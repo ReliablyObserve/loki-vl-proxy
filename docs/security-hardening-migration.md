@@ -99,6 +99,16 @@ not comparable to older runs that mostly measured primary-cache hits.
   bounded intermediate formatting, input, template depth and execution work.
   Exceeding these limits returns HTTP 400. Normal printf, control flow, string
   operations and both quoted/backtick template literals remain supported.
+- Raw metric evaluation (v1.68.0), including bare-parser `unwrap` queries,
+  rejects scans beyond `-manual-range-metric-row-limit` (default 1,000,000 rows)
+  and results beyond `-max-stats-query-series` (default 500 series), with 64 MiB
+  input/output and one million output samples. Overflow returns an error
+  (usually HTTP 502) instead of a truncated success. Native `stats_query_range`
+  paths keep their existing top-series cap at the same series limit.
+- Binary expressions (v1.68.0) allow nesting depth 64 and 1,024 child
+  evaluations, sharing 256 MiB of captured child responses, two million decoded
+  arrays, one million constructed samples and 64 MiB of label work; each encoded
+  result is capped at 64 MiB.
 - Coalesced bodies exceeding 256 MiB now return an error instead of being
   silently truncated. Scratch buffers above 1 MiB are not retained in the pool.
 - Disk expiry reclamation runs incrementally even with no new writes. This
@@ -128,10 +138,12 @@ Count/rate ranking continues to use pre-aggregated buckets as well.
 
 ## Remaining delete API gap
 
-The opt-in Loki delete handler currently targets `/select/logsql/delete`, which
-VictoriaLogs v1.52.0 rejects as an unsupported path. Its documented API is the
-asynchronous `/delete/run_task?filter=...` API. This hardening series does not
-enable that destructive API or claim delete compatibility. Keep deletion
-disabled until a dedicated adapter implements time and tenant constraints,
-task status/cancellation, authorization, and cache invalidation with live tests.
+The Loki delete handler (`/loki/api/v1/delete`) is always registered. It checks
+the confirmation header, selector, time bounds and tenant scope, then forwards to
+`/select/logsql/delete`, which VictoriaLogs v1.52.0 rejects as an unsupported
+path. Its documented API is the asynchronous `/delete/run_task?filter=...` API.
+This hardening series does not call that destructive API or claim delete
+compatibility: treat delete as unsupported. A working adapter would need time and
+tenant constraints, task status/cancellation, authorization, and cache
+invalidation with live tests.
 See [VictoriaLogs deletion](https://docs.victoriametrics.com/victorialogs/#how-to-delete-logs).

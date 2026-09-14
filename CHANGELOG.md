@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Correct Helm chart `values.yaml` comments and chart README to match the
+  binary: `label-style`/`metadata-field-mode` defaults (`underscores`/
+  `translated`), `server.metrics-max-concurrency` default `1`, the meaning of
+  `tenant.allow-global` (unmapped `X-Scope-OrgID: *` bypass), `rate-limit-burst`
+  semantics, `max-concurrent` backend bound, row/series limit errors and the
+  `tenant-label` stream-field requirement. The chart README now documents the
+  metrics and admin listeners, the peer-auth Secret and the NetworkPolicy
+  settings a ServiceMonitor needs. Comment and documentation changes only.
+
 ## [1.68.0] - 2026-09-14
 
 ### Security

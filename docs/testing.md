@@ -17,11 +17,13 @@ go test ./internal/proxy -run '^TestTupleContract_' -count=1
 # With race detector
 go test -race ./...
 
-# E2E compatibility tests (requires Docker Compose)
-cd test/e2e-compat
-docker compose up -d --build
-../../scripts/ci/wait_e2e_stack.sh 180
-go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
+# E2E compatibility tests (requires Docker Compose).
+# The stack is started from test/e2e-compat; the Go tests run from the repository root.
+(cd test/e2e-compat && docker compose up -d --build && ../../scripts/ci/wait_e2e_stack.sh 180)
+# Example: the `semantics` group; copy the other group patterns from .github/workflows/ci.yaml
+go test -v -tags=e2e -timeout=300s -count=1 \
+  -run '^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields)$' \
+  ./test/e2e-compat/
 
 # Manifest-driven Loki query semantics parity + inventory
 go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
@@ -31,13 +33,14 @@ go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
 
-# Playwright UI tests (browser-only Grafana smoke flows)
+# Reset the stack before switching to another group
+(cd test/e2e-compat && docker compose down -v)
+
+# Playwright UI tests: start the stack with the log generator profile, as CI does
+(cd test/e2e-compat && docker compose --profile ui up -d --build && ../../scripts/ci/wait_e2e_stack.sh 180)
 cd test/e2e-ui
 npm ci && npx playwright install chromium
 npm test
-
-# Generate local UI screenshots (Explore/Drilldown)
-npm run capture:screenshots
 
 # Run the same shards used in CI
 npx playwright test tests/datasource.spec.ts
@@ -46,13 +49,20 @@ npx playwright test --grep @explore-tail
 npx playwright test --grep @drilldown-core
 npx playwright test --grep @drilldown-mt
 npx playwright test --grep @explore-ops
+npx playwright test --grep @explore-mt
+npx playwright test --grep @regression
+npx playwright test --grep @comprehensive-ui
+cd ../..
 
-# macOS fallback: run the same UI tests inside Linux Playwright
+# macOS fallback (run from the repository root): the same UI tests inside Linux Playwright.
+# Specs default to 127.0.0.1, which is the container itself, so point every URL at the host.
 docker run --rm \
   -v "$(pwd)/test/e2e-ui:/work" \
   -w /work \
   -e GRAFANA_URL=http://host.docker.internal:3002 \
-  -e PROXY_URL=http://host.docker.internal:3100 \
+  -e LOKI_URL=http://host.docker.internal:13101 \
+  -e VL_URL=http://host.docker.internal:19428 \
+  -e PROXY_NATIVE_METADATA_URL=http://host.docker.internal:13106 \
   mcr.microsoft.com/playwright:v1.59.1-noble \
   /bin/bash -lc "npm ci && npx playwright test --grep @drilldown-core"
 
@@ -61,7 +71,16 @@ go build -o loki-vl-proxy ./cmd/proxy
 
 # Post-deploy tuple contract canary (validates default 2-tuple + categorize-labels 3-tuple; expects recent log data)
 PROXY_URL=http://127.0.0.1:3100 ./scripts/smoke-test.sh
+
+# The same canary against the compose stack, as the tuple-smoke CI job runs it
+go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
+PROXY_URL=http://127.0.0.1:13100 PROXY_URL_CATEGORIZED=http://127.0.0.1:13102 \
+  SMOKE_QUERY='{app="e2e-test"}' ./scripts/smoke-test.sh
 ```
+
+CI runs each `e2e-compat` group on a fresh stack. Running several groups against one stack re-ingests the fixtures (VictoriaLogs keeps duplicate rows, Loki drops them), which shows up as false parity diffs, so run `docker compose down -v` between groups. Do not run the Go parity groups with `--profile ui`: the continuous log generator changes cardinality while the comparison runs.
+
+The UI specs read these environment variables: `GRAFANA_URL` (default `http://127.0.0.1:3002`, used as the Playwright `baseURL`), `LOKI_URL` (default `http://127.0.0.1:13101`), `VL_URL` (default `http://127.0.0.1:19428`), `PROXY_NATIVE_METADATA_URL` (default `http://127.0.0.1:13106`), plus `PLAYWRIGHT_EXECUTABLE_PATH`, `CI`, `WORKERS` and `HEADED` in `playwright.config.ts`. CI also exports `PROXY_URL`, but no spec reads it.
 
 ## Security Validation
 
@@ -73,16 +92,17 @@ docker run --rm -v "$PWD:/repo" -w /repo \
   ghcr.io/gitleaks/gitleaks:v8.28.0 \
   detect --source . --report-format sarif --report-path gitleaks.sarif --exit-code 1
 
-# Go SAST
-go install github.com/securego/gosec/v2/cmd/gosec@v2.22.7
+# Go SAST (exclusions and their rationale live in .github/workflows/security-pr.yaml)
+go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 "$(go env GOPATH)/bin/gosec" \
-  -exclude=G104,G108,G115,G301,G302,G304,G306,G402,G404 \
+  -exclude=G104,G108,G115,G118,G301,G302,G304,G306,G402,G404,G704,G705 \
   -exclude-generated \
+  -exclude-dir=bench \
   ./...
 
 # filesystem vuln/misconfig/secret scan
 docker run --rm -v "$PWD:/repo" -w /repo \
-  aquasec/trivy:0.69.3 \
+  aquasec/trivy:0.71.0 \
   fs . \
   --ignorefile .trivyignore.yaml \
   --scanners vuln,misconfig,secret \
@@ -110,15 +130,56 @@ python3 scripts/ci/check_scorecard.py scorecard.json \
   --require-check CI-Tests=8 \
   --require-check SAST=7
 
-# repo-specific runtime checks
+# repo-specific runtime checks against the e2e-compat stack
+# (the scan scripts default to port 3100; the compose proxy listens on 13100)
 ./scripts/ci/run_security_regressions.sh
-./scripts/ci/run_zap_scan.sh baseline
-./scripts/ci/run_nuclei_scan.sh
+PROXY_BASE_URL=http://127.0.0.1:13100 ./scripts/ci/run_zap_scan.sh baseline
+
+# heavy lane only (scheduled/manual Security Heavy workflow)
+PROXY_BASE_URL=http://127.0.0.1:13100 ./scripts/ci/run_zap_scan.sh active
+PROXY_BASE_URL=http://127.0.0.1:13100 ./scripts/ci/run_nuclei_scan.sh
 ```
 
-The scheduled heavy lane also runs longer fuzzing, image scanning, SBOM generation, broader `Semgrep`, and an OWASP ZAP active scan.
+The pull-request `Security / runtime` job runs the security regressions and the ZAP baseline only. The scheduled heavy lane adds longer fuzzing, Trivy image scanning, SBOM generation, broader `Semgrep`, an OWASP ZAP active scan, and the curated `nuclei` scan.
 
 Local ZAP baseline runs may still report `10049 Non-Storable Content` on intentional `404` discovery paths such as `/` or disabled `/debug/*` URLs. That output is expected visibility noise unless it points at a real user-facing route.
+
+## CI Job Inventory
+
+Test, security and quality jobs defined under `.github/workflows/` (release, docs-site, labeler and badge workflows are not listed). Unless noted, a job runs on pull requests, pushes to `main`, and manual dispatch.
+
+| Workflow | Job | What it runs |
+|---|---|---|
+| `ci.yaml` | `test` | observability asset sync check, CI script unit tests, `go build`, `go vet`, `govulncheck` v1.8.0, `go test ./... -race` with coverage, `internal/cache` coverage guard (79%) |
+| `ci.yaml` | `lint` | `gofmt -s` check and `golangci-lint` v2.13.2 |
+| `ci.yaml` | `tuple-contract` | `go test ./internal/proxy -run '^TestTupleContract_'` |
+| `ci.yaml` | `tuple-smoke` | compose stack, `TestSetup_IngestLogs`, then `scripts/smoke-test.sh` |
+| `ci.yaml` | `fuzz-smoke` | short (12-20s) fuzz runs for `internal/proxy`, `internal/translator`, `internal/cache` and `internal/rulesmigrate` targets |
+| `ci.yaml` | `race-stress` | `-race -count=1` over `internal/proxy`, `internal/cache`, `internal/middleware`, `internal/observability`, plus targeted concurrency regressions |
+| `ci.yaml` | `stress-tests` | `-tags=stress -race` translation, coalescer and range-metric tests in `internal/proxy` |
+| `ci.yaml` | `memory-leak-tests` | `-tags=memleak -race -run 'TestMemLeak_'` in `internal/proxy` |
+| `ci.yaml` | `bench` | `internal/proxy` benchmarks (`-count=3`), label/field, patterns, cache and stats-translation scale benchmarks with regression thresholds, `TestLoad*` load tests |
+| `ci.yaml` | `docker` | image build and binary smoke run |
+| `ci.yaml` | `helm` | `helm lint`, template regressions, `scripts/ci/validate_helm_flags.sh` |
+| `ci.yaml` | `e2e-compat (core, drilldown, otel-edge, tail-multitenancy, semantics)` | one fresh compose stack per group, `go test -tags=e2e -run '<group pattern>' ./test/e2e-compat/` |
+| `ci.yaml` | `e2e-compat` | aggregates the five grouped jobs into one result |
+| `ci.yaml` | `e2e-fleet` | `test/e2e-fleet` 3-proxy stack, `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` only |
+| `ci.yaml` | `e2e-ui (9 shards)` | compose stack with `--profile ui`, one Playwright shard per job (see [CI Shards](#ci-shards)) |
+| `compat-loki.yaml` | `loki-pinned` | Loki 3.7.1, VictoriaLogs v1.49.0, Grafana 12.4.2: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
+| `compat-loki.yaml` | `loki-matrix` | weekly: the same checks for every `stack.loki.matrix_versions` entry |
+| `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.1, VictoriaLogs v1.50.0, Grafana 13.0.1: `TestDrilldownTrackScore` |
+| `compat-drilldown.yaml` | `drilldown-grafana-pr-matrix` | runtime profiles with `run_on_pr` (Grafana 13.0.1 `current_smoke`, 12.4.2 `previous_smoke`) |
+| `compat-drilldown.yaml` | `drilldown-contract-matrix`, `drilldown-grafana-runtime-matrix` | weekly/manual: Drilldown app contract checks per version and every Grafana runtime profile |
+| `compat-vl.yaml` | `vl-pinned` | Loki 3.7.1, VictoriaLogs v1.49.0, Grafana 12.4.2: `TestVLTrackScore` |
+| `compat-vl.yaml` | `vl-matrix` | weekly/manual: `TestVLTrackScore` for every `stack.victorialogs.matrix_versions` entry |
+| `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard guardrails |
+| `security-pr.yaml` | `Security / runtime` | compose stack, `scripts/ci/run_security_regressions.sh`, ZAP baseline |
+| `security-heavy.yaml` | `Heavy / image and sbom`, `Heavy / semgrep`, `Heavy / fuzz`, `Heavy / dast` | scheduled/manual only: Trivy image scan and SBOM, Semgrep 1.161.0, 2-minute fuzzing, ZAP active scan and curated nuclei |
+| `codeql.yaml` | `analyze` | CodeQL Go analysis (also weekly) |
+| `e2e-pipeline.yml` | `e2e-pipeline` | `test/e2e-pipeline` stack, `go test -tags=e2e ./test/e2e-pipeline/` |
+| `vl-ast-coverage.yml` | `check-coverage` | weekly, manual, and on PRs touching `internal/logsql/**` or its manifest: `scripts/check-vl-ast-coverage.py` |
+| `changelog-pr.yaml` | `changelog` | pull requests only: `scripts/ci/check_changelog_pr.py` changelog gate |
+| `pr-quality-report.yaml` | `report` | pull requests only: test count, coverage, compatibility, benchmark and load deltas against the base branch |
 
 ## Test Coverage by Category
 
@@ -138,7 +199,7 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | Hardening | 4 | Query length limit, limit sanitization, security headers |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |
 | Security CI static | Dedicated workflow | gitleaks, gosec, Trivy, actionlint, hadolint, Scorecard |
-| Security CI runtime | Dedicated workflow | custom regressions, ZAP baseline, curated nuclei |
+| Security CI runtime | Dedicated workflow | custom regressions and ZAP baseline on PRs; ZAP active scan and curated nuclei in the scheduled heavy lane |
 | Critical fixes | 30+ | Data race, binary operators, delete safeguards, without() |
 | Benchmarks | 10+ | Translation hot paths, Tier0 response-cache hits, and warm fleet shadow-copy reads |
 | E2E basic (Loki vs proxy) | 11 | Side-by-side API response comparison |
@@ -187,9 +248,9 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
 | `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
 | `test/e2e-compat/missing_ops_compat_test.go` | Edge-case parity coverage: unpack (test-data gap), `\|>` pattern match, unwrap duration/bytes, label_replace (nested sum gap) |
-| `test/e2e-ui/tests/explore-operations.spec.ts` | Explore Loki operations browser smoke (12 tests) |
-| `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` | Comprehensive Loki Explorer UI coverage (30+ tests covering all clickable elements, edge cases, and performance metrics) |
-| `test/e2e-ui/tests/performance-baseline.spec.ts` | Performance baseline measurements (page load, query response, UI interactions, label selector, filter changes) |
+| `test/e2e-ui/tests/explore-operations.spec.ts` | Explore Loki operations browser smoke (11 tests, `@explore-ops`) |
+| `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` | Explore UI coverage (15 tests, `@comprehensive-ui`): page load, editor, query execution, results panel, empty results, label filters, `unwrap`; timings recorded as annotations |
+| `test/e2e-ui/tests/performance-baseline.spec.ts` | Performance baseline measurements (7 tests, `@performance`, not run in CI): page load, query response, log row expansion, label selector, filter changes |
 | `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown with console/request guardrails |
 
 ## Playwright UI Matrix
@@ -208,6 +269,9 @@ docker compose up -d --build
 cd ../e2e-ui
 npm ci
 npx playwright install chromium
+# The script defaults to ports 3100/9428; point it at the compose ports
+PROXY_QUERY_URL=http://127.0.0.1:13100 \
+VL_INSERT_URL='http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,service_name,level,detected_level' \
 npm run capture:screenshots
 ```
 
@@ -225,8 +289,11 @@ Optional overrides:
 
 - `SCREENSHOT_FROM` (default `now-5m`)
 - `SCREENSHOT_TO` (default `now`)
-- `SCREENSHOT_OUT_DIR` (default `../../docs/images/ui`)
+- `SCREENSHOT_OUT_DIR` (default `../../docs/images/ui`, relative to the working directory)
 - `GRAFANA_URL` (default `http://127.0.0.1:3002`)
+- `PROXY_QUERY_URL` (default `http://127.0.0.1:3100`; the compose proxy is `http://127.0.0.1:13100`)
+- `VL_INSERT_URL` (default `http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,service_name,level,detected_level`; compose VictoriaLogs is on port `19428`)
+- `PLAYWRIGHT_EXECUTABLE_PATH` (optional system Chrome/Chromium binary)
 
 CI prefers the runner's existing Chrome/Chromium binary for these shards and falls back to `npx playwright install chromium` only when no system browser is available. That removes the repeated `apt` dependency install from the common GitHub-hosted path.
 
@@ -244,30 +311,33 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 | `explore-regression` | `npx playwright test --grep @regression` | API-level parity register (`explore-regression.spec.ts`): log selectors, line filters, parsers and pipelines compared line-for-line on an uncapped window; grouped metric queries compared by series set after Loki's range path has warmed; the `-max-stats-query-series` cap; content checks |
 | `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage (`explore-comprehensive-ui.spec.ts`): page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations |
 
+Specs whose tags match no shard do not run in CI: `explore-click-interactions.spec.ts` (`@click-interactions`), `performance-baseline.spec.ts` (`@performance`), `drilldown-loki-vs-proxy-compare.spec.ts` (`@compare`), and the `@drilldown-cache` groups of `drilldown-cache-regression.spec.ts` other than the labels-sidebar group, which also carries `@drilldown-core`.
+
 ## Performance Testing
 
 ### Comprehensive UI Coverage & Performance Baselines
 
-Two new test suites validate Loki Explorer and Logs Drilldown UI comprehensiveness and measure performance:
+Two Playwright suites cover Explore UI behavior and browser-side timings. For proxy and backend read-path benchmarks, see [benchmarks.md](benchmarks.md) and `bench/README.md`.
 
 #### Comprehensive UI Tests
-- **File**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts`
+- **File**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` (`@comprehensive-ui`, CI shard `explore-comprehensive`)
 - **Tests**: 15 cases covering:
   - Page load and query editor rendering
-  - Query execution (stream selector, line filters, json parser, `avg_over_time ... unwrap` metric)
-  - Results panel (logs and graph), empty results, label-filtered and time-range queries
+  - Query execution (stream selector, `sum(rate(...))` metric, json parser, `avg_over_time ... unwrap` metric)
+  - Results panel (logs and graph), empty results, a label filter stage (`| level="error"`)
   - Every test asserts no Grafana error toasts, console errors or failed datasource requests
   - Timings are recorded as Playwright annotations (`timing-ms`), not asserted
 
 #### Performance Baseline Tests
-- **File**: `test/e2e-ui/tests/performance-baseline.spec.ts` (180+ lines)
-- **Metrics Tracked**:
-  - **Explore page load**: Target &lt;\1000ms
-  - **Simple metric query response**: Target &lt;\1000ms
-  - **JSON parsed logs query**: Target &lt;\1000ms
-  - **Log entry expansion**: Target &lt;\100ms
-  - **Label selector load**: Target &lt;\1000ms
-  - **Rapid filter changes**: Target &lt;\1000ms
+- **File**: `test/e2e-ui/tests/performance-baseline.spec.ts` (`@performance`, 7 tests, not run in CI)
+- **Thresholds** (the `THRESHOLDS` constant in the spec):
+  - **Explore page load**: &lt;3000 ms (asserted)
+  - **Simple metric query response**: &lt;5000 ms (asserted)
+  - **JSON parsed logs query**: &lt;5000 ms (asserted)
+  - **Log entry expansion**: &lt;500 ms (asserted only when the expand button is visible)
+  - **Label selector open**: &lt;1000 ms (asserted only when the selector is visible)
+  - **Rapid filter application**: recorded against 5000 ms, not asserted on its own
+  - **Performance Report**: prints every recorded result and fails if any recorded result exceeded its threshold
 
 #### Running Performance Tests
 
@@ -275,17 +345,17 @@ Two new test suites validate Loki Explorer and Logs Drilldown UI comprehensivene
 cd test/e2e-ui
 
 # Run comprehensive UI tests
-npx playwright test explore-comprehensive-ui.spec.ts
+npx playwright test tests/explore-comprehensive-ui.spec.ts
 
 # Run performance baseline
-npx playwright test performance-baseline.spec.ts
+npx playwright test tests/performance-baseline.spec.ts
 
-# Run both with detailed reporting
-npx playwright test --grep "@comprehensive-ui|@performance" --reporter=verbose
+# Run both with one line per test
+npx playwright test --grep "@comprehensive-ui|@performance" --reporter=list
 
-# Generate HTML report
-npx playwright test performance-baseline.spec.ts --reporter=html
-# Open playwright-report/index.html
+# Generate HTML report, then open it
+npx playwright test tests/performance-baseline.spec.ts --reporter=html
+npm run report
 ```
 
 #### Performance Trends
@@ -294,10 +364,10 @@ To track performance over time:
 
 ```bash
 # Create baseline
-npm run test:e2e:ui:performance > baseline-$(date +%Y-%m-%d).txt
+npx playwright test tests/performance-baseline.spec.ts --reporter=list > baseline-$(date +%Y-%m-%d).txt
 
 # Compare against current
-npm run test:e2e:ui:performance > current-$(date +%Y-%m-%d).txt
+npx playwright test tests/performance-baseline.spec.ts --reporter=list > current-$(date +%Y-%m-%d).txt
 diff -u baseline-*.txt current-*.txt
 ```
 
@@ -314,17 +384,19 @@ The Docker-backed `test/e2e-compat` suite now runs as five functional PR shards 
 
 | Shard | Primary scope |
 |---|---|
-| `e2e-compat (core)` | Loki/VL surface parity, alerting, chaining, Explore HTTP contracts, control-plane endpoints |
-| `e2e-compat (drilldown)` | Drilldown contracts, Drilldown runtime-family checks, track-score summaries |
-| `e2e-compat (otel-edge)` | OTel label translation, complex queries, edge-case payloads and parser behavior |
-| `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, response/security edge checks |
-| `e2e-compat (semantics)` | query semantics matrix, operations matrix, range metric compat, clickout parity, missing ops |
+| `e2e-compat (core)` | `TestCompat_*`, `TestExtended_*`, `TestChaining_*`, `TestAlertingCompat_*`, Explore HTTP contracts, `TestLokiFunctions_*`, datasource catalog/health, proxy compatibility surface, pinned matrix vs compose check |
+| `e2e-compat (drilldown)` | `TestDrilldown_*` contracts including runtime-family checks, Drilldown cluster/level filter features, Loki/Drilldown/VL track scores |
+| `e2e-compat (otel-edge)` | OTel label translation, structured metadata, underscore-proxy surfaces, label dedup/translation, `TestEdge_*`, `TestComplex_*` |
+| `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, admin/analytics endpoints, security headers, metrics, gzip, response-shape and edge checks |
+| `e2e-compat (semantics)` | query semantics matrix and operations inventory, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout parity, `TestMissingOps_*` |
+
+The group patterns are anchored regexes in `.github/workflows/ci.yaml`. Tests outside every pattern do not run in these jobs: `TestHardeningLive_*` runs in `Security / runtime` (through `scripts/ci/run_security_regressions.sh`), `TestLabelCache_*` runs in `loki-pinned`, while `TestOperationsMatrix_*`, `TestPerf_*`, `TestParityLatency`, `TestPatternsDenseRepro_*`, `TestDense*`, `TestE2ELock_*`, `TestProxy_DrilldownLimits_*`, `TestRangeMetric_UnwrapResponseSizeGuard`, `TestFeature_IndexStats_ReturnsRealData`, `TestFeature_IndexVolume_ReturnsPrometheusFormat`, `TestFeature_IndexVolumeRange_ReturnsMatrix`, `TestFeature_ZstdCompression` and `TestFeature_GzipAndZstdBodiesMatch` are not matched by any CI pattern and run only when invoked locally.
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 
 The GitHub-hosted Docker jobs now also prebuild the proxy image once per job through BuildKit cache and start compose stacks with `--no-build`. That keeps the grouped compat shards and UI shards parallel without paying the full Docker rebuild cost every time a stack starts inside the same job.
 
-Compose-backed fleet cache smoke now runs on pull requests and post-merge `main` in CI (`e2e-fleet`), using the dedicated `TestFleetSmoke_*` suite.
+Compose-backed fleet cache smoke runs on pull requests and post-merge `main` in CI (`e2e-fleet`). The job runs only `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` against `test/e2e-fleet/docker-compose.yml`; the other `TestFleet_*`, `TestFleetSmoke_*` and `TestPeerDiscovery_*` tests in `test/e2e-fleet` are run locally.
 Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by seeding e2e data then executing `scripts/smoke-test.sh`.
 
 ## Query Semantics Matrix
@@ -396,6 +468,8 @@ Moved out of Playwright:
 |---|---|
 | `basic log query returns results without errors` | baseline Explore log query |
 | `sum by (level) rate returns the same series set on both datasources` | API-level proxy-vs-Loki metric parity through Grafana's datasource proxy (`explore-parity.spec.ts`) |
+| `exact windows and formatted rows stay visible: <datasource>` | one test per datasource (proxy, interact proxy, Loki) in `security-hardening-visibility.spec.ts` |
+| `buildExploreUrl encodes the datasource pane state` | pure URL/state coverage (`url-state.spec.ts`) |
 
 Moved out of Playwright:
 `internal/proxy/proxy_test.go`, `internal/proxy/gaps_test.go`, and `test/e2e-compat/chaining_test.go` cover query translation, response shape, parser pipelines, line filters, direction handling, and metric-query parity faster than the browser can.
@@ -408,7 +482,7 @@ Moved out of Playwright:
 | `multi-tenant query respects __tenant_id__ filter in Explore` | tenant narrowing in Explore |
 | `multi-tenant negative regex excludes fake tenant in Explore` | tenant negative-regex narrowing stays browser-visible |
 | `live tail works through the browser-allowed synthetic datasource` | browser-safe synthetic live tail |
-| `native-tail failure can recover through ingress live tail` | failure recovery after native-tail path breaks |
+| `native-tail datasource can hand off to ingress live tail` | failure recovery after native-tail path breaks |
 
 Moved out of Playwright:
 `test/e2e-compat/features_test.go` and `internal/proxy/*tail*test.go` cover tenant-header fanout, websocket protocol behavior, fallback selection, origin policy, and native-tail failure semantics without Chromium.
@@ -422,6 +496,9 @@ Moved out of Playwright:
 | `buildLogsDrilldownUrl` and `buildServiceDrilldownUrl` state tests | pure URL/state coverage without launching Chromium |
 | `proxy shows service buckets on landing page` | Logs Drilldown landing volumes |
 | `service drilldown field filter survives reload from URL state` | Drilldown URL state persists across reloads |
+| `patterns are visible in drilldown for autodetected datasource` | Patterns tab with the patterns-autodetect proxy |
+| `proxy drilldown-limits payload is a superset of Loki's` and the `Patterns tab is hidden/shown ...` tests | Patterns tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`) |
+| `labels visible — <range> range` | Drilldown fields labels sidebar per time range (`drilldown-cache-regression.spec.ts`) |
 
 Moved out of Playwright:
 `test/e2e-compat/drilldown_compat_test.go` now owns detected-fields contracts, dotted metadata exposure, filtered labels/fields resource behavior, parsed-field freshness, unknown field/label empty-success behavior, Grafana datasource resource parity, and multi-tenant Drilldown resource behavior including regex and no-match tenant filters.
@@ -434,6 +511,9 @@ Moved out of Playwright:
 | `multi-tenant service drilldown loads without browser errors` | multi-tenant service logs browser smoke |
 | `multi-tenant service field view loads detected fields without browser errors` | multi-tenant service fields browser smoke |
 | `multi-tenant service filter survives reload from URL state` | multi-tenant URL state keeps `__tenant_id__` filter after reload |
+| `multi-tenant service fields tab shows non-zero cardinality badges` | fields tab cardinality badges |
+| `multi-tenant drilldown label filter scopes logs to selected tenant` | tenant label filter narrows logs |
+| `multi-tenant drilldown with missing tenant shows empty result not error` | unknown tenant renders an empty result |
 
 ## Compatibility Tracks
 
@@ -443,23 +523,26 @@ The repo now keeps four separate compatibility tracks/contracts:
 |---|---|---|
 | Loki | `TestLokiTrackScore` | Loki `3.6.x` and `3.7.x` |
 | Logs Drilldown | `TestDrilldownTrackScore` | Logs Drilldown `1.0.x` and `2.0.x` families |
-| Grafana Loki datasource | `TestGrafanaDatasourceCatalogAndHealth` | Grafana runtime `11.x` and `12.x` families |
+| Grafana Loki datasource | `TestGrafanaDatasourceCatalogAndHealth` | Grafana runtime `13.x` (current) and `12.x` (previous) families |
 | VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.3x.x` through `v1.5x.x` transition band |
 
-The default local stack is pinned to:
+The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 
 - Loki `3.7.1`
 - VictoriaLogs `v1.50.0`
-- vmalert `v1.138.0` (with local VictoriaMetrics remote-write target for recording-rule evaluation)
-- Grafana `12.4.2`
-- Logs Drilldown contract `2.0.3` from `grafana/logs-drilldown` commit `c22fae24f533a36ec2173933d2c303804cb7e814`
+- vmalert `v1.138.0` and vmauth `v1.138.0`
+- VictoriaMetrics `v1.119.0` (remote-write target for vmalert recording rules and scrape store for the stack)
+- Grafana `13.0.1` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app@2.0.4`
+- Logs Drilldown contract `2.0.4` from `grafana/logs-drilldown` commit `94eff00f3e4c2c83e817d96f8d78ab41e196fab7`
+
+`TestPinnedCompatibilityMatrixMatchesCompose` fails when the Loki, VictoriaLogs or Grafana image defaults in compose drift from the pinned versions in `compatibility-matrix.json`, so bump both together. The Grafana plugin pins are not checked by that test; keep `GF_PLUGINS_PREINSTALL` and `stack.logs_drilldown_contract.pinned_version` aligned by hand.
 
 Field-surface defaults in the pinned stack:
 
-- Labels remain Loki-compatible when `-label-style=underscores` is used
-- `-metadata-field-mode=hybrid` is the default, so field APIs expose both native dotted names and translated aliases
-- If you need a stricter Loki-only field surface for a focused test, run the proxy with `-metadata-field-mode=translated`
-- The compose matrix includes a dedicated native-metadata proxy profile (`-metadata-field-mode=native`) so CI verifies both hybrid and native structured-metadata exposure
+- `-label-style=underscores` is the binary default, so labels stay Loki-compatible
+- `-metadata-field-mode=translated` is the binary default: field APIs expose Loki-compatible translated names only; the main proxy (`loki-vl-proxy`, port 13100) runs this mode
+- `-metadata-field-mode=hybrid` exposes both native dotted names and translated aliases; `loki-vl-proxy-underscore` (port 13102, behind the Grafana `Loki (via VL proxy)` datasources) and `loki-vl-proxy-patterns-autodetect` (port 13110) run it
+- Dedicated `loki-vl-proxy-native-metadata` (`native`), `loki-vl-proxy-translated-metadata` (`translated`) and `loki-vl-proxy-no-metadata` (`-emit-structured-metadata=false`) variants cover the other structured-metadata exposure modes
 
 Alerting and recording-rule parity coverage:
 
@@ -476,9 +559,11 @@ Support window policy:
 
 Grafana runtime profiles from the manifest:
 
-- `12.4.2` runs the full Drilldown runtime score on scheduled and manual compatibility checks
-- `12.4.1` runs a smaller current-family datasource-plus-Drilldown smoke profile on pull requests, and it must include the runtime-family contract checks
-- `11.6.6` runs a smaller previous-family datasource-plus-Drilldown smoke profile on pull requests, and it must include the runtime-family contract checks
+- `13.0.1` (`full`) runs `TestDrilldownTrackScore` and `TestDrilldown_RuntimeFamilyContracts` on scheduled and manual compatibility checks
+- `13.0.1` (`current_smoke`) runs `TestGrafanaDatasourceCatalogAndHealth`, `TestDrilldown_GrafanaResourceContracts` and `TestDrilldown_RuntimeFamilyContracts` on pull requests
+- `12.4.2` (`previous_smoke`) runs the same smoke tests on pull requests against the previous family
+
+The Grafana Loki datasource contract tracks `13.0.1`, `12.4.2` and `12.4.1`.
 
 Logs Drilldown family assertions are explicit in the contract matrix:
 
@@ -503,7 +588,7 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - Loki / Logs Drilldown / VictoriaLogs compatibility deltas
 - sampled benchmark and load-test deltas
 
-The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and uses 3-sample benchmark medians to keep the PR gate faster without dropping the tracked signals.
+The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and reports medians of 7 benchmark samples (`-count=7 -benchtime=2s -cpu=1` with `GOMAXPROCS=1`) and 3 high-concurrency load-test runs (`scripts/ci/collect_quality_metrics.sh`).
 The collector runs test/coverage, compatibility scores, benchmark medians, and load metrics in parallel with bounded fallbacks so a single slow signal does not block the whole report gate.
 The PR quality workflow now skips benchmark/load perf smoke when no perf-sensitive files changed, so docs/metadata-only PRs do not report noisy runner jitter as fake regressions.
 The quality gate compares base/head with relative and absolute regression thresholds and ignores low-baseline noise, so tiny shared-runner jitter does not fail required checks.
@@ -514,8 +599,8 @@ For reliable metadata PR auto-merge under branch protection, set repository secr
 
 Required-check note:
 
-- The repo now exposes the grouped compat jobs directly: `e2e-compat (core)`, `e2e-compat (drilldown)`, `e2e-compat (otel-edge)`, and `e2e-compat (tail-multitenancy)`.
-- The legacy umbrella `e2e-compat` job remains as a compatibility shim until branch protection is updated to require the grouped checks directly.
+- The repo exposes the grouped compat jobs directly: `e2e-compat (core)`, `e2e-compat (drilldown)`, `e2e-compat (otel-edge)`, `e2e-compat (tail-multitenancy)`, and `e2e-compat (semantics)`.
+- The umbrella `e2e-compat` job depends on all five groups and fails when any group fails, so one required check covers every group.
 
 That report is part of the required PR gate. It is still a smoke signal rather than a full benchmark lab run, but it now blocks obvious regressions in coverage, compatibility, and the tracked performance signals.
 

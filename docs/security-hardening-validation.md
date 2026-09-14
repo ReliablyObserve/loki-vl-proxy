@@ -88,8 +88,9 @@ cache keys invalidate old entries and can increase misses. Formatting buffers
 before responding. Range topk may expose more than k changing winners. Read the
 [migration guide](security-hardening-migration.md) before rollout.
 
-The opt-in delete adapter is still unsupported against the verified VL endpoint;
-keep deletion disabled pending a separately designed asynchronous adapter. The
+Delete remains unsupported: the always-registered `/loki/api/v1/delete` handler
+targets a path VictoriaLogs rejects, and no adapter for VL's asynchronous deletion
+API exists. The
 existing browser suite also contains explicit known-gap skips and permissive
 legacy assertions. The new strict tests do not turn those gaps into guarantees.
 
@@ -100,9 +101,11 @@ An isolated run without the UI generator confirmed invalid-IP and parser-error
 mismatches and invalid binary matching. Strict value checks also exposed
 quantile errors and a warmed-field-mapping regexp capture defect. Earlier
 reference timeouts and aggregate resource failures on a long-running generator
-stack are not isolated reproductions. These compatibility issues are tracked
-in the separate real-window draft; the legacy suite's green status is not
-execution-parity evidence. The malformed-template hardening regression uses
+stack are not isolated reproductions. These defects (IP validation, parser-error
+ordering, implicit many-to-one binary matching, quantile grouping and the regexp
+capture rewrite) were fixed in v1.68.0; the measured baseline, corrections and
+remaining limits are in [real-window compatibility findings](real-window-compatibility-gaps.md).
+The legacy suite's green status is not execution-parity evidence. The malformed-template hardening regression uses
 seeded data and correct timestamps directly.
 
 The pre-merge review additionally reproduced a hot/cold merge stall with one

@@ -18,7 +18,7 @@
 2. Run tuple smoke canary (validates both default 2-tuple and categorize-labels 3-tuple paths):
    - `PROXY_URL=http://<proxy>:3100 ./scripts/smoke-test.sh`
 3. Check tuple mode counters:
-   - `curl -fsS http://<proxy>:3100/metrics | rg "loki_vl_proxy_response_tuple_mode_total"`
+   - `curl -fsS http://<proxy>:9091/metrics | rg "loki_vl_proxy_response_tuple_mode_total"` (chart metrics port; a binary without `-metrics-listen` serves `/metrics` on `-listen` when `-server.register-instrumentation=true`)
 
 ## Typical Root Causes
 

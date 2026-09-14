@@ -62,26 +62,31 @@ flowchart TD
 ## Configuration
 
 ```bash
-# Kubernetes (DNS discovery via headless service)
+# Kubernetes (DNS discovery via headless service; peers are reached on port 3100)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-discovery=dns \
-  -peer-dns=proxy-headless.ns.svc.cluster.local
+  -peer-dns=proxy-headless.ns.svc.cluster.local \
+  -peer-auth-token=shared-secret
 
 # Static peer list
 ./loki-vl-proxy \
   -peer-self=10.0.0.1:3100 \
   -peer-discovery=static \
-  -peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
+  -peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100 \
+  -peer-auth-token=shared-secret
 ```
+
+Discovery modes are `dns` (headless A records, fixed peer port `3100`), `srv` (DNS SRV, port from the record), `http` (JSON peer list) and `static`. The peer cache is enabled only when both `-peer-self` and `-peer-discovery` are set.
 
 For full details including request flow diagrams, TTL preservation, circuit breaker states, performance characteristics, and large-fleet startup coordination, see [Fleet Cache Architecture](fleet-cache.md).
 
 Current implementation notes:
 
-- the current chart can wire peer discovery automatically through `peerCache.enabled=true`
+- the current chart can wire peer discovery automatically through `peerCache.enabled=true`, including `-peer-auth-token` from `peerCache.authToken`, `peerCache.existingSecret`, or a generated `<release>-peer-auth` Secret
 - larger `/_cache/get` responses can be `zstd`- or `gzip`-compressed between peers
 - `-peer-write-through=true` is enabled by default; non-owner writes above `-peer-write-through-min-ttl` are pushed to owners
-- `-peer-auth-token` can require a shared token on peer fetch and write-through endpoints when the fleet crosses a broader network boundary
+- `-peer-auth-token` is required when peer discovery is configured: the proxy refuses to start without it unless `-peer-insecure-ip-allowlist=true` restores the legacy IP-membership check. All `/_cache/*` endpoints compare `X-Peer-Token` in constant time and return `401` on mismatch
+- `GET /_cache/peers` returns the current ring (`peers`, `self`, `count`); `POST /admin/cache/flush?peers=1` purges the local caches and fans out `POST /_cache/purge` to every peer (see [Ring-Wide Cache Flush](fleet-cache.md#ring-wide-cache-flush))
 - `/_cache/has?keys=k1,k2,...` is a lightweight batch presence endpoint (no value data transferred) used by the startup warmup to discover which peer has the freshest copy of each label window before fetching; see [Startup Coordination](fleet-cache.md#startup-coordination-and-fleet-restart-safety)
 - `-warmup-max-jitter` spreads fleet startup queries across a configurable window to prevent thundering herd on rolling restarts

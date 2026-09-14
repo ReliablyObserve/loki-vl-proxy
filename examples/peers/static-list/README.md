@@ -21,20 +21,26 @@ docker compose ps
 
 ## How to test
 
-Check that each proxy sees all its peers:
+Check that each proxy sees all its peers. The `/_cache/*` endpoints require the
+shared peer token (`-peer-auth-token=fleet-secret`) in the `X-Peer-Token` header:
 
 ```bash
-curl -s http://localhost:3100/_cache/peers | jq .
-curl -s http://localhost:3101/_cache/peers | jq .
-curl -s http://localhost:3102/_cache/peers | jq .
+export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3101/_cache/peers | jq .
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3102/_cache/peers | jq .
 ```
 
 Each response should list `proxy-a:3100`, `proxy-b:3100`, and `proxy-c:3100`.
 
-Send a log line and verify it can be queried through any proxy:
+The proxy is read-only (`/loki/api/v1/push` returns `405`), so write a log line
+straight to VictoriaLogs and read it back through any proxy. VictoriaLogs has no
+published host port in this example, so push from a throwaway container on the
+compose network (`static-list_default` when started from this directory):
 
 ```bash
-curl -s -XPOST http://localhost:3100/loki/api/v1/push \
+docker run --rm --network static-list_default curlimages/curl:latest \
+  -s -XPOST http://victorialogs:9428/insert/loki/api/v1/push \
   -H "Content-Type: application/json" \
   -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello"]]}]}'
 

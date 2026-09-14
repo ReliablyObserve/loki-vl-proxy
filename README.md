@@ -19,8 +19,8 @@
 [![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-5291%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-88.7%25-green)](#tests)
+[![Tests](https://img.shields.io/badge/tests-5291%20passed-brightgreen)](docs/testing.md)
+[![Coverage](https://img.shields.io/badge/coverage-88.7%25-green)](docs/testing.md)
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -34,7 +34,7 @@ LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translat
 
 Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations, binary metric expressions, `PipeMath`/`PipeStats`/`PipeFilter` nodes).
 
-**Label metadata — fast and complete:** first request returns a 1h VL scan immediately (sub-ms proxy overhead); a background goroutine fetches the full requested range (1h → 7d) so the second request has complete historical label data from cache. Disk-backed cache survives proxy restarts; a 90-second keep-warm loop ensures labels stay hot even with no user queries. Time-bucketed cache keys (5-min / 1h / 6h buckets by range) collapse dashboard refresh drift to the same entry. Label-value routing uses `stream_field_names` as an endpoint gate — only stream-indexed labels use `stream_field_values`; non-stream labels fall through to `field_values` so queries like `cluster` always return results.
+**Label metadata — fast and complete:** first request returns a 5-minute VL scan immediately (sub-ms proxy overhead); a background goroutine fetches the full requested range (1h → 7d) so the second request has complete historical label data from cache. Disk-backed cache survives proxy restarts; a keep-warm loop refreshes standard label windows at 75% of the 5-minute labels TTL (about every 3m45s, skipping entries with more than 40% of their TTL left) so labels stay hot even with no user queries. Time-bucketed cache keys (5-min / 1h / 6h buckets by range) collapse dashboard refresh drift to the same entry. Label-value routing uses `stream_field_names` as an endpoint gate — only stream-indexed labels use `stream_field_values`; non-stream labels fall through to `field_values` so queries like `cluster` always return results.
 
 **Fleet restart safety:** rolling restarts of N proxy pods don't hammer VL. Startup jitter (`-warmup-max-jitter`) spreads instances across a configurable window; a two-phase peer discovery protocol (`/_cache/has` for batch presence check → `/_cache/get` from the freshest peer) means only the first instance per label window hits VL — the rest pull from peers. For a 30-pod fleet this reduces warmup VL queries from 120 to ≤8 on restart.
 
@@ -42,7 +42,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 **Keep your entire Loki stack — Grafana Explore, Drilldown, dashboards, API tooling — and run it on VictoriaLogs.**
 
-- **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes, zero query rewrites.
+- **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes and no query rewrites for supported LogQL; measured gaps are listed in [compatibility gaps](docs/real-window-compatibility-gaps.md) and [Known Issues](docs/KNOWN_ISSUES.md).
 - **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact.
 - **Proxy intelligence built in.** Disk-backed label cache with keep-warm loop, progressive full-range background fetch, time-bucketed keys, adaptive parallelism, circuit breaker, rate limits, tenant isolation. Fleet restart safety: jitter + peer-first warmup keeps rolling restarts from thundering VL. One ~14 MB static binary.
 
@@ -212,10 +212,10 @@ For StatefulSet persistence, peer-cache fleet setup, OTLP push wiring, and image
 |------|------|----------|
 | `dns` | `-peer-dns=proxy-headless.ns.svc.cluster.local` | Kubernetes headless service — only ready pods appear |
 | `srv` | `-peer-srv=_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local` | Kubernetes StatefulSet, Consul DNS — port embedded in record |
-| `http` | `-peer-http-url=http://consul:8500/v1/health/service/loki-vl-proxy?passing=true` | Outside k8s: Consul, Nomad, Prometheus HTTP SD, or custom endpoint |
+| `http` | `-peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy` | Outside k8s: Consul, Nomad, Prometheus HTTP SD, or custom endpoint |
 | `static` | `-peer-static=10.0.0.1:3100,10.0.0.2:3100` | Fixed fleets, development |
 
-Verify the live ring at any time: `curl http://proxy:3100/_cache/peers` → `{"peers":[...],"self":"...","count":N}`.
+Verify the live ring at any time: `curl -H 'X-Peer-Token: <peer-auth-token>' http://proxy:3100/_cache/peers` → `{"peers":[...],"self":"...","count":N}` (peer endpoints require the shared token unless `-peer-insecure-ip-allowlist=true`).
 
 Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`examples/peers/`](examples/peers/).
 
@@ -244,7 +244,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - Grafana Explore — log browsing, filtering, live tail
 - Grafana Logs Drilldown — patterns, service view, field breakdown
 - Dashboards — supported Loki log and metric queries
-- Multi-tenant — `X-Scope-OrgID` isolation with per-tenant rate limits
+- Multi-tenant — `X-Scope-OrgID` isolation, including Loki-style `a|b` multi-tenant reads
 - Live tail — native WebSocket tail or synthetic polling fallback
 - Rules and alerts — read bridge to vmalert (no write lifecycle)
 - LogQL — stream selectors, filters, parsers, metric queries, range functions and vector operators, with measured compatibility and documented limitations
@@ -255,17 +255,17 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 ## Production Features
 
 - **Circuit breaker** — opens on backend failure, closes automatically on recovery; lock-free fast path in healthy state
-- **Per-client rate limits** — token bucket per tenant with sharded locks; no convoy effects at high tenant count
+- **Per-client rate limits** — token bucket per client source IP plus a global in-flight cap (`-max-concurrent`, excess gets `503`)
 - **Adaptive log sampling** — below 10 req/s logs everything; above it, OK traffic becomes periodic summaries while errors are always logged
 - **Tenant isolation** — strict `X-Scope-OrgID` fanout guardrails; no cross-tenant data bleed
 - **TLS / mTLS** — configurable on both northbound (client) and southbound (backend) boundaries
-- **OTLP push** — proxy emits its own traces to any OTLP endpoint
+- **OTLP metrics push** — proxy pushes its own metrics to any OTLP HTTP endpoint
 - **Operator dashboard** — packaged Grafana dashboard covering Client → Proxy → VictoriaLogs, cache behavior, fanout, and resource utilization
-- **Runbook-backed alerts** — 13 alert rules, each with a linked runbook
+- **Runbook-backed alerts** — 15 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
-- **Read-only by default** — `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled
+- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` is guarded but not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
 - **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
-- **Query-length enforcement** — per-tenant max query time range via `-default-max-query-length` flag; per-tenant override via limits config
+- **Query-length enforcement** — `query_range` time-range limit: global default via `-default-max-query-length`, per-tenant override via `max_query_length` in `-tenant-limits` / `-tenant-default-limits`
 
 ---
 
@@ -278,7 +278,7 @@ flowchart LR
     subgraph Proxy["Loki-VL-proxy &nbsp;·&nbsp; one ~14 MB Go binary"]
         direction TB
         API["Loki API surface<br/><sub>query · labels · series · tail<br/>detected_fields · patterns · volume</sub>"]
-        SMART["<b>Smart layer</b> — the strange stuff that makes this work<br/><sub>• disk-backed label cache + 90 s keep-warm loop<br/>• progressive 1 h → 7 d background backfill<br/>• time-bucketed cache keys (collapse refresh drift)<br/>• fleet jitter + peer-first warmup (≤8 VL hits on 30-pod restart)<br/>• circuit breaker · rate limits · per-tenant isolation</sub>"]
+        SMART["<b>Smart layer</b> — the strange stuff that makes this work<br/><sub>• disk-backed label cache + keep-warm loop (75% of labels TTL)<br/>• progressive 1 h → 7 d background backfill<br/>• time-bucketed cache keys (collapse refresh drift)<br/>• fleet jitter + peer-first warmup (≤8 VL hits on 30-pod restart)<br/>• circuit breaker · rate limits · per-tenant isolation</sub>"]
         XLATE["LogQL → LogsQL translator<br/><sub>typed AST, version-gated, hot-reload labels</sub>"]
     end
 
@@ -308,7 +308,7 @@ flowchart LR
 
 ## Compatibility
 
-Loki-VL-proxy is validated continuously in CI against three separate tracks: Loki API, Grafana Logs Drilldown, and VictoriaLogs integration.
+Loki-VL-proxy is validated continuously in CI against four compatibility contracts: Loki API, Grafana Logs Drilldown, Grafana Loki datasource, and VictoriaLogs integration.
 
 ### Label and Field Compatibility
 
@@ -336,9 +336,9 @@ For full detail: [Loki Compatibility](docs/compatibility-loki.md), [Translation 
 
 - **100+ Prometheus metrics** under `loki_vl_proxy_*` — cache hit ratios, window fetch latency, fanout behavior, per-tenant and per-client pressure, circuit breaker state
 - **Packaged operator dashboard** — rows for Client-Side Loki API Visibility, Proxy Internal, and Backend-Side VictoriaLogs fanout; fast incident attribution
-- **13 runbook-backed alert rules** — backend latency, backend unreachable, circuit breaker open, high error rate, rate limiting, tenant isolation, and more
+- **15 runbook-backed alert rules** — backend latency, backend unreachable, circuit breaker open, high error rate, rate limiting, tenant error rate, tuple contract, system resources, and more
 - **Structured JSON logs** — route-aware, semconv-aligned, with user-pattern attribution from trusted Grafana headers
-- **OTLP tracing** — proxy emits traces to any OTLP endpoint
+- **OTLP metrics push** — the same proxy metrics pushed to any OTLP HTTP endpoint (`-otlp-endpoint`)
 
 See [Observability](docs/observability.md) and [Alert Runbooks Index](docs/runbooks/alerts.md).
 
@@ -346,7 +346,7 @@ See [Observability](docs/observability.md) and [Alert Runbooks Index](docs/runbo
 
 ## Security
 
-- Read-only API surface by default: `/push` blocked, delete gated, debug/admin disabled
+- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` is guarded but not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
 - Non-root runtime image, read-only root filesystem, restricted Helm security contexts
 - Hardening headers on all HTTP responses including 404s and disabled routes
 - CI security gates: `gitleaks`, `gosec`, Trivy, `actionlint`, `hadolint`, OpenSSF Scorecard, OWASP ZAP, curated Nuclei

@@ -24,7 +24,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 | `-tls-key-file` | — | — | TLS key file for HTTPS |
 | `-tls-client-ca-file` | — | — | CA file for verifying HTTPS client certificates |
 | `-tls-require-client-cert` | — | `false` | Require and verify HTTPS client certificates |
-| `-log-request-sample-rate` | — | `0` | Log one in every N requests for access logging (`0` = disabled). Superseded by adaptive sampling (see below). |
+| `-log-request-sample-rate` | — | `0` | Static sampling for successful (`2xx`) access logs: `0` or `1` logs every request, `N>1` logs 1 in every N requests; `4xx`/`5xx` are always logged. The proxy always runs adaptive sampling (`-log-rate-threshold`, `-log-stats-interval`), which takes precedence; this static rate is only a fallback when the adaptive sampler is not initialized. |
 | `-log-buffered` | — | `true` | Write logs in the background to avoid slowing down requests under high load |
 | `-log-stats-interval` | — | `10s` | How often to print a request statistics summary (total, errors, latency, cache rate) |
 | `-log-rate-threshold` | — | `10` | When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged. |
@@ -36,10 +36,11 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |
-| `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
+| `-label-style` | — | `underscores` | `passthrough` or `underscores` |
+| `-metadata-field-mode` | — | `translated` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
+| `-translate-otel-attributes` | `TRANSLATE_OTEL_ATTRIBUTES` | `true` | Translate known OTel semantic-convention labels from underscore to dotted form in upstream queries; set `false` to preserve client label names (for example when VictoriaLogs stores underscore names) |
 | `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
-| `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns `404 not_found` |
+| `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns an empty successful response (`{"status":"success","data":[]}`) |
 | `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
 | `-patterns-custom` | — | — | Static custom patterns prepended to every `/patterns` response. Accepts JSON string array or newline-separated text payload |
 | `-patterns-custom-file` | — | — | File path for static custom patterns prepended to every `/patterns` response. Supports JSON string array or newline-separated text with optional `#` comments |
@@ -51,12 +52,14 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
 
+Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraArgs`). The `LABEL_STYLE` and `METADATA_FIELD_MODE` environment variables do not override the current defaults.
+
 ### Label Style Modes
 
 | Mode | When to Use | Response | Query |
 |---|---|---|---|
 | `passthrough` | VL stores underscore labels (Vector/FluentBit normalize) | No translation | No translation |
-| `underscores` | VL stores OTel dotted labels (OTLP direct) | `service.name` → `service_name` | `{service_name="x"}` → VL `"service.name":"x"` |
+| `underscores` (default) | VL stores OTel dotted labels (OTLP direct) | `service.name` → `service_name` | `{service_name="x"}` → VL `"service.name":"x"` |
 
 ### Custom Field Mappings
 
@@ -208,10 +211,10 @@ References:
 | Mode | When to Use | Field APIs |
 |---|---|---|
 | `native` | You want only raw VictoriaLogs field names | `service.name`, `k8s.pod.name` |
-| `translated` | You want strict Loki-style field names only | `service_name`, `k8s_pod_name` |
-| `hybrid` | Default. You need Loki compatibility plus OTel-native correlation | Both native dotted names and translated aliases |
+| `translated` | Default. You want strict Loki-style field names only | `service_name`, `k8s_pod_name` |
+| `hybrid` | You need Loki compatibility plus OTel-native correlation | Both native dotted names and translated aliases |
 
-`-metadata-field-mode=hybrid` keeps the label surface Loki-compatible while making field-oriented APIs like `detected_fields` and `detected_field/{name}/values` expose both `service.name` and `service_name` when they differ.
+The default `-metadata-field-mode=translated` exposes only Loki-style aliases. `-metadata-field-mode=hybrid` keeps the label surface Loki-compatible while making field-oriented APIs like `detected_fields` and `detected_field/{name}/values` expose both `service.name` and `service_name` when they differ.
 
 ### Compatibility Profiles
 
@@ -223,7 +226,7 @@ The three flags below define the compatibility profile:
 
 | Profile | Settings | Best For |
 |---|---|---|
-| Loki/Grafana conservative | `label-style=underscores`, `metadata-field-mode=translated`, `emit-structured-metadata=true` | Strict Loki-style field naming plus Explore/Drilldown event metadata |
+| Loki/Grafana conservative (default) | `label-style=underscores`, `metadata-field-mode=translated`, `emit-structured-metadata=true` | Strict Loki-style field naming plus Explore/Drilldown event metadata |
 | Drilldown/OTel mixed mode | `label-style=underscores`, `metadata-field-mode=hybrid`, `emit-structured-metadata=true` | Grafana + OTel correlation where both dotted and translated field names are useful |
 | Native VL field surface | `label-style=passthrough`, `metadata-field-mode=native`, `emit-structured-metadata=true` | Consumers that prefer raw VictoriaLogs field names and structured metadata |
 
@@ -265,15 +268,13 @@ This is the recommended starting point when your priority is full compatibility 
   -patterns-enabled=true
 ```
 
-**Equivalent as environment variables** (for Docker Compose or Kubernetes):
+**Environment variables** (for Docker Compose or Kubernetes): only the backend address has an environment form here.
 
 ```bash
 VL_BACKEND_URL=http://victorialogs:9428
-LABEL_STYLE=underscores
-METADATA_FIELD_MODE=translated
 ```
 
-`-emit-structured-metadata` and `-patterns-enabled` have no env-variable override; pass them as flags or Helm `extraArgs`.
+The other settings in this profile are the binary defaults. Set `-label-style`, `-metadata-field-mode`, `-emit-structured-metadata` and `-patterns-enabled` as flags or Helm `extraArgs`; `LABEL_STYLE` and `METADATA_FIELD_MODE` do not override the current defaults.
 
 **Grafana datasource** — global single-tenant (no tenant mapping needed):
 
@@ -308,6 +309,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-cache-ttl` | — | `60s` | Default cache TTL |
 | `-cache-max` | — | `10000` | Maximum cache entries |
 | `-cache-max-bytes` | — | `268435456` | Maximum in-memory L1 cache size in bytes (256 MiB by default) |
+| `-labels-cache-ttl` | — | `0` (uses `5m`) | Cache TTL for `/labels` and `/label/{name}/values` responses. `0` uses the built-in 5-minute default. The keep-warm loop runs at 75% of the built-in 5-minute labels TTL. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
 | `-compat-cache-max-percent` | — | `10` | Percent of `-cache-max-bytes` reserved for Tier0 (`0` disables, max `50`) |
 
@@ -325,10 +327,11 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 
 | Endpoint | TTL |
 |---|---|
-| `labels`, `label_values` | 60s |
-| `series`, `detected_fields`, `detected_field_values`, `detected_labels` | 30s |
+| `labels`, `label_values` | 5m (`-labels-cache-ttl`) for request windows up to 1h; longer windows scale the TTL up (×3 up to 6h, ×10 up to 24h, ×20 up to 7d), capped at 1h |
+| `detected_fields`, `detected_field_values`, `detected_labels` | 90s, scaled for longer request windows the same way, capped at 1h |
+| `series` | 30s |
 | `patterns` | `100y` (effectively persistent; update-on-write) |
-| `query_range`, `query` | 10s |
+| `query_range`, `query` | 5m final-response cache; requests ending within `-recent-tail-refresh-window` (default `2m`) of now are refetched once the cached entry is older than `-recent-tail-refresh-max-staleness` (default `2s`) |
 | `index_stats`, `volume`, `volume_range` | 10s |
 
 ## Cache (L2 On-Disk)
@@ -369,20 +372,22 @@ The proxy can enforce a maximum query time range, matching Loki's `max_query_len
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-default-max-query-length` | — | `0` | Default maximum query time range enforced for all tenants. `0` disables the limit (unlimited, matching Loki's default). Accepts Go duration strings: `30d`, `7d`, `24h`. |
+| `-default-max-query-length` | — | `0` | Default maximum query time range enforced for all tenants unless overridden by tenant limits. `0` disables the limit (unlimited, matching Loki's default). Uses Go duration syntax (`h`, `m`, `s`; there is no `d` unit), for example `720h`. |
 
 ### Precedence
 
 When multiple limits are configured, the most specific takes effect:
 
-1. **Per-tenant** — `max_query_length` in the tenant limits config (highest priority)
-2. **Tenant defaults** — `max_query_length` in `tenantDefaultLimits`
+1. **Per-tenant** — `max_query_length` for the tenant in `-tenant-limits` (highest priority)
+2. **Tenant defaults** — `max_query_length` in `-tenant-default-limits`
 3. **Global flag** — `-default-max-query-length`
 4. **No limit** — when all of the above are `0` or unset
 
 ### Behavior
 
+- Enforced on `query_range` requests
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
+- Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not
 - Rejected queries return HTTP 400 with `{"status":"error","errorType":"bad_data","error":"query length ... exceeds limit ..."}`
 - Matches Loki's `max_query_length` semantics for client compatibility
 
@@ -392,8 +397,9 @@ When multiple limits are configured, the most specific takes effect:
 # Limit all queries to 30 days by default
 loki-vl-proxy -default-max-query-length=720h
 
-# Allow a specific tenant to query further back (in tenant limits config)
-# max_query_length: "90d"
+# Allow a specific tenant to query further back (tenant limits accept Loki units such as d)
+loki-vl-proxy -default-max-query-length=720h \
+  -tenant-limits='{"team-a":{"max_query_length":"90d"}}'
 
 # No global limit (default — operator manages limits via per-tenant config)
 loki-vl-proxy -default-max-query-length=0
@@ -431,6 +437,19 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-recent-tail-refresh-enabled` | — | `true` | Enable near-now stale-cache bypass for `query_range`, `index/volume`, and `index/volume_range` |
 | `-recent-tail-refresh-window` | — | `2m` | Treat requests ending within this window from `now` as near-now |
 | `-recent-tail-refresh-max-staleness` | — | `2s` | Maximum acceptable cache age for near-now requests before forcing a fresh backend fetch |
+
+## Drilldown and Metric Stats Controls
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-drilldown-scan-timeout` | — | `5s` | Per-request timeout for the `detected_fields` / `detected_field/{name}/values` log-scan path. `0` disables the cap |
+| `-max-stats-query-series` | — | `0` (uses `500`) | Maximum series returned by stats metric queries (`count_over_time`, `rate`, `bytes_rate`, ...). `0` uses the built-in default of `500`, matching the Drilldown series cap. VictoriaLogs-native stats results keep the busiest series; proxy-evaluated (manual) metric paths reject the query instead of truncating (see [Fixed Execution Limits](#fixed-execution-limits)) |
+| `-stats-query-range-concurrency` | — | `0` (uses `4`) | Maximum concurrent `stats_query_range` calls to VictoriaLogs. `0` uses the built-in default of `4` |
+| `-stats-query-range-inter-query-delay-ms` | — | `200` | Minimum pause in ms between consecutive individual `stats_query_range` calls; the concurrency slot is held for this long after each call. `0` disables |
+| `-drilldown-burst-window-ms` | — | `50` | Window in ms for coalescing concurrent Drilldown Fields per-field count queries into one fused VictoriaLogs call. `0` disables the coalescer |
+| `-drilldown-burst-max-fields` | — | `30` | Maximum fields per coalesced burst call; further fields form another call |
+| `-drilldown-field-batch-window-ms` | — | `100` | Accumulation window in ms for folding concurrent per-field `stats_query_range` calls into one multi-field query. `0` disables batching |
+| `-drilldown-field-batch-max-fields` | — | `6` | Maximum fields per batched call; excess fields form additional batches or fall back to individual calls |
 
 ### Loki-Aligned Defaults
 
@@ -494,26 +513,28 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, `X-Scope-OrgID` values are injected as `{<tenant-label>="<orgID>"}` into VL queries instead of `AccountID`/`ProjectID` headers. Use when all data is under VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
+| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, an unmapped `X-Scope-OrgID` (other than the default-tenant aliases and `*`) is sent as a VictoriaLogs `extra_stream_filters` constraint `{"<tenant-label>":"<orgID>"}` instead of `AccountID`/`ProjectID` headers; request parameters cannot override it. The field must be a VictoriaLogs **stream field** (part of `_stream_fields`). Use when all data is under the VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
 | `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of default published-limit overrides |
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
-| `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests |
-| `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant |
+| `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
+| `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
+| `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. Without it, unmapped `*` returns `403`; an explicit `"*"` tenant-map entry always takes precedence |
 | `-forward-tenant-header` | `FORWARD_TENANT_HEADER` | `true` | When `false`, suppresses X-Scope-OrgID header forwarding to the backend |
 
 ### Tenant Resolution Order
 
-1. **No header** — when `-auth.enabled=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`
+1. **No header** — when `-auth.enabled=false` and `-require-tenant-header=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`; otherwise they return `401`
 2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
 3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
 4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers
-5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. It uses the backend default tenant only when `-tenant.allow-global=true`
-6. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
-7. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
+5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. Unless the tenant map has an explicit `"*"` entry, it uses the backend default tenant only when `-tenant.allow-global=true` and returns `403` otherwise (also in `-tenant-label` mode)
+6. **Label routing** — with `-tenant-label` set, any other org ID is accepted and scoped with a stream-field constraint instead of tenant headers
+7. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
+8. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
 
 ### Multi-Tenant Query Headers
 
@@ -655,7 +676,7 @@ datasources:
       httpHeaderValue1: "0"
 ```
 
-`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and always requires explicit `-tenant.allow-global=true`.
+`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and requires explicit `-tenant.allow-global=true` unless the tenant map contains an explicit `"*"` entry.
 
 ### Hot Reload
 
@@ -728,7 +749,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-max-lines` | — | `1000` | Default max lines per query |
-| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.); cap prevents memory spikes on high-cardinality queries |
+| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.). Exceeding it rejects the query with HTTP `502` (`manual range metric row limit exceeded`) instead of returning truncated results |
 | `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests |
 | `-backend-min-version` | — | `v1.30.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate |
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
@@ -744,12 +765,12 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-backend-basic-auth` | — | — | `user:password` for VL basic auth |
 | `-backend-compression` | — | `auto` | Upstream compression preference: `auto`, `gzip`, `zstd`, `none`. `auto` detects loopback backends (localhost/127.x/::1) and disables compression for co-located VL, otherwise advertises `zstd, gzip`. |
 | `-backend-tls-skip-verify` | — | `false` | Skip TLS on VL connection |
-| `-backend-read-buffer-size` | — | `65536` | Per-connection read buffer size (bytes) for VL HTTP responses. Default 64 KB — reduces syscall count 7× for typical responses vs Go default 4 KB. Decrease (e.g. `8192`) to save memory in high-pod-count environments; increase (e.g. `131072`) when responses routinely exceed 64 KB. |
-| `-backend-write-buffer-size` | — | `65536` | Per-connection write buffer size (bytes) for VL HTTP requests. Default 64 KB. Tune alongside `-backend-read-buffer-size` for memory-constrained pods. |
 | `-tail.allowed-origins` | — | — | Comma-separated WebSocket Origin allowlist for `/loki/api/v1/tail` |
 | `-tail.mode` | — | `auto` | `auto`, `native`, or `synthetic` for `/tail` streaming mode |
 
 `-tail.mode=auto` prefers native backend tailing and falls back to synthetic polling when native streaming is unavailable. `native` disables the fallback, and `synthetic` forces the polling bridge even when the backend can stream natively.
+
+`/loki/api/v1/tail` accepts at most 4 KiB per client WebSocket message and closes the connection with code `1009` when a client sends more. Log frames sent to Grafana are not limited by this.
 
 Compression notes:
 
@@ -774,7 +795,7 @@ All protection controls are tunable via CLI flags:
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-max-concurrent` | — | `100` | Maximum concurrent backend queries allowed globally |
+| `-max-concurrent` | — | `100` | Maximum concurrent requests admitted per replica; excess requests get `503` immediately (`Retry-After: 5`). The same value also bounds concurrent hot/cold/alerting backend operations, including fanout, until each response body is consumed or closed. `0` disables both |
 | `-rate-limit-per-second` | — | `50` | Per-client request rate limit (requests/second) |
 | `-rate-limit-burst` | — | `100` | Per-client burst allowance above the rate limit |
 | `-cb-fail-threshold` | — | `5` | Number of backend failures within the sliding window required to open the circuit breaker |
@@ -782,7 +803,25 @@ All protection controls are tunable via CLI flags:
 | `-cb-window-duration` | — | `30s` | Sliding window duration for failure counting; sporadic failures outside the window do not accumulate |
 | `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead |
 
+Per-client rate limits identify clients by connection source IP and return `429` (`Retry-After: 1`). `-rate-limit-per-second=0` disables them; a burst of `0` with a positive rate rejects every request.
+
 Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer for additional control beyond these flags.
+
+## Fixed Execution Limits
+
+These protective limits are built in (not configurable unless a flag is named). Rejections are errors, not empty results; see [Security hardening migration](security-hardening-migration.md#execution-and-storage-limits) for rollout notes.
+
+| Area | Limit | When exceeded |
+|---|---|---|
+| Subqueries | 10,000 total inner evaluations (outer points × inner points); at most 10 workers per subquery window; 8 MiB per inner step response; 64 MiB decoded across the evaluation; 1,000,000 samples | `400` |
+| `line_format` | 64 KiB output per line; 16 MiB per response; 1 MiB template input per line; bounded template execution work | `400` |
+| Binary metric expressions | nesting depth 64; 1,024 child evaluations per request; 256 MiB of captured operand bytes; 64 MiB per operand response and encoded result; 1,000,000 output samples | `400` for evaluation and operand limits; `500` for errors raised while joining operands (including implicit many-to-one matches) |
+| Manual range-metric rows | `-manual-range-metric-row-limit` (default 1,000,000 rows); 64 MiB backend response | `502` |
+| Manual range-metric series | `-max-stats-query-series` (default 500) | `502` when hit while collecting raw samples (`maximum metric series exceeded`); `503` when hit while building the result (`manual metric series limit exceeded`) |
+| Request coalescer | 256 MiB per shared response body | error instead of silent truncation |
+| Hot/cold merge | 64 MiB buffered per hot or cold response | error |
+| Multi-tenant reads | 64 tenants per request; 32 MiB merged response | `400` / `413` |
+| `/tail` client messages | 4 KiB per client message | WebSocket close `1009` |
 
 ## Observability and Admin Surfaces
 
@@ -803,7 +842,7 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | `--metrics-listen` | — | — | Address of the dedicated `/metrics` listener (e.g. `:9091`). When set together with `-server.register-instrumentation=true`, `/metrics` moves off the main proxy listener so scrape traffic never competes with queries. Empty disables the dedicated listener. |
 | `-server.enable-pprof` | — | `false` | Expose `/debug/pprof/*` |
 | `-server.enable-query-analytics` | — | `false` | Expose `/debug/queries` |
-| `-server.admin-auth-token` | — | — | Bearer token accepted on admin/debug endpoints |
+| `-server.admin-auth-token` | — | — | Token required on admin/debug endpoints (`X-Admin-Token` header or `Authorization: Bearer <token>`). When set, admin/debug routes are served on the main listener instead of `--admin-listen`; without it, enabling admin/debug routes on a non-loopback admin address fails startup |
 | `-server.metrics-max-concurrency` | — | `1` | Maximum concurrent `/metrics` scrapes served at once (`0` disables the cap) |
 | `-metrics.max-tenants` | — | `256` | Max unique tenant labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
@@ -842,10 +881,11 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 
 Peer-cache notes:
 
-- the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`; for `srv` or `http` modes use `extraArgs`
+- the Helm chart manages `-peer-self`, `-peer-discovery`, and the mode-specific discovery flag automatically when `peerCache.enabled=true` (`peerCache.discovery` = `dns`, `srv` with `peerCache.srvName`, `http` with `peerCache.httpURL`, or `static` with `peerCache.peers`)
 - AZ-aware peer selection (`-peer-self-az`) prefers same-AZ peers for key fetches; Helm auto-injects it from `metadata.labels['topology.kubernetes.io/zone']` via Downward API when `peerCache.topologyLabel` is set (default). Set `podLabels: {topology.kubernetes.io/zone: <zone>}` or rely on a platform webhook/node label syncer to populate the pod label.
 - for `http` discovery with a Prometheus HTTP SD endpoint, per-peer AZ is read automatically from `labels.az` or `labels.availability_zone` in the SD response — no extra flag required
-- `GET /_cache/peers` returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful to verify discovery is working
+- `GET /_cache/peers` returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful to verify discovery is working; like every `/_cache/*` endpoint it requires the `X-Peer-Token` header unless `-peer-insecure-ip-allowlist=true`
+- `POST /admin/cache/flush` (admin listener, requires `-server.register-instrumentation=true`) purges this instance's caches; add `?peers=1` to also send `POST /_cache/purge` to every peer in the ring (each peer purges only itself)
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew
@@ -879,12 +919,12 @@ See [Fleet Cache Architecture](fleet-cache.md#hot-read-ahead-bounded).
 
 ### Peer Cache Token Management
 
-The chart auto-generates a Secret named `<release>-peer-auth` on first install when `peerCache.enabled=true` and `peerCache.authToken` is unset. The Secret holds a single key `peer-auth-token` populated with a random value (`randAlphaNum 48`), wired into the proxy Deployment as the `-peer-auth-token` flag via env-from-secret. This satisfies the v1.56.0 "token required by default" startup gate without operator action.
+The chart auto-generates a Secret named `<release>-peer-auth` on first install when `peerCache.enabled=true` and neither `peerCache.authToken` nor `peerCache.existingSecret` is set. The Secret holds a single key `token` populated with a random value (`randAlphaNum 32`) and is reused on upgrade via Helm `lookup`. It is exposed to the container as the `PEER_AUTH_TOKEN` environment variable and passed as `-peer-auth-token=$(PEER_AUTH_TOKEN)`. This satisfies the v1.56.0 "token required by default" startup gate without operator action.
 
 To rotate or replace the token:
 
 - **Rotate (chart-managed)** — delete the Secret and `helm upgrade` will regenerate it: `kubectl delete secret <release>-peer-auth && helm upgrade <release> charts/loki-vl-proxy`. All pods must restart to pick up the new value, so do this in a maintenance window or under a `RollingUpdate` strategy.
-- **Externally manage** — set `peerCache.authToken` to a value (or `peerCache.existingSecret` pointing at your own Secret) in the values file. The chart will skip auto-generation. Useful for GitOps flows that source secrets from Vault / External Secrets Operator.
+- **Externally manage** — set `peerCache.authToken` to a value (rendered into `<release>-peer-auth-literal`) or `peerCache.existingSecret` pointing at your own Secret (key `token` by default, override with `peerCache.existingSecretKey`). The chart will skip auto-generation. Pin the token this way for render-only GitOps flows or restricted RBAC, where `lookup` cannot read the existing Secret and would generate a new token on every render. Useful for GitOps flows that source secrets from Vault / External Secrets Operator.
 - **Disable peer cache** — set `peerCache.enabled=false`; no Secret is created and the token gate is skipped because no peer cache is configured.
 
 To restore the pre-v1.56.0 IP-allowlist-only behavior without a token, pass `-peer-insecure-ip-allowlist=true` via `extraArgs`. This is **not recommended**: peer auth then depends only on source-IP membership in the discovered peer set, which is brittle under discovery flap and pod IP churn.

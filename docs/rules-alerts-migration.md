@@ -54,6 +54,13 @@ Output:
 - every group forced to `type: vlogs`
 - every rule `expr` translated from LogQL into LogsQL
 
+Before translation, each rule `expr` is validated with the same typed LogQL AST
+validator the proxy's `query` and `query_range` handlers use. Malformed LogQL
+(for example a `| drop level!=~"debug"` matcher) fails conversion with a
+Loki-style parse error that names the group and rule, instead of being
+translated with the broken stage silently skipped. `-allow-risky` does not
+bypass this validation.
+
 ## Example
 
 Input:

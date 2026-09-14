@@ -62,7 +62,7 @@ flowchart TD
         subgraph STR["String Translator — TranslateLogQLWithCapabilities"]
             T1["Tier 1: string ops\nstream selectors · line filters\nlabel format · json/logfmt"]
             T2["Tier 2: AST-driven\nbuildStatsQuery → logsql.PipeStats\nipv4_range via logsql.Builder"]
-            UNSUP["UnsupportedError\n→ 501 or fallback"]
+            UNSUP["UnsupportedError\n→ 400 bad_data"]
         end
     end
 
@@ -214,7 +214,14 @@ All error strings are formatted to match Loki 3.x responses so Grafana datasourc
 
 ### ip() filter validation
 
-The `ip("value")` line filter extension validates the inner value as a valid IP address, CIDR block, or IP range (`a.b.c.d-e.f.g.h`) at parse time using `net.ParseIP` and `net.ParseCIDR`. Invalid values like `ip("999.999.999.999")` produce a parse error matching what Loki returns, rather than silently passing to VictoriaLogs and returning unexpected results.
+The `ip("value")` line filter extension (parsed in `internal/logql/parser.go`, matched in `internal/logql/ip_filter.go`) validates the inner value at parse time with `net/netip`, following Loki's matcher rules: a single address (`netip.ParseAddr`), a prefix (`netip.ParsePrefix`), or an ordered same-family range (`a.b.c.d-e.f.g.h`, zones stripped). Validation is eager: the query is rejected with HTTP 400 even when the time range contains no data.
+
+| Input | Parse error contains |
+|---|---|
+| Invalid address, prefix or range, e.g. `\|= ip("999.999.999.999")` | `ip: invalid pattern: "999.999.999.999"` |
+| `ip()` with a line filter operator other than `\|=` or `!=`, e.g. `\|~ ip("10.0.0.1")` | `ip: invalid operation` |
+
+Validation does not make matching exact: the translator still approximates IPv6, non-octet CIDR and range forms with regular expressions (see [translation reference](translation-reference.md#proxy-side-stages)).
 
 ## ValidateLogQL API
 
@@ -271,7 +278,7 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 | `quantile_over_time` φ < 0 | Rejected at semantic pass: 400 |
 | Unknown function (`label_replace`, custom) | `OpaqueMetricExpr`: raw text forwarded to VL unchanged |
 | VL version < required capability | `Capabilities` gating downgrades construct (e.g. `BestIPv4Range` → regexp fallback) |
-| No LogsQL equivalent for valid LogQL | `UnsupportedError` — handler decides: 501, partial result, or silent drop |
+| No LogsQL equivalent for valid LogQL | `UnsupportedError` — the query handler returns HTTP 400 with `errorType: bad_data` and the translator message (for example `count_values is not translatable to LogsQL`) |
 | `| line_format` unclosed template | Rejected at semantic pass: 400 with template parse error |
 | `| pattern` parser stage | Mapped to VL `seq()` word-match filter if caps allow, else regexp |
 

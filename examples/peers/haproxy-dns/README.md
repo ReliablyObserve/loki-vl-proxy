@@ -37,24 +37,31 @@ docker compose ps
 
 ## How to test
 
+The `/_cache/*` endpoints require the shared peer token (`-peer-auth-token=fleet-secret`)
+in the `X-Peer-Token` header.
+
 Check peer membership via HAProxy (routes to a random proxy):
 
 ```bash
-curl -s http://localhost:3100/_cache/peers | jq .
+export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
 ```
 
 Check a specific proxy directly:
 
 ```bash
-curl -s http://localhost:3200/_cache/peers | jq .  # proxy-a
-curl -s http://localhost:3201/_cache/peers | jq .  # proxy-b
-curl -s http://localhost:3202/_cache/peers | jq .  # proxy-c
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3200/_cache/peers | jq .  # proxy-a
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3201/_cache/peers | jq .  # proxy-b
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3202/_cache/peers | jq .  # proxy-c
 ```
 
-Verify DNS resolution from inside a proxy container:
+Verify DNS resolution against CoreDNS. The proxy image is distroless (no shell or
+`nslookup`), so run the lookup from a throwaway container on the compose network
+(`haproxy-dns_proxy-net` when started from this directory):
 
 ```bash
-docker compose exec proxy-a nslookup proxy-peers.local 172.28.0.2
+docker run --rm --network haproxy-dns_proxy-net busybox:latest \
+  nslookup proxy-peers.local 172.28.0.2
 # Should return A records for .10, .11, .12
 ```
 

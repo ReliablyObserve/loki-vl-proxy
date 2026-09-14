@@ -12,8 +12,11 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - read APIs enabled for Loki-compatible querying
 - write ingestion API (`/loki/api/v1/push`) blocked (`405`)
 - admin/debug APIs disabled unless explicitly enabled
+- `/metrics` not served unless `-server.register-instrumentation=true`
 
-The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguards.
+`/loki/api/v1/delete` is registered with request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
+
+Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
 
 ## High-Impact Controls
 
@@ -21,7 +24,9 @@ The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguar
 
 - `X-Scope-OrgID` is mapped to VictoriaLogs tenant IDs via `-tenant-map`
 - optional multi-tenant fanout is explicit (`tenant-a|tenant-b`)
-- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config
+- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config: an unmapped `X-Scope-OrgID: *` returns `403` in native and label-routing (`-tenant-label`) modes unless `-tenant.allow-global=true`; an explicit tenant-map entry for `*` takes precedence
+- label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
+- cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
 
 **Lightweight tenant enforcement**: `-require-tenant-header=true` rejects any request missing an `X-Scope-OrgID` header with HTTP 401. This is a lighter alternative to full auth — it catches misconfigured clients without requiring a token/credential system.
 
@@ -33,28 +38,43 @@ The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguar
 - use `-tail.allowed-origins` for Grafana/browser clients
 - keep restrictive defaults for internet-exposed deployments
 
-### 3) Delete Safeguards
+### 3) Delete API (unsupported)
 
-`/loki/api/v1/delete` requires:
+`/loki/api/v1/delete` is always registered and validates each request before contacting the backend:
 
-- `X-Delete-Confirmation: true`
-- explicit query selector (no broad wildcard delete)
-- explicit `start` and `end` time bounds
-- tenant-scoped execution and audit logging
+- `POST` only and `X-Delete-Confirmation: true`
+- explicit query selector (`{}` and `*` are rejected)
+- explicit `start` and `end` time bounds, at most 30 days apart
+- tenant-scoped execution and a warning-level audit log entry
+
+The handler then forwards to `/select/logsql/delete`, which VictoriaLogs rejects as an unsupported path (VictoriaLogs deletes through its asynchronous `/delete/run_task` API). Deletion is therefore not supported; do not rely on this endpoint. See [Remaining delete API gap](security-hardening-migration.md#remaining-delete-api-gap).
 
 ### 4) Request Hardening
 
 - max request body/header limits
 - request timeout boundaries
-- built-in rate limiting and global concurrency guards
+- built-in rate limiting (per-client token bucket keyed on the connection address; `-rate-limit-per-second`, `-rate-limit-burst`) and global concurrency guards (`-max-concurrent`, which also bounds backend operations until their bodies are consumed)
+- 64 KB maximum query string length and optional `-default-max-query-length` time-range ceiling
 - request coalescing + circuit breaker to reduce backend cascade risk
 
-### 5) Transport Security
+### 5) Execution Limits
+
+Excessive query work is rejected with an explicit error instead of returning partial or oversized successful responses:
+
+- raw metric evaluation: `-manual-range-metric-row-limit` rows (default 1,000,000) and `-max-stats-query-series` series (default 500), plus 64 MiB input/output and one million output samples
+- binary expressions: nesting depth 64, 1,024 child evaluations, 256 MiB captured child responses, two million decoded arrays, one million constructed samples, 64 MiB label work and 64 MiB per encoded result
+- subqueries: 10,000 total inner evaluations, one million samples, 8 MiB decoded per step and 64 MiB per evaluation
+- `line_format`: 64 KiB per formatted line and 16 MiB per response, with bounded template depth and execution work (HTTP `400` on overflow)
+- coalesced backend bodies above 256 MiB and tail client messages above 4 KiB are rejected
+
+Limits and rollout guidance are in the [migration guide](security-hardening-migration.md#execution-and-storage-limits).
+
+### 6) Transport Security
 
 - frontend TLS and optional mTLS support
 - backend TLS controls for VictoriaLogs/OTLP exporters
 - controlled forwarding of auth headers/cookies to backend
-- optional peer-cache shared-token protection via `-peer-auth-token`
+- peer-cache shared-token protection via `-peer-auth-token`, required whenever peer discovery or static peers are configured; startup fails without it unless `-peer-insecure-ip-allowlist=true` restores the legacy source-IP check. The token is compared in constant time. The Helm chart generates a `<release>-peer-auth` Secret when `peerCache.authToken` and `peerCache.existingSecret` are unset
 
 **mTLS / client certificate flags:**
 
@@ -134,20 +154,28 @@ That removes the weaker edge-path behavior where scanners could still reach miss
 - the runtime image now runs as a non-root user
 - the runtime image keeps a read-only root filesystem
 - Helm drops all capabilities and blocks privilege escalation
-- the chart can optionally mount host `/proc` read-only for richer process/system metrics
+- with `systemMetrics.hostProc.enabled=true` (the default), the chart mounts five individual host files read-only as `hostPath` `type: File` volumes — `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` — under `/host/proc` and passes `-host-proc-root`; the host's `/proc` directory and other workloads' per-process data are not mounted
 
-The host `/proc` mount is intentional. Trivy would normally flag this, so CI uses a narrow `.trivyignore.yaml` exception for the specific chart template path rather than disabling the broader class of checks.
+These `hostPath` mounts are intentional. Trivy would normally flag them (`KSV-0121`), so CI uses a narrow `.trivyignore.yaml` exception for the chart deployment template rather than disabling the broader class of checks. Disable `systemMetrics.hostProc` on clusters that forbid `hostPath`.
 
 ## Admin and Debug Endpoints
 
 The following are disabled by default and should stay restricted:
 
-- `/debug/queries`
-- `/debug/pprof/*`
+- `/debug/queries` (`-server.enable-query-analytics`)
+- `/debug/pprof/*` (`-server.enable-pprof`)
+- `/admin/cache/flush` (registered with `-server.register-instrumentation=true`)
 
-Enable only for controlled troubleshooting windows. On non-loopback listen addresses the proxy now refuses to start with these enabled unless `-server.admin-auth-token` is set.
+Enable only for controlled troubleshooting windows. Without `-server.admin-auth-token`, admin/debug routes are served only on `-admin-listen` (default `127.0.0.1:3101`), and the proxy refuses to start when these routes are enabled on a non-loopback address without a token. With a token, they move onto the main listener and require `Authorization: Bearer <token>` or `X-Admin-Token`. The chart keeps `admin-listen` on loopback and never publishes it through the Service.
 
-`/metrics` stays available on the main listener when instrumentation is enabled, but the default export now suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
+`/metrics` is not served by default. Set `-server.register-instrumentation=true` to enable it on the main listener, or add `-metrics-listen` for a dedicated port (the chart uses `:9091`). The default export suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
+
+## Log and Error Redaction
+
+- all log output passes through a redacting handler that masks API keys, bearer tokens, passwords, AWS credentials and URL-embedded credentials
+- debug logs record LogQL/LogsQL and backend parameters as `sha256:<8hex> len=<n>` fingerprints; `-debug-log-raw-queries=true` restores raw values for local debugging only
+- the request log records the authentication mechanism (`auth.source`) but not the Basic-Auth principal
+- VictoriaLogs error bodies are reduced to their message and stripped of stream selectors, long quoted literals and long hex identifiers before they are logged or returned; transport errors no longer echo backend URLs with query parameters. Redaction is disabled only by `-debug-log-raw-queries=true`
 
 ## Recommended Production Baseline
 
@@ -158,7 +186,9 @@ Enable only for controlled troubleshooting windows. On non-loopback listen addre
 - explicit `-http-read-header-timeout` and bounded `/metrics` concurrency
 - `ServiceMonitor` + alerting on `5xx`, circuit breaker open state, and backend latency
 - `-server.admin-auth-token` for debug/admin surfaces
-- `-peer-auth-token` when peer cache crosses network trust boundaries
+- `-peer-auth-token` for peer cache, with `-peer-insecure-ip-allowlist=false`
+- keep `-debug-log-raw-queries=false`
+- validate representative wide queries against the execution limits before rollout
 - avoid exposing debug/admin endpoints publicly
 
 ## Local Security Validation
@@ -172,15 +202,16 @@ docker run --rm -v "$PWD:/repo" -w /repo \
   detect --source . --report-format sarif --report-path gitleaks.sarif --exit-code 1
 
 # Go SAST
-go install github.com/securego/gosec/v2/cmd/gosec@v2.22.7
+go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 "$(go env GOPATH)/bin/gosec" \
-  -exclude=G104,G108,G115,G301,G302,G304,G306,G402,G404 \
+  -exclude=G104,G108,G115,G118,G301,G302,G304,G306,G402,G404,G704,G705 \
   -exclude-generated \
+  -exclude-dir=bench \
   ./...
 
 # filesystem scan with the same allowlist CI uses
 docker run --rm -v "$PWD:/repo" -w /repo \
-  aquasec/trivy:0.69.3 \
+  aquasec/trivy:0.71.0 \
   fs . \
   --ignorefile .trivyignore.yaml \
   --scanners vuln,misconfig,secret \
@@ -218,6 +249,7 @@ When reproducing ZAP locally, expect occasional `10049 Non-Storable Content` war
 
 ## Related Docs
 
+- [Security hardening migration](security-hardening-migration.md)
 - [Configuration](configuration.md)
 - [Testing](testing.md)
 - [API Reference](api-reference.md)

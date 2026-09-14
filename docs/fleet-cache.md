@@ -221,7 +221,7 @@ flowchart TD
 -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
 ```
 
-`net.LookupHost` resolves the headless service name to the IP addresses of all running pods. In Kubernetes, a headless service DNS entry only includes pods that **pass their readiness probe** — unhealthy pods fall out of DNS within one TTL (typically 5–30 s), so the peer ring automatically excludes them.
+`net.LookupHost` resolves the headless service name to the IP addresses of all running pods. Each resolved IP is paired with the fixed peer port `3100` (there is no port flag), so every peer must serve its main listener on `:3100` in this mode; use `srv`, `http`, or `static` when peers listen elsewhere. In Kubernetes, a headless service DNS entry only includes pods that **pass their readiness probe** — unhealthy pods fall out of DNS within one TTL (typically 5–30 s), so the peer ring automatically excludes them.
 
 Use when:
 - Running in Kubernetes with an HPA-managed Deployment or StatefulSet
@@ -235,7 +235,7 @@ Use when:
 -peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.monitoring.svc.cluster.local
 ```
 
-`net.LookupSRV` resolves a full SRV record (`_service._proto.domain`) and extracts host+port from each record. SRV records embed the port number, so no `-peer-port` flag is needed — each SRV record can point to a different port if required.
+`net.LookupSRV` resolves a full SRV record (`_service._proto.domain`) and extracts host+port from each record. SRV records embed the port number, so each SRV record can point to a different port if required (unlike `dns` mode, which always uses port `3100`).
 
 In Kubernetes, StatefulSet headless services publish SRV records per pod (e.g., `_http._tcp.proxy-headless.ns.svc.cluster.local`). These carry the same readiness gating as A records.
 
@@ -265,7 +265,7 @@ The proxy fetches the configured URL every `DiscoveryInterval`. The response bod
 
 **Consul example** (includes health check filtering):
 ```bash
--peer-http-url=http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true
+-peer-http-url=http://localhost:8500/v1/catalog/service/loki-vl-proxy
 ```
 Consul's `?passing=true` parameter returns only healthy instances — equivalent to Kubernetes readiness gating.
 
@@ -300,14 +300,14 @@ The peer list is parsed once at startup and never refreshed. Useful for small, f
 
 | Mode | Readiness gating | Dynamic add/remove | Works outside k8s | Port in config |
 |------|-----------------|-------------------|------------------|----------------|
-| `dns` | ✅ (k8s headless) | ✅ (every 15 s) | ⚠️ requires headless-style DNS | Yes (`-peer-port`) |
+| `dns` | ✅ (k8s headless) | ✅ (every 15 s) | ⚠️ requires headless-style DNS | No (fixed `3100`) |
 | `srv` | ✅ (k8s or Consul DNS) | ✅ (every 15 s) | ✅ | No (embedded in SRV) |
 | `http` | ✅ (endpoint controls list) | ✅ (every 15 s) | ✅ | Yes (in response) |
 | `static` | ❌ | ❌ (restart required) | ✅ | Yes (in flag) |
 
 ### Diagnostic endpoint
 
-`GET /_cache/peers` returns the current known peer list as JSON:
+`GET /_cache/peers` returns the current known peer list as JSON. It is served on the main listener behind the same `X-Peer-Token` check as the other peer endpoints:
 
 ```json
 {"peers":["10.0.0.1:3100","10.0.0.2:3100"],"self":"10.0.0.3:3100","count":2}
@@ -385,37 +385,46 @@ Each target's AZ is stored at discovery refresh time and used during peer select
 ## Configuration Examples
 
 ```bash
+# Every example needs the same -peer-auth-token on all peers: the proxy refuses
+# to start with peer discovery configured and no token, unless the legacy
+# -peer-insecure-ip-allowlist=true (IP-membership check only) is set.
+
 # Kubernetes: DNS discovery via headless service (single-AZ or no AZ preference)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-discovery=dns \
-  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local \
+  -peer-auth-token=shared-secret
 
 # Kubernetes: DNS discovery with AZ-aware peer selection
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-self-az=us-east-1a \
   -peer-discovery=dns \
-  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local \
+  -peer-auth-token=shared-secret
 
 # Kubernetes: SRV discovery (StatefulSet with headless service)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-discovery=srv \
-  -peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.monitoring.svc.cluster.local
+  -peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.monitoring.svc.cluster.local \
+  -peer-auth-token=shared-secret
 
 # Consul (health-checked, works outside k8s)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-discovery=http \
-  -peer-http-url=http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true
+  -peer-http-url=http://localhost:8500/v1/catalog/service/loki-vl-proxy \
+  -peer-auth-token=shared-secret
 
 # Prometheus HTTP SD with AZ labels (AZ extracted automatically from labels.az)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-self-az=us-east-1a \
   -peer-discovery=http \
-  -peer-http-url=http://my-registry/sd/loki-vl-proxy
+  -peer-http-url=http://my-registry/sd/loki-vl-proxy \
+  -peer-auth-token=shared-secret
 
 # Static peer list
 ./loki-vl-proxy \
@@ -451,7 +460,14 @@ peerCache:
   selfAZ: "us-east-1a"
 ```
 
-When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags. Use `peerCache.authToken` or `peerCache.existingSecret` when you need to provide the shared secret yourself; `extraArgs.peer-auth-token` is intentionally rejected while `peerCache.enabled=true` because the chart owns that CLI flag.
+When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags and `-peer-auth-token=$(PEER_AUTH_TOKEN)`. The token Secret is resolved in this order:
+
+1. `peerCache.authToken` set: the chart renders `<release>-peer-auth-literal` with that value.
+2. `peerCache.existingSecret` set: the chart references your Secret (key `peerCache.existingSecretKey`, default `token`) and renders none.
+3. Neither set, first install: the chart generates a random 32-character token into `<release>-peer-auth`.
+4. Neither set, upgrade: the chart reuses the existing `<release>-peer-auth` via Helm `lookup`.
+
+Case 4 needs a live cluster and permission to read Secrets. Offline rendering (`helm template` in GitOps pipelines) or restricted RBAC makes `lookup` return nothing, so a new token is generated on each render and peers reject each other; pin the token with case 1 or 2 there. An explicit empty `peerCache.authToken: ""` fails templating. `extraArgs.peer-auth-token` is intentionally rejected while `peerCache.enabled=true` because the chart owns that CLI flag.
 
 ## Performance Characteristics
 
@@ -473,8 +489,8 @@ Peer fetch behavior details:
 
 - larger `/_cache/get` payloads are compressed when peers request `Accept-Encoding`, preferring `zstd` and falling back to `gzip`
 - when `-peer-write-through=true`, non-owner writes above `-peer-write-through-min-ttl` are pushed to owners via `/_cache/set`
-- set `-peer-auth-token` fleet-wide in Kubernetes deployments so peer fetches authenticate by token instead of only by the currently discovered peer IP set
-- when `-peer-auth-token` is set, both peer fetch and peer write-through calls must carry the shared token or endpoints fail closed
+- `-peer-auth-token` is required whenever peer discovery is configured; set the same value fleet-wide. The proxy refuses to start without it unless `-peer-insecure-ip-allowlist=true` restores the legacy check based only on the currently discovered peer IP set
+- every peer endpoint (`/_cache/get`, `/_cache/set`, `/_cache/has`, `/_cache/hot`, `/_cache/peers`, `/_cache/purge`) compares `X-Peer-Token` in constant time and fails closed with `401` on a missing or wrong token
 
 ## Fleet Metrics
 
@@ -820,9 +836,22 @@ caller → best peer: GET /_cache/get?key=k1              (value fetch, only if 
 | `/_cache/set?key=K&ttl_ms=T` | POST | Push a value to a peer (write-through) | Full value |
 | `/_cache/has?keys=k1,k2,...` | GET | Batch presence + TTL check | JSON metadata only (~50B/key) |
 | `/_cache/hot?limit=N` | GET | Top N hot keys with scores and TTL | JSON index (no values) |
+| `/_cache/peers` | GET | Current ring membership (`peers`, `self`, `count`) | JSON metadata only |
+| `/_cache/purge` | POST | Purge this node's L0 hot index, L1 memory and L2 disk caches (fanout target of the ring-wide flush; never re-fans out) | none |
 
-All endpoints respect `X-Peer-Token` when `-peer-auth-token` is configured.
+All peer endpoints are served on the main listener and require `X-Peer-Token` (see [token requirement](#performance-characteristics)).
 Responses ≥1 KB are offered compressed (`zstd` preferred, `gzip` fallback).
+
+### Ring-Wide Cache Flush
+
+`POST /admin/cache/flush` purges the local instance's caches (L0 hot index, L1 memory, L2 disk). Adding `?peers=1` (or a bare `?peers`) also sends `POST /_cache/purge` with the shared `X-Peer-Token` to every other peer in the ring, at most 16 at a time with a 5 s timeout per peer. The JSON response reports `purged` or `error: ...` per peer; an unreachable peer does not block the rest. Peers purge only themselves, so there is no re-broadcast.
+
+`/admin/cache/flush` is an admin route: it is registered when `-server.register-instrumentation=true` and lives on the loopback `-admin-listen` address (default `127.0.0.1:3101`) unless `-server.admin-auth-token` is set, in which case it moves to the main listener and requires the token (`Authorization: Bearer <token>` or `X-Admin-Token`). The image has no shell, so in Kubernetes reach the loopback listener with a port-forward:
+
+```bash
+kubectl port-forward pod/<proxy-pod> 3101:3101 &
+curl -fsS -X POST 'http://127.0.0.1:3101/admin/cache/flush?peers=1'
+```
 
 ---
 
@@ -832,15 +861,15 @@ Responses ≥1 KB are offered compressed (`zstd` preferred, `gzip` fallback).
 
 ```yaml
 # values.yaml
-extraArgs:
-  peer-self: "$(POD_IP):3100"
-  peer-discovery: "dns"
-  peer-dns: "loki-vl-proxy-headless.monitoring.svc.cluster.local"
-  peer-auth-token: "$(PEER_AUTH_TOKEN)"  # from Secret
-  warmup-max-jitter: "20s"               # spread 30 pods over 20s window
+peerCache:
+  enabled: true          # chart wires -peer-self=$(POD_IP):3100, -peer-discovery=dns,
+                         # -peer-dns=<headless service> and -peer-auth-token from a Secret,
+                         # and creates the headless peer service
+  discovery: dns
+  existingSecret: loki-vl-proxy-peer-token  # pin the token for GitOps/offline rendering
 
-# Headless service for peer discovery
-# (chart creates this automatically when peerCache.enabled=true)
+extraArgs:
+  warmup-max-jitter: "20s"   # spread 30 pods over 20s window
 ```
 
 #### Jitter Sizing Formula

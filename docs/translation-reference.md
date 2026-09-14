@@ -61,17 +61,18 @@ After a parser stage, label filters are wrapped as `| filter <expr>`. For exampl
 | `\| label_format x="{{.y}}"` | `\| format "<y>" as x` |
 | `\| label_format a="{{.x}}", b="{{.y}}"` | `\| format "<x>" as a \| format "<y>" as b` |
 | `\| drop a, b` | `\| delete a, b` — bare field names, unconditional |
-| `\| drop level="debug"` | proxy post-processes each entry: removes `level` from structured metadata and parsed fields when value matches; stream labels are not affected |
+| `\| drop level="debug"` | proxy post-processes each entry: removes `level` from stream labels, structured metadata and parsed fields when value matches |
 | `\| drop status=~"5.."` | proxy regex match: removes `status` when value matches regex |
 | `\| keep a, b` | `\| fields _time, _msg, _stream, a, b` — bare field names |
-| `\| keep method="GET"` | proxy post-processes: strips `method` from entries where value ≠ `"GET"` |
+| `\| keep method="GET"` | proxy post-processes: strips `method` (including a stream label) from entries where value ≠ `"GET"` |
 | `\| keep status!~"2.."` | proxy negative-regex: removes `status` from entries where value does not match |
+| `\| drop status!~"2.."` | proxy negative-regex: removes `status` when value does not match `2..` (the `!~` matcher form is recognised since v1.61.0) |
 
-:::note Drop/keep matcher scope
-The matcher form of `| drop`/`| keep` applies to structured metadata and parsed fields. Stream labels (the label set from the log stream selector) are not mutated by matcher conditions — only bare field drops affect how VictoriaLogs filters the raw field.
+:::note Drop/keep scope
+Both forms mutate stream labels as well as structured metadata and parsed fields. Matcher conditions (`=`, `!=`, `=~`, `!~`) remove a stream label only on entries whose value matches (drop) or does not match (keep); the response stream key is recomputed from the remaining labels. Under `label-style=underscores` the Loki name (`service_name`) is also matched against the stored dotted field (`service.name`).
 :::
 
-**Stream label exposure**: `| keep app, level` instructs VL to project only `_time, _msg, _stream, app, level`. Because `_stream` contains all original stream labels as JSON, stream labels beyond `app` and `level` remain visible in the Loki response label set. Only structured metadata / parsed fields are affected by keep projection.
+**Stream label exposure**: `| keep app, level` instructs VL to project only `_time, _msg, _stream, app, level`. The proxy then removes stream labels outside the keep list from the Loki response label set, so only `app` and `level` remain.
 
 ## Proxy-Side Stages
 
@@ -80,8 +81,8 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | LogQL | Implementation |
 |---|---|
 | `\| decolorize` | ANSI escape sequence stripping via regex |
-| `\| ip("10.0.0.0/8")` | IP CIDR range filtering |
-| `\| line_format` (templates) | Full Go `text/template` (ToUpper, ToLower, default, etc.) |
+| `\| ip("10.0.0.0/8")` | IP address, CIDR or range filtering. Arguments are validated at parse time; line filters accept only `\|= ip(...)` and `!= ip(...)`. Line filters translate to regular-expression approximations, so non-octet IPv4 prefixes, IPv4 ranges and IPv6 forms are not matched exactly. Label filters (`addr = ip("cidr")`) use VictoriaLogs `ipv4_range()` for IPv4 CIDRs when the backend supports it, otherwise a regular expression |
+| `\| line_format` (templates) | Go `text/template` (ToUpper, ToLower, default, etc.) with bounded work: 64 KiB output per line and 16 MiB per response, plus template depth, input and execution limits. Exceeding a limit returns HTTP 400 |
 
 ## Metric Queries
 
@@ -101,7 +102,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `last_over_time({...} \| unwrap f [5m])` | `... \| stats last(f)` |
 | `stddev_over_time({...} \| unwrap f [5m])` | `... \| stats stddev(f)` |
 | `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... \| stats stddev(f)) ^ 2` |
-| `quantile_over_time(0.95, {...} \| unwrap f [5m])` | `... \| stats quantile(0.95, f)` |
+| `quantile_over_time(0.95, {...} \| unwrap f [5m])` | proxy exact raw-sample evaluator for instant and range queries (Loki interpolates between ranked samples; VL `quantile` uses a different rank selection and tumbling buckets). Grouping is preserved and samples at the evaluation timestamp are included |
 | `rate_counter({...} \| unwrap f [5m])` | `... \| stats __rate_counter__(f)` |
 | `absent_over_time({...}[5m])` | `... \| stats count()` |
 
@@ -112,7 +113,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `sum(rate({...}[5m]))` | normalized per-stream/per-group rate, then proxy applies outer aggregation where supported |
 | `sum(rate({...}[5m])) by (x)` | `... \| stats by (x) count() as __lvp_inner \| math __lvp_inner/window as __lvp_rate \| stats by (x) sum(__lvp_rate)` |
 | `avg(rate({...}[5m])) by (x)` | same normalized-rate path grouped by `(x)` |
-| `topk(10, rate({...}[5m]))` | normalized-rate path with stream grouping; top-level selection remains simplified |
+| `topk(10, rate({...}[5m]))` | normalized-rate path with stream grouping; on range queries the proxy ranks series independently at each timestamp, so a range can return more than `k` distinct series, each with only its winning samples |
 
 Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`, `group`, `label_replace`, `label_join`.
 
@@ -132,6 +133,13 @@ Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `st
 
 Supported operators: `+`, `-`, `*`, `/`, `%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `<=`.
 
+Binary expression notes:
+
+- Each operand is executed through the normal query handlers, so trailing range windows, parser errors and extraction aliases are preserved. Operator precedence, parentheses and comparison filtering versus `bool` follow Loki.
+- Vector-vector operands are evaluated on the step-aligned grid, as Loki's query frontend does with `align_queries_with_step` enabled. Against a default Loki, results for an unaligned `start` can differ by less than one step.
+- Implicit many-to-one matches (without `group_left`/`group_right`) are rejected with HTTP 500 and Loki's `multiple matches for labels` error; cardinality is checked at each timestamp.
+- Evaluation is bounded: 64 nesting levels, 1,024 child evaluations, 256 MiB of captured child responses, two million decoded arrays, one million output samples and 64 MiB of label work, with each encoded result capped at 64 MiB. A valid expression exceeding these limits fails explicitly.
+
 ## Proxy Compatibility Layer
 
 The following Loki semantics are implemented in the proxy to bridge gaps where VictoriaLogs primitives do not directly match Loki behavior.
@@ -142,7 +150,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 |---|---|
 | `offset 1h` on range vectors | Supported: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch; multiple distinct offsets in the same query return HTTP 400 |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
-| Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
+| Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation. More than 10,000 total inner evaluations (outer points × inner points) returns HTTP 400; decoded results are limited to 8 MiB per step, 64 MiB per evaluation and one million samples. Failed inner queries return an error, not an empty result |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
 | `label_replace(expr, dst, repl, src, regex)` | Proxy post-processing: inner expr translated to VL, spec embedded as marker, applied to matrix response (Prometheus semantics: no-match leaves dst unchanged) |
 | `label_join(v, dst, sep, src1, ...)` | Proxy post-processing: same marker pattern as `label_replace`; missing src labels are skipped |

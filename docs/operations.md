@@ -19,7 +19,7 @@ The proxy is stateless (except optional disk cache). Scale horizontally without 
 
 Key scaling controls (all tunable via CLI flags):
 
-- `-max-concurrent 100` — global concurrent backend query cap
+- `-max-concurrent 100` — per-replica in-flight request cap (excess gets `503`); also bounds concurrent backend operations
 - `-rate-limit-per-second 50` / `-rate-limit-burst 100` — per-client token bucket
 - `-cb-fail-threshold 5` / `-cb-open-duration 10s` — backend circuit breaker
 - use Grafana refresh policy, ingress shaping, HPA, and cache tuning as complementary levers
@@ -55,7 +55,7 @@ extraArgs:
 |------|----------|-------------|
 | `-backend` | Yes | VictoriaLogs URL |
 | `-listen` | No | Listen address (default `:3100`) |
-| `-label-style` | No | `passthrough` (default) or `underscores` |
+| `-label-style` | No | `underscores` (default) or `passthrough` |
 
 ---
 
@@ -125,10 +125,10 @@ The proxy maps `X-Scope-OrgID` headers to VictoriaLogs tenant IDs. Three strateg
 Best for small, static tenant maps. The entire map is provided directly as a CLI flag or env var value:
 
 ```bash
--tenant-map='{"team-a":"vl-tenant-1","team-b":"vl-tenant-2"}'
+-tenant-map='{"team-a":{"account_id":"1","project_id":"0"},"team-b":{"account_id":"2","project_id":"0"}}'
 ```
 
-This requires a proxy restart to update.
+This requires a proxy restart to update. (A map supplied through the `TENANT_MAP` environment variable is re-read on SIGHUP when no `-tenant-map-file` is set.)
 
 #### 2. File-based (`-tenant-map-file`)
 
@@ -158,13 +158,13 @@ Polling every `30s` means changes are picked up automatically even without an ex
 
 #### 3. Label-based (`-tenant-label`)
 
-Routes per-query based on a label field value in the incoming stream. Useful when a single VictoriaLogs tenant holds multi-tenant data distinguished by a label such as `service.name`:
+Scopes each request by a stream field instead of VictoriaLogs `AccountID`/`ProjectID` headers. Useful when the VictoriaLogs default tenant (0:0) holds data for several tenants distinguished by a stream label such as `tenant`:
 
 ```bash
--tenant-label=service.name
+-tenant-label=tenant
 ```
 
-When set, the proxy extracts the label value from the query or push request and uses it as the VictoriaLogs tenant ID, without requiring the client to set `X-Scope-OrgID`.
+When set, the client still sends `X-Scope-OrgID`. For an org ID that is not in the tenant map, not a default-tenant alias (`0`, `fake`, `default`) and not `*`, the proxy adds a VictoriaLogs `extra_stream_filters` constraint `{"tenant":"<orgID>"}` to backend queries; request parameters cannot override it. The configured field must be a VictoriaLogs **stream field** (part of `_stream_fields` at ingestion). Explicit tenant-map entries take priority, and an unmapped `X-Scope-OrgID: *` is still rejected with `403` unless `-tenant.allow-global=true`.
 
 ---
 
@@ -172,19 +172,21 @@ When set, the proxy extracts the label value from the query or push request and 
 
 `-require-tenant-header=true` enforces that every request carries an `X-Scope-OrgID` header (returns HTTP 401 if missing) without enabling full auth. This is useful for catching misconfigured clients in multi-tenant setups without a full auth proxy.
 
-This is distinct from `-auth.enabled`: the latter enables credential validation, while `-require-tenant-header` only checks for header presence.
+`-auth.enabled=true` has the same effect on requests without the header (`401`). Neither flag authenticates the header value; put an authenticating proxy in front of the proxy when tenants must not be able to choose their own `X-Scope-OrgID`.
 
 ---
 
 ## Health Check Endpoints
 
-The proxy exposes three operational endpoints:
+The proxy exposes these operational endpoints:
 
 | Endpoint | Purpose | Kubernetes probe |
 |----------|---------|-----------------|
 | `/alive` | Liveness — confirms the process is running | `livenessProbe` |
 | `/ready` | Readiness — confirms the proxy is ready to serve traffic (backend reachable, warm-up complete) | `readinessProbe` |
-| `/metrics` | Prometheus metrics scrape | ServiceMonitor / scrape config |
+| `/metrics` | Prometheus metrics scrape. Off by default since v1.56.0: requires `-server.register-instrumentation=true`, and is served on `--metrics-listen` when set (the Helm chart uses `:9091`), otherwise on the main listener | ServiceMonitor / scrape config |
+
+Admin and debug routes (`/admin/cache/flush`, `/debug/pprof/*`, `/debug/queries`) are served on the loopback `--admin-listen` address (default `127.0.0.1:3101`) unless `-server.admin-auth-token` is set, in which case they move to the main listener and require that token. `/admin/cache/flush` exists only when `-server.register-instrumentation=true`; `POST /admin/cache/flush?peers=1` also purges every peer in the ring through the token-protected `POST /_cache/purge` peer endpoint.
 
 If `/ready` stays non-`ok` immediately after a restart, check whether patterns or indexed label-values startup warm is configured — those persistence restores can intentionally hold readiness at `503` until warm-up completes.
 
@@ -200,9 +202,9 @@ Translation guidance moved to dedicated docs:
 
 Operational recommendation:
 
-- use `label-style=underscores` when upstream VL stores dotted OTel fields
+- use `label-style=underscores` (default) when upstream VL stores dotted OTel fields; `passthrough` when VL already stores underscore names
 - use `metadata-field-mode=hybrid` for mixed Loki + OTel field workflows
-- use `metadata-field-mode=translated` for strict Loki-style field surfaces
+- use `metadata-field-mode=translated` (default) for strict Loki-style field surfaces
 - use `metadata-field-mode=native` for OTel-native field-only surfaces
 
 ---
@@ -254,14 +256,15 @@ Default TTLs are conservative. Adjust for your query patterns:
 -cache-max=50000         # Increase for high-cardinality environments
 ```
 
-| Endpoint | Default TTL | Recommendation |
-|----------|-------------|----------------|
-| labels | 60s | 120-300s if label set is stable |
-| label_values | 60s | 60-120s |
-| series | 30s | 30-60s |
-| detected_fields | 30s | 30-60s |
-| query_range | 10s | 5-30s depending on freshness needs |
-| query | 10s | 5-30s |
+| Endpoint | Default TTL | Notes |
+|----------|-------------|-------|
+| labels, label_values | 5m | `-labels-cache-ttl`; scaled up for longer request windows, capped at 1h |
+| detected_fields, detected_field_values, detected_labels | 90s | scaled up for longer request windows, capped at 1h |
+| series | 30s | Tier0 compatibility cache |
+| query_range, query | 5m final-response cache | requests ending within `-recent-tail-refresh-window` (default `2m`) of now refetch once the entry is older than `-recent-tail-refresh-max-staleness` (default `2s`) |
+| index_stats, volume, volume_range | 10s | |
+
+The per-endpoint TTLs above are built in; `-labels-cache-ttl` is the only per-endpoint override. Query-range split windows use `-query-range-history-cache-ttl` / `-query-range-recent-cache-ttl`.
 
 ### Concurrency Limits
 
@@ -280,7 +283,7 @@ All traffic guard controls are tunable via CLI flags (or `extraArgs` in the Helm
 |---|---|---|
 | `-rate-limit-per-second` | `50` | Per-client request rate (req/s) |
 | `-rate-limit-burst` | `100` | Per-client burst allowance |
-| `-max-concurrent` | `100` | Global concurrent backend query cap |
+| `-max-concurrent` | `100` | Per-replica in-flight request cap (excess gets `503` with `Retry-After: 5`); also bounds concurrent backend operations |
 | `-cb-fail-threshold` | `5` | Failures within window to open circuit breaker |
 | `-cb-open-duration` | `10s` | How long circuit breaker stays open |
 | `-cb-window-duration` | `30s` | Failure counting window |
@@ -346,7 +349,7 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 
 1. Check proxy health: `curl http://proxy:3100/ready`
 2. Check VL backend: `curl http://vl:9428/health`
-3. Check proxy logs for translation errors
+3. Check proxy logs for translation errors and execution-limit rejections
 4. Verify label-style matches your VL ingestion format
 5. Check `/loki/api/v1/labels` for available labels
 
@@ -354,8 +357,8 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Dots in Grafana labels | `label-style=passthrough` with dotted VL data | Set `label-style=underscores` |
-| Empty label_values for service_name | VL stores `service.name`, query asks `service_name` | Set `label-style=underscores` |
+| Dots in Grafana labels | `label-style=passthrough` with dotted VL data | Set `label-style=underscores` (the default) |
+| Empty label_values for service_name | VL stores `service.name`, query asks `service_name` | Set `label-style=underscores` (the default) |
 | Grafana Drilldown "failed to fetch" | Volume/stats endpoint issue | Check proxy logs, ensure VL v1.49+ |
 
 ### High Memory Usage
@@ -373,9 +376,19 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 - Check VL backend latency via metrics
 - Rely on built-in singleflight coalescing for identical concurrent reads
 
+### 502 / 503 Errors On Large Queries
+
+Not every `502` or `503` means VictoriaLogs is down. Built-in execution limits reject oversized work instead of returning truncated data:
+
+- `502` with `manual range metric row limit exceeded` — raise `-manual-range-metric-row-limit` or narrow the query
+- `502` with `maximum metric series exceeded` or `503` with `manual metric series limit exceeded` — narrow the query or raise `-max-stats-query-series`
+- `503` with `too many concurrent queries` — the `-max-concurrent` admission cap was reached
+
+Subquery, `line_format` and binary-expression evaluation limits return `400`. See [Fixed Execution Limits](configuration.md#fixed-execution-limits).
+
 ### Circuit Breaker Tripping
 
-The circuit breaker opens after consecutive backend 5xx responses. Check:
+The circuit breaker opens after `-cb-fail-threshold` backend transport failures (connection errors) within `-cb-window-duration`. HTTP error responses from VictoriaLogs and timeouts do not count, because they prove the backend is reachable. Check:
 - VL backend health and logs
 - Network connectivity between proxy and VL
 - VL resource usage (CPU/memory/disk)

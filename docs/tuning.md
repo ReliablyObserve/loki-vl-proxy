@@ -16,9 +16,9 @@ and as `-<flag>` on the proxy binary.
 
 | Setting                              | Default | Disabled when | Notes                                  |
 |--------------------------------------|---------|---------------|----------------------------------------|
-| `extraArgs.max-concurrent`           | 64      | 0             | Per-replica in-flight cap. Excess requests are queued briefly, then 429'd. |
-| `extraArgs.rate-limit-per-second`    | 50      | 0             | Per-client token bucket refill rate (req/s). Identifies clients by source IP. |
-| `extraArgs.rate-limit-burst`         | 100     | 0             | Per-client burst size. Lets dashboard loads burst above the steady-state rate briefly. |
+| `extraArgs.max-concurrent`           | 64      | 0             | Per-replica in-flight cap. Excess requests are rejected immediately with `503` and `Retry-After: 5`. The same value bounds concurrent backend operations (including fanout), which wait for a free slot until their response bodies are consumed. |
+| `extraArgs.rate-limit-per-second`    | 50      | 0             | Per-client token bucket refill rate (req/s). Identifies clients by connection source IP. Requests over the limit get `429` with `Retry-After: 1`. |
+| `extraArgs.rate-limit-burst`         | 100     | —             | Per-client burst size. Lets dashboard loads burst above the steady-state rate briefly. Disable rate limiting with `rate-limit-per-second=0`; a burst of `0` with a positive rate rejects every request. |
 
 The binary's defaults are 100 / 50 / 100; the chart ships 64 / 50 / 100
 (one tighter in-flight cap to leave backend headroom for a small Grafana
@@ -36,7 +36,7 @@ Tune based on:
   in.
 - **Average and p99 backend query latency.** Higher latency means each
   in-flight slot is held longer; raise `max-concurrent` to maintain
-  throughput, or accept queuing.
+  throughput, or accept more `503` rejections at admission.
 - **Backend CPU/memory headroom for fanout.** `max-concurrent` is the
   upper bound on simultaneous load you pass through to VictoriaLogs from
   one proxy replica. Multiply by replica count to size the backend.

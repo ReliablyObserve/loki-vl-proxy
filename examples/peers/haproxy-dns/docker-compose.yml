@@ -10,10 +10,11 @@
 #
 # Usage:
 #   docker compose up -d
-#   curl http://localhost:3100/_cache/peers   (via HAProxy → any proxy)
-#   curl http://localhost:3200/_cache/peers   (proxy-a direct)
-#   curl http://localhost:3201/_cache/peers   (proxy-b direct)
-#   curl http://localhost:3202/_cache/peers   (proxy-c direct)
+#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers   (via HAProxy → any proxy)
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3200/_cache/peers   (proxy-a direct)
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3201/_cache/peers   (proxy-b direct)
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3202/_cache/peers   (proxy-c direct)
 
 networks:
   proxy-net:

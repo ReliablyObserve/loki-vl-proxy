@@ -65,9 +65,9 @@ extraArgs:
   #
   # 0 = unlimited (NOT recommended — a single noisy client can drive expensive
   # fanout). To restore the prior unlimited behavior, set all three back to "0".
-  max-concurrent: "64"          # per-replica in-flight ceiling; 0 = unlimited (NOT recommended)
-  rate-limit-per-second: "50"   # per-client token bucket refill (req/s); 0 = disabled
-  rate-limit-burst: "100"       # per-client burst size; 0 = disabled
+  max-concurrent: "64"          # per-replica in-flight ceiling (excess gets 503); also bounds concurrent backend calls until bodies are consumed; 0 = unlimited (NOT recommended)
+  rate-limit-per-second: "50"   # per-client (source IP) token bucket refill (req/s), excess gets 429; 0 = disabled
+  rate-limit-burst: "100"       # per-client burst size; with a positive rate, 0 rejects every request (disable via rate-limit-per-second=0)
 
   # --- Cache ---
   cache-ttl: "60s"
@@ -110,7 +110,7 @@ extraArgs:
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
   # default-max-query-length: "0"                      # max query time range for all tenants (0 = unlimited; per-tenant limits override)
-  # max-stats-query-series: "500"                       # max series returned by stats metric queries (count_over_time, rate, bytes_rate); 0 = built-in default of 500
+  # max-stats-query-series: "500"                       # max series returned by stats metric queries (count_over_time, rate, bytes_rate); 0 = built-in default of 500; proxy-evaluated metric paths return HTTP 502/503 instead of truncating
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
   # drilldown-burst-max-fields: "30"
@@ -146,7 +146,7 @@ extraArgs:
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
   # cb-open-duration: "10s"                 # circuit breaker open duration before probe
   # cb-window-duration: "30s"               # circuit breaker sliding window for failure counting
-  # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call
+  # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
 
   # --- Frontend/client-facing compression ---
   # gzip for broad Loki/Grafana compatibility; route-aware policy raises the
@@ -160,7 +160,7 @@ extraArgs:
   peer-write-through-min-ttl: "30s"
 
   log-level: "info"
-  # log-request-sample-rate: "0"    # 0=log all 2xx; N>1 logs 1-in-N (saves log build overhead at high throughput)
+  # log-request-sample-rate: "0"    # static 2xx sampling (0/1 = all, N>1 = 1-in-N); fallback only, adaptive sampling (log-rate-threshold) takes precedence
   # log-buffered: "true"            # write logs in the background for better performance under load
   # log-stats-interval: "10s"       # how often to print a request statistics summary
   # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
@@ -203,8 +203,8 @@ extraArgs:
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
   # Compatibility profile knobs:
-  # - label-style: passthrough | underscores
-  # - metadata-field-mode: native | translated | hybrid
+  # - label-style: passthrough | underscores (binary default: underscores)
+  # - metadata-field-mode: native | translated | hybrid (binary default: translated)
   # - emit-structured-metadata: true | false
   # - patterns-enabled: true | false
   #
@@ -222,10 +222,10 @@ extraArgs:
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/configuration.md#compatibility-profiles
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/api-reference.md
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/compatibility-matrix.md
-  # metadata-field-mode: "translated"        # field exposure: native | translated | hybrid
+  # metadata-field-mode: "translated"        # field exposure: native | translated | hybrid (default translated; set via flag, METADATA_FIELD_MODE env does not override it)
   # emit-structured-metadata: "true"         # include 3-tuple stream values [timestamp, line, metadata]
   # Label translation (OTel compatibility)
-  # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
+  # label-style: "underscores"  # default; convert VL dotted fields (service.name) to Loki underscores (service_name); set via flag, LABEL_STYLE env does not override it
   # translate-otel-attributes: "true"  # rewrite known OTel labels to dotted form in upstream queries (set "false" for underscore storage)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
   # Derived fields (trace linking)
@@ -285,21 +285,21 @@ extraArgs:
   # response-compression-min-bytes: "1024"     # minimum response size before frontend compression starts
   # response-gzip: "true"
   # max-lines: "1000"
-  # auth.enabled: "false"                       # require tenant header
+  # auth.enabled: "false"                       # reject requests missing X-Scope-OrgID with 401 (does not authenticate the value)
   # require-tenant-header: "false"             # reject requests missing X-Scope-OrgID with 401
   # forward-tenant-header: "true"              # forward X-Scope-OrgID to upstream backend
-  # tenant-label: ""                           # VL field name for label-based tenant routing
+  # tenant-label: ""                           # VL field name for label-based tenant routing via extra_stream_filters; must be a VL stream field (_stream_fields)
   # tenant-map-file: ""                        # path to YAML/JSON tenant map file (hot-reloaded)
   # tenant-map-reload-interval: "30s"          # poll interval for tenant map file changes
   # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
   # tenant-default-limits: ""                  # JSON map of default published limits overrides
   # tenant-limits: ""                          # JSON map of per-tenant published limits overrides
-  # tenant.allow-global: "false"                # allow global tenant map wildcard entry
+  # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403. An explicit "*" tenant-map entry always wins
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
-  # server.metrics-max-concurrency: "0"         # bound concurrent /metrics scrapes (0=unlimited)
+  # server.metrics-max-concurrency: "1"         # bound concurrent /metrics scrapes (binary default 1; 0 disables the cap)
   # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
   # Binary defaults flipped: server.register-instrumentation is now false in the
   # raw binary and admin/debug routes move to a loopback --admin-listen so a
@@ -446,8 +446,9 @@ env: []
   #       key: tenant-map
   # - name: OTLP_ENDPOINT
   #   value: "http://otel-collector:4318/v1/metrics"
-  # - name: LABEL_STYLE
-  #   value: "underscores"
+  # - name: EXTRA_LABEL_FIELDS
+  #   value: "host.id,k8s.cluster.name"
+  # (label-style and metadata-field-mode are set via extraArgs; their env vars do not override the defaults)
   # - name: FIELD_MAPPING
   #   valueFrom:
   #     configMapKeyRef:

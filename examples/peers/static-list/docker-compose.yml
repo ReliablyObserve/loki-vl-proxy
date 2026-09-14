@@ -5,9 +5,12 @@
 #
 # Usage:
 #   docker compose up -d
-#   curl http://localhost:3100/_cache/peers
-#   curl http://localhost:3101/_cache/peers
-#   curl http://localhost:3102/_cache/peers
+#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3101/_cache/peers
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3102/_cache/peers
+#
+# The proxy is read-only: write logs to VictoriaLogs (no host port here; see README.md).
 
 services:
 
