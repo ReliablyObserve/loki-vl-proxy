@@ -481,6 +481,15 @@ type streamDef struct {
 	Lines              []string
 	StructuredMetadata map[string]string // applied to all lines; exposed via categorize-labels
 	VLOnly             bool              // push only to VL (not Loki) — for OTel data with dotted labels
+	Interval           time.Duration     // spacing between consecutive lines; zero means one second
+}
+
+func (sd streamDef) lineTime(baseTime time.Time, i int) time.Time {
+	interval := sd.Interval
+	if interval <= 0 {
+		interval = time.Second
+	}
+	return baseTime.Add(time.Duration(i) * interval)
 }
 
 func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
@@ -490,7 +499,7 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		// Loki: use 3-element values when structured metadata is set.
 		var lokiValues []interface{}
 		for i, line := range sd.Lines {
-			ts := baseTime.Add(time.Duration(i) * time.Second)
+			ts := sd.lineTime(baseTime, i)
 			tsStr := fmt.Sprintf("%d", ts.UnixNano())
 			if len(sd.StructuredMetadata) > 0 {
 				lokiValues = append(lokiValues, []interface{}{tsStr, line, sd.StructuredMetadata})
@@ -515,7 +524,7 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 	// VictoriaLogs: structured metadata fields are pushed as extra non-stream fields.
 	var vlLines []string
 	for i, line := range sd.Lines {
-		ts := baseTime.Add(time.Duration(i) * time.Second)
+		ts := sd.lineTime(baseTime, i)
 		entry := map[string]string{"_time": ts.Format(time.RFC3339Nano), "_msg": line}
 		for k, v := range sd.Labels {
 			entry[k] = v

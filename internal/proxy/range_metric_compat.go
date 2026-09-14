@@ -102,6 +102,26 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 	return spec, true
 }
 
+// parseSingleFieldCountSpec accepts only a translated query of the exact shape
+// `<base> | stats by (<field>) count()` — the shape the single-field count fast
+// paths (windowed /hits, two-phase top-N, Drilldown field paths) rebuild from
+// BaseQuery. parseStatsCompatSpec reads only the first stats pipe, so the rate
+// translation `| stats by (f) count() as __lvp_inner | math __lvp_inner/<window>
+// ...` also reports Func "count"; rebuilding it as a bare count() drops the
+// per-second division and returns raw window counts where Loki returns rates.
+func parseSingleFieldCountSpec(logsqlQuery string) (statsCompatSpec, bool) {
+	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+		return statsCompatSpec{}, false
+	}
+	// The count() stats pipe must be the final stage.
+	rest := logsqlQuery[strings.Index(logsqlQuery, "| stats ")+len("| stats "):]
+	if strings.Contains(rest, "|") || !strings.HasSuffix(strings.TrimSpace(rest), "count()") {
+		return statsCompatSpec{}, false
+	}
+	return spec, true
+}
+
 // stripOuterLabelReplace removes label_replace(v, ...) wrappers from a logql
 // expression, returning the innermost wrapped expression. This allows
 // parseOriginalRangeMetricSpec to reach the actual metric function even when

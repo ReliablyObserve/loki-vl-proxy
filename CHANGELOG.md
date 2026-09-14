@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Return per-second values for single-label grouped `rate` over long ranges.
+  `sum by (app) (rate({namespace="prod"}[5m]))` with `step=300` over two hours
+  or more returned the raw count of each window (for example `1200` or, for
+  `[1h]` with `step=3600` over 24h, `14400`), while Loki returns the per-second
+  rate (`4`). The same raw counts were returned at any range when the grouped
+  label also carried a `label!=""` filter and the window was shorter than the
+  step; that shape now takes the same native path as the unfiltered query and
+  keeps the separate, still-open window-shorter-than-step difference (the whole
+  step bucket is counted). Two or more group labels and sliding windows were
+  already correct. The
+  high-cardinality single-field count shortcuts (bounded
+  two-phase top-N, window-sampled `/hits` for Grafana-sourced id fields, the
+  16 MB overflow fallback and the Drilldown single-field paths) recognised a
+  query only by its first `| stats` stage. The `rate` translation also starts
+  with `count()`, so they accepted it and rebuilt it as a plain
+  `| stats by (field) count()`, dropping the later `| math .../<window>`
+  division. These shortcuts now accept only a translated query that ends with
+  a single-field `count()`. `rate` falls back to the exact path that applies
+  the division. `count_over_time` keeps the shortcuts, and `bytes_rate` and
+  `bytes_over_time` were never affected. A Loki-versus-proxy e2e test ingests
+  its own fixture and compares `rate` (`[5m]`/300 and `[1h]`/3600),
+  `bytes_rate` and `count_over_time` exactly over a three-hour window.
+  Side effects: a rate query whose single-field count would exceed the 16 MB
+  overflow now returns an empty matrix instead of raw counts, and
+  `count(sum by (app) (count_over_time(...)))` is evaluated with its full
+  pipeline instead of being rebuilt as per-app counts.
+
 ## [1.69.0] - 2026-09-14
 
 ### Changed
