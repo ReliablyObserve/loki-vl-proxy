@@ -37,8 +37,7 @@ Existing development containers and production deployments were not modified.
 | Grafana 13.0.1 / Logs Drilldown 2.0.4 | Three strict browser tests pass across direct Loki, normal proxy and native-metadata proxy: 18 page states verify exact marker presence/absence and formatted text. Plugin version verified through Grafana API. |
 | Grafana synthetic and ingress tail | Two tests require newly ingested markers in visible live log rows, beyond merely opening WebSockets. Both pass. |
 | Broader Explore / Drilldown browser suite | 107 passed and 12 existing explicit skips across eight suites. After the final scope/cache performance change, all 18 focused Explore/Drilldown/visibility tests passed again. Skips remain gaps, not passes. |
-| Go unit suite | 4,813 tests passed after formatting/tuple fixes; final ranking checks and integration CI are reported in the PR. |
-| Race detector | Full 4,807-test suite passed before final formatting/ranking fixes; subsequent formatting-focused race run passed 20 tests. Final checks are reported in the PR. |
+| Go unit suite and race detector | Full final suite: 4,815 tests passed across 14 packages with `go test -race ./... -count=1` on revision `48d4443`, including the formatting, ranking and scope/cache performance fixes. CI status is recorded in the integration PR. |
 | Static/runtime dependency checks | `go vet ./...` passed; `govulncheck@latest ./...` reported no reachable Go vulnerabilities at review time. |
 | Website | Fresh `npm ci` verifies all 20 patched bundles; two CJS/ESM subprocess regression groups pass; production build passed. Registry audit still flags 18 affected dependency-tree entries from two image-size advisories. |
 
