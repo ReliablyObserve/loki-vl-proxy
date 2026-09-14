@@ -12,6 +12,27 @@ import (
 	"time"
 )
 
+func TestTenantScoping_NamespaceTracksReloadAndCopiesBackendConfig(t *testing.T) {
+	headers := map[string]string{"Authorization": "Bearer original"}
+	p, err := New(Config{BackendURL: "http://unused", BackendHeaders: headers, LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := p.withRequestScope(httptest.NewRequest("GET", "/", nil))
+	before := p.fingerprintFromCtx(r.Context(), r)
+	headers["Authorization"] = "Bearer changed"
+	if p.backendHeaders["Authorization"] != "Bearer original" {
+		t.Fatal("caller mutated immutable backend configuration")
+	}
+	p.ReloadTenantMap(map[string]TenantMapping{"a": {AccountID: "1", ProjectID: "0"}})
+	if p.forwardedAuthFingerprint(httptest.NewRequest("GET", "/", nil)) == before {
+		t.Fatal("reload did not replace cached namespace")
+	}
+	if p.forwardedAuthFingerprint(r) != before {
+		t.Fatal("reload changed admitted request scope")
+	}
+}
+
 func TestTenantScoping_ReloadDuringInflightAndBackgroundWork(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,7 @@ type requestRouting struct {
 	tenants    map[string]TenantMapping
 	label      string
 	translator *LabelTranslator
+	namespace  string
 }
 
 func (p *Proxy) routingForContext(ctx context.Context) requestRouting {
@@ -32,7 +33,7 @@ func (p *Proxy) routingForContext(ctx context.Context) requestRouting {
 	}
 	p.configMu.RLock()
 	defer p.configMu.RUnlock()
-	return requestRouting{p.tenantMap, p.tenantLabel, p.labelTranslator}
+	return requestRouting{p.tenantMap, p.tenantLabel, p.labelTranslator, p.routingNamespace}
 }
 
 func (p *Proxy) withRequestScope(r *http.Request) *http.Request {
@@ -61,13 +62,23 @@ func (p *Proxy) contextScopeFingerprint(ctx context.Context) string {
 // aliases, and versions all existing response/cache identities. Never expose its
 // input (which can contain backend credentials) in logs or cache key text.
 func (p *Proxy) scopeFingerprint(ctx context.Context, orgID string) string {
+
 	routing := p.routingForContext(ctx)
-	mappings := make(map[string]TenantMapping)
-	for _, id := range strings.Split(orgID, "|") {
-		if mapping, ok := routing.tenants[strings.TrimSpace(id)]; ok {
-			mappings[strings.TrimSpace(id)] = mapping
-		}
+	namespace := routing.namespace
+	if namespace == "" {
+		namespace = p.buildRoutingNamespace(routing)
 	}
+	if orgID == "" {
+		return namespace
+	}
+	sum := sha256.Sum256([]byte(namespace + orgID))
+	return hex.EncodeToString(sum[:])
+}
+
+// Called at startup/reload. Only a namespace digest is retained; credentials
+// never become cache-key text. Including all mappings also invalidates sibling
+// tenant caches on reload, without any unbounded per-tenant memo table.
+func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 	backend, cold := "", ""
 	if p.backend != nil {
 		backend = p.backend.String()
@@ -81,7 +92,7 @@ func (p *Proxy) scopeFingerprint(ctx context.Context, orgID string) string {
 	if routing.translator != nil {
 		style, fields, otel = routing.translator.style, routing.translator.vlToLoki, routing.translator.translateOTel
 	}
-	data, _ := json.Marshal([]any{"scope-v2", backend, cold, p.backendHeaders, orgID, mappings, routing.label, style, fields, otel, p.forwardTenantHeader})
+	data, _ := json.Marshal([]any{"scope-v3", backend, cold, p.backendHeaders, routing.tenants, routing.label, style, fields, otel, p.forwardTenantHeader})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

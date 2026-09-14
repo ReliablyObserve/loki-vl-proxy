@@ -763,11 +763,13 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 	}
 }
 
-// forwardedAuthFingerprint returns a short hash (16 hex chars) of the
-// per-user auth context forwarded with a request (configured forward headers
-// and cookies). Returns "" when no forwarding is configured, so callers can
-// skip the extra allocation when the cache namespace is already user-agnostic.
+// forwardedAuthFingerprint includes immutable routing and all forwarded identity.
 func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
+	// Use the canonical spelling to avoid allocating a normalized header key.
+	scope := p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-Orgid"))
+	if len(r.Header) == 0 || (!p.metricsTrustProxyHeaders && len(p.forwardHeaders) == 0 && len(p.forwardCookies) == 0) {
+		return scope
+	}
 	identity := p.forwardedIdentityHeaders(r)
 	cookies := make([][2]string, 0)
 	for _, cookie := range r.Cookies() {
@@ -775,8 +777,11 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 			cookies = append(cookies, [2]string{cookie.Name, cookie.Value})
 		}
 	}
+	if len(identity) == 0 && len(cookies) == 0 {
+		return scope
+	}
 	// JSON encoding is unambiguous even when header values contain delimiters.
-	data, _ := json.Marshal([]any{p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID")), identity, cookies})
+	data, _ := json.Marshal([]any{scope, identity, cookies})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

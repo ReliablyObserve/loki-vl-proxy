@@ -447,6 +447,7 @@ type Proxy struct {
 	coalescer                             *mw.Coalescer
 	limiter                               *mw.RateLimiter
 	breaker                               *mw.CircuitBreaker
+	routingNamespace                      string       // immutable digest, replaced under configMu on reload
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
 	tenantMap                             map[string]TenantMapping
 	tenantLabel                           string
@@ -603,10 +604,11 @@ type Proxy struct {
 const maxReadCacheKeyMemoEntries = 16384
 
 type canonicalReadCacheMemoKey struct {
-	endpoint string
-	orgID    string
-	extra    string
-	rawQuery string
+	endpoint  string
+	orgID     string
+	extra     string
+	rawQuery  string
+	authScope string
 }
 
 var defaultTenantLimitsAllowPublish = []string{
@@ -844,7 +846,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines = 1000
 	}
 
-	backendHeaders := cfg.BackendHeaders
+	backendHeaders := maps.Clone(cfg.BackendHeaders)
 	if backendHeaders == nil {
 		backendHeaders = make(map[string]string)
 	}
@@ -1077,7 +1079,7 @@ func New(cfg Config) (*Proxy, error) {
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
 		drilldownCardCache:                    newDrilldownCardinalityCache(),
-		forwardHeaders:                        cfg.ForwardHeaders,
+		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
@@ -1343,6 +1345,7 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	return p, nil
 }
 
@@ -1540,6 +1543,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	p.configMu.Lock()
 	p.tenantMap = maps.Clone(m)
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.compatCache != nil {
 		p.compatCache.InvalidatePrefix("")
 	}
@@ -1556,6 +1560,7 @@ func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	prevTranslateOTel := p.labelTranslator.translateOTel
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
 	p.labelTranslator.SetTranslateOTel(prevTranslateOTel)
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
 	}
@@ -2220,13 +2225,23 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	params := url.Values{"query": {logqlQuery}}
-	for _, key := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
-		if value := r.FormValue(key); value != "" {
-			params.Set(key, value)
-		}
+
+	var key strings.Builder
+	key.Grow(len(logqlQuery) + 256)
+	key.WriteString("query_range:v3:")
+	writePart := func(value string) {
+		var digits [20]byte
+		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))
+		key.WriteByte(':')
+		key.WriteString(value)
 	}
-	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + params.Encode() + ":profile:" + p.responseProfileCacheKey(r) + ":auth:" + p.fingerprintFromCtx(r.Context(), r)
+	writePart(logqlQuery)
+	for _, name := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
+		writePart(r.FormValue(name))
+	}
+	writePart(p.responseProfileCacheKey(r))
+	writePart(p.fingerprintFromCtx(r.Context(), r))
+	return key.String()
 }
 
 // responseProfileCacheKey covers negotiated tuple shape and the Grafana profile

@@ -35,14 +35,13 @@ func endpointForReadCacheKey(cacheKey string) string {
 }
 
 func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
-	// Include the per-user auth fingerprint so requests with different forwarded
-	// credentials land in different cache namespaces.
+
+	var authScope string
 	if r != nil {
-		if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
-			extraParts = append(extraParts, "auth:"+fp)
-		}
+		authScope = p.fingerprintFromCtx(r.Context(), r)
 	}
 	if memoKey, ok := buildCanonicalReadCacheMemoKey(endpoint, orgID, r, extraParts); ok && p != nil {
+		memoKey.authScope = authScope
 		p.readCacheKeyMemoMu.RLock()
 		if cached, hit := p.readCacheKeyMemo[memoKey]; hit {
 			p.readCacheKeyMemoMu.RUnlock()
@@ -50,6 +49,9 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		}
 		p.readCacheKeyMemoMu.RUnlock()
 
+		if authScope != "" {
+			extraParts = append(extraParts, "auth:"+authScope)
+		}
 		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
 		p.readCacheKeyMemoMu.Lock()
 		if p.readCacheKeyMemo == nil || len(p.readCacheKeyMemo) >= maxReadCacheKeyMemoEntries {
@@ -58,6 +60,9 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 		p.readCacheKeyMemo[memoKey] = computed
 		p.readCacheKeyMemoMu.Unlock()
 		return computed
+	}
+	if authScope != "" {
+		extraParts = append(extraParts, "auth:"+authScope)
 	}
 	return computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
 }
