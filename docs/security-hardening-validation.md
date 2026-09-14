@@ -37,9 +37,17 @@ Existing development containers and production deployments were not modified.
 | Grafana 13.0.1 / Logs Drilldown 2.0.4 | Three strict browser tests pass across direct Loki, normal proxy and native-metadata proxy: 18 page states verify exact marker presence/absence and formatted text. Plugin version verified through Grafana API. |
 | Grafana synthetic and ingress tail | Two tests require newly ingested markers in visible live log rows, beyond merely opening WebSockets. Both pass. |
 | Broader Explore / Drilldown browser suite | 107 passed and 12 existing explicit skips across eight suites. After the final scope/cache performance change, all 18 focused Explore/Drilldown/visibility tests passed again. Skips remain gaps, not passes. |
-| Go unit suite and race detector | Full final suite: 4,815 tests passed across 14 packages with `go test -race ./... -count=1` on revision `48d4443`, including the formatting, ranking and scope/cache performance fixes. CI status is recorded in the integration PR. |
+| Go unit suite and race detector | Full final suite: 4,816 tests passed across 14 packages with `go test -race ./... -count=1` on revision `5c33387`, including empty-window ranking and scope/cache performance fixes. CI status is recorded in the integration PR. |
 | Static/runtime dependency checks | `go vet ./...` passed; `govulncheck@latest ./...` reported no reachable Go vulnerabilities at review time. |
 | Website | Fresh `npm ci` verifies all 20 patched bundles; two CJS/ESM subprocess regression groups pass; production build passed. Registry audit still flags 18 affected dependency-tree entries from two image-size advisories. |
+
+The requested current-version review additionally ran on **Loki 3.7.7,
+Grafana 13.2.1 and Logs Drilldown 2.5.2**, with runtime versions verified through
+their APIs. All 107 selected browser tests passed with the same 12 existing
+skips, both before and after the final empty-window ranking fix. Live tenant,
+exact-window and formatting tests pass; topk/bottomk tests now also cover empty
+leading/trailing windows and byte-based aggregations. The Compose review
+override pins these versions for reproducible manual acceptance.
 
 The final scope/cache implementation avoids repeated configuration serialization
 on cache hits. Local Apple M5 measurements (`GOMAXPROCS=1`, three one-second runs)
@@ -84,6 +92,16 @@ The opt-in delete adapter is still unsupported against the verified VL endpoint;
 keep deletion disabled pending a separately designed asynchronous adapter. The
 existing browser suite also contains explicit known-gap skips and permissive
 legacy assertions. The new strict tests do not turn those gaps into guarantees.
+
+A separate correction of the legacy exhaustive helper exposed a serious test
+limitation: it sends millisecond integers, which Loki treats as nanoseconds,
+and therefore often compares an empty epoch window with current proxy data.
+The corrected real-window run found invalid-IP and metric parser-error
+mismatches, missing grouped quantile/regexp-capture results, an aggregate-rate
+fallback error and several reference-Loki timeouts. These are open compatibility
+blockers in the separate real-window review draft; the legacy suite's green
+status is not evidence that these behaviors work. The malformed-template
+hardening regression now uses seeded data and correct timestamps directly.
 
 Before broad shared production rollout, run the full supported-version matrix,
 a representative concurrent/tenant workload soak, backend outage and disk-full

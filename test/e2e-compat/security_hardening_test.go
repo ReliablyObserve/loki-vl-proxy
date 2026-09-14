@@ -210,6 +210,15 @@ func TestHardeningLive_ExactWindowsAndFormattingMatchLoki(t *testing.T) {
 		}
 	}
 	hardeningRequest(t, "POST", vlURL+"/internal/force_flush", "", nil)
+	// Check malformed templates against actual data, not an accidentally empty
+	// epoch window: Loki can skip stage evaluation when no streams are selected.
+	invalid := url.Values{"query": {`{service_name="` + service + `"} | line_format "{{.service_name"`}, "start": {strconv.FormatInt(stamp.UnixNano(), 10)}, "end": {strconv.FormatInt(stamp.Add(time.Second).UnixNano(), 10)}}
+	for _, base := range []string{lokiURL, proxyURL} {
+		status, body := hardeningRequest(t, "GET", base+"/loki/api/v1/query_range?"+invalid.Encode(), "", nil)
+		if status != http.StatusBadRequest {
+			t.Fatalf("%s malformed formatting: %d %s", base, status, body)
+		}
+	}
 	for _, format := range []string{"", " | line_format `{{.service_name}}`", " | line_format \"{{printf \\\"%s\\\" .service_name}}\""} {
 		for i := 0; i < 2; i++ {
 			start := stamp.Add(time.Duration(2*i) * time.Second)
