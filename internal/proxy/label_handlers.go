@@ -270,9 +270,10 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	//
 	// Use fastjson to parse the VL response and write the Loki response directly
 	// to avoid encoding/json reflection overhead (mapEncoder + sorting per entry).
+	// fjRoot and every value read from it live in fjp's buffers, so the parser
+	// goes back to the pool only after the response has been built.
 	fjp := vlFJParserPool.Get()
 	fjRoot, err := fjp.ParseBytes(body)
-	vlFJParserPool.Put(fjp)
 
 	sb := jsonBuilderPool.Get().(*strings.Builder)
 	sb.Reset()
@@ -323,6 +324,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		*kp = keys
 		seriesKeysPool.Put(kp)
 	}
+	vlFJParserPool.Put(fjp)
 	sb.WriteString(`]}`)
 	result := sb.String()
 	jsonBuilderPool.Put(sb)

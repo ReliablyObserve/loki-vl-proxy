@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Fix cross-tenant data exposure from two data races on the process-wide
+  fastjson parser pool. `/loki/api/v1/series` returned its parser to the pool
+  right after parsing and then built the response from the parsed values, and
+  the `detected_fields` scan returned its parser before reading the `_msg`
+  bytes borrowed from it for the logfmt pass. Under concurrent requests the
+  next parse, which can belong to any tenant, overwrote the shared buffer, so a
+  response could contain another tenant's stream label names and values
+  (`/series`), a truncated series list, or field names and values taken from
+  another tenant's log lines (`detected_fields`). Both responses are stored in
+  the per-tenant response cache (30s for `/series`, 90s for `detected_fields`)
+  and shared with peers, so a corrupted response could be served repeatedly to
+  the wrong tenant. All multi-tenant deployments running the fastjson paths are
+  affected; single-tenant deployments could see wrong or truncated results.
+  Both paths now finish reading everything they borrowed before returning the
+  parser; allocations are unchanged. Every other parser and buffer pool in the
+  proxy, middleware and cache was checked and already copies before release.
+  New tests run concurrent field scans and series requests against a fake
+  VictoriaLogs under `-race`, assert that each response holds only its own
+  rows, and are part of the targeted race step in CI.
+
 ## [1.69.3] - 2026-09-15
 
 ### Fixed
