@@ -330,7 +330,26 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	p.proxyStatsQueryRange(sc, innerR, translatedInner)
+	// Ranking needs the complete trailing window at each evaluation point.
+	// Native VL buckets are timestamped at their left edge; ranking those
+	// directly can select the next window's winner and omit the first point.
+	// The manual range adapter still uses VL pre-aggregation when available.
+	handled := false
+	if postAgg.name == "topk" || postAgg.name == "bottomk" {
+		spec, ok := parseStatsCompatSpec(translatedInner)
+		orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
+		if ok && hasOrig && orig.Window > 0 {
+			fn := normalizeManualMetricFunction(spec, orig)
+			switch fn {
+			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
+				handled = p.proxyManualRangeMetricRange(sc, innerR, spec, orig, fn)
+			}
+		}
+	}
+	if !handled {
+		p.proxyStatsQueryRange(sc, innerR, translatedInner)
+	}
 
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels)

@@ -72,40 +72,42 @@ func TestHardeningLive_TopKChangingWinners(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("flush: %d %s", status, body)
 	}
-	for _, op := range []string{"topk", "bottomk"} {
-		q := url.Values{"query": {op + `(1, sum by (rank) (rate({service_name="` + service + `"}[1m])))`}, "start": {strconv.FormatInt(stamp.Unix(), 10)}, "end": {strconv.FormatInt(stamp.Add(time.Minute).Unix(), 10)}, "step": {"60"}}
-		want := map[int64]string{stamp.Unix(): "0", stamp.Add(time.Minute).Unix(): "1"}
-		if op == "bottomk" {
-			want = map[int64]string{stamp.Unix(): "1", stamp.Add(time.Minute).Unix(): "0"}
-		}
-		for _, base := range []string{lokiURL, proxyURL} {
-			status, body := hardeningRequest(t, "GET", base+"/loki/api/v1/query_range?"+q.Encode(), "", nil)
-			if status != 200 {
-				t.Fatalf("%s %s: %d %s", base, op, status, body)
+	for _, fn := range []string{"rate", "count_over_time"} {
+		for _, op := range []string{"topk", "bottomk"} {
+			q := url.Values{"query": {op + `(1, sum by (rank) (` + fn + `({service_name="` + service + `"}[1m])))`}, "start": {strconv.FormatInt(stamp.Unix(), 10)}, "end": {strconv.FormatInt(stamp.Add(time.Minute).Unix(), 10)}, "step": {"60"}}
+			want := map[int64]string{stamp.Unix(): "0", stamp.Add(time.Minute).Unix(): "1"}
+			if op == "bottomk" {
+				want = map[int64]string{stamp.Unix(): "1", stamp.Add(time.Minute).Unix(): "0"}
 			}
-			var response struct {
-				Data struct {
-					Result []struct {
-						Metric map[string]string
-						Values [][]any
+			for _, base := range []string{lokiURL, proxyURL} {
+				status, body := hardeningRequest(t, "GET", base+"/loki/api/v1/query_range?"+q.Encode(), "", nil)
+				if status != 200 {
+					t.Fatalf("%s %s: %d %s", base, op, status, body)
+				}
+				var response struct {
+					Data struct {
+						Result []struct {
+							Metric map[string]string
+							Values [][]any
+						}
 					}
 				}
-			}
-			if err := json.Unmarshal(body, &response); err != nil {
-				t.Fatal(err)
-			}
-			got := map[int64]string{}
-			for _, series := range response.Data.Result {
-				for _, point := range series.Values {
-					ts := int64(point[0].(float64))
-					if _, exists := got[ts]; exists {
-						t.Fatalf("multiple winners at %d: %s", ts, body)
-					}
-					got[ts] = series.Metric["rank"]
+				if err := json.Unmarshal(body, &response); err != nil {
+					t.Fatal(err)
 				}
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("%s %s winners: got=%v want=%v body=%s", base, op, got, want, body)
+				got := map[int64]string{}
+				for _, series := range response.Data.Result {
+					for _, point := range series.Values {
+						ts := int64(point[0].(float64))
+						if _, exists := got[ts]; exists {
+							t.Fatalf("multiple winners at %d: %s", ts, body)
+						}
+						got[ts] = series.Metric["rank"]
+					}
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("%s %s winners: got=%v want=%v body=%s", base, op, got, want, body)
+				}
 			}
 		}
 	}
