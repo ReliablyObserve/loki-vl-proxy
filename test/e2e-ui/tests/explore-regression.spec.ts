@@ -118,6 +118,9 @@ async function assertLogParity(
   query: string,
   label: string
 ): Promise<void> {
+  // Resolve the comparison window after warmup. Capturing it before the
+  // first-minute wait leaves both requests pinned to an empty startup window.
+  await ensureStackWarm(page);
   const { proxyUID, lokiUID } = await uids(page);
   const opts = {
     endSec: windowEnd(),

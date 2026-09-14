@@ -99,3 +99,25 @@ not comparable to older runs that mostly measured primary-cache hits.
 These protective limits are intentional behavior changes for unusually large
 workloads. Validate representative queries and watch rejection rates before
 rollout; do not interpret a rejected query as absence of logs or healthy alerts.
+
+Formatting queries now use the buffered evaluator even when response streaming
+is enabled, so errors are reported before partial success is written. Raw log
+queries retain streaming. Both legacy and categorized tuples are formatted;
+categorized metadata stays attached and its fields are available to templates.
+Backtick and escaped-quote literals are decoded correctly before translation.
+
+Range-query `topk`/`bottomk` now select winners independently at each timestamp,
+following [Prometheus range semantics](https://prometheus.io/blog/2021/02/18/introducing-the-%40-modifier/).
+A range can therefore return more than `k` distinct series as winners change;
+each series contains only its winning samples. Dashboards relying on the old
+whole-range cap will display additional legitimate series.
+
+## Remaining delete API gap
+
+The opt-in Loki delete handler currently targets `/select/logsql/delete`, which
+VictoriaLogs v1.52.0 rejects as an unsupported path. Its documented API is the
+asynchronous `/delete/run_task?filter=...` API. This hardening series does not
+enable that destructive API or claim delete compatibility. Keep deletion
+disabled until a dedicated adapter implements time and tenant constraints,
+task status/cancellation, authorization, and cache invalidation with live tests.
+See [VictoriaLogs deletion](https://docs.victoriametrics.com/victorialogs/#how-to-delete-logs).

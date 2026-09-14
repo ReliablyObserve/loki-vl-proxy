@@ -130,7 +130,7 @@ async function seedPatternsStream(page: Page) {
 
   // e2e-ui shards don't run ingest tests, so seed VictoriaLogs directly.
   await page.request.post(
-    "http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,service_name,level,cluster",
+    `${process.env.VL_URL || "http://127.0.0.1:19428"}/insert/jsonline?_stream_fields=app,service_name,level,cluster`,
     {
       data: lines,
       headers: {

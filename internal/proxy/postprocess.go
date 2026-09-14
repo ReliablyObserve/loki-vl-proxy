@@ -182,37 +182,70 @@ func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[strin
 			labels = map[string]string{}
 		}
 
-		values, ok := stream["values"].([][]string)
-		if !ok {
-			continue
-		}
-
-		for i, val := range values {
-			if len(val) < 2 {
-				continue
-			}
-
-			inputBytes := len(val[1])
-			for k, v := range labels {
-				inputBytes += len(k) + len(v)
-			}
-			if inputBytes > 1<<20 {
-				return fmt.Errorf("line_format input limit exceeded")
-			}
-			// Build template data from labels + line
+		formatLine := func(line string, metadata any) (string, error) {
 			data := make(map[string]string, safeAddCap(len(labels), 1))
 			for k, v := range labels {
 				data[k] = v
 			}
-			data["_line"] = val[1]
-
+			// Categorized tuples carry parsed fields outside the stream labels.
+			if fields, ok := metadata.(map[string]interface{}); ok {
+				for _, category := range []string{"structuredMetadata", "parsed"} {
+					if values, ok := fields[category].(map[string]string); ok {
+						for k, v := range values {
+							data[k] = v
+						}
+					}
+				}
+			}
+			inputBytes := len(line)
+			for k, v := range data {
+				inputBytes += len(k) + len(v)
+			}
+			if inputBytes > 1<<20 {
+				return "", fmt.Errorf("line_format input limit exceeded")
+			}
+			data["_line"] = line
 			buf := &templateOutput{remaining: min(maxFormattedLineBytes, maxFormattedResponseBytes-total)}
 			if err := tmpl.Execute(buf, data); err != nil {
-				return fmt.Errorf("line_format: %w", err)
+				return "", fmt.Errorf("line_format: %w", err)
 			}
 			total += buf.Len()
-			values[i][1] = buf.String()
+			return buf.String(), nil
 		}
+		switch values := stream["values"].(type) {
+		case [][]string:
+			for _, val := range values {
+				if len(val) < 2 {
+					continue
+				}
+				line, err := formatLine(val[1], nil)
+				if err != nil {
+					return err
+				}
+				val[1] = line
+			}
+		case []interface{}:
+			for _, value := range values {
+				val, ok := value.([]interface{})
+				if !ok || len(val) < 2 {
+					return fmt.Errorf("invalid line_format tuple")
+				}
+				original, ok := val[1].(string)
+				if !ok {
+					return fmt.Errorf("invalid line_format line")
+				}
+				var metadata any
+				if len(val) > 2 {
+					metadata = val[2]
+				}
+				line, err := formatLine(original, metadata)
+				if err != nil {
+					return err
+				}
+				val[1] = line
+			}
+		}
+
 	}
 	return nil
 }

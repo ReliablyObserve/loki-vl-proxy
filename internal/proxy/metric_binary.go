@@ -3895,10 +3895,9 @@ func metricKey(metric map[string]interface{}) string {
 	return strings.Join(parts, ",")
 }
 
-// applyTopKToMatrix filters a Loki matrix response to the top or bottom k series
-// by maximum absolute value across all time steps. descending=true keeps the highest
-// values (topk), descending=false keeps the lowest (bottomk). On parse error, returns
-// the original body unchanged.
+// applyTopKToMatrix ranks independently at each evaluation timestamp, as
+// Loki/PromQL range queries require. Winners can change, so the result may
+// contain more than k series, with only their winning samples retained.
 func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 	v, err := fj.ParseBytes(body)
 	if err != nil {
@@ -3908,42 +3907,76 @@ func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 	if len(result) <= k {
 		return body
 	}
-
+	data := v.Get("data")
+	if data == nil {
+		return body
+	}
 	type ranked struct {
-		idx      int
-		maxValue float64
+		point  *fj.Value
+		value  float64
+		series int
 	}
-	ranks := make([]ranked, len(result))
-	for i, s := range result {
-		var maxV float64
-		for _, val := range s.GetArray("values") {
-			arr := val.GetArray()
-			if len(arr) < 2 {
-				continue
+	steps := make(map[float64][]ranked)
+	for i, series := range result {
+		for _, point := range series.GetArray("values") {
+			pair := point.GetArray()
+			if len(pair) != 2 {
+				return body
 			}
-			vf := arr[1].GetStringBytes()
-			f := parseFloat64Bytes(vf)
-			if abs64(f) > abs64(maxV) {
-				maxV = f
+			ts, err := pair[0].Float64()
+			if err != nil {
+				return body
+			}
+			value, err := strconv.ParseFloat(string(pair[1].GetStringBytes()), 64)
+			if err != nil {
+				return body
+			}
+			steps[ts] = append(steps[ts], ranked{point, value, i})
+		}
+	}
+	selected := make(map[*fj.Value]bool)
+	for _, ranks := range steps {
+		sort.Slice(ranks, func(a, b int) bool {
+			av, bv := ranks[a].value, ranks[b].value
+			if math.IsNaN(av) {
+				return false
+			}
+			if math.IsNaN(bv) {
+				return true
+			}
+			if av == bv {
+				return ranks[a].series < ranks[b].series
+			}
+			if descending {
+				return av > bv
+			}
+			return av < bv
+		})
+		for i := 0; i < min(max(k, 0), len(ranks)); i++ {
+			selected[ranks[i].point] = true
+		}
+	}
+	var arena fj.Arena
+	filtered := arena.NewArray()
+	count := 0
+	for _, series := range result {
+		values := arena.NewArray()
+		n := 0
+		for _, point := range series.GetArray("values") {
+			if selected[point] {
+				values.SetArrayItem(n, point)
+				n++
 			}
 		}
-		ranks[i] = ranked{i, maxV}
-	}
-
-	sort.Slice(ranks, func(a, b int) bool {
-		if descending {
-			return ranks[a].maxValue > ranks[b].maxValue
+		if n == 0 {
+			continue
 		}
-		return ranks[a].maxValue < ranks[b].maxValue
-	})
-
-	kept := make([]int, k)
-	for i := range kept {
-		kept[i] = ranks[i].idx
+		series.Set("values", values)
+		filtered.SetArrayItem(count, series)
+		count++
 	}
-	sort.Ints(kept)
-
-	return rebuildMatrixOrVector(body, "matrix", result, kept)
+	data.Set("result", filtered)
+	return v.MarshalTo(nil)
 }
 
 // applyTopKToVector filters a Loki vector response to the top or bottom k samples.

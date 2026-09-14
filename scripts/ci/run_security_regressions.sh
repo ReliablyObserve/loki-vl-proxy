@@ -6,5 +6,5 @@ go test ./internal/proxy \
   -count=1
 
 go test -v -tags=e2e -timeout="${E2E_SECURITY_TIMEOUT:-150s}" -count=1 \
-  -run '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_QueryAnalytics_Endpoint|TestFeature_Tail_BrowserOriginRejectedByDefault|TestFeature_SecurityHeaders)$' \
+  -run '^(TestSetup_IngestLogs|TestHardeningLive_.*|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_QueryAnalytics_Endpoint|TestFeature_Tail_BrowserOriginRejectedByDefault|TestFeature_SecurityHeaders)$' \
   ./test/e2e-compat/

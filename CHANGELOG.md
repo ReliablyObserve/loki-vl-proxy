@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve backtick and escaped-quote line formatting through real response
+  tuples, including categorized metadata, and apply formatting limits before
+  streaming. Add live tenant/cache/Loki parity and visible Grafana regressions.
+- Evaluate range-query topk/bottomk at each timestamp so changing winners stay
+  visible, with signed-value ranking and losing samples removed.
+
 - Patch malformed ICNS/JXL/HEIF image parsing in the documentation build with
   integrity-checked bounds checks and isolated regression tests; constrain build
   time and token permissions. Registry npm audit metadata remains unchanged
