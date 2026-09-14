@@ -2089,15 +2089,12 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 }
 
 // =============================================================================
-// Coverage gap: proxyBareParserMetricViaStats (the rate|json tumbling-window fast path)
+// Unused JSON parser aggregation retains the native stats path
 // =============================================================================
 
-func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
-	// rate({...} | json | drop __error__,__error_details__ [5m]) with step==range
-	// (tumbling window) must use native VL stats_query_range. Loki groups these by
-	// stream labels only (not parsed fields), and VL native stats matches that behaviour.
-	// Explicit __error__ handling is required for the fast path; without it the slow
-	// path is taken so that parse failures are excluded from counts.
+func TestUnusedJSONParser_SummedRateTumblingUsesStats(t *testing.T) {
+	// sum without grouping or label predicates gives Loki NoLabels parser hints.
+	// JSON cannot affect the count, so preserve the native tumbling-window path.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -2123,9 +2120,9 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
 	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
-	// Query must include explicit __error__ handling to qualify for the fast path.
+	// Aggregation discards all labels, so Loki can skip this unused parser.
 	params := url.Values{}
-	params.Set("query", `rate({app="api-gateway"} | json | drop __error__, __error_details__ [5m])`)
+	params.Set("query", `sum(rate({app="api-gateway"} | json | drop __error__, __error_details__ [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "300")
@@ -2137,7 +2134,7 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if !statsCalled {
-		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (tumbling-window fast path)")
+		t.Fatal("expected unused parser aggregation to call stats_query_range")
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -2148,11 +2145,9 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	}
 }
 
-func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) {
-	// rate({...} | json [5m]) with step=60 is a sliding window (range != step).
-	// After the long-range memory fix, the sliding-window stats path routes these
-	// to stats_query_range (per-step counts with client-side sliding aggregation)
-	// instead of the 1M-limit raw log fetch. Avoids OOM on long time ranges.
+func TestUnusedJSONParser_SummedRateSlidingUsesStats(t *testing.T) {
+	// A label-free sum may elide JSON under Loki's parser hints. Keep its
+	// sliding-window aggregation on the bounded native stats path.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -2163,7 +2158,7 @@ func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) 
 		}
 		if r.URL.Path == "/select/logsql/query" {
 			// Slow-path 1M-limit fetch must NOT be called for sliding-window rate without post-parser filter.
-			if r.FormValue("limit") == "1000000" {
+			if r.FormValue("limit") == "1000000" || r.FormValue("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				t.Error("unexpected 1M-limit slow-path /select/logsql/query call for sliding-window rate (stats path should be used)")
 			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -2181,7 +2176,7 @@ func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) 
 	base := time.Unix(1700000000, 0)
 	// step=60 != range=[5m]=300 → sliding window → stats fast path (not 1M log fetch).
 	params := url.Values{}
-	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
+	params.Set("query", `sum(rate({app="api-gateway"} | json [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "60")

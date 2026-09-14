@@ -124,9 +124,9 @@ type ParserStage struct {
 func (s *ParserStage) String() string {
 	switch s.Type {
 	case ParserJSON:
-		return "| json"
+		return strings.TrimSpace("| json " + s.Param)
 	case ParserLogfmt:
-		return "| logfmt"
+		return strings.TrimSpace("| logfmt " + s.Param)
 	case ParserRegexp:
 		return fmt.Sprintf("| regexp `%s`", s.Param)
 	case ParserPattern:
@@ -416,15 +416,26 @@ func (vm *VectorMatching) String() string {
 type BinOpExpr struct {
 	Left, Right    Expr
 	Op             string
+	ReturnBool     bool
 	VectorMatching *VectorMatching
 }
 
 func (b *BinOpExpr) String() string {
-	s := b.Left.String() + " " + b.Op
+	left, right := b.Left.String(), b.Right.String()
+	if _, ok := b.Left.(*BinOpExpr); ok {
+		left = "(" + left + ")"
+	}
+	if _, ok := b.Right.(*BinOpExpr); ok {
+		right = "(" + right + ")"
+	}
+	s := left + " " + b.Op
+	if b.ReturnBool {
+		s += " bool"
+	}
 	if vm := b.VectorMatching.String(); vm != "" {
 		s += " " + vm
 	}
-	s += " " + b.Right.String()
+	s += " " + right
 	return s
 }
 

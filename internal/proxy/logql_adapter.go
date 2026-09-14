@@ -14,14 +14,17 @@ func binOpExprToVMInfo(expr *logqlpkg.BinOpExpr) *translator.VectorMatchInfo {
 	vm := &translator.VectorMatchInfo{}
 	switch expr.VectorMatching.Card {
 	case "on":
+		vm.MatchOn = true
 		vm.On = expr.VectorMatching.MatchLabels
 	case "ignoring":
 		vm.Ignoring = expr.VectorMatching.MatchLabels
 	}
 	switch expr.VectorMatching.GroupSide {
 	case "group_left":
+		vm.GroupSide = "group_left"
 		vm.GroupLeft = expr.VectorMatching.Include
 	case "group_right":
+		vm.GroupSide = "group_right"
 		vm.GroupRight = expr.VectorMatching.Include
 	}
 	return vm

@@ -90,7 +90,7 @@ test.describe("Drilldown Fields — all time ranges load without errors @drilldo
 // (regression guard for the "labels not loading" issue on wide ranges)
 // ─────────────────────────────────────────────────────────────────────────────
 
-test.describe("Drilldown Fields — labels sidebar is populated @drilldown-cache", () => {
+test.describe("Drilldown Fields — labels sidebar is populated @drilldown-cache @drilldown-core", () => {
   for (const { from, to, label } of TIME_RANGES) {
     test(`labels visible — ${label} range`, async ({ page }) => {
       await openFieldsView(page, PROXY_INTERACT_DS, TEST_SERVICE, from, to);
@@ -98,14 +98,12 @@ test.describe("Drilldown Fields — labels sidebar is populated @drilldown-cache
       const filterByLabels = drilldownLabelFilter(page);
       await expect(filterByLabels).toBeVisible({ timeout: 30_000 });
 
-      // Open the dropdown and verify at least one label option is available.
-      // An empty dropdown means the proxy returned zero labels for this range.
+      // Options load asynchronously after opening the dropdown. Require a
+      // visible result; the loading state does not establish an empty response.
       await filterByLabels.click();
-      await page.waitForTimeout(500);
-
       const options = page.getByRole("option");
-      const count = await options.count();
-      expect(count, `labels dropdown is empty for ${label} range`).toBeGreaterThan(0);
+      await expect(options.first(), `labels dropdown is empty for ${label} range`)
+        .toBeVisible({ timeout: 30_000 });
 
       await page.keyboard.press("Escape");
     });

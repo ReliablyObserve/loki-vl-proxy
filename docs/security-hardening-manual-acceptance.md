@@ -44,12 +44,11 @@ Do not mix its test ingestion endpoints with another running stack.
 
 ## Handoff for every review phase
 
-The focused PRs below are stacked review slices. [Integration PR #525](https://github.com/ReliablyObserve/loki-vl-proxy/pull/525)
-contains all slices plus the final compatibility/performance fixes and runs the
-full CI against `main`. If #525 is merged together, run every row against that
-merge. If slices are merged separately, rebuild after each approved merge and
-run its row plus the earlier rows. Tests introduced in a later slice require the
-integration checkout; do not report them as run on an earlier commit.
+The focused PRs #520–524 were closed as superseded by
+[integration PR #525](https://github.com/ReliablyObserve/loki-vl-proxy/pull/525),
+merged as `5b8cdbf`. Release metadata PR #527 materialized v1.67.0 at `ee0d526`.
+Run all five review rows against that release. The compatibility follow-up #526
+has separate regression coverage; do not report its tests as part of v1.67.0.
 
 | Phase / review | Change and compatibility impact | Manual check and expected result |
 | --- | --- | --- |
@@ -59,6 +58,7 @@ integration checkout; do not report them as run on an earlier commit.
 | [#523 Execution and storage](https://github.com/ReliablyObserve/loki-vl-proxy/pull/523) | Bound query/template work and backend concurrency; surface size/failure errors; reclaim expired disk entries. Large workloads may now be rejected. | Run representative long-range charts and formatted logs, then the limit regressions below. Normal queries succeed, excessive work returns an error, and subsequent small queries still work. Check errors in Grafana's query inspector. |
 | [#524 Documentation build](https://github.com/ReliablyObserve/loki-vl-proxy/pull/524) | Patch the vulnerable build-time image parser and constrain CI permissions/time. Registry audit metadata still flags the dependency. | Run the website commands below; malformed-image tests terminate and pass, then the website builds. Browse the generated migration and validation pages. |
 | [#525 Integration](https://github.com/ReliablyObserve/loki-vl-proxy/pull/525) | Preserve real log tuples and template fields; select topk/bottomk winners at each timestamp; avoid per-request scope hashing overhead. Changing winners can produce more than k series over a range. | Compare quoted/backtick formatting and changing-winner charts with Loki. Run the strict browser checks below and the full user-visible checklist. Check both chart edges and actual log rows. |
+| [#526 Populated-query compatibility (draft)](https://github.com/ReliablyObserve/loki-vl-proxy/pull/526) | Correct literal substring filters, IP validation, regexp capture filters, quantile grouping/windows and binary cardinality. Raw metric overflow now returns an error instead of partial values. Parser-error semantics remain a merge blocker. | In Explore compare `\|= "ip(bad)"` against direct Loki, inspect named regexp captures, compare grouped quantile values and both window boundaries, and check invalid many-to-one expressions show an error. Run the strict unique-fixture canaries; the separate parser-error canary is expected to expose unresolved failures. |
 
 Run these focused checks from the repository root on the integrated revision:
 
@@ -94,6 +94,15 @@ passes, failures and skips; manual steps with expected results; and outstanding
 limitations. Keep a failed check open with its evidence and reproduction until
 it is resolved. The review stack can be used before merge, but label its results
 as testing the proposed revision.
+
+The isolated #526 stack uses Grafana `http://127.0.0.1:14002`, proxy port `33100`,
+Loki `33101`, and VictoriaLogs `49428`. Its Compose project is `loki-parity-clean`;
+the existing #525 review stack at port `4002` is separate. For Go exhaustive
+parity, recreate only the isolated project's volumes and run without its UI
+generator. Unique-fixture tests may be repeated without shared-data duplication.
+See [the compatibility findings](real-window-compatibility-gaps.md) for the
+passing baseline and explicitly failing coverage. Do not interpret a passing
+browser chart or the old exhaustive status check as full LogQL parity.
 
 ## User-visible checklist
 

@@ -8,7 +8,7 @@ for (const datasource of [PROXY_DS, PROXY_INTERACT_DS, LOKI_DS]) {
   test(`exact windows and formatted rows stay visible: ${datasource} @explore-core`, async ({ page }) => {
     const service = `security-ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const stamp = Math.floor((Date.now() - 180_000) / 300_000) * 300_000 + 1_000;
-    const markers = ["first-window-marker", "second-window-marker"];
+    const markers = ["first-window-marker ip(bad)", "second-window-marker ip(bad)"];
     const labels = { service_name: service, level: "info" };
     const vl = process.env.VL_URL || "http://127.0.0.1:19428";
     const loki = process.env.LOKI_URL || "http://127.0.0.1:13101";
@@ -27,9 +27,10 @@ for (const datasource of [PROXY_DS, PROXY_INTERACT_DS, LOKI_DS]) {
     expect((await page.request.post(`${vl}/internal/force_flush`)).ok()).toBeTruthy();
     const uid = await resolveDatasourceUid(page, datasource);
     const guards = installGrafanaGuards(page);
-    for (const formatted of [false, true]) {
+    for (const mode of ["raw", "formatted", "literal"]) {
+      const formatted = mode === "formatted";
       for (const i of [0, 1, 0]) {
-        const query = `{service_name="${service}"}` + (formatted ? ' | line_format `{{printf "%s" .service_name}}`' : "");
+        const query = `{service_name="${service}"}` + (formatted ? ' | line_format `{{printf "%s" .service_name}}`' : mode === "literal" ? ' |= "ip(bad)"' : "");
         const target = new URL(buildExploreUrl(uid, query), "http://grafana.invalid");
         const panes = JSON.parse(target.searchParams.get("panes")!);
         panes.A.range = { from: new Date(stamp + i * 2_000).toISOString(), to: new Date(stamp + i * 2_000 + 1_000).toISOString() };

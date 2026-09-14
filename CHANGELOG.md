@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject malformed IP line-filter arguments and implicit many-to-one metric
+  matches consistently with Loki. Preserve empty grouping modifiers and check
+  cardinality at each evaluation, without conflating disjoint streams.
+- Escape literal substring filters before regex translation and preserve
+  query-created regexp capture names independently of stored-field mappings.
+- Preserve quantile grouping and use interpolated values over exact trailing
+  windows, including samples at the evaluation timestamp. Existing raw-sample
+  limits apply; parser-error compatibility remains blocked in draft coverage.
+- Reject raw metric scans beyond the configured row limit instead of computing
+  successful partial results; check cancellation during sample collection and
+  between metric evaluations. Oversized requests now fail explicitly.
+
 - Correct exhaustive compatibility timestamps to address real Loki data;
   expose previously hidden runtime and result-parity gaps for follow-up fixes.
 

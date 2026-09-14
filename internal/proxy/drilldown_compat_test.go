@@ -1727,7 +1727,7 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/select/logsql/query":
-			if r.Form.Get("limit") == "1000000" {
+			if r.Form.Get("limit") == "1000000" || r.Form.Get("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				manualQuery = r.Form.Get("query")
 			}
 			sampleQueries = append(sampleQueries, r.Form.Get("query"))
@@ -1801,7 +1801,7 @@ func TestDrilldown_SumCountOverTimeWithParserAndDropError_UsesNativeStats(t *tes
 		case "/select/logsql/query":
 			// Only flag as manual metric fetch when limit=1000000 (collectRangeMetricSamples).
 			// The preferWorkingParser probe also hits this path with a small limit.
-			if r.Form.Get("limit") == "1000000" {
+			if r.Form.Get("limit") == "1000000" || r.Form.Get("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				manualQueryCalled = true
 			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -2617,7 +2617,7 @@ func TestDrilldown_LogsTabCounter_SumCountOverTimeParserReturnsSingleSeries(t *t
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
-		if r.URL.Path == "/select/logsql/query" && r.Form.Get("limit") == "1000000" {
+		if r.URL.Path == "/select/logsql/query" && (r.Form.Get("limit") == "1000000" || r.Form.Get("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001")) {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			ts := time.Unix(1700000000, 0).Add(-time.Hour)
 			for _, s := range streams {

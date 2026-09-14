@@ -113,7 +113,7 @@ func TestOn_BinaryMatchesBySubset(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Left side has no "error" in the query; right side has level="error".
 		// Dispatch by query content — safe for concurrent left+right fetches.
-		if strings.Contains(r.URL.Query().Get("query"), "error") {
+		if strings.Contains(r.FormValue("query"), "error") {
 			// Right side: rate({app="a",level="error"}[5m])
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","level":"error"},"value":[1609459200,"10"]}
@@ -121,8 +121,7 @@ func TestOn_BinaryMatchesBySubset(t *testing.T) {
 		} else {
 			// Left side: rate({app="a"}[5m])
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
-				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]},
-				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"200"]}
+				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]}
 			]}}`))
 		}
 	}))
@@ -157,10 +156,9 @@ func TestOn_BinaryMatchesBySubset(t *testing.T) {
 		t.Fatalf("expected success, got %q (body: %s)", resp.Status, w.Body.String())
 	}
 
-	// With on(app), both left series (p1, p2) should match the single right series
-	// because they share app="a". Without on(app), exact key match would find no matches.
-	if len(resp.Data.Result) == 0 {
-		t.Error("on(app) should produce results by matching on app label subset")
+	// on(app) matches this one-to-one pair despite different extra labels.
+	if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Value) != 2 || resp.Data.Result[0].Value[1] != "10" {
+		t.Fatalf("expected one matched value 10, got %s", w.Body.String())
 	}
 }
 
@@ -169,7 +167,7 @@ func TestIgnoring_ExcludesLabelsFromMatch(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Dispatch by query content — safe for concurrent left+right fetches.
 		// Left has pod="p1", right has pod="p2"; VL queries differ by pod value.
-		if strings.Contains(r.URL.Query().Get("query"), "p2") {
+		if strings.Contains(r.FormValue("query"), "p2") {
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"10"]}
 			]}}`))
@@ -221,7 +219,7 @@ func TestGroupLeft_OneToMany(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Dispatch by query content — safe for concurrent left+right fetches.
 		// Left has env="pods" selector, right has env="team" selector.
-		if strings.Contains(r.URL.Query().Get("query"), "team") {
+		if strings.Contains(r.FormValue("query"), "team") {
 			// Right: one (single entry per app with team info)
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","team":"backend"},"value":[1609459200,"1"]}

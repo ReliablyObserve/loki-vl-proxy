@@ -2085,6 +2085,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, true) {
+		return
+	}
+
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
@@ -2315,6 +2319,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, false) {
+		return
 	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))

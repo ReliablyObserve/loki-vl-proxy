@@ -244,6 +244,10 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 func statusFromUpstreamErr(err error) int {
+	var matchingErr vectorMatchError
+	if errors.As(err, &matchingErr) {
+		return http.StatusInternalServerError
+	}
 	if err == nil {
 		return http.StatusBadGateway
 	}

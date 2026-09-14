@@ -2,6 +2,8 @@ package logql
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -216,11 +218,9 @@ func translateLineFilter(s *LineFilterStage) (string, error) {
 	quoted := logsql.QuotePattern(s.Value)
 	switch s.Op {
 	case LineFilterContains:
-		// |= "text" → ~"text" (substring/regexp match in VL)
-		return "~" + quoted, nil
+		return "~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
 	case LineFilterExcludes:
-		// != "text" → NOT ~"text"
-		return "NOT ~" + quoted, nil
+		return "NOT ~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
 	case LineFilterMatchRe:
 		// |~ "re" → ~"re"
 		return "~" + quoted, nil

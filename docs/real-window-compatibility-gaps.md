@@ -1,65 +1,63 @@
 ---
 sidebar_label: Real-window compatibility gaps
-description: Blocking findings exposed by correcting the exhaustive Loki test timestamps.
+description: Measured compatibility findings using isolated populated fixtures.
 ---
 
-# Real-window compatibility follow-up
+# Real-window compatibility findings
 
-Status: investigation and failing regression coverage; **not ready to merge or
-claim full production compatibility**. This follows the security hardening
-integration in PR #525. Its new seeded API tests and visible browser tests use
-correct timestamps. The older exhaustive helper did not.
+PR #526 remains a draft. Parser-error regressions are merge blockers. The security integration in PR #525 does not establish full LogQL parity.
 
-## Test defect and measured effect
+## Timestamp defect
 
-The exhaustive helper sent `UnixMilli()` integers to Loki's `start` and `end`.
-Loki interprets integer timestamps as nanoseconds, so those requests addressed
-1970 while the proxy's permissive timestamp conversion addressed current data.
-This made empty results and skipped runtime validation look like compatibility.
-The change in this draft uses RFC3339 timestamps for the actual ingested range.
-See the [Loki timestamp contract](https://grafana.com/docs/loki/latest/reference/loki-http-api/#timestamps).
+The exhaustive helper sent millisecond integers to Loki, which interprets integers as nanoseconds. Loki therefore queried 1970 while the proxy queried current data. RFC3339Nano timestamps now address the same populated window. A literal canary also requires both freshly ingested lines from both backends. See the [Loki timestamp contract](https://grafana.com/docs/loki/latest/reference/loki-http-api/#timestamps).
 
-Measured locally with Loki 3.7.7, VictoriaLogs 1.50.0 and proxy revision 5c33387:
+## Isolated baseline
 
-| Finding | Evidence | Required solution and regression |
-| --- | --- | --- |
-| Invalid IP patterns silently succeed | Loki returns 400 for invalid IPv4, text, CIDR prefix and IPv6 patterns; proxy returns 200. Four error-parity cases fail. | Validate supported single-address, CIDR and range forms, including IPv6, at the appropriate execution boundary. Cover valid/invalid forms, empty/populated windows and line/label filters. Do not replace errors with an empty regex match. |
-| Parser errors disappear inside metrics | `rate({env="production"} \| json \| __error__!="" [5m])` returns a Loki `JSONParserErr` pipeline error but proxy 200. The registry contains this case twice. | Preserve parser-error state through filters/drop stages and fail metric evaluation when surviving samples contain errors. A blanket syntax rejection would also reject valid empty/error-filtered results. Cover raw malformed input, `__error__=""`, nonempty filters, `drop __error__`, range/instant queries and alerting behavior. |
-| Grouped quantile loses data | A populated `quantile_over_time(... unwrap duration_ms [5m]) by (level)` request returns three Loki series and no proxy series. | Preserve original grouping and parsed numeric fields through fallback dispatch. Add deterministic quantile fixtures with exact per-group values and timestamps, plus cache-hit repeats. |
-| Regexp capture then filter loses data | `... \| regexp "(?P<http_method>[A-Z]+)" \| http_method="GET"` returns four Loki streams and no proxy streams. | Preserve the capture alias and pipeline order in translation; compare actual selected lines and categorized fields, then verify a Grafana filter click/reload. |
-| Wide aggregate fallback can exceed backend sort memory | `sum(rate({env="production"}[5m]))` succeeds in Loki and returns proxy 502 in the corrected suite. A wide byte-ranking reproduction identified VL's `sort ... limit 1000000` exceeding its 163 MB query-memory allowance; a three-minute query succeeds. | Push compatible aggregation into VL instead of sorting raw logs. The byte-ranking case is fixed in integration revision 64ee392 using byte sums plus presence counts. Investigate the remaining aggregate-all/without fallbacks under the same fixed memory budget and representative data volume. Keep errors visible and verify values, grouping and tenant constraints. |
-| Some reference queries time out | Several unwrapped range functions and `without` aggregations exceeded the local reference client's 20-second deadline; a whole-second RFC3339 probe also timed out. Loki stayed running without OOM/restarts. | Reproduce with a fresh minimal fixture and isolated reference backend before attributing these failures to proxy semantics. Distinguish upstream runtime/timeout failures from valid contract responses; do not make the proxy mimic reference infrastructure failures. |
+A fresh Compose project with Loki 3.7.7, VictoriaLogs 1.50.0 and proxy 76063b3, without the UI generator, produced **283/284 query checks** and **64/70 error checks**. The query failure was implicit many-to-one matching. The six error failures were four invalid IP cases and a duplicated parser-error case.
 
-The observed error-parity result was 64/70; six failures represent four IP cases
-and the duplicated parser-error case. This is not an exhaustive count of product
-defects. The broader corrected query run completed at 255/284 with 29 failed
-checks, including reference timeouts and error-code comparisons as well as the
-populated-result gaps above. These are observations on revision 5c33387; the
-byte-ranking resource fix is a subsequent integration follow-up.
-Previous all-green exhaustive results must not be used as proof of execution parity.
+The earlier 255/284 query result came from a long-running UI generator stack with repeated ingestion. Its reference timeouts, sort-memory failures and empty-result findings are not isolated reproductions. The regexp capture/filter query returns populated data on the clean stack.
 
-## Reproduce and acceptance
+The exhaustive checks compare status, result type and non-emptiness. Strict quantile canaries demonstrated wrong grouping and values even when those checks passed. They are insufficient proof of labels, samples or timestamps.
 
-Start the review override from `docs/security-hardening-manual-acceptance.md`,
-then use the stack's actual endpoints:
+## Corrections under validation
+
+- IP line filters reject invalid single addresses, prefixes, ranges and unsupported operators. Substring filters preserve literal regex metacharacters, including text resembling `ip(...)`.
+- Grouped quantiles retain `by (labels)` and `by ()`, interpolate over trailing windows and include samples at the evaluation timestamp. The exact adapter uses bounded raw samples; it does not establish native quantile performance.
+- Binary matching checks cardinality independently at each timestamp. Empty grouping modifiers retain their meaning, disjoint streams do not conflict, and set operations retain their many-to-many exemption.
+
+These corrections reject previously accepted invalid queries and change incorrect numeric results. They do not imply unchanged behavior for all clients. IP validation is eager: Loki can bypass invalid pipeline construction for historical empty ranges, while the proxy rejects the invalid expression.
+
+## Remaining blockers
+
+### Parser error state
+
+VictoriaLogs JSON unpacking does not produce Loki error labels. Filtering those labels after pushdown can lose malformed lines or include lines that Loki rejects. Stage order and aggregation hints affect the result:
+
+| Pipeline inside a metric | Measured Loki behavior |
+| --- | --- |
+| JSON with surviving malformed input | Pipeline error in ordinary grouped/raw evaluation |
+| JSON then empty-error filter | Valid parsed samples only |
+| JSON then nonempty-error filter | Pipeline error |
+| JSON then drop error | Valid and malformed samples accepted |
+| JSON, nonempty-error filter, then drop error | Malformed samples accepted |
+| Drop error before nonempty-error filter | Empty result |
+| Drop error details only | Error state survives |
+
+Aggregation can suppress parsing or retain error labels. A blanket syntax rejection or malformed-JSON preflight does not implement this contract. The new strict unique-fixture canary has **24/24 Loki checks passing** and **5/24 proxy checks passing, 19 failing** on the current execution semantics. These are failing coverage, not waived tests.
+
+Sources: [Loki parser](https://github.com/grafana/loki/blob/v3.7.7/pkg/logql/log/parser.go), [parser hints](https://github.com/grafana/loki/blob/v3.7.7/pkg/logql/log/parser_hints.go), [evaluator](https://github.com/grafana/loki/blob/v3.7.7/pkg/logql/evaluator.go), [VictoriaLogs JSON unpacking](https://github.com/VictoriaMetrics/VictoriaLogs/blob/v1.50.0/lib/logstorage/pipe_unpack_json.go).
+
+### Other limits
+
+Valid label `ip()` syntax and exact matching of all IPv6/non-octet CIDR/range forms need further compatibility work; argument validation does not fix the existing approximate translation. Cardinality validation alone does not establish correct output labels or sample shapes for every valid grouped matrix join. Wide raw-sample fallback resource limits remain relevant.
+
+## Reproduce
+
+Use a fresh isolated Compose project for each parity shard. Do not enable the UI generator or repeatedly ingest shared fixtures into the same volumes. Wait for Loki and the proxy to report ready.
 
 ```sh
-LOKI_URL=http://127.0.0.1:13101 PROXY_URL=http://127.0.0.1:13100 \
-VL_URL=http://127.0.0.1:19428 \
+LOKI_URL=http://127.0.0.1:33101 PROXY_URL=http://127.0.0.1:33100 VL_URL=http://127.0.0.1:49428 \
 go test -v -tags=e2e ./test/e2e-compat -run '^TestLogQL_Exhaustive_' -count=1
 ```
 
-For the isolated review project, replace ports with 23101, 23100 and 29428.
-The suite seeds rich data through `ensureDataIngested`; retain those fixtures
-and record exact request windows and full error bodies when minimizing failures.
-
-Before merging this follow-up, resolve or explicitly classify every failure
-using real populated fixtures and upstream evidence. Add a timestamp canary
-that requires a newly ingested marker from both backends, so a future unit
-regression cannot pass by querying an empty epoch. Make assertions compare
-actual lines/values and identities instead of only status and result shape.
-
-For each fix, document compatibility changes, run its focused real-API check,
-and then repeat Explore/Drilldown query-inspector and visible-row checks after
-rebuilding the actual approved merge. Keep this follow-up separate from the
-already measured security gates; do not hide failures or label them as passes.
+Unique-fixture `TestHardeningLive_` canaries are selected by the existing security regression CI script. Record failures separately from passes; HTTP 200 or a nonempty chart is insufficient proof of parity.

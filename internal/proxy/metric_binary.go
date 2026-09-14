@@ -3325,8 +3325,12 @@ func (p *Proxy) proxyBinaryMetricQueryVM(w http.ResponseWriter, r *http.Request,
 }
 
 func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string, vm *translator.VectorMatchInfo) {
+	if expr := binaryExprForRequest(r); expr != nil {
+		p.proxyBinaryLogQL(w, r, expr, resultType)
+		return
+	}
 	// If no vector matching, fall back to default behavior
-	if vm == nil || (len(vm.On) == 0 && len(vm.Ignoring) == 0 && len(vm.GroupLeft) == 0 && len(vm.GroupRight) == 0) {
+	if vm == nil || (!vm.MatchOn && vm.GroupSide == "" && len(vm.On) == 0 && len(vm.Ignoring) == 0 && len(vm.GroupLeft) == 0 && len(vm.GroupRight) == 0) {
 		p.proxyBinaryMetric(w, r, op, leftQL, rightQL, vlEndpoint, resultType)
 		return
 	}
@@ -3379,79 +3383,30 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 
 	var leftBody, rightBody []byte
 	var leftErr, rightErr error
-
-	// Run both non-scalar VL fetches concurrently.
-	if !leftIsScalar && !rightIsScalar {
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-			if e != nil {
-				leftErr = e
-				return
-			}
-			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}()
-		go func() {
-			defer wg.Done()
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-			if e != nil {
-				rightErr = e
-				return
-			}
-			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}()
-		wg.Wait()
-		if leftErr != nil {
-			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
-			return
-		}
-		if rightErr != nil {
-			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
-			return
-		}
-	} else {
-		if leftIsScalar {
-			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-		} else {
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
-				return
-			}
-			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}
-
-		if rightIsScalar {
-			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-		} else {
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
-				return
-			}
-			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}
+	// Nested marker operands share the request's bounded work budget.
+	leftBody, _, leftErr = p.resolveBinOpBody(r, leftQL, vlEndpoint, resultType, buildParams)
+	if leftErr == nil {
+		rightBody, _, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
+	}
+	if leftErr != nil {
+		p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
+		return
+	}
+	if rightErr != nil {
+		p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+		return
 	}
 
-	// Apply vector matching: on(), ignoring(), group_left(), group_right()
 	var result []byte
-	if len(vm.On) > 0 {
-		result = applyOnMatching(leftBody, rightBody, op, vm.On, resultType)
-	} else if len(vm.Ignoring) > 0 {
-		if err := validateVectorMatchCardinality(leftBody, rightBody, nil, vm.Ignoring, len(vm.GroupLeft) > 0, len(vm.GroupRight) > 0); err != nil {
+	if leftIsScalar || rightIsScalar {
+		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	} else {
+		var err error
+		result, err = matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
+		if err != nil {
 			p.writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		result = applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType)
-	} else {
-		// group_left/group_right without on/ignoring — use default matching
-		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	}
 
 	if origStartNs > 0 {
@@ -3606,12 +3561,23 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType 
 		return nil, false, e
 	}
 	defer resp.Body.Close()
-	body, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if err != nil {
+		return nil, false, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, false, fmt.Errorf("binary operand backend returned status %d: %s", resp.StatusCode, p.redactBackendError(body))
+	}
 	return body, false, nil
 }
 
 // evalBinaryMarker recursively evaluates a __binary__: expression marker.
 func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType string, buildParams func(string) url.Values) ([]byte, error) {
+	var err error
+	r, err = nextBinaryEvaluation(r)
+	if err != nil {
+		return nil, err
+	}
 	op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(marker)
 	if !ok {
 		return nil, fmt.Errorf("invalid binary expression marker")
@@ -3626,11 +3592,8 @@ func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType
 		return nil, err
 	}
 
-	if vm != nil && len(vm.On) > 0 {
-		return applyOnMatching(leftBody, rightBody, op, vm.On, resultType), nil
-	}
-	if vm != nil && len(vm.Ignoring) > 0 {
-		return applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType), nil
+	if !leftScalar && !rightScalar {
+		return matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
 	}
 	return combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftScalar, rightScalar, left, right), nil
 }

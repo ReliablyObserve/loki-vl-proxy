@@ -101,18 +101,6 @@ func (p *parser) expect(typ TokType) (Token, error) {
 	return p.advance(), nil
 }
 
-// isBinOpTok returns true if the current token can start a binary operator
-// between two metric expressions.
-func isBinOpTok(t TokType) bool {
-	switch t {
-	case TokPlus, TokMinus, TokStar, TokSlash, TokPercent, TokCaret,
-		TokLt, TokGt, TokLtEq, TokGtEq, TokEqEq, TokBangEq,
-		TokAnd, TokOr, TokUnless:
-		return true
-	}
-	return false
-}
-
 // parseExpr is the top-level entry point, including infix binary operations.
 func (p *parser) parseExpr() (Expr, error) {
 	lhs, err := p.parsePrimary()
@@ -214,46 +202,75 @@ func (p *parser) parsePrimary() (Expr, error) {
 // maybeInfix checks for a binary operator after a primary and builds a BinOpExpr
 // if found. Handles optional vector matching modifiers (on/ignoring, group_left/right).
 func (p *parser) maybeInfix(lhs Expr) (Expr, error) {
-	if !isBinOpTok(p.cur.Typ) {
-		return lhs, nil
-	}
-	op := p.advance().Val
-	if op == "!=" {
-		op = "!="
-	}
+	return p.parseBinaryRHS(lhs, 1)
+}
 
-	// Optional bool modifier (e.g. `> bool 0`): consume and ignore for routing purposes.
-	if p.cur.Typ == TokIdent && p.cur.Val == "bool" {
-		p.advance()
+// Loki syntax.y declares these levels from lowest to highest. Only exponentiation
+// is right associative; parentheses are handled by parsePrimary.
+func binaryPrecedence(token TokType) int {
+	switch token {
+	case TokOr:
+		return 1
+	case TokAnd, TokUnless:
+		return 2
+	case TokEqEq, TokBangEq, TokLt, TokLtEq, TokGt, TokGtEq:
+		return 3
+	case TokPlus, TokMinus:
+		return 4
+	case TokStar, TokSlash, TokPercent:
+		return 5
+	case TokCaret:
+		return 6
+	default:
+		return 0
 	}
+}
 
-	// Optional vector matching: on(labels) / ignoring(labels)
-	var vm *VectorMatching
-	if p.cur.Typ == TokOn || p.cur.Typ == TokIgnoring {
-		card := p.advance().Val
-		labels, err := p.parseLabelList()
-		if err != nil {
-			return nil, err
+func (p *parser) parseBinaryRHS(lhs Expr, minPrecedence int) (Expr, error) {
+	for {
+		precedence := binaryPrecedence(p.cur.Typ)
+		if precedence < minPrecedence {
+			return lhs, nil
 		}
-		vm = &VectorMatching{Card: card, MatchLabels: labels}
-		// Optional group_left / group_right
-		if p.cur.Typ == TokGroupLeft || p.cur.Typ == TokGroupRight {
-			side := p.advance().Val
-			include, err := p.parseLabelList()
+		op := p.advance().Val
+		returnBool := false
+		if p.cur.Typ == TokIdent && p.cur.Val == "bool" {
+			returnBool = true
+			p.advance()
+		}
+
+		var vm *VectorMatching
+		if p.cur.Typ == TokOn || p.cur.Typ == TokIgnoring {
+			card := p.advance().Val
+			labels, err := p.parseLabelList()
 			if err != nil {
 				return nil, err
 			}
-			vm.GroupSide = side
-			vm.Include = include
+			vm = &VectorMatching{Card: card, MatchLabels: labels}
+			if p.cur.Typ == TokGroupLeft || p.cur.Typ == TokGroupRight {
+				side := p.advance().Val
+				include, err := p.parseLabelList()
+				if err != nil {
+					return nil, err
+				}
+				vm.GroupSide, vm.Include = side, include
+			}
 		}
-	}
 
-	rhs, err := p.parsePrimary()
-	if err != nil {
-		return nil, err
+		rhs, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		nextPrecedence := precedence + 1
+		if op == "^" {
+			nextPrecedence = precedence
+		}
+		rhs, err = p.parseBinaryRHS(rhs, nextPrecedence)
+		if err != nil {
+			return nil, err
+		}
+		lhs = &BinOpExpr{Left: lhs, Right: rhs, Op: op, ReturnBool: returnBool, VectorMatching: vm}
 	}
-	lhs = &BinOpExpr{Left: lhs, Right: rhs, Op: op, VectorMatching: vm}
-	return p.maybeInfix(lhs)
 }
 
 // parseLabelList parses a parenthesised comma-separated label name list: (label1, label2).
@@ -365,55 +382,10 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 // parsePipelineStage parses one pipeline stage. Returns nil, nil when no more
 // pipeline stages are found (i.e. EOF or unexpected token).
 func (p *parser) parsePipelineStage() (Stage, error) {
+	if isLineFilterOperator(p.cur.Typ) {
+		return p.parseLineFilterStage()
+	}
 	switch p.cur.Typ {
-	case TokPipeEq:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterContains, Value: val}, nil
-
-	case TokBangEq:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterExcludes, Value: val}, nil
-
-	case TokPipeTilde:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterMatchRe, Value: val}, nil
-
-	case TokBangTilde:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterExcludeRe, Value: val}, nil
-
-	case TokPipeGt:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterContainsPat, Value: val}, nil
-
-	case TokBangGt:
-		p.advance()
-		val, err := p.expectStringOrRaw()
-		if err != nil {
-			return nil, err
-		}
-		return &LineFilterStage{Op: LineFilterExcludePat, Value: val}, nil
-
 	case TokPipe:
 		p.advance()
 		return p.parsePipeBody()
@@ -432,14 +404,14 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 	switch kw {
 	case "json":
+		start := p.sc.pos
 		p.advance()
-		p.consumeExplicitFieldList()
-		return &ParserStage{Type: ParserJSON}, nil
+		return &ParserStage{Type: ParserJSON, Param: p.consumeExplicitFieldList(start)}, nil
 
 	case "logfmt":
+		start := p.sc.pos
 		p.advance()
-		p.consumeExplicitFieldList()
-		return &ParserStage{Type: ParserLogfmt}, nil
+		return &ParserStage{Type: ParserLogfmt, Param: p.consumeExplicitFieldList(start)}, nil
 
 	case "regexp":
 		p.advance()
@@ -591,6 +563,9 @@ func (p *parser) expectStringOrRaw() (string, error) {
 			if _, err := p.expect(TokRParen); err != nil {
 				return "", err
 			}
+			if name == "ip" && !validIPPattern(val) {
+				return "", fmt.Errorf("ip: invalid pattern: %q", val)
+			}
 			return name + "(" + val + ")", nil
 		}
 		return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got IDENT (%q)", name)
@@ -655,23 +630,30 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 
 // consumeExplicitFieldList consumes an optional comma-separated field list
 // after | json or | logfmt. Each item is a bare name or name="alias" form.
-// e.g. `| json method, http_code="status"` — consumed and ignored; VL handles them.
-func (p *parser) consumeExplicitFieldList() {
+// Preserve exact extraction expressions, including raw strings and escapes,
+// because the AST is also used to execute nested metric operands.
+func (p *parser) consumeExplicitFieldList(start int) string {
+	end := start
 	for p.cur.Typ == TokIdent {
+		end = p.sc.pos
 		p.advance() // field name
 		// Optional ="alias" assignment
 		if p.cur.Typ == TokEq {
+			end = p.sc.pos
 			p.advance()
-			if p.cur.Typ == TokString || p.cur.Typ == TokIdent {
+			if p.cur.Typ == TokString || p.cur.Typ == TokRawString || p.cur.Typ == TokIdent {
+				end = p.sc.pos
 				p.advance()
 			}
 		}
 		if p.cur.Typ == TokComma {
+			end = p.sc.pos
 			p.advance()
 		} else {
 			break
 		}
 	}
+	return strings.TrimSpace(p.input[start:end])
 }
 
 // consumeBalancedParens consumes tokens including nested parentheses until the

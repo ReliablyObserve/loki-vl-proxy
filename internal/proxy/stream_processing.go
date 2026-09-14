@@ -193,6 +193,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		metadataMapPool.Put(pfBuf2)
 	}()
 
+	captureFields := regexpCaptureFields(originalQuery)
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -219,6 +220,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
+		parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 		if len(dropConditions) > 0 {
 			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 		}
@@ -252,6 +254,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			}
 		}
 
+		translatedLabels = mergeRegexpCaptureLabels(translatedLabels, parsedFields, captureFields)
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
 			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels),
@@ -538,11 +541,12 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	streamLabelCache := make(map[string]map[string]string, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+	captureFields := regexpCaptureFields(originalQuery)
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels. Parsed fields are merged into the
 	// stream label set (matching Loki behaviour) so Grafana's unwrap field picker can see them.
-	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed
+	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0
 	dropConditions, keepConditions, bareDropFields2, bareKeepFields2 := extractDropKeepFromAST(originalQuery)
 
 	var (
@@ -633,6 +637,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
@@ -682,6 +687,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			}
 			streamKey = canonicalLabelsKey(extLabels)
 			streamLabels = extLabels
+		}
+		if len(captureFields) > 0 {
+			streamLabels = mergeRegexpCaptureLabels(streamLabels, parsedFields, captureFields)
+			streamKey = canonicalLabelsKey(streamLabels)
 		}
 		se, ok := streamMap[streamKey]
 		if !ok {
