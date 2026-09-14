@@ -209,7 +209,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		// appears once). Without this it rendered an empty chart ("nothing").
 		// The level value-filter disqualifies it from the detectDrilldownSingleField
 		// fast paths (those require pure existence filters), so it lands here.
-		if spec, ok := parseStatsCompatSpec(logsqlQuery); ok && spec.Func == "count" && len(spec.GroupBy) == 1 {
+		if spec, ok := parseSingleFieldCountSpec(logsqlQuery); ok {
 			field := spec.GroupBy[0]
 			phase1Query := spec.BaseQuery + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
 			if out := p.drilldownTwoPhase(r, phase1Query, spec.BaseQuery, field, r.FormValue("step")); len(out) > 0 {
@@ -2148,8 +2148,8 @@ func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Re
 	// falls through to the exact direct path (bounded to
 	// maxStatsQuerySeries top-N-by-count, like Loki's max_query_series, with the
 	// two-phase fallback only on a 16MB overflow).
-	spec, ok := parseStatsCompatSpec(logsqlQuery)
-	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
+	if !ok {
 		return false
 	}
 	if !isGrafanaDrilldownRequest(r) && (!isGrafanaSourcedRequest(r) || !isLikelyHighCardinalityField(spec.GroupBy[0])) {
@@ -2181,8 +2181,8 @@ func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Re
 }
 
 func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) []byte {
-	spec, ok := parseStatsCompatSpec(logsqlQuery)
-	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
+	if !ok {
 		return nil
 	}
 	start, end := r.FormValue("start"), r.FormValue("end")
