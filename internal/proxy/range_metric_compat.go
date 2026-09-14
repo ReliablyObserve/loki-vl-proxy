@@ -880,20 +880,7 @@ func (p *Proxy) collectRangeMetricHits(
 		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
-			if entry.PresentBuckets == nil {
-				entry.PresentBuckets = make(map[int64]struct{})
-			}
-			for _, pair := range res.GetArray("values") {
-				arr := pair.GetArray()
-				if len(arr) < 2 {
-					continue
-				}
-				ts, tsErr := arr[0].Int64()
-				count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
-				if tsErr == nil && countErr == nil && count > 0 {
-					entry.PresentBuckets[ts*int64(time.Second)] = struct{}{}
-				}
-			}
+			addPresentBuckets(&entry, res.GetArray("values"))
 			seriesMap[seriesKey] = entry
 			continue
 		}
@@ -930,6 +917,23 @@ func (p *Proxy) collectRangeMetricHits(
 		seriesMap = capSeriesByTotalCount(seriesMap, p.resolvedMaxStatsQuerySeries())
 	}
 	return seriesMap, nil
+}
+
+func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value) {
+	if entry.PresentBuckets == nil {
+		entry.PresentBuckets = make(map[int64]struct{})
+	}
+	for _, pair := range values {
+		arr := pair.GetArray()
+		if len(arr) < 2 {
+			continue
+		}
+		ts, tsErr := arr[0].Int64()
+		count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+		if tsErr == nil && countErr == nil && count > 0 {
+			entry.PresentBuckets[ts*int64(time.Second)] = struct{}{}
+		}
+	}
 }
 
 // metricSeriesCacheEntry holds the pre-computed labels and key for a metric series.
