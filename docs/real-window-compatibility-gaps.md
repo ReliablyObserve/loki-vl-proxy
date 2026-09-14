@@ -27,12 +27,15 @@ Measured locally with Loki 3.7.7, VictoriaLogs 1.50.0 and proxy revision 5c33387
 | Parser errors disappear inside metrics | `rate({env="production"} \| json \| __error__!="" [5m])` returns a Loki `JSONParserErr` pipeline error but proxy 200. The registry contains this case twice. | Preserve parser-error state through filters/drop stages and fail metric evaluation when surviving samples contain errors. A blanket syntax rejection would also reject valid empty/error-filtered results. Cover raw malformed input, `__error__=""`, nonempty filters, `drop __error__`, range/instant queries and alerting behavior. |
 | Grouped quantile loses data | A populated `quantile_over_time(... unwrap duration_ms [5m]) by (level)` request returns three Loki series and no proxy series. | Preserve original grouping and parsed numeric fields through fallback dispatch. Add deterministic quantile fixtures with exact per-group values and timestamps, plus cache-hit repeats. |
 | Regexp capture then filter loses data | `... \| regexp "(?P<http_method>[A-Z]+)" \| http_method="GET"` returns four Loki streams and no proxy streams. | Preserve the capture alias and pipeline order in translation; compare actual selected lines and categorized fields, then verify a Grafana filter click/reload. |
-| Aggregate rate fallback can return a backend error | `sum(rate({env="production"}[5m]))` succeeds in Loki and returns proxy 502 from a rejected VL query in the corrected suite. | Reduce the generated query, fix aggregate-all fallback construction, and verify one scalar series with both parser-free and parsed inputs. Keep tenant constraints and backend error propagation intact. |
+| Wide aggregate fallback can exceed backend sort memory | `sum(rate({env="production"}[5m]))` succeeds in Loki and returns proxy 502 in the corrected suite. A wide byte-ranking reproduction identified VL's `sort ... limit 1000000` exceeding its 163 MB query-memory allowance; a three-minute query succeeds. | Push compatible aggregation into VL instead of sorting raw logs. The byte-ranking case is fixed in integration revision 64ee392 using byte sums plus presence counts. Investigate the remaining aggregate-all/without fallbacks under the same fixed memory budget and representative data volume. Keep errors visible and verify values, grouping and tenant constraints. |
 | Some reference queries time out | Several unwrapped range functions and `without` aggregations exceeded the local reference client's 20-second deadline; a whole-second RFC3339 probe also timed out. Loki stayed running without OOM/restarts. | Reproduce with a fresh minimal fixture and isolated reference backend before attributing these failures to proxy semantics. Distinguish upstream runtime/timeout failures from valid contract responses; do not make the proxy mimic reference infrastructure failures. |
 
 The observed error-parity result was 64/70; six failures represent four IP cases
 and the duplicated parser-error case. This is not an exhaustive count of product
-defects. The broader corrected run also exposed the populated-result gaps above.
+defects. The broader corrected query run completed at 255/284 with 29 failed
+checks, including reference timeouts and error-code comparisons as well as the
+populated-result gaps above. These are observations on revision 5c33387; the
+byte-ranking resource fix is a subsequent integration follow-up.
 Previous all-green exhaustive results must not be used as proof of execution parity.
 
 ## Reproduce and acceptance
