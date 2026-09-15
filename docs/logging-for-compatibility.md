@@ -35,15 +35,20 @@ If `_msg` does not contain the string "timeout", the filter finds nothing — ev
 
 ### What VL uses as `_msg` — by delivery path
 
-| Delivery path | VL `_msg` value |
-|---|---|
-| Loki push API — plain text | Full raw line |
-| Loki push API — JSON, **no** `_msg` field | Full JSON string (same bytes Loki stores) ✓ |
-| Loki push API — JSON, **with** `_msg` field | Only the `_msg` value — other fields invisible to text filters ✗ |
-| OTel OTLP (`/insert/opentelemetry/v1/logs`) | `body` string attribute |
-| VL JSON insert (`/insert/jsonline`) | Explicit `_msg` field value |
+Verified against VictoriaLogs v1.50.0 (`app/vlinsert/loki`, `app/vlinsert/insertutil`, `lib/logstorage`).
 
-The single source of divergence: explicitly setting `_msg` in JSON logs to a short summary while searchable content (error messages, upstream names, status codes) lives in other fields.
+| Delivery path | VL `_msg` value | Other fields |
+|---|---|---|
+| Loki push API — plain text or logfmt | Full raw line ✓ | Stream labels and structured metadata |
+| Loki push API — JSON line **without** `_msg`, default settings | The `-defaultMsgValue` placeholder `missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field` ✗ | Every JSON key, flattened |
+| Loki push API — JSON line with `disable_message_parsing=1` | Full raw line (same bytes Loki stores) ✓ | Stream labels and structured metadata only |
+| Loki push API — JSON line **with** a `_msg` key | That key's value | Every other JSON key |
+| Loki push API — JSON line with `_msg_field=<key>` | That key's value | Every other JSON key |
+| Loki push API — empty line | The `-defaultMsgValue` placeholder | Stream labels and structured metadata |
+| OTel OTLP (`/insert/opentelemetry/v1/logs`) | `body` string | Attributes; a map `body` without a message field stores the placeholder |
+| VL JSON insert (`/insert/jsonline`) | Explicit `_msg` field value, or the placeholder when absent | Every other key |
+
+Loki returns the pushed line byte for byte, so only the rows marked ✓ can give identical lines and identical line filters.
 
 ---
 
@@ -51,7 +56,7 @@ The single source of divergence: explicitly setting `_msg` in JSON logs to a sho
 
 ### Auto-extraction of JSON fields
 
-When VL receives a JSON log line via the Loki push API, it automatically parses the JSON and stores each key as a searchable VL field — in addition to keeping the full JSON string as `_msg`. This gives you both text filter parity with Loki AND structured field access:
+When VL receives a JSON log line via the Loki push API, it parses the JSON (`addMsgField` in `app/vlinsert/loki/loki_json.go`, also used for protobuf pushes) and stores each key as a separate field. Nested objects are flattened into dotted keys, numbers, booleans and arrays are stored as their JSON text, and nulls and empty strings are dropped. The line itself is **not** kept: unless the JSON has a `_msg` key or `_msg_field` names one, `_msg` holds the `-defaultMsgValue` placeholder.
 
 ```json
 {"method":"POST","path":"/api/v1/payments","status":502,"error":"gateway timeout","trace_id":"err002"}
@@ -59,7 +64,7 @@ When VL receives a JSON log line via the Loki push API, it automatically parses 
 
 VL stores:
 ```
-_msg     = '{"method":"POST","path":"/api/v1/payments","status":502,"error":"gateway timeout","trace_id":"err002"}'
+_msg     = 'missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field'
 method   = POST
 path     = /api/v1/payments
 status   = 502
@@ -68,13 +73,34 @@ trace_id = err002
 ```
 
 Result:
-- `|= "timeout"` searches `_msg` → full JSON → **finds "gateway timeout"** ✓
-- `| json | error="gateway timeout"` uses the extracted `error` field ✓
-- Both Loki and VL return this line for both query forms ✓
+- `|= "timeout"` searches `_msg` (the placeholder) → **no match** ✗ (and `|= "field"` matches every such row)
+- `| json | error="gateway timeout"` uses the extracted fields ✓
 
-This auto-parsing is enabled by default. It can be disabled with `-loki.disableMessageParsing` on the VL binary (rarely needed).
+### Keep the original line in `_msg`
 
-### What breaks parity: explicit `_msg`
+Pick one of these on the VL ingestion path so `_msg` holds the line Loki stores:
+
+| Setting | Scope | Effect |
+|---|---|---|
+| `disable_message_parsing=1` query arg, or `VL-Loki-Disable-Message-Parsing: 1` header | Per request to `/insert/loki/api/v1/push` | `_msg` = raw line; JSON keys are not extracted (the proxy's `\| json` still unpacks them at query time) |
+| `-loki.disableMessageParsing` | VL flag, all Loki pushes | Same as above |
+| Add a `_msg` key holding the original line before sending to VL (as `test/e2e-compat/log-generator.py` does) | Per line | `_msg` = raw line and every JSON key extracted as a field |
+
+`_msg_field=<key>` (or `VL-Msg-Field`) and `-loki.messageFieldsPrefix` do not keep the line: `_msg_field` moves one JSON key's value into `_msg`, so the line becomes that value.
+
+### How the proxy returns lines
+
+The proxy returns `_msg` as the log line. When `_msg` is empty or exactly VictoriaLogs' placeholder (the default text above, or the value of `-backend-default-msg-value` when VL runs with a custom `-defaultMsgValue`), no line was stored, so the proxy rebuilds one as a flat JSON object of the row's non-stream fields with keys sorted, for example `{"error":"gateway timeout","method":"POST","path":"/api/v1/payments","status":"502","trace_id":"err002"}`. A row with no such fields (a pushed empty line) returns `""`. This is the closest line the stored data allows, with known limits:
+
+- values are strings (`"status":"502"`, not `502`) and nesting is lost (`http.route`, not `{"http":{"route":...}}`);
+- null and empty values, and keys that collide with stream labels, are missing;
+- structured metadata and OTLP attributes are stored like body keys and appear in the rebuilt line;
+- line filters (`|=`, `|~`, `!=`, `!~`) run in VictoriaLogs on `_msg`, so they still match the placeholder text, not the rebuilt line; `-derived-fields` regexes run on the returned (rebuilt) line;
+- fields the query's own pipeline writes are left out so the pipeline does not change the line: `regexp` and `pattern` captures, explicit `| json name=...` / `| logfmt name` extractions and `label_format` targets. A body key with one of those names is therefore missing from the line for that query;
+- `| keep` and `| drop` run in VictoriaLogs before the line is rebuilt, so dropped (or not kept) body keys are missing from the rebuilt line, although Loki's line keeps them;
+- a `level` body key becomes a `level` stream label (one stream per level value), and with `categorize-labels` the row's body keys are also returned as structured metadata; for the same push Loki returns one stream without `level`, and with `categorize-labels` only `detected_level` in structured metadata.
+
+### Explicit `_msg` with a short summary
 
 ```json
 {"_msg":"POST /api/v1/payments 502 30000ms","method":"POST","path":"/api/v1/payments","status":502,"error":"gateway timeout"}
@@ -84,17 +110,17 @@ VL stores `_msg` = `"POST /api/v1/payments 502 30000ms"` — the explicit value 
 
 - `|= "timeout"` searches `_msg` = `"POST /api/v1/payments 502 30000ms"` → **no match** ✗
 - Loki searches the full JSON raw line → **match** ✓
-- Result: 3 lines VL returns that Loki excludes (or vice versa)
+- The proxy returns `POST /api/v1/payments 502 30000ms` as the line; Loki returns the JSON
 
 ---
 
 ## 3. JSON Logs via Loki Push API
 
-### Rule: Never set `_msg` in JSON log entries
+### Rule: VL's `_msg` must hold the full JSON line
 
-Keep `_msg` out of the payload. VL uses the full JSON string and both systems agree.
+Send JSON lines to VL with `disable_message_parsing=1`, or add a `_msg` key whose value is the whole original line. Never send a default-settings JSON push without `_msg` (VL keeps only the placeholder) and never set `_msg` to a short summary.
 
-**Correct format:**
+**Correct line format:**
 ```json
 {"method":"GET","path":"/api/v1/users","status":200,"duration_ms":42,"trace_id":"abc123def456","user_id":"usr_42","level":"info"}
 ```
@@ -104,7 +130,7 @@ Keep `_msg` out of the payload. VL uses the full JSON string and both systems ag
 {"method":"POST","path":"/api/v1/payments","status":502,"duration_ms":30000,"error":"gateway timeout","upstream":"payment-service","trace_id":"err002","level":"error"}
 ```
 
-Both `|= "timeout"` and `|= "gateway"` search the full JSON — both systems agree.
+With `_msg` holding that line, both `|= "timeout"` and `|= "gateway"` search the full JSON — both systems agree.
 
 **Do not do:**
 ```json
@@ -753,7 +779,7 @@ After configuring your pipeline, use these queries in Grafana to verify parity. 
 # logfmt: only works correctly if level is a stream label
 {app="payment-service"} | logfmt | level="error"
 
-# JSON: works if _msg is full JSON
+# JSON: works when _msg holds the full JSON line
 {app="api-gateway"} | json | status >= 500
 
 # Chained
@@ -780,7 +806,7 @@ rate({app="api-gateway"} |= "error" [1m])
 
 | Format | Critical rule | Why |
 |---|---|---|
-| JSON via Loki push | No explicit `_msg` field | VL uses full JSON → same as Loki raw line |
+| JSON via Loki push | `disable_message_parsing=1`, or `_msg` = the whole line | Default parsing keeps only a placeholder in `_msg` |
 | JSON with errors | Include error text in JSON body | `_msg` = what VL searches; errors in separate fields are invisible to text filters |
 | logfmt | One stream per `level` value | Loki checks stream label; VL checks parsed field — only match when they agree |
 | OTel body | Put searchable text in body string | body → `_msg`; attributes are structured fields, not searched by text filters |

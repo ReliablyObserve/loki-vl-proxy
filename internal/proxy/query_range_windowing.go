@@ -79,13 +79,14 @@ type queryRangeWindowCacheEntry struct {
 // VictoriaLogs rows into Loki stream entries. It is derived once per request
 // and shared by every window fetch, background warm and window cache key.
 type logQueryShape struct {
-	skipLogLineReconstruction bool
-	classifyAsParsed          bool
-	captureFields             map[string]bool
-	dropConditions            []translator.DropCondition
-	keepConditions            []translator.DropCondition
-	bareDropFields            []string
-	bareKeepFields            []string
+	classifyAsParsed bool
+	captureFields    map[string]bool
+	// lineFields are the fields the pipeline writes, left out of rebuilt lines.
+	lineFields     map[string]bool
+	dropConditions []translator.DropCondition
+	keepConditions []translator.DropCondition
+	bareDropFields []string
+	bareKeepFields []string
 	// fingerprint identifies the LogQL pipeline in window cache keys. Cached
 	// fragments hold resolved stream labels, and some stages that change them
 	// (conditional | drop / | keep) emit no LogsQL.
@@ -97,10 +98,10 @@ func newLogQueryShape(query string) logQueryShape {
 	if err != nil {
 		// Each helper keeps its own fallback for queries the parser rejects.
 		shape := logQueryShape{
-			skipLogLineReconstruction: hasTextExtractionParser(query),
-			classifyAsParsed:          hasLabelParserStage(query),
-			captureFields:             regexpCaptureFields(query),
-			fingerprint:               logQueryShapeFingerprint(query),
+			classifyAsParsed: hasLabelParserStage(query),
+			captureFields:    regexpCaptureFields(query),
+			lineFields:       logQueryLineFields(query),
+			fingerprint:      logQueryShapeFingerprint(query),
 		}
 		shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = extractDropKeepFromAST(query)
 		return shape
@@ -110,10 +111,10 @@ func newLogQueryShape(query string) logQueryShape {
 		stages = append(stages, stage.String())
 	}
 	shape := logQueryShape{
-		skipLogLineReconstruction: pipelineHasParserStage(lq.Pipeline),
-		classifyAsParsed:          pipelineHasParserStageOf(lq.Pipeline, true, true),
-		captureFields:             pipelineRegexpCaptureFields(lq.Pipeline),
-		fingerprint:               logQueryShapeFingerprint(strings.Join(stages, "\n")),
+		classifyAsParsed: pipelineHasParserStageOf(lq.Pipeline, true, true),
+		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
+		lineFields:       pipelineLineFields(lq.Pipeline),
+		fingerprint:      logQueryShapeFingerprint(strings.Join(stages, "\n")),
 	}
 	shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = dropKeepFromPipeline(lq.Pipeline)
 	return shape
@@ -799,6 +800,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 	parts := []string{
 		"query_range_window",
 		r.Header.Get("X-Scope-OrgID"),
+		logLineCacheKeyVersion,
 		logsqlQuery,
 		r.FormValue("direction"),
 		queryLimit,
@@ -847,7 +849,6 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		metadataMapPool.Put(pfBuf)
 	}()
 
-	skipLogLineReconstruction := shape.skipLogLineReconstruction
 	classifyAsParsed := shape.classifyAsParsed
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := shape.captureFields
@@ -897,26 +898,21 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg := string(fjVal.GetStringBytes("_msg"))
 		desc := p.logQueryStreamDescriptorBytes(
 			fjVal.GetStringBytes("_stream"),
 			fjVal.GetStringBytes("level"),
 			streamLabelCache, streamDescriptorCache,
 		)
+		msg := storedLogLineFromFJ(fjVal, desc.streamLabels, shape.lineFields, p.defaultMsgValue())
 
-		needsObject := needsClassification || !skipLogLineReconstruction
 		var fjObj *fj.Object
-		if needsObject {
+		if needsClassification {
 			obj, fjErr := fjVal.Object()
 			if fjErr != nil {
 				vlFJParserPool.Put(fjParser)
 				continue
 			}
 			fjObj = obj
-		}
-
-		if !skipLogLineReconstruction {
-			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
 		}
 
 		var structuredMetadata, parsedFields map[string]string

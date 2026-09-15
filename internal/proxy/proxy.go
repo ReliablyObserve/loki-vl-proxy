@@ -172,6 +172,10 @@ type Config struct {
 	BackendVersionStrict bool
 	DerivedFields        []DerivedField // derived fields for trace/link extraction
 	StreamResponse       bool           // stream responses via chunked transfer (default: false)
+	// BackendDefaultMsgValue is the VictoriaLogs -defaultMsgValue when it is not
+	// the built-in "missing _msg field; ..." text. Rows whose _msg is empty or
+	// this placeholder have their log line rebuilt from the row's fields.
+	BackendDefaultMsgValue string
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
@@ -473,6 +477,7 @@ type Proxy struct {
 	derivedFields                         []DerivedField
 	streamResponse                        bool
 	emitStructuredMetadata                bool
+	backendDefaultMsgValue                string
 	patternsEnabled                       bool
 	patternsAutodetectFromQueries         bool
 	patternsCustom                        []string
@@ -1101,6 +1106,7 @@ func New(cfg Config) (*Proxy, error) {
 		derivedFields:                         cfg.DerivedFields,
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
+		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		patternsEnabled:                       patternsEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCustom:                        patternsCustom,
@@ -2294,7 +2300,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 
 	var key strings.Builder
 	key.Grow(len(logqlQuery) + 256)
-	key.WriteString("query_range:v3:")
+	key.WriteString("query_range:v3:" + logLineCacheKeyVersion + ":")
 	writePart := func(value string) {
 		var digits [20]byte
 		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))

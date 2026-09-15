@@ -53,6 +53,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there is no upper bound. Rows are streamed, so raising the cap costs
   VictoriaLogs scan work and transfer rather than proxy memory. It is a safety
   cap: the logs volume shapes above no longer read raw rows.
+- **Log lines are returned as VictoriaLogs stores them, matching Loki; the
+  proxy no longer wraps them in a synthesized `{"_msg": ...}` JSON object.**
+  Loki returns the pushed line byte for byte. Since v1.25.0 the proxy rebuilt
+  the line whenever a VictoriaLogs row carried any field outside `_stream`: it
+  returned `{"_msg":"<line>","field":"value",...}` with the line escaped
+  inside, values turned into strings and keys in random order. That hit every
+  JSON line VictoriaLogs had unpacked into fields (for example the UI log
+  generator's `{"service": {"name": ...}, ...}` lines) and every line pushed
+  with structured metadata, on single-request, windowed and streamed
+  `query_range` for every label style, metadata field mode and tuple
+  encoding. Lines now equal VictoriaLogs `_msg` on those paths and on tail.
+  Rows that VictoriaLogs stored without a line are the exception: a Loki
+  push (JSON or protobuf) of a JSON line without `_msg`, the usual Promtail
+  and Alloy route with VictoriaLogs' default message parsing, an
+  `/insert/jsonline` row without `_msg`, or an OTLP map body keep only the
+  `-defaultMsgValue` placeholder (`missing _msg field; see ...`) in `_msg`.
+  For rows whose `_msg` is empty or exactly that placeholder, the proxy now
+  returns a flat JSON object of the row's non-stream fields with sorted keys
+  (for example `{"method":"GET","msg":"hello json","status":"200"}`), which is
+  the closest line the stored data allows, and `""` when there are no such
+  fields (a pushed empty line). Fields the query's own pipeline writes in
+  VictoriaLogs (`regexp` and `pattern` captures, explicit `json`/`logfmt`
+  extractions, `label_format` targets) are left out, so the pipeline does not
+  change the line. Before, `query_range` returned the placeholder inside the
+  `{"_msg": ...}` wrapper and tail returned the bare placeholder. Known limits
+  of rebuilt lines: values are strings, nesting is flattened into dotted keys,
+  nulls, empty values and keys that collide with stream labels are missing,
+  structured metadata and OTLP attributes cannot be told apart from body
+  keys, `| keep` and `| drop` remove body keys from the line, and line filters
+  still match the stored placeholder. Unchanged by this fix and documented:
+  on such rows a `level` body key becomes a stream label, and with
+  `categorize-labels` the body keys are also returned as structured metadata,
+  where Loki returns one stream with only `detected_level`. The
+  new `-backend-default-msg-value` flag names a custom VictoriaLogs
+  `-defaultMsgValue`; `docs/logging-for-compatibility.md` now describes what
+  VictoriaLogs stores per ingestion route and the `disable_message_parsing`
+  setting that keeps the original line. Non-stream fields keep reaching
+  clients as structured metadata and parsed fields with `categorize-labels`,
+  and through `detected_fields`, as before. Behaviour changes: clients that
+  parsed the synthesized wrapper no longer find fields in the line that Loki
+  does not have there, and `-derived-fields` regexes now run on the returned
+  line only, so a regex that matched a non-stream field inside the old
+  wrapper (for example `"trace_id":"(\w+)"` against a `trace_id` pushed as
+  structured metadata) no longer matches. Cache keys of `query_range`
+  responses and windows are versioned (`line-v3`), so disk (L2) and peer (L3)
+  entries written by older binaries are not served; pattern snapshots mined
+  from wrapped or placeholder lines are not versioned and age out on their
+  own.
 
 ## [1.78.0] - 2026-09-15
 

@@ -277,6 +277,7 @@ extraArgs:
   # backend-version-check-timeout: "5s"         # startup backend version check timeout
   # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
+  # backend-default-msg-value: ""               # VictoriaLogs -defaultMsgValue when customized; rows whose _msg is empty or that placeholder get a line rebuilt from their fields
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"
   # otel-service-namespace: ""

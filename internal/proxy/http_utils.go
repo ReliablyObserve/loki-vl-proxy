@@ -27,11 +27,10 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
-	fj "github.com/valyala/fastjson"
 )
 
-// jsonBuilderPool recycles strings.Builder values used by reconstructLogLine to
-// avoid per-entry heap allocations when building the flat JSON log body.
+// jsonBuilderPool recycles strings.Builder values used to build JSON bodies
+// without per-call heap allocations.
 var jsonBuilderPool = sync.Pool{New: func() interface{} { return new(strings.Builder) }}
 
 // gzipReaderPool reuses gzip decompression readers across VL responses to avoid
@@ -743,145 +742,6 @@ var trustedProxyForwardHeaders = []string{
 // that should never be exposed in Loki-compatible responses.
 func isVLInternalField(name string) bool {
 	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id"
-}
-
-// reconstructLogLine returns a Loki-compatible log line for a VL entry.
-//
-// streamLabels is the pre-parsed set of stream label keys for this entry (from
-// the caller's logQueryStreamDescriptor cache). Passing them in avoids
-// re-parsing the _stream value and avoids allocating a fresh map per call.
-//
-// When VL auto-parses a JSON log at ingestion time it stores all JSON fields as
-// top-level VL fields while keeping only the _msg value as the log-line string.
-// Loki, by contrast, stores the original raw JSON bytes and returns them as-is.
-// This causes |= text-filter and | json parser mismatches: a user who pushes
-// {"method":"GET","status":401} expects |= "method=GET" to match, but the proxy
-// would return only the _msg string.
-//
-// Detection: if any top-level VL field is neither a VL internal (_time/_msg/…)
-// nor a stream label (from _stream), it was extracted from the original JSON log
-// body at ingestion time → the original log was JSON-formatted.
-//
-// When reconstruction applies, a flat JSON object is returned with _msg and the
-// extra non-stream fields. Stream label fields (app, namespace, pod, …) are
-// excluded because they were part of the Loki stream metadata, not the log line
-// body — matching Loki's native format. Values are always strings because VL
-// does not preserve original JSON types (numbers, booleans become strings).
-//
-// originalQuery is the raw Loki LogQL query string. Reconstruction is skipped
-// when the query contains text-extraction parsers other than | json: the
-// extracted fields in the VL response would come from logfmt/regexp/pattern
-// parsing at query time rather than from JSON ingestion, so wrapping the
-// original text line in JSON would be incorrect.
-func reconstructLogLine(msg string, entry map[string]interface{}, streamLabels map[string]string, originalQuery string) string {
-	return reconstructLogLineWithFlag(msg, entry, streamLabels, hasTextExtractionParser(originalQuery))
-}
-
-// reconstructLogLineWithFlag is the hot-path variant of reconstructLogLine for
-// use in tight per-entry loops where the hasTextExtractionParser result is
-// constant for the entire response and can be precomputed once by the caller.
-//
-// Uses appendJSONStringToBuilder for zero-allocation JSON string escaping and
-// the startLen trick (mirroring reconstructLogLineWithFlagFJ) to avoid a
-// separate hasExtra scan pass over the map.
-func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, streamLabels map[string]string, skipReconstruction bool) string {
-	if skipReconstruction {
-		return msg
-	}
-	// Key-only pre-scan: avoids pool allocation for the common case where all
-	// fields are stream labels or VL internals. Value work happens in the
-	// write loop below, with startLen as a safety net for empty/invalid values.
-	hasExtra := false
-	for key := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
-			continue
-		}
-		if _, ok := streamLabels[key]; !ok {
-			hasExtra = true
-			break
-		}
-	}
-	if !hasExtra {
-		return msg
-	}
-	b := jsonBuilderPool.Get().(*strings.Builder)
-	b.Reset()
-	// Pre-grow to msg length + overhead so growSlice is not called on typical entries.
-	// Pool reuse means this is free once the builder reaches steady-state capacity.
-	if need := len(msg) + 64; b.Cap() < need {
-		b.Grow(need)
-	}
-	b.WriteString(`{"_msg":`)
-	appendJSONStringToBuilder(b, msg)
-	startLen := b.Len()
-	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
-			continue
-		}
-		if _, ok := streamLabels[key]; ok {
-			continue
-		}
-		sv, ok := stringifyEntryValue(value)
-		if !ok || strings.TrimSpace(sv) == "" {
-			continue
-		}
-		b.WriteByte(',')
-		appendJSONStringToBuilder(b, key)
-		b.WriteByte(':')
-		appendJSONStringToBuilder(b, sv)
-	}
-	if b.Len() == startLen {
-		jsonBuilderPool.Put(b)
-		return msg
-	}
-	b.WriteByte('}')
-	result := b.String()
-	jsonBuilderPool.Put(b)
-	return result
-}
-
-// reconstructLogLineWithFlagFJ is the fastjson variant of reconstructLogLineWithFlag.
-// obj must be the parsed fastjson Object for the current VL NDJSON entry.
-// It avoids map[string]interface{} allocations by visiting fields directly via Object.Visit.
-func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[string]string, skipReconstruction bool) string {
-	if skipReconstruction {
-		return msg
-	}
-	b := jsonBuilderPool.Get().(*strings.Builder)
-	b.Reset()
-	// Pre-grow to msg length + overhead so growSlice is not called on typical entries.
-	// Pool reuse means this is free once the builder reaches steady-state capacity.
-	if need := len(msg) + 64; b.Cap() < need {
-		b.Grow(need)
-	}
-	b.WriteString(`{"_msg":`)
-	appendJSONStringToBuilder(b, msg)
-	startLen := b.Len()
-	obj.Visit(func(k []byte, v *fj.Value) {
-		key := string(k)
-		if isVLInternalField(key) || key == "_stream_id" {
-			return
-		}
-		if _, isStreamLabel := streamLabels[key]; isStreamLabel {
-			return
-		}
-		sv, ok := stringifyFJValue(v)
-		if !ok || strings.TrimSpace(sv) == "" {
-			return
-		}
-		b.WriteByte(',')
-		appendJSONStringToBuilder(b, key)
-		b.WriteByte(':')
-		appendJSONStringToBuilder(b, sv)
-	})
-	if b.Len() == startLen {
-		jsonBuilderPool.Put(b)
-		return msg
-	}
-	b.WriteByte('}')
-	result := b.String()
-	jsonBuilderPool.Put(b)
-	return result
 }
 
 // appendJSONStringToBuilder writes s as a JSON-encoded string into a strings.Builder.

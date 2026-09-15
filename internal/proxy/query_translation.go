@@ -462,10 +462,9 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 }
 
 var (
-	jsonParserStageRE    = regexp.MustCompile(`\|\s*json(?:\s+[^|]+)?`)
-	logfmtParserStageRE  = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
-	regexpParserStageRE  = regexp.MustCompile(`\|\s*regexp\b`)
-	patternParserStageRE = regexp.MustCompile(`\|\s*pattern\b`)
+	jsonParserStageRE   = regexp.MustCompile(`\|\s*json(?:\s+[^|]+)?`)
+	logfmtParserStageRE = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
+	regexpParserStageRE = regexp.MustCompile(`\|\s*regexp\b`)
 
 	// logqlOffsetRE matches the "offset <duration>" clause that appears after a
 	// range window bracket, e.g. "[5m] offset 1h". Capture group 1 is the
@@ -477,35 +476,6 @@ var (
 	// false positives from regex character classes in filter expressions (e.g. [a-z]).
 	rangeVectorRE = regexp.MustCompile(`\[\d[\d.]*[smhdwy]\w*\]`)
 )
-
-// hasTextExtractionParser returns true when the LogQL query contains any
-// parser stage that makes log-line reconstruction unnecessary.  When true,
-// the original _msg value is returned verbatim (matching Loki behaviour);
-// when false, reconstructLogLineWithFlagFJ wraps _msg + extracted fields
-// into a new JSON object, which diverges from Loki for | json queries.
-//
-// | json is included here: Loki returns the original JSON string unchanged;
-// wrapping it in a new JSON envelope is incorrect and adds per-entry CPU cost.
-func hasTextExtractionParser(query string) bool {
-	lq, err := logqlpkg.ParseLogQuery(query)
-	if err != nil {
-		// Fall back to regex for queries the parser rejects (e.g. metric wrappers).
-		return logfmtParserStageRE.MatchString(query) ||
-			regexpParserStageRE.MatchString(query) ||
-			patternParserStageRE.MatchString(query) ||
-			jsonParserStageRE.MatchString(query)
-	}
-	return pipelineHasParserStage(lq.Pipeline)
-}
-
-func pipelineHasParserStage(pipeline []logqlpkg.Stage) bool {
-	for _, stage := range pipeline {
-		if _, ok := stage.(*logqlpkg.ParserStage); ok {
-			return true
-		}
-	}
-	return false
-}
 
 func hasParserStage(query, parser string) bool {
 	if parser == "logfmt" {
