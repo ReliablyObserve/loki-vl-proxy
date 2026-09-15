@@ -2,7 +2,7 @@
   "stack": {
     "loki": {
       "image_repo": "grafana/loki",
-      "pinned_version": "3.7.1",
+      "pinned_version": "3.7.7",
       "support_window": {
         "policy": "current_minor_plus_previous_minor",
         "description": "Support the current Loki minor family and one minor family behind. Keep all patch releases in the supported families, and slide the window forward when a new minor becomes current.",
@@ -21,14 +21,26 @@
         "3.6.8",
         "3.6.9",
         "3.6.10",
+        "3.6.11",
+        "3.6.12",
+        "3.6.13",
+        "3.6.14",
+        "3.6.15",
+        "3.6.16",
         "3.7.0",
-        "3.7.1"
+        "3.7.1",
+        "3.7.2",
+        "3.7.3",
+        "3.7.4",
+        "3.7.5",
+        "3.7.6",
+        "3.7.7"
       ],
       "role": "reference implementation"
     },
     "victorialogs": {
       "image_repo": "victoriametrics/victoria-logs",
-      "pinned_version": "v1.50.0",
+      "pinned_version": "v1.52.0",
       "support_window": {
         "policy": "v1_3x_to_v1_5x_transition",
         "description": "Support VictoriaLogs releases across v1.3x.x through v1.5x.x during migration windows. The current family is v1.5x.x, but we intentionally retain older bands to avoid backend upgrade lockstep.",
@@ -61,6 +73,7 @@
         "v1.49.0",
         "v1.50.0",
         "v1.51.0",
+        "v1.51.1",
         "v1.52.0"
       ],
     "capability_profiles": [
@@ -98,7 +111,7 @@
     },
     "grafana": {
       "image_repo": "grafana/grafana",
-      "pinned_version": "13.0.1",
+      "pinned_version": "13.2.1",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
       "support_window": {
         "policy": "latest_full_plus_current_and_previous_smoke",
@@ -109,18 +122,18 @@
       },
       "runtime_profiles": [
         {
-          "version": "13.0.1",
+          "version": "13.2.1",
           "profile": "full",
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "13.0.1",
+          "version": "13.2.1",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "12.4.2",
+          "version": "12.4.10",
           "profile": "previous_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
@@ -163,7 +176,9 @@
         "previous_family": "12.x"
       },
       "matrix_versions": [
+        "13.2.1",
         "13.0.1",
+        "12.4.10",
         "12.4.2",
         "12.4.1"
       ],
@@ -200,15 +215,27 @@
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "2.0.4",
-      "pinned_commit": "94eff00f3e4c2c83e817d96f8d78ab41e196fab7",
+      "pinned_version": "2.5.2",
+      "pinned_commit": "7587eede6a3b0b26feb74281997d1f780cfd58c2",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
-        "current_family": "2.0.x",
+        "current_family": "2.x",
         "previous_family": "1.0.x"
       },
       "matrix_versions": [
+        "2.5.2",
+        "2.5.1",
+        "2.5.0",
+        "2.4.0",
+        "2.3.0",
+        "2.2.1",
+        "2.2.0",
+        "2.1.5",
+        "2.1.3",
+        "2.1.2",
+        "2.1.1",
+        "2.1.0",
         "2.0.4",
         "2.0.3",
         "2.0.2",
@@ -228,7 +255,8 @@
         "Service detail logs use a mixed parser selector: json + logfmt + drop __error__ stages",
         "detected_fields is post-processed by the app datasource wrapper to drop detected_level, level, and level_extracted",
         "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list",
-        "2.0.4 known issue: patterns tab does not re-enable after switching from a datasource where pattern_ingester_enabled=false; workaround is to use the patterns-autodetect proxy variant as the Grafana default datasource"
+        "2.0.4 through 2.5.2 known issue (same ServiceScene.subscribeToLokiConfig code): patterns tab does not re-enable after switching from a datasource where pattern_ingester_enabled=false; workaround is to use the patterns-autodetect proxy variant as the Grafana default datasource",
+        "2.2.0 moved the mixed json + logfmt + drop __error__ parser expression from LOG_STREAM_SELECTOR_EXPR into MIXED_FORMAT_EXPR"
       ],
       "capability_profiles": [
         {
@@ -331,6 +359,27 @@
             "field values breakdowns",
             "additional label values and service-detail panels",
             "patterns tab initialization (2.0.4: must use patterns-autodetect as default datasource)"
+          ]
+        },
+        {
+          "versions": [
+            "2.1.0",
+            "2.1.1",
+            "2.1.2",
+            "2.1.3",
+            "2.1.5",
+            "2.2.0",
+            "2.2.1",
+            "2.3.0",
+            "2.4.0",
+            "2.5.0",
+            "2.5.1",
+            "2.5.2"
+          ],
+          "focus": [
+            "mixed parser expression via MIXED_FORMAT_EXPR",
+            "landing and service-page label/field filter inputs located by placeholder (e2e-ui drilldownLabelFilter / drilldownFieldFilter)",
+            "patterns tab initialization (same behaviour as 2.0.4)"
           ]
         }
       ]

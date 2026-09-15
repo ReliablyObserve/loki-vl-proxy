@@ -26,9 +26,10 @@ VictoriaLogs is intentionally broader than the Loki support window. We support `
 
 | VictoriaLogs version | Coverage path | Version-specific focus |
 |---|---|---|
-| `v1.52.0` | Scheduled and manual matrix | Scratch-based image (no shell): compose health probes must exec the binary |
-| `v1.51.0` | Scheduled and manual matrix | `json_array_concat` pipe |
-| `v1.50.0` | PR and main CI pinned runtime | Current pinned backend |
+| `v1.52.0` | PR and main CI pinned runtime | Current pinned backend. Distroless image (no shell): compose health probes must exec the binary. `json_array_concat` pipe. Bare filter pipes starting with a non-word token or `not` are accepted again. Parse errors echo the query before the reason |
+| `v1.51.1` | Scheduled and manual matrix | Cluster upgrade bridge: `vlstorage` v1.51.1 accepts `vlselect` v1.38.0 through v1.51.0; same LogsQL surface as v1.51.0 |
+| `v1.51.0` | Scheduled and manual matrix | `coalesce` pipe; bare filter pipes must carry the `filter` prefix unless they start with `field_name:` |
+| `v1.50.0` | Scheduled and manual matrix | Previous pinned backend |
 | `v1.49.0` | Scheduled and manual matrix | Structured metadata shaping, volume endpoints |
 | `v1.48.0` | Scheduled and manual matrix | Structured metadata shaping, volume endpoints |
 | `v1.47.0` | Scheduled and manual matrix | Structured metadata shaping, volume endpoints |
@@ -77,16 +78,18 @@ Current code gates:
 
 As new LogSQL backend features land, this table and the capability derivation in proxy code should be updated together, with explicit tests per profile.
 
-## Feature Capability Matrix (v1.30.0 To v1.50.0)
+## Feature Capability Matrix (v1.30.0 To v1.52.0)
 
-The table below tracks changelog-relevant LogSQL and metadata behavior between `v1.30.0` and `v1.50.0`, and how the proxy should treat each band.
+The table below tracks changelog-relevant LogSQL and metadata behavior between `v1.30.0` and `v1.52.0`, and how the proxy should treat each band.
 
 | Version band | Backend capability signals | Limitations / risks to account for | Proxy handling policy |
 |---|---|---|---|
 | `v1.30.x` to `v1.33.x` | baseline stable `field_*`, `stream_field_*`, `hits`, and core query endpoints | older query-path edge cases; use conservative behavior for expensive pattern extraction | keep stream metadata fast-path enabled; keep conservative (non-dense) pattern windowing |
 | `v1.34.x` to `v1.48.x` | improved cluster query behavior and partial-response handling in VictoriaLogs changelog line | still treat dense pattern extraction as opt-in to avoid long-range overload in mixed backends | same runtime profile as `vl-v1.30-plus`; prefer conservative pattern sampling |
 | `v1.49.x` | adds `filter=substring` support for `field_names` / `field_values` and stream metadata browse endpoints | older versions do not support this parameter reliably | gate substring server-side filtering by backend capability; keep fallback filtering in proxy for older versions |
-| `v1.50.x+` | parser/query fixes and latest metadata/query behavior; current pinned target | none specific beyond normal backend saturation limits | enable `vl-v1.50-plus` profile, including dense patterns windowing and newest metadata behavior |
+| `v1.50.x` | parser/query fixes and latest metadata/query behavior | none specific beyond normal backend saturation limits | enable `vl-v1.50-plus` profile, including dense patterns windowing and newest metadata behavior |
+| `v1.51.x` | `coalesce` pipe; `limit`/`offset` after `stats` on `stats_query`; `unpack_json` accepts JSON with leading spaces; `stats_query`/`stats_query_range` answer 502 when a storage node is unavailable | a filter pipe without the `filter` prefix is rejected unless it starts with `field_name:` | the translator emits `| filter` for every filter that follows a non-filter pipe |
+| `v1.52.x` | distroless image; `json_array_concat` pipe; filters starting with a non-word token or `not` are accepted without the prefix again; `-search.maxQueueDuration` is honoured for queued requests; current pinned target | no shell in the image; parse errors echo the query before the reason (`cannot parse query arg [<query>]: <reason>`) | same `vl-v1.50-plus` profile; compose health probes exec `/victoria-logs-prod -version`; the upstream error classifier reads both parse-error layouts, so invalid queries stay Loki `400 bad_data` |
 | `< v1.30.0` | legacy behavior only | higher compatibility risk for modern drilldown/explore contracts | block startup by default (`backend-min-version`), allow override with `backend-allow-unsupported-version=true` |
 
 ### Capability Profile Guidance

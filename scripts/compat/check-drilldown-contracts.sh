@@ -55,12 +55,12 @@ check_family_2x() {
     "Run the field values breakdown query"
   check "2.x keeps additional label tab wiring in service selection tabs" \
     "src/Components/ServiceSelectionScene/ServiceSelectionTabsScene.tsx" \
-    "label=\\{'Add label'\\}"
+    "'Add label( tab)?'"
 }
 
 check "service selection volume contract" "src/services/datasource.ts" "['\"]index/volume['\"]"
 check "detected fields contract" "src/services/datasource.ts" "['\"]detected_fields['\"]"
-check "mixed parser service logs contract" "src/services/variables.ts" "LOG_STREAM_SELECTOR_EXPR = .*\\| json .*\\| logfmt \\| drop __error__, __error_details__"
+check "mixed parser service logs contract" "src/services/variables.ts" "(LOG_STREAM_SELECTOR_EXPR|MIXED_FORMAT_EXPR) = .*\\| json .*\\| logfmt \\| drop __error__, __error_details__"
 check "detected level field removal contract" "src/services/filters.ts" "FIELDS_TO_REMOVE = \\['level_extracted', LEVEL_VARIABLE_VALUE, LEVEL_INDEX_NAME\\]"
 check "labels field parsing contract" "src/services/labels.ts" "getAllLabelsFromDataFrame"
 check "level coloring contract" "src/services/panel.ts" "UNKNOWN_LEVEL_LOGS = 'logs'"

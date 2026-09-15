@@ -15,7 +15,7 @@ The exhaustive helper sent millisecond integers to Loki, which interprets intege
 
 A fresh Compose project with Loki 3.7.7, VictoriaLogs 1.50.0 and a pre-release build of these corrections, without the UI generator, produced **283/284 query checks** and **64/70 error checks**. The query failure was implicit many-to-one matching. The six error failures were four invalid IP cases and a duplicated parser-error case.
 
-The default `test/e2e-compat/docker-compose.yml` pins Loki 3.7.1 and VictoriaLogs v1.50.0. Loki 3.7.7 comes from the `docker-compose.review.yml` override (or `LOKI_IMAGE`), so results from the default stack are measured against a different Loki patch release.
+The default `test/e2e-compat/docker-compose.yml` pins Loki 3.7.7 and VictoriaLogs v1.52.0, the same Loki release as the `docker-compose.review.yml` override; `LOKI_IMAGE` selects another Loki release.
 
 The earlier 255/284 query result came from a long-running UI generator stack with repeated ingestion. Its reference timeouts and empty-result findings were not isolated reproductions. A later deterministic test reproduced the regexp capture/filter failure after the stored-field inventory was warmed: a query-created `http_method` capture was incorrectly rewritten to a stored `http.method` field. Query-local capture names now remain independent of that inventory.
 

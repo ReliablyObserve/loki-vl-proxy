@@ -37,18 +37,18 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 
 | Service | Host Port | Purpose |
 |---------|-----------|---------|
-| `loki` (Loki 3.7.1) | 13101 | Reference implementation (ground truth) |
-| `victorialogs` (VictoriaLogs v1.50.0) | 19428 | Backend for the proxy |
+| `loki` (Loki 3.7.7) | 13101 | Reference implementation (ground truth) |
+| `victorialogs` (VictoriaLogs v1.52.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
 | `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
 | 11 proxy variants | 13100, 13102-13103, 13105-13110, 13150-13151 | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
-| `grafana` (Grafana 13.0.1) | 3002 | UI with all datasources provisioned |
+| `grafana` (Grafana 13.2.1) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
 
-Grafana preinstalls `victoriametrics-logs-datasource@0.26.3` and `grafana-lokiexplore-app@2.0.4`.
+Grafana preinstalls `victoriametrics-logs-datasource@0.32.0` and `grafana-lokiexplore-app@2.5.2`.
 
 ## Dual-Write Pattern
 
@@ -187,9 +187,9 @@ Set environment variables before `docker compose up` to override image versions:
 
 | Variable | Default |
 |----------|---------|
-| `LOKI_IMAGE` | `grafana/loki:3.7.1` |
-| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.50.0` |
-| `GRAFANA_IMAGE` | `grafana/grafana:13.0.1` |
+| `LOKI_IMAGE` | `grafana/loki:3.7.7` |
+| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.52.0` |
+| `GRAFANA_IMAGE` | `grafana/grafana:13.2.1` |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |
 | `VMAUTH_IMAGE` | `victoriametrics/vmauth:v1.138.0` |
 | `VMALERT_IMAGE` | `victoriametrics/vmalert:v1.138.0` |

@@ -58,9 +58,9 @@ References:
 
 The Patterns tab in Grafana Logs Drilldown is controlled by the `pattern_ingester_enabled` field in `/loki/api/v1/drilldown-limits`. The proxy returns `true` for this field when both `-patterns-enabled` and `-patterns-autodetect-from-queries` flags are set.
 
-### Known Issue: Patterns Tab in Drilldown 2.0.4
+### Known Issue: Patterns Tab in Drilldown 2.0.4 through 2.5.2
 
-Drilldown 2.0.4 contains a bug where the Patterns tab does not re-appear after switching from a datasource that returned `pattern_ingester_enabled=false`. The initialization guard (`void 0 === null`, always false) prevents the tab from being re-enabled once `$patternsData` is set to `null`.
+Drilldown 2.0.4 through 2.5.2 contain a bug where the Patterns tab does not re-appear after switching from a datasource that returned `pattern_ingester_enabled=false`. The initialization guard (`void 0 === null`, always false) prevents the tab from being re-enabled once `$patternsData` is set to `null`.
 
 **Workaround**: Use the `-patterns-enabled=true -patterns-autodetect-from-queries=true` proxy variant as the Grafana **default datasource**. With this configuration, the first Drilldown load returns `true`, correctly initializing `$patternsData`, and the Patterns tab appears.
 

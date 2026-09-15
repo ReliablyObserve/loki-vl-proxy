@@ -15,7 +15,7 @@
 services:
   # Reference Loki instance (ground truth)
   loki:
-    image: ${LOKI_IMAGE:-grafana/loki:3.7.1}
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.7}
     container_name: e2e-loki
     # Loki image runs as uid 10001; named volume defaults to root-owned and
     # Loki crashes with "mkdir /tmp/loki/rules: permission denied". Run as root
@@ -48,14 +48,14 @@ services:
       # ingested logs and making any range > "since restart" return empty —
       # which fakes a divergence with the proxy (whose VL backend IS persisted).
       - e2e-loki-data:/tmp/loki
-    # Loki 3.7.1 image is minimal (no wget/curl/shell) — healthcheck uses NONE.
+    # Loki 3.7.x images are minimal (no wget/curl/shell) — healthcheck uses NONE.
     # Tests retry on connection failure.
     healthcheck:
       disable: true
 
   # VictoriaLogs backend
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.50.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.52.0}
     container_name: e2e-victorialogs
     ports:
       - "19428:9428"
@@ -799,7 +799,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:13.0.1}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.2.1}
     container_name: e2e-grafana
     ports:
       - "3002:3000"
@@ -808,12 +808,12 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
       # Pin the Logs Drilldown plugin: an unpinned grafana-lokiexplore-app pulls
-      # whatever is latest at image-build time (now 2.1.1), which drifts the
+      # whatever is latest at image-build time, which drifts the
       # landing-page UI (e.g. the "Filter by labels" combobox) out from under the
       # Playwright selectors — deterministically breaking e2e-ui (drilldown-core)
       # and (drilldown-multitenant) in CI while a cached older plugin still passes
       # locally. Bump this pin deliberately alongside any selector updates.
-      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app@2.0.4
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.32.0,grafana-lokiexplore-app@2.5.2
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro

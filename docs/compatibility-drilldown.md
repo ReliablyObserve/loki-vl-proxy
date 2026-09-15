@@ -28,8 +28,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.0.1` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
-| `12.4.2` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
+| `13.2.1` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
+| `12.4.10` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
 | `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
 
@@ -37,7 +37,10 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `2.0.4` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; patterns tab requires patterns-autodetect as Grafana default |
+| `2.5.2` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; label/field filter inputs located by placeholder; patterns tab requires patterns-autodetect as Grafana default |
+| `2.2.0`–`2.5.1` | Scheduled and manual contract matrix | Mixed parser expression in `MIXED_FORMAT_EXPR` |
+| `2.1.0`–`2.1.5` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
+| `2.0.4` | Scheduled and manual contract matrix | Previous pinned contract; patterns tab requires patterns-autodetect as Grafana default |
 | `2.0.3` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels, patterns |
 | `2.0.2` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `2.0.1` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
@@ -66,7 +69,7 @@ Because of that, version-specific behavior should be gated by:
 
 1. explicit request source tag,
 2. Grafana runtime family (`12.x`, `13.x`),
-3. compatibility matrix contract version bands (`1.0.x`, `2.0.x`), validated in CI.
+3. compatibility matrix contract version bands (`1.0.x`, `2.x`), validated in CI.
 
 ## Field Histogram Series Cap
 
@@ -227,16 +230,16 @@ and `test/e2e-compat/drilldown_chunked_merge_lock_test.go`. Each is named
 
 | Drilldown version family | Capability profile | Proxy handling focus |
 |---|---|---|
-| `2.0.x` | `drilldown-v2` | detected-level defaults, modern service-detail scenes, patterns and field-value drill flows |
+| `2.x` | `drilldown-v2` | detected-level defaults, modern service-detail scenes, patterns and field-value drill flows |
 | `1.0.x` | `drilldown-v1` | legacy service buckets, filtered detected-fields path, prior labels/field rendering behavior |
 
 These profiles are matrix-level compatibility profiles (contract and CI guidance). Runtime request handling must stay Loki-compatible and should not depend on guessed app build strings.
 
 ## Known Issues
 
-### Drilldown 2.0.4: Patterns Tab Initialization
+### Drilldown 2.0.4 through 2.5.2: Patterns Tab Initialization
 
-Drilldown 2.0.4 contains a bug in `subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:
+Drilldown 2.0.4 through 2.5.2 contain a bug in `ServiceScene.subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:
 
 - If the Grafana default datasource has `pattern_ingester_enabled=false` in `/loki/api/v1/drilldown-limits`, `$patternsData` is set to `null`.
 - Switching to a datasource where `pattern_ingester_enabled=true` does NOT re-show the tab because the `void 0 === null` guard treats `null` as "already initialized".
@@ -249,8 +252,8 @@ In the e2e-compat compose stack, `loki-vl-proxy-patterns-autodetect` is set as `
 
 Potential next family move:
 
-- current: `2.0.x` (pinned: `2.0.4`)
-- next expected family to evaluate: `2.1.x` (then `3.0.x` when released)
+- current: `2.x` (pinned: `2.5.2`)
+- next expected family to evaluate: `3.0.x` when released
 
 Promotion criteria for a new family:
 
