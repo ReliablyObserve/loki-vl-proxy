@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -363,9 +364,9 @@ func parseOriginalByLabels(logql string) []string {
 
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
 	// Queries containing | math are multi-stage VL rate pipelines built by the translator
-	// (e.g. sum(rate({...} | json [w]))). For non-sliding windows (range == step), VL can
-	// execute them natively — no manual decomposition needed. For sliding windows (range >
-	// step), fall through to the manual path which implements correct per-step accumulation.
+	// (e.g. sum(rate({...} | json [w]))). For tumbling windows (range == step), VL can
+	// execute them natively — no manual decomposition needed. For any other range, fall
+	// through to the manual path which evaluates each step's (T-range, T] window.
 	//
 	// Exception: queries with parser stages (| json, | logfmt, etc.) without an explicit
 	// "| drop __error__" opt-in must NOT use VL native stats for tumbling windows. Loki
@@ -374,7 +375,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if strings.Contains(logsqlQuery, "| math ") {
 		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
-		if stepOk && hasOrigSpec && origSpec.Window > 0 && origSpec.Window <= step {
+		if stepOk && hasOrigSpec && origSpec.Window > 0 && p.statsRangeIsTumbling(r, origSpec.Window, step) {
 			spec, specOk := parseStatsCompatSpec(logsqlQuery)
 			// Parser stages without an explicit drop-error opt-in require the manual path
 			// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
@@ -404,19 +405,15 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		return false
 	}
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
-	// noSlidingOverlap is true when consecutive evaluation windows don't overlap:
-	// range == step (tumbling) or range < step (gap between windows). Both are
-	// semantically equivalent for VL native stats — only range > step produces
-	// overlapping sliding windows where VL tumbling-bucket stats diverges from LogQL.
-	noSlidingOverlap := step > 0 && origSpec.Window > 0 && origSpec.Window <= step
+	rangeEqualsStep := p.statsRangeIsTumbling(r, origSpec.Window, step)
 	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
 	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
 	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
 	// can correctly identify the drop-error clause.
-	if manualFunc != "quantile" && noSlidingOverlap && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap) {
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -434,6 +431,39 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		spec.ByExplicit = true
 	}
 	return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
+}
+
+// statsRangeIsTumbling reports whether native step buckets answer a range
+// metric: only when the range equals the step, where one VictoriaLogs bucket is
+// exactly one Loki window, and the backend can place bucket edges on the
+// request's windows (tumblingBucketsAligned). With range < step a bucket also
+// holds the lines between windows, which Loki never counts, and with range >
+// step the windows overlap; both use the anchored window evaluator.
+//
+// Grafana Logs Drilldown requests keep their earlier routing, where range <=
+// step is native: their hits and hybrid paths build, coarsen and zero-fill a
+// bucket-start axis that every panel of the page shares.
+func (p *Proxy) statsRangeIsTumbling(r *http.Request, window, step time.Duration) bool {
+	if step <= 0 || window <= 0 || window > step {
+		return false
+	}
+	if isGrafanaDrilldownRequest(r) {
+		return true
+	}
+	return window == step && p.tumblingBucketsAligned(r, window)
+}
+
+// tumblingBucketsAligned reports whether stats_query_range buckets of window
+// can cover the request's evaluation windows: always when the backend honours
+// the offset arg (VictoriaLogs v1.45+), otherwise only when the start is
+// epoch-aligned to window, like slidingStatsBucket. An unknown version (probe
+// pending or failed) counts as no offset support.
+func (p *Proxy) tumblingBucketsAligned(r *http.Request, window time.Duration) bool {
+	if p.supportsStatsRangeOffset() {
+		return true
+	}
+	startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start"))
+	return ok && window > 0 && startNs%int64(window) == 0
 }
 
 func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
@@ -633,20 +663,29 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	// Bucket edges must coincide with every evaluation window edge. When no
 	// bounded bucket grid exists, the exact raw-sample evaluator answers.
+	// fetchStart is the left edge of the first bucket (or raw fetch), and
+	// sampleShift moves bucket labels onto the window they hold.
+	fetchStart, sampleShift := startTS.Add(-origSpec.Window), time.Duration(0)
 	bucket, bucketsOK := p.slidingStatsBucket(startTS, step, origSpec.Window)
+	if origSpec.Window < step {
+		// Windows shorter than the step are disjoint. Keep only lines inside one,
+		// so a bucket per step, (t-step, t], holds exactly the window (t-range, t]
+		// and a raw fetch reads only window lines. gcd(step, range) buckets would
+		// grow with every step that range does not divide (a 604.8s step and a
+		// 5m range need 2.4s buckets: 252k per series over 7 days).
+		spec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
+		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
+		bucket, bucketsOK = p.slidingStatsBucket(startTS, step, step)
+	}
 	if !bucketsOK {
 		statsAggFunc = ""
 	}
-	// Sliding-window parser-stage queries (range > step) reach this path via
-	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
-	// fast path for them: VL's tumbling-bucket stats would diverge from LogQL's
-	// sliding-window semantics when combined with | json / | logfmt exclusion.
 	// Drilldown burst coalescer: groups ~30 per-field field-presence count_over_time
 	// queries into a single fused VL conditional-stats call. Detects byExplicit
 	// aggregate-all queries with a | filter field != "" pattern.
 	// extractCommonBase strips | json / | logfmt + the field filter so VL uses its
 	// pre-indexed column index (| json before count() if returns empty in VL).
-	if p.drilldownCoalescer != nil && statsAggFunc == "count() as c" && spec.ByExplicit && len(spec.GroupBy) == 0 {
+	if p.drilldownCoalescer != nil && sampleShift == 0 && origSpec.Window >= step && statsAggFunc == "count() as c" && spec.ByExplicit && len(spec.GroupBy) == 0 {
 		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
 			orgID := r.Header.Get("X-Scope-OrgID")
 			bKey := burstKey{
@@ -665,12 +704,21 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			// Fall through on error — coalescer failure is non-fatal.
 		}
 	}
-	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, bucket); ok {
-		p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
+	// Anchored buckets hold every (t-range, t] window whatever range and step
+	// are, so per-stream series (range != step) and parser stages use them too.
+	// With parser stages the stats query keeps them: VictoriaLogs groups by the
+	// parsed fields and counts every line, as the raw evaluator does.
+	streamBuckets := origSpec.Window != step
+	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false); ok {
+		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
 		return true
 	}
-	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, bucket); ok {
-		p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
+	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket); ok {
+		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
+		return true
+	}
+	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true); ok {
+		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
 		return true
 	}
 
@@ -693,6 +741,42 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
+}
+
+// maxStatsBucketResponseBytes bounds one stats_query_range bucket response of
+// the window evaluator; a variable so tests can exercise the overflow paths.
+var maxStatsBucketResponseBytes int64 = 64 << 20
+
+// windowPhaseFilter returns LogsQL pipes keeping only the lines inside one of
+// the evaluation windows (t-window, t], t = start+k*step, of a range metric
+// whose window is shorter than its step. The phase of a line is its distance
+// past the window start preceding it, modulo the step: a line is in a window
+// when 0 < phase <= window. VictoriaLogs evaluates math in float64, so a line
+// within a few hundred nanoseconds of a window edge may fall on either side.
+func windowPhaseFilter(start time.Time, step, window time.Duration) string {
+	anchor := start.Add(-window).UnixNano()
+	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
+		") as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=" + strconv.FormatInt(int64(window), 10)
+}
+
+// shiftSeriesSamples moves every bucket label and present bucket forward by
+// shift, in place: a (t-step, t] bucket of windowPhaseFilter lines is labelled
+// t-step and holds the window (t-window, t], which the evaluator reads from
+// labels in [t-window, t).
+func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Duration) map[string]manualSeriesSamples {
+	if shift == 0 {
+		return series
+	}
+	for key, entry := range series {
+		for i := range entry.Samples {
+			entry.Samples[i].ts += int64(shift)
+		}
+		for i := range entry.PresentBuckets {
+			entry.PresentBuckets[i] += int64(shift)
+		}
+		series[key] = entry
+	}
+	return series
 }
 
 // writeHitsRangeMetricMatrix writes the bucket matrix and returns the HTTP status.
@@ -772,26 +856,99 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	return true
 }
 
-// collectStatsFastPathHits handles count_over_time / rate / bytes_* queries that have no
-// parser stages and an explicit groupBy — served from VL's stats_query_range endpoint.
+// collectStatsFastPathHits handles count_over_time / rate / bytes_* queries with an
+// explicit groupBy — served from VL's stats_query_range endpoint. withParser selects
+// queries with parser stages (kept in the stats query, so parsed by() fields group as
+// in the raw evaluator) instead of queries without them. Per-stream grouping (the
+// _stream sentinel of bare range metrics) is served only without parser stages and
+// when streamBuckets is set.
 // Returns nil, false when the fast path is not applicable or VL returns an error.
-func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
-	if statsAggFunc == "" || queryUsesParserStages(spec.BaseQuery) {
+func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration, streamBuckets, withParser bool) (map[string]manualSeriesSamples, bool) {
+	if statsAggFunc == "" || queryUsesParserStages(spec.BaseQuery) != withParser {
 		return nil, false
 	}
 	for _, g := range spec.GroupBy {
-		if g == "_stream" {
+		if g == "_stream" && (!streamBuckets || withParser) {
 			return nil, false
 		}
 	}
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit {
 		return nil, false
 	}
-	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	singleField := len(spec.GroupBy) == 1 && spec.GroupBy[0] != "_stream" && !spec.ByExplicit
+	var (
+		series map[string]manualSeriesSamples
+		err    error
+	)
+	if singleField && end.Sub(windowStart) >= 2*time.Hour {
+		// Over hours a field such as pod churns into thousands of values, and the
+		// full bucket response can take seconds only to overflow: rank first.
+		series, err = p.collectTopValueRangeMetricHits(ctx, spec, statsAggFunc, windowStart, end, step)
+	} else {
+		series, err = p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+		if errors.Is(err, errBodyTooLarge) && singleField {
+			// Too many series for one bucket response: keep the busiest values.
+			series, err = p.collectTopValueRangeMetricHits(ctx, spec, statsAggFunc, windowStart, end, step)
+		}
+	}
 	if err != nil {
 		return nil, false
 	}
 	return series, true
+}
+
+// maxTopValueFilterBytes bounds the in() filter of collectTopValueRangeMetricHits,
+// leaving room for the rest of the query under VictoriaLogs' default
+// -search.maxQueryLen of 16384 bytes.
+const maxTopValueFilterBytes = 12 << 10
+
+// collectTopValueRangeMetricHits answers a single-field grouped bucket query in
+// two phases: one stats_query ranks the field values by line count over the
+// whole fetch window, up to the operator's -max-stats-query-series, then the
+// bucket query runs, restricted to those values when the ranking was cut. The
+// in() filter keeps the busiest values that fit maxTopValueFilterBytes. Lines
+// without the field stay in when they rank. The series of the kept values are
+// exact.
+func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
+	field := quoteLogsQLIdent(spec.GroupBy[0])
+	limit := p.resolvedMaxStatsQuerySeries()
+	params := url.Values{}
+	params.Set("query", spec.BaseQuery+" | stats by ("+field+") count() as _c | sort by (_c desc) | limit "+strconv.Itoa(limit+1))
+	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
+	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
+	params.Set("time", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, p.redactedBackendStatusError("stats_query backend", resp.StatusCode, body)
+	}
+	body, err := readBodyLimited(resp.Body, 4<<20)
+	if err != nil {
+		return nil, err
+	}
+	values := drilldownTopValuesFromMatrix(body, spec.GroupBy[0])
+	if len(values) == 0 {
+		// No labelled value in the window: the unfiltered query is small.
+		return p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	}
+	if len(values) < limit {
+		// Every value ranked (the empty group may be one of them): no filter.
+		return p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	}
+	values = values[:limit]
+	filter := buildVLInFilter(spec.GroupBy[0], values)
+	for len(filter) > maxTopValueFilterBytes && len(values) > 1 {
+		values = values[:len(values)*maxTopValueFilterBytes/len(filter)]
+		filter = buildVLInFilter(spec.GroupBy[0], values)
+	}
+	if drilldownTopValuesHaveEmpty(body, spec.GroupBy[0]) {
+		filter = "(" + filter + " or " + field + `:"")`
+	}
+	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+filter, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
 }
 
 // collectParserStageStatsFastPathHits handles parser-stage GroupBy count queries
@@ -978,8 +1135,7 @@ func (p *Proxy) collectRangeMetricHits(
 		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	const maxStatsResponseBytes = 64 << 20 // 64 MB
-	body, err := readBodyLimited(resp.Body, maxStatsResponseBytes)
+	body, err := readBodyLimited(resp.Body, maxStatsBucketResponseBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1021,21 +1177,38 @@ func (p *Proxy) collectRangeMetricHits(
 	if !withPresence {
 		results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
 	}
+	// Stream-grouped series carry the labels the raw evaluator derives from
+	// _stream and level.
+	streamGrouped := false
+	for _, g := range groupBy {
+		streamGrouped = streamGrouped || g == "_stream"
+	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
-		metric := make(map[string]string)
-		metricObj.Visit(func(k []byte, mv *fj.Value) {
-			key := string(k)
-			if key == "__name__" {
-				return
-			}
-			lokiKey, ok := vlToLoki[key]
-			if !ok {
-				lokiKey = p.labelTranslator.ToLoki(key)
-			}
-			metric[lokiKey] = string(mv.GetStringBytes())
-		})
+		var metric map[string]string
+		if streamGrouped {
+			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
+		} else {
+			metric = make(map[string]string)
+			metricObj.Visit(func(k []byte, mv *fj.Value) {
+				key := string(k)
+				if key == "__name__" {
+					return
+				}
+				// Loki never keeps an empty label value; VictoriaLogs groups an
+				// absent field as "".
+				value := string(mv.GetStringBytes())
+				if value == "" {
+					return
+				}
+				lokiKey, ok := vlToLoki[key]
+				if !ok {
+					lokiKey = p.labelTranslator.ToLoki(key)
+				}
+				metric[lokiKey] = value
+			})
+		}
 		seriesKey := canonicalLabelsKey(metric)
 		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
 			entry := seriesMap[seriesKey]

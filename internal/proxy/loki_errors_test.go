@@ -223,8 +223,8 @@ func TestLongRange_SummedCountWithUnusedJSONUsesStats(t *testing.T) {
 	p.RegisterRoutes(mux)
 
 	// Simulate Grafana sending $__auto range (step=15m) for a 24h window.
-	base := time.Unix(1700000000, 0)
-	step := 15 * 60 // 15m step
+	base := time.Unix(1699999200, 0) // epoch-aligned: no known VL version, so no offset arg
+	step := 15 * 60                  // 15m step
 	params := url.Values{}
 	params.Set("query", `sum(count_over_time({service_name="api-gateway"} | json [15m]))`) // range=step=15m
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))

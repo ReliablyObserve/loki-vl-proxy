@@ -17,6 +17,7 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -57,17 +58,31 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
+	// Strip | delete __error__, __error_details__ for any stats query — it removes
+	// a field per row but never filters logs; counts are identical without it.
+	effectiveQuery := logsqlQuery
+	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
+		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(spec.BaseQuery, ""))
+		if noDelete != spec.BaseQuery {
+			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
+		}
+	}
+
 	// Range == step: Loki's sample at T covers (T-W, T] while VL's bucket
-	// labelled T covers [T, T+W). Fetch from start-W and relabel every bucket
-	// to its Loki evaluation timestamp (relabelTumblingStatsQueryRange).
-	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
+	// labelled T covers [T, T+W). Fetch from start-W on a grid whose buckets are
+	// (edge, edge+W] and relabel every bucket to its Loki evaluation timestamp
+	// (relabelSnappedTumblingStatsQueryRange). A backend without the offset arg
+	// has only epoch-aligned buckets, which match no window of an unaligned start;
+	// statsRangeIsTumbling sends those requests to the exact evaluator, except
+	// for Drilldown, which keeps its earlier routing.
+	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok && p.statsRangeIsTumbling(r, origSpec.Window, origSpec.Window) {
 		buf := &bufferedResponseWriter{}
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
-		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
-		_ = p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
+		shiftedR.Form.Set("start", strconv.FormatInt(origStartNs-origSpec.Window.Nanoseconds(), 10))
+		_ = p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, effectiveQuery, origSpec.Window)
 		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
-		body := relabelTumblingStatsQueryRange(buf.body, origStartNs, endNs, origSpec.Window.Nanoseconds())
+		body := relabelSnappedTumblingStatsQueryRange(buf.body, origStartNs, endNs, origSpec.Window.Nanoseconds())
 		if hasTopK {
 			body = applyTopKToMatrix(body, topK, topKDesc)
 		}
@@ -83,17 +98,8 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// Strip | delete __error__, __error_details__ for any stats query — it removes
-	// a field per row but never filters logs; counts are identical without it.
-	effectiveQuery := logsqlQuery
-	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
-		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(spec.BaseQuery, ""))
-		if noDelete != spec.BaseQuery {
-			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
-		}
-	}
-
-	// Drilldown-style single-field count queries route through the /hits
+	// Drilldown-style single-field count queries that are not tumbling log range
+	// metrics (Grafana Logs Drilldown requests always) route through the /hits
 	// fast paths regardless of source tag. Two sub-cases:
 	//  1. No parser stages (column-indexed fields: stream labels, OTel attrs) →
 	//     proxyStatsQueryRangeDrilldown (batcher / two-phase / hybrid).
@@ -135,6 +141,14 @@ const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
 var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 
 func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) (capExceeded bool) {
+	return p.proxyStatsQueryRangeDirectAnchored(w, r, logsqlQuery, 0)
+}
+
+// proxyStatsQueryRangeDirectAnchored is proxyStatsQueryRangeDirect with an
+// optional tumbling window. When tumblingWindow > 0 and the backend honours the
+// offset arg, buckets of that width are anchored at the request start with
+// Loki's (edge, edge+window] boundaries, and the end becomes inclusive.
+func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *http.Request, logsqlQuery string, tumblingWindow time.Duration) (capExceeded bool) {
 	// High-cardinality single-field count by(field) over a wide range (e.g. the
 	// Drilldown labels-overview pod panel: sum(count_over_time({...,pod!=""} |
 	// detected_level=... [2m])) by (pod)). VL's unbounded stats response is 40MB+
@@ -149,7 +163,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	if p.tryHighCardCountByWindowedHits(w, r, logsqlQuery) {
 		return true
 	}
-	if out := p.tryHighCardCountByTwoPhase(r, logsqlQuery); out != nil {
+	if out := p.tryHighCardCountByTwoPhase(r, logsqlQuery, tumblingWindow); out != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(out)
 		return true
@@ -166,6 +180,13 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
+		startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
+		endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
+		if startOK && endOK {
+			p.setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
+		}
+	}
 
 	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
 	// before the full body is allocated. The coalescer's 256 MB cap is too generous
@@ -2183,7 +2204,11 @@ func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Re
 	return p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, stepRaw, drillCacheKey)
 }
 
-func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) []byte {
+// tryHighCardCountByTwoPhase answers a wide single-field count in two phases (see
+// above). tumblingWindow > 0 (the tumbling relabel) keeps Loki's windows: Phase 2 uses
+// the anchored bucket grid of proxyStatsQueryRangeDirectAnchored, and lines
+// without the field stay in as the unlabelled series when Phase 1 ranks them.
+func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string, tumblingWindow time.Duration) []byte {
 	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
 	if !ok {
 		return nil
@@ -2236,6 +2261,7 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) 
 	if len(topValues) > maxDrilldownPhase2Values {
 		topValues = topValues[:maxDrilldownPhase2Values]
 	}
+	keepUnlabelled := tumblingWindow > 0 && drilldownTopValuesHaveEmpty(p1Body, field)
 
 	// Phase 2: per-step counts for the selected values, bounded by field:in(...).
 	// Use the SAME unpack-stripped base as Phase 1 (column-indexed `level` filter,
@@ -2247,9 +2273,15 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) 
 	// run ~2x Loki's detected_level (a data-density quirk affecting both VL variants)
 	// but are actually CLOSER to Loki than the unpack variant — verified live.
 	inFilter := buildVLInFilter(field, topValues)
+	if keepUnlabelled {
+		inFilter = "(" + inFilter + " or " + quoteLogsQLIdent(field) + `:"")`
+	}
 	p2Query := p1Base + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
 	p2Query = p.addUnderscorefallbackByLabels(p2Query, parseOriginalByLabels(r.FormValue("query")))
 	p2Params := buildStatsQueryRangeParams(p2Query, start, end, r.FormValue("step"))
+	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
+		p.setSlidingStatsRangeParams(p2Params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
+	}
 	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
 	if err != nil {
 		return nil
@@ -2365,6 +2397,21 @@ func drilldownTopValuesFromMatrix(body []byte, field string) []string {
 		}
 	}
 	return out
+}
+
+// drilldownTopValuesHaveEmpty reports whether a Phase 1 matrix ranks the group
+// of rows without the field (an empty value).
+func drilldownTopValuesHaveEmpty(body []byte, field string) bool {
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return false
+	}
+	for _, entry := range v.GetArray("data", "result") {
+		if len(entry.GetStringBytes("metric", field)) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // buildVLInFilter builds a LogsQL field:in("v1","v2",...) existence filter.
@@ -2504,16 +2551,17 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 	return common, common > 0
 }
 
-// statsRateRangeEqualsStepShift detects whether the query contains a rate() or
-// bytes_rate() with range==step so that the caller can fetch from start-W and
-// relabel buckets onto Loki's evaluation timestamps
-// (relabelTumblingStatsQueryRange). The check scans the full expression (not
-// just the top-level function) so outer aggregations like sum by(x)(rate(...))
-// are detected. count_over_time and bytes_over_time are relabelled only as an
-// ungrouped sum (isSumAllLogRange), the shape parser-free Explore queries and
-// the ordered JSON elision produce. Grouped counts are left alone: Drilldown
-// field histograms route them through the hits and hybrid paths below, which
-// own their axis handling.
+// statsRateRangeEqualsStepShift detects whether every range aggregation of the
+// query is a log range function (rate, bytes_rate, count_over_time,
+// bytes_over_time) with range==step so that the caller can fetch from start-W
+// and relabel buckets onto Loki's evaluation timestamps. The parsed expression
+// is walked, so outer aggregations like sum by(x)(count_over_time(...)) are
+// detected, grouped or not, and function names inside string literals are not.
+//
+// Grafana Logs Drilldown requests keep their earlier routing: only rate,
+// bytes_rate and ungrouped sums are relabelled, and grouped counts stay on the
+// hits and hybrid paths, which build, coarsen and zero-fill their own
+// bucket-start axis. That keeps every panel of a Drilldown page on one axis.
 // NOTE: binary metric expressions are evaluated per operand through the normal
 // handlers; the legacy proxyBinaryMetric paths apply the shift independently.
 // Returns (spec, origStartNs, true) when shifting is needed.
@@ -2522,14 +2570,16 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	if !hasSpec || spec.Window <= 0 {
 		return
 	}
-	// Search the full expression for these function calls — "rate(" is also present
-	// in "rate_counter(" and "rate_sum(", so exclude those explicitly.
-	lq := strings.ToLower(strings.TrimSpace(originalLogql))
-	hasBytesRate := strings.Contains(lq, "bytes_rate(")
-	hasBareRate := strings.Contains(lq, "rate(") &&
-		!strings.Contains(lq, "rate_counter(") &&
-		!strings.Contains(lq, "rate_sum(")
-	if !hasBareRate && !hasBytesRate && !isSumAllLogRange(originalLogql) {
+	stripped := stripOuterLabelReplace(originalLogql)
+	expr, err := logqlpkg.Parse(stripped)
+	if err != nil {
+		return
+	}
+	found, hasRate, logRangeOnly := logRangeFunctions(expr)
+	if !found || !logRangeOnly {
+		return
+	}
+	if isGrafanaDrilldownRequest(r) && !hasRate && !isSumAllLogRange(stripped) {
 		return
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
@@ -2541,6 +2591,36 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 		return
 	}
 	return spec, startNs, true
+}
+
+// logRangeFunctions walks a metric expression. found reports at least one range
+// aggregation, hasRate a rate or bytes_rate, and logRangeOnly that every range
+// aggregation is rate, bytes_rate, count_over_time or bytes_over_time over a
+// log query and every other node is an aggregation, binary operation or
+// literal.
+func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly bool) {
+	switch e := expr.(type) {
+	case *logqlpkg.RangeAggregation:
+		if _, isLog := e.Inner.(*logqlpkg.LogQuery); !isLog {
+			return true, false, false
+		}
+		switch e.Op {
+		case logqlpkg.RangeRate, logqlpkg.RangeBytesRate:
+			return true, true, true
+		case logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesOverTime:
+			return true, false, true
+		}
+		return true, false, false
+	case *logqlpkg.VectorAggregation:
+		return logRangeFunctions(e.Inner)
+	case *logqlpkg.BinOpExpr:
+		lf, lr, lo := logRangeFunctions(e.Left)
+		rf, rr, ro := logRangeFunctions(e.Right)
+		return lf || rf, lr || rr, lo && ro
+	case *logqlpkg.LiteralExpr:
+		return false, false, true
+	}
+	return false, false, false
 }
 
 // statsQRFJPool pools fastjson.Parser instances for trimStatsQueryRange* hot paths.
@@ -2612,17 +2692,37 @@ func marshalFJ(buf *bytes.Buffer, v *fj.Value, scratch *[]byte) {
 // [startNs, endNs] are kept. That also drops the partial buckets the shifted
 // fetch produces at either edge. endNs <= 0 disables the upper bound.
 func relabelTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs int64) []byte {
+	return relabelStatsQueryRange(body, startNs, endNs, func(tsNs int64) int64 { return tsNs + windowNs })
+}
+
+// relabelSnappedTumblingStatsQueryRange is relabelTumblingStatsQueryRange for
+// buckets fetched from startNs-windowNs: every label first snaps to the nearest
+// edge of that grid. VictoriaLogs reports bucket labels as float seconds, which
+// cannot carry an anchored edge exactly (the 1ns edge shift, or a millisecond
+// start at nanosecond precision), so an unsnapped label can fall just outside
+// [startNs, endNs] and drop the first or last sample.
+func relabelSnappedTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs int64) []byte {
+	anchor := time.Unix(0, startNs-windowNs)
+	return relabelStatsQueryRange(body, startNs, endNs, func(tsNs int64) int64 {
+		return snapSlidingBucketNanos(tsNs, anchor, time.Duration(windowNs)) + windowNs
+	})
+}
+
+// relabelStatsQueryRange maps every point timestamp through relabel and keeps
+// only points whose new timestamp lies in [startNs, endNs]. endNs <= 0
+// disables the upper bound.
+func relabelStatsQueryRange(body []byte, startNs, endNs int64, relabel func(int64) int64) []byte {
 	return trimStatsQRByTimeFJShifted(body, func(tsNs int64) bool {
-		shifted := tsNs + windowNs
-		return shifted >= startNs && (endNs <= 0 || shifted <= endNs)
-	}, windowNs)
+		ts := relabel(tsNs)
+		return ts >= startNs && (endNs <= 0 || ts <= endNs)
+	}, relabel)
 }
 
 // trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
 // eliminating json.Unmarshal struct allocations and json.Marshal reflection.
-// trimStatsQRByTimeFJShifted filters stats_query_range points and moves every
-// kept point's timestamp forward by shiftNs. keep receives the original timestamp.
-func trimStatsQRByTimeFJShifted(body []byte, keep func(int64) bool, shiftNs int64) []byte {
+// trimStatsQRByTimeFJShifted filters stats_query_range points and rewrites every
+// kept point's timestamp with relabel. keep receives the original timestamp.
+func trimStatsQRByTimeFJShifted(body []byte, keep func(int64) bool, relabel func(int64) int64) []byte {
 	p := statsQRFJPool.Get()
 	defer statsQRFJPool.Put(p)
 
@@ -2670,7 +2770,7 @@ scanLoop:
 			}
 		}
 	}
-	if !needsTrim && shiftNs == 0 {
+	if !needsTrim && relabel == nil {
 		return body
 	}
 
@@ -2703,7 +2803,7 @@ scanLoop:
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"result":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, shiftNs, scratch)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, relabel, scratch)
 		if stats := dataVal.Get("stats"); stats != nil {
 			buf.WriteString(`,"stats":`)
 			marshalFJ(buf, stats, scratch)
@@ -2714,7 +2814,7 @@ scanLoop:
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"results":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, shiftNs, scratch)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, relabel, scratch)
 	}
 
 	buf.WriteByte('}')
@@ -2724,7 +2824,7 @@ scanLoop:
 	return result
 }
 
-func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, shiftNs int64, scratch *[]byte) {
+func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, relabel func(int64) int64, scratch *[]byte) {
 	buf.WriteByte('[')
 	for si, series := range seriesArr {
 		if si > 0 {
@@ -2757,12 +2857,12 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 					buf.WriteByte(',')
 				}
 				firstPoint = false
-				if shiftNs == 0 || len(pts) < 2 {
+				if relabel == nil || len(pts) < 2 {
 					marshalFJ(buf, point, scratch)
 					continue
 				}
 				buf.WriteByte('[')
-				buf.WriteString(strconv.FormatFloat(float64(tsNs+shiftNs)/float64(time.Second), 'f', -1, 64))
+				buf.WriteString(strconv.FormatFloat(float64(relabel(tsNs))/float64(time.Second), 'f', -1, 64))
 				buf.WriteByte(',')
 				marshalFJ(buf, pts[1], scratch)
 				buf.WriteByte(']')
@@ -2930,6 +3030,9 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
 					delete(syntheticLabels, "service_name")
 				}
+			}
+			if dropEmptyLabelValues(syntheticLabels) {
+				changed = true
 			}
 			if len(syntheticLabels) != beforeSyntheticCount {
 				changed = true
@@ -3311,9 +3414,10 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	// just streams active in the window (O(window)).
 	if origSpec, ok := parseOriginalRangeMetricSpec(originalLogql); ok && origSpec.Window > 0 {
 		if evalNanos, ok2 := parseFlexibleUnixNanos(evalTime); ok2 {
+			// VictoriaLogs filters [start, end); Loki's window is (time-range, time].
 			startNanos := evalNanos - int64(origSpec.Window)
-			params.Set("start", nanosToVLTimestamp(startNanos))
-			params.Set("end", nanosToVLTimestamp(evalNanos))
+			params.Set("start", time.Unix(0, startNanos+1).UTC().Format(time.RFC3339Nano))
+			params.Set("end", time.Unix(0, evalNanos+1).UTC().Format(time.RFC3339Nano))
 		}
 	}
 

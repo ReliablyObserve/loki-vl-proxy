@@ -1935,6 +1935,11 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		r.Form.Set("start", start)
 		return r
 	}
+	drilldownReq := func(step, start string) *http.Request {
+		r := makeReq(step, start)
+		r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+		return r
+	}
 	const start1m = "1700000060000000000" // arbitrary fixed start
 	const step1m = "60"                   // 60s == 1m
 
@@ -1948,10 +1953,19 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		{"sum_by_rate", `sum by (level) (rate({app="x"} | json [1m]))`, true},
 		{"topk_rate", `topk(3, rate({app="x"}[1m]))`, true},
 		{"sum_by_bytes_rate", `sum by (l) (bytes_rate({app="x"}[1m]))`, true},
-		{"count_over_time", `count_over_time({app="x"}[1m])`, false}, // per-stream: left to the hits/hybrid paths
+		{"count_over_time", `count_over_time({app="x"}[1m])`, true},
+		{"bytes_over_time", `bytes_over_time({app="x"}[1m])`, true},
 		{"sum_count_over_time", `sum(count_over_time({app="x"}[1m]))`, true},
 		{"sum_bytes_over_time", `sum(bytes_over_time({app="x"}[1m]))`, true},
-		{"sum_by_count_over_time", `sum by (pod) (count_over_time({app="x"}[1m]))`, false}, // Drilldown field histogram
+		{"sum_by_count_over_time", `sum by (pod) (count_over_time({app="x"}[1m]))`, true},
+		{"sum_by_bytes_over_time", `sum by (pod) (bytes_over_time({app="x"}[1m]))`, true},
+		{"max_over_time", `max_over_time({app="x"} | unwrap v [1m])`, false},
+		// Function names inside string literals are not range aggregations.
+		{"name_in_line_filter", `max_over_time({app="x"} |= "count_over_time(" | unwrap v [1m])`, false},
+		{"name_in_label_value", `sum_over_time({app="rate("} | unwrap v [1m])`, false},
+		{"label_replace_count", `label_replace(sum by (pod) (count_over_time({app="x"}[1m])), "p", "$1", "pod", "(.*)")`, true},
+		{"binary_counts", `sum(count_over_time({app="x"}[1m])) / sum(count_over_time({app="y"}[1m]))`, true},
+		{"binary_mixed_unwrap", `sum(count_over_time({app="x"}[1m])) / sum(sum_over_time({app="y"} | unwrap v [1m]))`, false},
 		{"sum_count_unwrap", `sum(sum_over_time({app="x"} | unwrap v [1m]))`, false},
 		{"rate_counter", `rate_counter({app="x"} | unwrap f [1m])`, false},
 		{"rate_sum", `rate_sum({app="x"} | count() by (l) [1m])`, false},
@@ -1963,6 +1977,26 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 			_, _, ok := statsRateRangeEqualsStepShift(tc.logql, makeReq(step1m, start1m))
 			if ok != tc.wantOK {
 				t.Errorf("statsRateRangeEqualsStepShift(%q) ok=%v want %v", tc.logql, ok, tc.wantOK)
+			}
+		})
+	}
+
+	// Grafana Logs Drilldown keeps the bucket-start axis of its grouped count
+	// panels; rate and ungrouped sums are relabelled as before.
+	for _, tc := range []struct {
+		name   string
+		logql  string
+		wantOK bool
+	}{
+		{"drilldown_grouped_count", `sum by (pod) (count_over_time({app="x"} | detected_level="error" [1m]))`, false},
+		{"drilldown_bare_count", `count_over_time({app="x"}[1m])`, false},
+		{"drilldown_sum_count", `sum(count_over_time({app="x"}[1m]))`, true},
+		{"drilldown_rate", `sum by (pod) (rate({app="x"}[1m]))`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, ok := statsRateRangeEqualsStepShift(tc.logql, drilldownReq(step1m, start1m))
+			if ok != tc.wantOK {
+				t.Errorf("Drilldown statsRateRangeEqualsStepShift(%q) ok=%v want %v", tc.logql, ok, tc.wantOK)
 			}
 		})
 	}
@@ -2131,7 +2165,7 @@ func TestUnusedJSONParser_SummedRateTumblingUsesStats(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	base := time.Unix(1700000000, 0)
+	base := time.Unix(1699999200, 0) // epoch-aligned: no known VL version, so no offset arg
 	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
 	// Aggregation discards all labels, so Loki can skip this unused parser.
 	params := url.Values{}

@@ -164,7 +164,7 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 				}
 			}
 			for _, line := range fake.lines {
-				if line.ts < start || line.ts >= end {
+				if line.ts < start || line.ts >= end || !fakeWindowPhaseKeep(t, q, line.ts) {
 					continue
 				}
 				app := ""
@@ -238,7 +238,7 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 			}
 			counts := map[string]map[int64]int{}
 			for _, line := range fake.lines {
-				if line.ts < start || line.ts >= end {
+				if line.ts < start || line.ts >= end || !fakeWindowPhaseKeep(t, r.Form.Get("query"), line.ts) {
 					continue
 				}
 				app := ""
@@ -290,7 +290,7 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 			end := parseFakeVLTime(t, r.Form.Get("end"))
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			for _, line := range fake.lines {
-				if line.ts < start || line.ts >= end {
+				if line.ts < start || line.ts >= end || !fakeWindowPhaseKeep(t, r.Form.Get("query"), line.ts) {
 					continue
 				}
 				fields := slidingLogfmtFields(line.msg)
@@ -588,8 +588,9 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 		byApp                     bool
 		span, step, window, every time.Duration
 	}{
-		// gcd(7m, 1h) = 60s: 43207 buckets over 30 days.
-		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantStep: "60s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
+		// A 7m range at a 1h step: one window-phase-filtered bucket per step
+		// (gcd buckets would need 43207 over 30 days).
+		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantStep: "3600s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
 		// gcd(17s, 5m) = 1s: 86700 buckets over 24 hours.
 		{name: "count 5m over 24h at 17s step", query: `sum(count_over_time({app="fine-app"}[5m]))`, fn: "count_over_time", wantStep: "1s", span: 24 * time.Hour, step: 17 * time.Second, window: 5 * time.Minute, every: 40 * time.Second},
 	} {

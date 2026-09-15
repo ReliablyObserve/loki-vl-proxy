@@ -1787,6 +1787,9 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	q.Set("end", "2026-04-04T17:30:00Z")
 	q.Set("step", "300")
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	// The label card is a Logs Drilldown panel; its range < step keeps the
+	// native Drilldown routing.
+	r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 	p.handleQueryRange(w, r)
 
 	if statsQuery == "" {
@@ -2346,8 +2349,10 @@ func TestDrilldownLogCountUnderscokeProxyLokiPushData(t *testing.T) {
 	w := httptest.NewRecorder()
 	q := url.Values{}
 	q.Set("query", `sum by (service_name) (count_over_time({app="payment-service"}[60s]))`)
-	q.Set("start", "2026-04-08T10:00:00Z")
-	q.Set("end", "2026-04-08T11:00:00Z")
+	// The range holds the backend bucket (2024-04-08T01:00:00Z), which the
+	// tumbling relabel reports one window later.
+	q.Set("start", "2024-04-08T00:30:00Z")
+	q.Set("end", "2024-04-08T01:30:00Z")
 	q.Set("step", "60")
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
 	p.handleQueryRange(w, r)

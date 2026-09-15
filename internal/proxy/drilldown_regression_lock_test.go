@@ -23,12 +23,14 @@
 //	   Reproduction is in TestLock_HitsRunsForAllRanges.
 //
 //	The fixes covered here:
-//	  - Routing: every Drilldown-shape stats query (any source) goes
-//	    through /hits, regardless of range. Removes the historical 6h
-//	    hybrid threshold.
-//	  - Routing: the X-Query-Tags: Source=grafana-lokiexplore-app gate is
-//	    NOT applied on the way IN — Explore-sourced count_over_time
-//	    queries get the same fast path Drilldown does.
+//	  - Routing: every Drilldown-shape stats query from Grafana Logs
+//	    Drilldown goes through /hits, regardless of range. Removes the
+//	    historical 6h hybrid threshold.
+//	  - Routing: other sources (Explore, dashboards, API clients) get Loki's
+//	    window semantics for count_over_time: range == step is relabelled to
+//	    Loki's evaluation timestamps and range != step uses the anchored
+//	    window evaluator. Only Drilldown keeps the bucket-start /hits axis
+//	    that all of its panels share.
 //	  - Leftover suppression: ANY Grafana-sourced request with
 //	    end-start ≤ 2 × step gets an empty matrix from the /hits handler,
 //	    so mergeFrames has nothing to glue onto the right edge.
@@ -165,19 +167,17 @@ func drilldownRequest(t *testing.T, query string, startSec, endSec int64, step, 
 }
 
 // ---------------------------------------------------------------------------
-// Lock 1: Routing — every stats-compat Drilldown shape goes through the
-// /hits-enabled drilldown handler, regardless of source tag.
+// Lock 1: Routing — the Drilldown shape goes through the /hits-enabled
+// drilldown handler for Drilldown; other sources get Loki's axis.
 // ---------------------------------------------------------------------------
 
-// TestLock_RoutingSourceAgnostic confirms a count_over_time({…} | X!="") query
-// reaches proxyStatsQueryRangeDrilldown for ALL of:
+// TestLock_RoutingSourceAgnostic confirms a tumbling count_over_time({…} | X!="")
+// query reaches proxyStatsQueryRangeDrilldown (/hits) for
+// X-Query-Tags: Source=grafana-lokiexplore-app (Drilldown), and the relabelled
+// stats_query_range path, never /hits, for:
 //   - no source tag (Explore / direct API / curl)
-//   - X-Query-Tags: Source=grafana-lokiexplore-app (Drilldown)
 //   - User-Agent: Grafana/X.Y.Z (dashboard panel)
 //   - X-Grafana-Org-Id header (Explore backend-routed)
-//
-// If a future PR re-introduces a "Drilldown-only" gate on routing, this test
-// fails because at least one of the four sources stops hitting /hits.
 func TestLock_RoutingSourceAgnostic(t *testing.T) {
 	for _, source := range []string{"", "drilldown", "grafana-ua", "grafana-hdr"} {
 		t.Run("source="+source, func(t *testing.T) {
@@ -191,6 +191,7 @@ func TestLock_RoutingSourceAgnostic(t *testing.T) {
 			vl := backend.server()
 			defer vl.Close()
 			p := newTestProxy(t, vl.URL)
+			p.storeBackendVersion("v1.50.0", "v1.50.0") // stats_query_range offset (v1.45+)
 
 			r := drilldownRequest(t,
 				`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
@@ -199,8 +200,15 @@ func TestLock_RoutingSourceAgnostic(t *testing.T) {
 			p.proxyStatsQueryRange(w, r,
 				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
 
-			if backend.callsFor("/select/logsql/hits") == 0 {
-				t.Fatalf("source=%q: expected /select/logsql/hits to be called (routing regression — source-tag gate re-introduced?)", source)
+			hits, stats := backend.callsFor("/select/logsql/hits"), backend.callsFor("/select/logsql/stats_query_range")
+			if source == "drilldown" {
+				if hits == 0 {
+					t.Fatalf("source=%q: expected /select/logsql/hits to be called (Drilldown routing regression)", source)
+				}
+				return
+			}
+			if hits != 0 || stats == 0 {
+				t.Fatalf("source=%q: expected the relabelled stats_query_range path, got %d /hits and %d stats calls", source, hits, stats)
 			}
 		})
 	}
@@ -850,6 +858,39 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(hitsResponse("pod", entries)))
+		case "/select/logsql/stats_query_range":
+			// Sources other than Drilldown read the same chunk-unique series from
+			// stats buckets spread over the whole requested range.
+			startNs := parseFakeVLTime(t, r.Form.Get("start"))
+			endNs := parseFakeVLTime(t, r.Form.Get("end"))
+			bucket, err := time.ParseDuration(r.Form.Get("step"))
+			if err != nil || bucket <= 0 {
+				t.Errorf("fake VL: bad step %q", r.Form.Get("step"))
+				return
+			}
+			first := startNs - startNs%int64(bucket)
+			var b strings.Builder
+			b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+			for i := 0; i < 16; i++ {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				fmt.Fprintf(&b, `{"metric":{"pod":"pod-c%d-i%d"},"values":[`, startNs/int64(time.Second), i)
+				j := 0
+				for ts := first; ts < endNs; ts += int64(bucket) {
+					if (i+j)%3 == 0 {
+						if !strings.HasSuffix(b.String(), "[") {
+							b.WriteByte(',')
+						}
+						fmt.Fprintf(&b, `[%d,"20"]`, ts/int64(time.Second))
+					}
+					j++
+				}
+				b.WriteString(`]}`)
+			}
+			b.WriteString(`]}}`)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(b.String()))
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
@@ -910,7 +951,8 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 // The non-Drilldown sources are kept on purpose even though residual suppression
 // is now scoped to Drilldown: they verify that per-chunk axis trimming alone
 // keeps Explore/dashboard metric ranges spike-free, so narrowing suppression to
-// Drilldown did not reintroduce the spike for the other sources.
+// Drilldown did not reintroduce the spike for the other sources. Those sources
+// take the relabelled stats_query_range path, not /hits.
 //
 // If a future PR regresses ANY of:
 //   - leftover-chunk suppression (Drilldown)

@@ -139,13 +139,11 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 	})
 }
 
-// TestProxyStatsQueryRange_DrilldownPathAlwaysOn verifies that the Drilldown
-// /hits routing applies regardless of source tag. The previous header gate
-// kept Explore on proxyStatsQueryRangeDirect, which hits the 16 MB stats
-// response cap and returns an empty matrix at 24h+ for high-cardinality
-// fields. Routing both sources through the Drilldown path (which uses VL
-// /hits + sampled windows internally) fixes the empty-matrix symptom while
-// returning the same shape Drilldown already consumes.
+// TestProxyStatsQueryRange_DrilldownPathAlwaysOn verifies that Drilldown
+// requests keep the Drilldown /hits routing for a tumbling single-field count,
+// while other clients get Loki's (T-range, T] windows. At 24h+ those clients
+// are bounded by the direct path's windowed /hits (Grafana high-cardinality
+// fields), two-phase and 16 MB rescue instead.
 func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 	var receivedQuery string
 	var receivedMu sync.Mutex
@@ -160,7 +158,7 @@ func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 
 	// Use a distinct orgID per subtest to avoid the Drilldown response cache
 	// returning a hit on the second call (the cache key is content + orgID).
-	run := func(t *testing.T, orgID, queryLabel, header string) {
+	run := func(t *testing.T, orgID, queryLabel, header string, wantDrilldown bool) {
 		t.Helper()
 		receivedQuery = ""
 		p := newTestProxy(t, vlBackend.URL)
@@ -177,17 +175,19 @@ func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 			req.Header.Set("X-Query-Tags", header)
 		}
 		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
-		if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-			t.Errorf("must route through Drilldown path (header=%q); VL received: %s", header, receivedQuery)
+		if got := strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)); got != wantDrilldown {
+			t.Errorf("Drilldown path used=%v, want %v (header=%q); VL received: %s", got, wantDrilldown, header, receivedQuery)
 		}
 	}
 
-	t.Run("without_header_routes_to_drilldown_path", func(t *testing.T) {
-		run(t, "explore-tenant", "production", "")
+	// Without the Drilldown tag a tumbling count gets Loki's window semantics
+	// instead of the Drilldown bucket-start axis.
+	t.Run("without_header_uses_loki_windows", func(t *testing.T) {
+		run(t, "explore-tenant", "production", "", false)
 	})
 
 	t.Run("with_drilldown_header_routes_to_drilldown_path", func(t *testing.T) {
-		run(t, "drilldown-tenant", "staging", "Source=grafana-lokiexplore-app")
+		run(t, "drilldown-tenant", "staging", "Source=grafana-lokiexplore-app", true)
 	})
 }
 
