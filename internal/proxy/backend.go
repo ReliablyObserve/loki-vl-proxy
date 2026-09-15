@@ -94,8 +94,12 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 		logAttrs = append(logAttrs, "server.port", serverPort)
 	}
 	if err != nil {
+		errorType := "transport"
+		if statusCode == 499 {
+			errorType = "canceled"
+		}
 		logAttrs = append(logAttrs,
-			"error.type", "transport",
+			"error.type", errorType,
 			"error.message", err.Error(),
 		)
 	}
@@ -637,9 +641,9 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		err = p.sanitizeUpstreamError(err)
-		mappedStatus := statusFromUpstreamErr(err)
+		mappedStatus := upstreamErrorStatus(ctx, err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
-		if shouldRecordBreakerFailure(err) {
+		if shouldRecordBreakerFailure(ctx, err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err
@@ -708,7 +712,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		err = p.sanitizeUpstreamError(err)
-		mappedStatus := statusFromUpstreamErr(err)
+		mappedStatus := upstreamErrorStatus(ctx, err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		return nil, err
 	}
@@ -727,7 +731,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	resp, err := p.vlPostHTTP(ctx, path, params)
 	if err != nil {
-		if shouldRecordBreakerFailure(err) {
+		if shouldRecordBreakerFailure(ctx, err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err

@@ -292,6 +292,22 @@ func statusFromUpstreamErr(err error) int {
 	return http.StatusBadGateway
 }
 
+// upstreamErrorStatus maps a failed backend call to the status recorded in
+// upstream metrics and logs. A call aborted by its own context is 499 (or 504
+// when the context hit its deadline), whatever error the transport returned,
+// so proxy-side cancellations are not reported as 502 backend failures.
+func upstreamErrorStatus(ctx context.Context, err error) int {
+	if ctx != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return http.StatusGatewayTimeout
+			}
+			return 499
+		}
+	}
+	return statusFromUpstreamErr(err)
+}
+
 func isCanceledErr(err error) bool {
 	if err == nil {
 		return false
@@ -490,8 +506,21 @@ func badRequestStatusOr(err error, fallback int) int {
 	return fallback
 }
 
-func shouldRecordBreakerFailure(err error) bool {
+// shouldRecordBreakerFailure reports whether a failed backend call is evidence
+// that the backend is unavailable. ctx is the context the call ran with; nil
+// means none is known.
+//
+// A call whose own context is already done was aborted on the proxy side: a
+// client disconnect, a deadline, or an internal cancellation such as an
+// errgroup sibling error or an evaluation budget. None of these say anything
+// about backend health. Go's http.Client reports such a request with
+// context.Cause(ctx), so the error need not wrap context.Canceled and may carry
+// an arbitrary message; checking the context itself is the only reliable test.
+func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
 		return false
 	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.

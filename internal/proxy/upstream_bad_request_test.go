@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -727,7 +728,7 @@ func TestStatusFromUpstreamErr_ClientMistakes(t *testing.T) {
 	if !shouldFallbackToGenericMetadata(vlErr(http.StatusBadRequest, vlBodyUnsupportedPath)) {
 		t.Fatal("an endpoint missing on older VictoriaLogs must still fall back to the generic metadata endpoint")
 	}
-	if shouldRecordBreakerFailure(vlErr(http.StatusBadRequest, vlBodyParsePattern)) {
+	if shouldRecordBreakerFailure(context.Background(), vlErr(http.StatusBadRequest, vlBodyParsePattern)) {
 		t.Fatal("a backend 400 must not count as a circuit-breaker failure")
 	}
 	if shouldRetryQueryRangeWindow(vlErr(http.StatusBadRequest, vlBodyParsePattern)) {
