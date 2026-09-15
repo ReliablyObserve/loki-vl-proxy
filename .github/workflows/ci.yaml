@@ -209,7 +209,7 @@ jobs:
         # so a failure points straight at the affected helper without grep.
         run: |
           go test -race -count=1 -v -timeout=2m \
-            -run '^Test(SnapshotEntriesForPatterns_|RequestSampler_ConcurrentShouldLogIsRaceFree|AsyncHandler_)' \
+            -run '^Test(SnapshotEntriesForPatterns_|RequestSampler_ConcurrentShouldLogIsRaceFree|AsyncHandler_|DetectFieldSummariesStream_Concurrent|HandleSeries_Concurrent)' \
             ./internal/proxy/ ./internal/observability/
 
   tuple-smoke:

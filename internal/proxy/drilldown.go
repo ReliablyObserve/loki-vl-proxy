@@ -2035,17 +2035,20 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			})
 		}
 
-		vlFJParserPool.Put(fjParser)
-
-		if len(msgBytes) == 0 {
-			continue
-		}
+		// msgBytes points into fjParser's buffer, which the next Parse by any
+		// goroutine that takes this parser from the pool overwrites, so copy the
+		// message before returning the parser.
 		// Skip logfmt parsing when _msg is JSON — we already extracted fields
 		// via the fastjson pass above and a logfmt scan would misparse JSON tokens.
-		if msgBytes[0] == '{' {
+		var msg string
+		if len(msgBytes) > 0 && msgBytes[0] != '{' {
+			msg = string(msgBytes)
+		}
+		vlFJParserPool.Put(fjParser)
+
+		if msg == "" {
 			continue
 		}
-		msg := string(msgBytes)
 
 		for key, value := range parseLogfmtFields(msg) {
 			if key == "level" {
