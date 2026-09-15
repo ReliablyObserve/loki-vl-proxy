@@ -841,7 +841,7 @@ func TestUpstreamBadRequest_LimitErrorsKeepBackendFailureHandling(t *testing.T) 
 		}
 	})
 
-	t.Run("multi_tenant_limit_on_one_tenant_keeps_partial_results", func(t *testing.T) {
+	t.Run("multi_tenant_limit_on_one_tenant_fails_whole_request", func(t *testing.T) {
 		vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Scope-OrgID") == "tenant-b" {
 				http.Error(w, vlBodyRowsMemory, http.StatusBadRequest)
@@ -853,14 +853,22 @@ func TestUpstreamBadRequest_LimitErrorsKeepBackendFailureHandling(t *testing.T) 
 		defer vl.Close()
 		p := newTestProxy(t, vl.URL)
 		p.forwardTenantHeader = true
-		req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/series", map[string]string{"match[]": `{app="billing"}`}), nil)
-		req.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
-		_ = req.ParseForm()
-		w := httptest.NewRecorder()
-		p.handleSeries(w, req)
-		if w.Code != http.StatusOK || w.Header().Get("X-Multi-Tenant-Partial-Failures") != "tenant-b" {
-			t.Fatalf("expected tenant-a results with tenant-b skipped, got %d partial=%q body=%s",
-				w.Code, w.Header().Get("X-Multi-Tenant-Partial-Failures"), w.Body.String())
+		serve := func(orgID string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/series", map[string]string{"match[]": `{app="billing"}`}), nil)
+			req.Header.Set("X-Scope-OrgID", orgID)
+			_ = req.ParseForm()
+			w := httptest.NewRecorder()
+			p.handleSeries(w, req)
+			return w
+		}
+		single := serve("tenant-b")
+		if single.Code < http.StatusBadRequest {
+			t.Fatalf("single-tenant limit failure answered %d %s", single.Code, single.Body.String())
+		}
+		// Loki fails the whole multi-tenant request when one tenant fails.
+		w := serve("tenant-a|tenant-b")
+		if want := multiTenantFailureStatus(single.Code); w.Code != want || strings.Contains(w.Body.String(), "billing\"}") {
+			t.Fatalf("expected the whole request to fail with %d, got %d body=%s", want, w.Code, w.Body.String())
 		}
 	})
 }

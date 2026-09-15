@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -52,26 +51,19 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 			merge = p.multiTenantDetectedLabelsResponse
 		}
 		body, contentType, err := merge(filteredReq, filteredTenants)
-		if isUpstreamQueryRejected(err) {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			return true
-		}
 		if err != nil {
-			p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+			p.writeError(w, multiTenantFailureStatus(statusFromUpstreamErr(err)), err.Error())
 			return true
 		}
-		w.Header().Set("Content-Type", contentType)
-		_, _ = w.Write(body)
-		if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
-			p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
-		}
+		p.writeMultiTenantMerged(w, filteredReq, endpoint, body, contentType, false)
 		return true
 	}
 
 	type tenantResult struct {
 		tenantID string
 		rec      *httptest.ResponseRecorder
-		failed   bool
+		// failureStatus is the status of a failed sub-request, 0 on success.
+		failureStatus int
 	}
 
 	results := make([]tenantResult, len(filteredTenants))
@@ -85,60 +77,43 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 			subReq.Header.Set("X-Scope-OrgID", tenantID)
 			rec := httptest.NewRecorder()
 			p.serveEndpoint(endpoint, rec, subReq)
-			results[i] = tenantResult{tenantID: tenantID, rec: rec, failed: rec.Code >= 400}
+			results[i] = tenantResult{tenantID: tenantID, rec: rec, failureStatus: multiTenantSubRequestFailure(rec)}
 		}(i, tenantID)
 	}
 	wg.Wait()
 
-	// Loki validates the query once before splitting by tenant, so a query
-	// rejected for every tenant fails the whole request with that 400 instead of
-	// "all sub-requests failed". A backend 400 passed through for every tenant
-	// gets the same 400, matching a single-tenant request. A failure on only
-	// some tenants (a backend limit or outage) keeps the per-tenant skipping
-	// below. Sub-responses carry only a status, not the error class, so a
-	// rejection on one tenant mixed with a 5xx or transport failure on another
-	// still reports "all sub-requests failed".
-	allRejected := len(results) > 0
-	for _, res := range results {
-		allRejected = allRejected && res.rec.Code == http.StatusBadRequest
+	// Loki fails a multi-tenant request as a whole when any tenant fails
+	// (pkg/querier/multi_tenant_querier.go returns the first tenant error), so
+	// nothing is merged or cached from a fanout with a failed tenant.
+	var failed *tenantResult
+	for i := range results {
+		res := &results[i]
+		if res.failureStatus == 0 {
+			continue
+		}
+		p.log.Warn("multi-tenant sub-request failed, failing the request",
+			"endpoint", endpoint, "tenant", res.tenantID, "status", res.failureStatus)
+		// Loki validates the query once before splitting by tenant, so a
+		// rejected query reports its 400 whatever the other tenants returned.
+		if failed == nil || (res.failureStatus == http.StatusBadRequest && failed.failureStatus != http.StatusBadRequest) {
+			failed = res
+		}
 	}
-	if allRejected {
-		w.Header().Set("Content-Type", results[0].rec.Header().Get("Content-Type"))
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write(results[0].rec.Body.Bytes())
+	if failed != nil {
+		p.writeMultiTenantFailure(w, failed.rec, failed.failureStatus)
 		return true
 	}
 
 	// Collect results in original order (deterministic merge).
 	successTenants := make([]string, 0, len(filteredTenants))
-	failedTenants := make([]string, 0)
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
 	stale := false
 	for _, r := range results {
-		if r.failed {
-			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
-				"endpoint", endpoint, "tenant", r.tenantID, "status", r.rec.Code)
-			failedTenants = append(failedTenants, r.tenantID)
-			continue
-		}
 		successTenants = append(successTenants, r.tenantID)
 		recorders = append(recorders, r.rec)
 		if r.rec.Header().Get(staleResponseHeader) != "" {
 			stale = true
 		}
-	}
-
-	if len(recorders) == 0 {
-		// All tenants failed — return an explicit error rather than a silent empty
-		// success, which would mask backend outages and authorization failures.
-		p.writeError(w, http.StatusBadGateway,
-			fmt.Sprintf("all %d multi-tenant sub-requests failed", len(filteredTenants)))
-		return true
-	}
-	// Partial success: advertise which tenants were skipped so callers can detect
-	// incomplete results rather than treating them as authoritative.
-	if len(failedTenants) > 0 {
-		w.Header().Set("X-Multi-Tenant-Partial-Failures", strings.Join(failedTenants, ","))
 	}
 
 	body, contentType, err := mergeMultiTenantResponses(endpoint, successTenants, recorders)
@@ -150,26 +125,88 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit")
 		return true
 	}
-	// Inject Loki-compatible warnings for partial failures so Grafana and other
-	// clients that read the warnings field (instead of the custom header) can detect
-	// incomplete data without trusting HTTP 200 as authoritative.
-	if len(failedTenants) > 0 {
-		body = injectMultiTenantWarnings(body, failedTenants)
+	p.writeMultiTenantMerged(w, filteredReq, endpoint, body, contentType, stale)
+	return true
+}
+
+// drilldownPartialUpstreamStatusHeader is set by writeDrilldownPartialFromUpstream
+// on the 200 partial-results reply that replaces a failed stats call for
+// Grafana-sourced traffic.
+const drilldownPartialUpstreamStatusHeader = "X-Proxy-Upstream-Status"
+
+// multiTenantSubRequestFailure returns the failure status of a tenant
+// sub-response, or 0 when the tenant answered successfully. A Drilldown
+// partial-results reply is a 200 that stands in for a failed backend call; the
+// merge would drop its warnings and cache the other tenants' data as complete,
+// so it fails the tenant with the backend status it replaced.
+func multiTenantSubRequestFailure(rec *httptest.ResponseRecorder) int {
+	if rec.Code >= http.StatusBadRequest {
+		return rec.Code
 	}
+	if raw := rec.Header().Get(drilldownPartialUpstreamStatusHeader); raw != "" {
+		if code, err := strconv.Atoi(raw); err == nil && code >= http.StatusBadRequest {
+			return code
+		}
+		return http.StatusBadGateway
+	}
+	return 0
+}
+
+// multiTenantFailureStatus maps the status of a failed tenant sub-request to
+// the status Loki returns for the whole multi-tenant request: client errors and
+// cancellations keep their status, a timeout stays 504, and every other backend
+// failure is 500.
+func multiTenantFailureStatus(code int) int {
+	if code < http.StatusInternalServerError || code == http.StatusGatewayTimeout {
+		return code
+	}
+	return http.StatusInternalServerError
+}
+
+// writeMultiTenantFailure answers a multi-tenant request with the failure of
+// one tenant sub-request, in the proxy's JSON error envelope with Loki's status.
+func (p *Proxy) writeMultiTenantFailure(w http.ResponseWriter, failed *httptest.ResponseRecorder, failureStatus int) {
+	code := multiTenantFailureStatus(failureStatus)
+	if code == failed.Code {
+		w.Header().Set("Content-Type", failed.Header().Get("Content-Type"))
+		w.WriteHeader(code)
+		_, _ = w.Write(failed.Body.Bytes())
+		return
+	}
+	msg := failed.Header().Get("X-Proxy-Upstream-Error")
+	if failed.Code >= http.StatusBadRequest {
+		msg = strings.TrimSpace(failed.Body.String())
+		var envelope struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(failed.Body.Bytes(), &envelope) == nil && envelope.Error != "" {
+			msg = envelope.Error
+		}
+	}
+	if msg == "" {
+		msg = "multi-tenant sub-request failed"
+	}
+	p.writeError(w, code, msg)
+}
+
+// writeMultiTenantMerged writes a merged multi-tenant response. A merge that
+// includes a stale tenant answer is marked stale (so the edge cache skips it)
+// and is not stored in the merge cache.
+func (p *Proxy) writeMultiTenantMerged(w http.ResponseWriter, r *http.Request, endpoint string, body []byte, contentType string, stale bool) {
 	if contentType == "" {
 		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
 	if stale {
-		// A tenant answered from a stale cache entry: mark the merged response
-		// (so the edge cache skips it) and do not store it in the merge cache.
 		markStaleResponse(w.Header())
 	}
 	_, _ = w.Write(body)
-	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable && !stale {
+	if stale {
+		return
+	}
+	if cacheKey, cacheable := p.multiTenantCacheKey(r, endpoint); cacheable {
 		p.setMultiTenantMergeCache(endpoint, cacheKey, body)
 	}
-	return true
 }
 
 // setMultiTenantMergeCache stores a merged multi-tenant response through the
@@ -204,8 +241,6 @@ func (p *Proxy) serveEndpoint(endpoint string, w http.ResponseWriter, r *http.Re
 		p.handleDetectedFieldValues(w, r)
 	case "patterns":
 		p.handlePatterns(w, r)
-	case "detected_labels":
-		p.handleDetectedLabels(w, r)
 	}
 }
 
@@ -1005,6 +1040,7 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		CardinalityFloor int
 	}
 	merged := map[string]*mergedField{}
+	var tenantErr error
 	for _, tenantID := range tenantIDs {
 		subReq := r.Clone(r.Context())
 		subReq.Header = r.Header.Clone()
@@ -1015,8 +1051,12 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		if isUpstreamQueryRejected(err) {
 			return nil, "", err
 		}
-		if err != nil {
-			p.log.Warn("detected_fields unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+		if err != nil || tenantErr != nil {
+			// Loki fails the whole multi-tenant request on a tenant error. Later
+			// tenants are still asked, so a rejected query reports its 400.
+			if tenantErr == nil {
+				tenantErr = err
+			}
 			continue
 		}
 		for _, item := range fields {
@@ -1051,6 +1091,9 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		}
 	}
 
+	if tenantErr != nil {
+		return nil, "", tenantErr
+	}
 	labels := make([]string, 0, len(merged))
 	for label := range merged {
 		labels = append(labels, label)
@@ -1106,6 +1149,7 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 			values: map[string]struct{}{},
 		},
 	}
+	var tenantErr error
 	for _, tenantID := range tenantIDs {
 		merged["__tenant_id__"].values[tenantID] = struct{}{}
 
@@ -1118,8 +1162,12 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 		if isUpstreamQueryRejected(err) {
 			return nil, "", err
 		}
-		if err != nil {
-			p.log.Warn("detected_labels unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+		if err != nil || tenantErr != nil {
+			// Loki fails the whole multi-tenant request on a tenant error. Later
+			// tenants are still asked, so a rejected query reports its 400.
+			if tenantErr == nil {
+				tenantErr = err
+			}
 			continue
 		}
 		for label, summary := range summaries {
@@ -1137,6 +1185,9 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 		}
 	}
 
+	if tenantErr != nil {
+		return nil, "", tenantErr
+	}
 	out := formatDetectedLabelSummaries(merged)
 	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "detectedLabels": out, "limit": lineLimit})
 	return body, "application/json", err
@@ -1302,45 +1353,4 @@ func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values 
 	filter, _ := json.Marshal(map[string]string{label: orgID})
 	result.Set("extra_stream_filters", string(filter))
 	return result
-}
-
-// injectMultiTenantWarnings adds a Loki-compatible "warnings" array to a JSON response
-// body when some tenant sub-requests failed. Grafana's Loki datasource reads warnings
-// from the response body, so the X-Multi-Tenant-Partial-Failures header alone is not
-// sufficient for Grafana to surface the incomplete-data indicator.
-//
-// Only modifies the body when it is a valid JSON object without an existing "warnings"
-// field — streaming/NDJSON responses are left unchanged.
-func injectMultiTenantWarnings(body []byte, failedTenants []string) []byte {
-	// Quick check: must look like a single JSON object (not NDJSON).
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
-		return body
-	}
-	if bytes.ContainsRune(trimmed, '\n') {
-		return body
-	}
-	// Don't double-inject.
-	if bytes.Contains(trimmed, []byte(`"warnings"`)) {
-		return body
-	}
-	msg := fmt.Sprintf("partial multi-tenant response: tenants [%s] unavailable", strings.Join(failedTenants, ","))
-	warningsJSON, err := json.Marshal([]string{msg})
-	if err != nil {
-		return body
-	}
-	// Insert before the closing '}'.
-	// Guard against integer overflow in the capacity arithmetic: bodies larger than
-	// 512 MiB are unrealistic for a warnings-eligible single JSON object; skip
-	// injection rather than risk a panic on overflow.
-	const maxInjectBodySize = 512 * 1024 * 1024
-	if len(trimmed) > maxInjectBodySize {
-		return body
-	}
-	out := make([]byte, 0, len(trimmed)+len(warningsJSON)+14)
-	out = append(out, trimmed[:len(trimmed)-1]...)
-	out = append(out, ',', '"', 'w', 'a', 'r', 'n', 'i', 'n', 'g', 's', '"', ':')
-	out = append(out, warningsJSON...)
-	out = append(out, '}')
-	return out
 }

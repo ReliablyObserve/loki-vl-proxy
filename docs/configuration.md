@@ -547,6 +547,7 @@ The proxy accepts Loki-style multi-tenant query headers on read/query endpoints 
 - Query results inject a synthetic `__tenant_id__` label per tenant, matching Loki's documented query behavior
 - `__tenant_id__` matchers in the leading selector narrow the tenant fanout set before backend requests are sent
 - multi-tenant `detected_fields` and `detected_labels` use exact merged value unions, so cardinality does not double-count identical values across tenants
+- like Loki, a multi-tenant request fails as a whole when any tenant's sub-request fails: `400` when a tenant rejects the query, `504` on a timeout, `500` for any other backend failure (a Grafana Drilldown partial-results reply from one tenant counts as that tenant failing); nothing is merged or cached from the other tenants
 - Wildcard `*` is not allowed inside a multi-tenant header; use explicit tenant IDs
 - fanout is safety-capped to prevent one request from exploding into an unbounded number of backend queries
 - merged multi-tenant response bodies are also size-capped before they are returned to the client

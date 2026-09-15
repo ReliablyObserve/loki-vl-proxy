@@ -140,15 +140,15 @@ All error responses from the proxy use the standard Loki JSON error envelope:
 
 | HTTP Status | `errorType` | Typical causes |
 |---|---|---|
-| 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), subquery / `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants |
+| 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), subquery / `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
 | 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant or unmapped wildcard `X-Scope-OrgID: *` without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
 | 404 | `not_found` | rules lookups with no matching rule group |
 | 406 / 422 | `not_acceptable` / `execution` | Loki status mapping (for example a backend returning that status) |
 | 499 | `canceled` | client canceled the request |
-| 500 | `internal` | proxy evaluation errors, including implicit many-to-one / multiple-match vector joins |
-| 502 | `unavailable` | backend request failures, `manual range metric row limit exceeded`, `maximum metric series exceeded` while collecting raw samples, all multi-tenant sub-requests failed |
+| 500 | `internal` | proxy evaluation errors, including implicit many-to-one / multiple-match vector joins; a multi-tenant request where a tenant's backend request failed |
+| 502 | `unavailable` | backend request failures, `manual range metric row limit exceeded`, `maximum metric series exceeded` while collecting raw samples |
 | 503 | `timeout` | circuit breaker open, `manual metric series limit exceeded` |
-| 504 | `timeout` | backend or window timeouts |
+| 504 | `timeout` | backend or window timeouts, including a timeout on one tenant of a multi-tenant request |
 
 See [Fixed Execution Limits](configuration.md#fixed-execution-limits) for the limit values.
 
@@ -160,7 +160,6 @@ A few responses are produced before the Loki error writer and carry no `errorTyp
 
 Some responses are `200` with incomplete data:
 
-- Multi-tenant reads where some tenants fail return the merged result for the remaining tenants, a Loki-style `warnings` array in the JSON body (which Grafana displays) and the `X-Multi-Tenant-Partial-Failures` header. If every tenant fails the proxy returns `502`.
 - With `-query-range-partial-responses=true`, log `query_range` responses may stop at the first failed window after retryable backend errors and set `X-Loki-VL-Partial-Response: true`.
 
 ## Infrastructure Endpoints
