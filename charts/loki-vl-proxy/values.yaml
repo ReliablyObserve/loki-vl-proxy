@@ -147,6 +147,7 @@ extraArgs:
   # cb-open-duration: "10s"                 # circuit breaker open duration before probe
   # cb-window-duration: "30s"               # circuit breaker sliding window for failure counting
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
+  # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 502 (no truncated results)
 
   # --- Frontend/client-facing compression ---
   # gzip for broad Loki/Grafana compatibility; route-aware policy raises the

@@ -40,6 +40,7 @@ type HandlerConfig struct {
 	enableQueryAnalytics                  bool
 	adminAuthToken                        string
 	rangeMetricRowLimit                   int
+	orderedJSONMaxBytes                   int64 // ordered JSON metric byte cap (0=1 GiB)
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool

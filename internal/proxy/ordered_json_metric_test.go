@@ -202,7 +202,7 @@ func TestOrderedJSONMetricSlidingWindowRetainsRealZeroAndExcludesBoundary(t *tes
 			{ts: time.Unix(90, 0).UnixNano(), value: 100},
 		},
 	}}
-	body, err := buildOrderedJSONMetric(t.Context(), plan, series, stamp, stamp.Add(20*time.Second), 10*time.Second, true)
+	body, err := buildOrderedJSONMetric(t.Context(), plan, series, stamp, stamp.Add(20*time.Second), 10*time.Second, true, defaultOrderedJSONMetricMaxBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestOrderedJSONMetricRowsCancellationAndTenant(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation=%v", err)
 	}
-	_, err = buildOrderedJSONMetric(ctx, plan, map[string]manualSeriesSamples{"x": {Samples: []rangeMetricSample{{ts: stamp.UnixNano(), value: 1}}}}, stamp, stamp, time.Second, true)
+	_, err = buildOrderedJSONMetric(ctx, plan, map[string]manualSeriesSamples{"x": {Samples: []rangeMetricSample{{ts: stamp.UnixNano(), value: 1}}}}, stamp, stamp, time.Second, true, defaultOrderedJSONMetricMaxBytes)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("evaluation cancellation=%v", err)
 	}
@@ -288,6 +288,7 @@ func TestOrderedJSONMetricBodyBudgetRejectsPartialResponse(t *testing.T) {
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
+	p.orderedJSONMaxBytes = 64 << 20
 	plan, _ := compileOrderedJSONMetric(`sum(rate({app="test"}|json[5m]))`)
 	series, err := p.collectOrderedJSONMetric(t.Context(), plan, stamp.Add(time.Second), stamp.Add(time.Second), time.Second)
 	if err == nil || series != nil {

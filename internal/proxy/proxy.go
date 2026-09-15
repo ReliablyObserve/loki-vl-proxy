@@ -133,11 +133,14 @@ type Config struct {
 	// 0 means use the built-in default of 1,000,000. Lower values bound memory at the cost
 	// of potential result truncation for very high-cardinality queries.
 	RangeMetricRowLimit int
-	ForwardHeaders      []string          // HTTP headers to forward from client to VL backend
-	ForwardCookies      []string          // Cookie names to forward from client to VL backend
-	BackendHeaders      map[string]string // static headers to add to all VL requests
-	BackendBasicAuth    string            // "user:password" for VL backend basic auth
-	BackendCompression  string            // upstream HTTP compression preference: auto, gzip, zstd, none
+	// OrderedJSONMetricMaxBytes caps the raw rows response read and the response
+	// built by the ordered JSON metric evaluator. 0 means 1 GiB.
+	OrderedJSONMetricMaxBytes int64
+	ForwardHeaders            []string          // HTTP headers to forward from client to VL backend
+	ForwardCookies            []string          // Cookie names to forward from client to VL backend
+	BackendHeaders            map[string]string // static headers to add to all VL requests
+	BackendBasicAuth          string            // "user:password" for VL backend basic auth
+	BackendCompression        string            // upstream HTTP compression preference: auto, gzip, zstd, none
 	// ClientResponseCompression controls downstream client-facing response
 	// compression policy used by the compatibility cache hit path.
 	ClientResponseCompression string
@@ -487,6 +490,7 @@ type Proxy struct {
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
+	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
@@ -1077,6 +1081,7 @@ func New(cfg Config) (*Proxy, error) {
 		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
+		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
@@ -1250,6 +1255,7 @@ func New(cfg Config) (*Proxy, error) {
 			enableQueryAnalytics:                  p.enableQueryAnalytics,
 			adminAuthToken:                        p.adminAuthToken,
 			rangeMetricRowLimit:                   p.rangeMetricRowLimit,
+			orderedJSONMaxBytes:                   p.orderedJSONMaxBytes,
 			tailAllowedOrigins:                    p.tailAllowedOrigins,
 			tailMode:                              p.tailMode,
 			metricsTrustProxyHeaders:              p.metricsTrustProxyHeaders,
