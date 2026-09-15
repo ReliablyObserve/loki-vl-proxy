@@ -18,7 +18,10 @@ import (
 
 // RunRecord holds a full benchmark run for one target × workload × concurrency.
 type RunRecord struct {
-	Timestamp      time.Time
+	Timestamp time.Time
+	// ReferenceTime is the time every workload window ended at (the seeded
+	// data end when --data-end is set).
+	ReferenceTime  time.Time
 	Version        string // optional version tag
 	Target         string // "loki" | "proxy"
 	TargetURL      string
@@ -33,6 +36,89 @@ type RunRecord struct {
 	VLBefore metricscrape.ResourceSnapshot
 	VLAfter  metricscrape.ResourceSnapshot
 	VLDelta  metricscrape.Delta
+	// CacheMode, MaxErrorRate, Publishable and NotPublishable are copied from
+	// the run's Meta (see Stamp) so each JSON record carries them.
+	CacheMode      string
+	MaxErrorRate   float64
+	Publishable    bool
+	NotPublishable []string `json:",omitempty"`
+}
+
+// Meta describes a whole benchmark run.
+type Meta struct {
+	// CacheMode is "warm" or "cold" (see bench/README.md).
+	CacheMode string
+	// MaxErrorRate is the largest error and degraded-answer rate a timed run
+	// may have.
+	MaxErrorRate float64
+	// NotPublishable lists why the numbers must not be published; empty means
+	// publishable.
+	NotPublishable []string
+}
+
+// Publishable reports whether the run's numbers may be published.
+func (m Meta) Publishable() bool { return len(m.NotPublishable) == 0 }
+
+// Stamp copies the run metadata into every record.
+func Stamp(records []RunRecord, m Meta) {
+	for i := range records {
+		records[i].CacheMode = m.CacheMode
+		records[i].MaxErrorRate = m.MaxErrorRate
+		records[i].Publishable = m.Publishable()
+		records[i].NotPublishable = m.NotPublishable
+	}
+}
+
+// Violations lists why a timed run's statistics fail the error gate: no
+// completed request, or an error rate (transport errors, timeouts, HTTP 4xx and
+// 5xx) or degraded-answer rate above maxRate.
+func Violations(s histogram.Stats, maxRate float64) []string {
+	if s.Count == 0 {
+		return []string{"no request completed"}
+	}
+	var out []string
+	if s.ErrorRate > maxRate {
+		out = append(out, fmt.Sprintf("error rate %.2f%% (%d of %d requests: 4xx=%d 5xx=%d, transport errors or timeouts=%d) is above --max-error-rate %.2f%%",
+			s.ErrorRate*100, s.Errors, s.Count, s.Status4xx, s.Status5xx, s.Errors-s.Status4xx-s.Status5xx, maxRate*100))
+	}
+	if s.DegradedRate > maxRate {
+		out = append(out, fmt.Sprintf("degraded-answer rate %.2f%% (%d of %d requests were partial, stale, a fallback or carried warnings) is above --max-error-rate %.2f%%",
+			s.DegradedRate*100, s.Degraded, s.Count, maxRate*100))
+	}
+	return out
+}
+
+// writeHeader writes the run metadata ahead of the result tables.
+func writeHeader(w io.Writer, m Meta, markdown bool) {
+	mode := m.CacheMode
+	switch mode {
+	case "warm":
+		mode = "warm (Loki results caches on; cached proxy; identical warm-up, no flushes)"
+	case "cold":
+		mode = "cold (Loki results caches off; proxy without response cache; no warm-up)"
+	}
+	if markdown {
+		fmt.Fprintf(w, "- Cache mode: %s\n- Max error and degraded-answer rate: %.2f%%\n", mode, m.MaxErrorRate*100)
+		if m.Publishable() {
+			fmt.Fprintf(w, "- Publishable: yes\n\n")
+			return
+		}
+		fmt.Fprintf(w, "\n> **NOT PUBLISHABLE.** These numbers must not be published or compared:\n")
+		for _, r := range m.NotPublishable {
+			fmt.Fprintf(w, "> - %s\n", r)
+		}
+		fmt.Fprintln(w)
+		return
+	}
+	fmt.Fprintf(w, "  Cache mode: %s\n  Max error and degraded-answer rate: %.2f%%\n", mode, m.MaxErrorRate*100)
+	if m.Publishable() {
+		fmt.Fprintf(w, "  Publishable: yes\n")
+		return
+	}
+	fmt.Fprintf(w, "  NOT PUBLISHABLE:\n")
+	for _, r := range m.NotPublishable {
+		fmt.Fprintf(w, "    - %s\n", r)
+	}
 }
 
 // ComparisonRow holds Loki vs Proxy stats for one metric at one concurrency level.
@@ -46,7 +132,8 @@ type ComparisonRow struct {
 }
 
 // WriteText writes a human-readable table to w.
-func WriteText(w io.Writer, records []RunRecord) {
+func WriteText(w io.Writer, meta Meta, records []RunRecord) {
+	writeHeader(w, meta, false)
 	// Group by workload × concurrency: loki vs proxy vs proxy_nocache vs proxy_coalescer vs proxy_partial vs vl_direct.
 	type key struct {
 		workload    string
@@ -265,6 +352,34 @@ func WriteText(w io.Writer, records []RunRecord) {
 					return na
 				}
 				return fmtPct(vStats.ErrorRate)
+			}(),
+			na)
+
+		// Degraded answers (partial, stale, fallback, warnings)
+		printRow("Degraded Rate",
+			func() string {
+				if p.loki == nil {
+					return na
+				}
+				return fmtPct(lStats.DegradedRate)
+			}(),
+			func() string {
+				if p.proxy == nil {
+					return na
+				}
+				return fmtPct(pStats.DegradedRate)
+			}(),
+			func() string {
+				if p.proxyNocache == nil {
+					return na
+				}
+				return fmtPct(ncStats.DegradedRate)
+			}(),
+			func() string {
+				if p.vlDirect == nil {
+					return na
+				}
+				return fmtPct(vStats.DegradedRate)
 			}(),
 			na)
 
@@ -489,7 +604,7 @@ func WriteJSON(path string, records []RunRecord) error {
 }
 
 // WriteMarkdown writes a markdown summary table to path.
-func WriteMarkdown(path string, records []RunRecord) error {
+func WriteMarkdown(path string, meta Meta, records []RunRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -501,6 +616,7 @@ func WriteMarkdown(path string, records []RunRecord) error {
 
 	fmt.Fprintf(f, "# loki-vl-proxy Read Performance Benchmark\n\n")
 	fmt.Fprintf(f, "Generated: %s\n\n", time.Now().Format(time.RFC3339))
+	writeHeader(f, meta, true)
 
 	// Group by workload × concurrency, emit markdown tables.
 	type key struct {
@@ -637,6 +753,15 @@ func WriteMarkdown(path string, records []RunRecord) error {
 			}(),
 			fmt.Sprintf("%.2f%%", vs.ErrorRate*100),
 			na, na)
+
+		pct := func(r *RunRecord, v float64) string {
+			if r == nil {
+				return na
+			}
+			return fmt.Sprintf("%.2f%%", v*100)
+		}
+		row("Degraded Rate", pct(p.loki, ls.DegradedRate), pct(p.proxy, ps.DegradedRate), pct(p.proxyNocache, ncs.DegradedRate),
+			pct(p.proxyCoalescer, css.DegradedRate), pct(p.proxyPartial, pts.DegradedRate), pct(p.vlDirect, vs.DegradedRate), na, na)
 
 		// Resource rows.
 		lCPUStr, pCPUStr, ncCPUStr, csCPUStr, ptCPUStr, vCPUStr := na, na, na, na, na, na

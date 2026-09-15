@@ -21,6 +21,7 @@ type Histogram struct {
 	bytes     atomic.Int64 // response bytes
 	status4xx atomic.Int64
 	status5xx atomic.Int64
+	degraded  atomic.Int64
 }
 
 func New() *Histogram { return &Histogram{} }
@@ -45,6 +46,12 @@ func (h *Histogram) Record(d time.Duration, respBytes int64, err bool, statusCod
 	h.mu.Unlock()
 }
 
+// RecordDegraded counts one response that succeeded but was partial, stale,
+// a fallback or carried warnings. Call it in addition to Record.
+func (h *Histogram) RecordDegraded() {
+	h.degraded.Add(1)
+}
+
 // Snapshot returns computed statistics. Safe to call concurrently.
 func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 	h.mu.Lock()
@@ -60,6 +67,7 @@ func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 	sum := h.sum.Load()
 	s4xx := h.status4xx.Load()
 	s5xx := h.status5xx.Load()
+	degraded := h.degraded.Load()
 
 	s := Stats{
 		Count:      n,
@@ -68,6 +76,9 @@ func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 		Status4xx:  s4xx,
 		Status5xx:  s5xx,
 		TotalBytes: bytes,
+		Degraded:   degraded,
+		// DegradedRate counts degraded answers among all requests.
+		DegradedRate: safeDivF(float64(degraded), float64(n)),
 	}
 	if n > 0 {
 		s.Mean = time.Duration(sum / n)
@@ -91,23 +102,27 @@ func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 
 // Stats holds computed histogram statistics.
 type Stats struct {
-	Count       int64
-	Errors      int64
-	ErrorRate   float64
-	Status4xx   int64
-	Status5xx   int64
-	TotalBytes  int64
-	BytesPerSec float64
-	Throughput  float64 // req/s
-	Mean        time.Duration
-	Min         time.Duration
-	Max         time.Duration
-	P50         time.Duration
-	P75         time.Duration
-	P90         time.Duration
-	P95         time.Duration
-	P99         time.Duration
-	P999        time.Duration
+	Count     int64
+	Errors    int64
+	ErrorRate float64
+	Status4xx int64
+	Status5xx int64
+	// Degraded counts successful responses that were partial, stale, a
+	// fallback or carried warnings (see internal/degraded).
+	Degraded     int64
+	DegradedRate float64
+	TotalBytes   int64
+	BytesPerSec  float64
+	Throughput   float64 // req/s
+	Mean         time.Duration
+	Min          time.Duration
+	Max          time.Duration
+	P50          time.Duration
+	P75          time.Duration
+	P90          time.Duration
+	P95          time.Duration
+	P99          time.Duration
+	P999         time.Duration
 }
 
 func pct(sorted []time.Duration, p float64) time.Duration {

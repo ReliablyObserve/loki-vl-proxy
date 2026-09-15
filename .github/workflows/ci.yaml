@@ -44,6 +44,14 @@ jobs:
       - name: Unit tests
         run: go test ./... -count=1 -race -coverprofile=coverage.out
 
+      # bench/ is a separate Go module, so the root ./... above does not cover it.
+      # Its tests include the benchmark Loki config drift guard.
+      - name: Benchmark harness vet and tests (bench module)
+        working-directory: bench
+        run: |
+          go vet ./...
+          go test ./... -count=1 -race
+
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
 
