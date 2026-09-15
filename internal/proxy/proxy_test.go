@@ -1209,6 +1209,89 @@ func TestContract_Patterns_WindowedSamplingCoversWholeRange(t *testing.T) {
 	}
 }
 
+// A fixture that spans a UTC midnight must yield every step bucket on both
+// sides of the boundary: neither the aligned window split, the per-window
+// backend fetch, the miner's bucketization nor the requested-range fill may
+// key or truncate by day.
+func TestContract_Patterns_WindowedSamplingCoversUTCDayBoundary(t *testing.T) {
+	const step = 30 * time.Second
+	fixtureStart := time.Date(2026, 9, 14, 23, 0, 0, 0, time.UTC)
+	fixtureEnd := fixtureStart.Add(2 * time.Hour)
+	midnight := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Errorf("unexpected backend path %s", r.URL.Path)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		parseBound := func(raw string) int64 {
+			value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+			if err != nil {
+				t.Errorf("expected numeric timestamp, got %q: %v", raw, err)
+				return 0
+			}
+			if len(strings.TrimSpace(raw)) <= 10 {
+				return value * int64(time.Second)
+			}
+			return value
+		}
+		startNs := parseBound(r.FormValue("start"))
+		endNs := parseBound(r.FormValue("end"))
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for ts := fixtureStart; !ts.After(fixtureEnd); ts = ts.Add(step) {
+			if ts.UnixNano() < startNs || ts.UnixNano() > endNs {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":"stable_pattern_alpha component=collector action=scrape outcome=ok","level":"info"}`+"\n", ts.Format(time.RFC3339Nano))
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf("/loki/api/v1/patterns?query=%%7Bapp%%3D%%22web%%22%%7D&start=%d&end=%d&step=30s", fixtureStart.Unix(), fixtureEnd.Unix()),
+		nil,
+	)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected exactly one pattern, got %d: %s", len(resp.Data), w.Body.String())
+	}
+
+	expectedBuckets := int(fixtureEnd.Sub(fixtureStart)/step) + 1
+	counts := make(map[int64]int, expectedBuckets)
+	for _, sample := range resp.Data[0].Samples {
+		ts, okTS := numberToInt64(sample[0])
+		count, okCount := numberToInt(sample[1])
+		if !okTS || !okCount {
+			t.Fatalf("expected numeric sample, got %v", sample)
+		}
+		counts[ts] = count
+	}
+	if len(counts) != expectedBuckets {
+		t.Fatalf("expected %d buckets across the day boundary, got %d: %v", expectedBuckets, len(counts), resp.Data[0].Samples)
+	}
+	for ts := fixtureStart; !ts.After(fixtureEnd); ts = ts.Add(step) {
+		if counts[ts.Unix()] != 1 {
+			t.Fatalf("bucket %s expected count 1, got %d", ts.Format(time.RFC3339), counts[ts.Unix()])
+		}
+	}
+	if counts[midnight.Add(-step).Unix()] != 1 || counts[midnight.Unix()] != 1 {
+		t.Fatalf("buckets adjacent to UTC midnight missing: %v", counts)
+	}
+}
+
 func TestContract_Patterns_WindowedSamplingSecondPassWidensCappedWindows(t *testing.T) {
 	var (
 		receivedLimits []int
