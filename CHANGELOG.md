@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.78.0] - 2026-09-15
+
 ### Fixed
 
 - **Internal cancellations such as budget limits or a failed sibling request no
