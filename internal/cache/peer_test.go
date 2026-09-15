@@ -1773,6 +1773,10 @@ func TestPeerCache_ReadAhead_BoundedFairPrefetch(t *testing.T) {
 			_, _ = ownerCache.Get(k)
 		}
 	}
+	// Cache.Get hands hot-key hits to the promoter goroutine; the owner's
+	// hot index is only populated once that goroutine has applied them.
+	// Flush it so /_cache/hot cannot be served empty to the follower.
+	ownerCache.drainPromotions()
 
 	errs := followerPC.runReadAheadCycle()
 	if errs != 0 {
