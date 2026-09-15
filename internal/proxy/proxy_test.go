@@ -478,29 +478,31 @@ func TestContract_QueryRange_MatrixFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 }
 
-func TestContract_QueryRange_MatrixFormat_SlidingRateUsesManualLogFetch(t *testing.T) {
-	// rate()[5m] with step=60s is a sliding window (range != step).
-	// The proxy must use the manual log-fetch path, not native VL stats_query_range,
-	// because VL stats uses tumbling per-step buckets which give wrong values for
-	// sliding windows. The manual path makes a single /select/logsql/query call
-	// (no window splitting) and aggregates in-process.
+func TestContract_QueryRange_MatrixFormat_SlidingRateUsesAnchoredStatsBuckets(t *testing.T) {
+	// rate()[5m] with step=60s is a sliding window (range != step). The proxy
+	// evaluates every (t-5m, t] window from one stats_query_range call with
+	// gcd(step, range) = 60s buckets anchored at start-5m, per stream, instead
+	// of scanning raw log lines (no window splitting either).
 	var (
 		mu        sync.Mutex
 		callCount int
+		gotStep   string
 	)
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Errorf("unexpected path %s; sliding rate must use log-fetch not stats", r.URL.Path)
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Errorf("unexpected path %s; sliding rate must use anchored stats buckets", r.URL.Path)
 			http.Error(w, "wrong endpoint", http.StatusBadRequest)
 			return
 		}
+		_ = r.ParseForm()
 		mu.Lock()
 		callCount++
+		gotStep = r.Form.Get("step")
 		mu.Unlock()
-		// Return one NDJSON entry so the rate aggregation has data to work with.
-		w.Header().Set("Content-Type", "application/stream+json")
-		fmt.Fprintln(w, `{"_time":"2024-01-15T10:10:00Z","_stream":"{\"app\":\"nginx\"}","_msg":"hit"}`)
+		// One per-stream bucket so the rate aggregation has data to work with.
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","_stream":"{app=\"nginx\"}","level":""},"values":[[1705312800,"1"]]}]}}`)
 	}))
 	defer vlBackend.Close()
 
@@ -522,13 +524,16 @@ func TestContract_QueryRange_MatrixFormat_SlidingRateUsesManualLogFetch(t *testi
 	mu.Lock()
 	got := callCount
 	mu.Unlock()
-	if got != 1 {
-		t.Fatalf("expected exactly one log-fetch call (no window splitting for manual rate), got %d", got)
+	if got != 1 || gotStep != "60s" {
+		t.Fatalf("expected exactly one stats_query_range call with 60s buckets, got %d calls (step %q)", got, gotStep)
 	}
 
 	var resp struct {
 		Data struct {
 			ResultType string `json:"resultType"`
+			Result     []struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -536,6 +541,15 @@ func TestContract_QueryRange_MatrixFormat_SlidingRateUsesManualLogFetch(t *testi
 	}
 	if resp.Data.ResultType != "matrix" {
 		t.Fatalf("expected matrix result type, got %q", resp.Data.ResultType)
+	}
+	// The bucket (10:00, 10:01] lies in the 5m windows ending 10:01 .. 10:05 (end).
+	if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Values) != 5 {
+		t.Fatalf("expected one series with 5 samples, got %s", w.Body.String())
+	}
+	for _, point := range resp.Data.Result[0].Values {
+		if point[1] != strconv.FormatFloat(1.0/300, 'f', -1, 64) {
+			t.Fatalf("expected rate 1/300 in every window holding the bucket, got %s", w.Body.String())
+		}
 	}
 }
 

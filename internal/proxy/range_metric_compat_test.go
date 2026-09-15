@@ -208,7 +208,7 @@ func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 	// (range == step, tumbling window) — after removing the parser-stage guard this now
 	// routes to VL stats_query_range (fast path). The test name is kept for history but
 	// the expectation is updated: fast path is now correct for tumbling-window parser queries.
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 	var statsCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +258,7 @@ func TestQueryRange_RateParserStageDropErrTumblingUsesStatsQueryRange(t *testing
 	// sum by (app) (rate({app="api-gateway"} | json | drop __error__ [5m])) with step=5m
 	// (range == step, tumbling window) WITH "| drop __error__" opts in to VL count-all
 	// semantics and MUST route to VL stats_query_range fast path.
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 	var statsCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -425,7 +425,7 @@ func TestQueryRange_JSONRatePreservesParsedSeriesAndSlidingBounds(t *testing.T) 
 }
 
 func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 	var (
 		manualCalled bool
 		statsCalled  bool
@@ -1398,7 +1398,7 @@ func TestQueryRange_RateParserStageTumblingUsesVLNative(t *testing.T) {
 	// sum by (app) (rate({app} | json | status >= 400 [5m])) step=5m → tumbling window.
 	// After removing the parser-stage guard, this must route to VL stats_query_range
 	// (fast path), NOT to the slow /select/logsql/query raw-log-fetch path.
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 	var statsCalled, slowCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

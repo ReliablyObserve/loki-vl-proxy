@@ -1211,7 +1211,10 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 		// Translate VL field names to Loki label names.
 		translated := make(map[string]string, len(hit.Fields))
 		for k, v := range hit.Fields {
-			translated[lt.ToLoki(k)] = v
+			// A declared field the stream lacks comes back as ""; Loki omits it.
+			if v != "" {
+				translated[lt.ToLoki(k)] = v
+			}
 		}
 		key := canonicalLabelsKey(translated)
 		entry, seen := series[key]
@@ -2032,6 +2035,20 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 	p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, evalNanos, evalNanos, int64(time.Second), spec, false)
 }
 
+// dropEmptyLabelValues removes labels whose value is empty and reports whether
+// any was removed. Loki's labels.Builder never keeps an empty value, while
+// VictoriaLogs groups an absent by() field as "".
+func dropEmptyLabelValues(labels map[string]string) bool {
+	dropped := false
+	for key, value := range labels {
+		if value == "" {
+			delete(labels, key)
+			dropped = true
+		}
+	}
+	return dropped
+}
+
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
 var statsTranslateFJPool fj.ParserPool
 
@@ -2173,6 +2190,9 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
 					delete(syntheticLabels, "service_name")
 				}
+			}
+			if dropEmptyLabelValues(syntheticLabels) {
+				changed = true
 			}
 			if len(syntheticLabels) != beforeSyntheticCount {
 				changed = true

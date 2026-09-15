@@ -95,9 +95,12 @@ func TestBuildStatsQueryRangeParams_EndIsSeconds(t *testing.T) {
 }
 
 // TestProxyStatsQuery_SendsSecondBoundsToVL verifies that proxyStatsQuery
-// sends start/end in seconds to VL when the original LogQL contains a range window.
-// The root bug: without this fix, VL received nanosecond timestamps and scanned
-// all historical data (O(all_time) instead of O(window)).
+// sends start/end bounds VL parses as times (never raw nanosecond integers)
+// when the original LogQL contains a range window. The root bug: without this
+// fix, VL received nanosecond timestamps and scanned all historical data
+// (O(all_time) instead of O(window)). The bounds are RFC3339 with nanoseconds,
+// both one nanosecond late: VictoriaLogs filters [start, end) and Loki's
+// instant window is (time-range, time].
 func TestProxyStatsQuery_SendsSecondBoundsToVL(t *testing.T) {
 	var capturedStart, capturedEnd string
 
@@ -130,17 +133,9 @@ func TestProxyStatsQuery_SendsSecondBoundsToVL(t *testing.T) {
 	if capturedStart == "" {
 		t.Fatal("expected start to be sent to VL for windowed LogQL query")
 	}
-	// Both must be in seconds (≤12 digits), never 19-digit nanoseconds
-	if len(capturedStart) > 12 {
-		t.Errorf("start param %q looks like nanoseconds — VL expects Unix seconds", capturedStart)
-	}
-	if len(capturedEnd) > 12 {
-		t.Errorf("end param %q looks like nanoseconds — VL expects Unix seconds", capturedEnd)
-	}
-
-	// end = eval time, start = eval time minus 5m window
-	wantEnd := strconv.FormatInt(evalTimeUnix, 10)
-	wantStart := strconv.FormatInt(evalTimeUnix-300, 10)
+	// end = eval time + 1ns, start = eval time minus 5m window + 1ns
+	wantEnd := time.Unix(evalTimeUnix, 1).UTC().Format(time.RFC3339Nano)
+	wantStart := time.Unix(evalTimeUnix-300, 1).UTC().Format(time.RFC3339Nano)
 
 	if capturedEnd != wantEnd {
 		t.Errorf("end: got %q, want %q", capturedEnd, wantEnd)

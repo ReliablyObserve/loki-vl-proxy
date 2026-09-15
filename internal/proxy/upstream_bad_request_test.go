@@ -647,6 +647,8 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 					}))
 					defer vl.Close()
 					p := newTestProxy(t, vl.URL)
+					// A known v1.45+ backend: tumbling stats buckets for any start.
+					p.storeBackendVersion("v1.50.0", "v1.50.0")
 					req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/query_range", map[string]string{"query": query.query, "step": "60"}), nil)
 					for k, v := range client.headers {
 						req.Header.Set(k, v)

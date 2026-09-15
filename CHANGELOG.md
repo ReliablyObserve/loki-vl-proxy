@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Report tumbling log range metrics at Loki's evaluation timestamps.
+  `count_over_time` and `bytes_over_time` with range equal to the step, bare or
+  grouped (`sum by (pod) (count_over_time({app="x"}[5m]))` at step 300), were
+  passed through with VictoriaLogs bucket labels. VictoriaLogs labels a bucket
+  by its start (`[T, T+step)`), while Loki's sample at `T` covers
+  `(T-range, T]`, so every value appeared one step early (`30,30,30,18` where
+  Loki answers `1,30,30,30`). Only `rate`, `bytes_rate` and ungrouped `sum`
+  were relabelled, and those still dropped Loki's first sample: a line written
+  exactly on a window edge belongs to the window that ends there. When every
+  range aggregation of the parsed query is one of these four functions, the
+  query now fetches one window early and is relabelled, on buckets anchored to
+  the request with Loki's `(edge, edge+range]` boundaries and an inclusive end
+  (VictoriaLogs v1.45+, the same anchoring as sliding windows). Bucket labels
+  snap to the request's step grid before relabelling: VictoriaLogs reports
+  them as float seconds, so with a millisecond start (as Grafana sends) an
+  unsnapped label fell just outside the range and the first or last sample was
+  dropped. The two-phase top-N path used from two hours on reads anchored
+  Phase 2 buckets too and keeps lines without the grouped label as the
+  unlabelled series. A backend without the offset arg (older or unknown
+  versions, including while the startup version probe is pending) only has
+  epoch-aligned buckets: those serve starts aligned to the range, and any
+  other start is answered by the exact evaluator. With aligned starts on such
+  backends a line exactly on a window edge still lands one window late.
+- Keep Grafana Logs Drilldown panels on one axis. Drilldown requests
+  (`X-Query-Tags: Source=grafana-lokiexplore-app`) keep the earlier routing
+  for `count_over_time` and `bytes_over_time`: the `/hits` and hybrid paths
+  build, coarsen and zero-fill a bucket-start axis, and relabelling only some
+  panels would offset them by one step. Other clients (Explore, dashboards, API
+  clients) sending the Drilldown histogram shape
+  (`sum by (f) (count_over_time({...} | f!="" [W]))`) now get Loki's windows
+  instead of that axis.
+- Evaluate range metrics whose range differs from the step over each window
+  only. `rate({app="x"}[1m])` at step 300 took the tumbling path and counted
+  the whole five-minute bucket (`0.5` where Loki answers `0.1`, and `30`
+  instead of `6` for `count_over_time`). Only range equal to the step is
+  tumbling now; other ranges use the anchored window evaluator, which counts
+  each `(T-range, T]` window exactly and leaves steps without lines absent, as
+  Loki does. It reads one `stats_query_range` call, now also per stream for
+  bare queries and for queries with parser stages such as `pattern` or
+  `regexp` (kept in the stats query), instead of scanning raw log lines. With
+  a range shorter than the step, a `math`/`filter` pipe keeps only the lines
+  inside a window, so the call reads one bucket per step and any raw fallback
+  reads only window lines; a line within a few hundred nanoseconds of a window
+  edge may land on either side, because VictoriaLogs evaluates `math` in
+  float64. With a range longer than the step the buckets are `gcd(step,
+  range)` wide. The raw scan's 1M-row and 64 MB limits made 24h and 7d
+  queries fail: `rate({app="x"}[5m])` at step 60 over 24h returned `502` and
+  now returns `200` in about 30 ms on the e2e stack, and grouped counts over
+  7d at Grafana's 604.8s step no longer need 2.4s buckets. A grouping by one
+  field that churns into thousands of values (pods over days) is ranked first
+  from two hours on, or once its bucket response exceeds 64 MB, and returns
+  exact series for the busiest `-max-stats-query-series` values (default 500,
+  as many as fit a 12 KiB `in()` filter under VictoriaLogs' default
+  `-search.maxQueryLen`): `sum by (pod) (count_over_time({...}[10m]))` over 7d
+  returned `502` after about 5 seconds and now answers in about 0.2 s. Other
+  bucket responses over 64 MB still fall back to the raw scan.
+- Count instant metric windows as `(time-range, time]`. The stats query sent
+  VictoriaLogs `[time-range, time)`, so a line exactly at the evaluation time
+  was left out and a line exactly one range earlier was counted:
+  `sum by (pod) (count_over_time({app="x"}[5m]))` at the first line's
+  timestamp returned nothing where Loki answers `1`. Both bounds now move one
+  nanosecond later.
+- Omit metric labels with an empty value. VictoriaLogs groups an absent
+  `by()` field as `""`, so `sum by (level) (...)` with `level` only in the log
+  line returned `{level=""}` instead of `{}`, and `sum by (app, pod) (...)`
+  returned `pod=""` for streams without `pod`, where Loki drops the label.
+  Stats range and instant responses, the stats bucket path and the bare
+  parser `/hits` path now drop empty values. Because VictoriaLogs already puts
+  absent and empty values in one group, no series merge is needed.
+
 ## [1.79.0] - 2026-09-15
 
 ### Fixed

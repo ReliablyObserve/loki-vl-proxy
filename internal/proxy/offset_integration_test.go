@@ -14,7 +14,7 @@ func TestQueryRange_OffsetShiftsTimeWindow(t *testing.T) {
 	// rate({app="nginx"}[60s] offset 1h) with start=T end=T+30m step=60
 	// range==step (tumbling window) → routes to stats_query_range.
 	// The proxy must query VL with start=T-1h end=T+30m-1h (both shifted back 1h).
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 	offset := time.Hour
 
 	var gotStart, gotEnd string
@@ -74,7 +74,7 @@ func TestQueryRange_OffsetShiftsTimeWindow(t *testing.T) {
 func TestQueryRange_NoOffsetUnchanged(t *testing.T) {
 	// Verify that queries without offset leave start/end untouched.
 	// Use [60s] with step=60 so range==step (tumbling) → stats_query_range path.
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1699999200, 0).UTC() // epoch-aligned: no known VL version, so no offset arg
 
 	var gotStart string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
