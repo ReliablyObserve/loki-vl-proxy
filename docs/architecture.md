@@ -325,6 +325,8 @@ flowchart LR
 
 VictoriaLogs treats all fields equally, while Loki 3.x distinguishes stream labels, structured metadata, and parsed labels. In practice, Grafana Explore handles both transparently.
 
+Log query responses group entries into streams the way Loki does: by stream labels plus the labels extracted by `| json` / `| logfmt`. With the `categorize-labels` encoding (and `-emit-structured-metadata`), extracted labels stay out of the stream object and are returned in each entry's `parsed` metadata; a `level` field returned by VictoriaLogs still adds `level` and `detected_level` to the stream labels. Single-request, windowed (`-query-range-windowing`) and `-stream-response` log queries share this stream resolution.
+
 ### Label Translation
 
 VictoriaLogs stores OTel attributes with native dotted names (`service.name`), while Loki uses underscores (`service_name`). The `-label-style` flag controls translation:

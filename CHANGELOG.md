@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep Loki's parsed-label streams on windowed log queries. A `| json` or
+  `| logfmt` log query whose range crossed the query-range split interval
+  (`-query-range-split-interval`, default 1h, hour-aligned windows) was merged
+  into one stream per stream-label set: the windowed entry builder keyed
+  entries by the stream descriptor and never folded parser-extracted labels
+  into the stream, while the single-request path did. For example
+  `{app="api"} | json` over 3h returned 1 stream against Loki's 12, and
+  `{app="worker"} | logfmt | duration_ms > 5000` returned one stream per
+  stream-label set instead of one per extracted label set. Both paths now
+  resolve stream identity through one helper (stream-label `| drop`/`| keep`
+  mutations, extracted labels, named regexp captures), so windowed responses
+  return the same streams, label sets, per-stream entries, direction ordering
+  and limit handling as a single request. Streams are keyed by their emitted
+  (translated) label set, so under `-label-style=underscores` two backend
+  streams that translate to identical labels are returned as one stream, as
+  Loki would. Window cache keys now include a fingerprint of the normalized
+  LogQL pipeline, because cached fragments hold resolved stream labels and
+  stages such as a conditional `| drop level="debug"` add no LogsQL: without
+  it, `{app="api"} | json` and `{app="api"} | json | drop level="debug"`
+  shared fragments and returned each other's labels. Window fragments cached
+  by earlier releases are not reused. The LogQL pipeline is parsed once per
+  windowed request instead of several times per window.
+- With the `categorize-labels` response encoding and structured metadata
+  enabled, log queries no longer copy `| json`/`| logfmt` extracted labels into
+  the stream object; they are returned in each entry's `parsed` metadata, as
+  Loki does. The single-request path previously split one Loki stream into one
+  stream per extracted label set. A `level` field returned by VictoriaLogs is
+  still kept in the stream labels with `detected_level` (see Known Issues).
+- `-stream-response` log queries now include `| json`/`| logfmt` extracted
+  labels in each emitted stream object, matching the buffered response and
+  Loki; they were previously dropped from the stream labels.
+
 ## [1.71.0] - 2026-09-15
 
 ### Fixed

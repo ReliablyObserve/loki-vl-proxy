@@ -14,8 +14,12 @@ func regexpCaptureFields(query string) map[string]bool {
 	if err != nil {
 		return nil
 	}
+	return pipelineRegexpCaptureFields(lq.Pipeline)
+}
+
+func pipelineRegexpCaptureFields(pipeline []logqlpkg.Stage) map[string]bool {
 	var names map[string]bool
-	for _, stage := range lq.Pipeline {
+	for _, stage := range pipeline {
 		parser, ok := stage.(*logqlpkg.ParserStage)
 		if !ok || parser.Type != logqlpkg.ParserRegexp {
 			continue
