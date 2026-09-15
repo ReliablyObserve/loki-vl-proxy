@@ -28,6 +28,7 @@ const (
 //	FieldIPv4Range        — ipv4_range() field filter.       Added in v1.45.
 //	MetadataSubstring     — substring in metadata fields.    Added in v1.49.
 //	DensePatternWindowing — dense windowing for patterns.    Added in v1.50.
+//	PipeCoalesce          — coalesce pipe.                   Added in v1.51.
 //
 // When a feature is false, the translator or proxy must substitute a
 // compatible but slower alternative (regexp approximation, proxy-side
@@ -37,6 +38,7 @@ type Capabilities struct {
 	FieldIPv4Range        bool // v1.45+
 	MetadataSubstring     bool // v1.49+
 	DensePatternWindowing bool // v1.50+
+	PipeCoalesce          bool // v1.51+
 }
 
 // CapabilitiesFor returns the Capabilities for the given VictoriaLogs semver
@@ -55,6 +57,7 @@ func CapabilitiesFor(semver string) Capabilities {
 		FieldIPv4Range:        atLeast(maj, min, 1, 45),
 		MetadataSubstring:     atLeast(maj, min, 1, 49),
 		DensePatternWindowing: atLeast(maj, min, 1, 50),
+		PipeCoalesce:          atLeast(maj, min, 1, 51),
 	}
 }
 

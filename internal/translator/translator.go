@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"regexp/syntax"
 	"strconv"
 	"strings"
 	"time"
@@ -458,10 +459,10 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// expression. Handle them before the without/binary/metric path so the inner
 	// expression is translated correctly and the marker is appended last.
 	if result, ok := tryTranslateLabelReplace(logql, labelFn); ok {
-		return result, nil
+		return applyServiceNameGrouping(result, caps), nil
 	}
 	if result, ok := tryTranslateLabelJoin(logql, labelFn); ok {
-		return result, nil
+		return applyServiceNameGrouping(result, caps), nil
 	}
 
 	// Extract without() labels before translation.
@@ -482,12 +483,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
 	if binResult, ok := tryTranslateBinaryMetricExpr(logql, labelFn); ok {
-		return appendWithoutMarker(binResult, withoutLabels), nil
+		return appendWithoutMarker(applyServiceNameGrouping(binResult, caps), withoutLabels), nil
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
 	if metricResult, ok := tryTranslateMetricQuery(logql, labelFn); ok {
-		return appendWithoutMarker(metricResult, withoutLabels), nil
+		return appendWithoutMarker(applyServiceNameGrouping(metricResult, caps), withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
 		return "", &UnsupportedError{Msg: unwrapFunc + " requires `| unwrap <field>` for range aggregation", Func: unwrapFunc}
@@ -1206,6 +1207,11 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			value := strings.TrimSpace(stage[idx+len(entry.logql):])
 			if label == "" {
 				return "", false
+			}
+			if label == "service_name" && !entry.entry.isComp && !strings.HasPrefix(value, `ip("`) {
+				// A label filter reads the stream's service_name, which the
+				// proxy derives exactly as the selector does.
+				return serviceNameLabelFilter(value, entry.entry.negate, entry.entry.isRe), true
 			}
 			if label == "detected_level" {
 				label = "level"
@@ -2440,7 +2446,9 @@ func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
 		if part == "" {
 			continue
 		}
-		if labelFn != nil {
+		// service_name is derived per row (applyServiceNameGrouping), never a
+		// translated source field.
+		if labelFn != nil && part != "service_name" {
 			part = strings.TrimSpace(labelFn(part))
 		}
 		if part == "" {
@@ -2453,6 +2461,128 @@ func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
 		out = append(out, part)
 	}
 	return strings.Join(out, ", ")
+}
+
+// applyServiceNameGrouping makes `by (service_name)` group by the service name
+// Loki assigns: every metric subquery whose stats pipe groups by service_name
+// computes that field first, as the first non-empty source field in
+// syntheticServiceNameFields order, else unknown_service (the value the
+// selector filter matches). The pipes go before any parser stage, which reads
+// fields but never changes a stream's service name in Loki. VictoriaLogs
+// v1.51+ has the coalesce pipe; older versions get the same value from format
+// pipes that keep a non-empty destination.
+func applyServiceNameGrouping(query string, caps logsql.Capabilities) string {
+	if !strings.Contains(query, "service_name") {
+		return query
+	}
+	segments := strings.Split(query, binaryMetricSeparator)
+	for i, segment := range segments {
+		segments[i] = applyServiceNameGroupingSegment(segment, caps)
+	}
+	return strings.Join(segments, binaryMetricSeparator)
+}
+
+const binaryMetricSeparator = "|||"
+
+func applyServiceNameGroupingSegment(segment string, caps logsql.Capabilities) string {
+	start := 0
+	for strings.HasPrefix(segment[start:], BinaryMetricPrefix) {
+		colon := strings.Index(segment[start+len(BinaryMetricPrefix):], ":")
+		if colon < 0 {
+			return segment
+		}
+		start += len(BinaryMetricPrefix) + colon + 1
+	}
+	if !statsGroupsByServiceName(segment[start:]) {
+		return segment
+	}
+	return segment[:start] + WithDerivedServiceName(segment[start:], caps)
+}
+
+// WithDerivedServiceName returns query with the pipes that set the
+// service_name field to the service name Loki assigns (the first non-empty
+// field of syntheticServiceNameFields, else unknown_service) inserted before
+// its first pipe, or appended to a pipe-less filter.
+func WithDerivedServiceName(query string, caps logsql.Capabilities) string {
+	pipeAt := firstTopLevelPipe(query)
+	if pipeAt < 0 {
+		return strings.TrimSpace(query) + " " + serviceNameGroupingPipes(caps)
+	}
+	return query[:pipeAt] + serviceNameGroupingPipes(caps) + " " + query[pipeAt:]
+}
+
+// statsGroupsByServiceName reports whether a stats pipe of query groups by
+// service_name.
+func statsGroupsByServiceName(query string) bool {
+	const marker = "| stats by ("
+	for rest := query; ; {
+		idx := strings.Index(rest, marker)
+		if idx < 0 {
+			return false
+		}
+		rest = rest[idx+len(marker):]
+		end := strings.IndexByte(rest, ')')
+		if end < 0 {
+			return false
+		}
+		for _, item := range strings.Split(rest[:end], ",") {
+			if strings.TrimSpace(item) == "service_name" {
+				return true
+			}
+		}
+		rest = rest[end:]
+	}
+}
+
+// firstTopLevelPipe returns the index of the first '|' outside quoted strings.
+func firstTopLevelPipe(query string) int {
+	var quote byte
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == '|':
+			return i
+		}
+	}
+	return -1
+}
+
+// ServiceNameSourceFields returns the VictoriaLogs fields the proxy reads to
+// derive service_name, in Loki's discover_service_name order. The result must
+// not be modified.
+func ServiceNameSourceFields() []string { return syntheticServiceNameFields }
+
+// ServiceNameDerivationPipes returns the pipes that set the service_name field
+// of every row to the service name Loki assigns.
+func ServiceNameDerivationPipes(caps logsql.Capabilities) string {
+	return serviceNameGroupingPipes(caps)
+}
+
+func serviceNameGroupingPipes(caps logsql.Capabilities) string {
+	names := make([]string, len(syntheticServiceNameFields))
+	for i, field := range syntheticServiceNameFields {
+		names[i] = field
+		if strings.Contains(field, ".") {
+			names[i] = `"` + field + `"`
+		}
+	}
+	if caps.PipeCoalesce {
+		return "| coalesce(" + strings.Join(names, ", ") + ") default " + logsql.QuoteValue(unknownServiceNameValue) + " as service_name"
+	}
+	var b strings.Builder
+	for _, field := range syntheticServiceNameFields[1:] {
+		b.WriteString(`| format "<` + field + `>" as service_name keep_original_fields `)
+	}
+	b.WriteString(`| format ` + logsql.QuoteValue(unknownServiceNameValue) + ` as service_name keep_original_fields`)
+	return b.String()
 }
 
 func findMatchingBrace(s string) int {
@@ -2753,14 +2883,10 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				return ""
 			}
 
-			// Apply label name translation (e.g., service_name → service.name)
+			// service_name is derived from stream fields on the read path;
+			// match exactly the streams the proxy labels with that value.
 			if origLabel == "service_name" {
-				// logsql op string for serviceNameMatcherFilter: ":=" or ":~"
-				vlOpStr := ":="
-				if op.isRe {
-					vlOpStr = ":~"
-				}
-				return serviceNameMatcherFilter(vlOpStr, value, op.negate, op.isRe)
+				return serviceNameMatcherFilter(value, op.negate, op.isRe)
 			}
 			// detected_level is a synthetic Loki label synthesized by the proxy.
 			// VL stores the field as "level"; translate unconditionally before
@@ -2870,43 +2996,195 @@ func streamMatcherValue(value string, isRegex bool) string {
 	return strings.Trim(value, "\"`")
 }
 
-func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
-	value = streamMatcherValue(value, isRegex)
-	parts := make([]string, 0, len(syntheticServiceNameFields))
+const (
+	// unknownServiceNameValue is the service_name Loki assigns when no source
+	// label exists (discover_service_name fallback).
+	unknownServiceNameValue = "unknown_service"
+	// matchNoStreamsFilter is a LogsQL filter that matches no rows.
+	matchNoStreamsFilter = "-*"
+)
+
+// serviceNameMatcherFilter translates a `service_name` stream matcher.
+//
+// Loki assigns service_name at ingest: an existing service_name, else the
+// first non-empty label of discover_service_name, else unknown_service. The
+// proxy has no ingest, so the value is derived on the read path from what
+// VictoriaLogs stores: the first non-empty field of
+// syntheticServiceNameFields (the same order the metric grouping coalesces),
+// else unknown_service. The selector must select a row if and only if that
+// derived value satisfies the matcher, so it is a pure filter with one OR
+// branch per priority position; a branch requires every higher-priority
+// field to be empty (`field:=""` also matches a missing field):
+//
+//	(f0:="v" OR (f0:="" f1:="v") OR ... OR (f0:="" ... fN:=""))
+//
+// The last branch selects unknown_service rows and is present only when
+// unknown_service satisfies the matcher. Every row carries exactly one
+// derived service_name, so a negated matcher is the negated positive filter.
+// Plain field filters keep VictoriaLogs on its bloom-filter path and stay
+// valid wherever the proxy strips pipes from the base query.
+func serviceNameMatcherFilter(rawValue string, neg, isRegex bool) string {
+	value := streamMatcherValue(rawValue, false)
+	if isRegex {
+		// Loki selector regexps are fully anchored and '.' matches newlines.
+		value = "^(?s:" + value + ")$"
+	}
+	return serviceNameDerivedFilter(value, neg, isRegex)
+}
+
+// serviceNameLabelFilter translates a `| service_name op "v"` stage. Loki
+// simplifies label-matcher regexps before matching (pkg/logql/log/filter.go
+// parseRegexpFilter with isLabel=true): a bare literal becomes an equality
+// check, a literal wrapped in `.*` a substring check, and only what it cannot
+// simplify stays an anchored match. serviceNameLabelFilterPattern reproduces
+// that as one anchored pattern over the derived value.
+func serviceNameLabelFilter(rawValue string, neg, isRegex bool) string {
+	value := streamMatcherValue(rawValue, false)
+	if isRegex {
+		value = serviceNameLabelFilterPattern(value)
+	}
+	return serviceNameDerivedFilter(value, neg, isRegex)
+}
+
+// serviceNameDerivedFilter builds the filter for an already-effective value:
+// an exact value, or a fully anchored regexp.
+func serviceNameDerivedFilter(value string, neg, isRegex bool) string {
+	var re *regexp.Regexp
+	if isRegex {
+		// An invalid regexp is left for VictoriaLogs to reject.
+		re, _ = regexp.Compile(value)
+	}
+	branches := make([]string, 0, len(syntheticServiceNameFields)+1)
+	emptyPrefix := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
-		// Quote dotted field names so VL can parse them.
 		name := field
 		if strings.Contains(name, ".") {
 			name = `"` + name + `"`
 		}
-		if isRegex {
-			// Regex values use FieldFilter with FieldOpRegexp (quoting via QuotePattern).
-			parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpRegexp, value, neg))
-			continue
-		}
-		if value == "" {
-			if neg {
-				// ":!\"\"" is VL's "not empty" inline syntax; no FieldFilter op maps to it.
-				parts = append(parts, name+`:!""`)
-			} else {
-				// Use FieldFilter for correct empty-equality formatting: field:=""
-				parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, "", false))
+		var terms []string
+		switch {
+		case isRegex:
+			terms = append(terms, name+":~"+strconv.Quote(value))
+			if re == nil || re.MatchString("") {
+				// A missing field reads as empty and would satisfy an
+				// empty-compatible regexp; derivation needs a non-empty value.
+				terms = append(terms, "-"+name+`:=""`)
 			}
-			continue
+		case value != "":
+			terms = append(terms, name+":="+strconv.Quote(value))
 		}
-		// Use FieldFilter for correct value quoting via logsql.QuoteValue.
-		parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, value, neg))
+		if len(terms) > 0 {
+			terms = append(append(make([]string, 0, len(emptyPrefix)+len(terms)), emptyPrefix...), terms...)
+			if len(terms) == 1 {
+				branches = append(branches, terms[0])
+			} else {
+				branches = append(branches, "("+strings.Join(terms, " ")+")")
+			}
+		}
+		emptyPrefix = append(emptyPrefix, name+`:=""`)
 	}
-	if value == "" && !isRegex {
+	unknownMatches := value == unknownServiceNameValue
+	if isRegex {
+		unknownMatches = re != nil && re.MatchString(unknownServiceNameValue)
+	}
+	if unknownMatches {
+		branches = append(branches, "("+strings.Join(emptyPrefix, " ")+")")
+	}
+	if len(branches) == 0 {
+		// Every row has a non-empty service_name, so `service_name=""`
+		// matches nothing and `service_name!=""` matches everything.
 		if neg {
-			return "(" + strings.Join(parts, " OR ") + ")"
+			return "*"
 		}
-		return strings.Join(parts, " ")
+		return matchNoStreamsFilter
 	}
+	filter := "(" + strings.Join(branches, " OR ") + ")"
 	if neg {
-		return strings.Join(parts, " ")
+		return "-" + filter
 	}
-	return "(" + strings.Join(parts, " OR ") + ")"
+	return filter
+}
+
+// serviceNameLabelFilterPattern returns the anchored pattern that matches what
+// Loki's label filter matches for the regexp value, reproducing the
+// simplifications of RegexSimplifier.Simplify with isLabel=true: a literal is
+// an equality check, `.*`/`.+` match everything and everything non-empty, a
+// literal wrapped in `.*` is a substring check, and alternations combine the
+// same rules per leg. Anything else keeps Loki's anchored regexp.
+func serviceNameLabelFilterPattern(value string) string {
+	reg, err := syntax.Parse(value, syntax.Perl)
+	if err != nil {
+		return "^(?s:" + value + ")$"
+	}
+	return "^(?s:" + effectiveLabelMatcherPattern(reg.Simplify()) + ")$"
+}
+
+func effectiveLabelMatcherPattern(reg *syntax.Regexp) string {
+	switch reg.Op {
+	case syntax.OpCapture:
+		if len(reg.Sub) == 1 {
+			return effectiveLabelMatcherPattern(reg.Sub[0])
+		}
+	case syntax.OpEmptyMatch:
+		return ""
+	case syntax.OpLiteral:
+		return quotedRegexpLiteral(reg)
+	case syntax.OpStar:
+		if len(reg.Sub) == 1 && reg.Sub[0].Op == syntax.OpAnyCharNotNL {
+			return ".*"
+		}
+	case syntax.OpPlus:
+		if len(reg.Sub) == 1 && reg.Sub[0].Op == syntax.OpAnyCharNotNL {
+			return ".+"
+		}
+	case syntax.OpAlternate:
+		parts := make([]string, 0, len(reg.Sub))
+		for _, sub := range reg.Sub {
+			parts = append(parts, effectiveLabelMatcherPattern(sub))
+		}
+		return strings.Join(parts, "|")
+	case syntax.OpConcat:
+		if literal, ok := concatSingleLiteral(reg); ok {
+			return ".*" + literal + ".*"
+		}
+	}
+	return reg.String()
+}
+
+// concatSingleLiteral returns the quoted literal of a concatenation of one
+// literal and `.*` parts, the shape Loki turns into a substring check.
+func concatSingleLiteral(reg *syntax.Regexp) (string, bool) {
+	literal := ""
+	parts := 0
+	for _, sub := range reg.Sub {
+		switch {
+		case sub.Op == syntax.OpEmptyMatch:
+			continue
+		case sub.Op == syntax.OpLiteral:
+			if literal != "" {
+				return "", false
+			}
+			literal = quotedRegexpLiteral(sub)
+		case sub.Op == syntax.OpStar && len(sub.Sub) == 1 && sub.Sub[0].Op == syntax.OpAnyCharNotNL:
+		default:
+			return "", false
+		}
+		parts++
+		if parts > 3 {
+			return "", false
+		}
+	}
+	return literal, literal != ""
+}
+
+// quotedRegexpLiteral returns a regexp that matches the literal's text, case
+// insensitively when the literal was parsed that way.
+func quotedRegexpLiteral(reg *syntax.Regexp) string {
+	literal := regexp.QuoteMeta(string(reg.Rune))
+	if reg.Flags&syntax.FoldCase != 0 {
+		return "(?i:" + literal + ")"
+	}
+	return literal
 }
 
 func isParserStage(translated string) bool {
@@ -2915,7 +3193,11 @@ func isParserStage(translated string) bool {
 }
 
 func isFieldFilter(s string) bool {
-	// Field filters contain :=, :!, :~, :>, :<, :>=, :<=
+	// Field filters contain :=, :!, :~, :>, :<, :>=, :<=; a service_name
+	// matcher can also reduce to match-all or match-none.
+	if s == "*" || s == matchNoStreamsFilter {
+		return true
+	}
 	return strings.Contains(s, ":=") || strings.Contains(s, ":~") ||
 		strings.Contains(s, ":!") || strings.Contains(s, ":>") || strings.Contains(s, ":<")
 }

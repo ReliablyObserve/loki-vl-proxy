@@ -122,13 +122,15 @@ func TestCoverage_AddByClause_NoStats(t *testing.T) {
 
 func TestCoverage_AddByClause_WithStatsAndTranslator(t *testing.T) {
 	labelFn := func(label string) string {
-		if label == "service_name" {
-			return "service.name"
+		if label == "k8s_cluster_name" {
+			return "k8s.cluster.name"
 		}
 		return label
 	}
-	got := addByClause(`app:="nginx" | stats count(*) as hits`, "service_name, cluster", labelFn)
-	want := `app:="nginx" | stats by (service.name, cluster) count(*) as hits`
+	// Labels are translated to VictoriaLogs fields, except service_name, which
+	// the grouping derives per row.
+	got := addByClause(`app:="nginx" | stats count(*) as hits`, "service_name, k8s_cluster_name", labelFn)
+	want := `app:="nginx" | stats by (service_name, k8s.cluster.name) count(*) as hits`
 	if got != want {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}

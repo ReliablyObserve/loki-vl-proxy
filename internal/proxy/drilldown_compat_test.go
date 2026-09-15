@@ -37,7 +37,7 @@ func TestDrilldown_QueryRange_ServiceNameSelectorAndSyntheticLabel(t *testing.T)
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 	p.handleQueryRange(w, r)
 
-	if !strings.Contains(receivedQuery, `app:="api-gateway"`) {
+	if !strings.Contains(receivedQuery, ` app:="api-gateway")`) {
 		t.Fatalf("expected synthetic service_name selector to include app matcher, got %q", receivedQuery)
 	}
 
@@ -302,7 +302,7 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bservice_name%3D~%60.%2B%60%7D&start=1&end=2", nil)
 	p.handleVolume(w, r)
 
-	if !strings.Contains(receivedQuery, `service_name:~".+"`) || !strings.Contains(receivedQuery, `app:~".+"`) {
+	if !strings.Contains(receivedQuery, `service_name:~"^(?s:.+)$"`) || !strings.Contains(receivedQuery, `app:~"^(?s:.+)$"`) {
 		t.Fatalf("expected service_name regex expansion with backtick support, got %q", receivedQuery)
 	}
 
@@ -601,23 +601,22 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsDetectedLevelUsesDerivedAggregat
 	}
 }
 
-func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
+// Loki lists the service names it assigned, so the proxy lists the distinct
+// values of the same derivation it matches in selectors and groups by, rather
+// than the values of every source field (which would offer values that
+// {service_name="..."} does not select).
+func TestDrilldown_LabelValues_ServiceNameListsDerivedValues(t *testing.T) {
+	var fieldValuesQuery, fieldValuesField string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/field_names":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "service.name", "hits": 12},
-				},
-			})
-		case "/select/logsql/stream_field_values":
-			if got := r.URL.Query().Get("field"); got != "service.name" {
-				t.Fatalf("expected service_name fast path to use service.name field first, got %q", got)
-			}
+		case "/select/logsql/field_values":
+			fieldValuesQuery = r.URL.Query().Get("query")
+			fieldValuesField = r.URL.Query().Get("field")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
 					{"value": "api-gateway", "hits": 12},
 					{"value": "worker", "hits": 5},
+					{"value": "unknown_service", "hits": 2},
 				},
 			})
 		default:
@@ -627,100 +626,19 @@ func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 	defer vlBackend.Close()
 
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values")
-	data := assertDataIsStringArray(t, resp)
-	assertContains(t, data, "api-gateway")
-	assertContains(t, data, "worker")
-}
-
-func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/field_names":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "service_name", "hits": 3},
-					{"value": "app", "hits": 12},
-				},
-			})
-		case "/select/logsql/stream_field_values":
-			// Phase 1 uses stream_field_values for all candidates.
-			switch got := r.URL.Query().Get("field"); got {
-			case "app":
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"values": []map[string]interface{}{
-						{"value": "api-gateway", "hits": 12},
-						{"value": "worker", "hits": 5},
-					},
-				})
-			case "service_name":
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"values": []map[string]interface{}{
-						{"value": "otel-auth-service", "hits": 2},
-					},
-				})
-			default:
-				t.Fatalf("expected service_name values to use concrete app inventory and merge any sparse service_name values, got %q", got)
-			}
-		case "/select/logsql/streams", "/select/logsql/query":
-			t.Fatalf("service_name native inventory must not fall back to stream scans when app inventory is available, got %s", r.URL.Path)
-		default:
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-	}))
-	defer vlBackend.Close()
-
-	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values")
-	data := assertDataIsStringArray(t, resp)
-	assertContains(t, data, "api-gateway")
-	assertContains(t, data, "worker")
-}
-
-func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInventory(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/field_names":
-			// Single field_names fetch covers both stream-indexed labels and OTel fields.
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "app", "hits": 12},
-					{"value": "service.name", "hits": 4},
-				},
-			})
-		case "/select/logsql/stream_field_values":
-			// Phase 1: all service-name candidates fetched via stream_field_values.
-			switch r.URL.Query().Get("field") {
-			case "app":
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"values": []map[string]interface{}{
-						{"value": "api-gateway", "hits": 12},
-						{"value": "worker", "hits": 5},
-					},
-				})
-			case "service.name":
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"values": []map[string]interface{}{
-						{"value": "otel-auth-service", "hits": 4},
-					},
-				})
-			default:
-				t.Fatalf("unexpected field %q for stream_field_values", r.URL.Query().Get("field"))
-			}
-		case "/select/logsql/streams", "/select/logsql/query":
-			t.Fatalf("service_name label values must be resolved from metadata inventory before stream scans, got %s", r.URL.Path)
-		default:
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-	}))
-	defer vlBackend.Close()
-
-	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values?query=*")
 	data := assertDataIsStringArray(t, resp)
 	if len(data) != 3 {
-		t.Fatalf("expected merged service inventory from stream and structured metadata fields, got %v", data)
+		t.Fatalf("expected the derived service names, got %v", data)
 	}
 	assertContains(t, data, "api-gateway")
 	assertContains(t, data, "worker")
-	assertContains(t, data, "otel-auth-service")
+	assertContains(t, data, "unknown_service")
+	if fieldValuesField != "service_name" {
+		t.Fatalf("expected the derived field, got %q", fieldValuesField)
+	}
+	if !strings.Contains(fieldValuesQuery, "as service_name keep_original_fields") && !strings.Contains(fieldValuesQuery, "| coalesce(") {
+		t.Fatalf("expected the service_name derivation in the query, got %q", fieldValuesQuery)
+	}
 }
 
 func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *testing.T) {
@@ -1318,11 +1236,11 @@ func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 			sawFieldNames = true
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
-		case "/select/logsql/stream_field_values":
-			// Phase 1 uses stream_field_values for all candidates (covers both stream and column fields).
+		case "/select/logsql/field_values":
+			// service_name values come from the derived field, in one call.
 			sawFieldValues = true
-			if r.URL.Query().Get("field") != "service.name" {
-				t.Fatalf("expected service_name fast path to use service.name field, got %q", r.URL.Query().Get("field"))
+			if r.URL.Query().Get("field") != "service_name" {
+				t.Fatalf("expected service_name fast path to use the derived field, got %q", r.URL.Query().Get("field"))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"grafana","hits":2}]}`))
@@ -1362,9 +1280,10 @@ func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	if len(values) != 1 || values[0].(string) != "grafana" {
 		t.Fatalf("expected service_name values from fast path, got %v", values)
 	}
-	if !sawFieldNames || !sawFieldValues {
-		t.Fatalf("expected field_names + stream_field_values fast path, got fieldNames=%v fieldValues=%v", sawFieldNames, sawFieldValues)
+	if !sawFieldValues {
+		t.Fatalf("expected the derived field_values fast path, got fieldValues=%v", sawFieldValues)
 	}
+	_ = sawFieldNames
 }
 
 func TestDrilldown_DetectedFieldValues_IgnoreZeroHitNativeValues(t *testing.T) {
@@ -1795,8 +1714,14 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	if statsQuery == "" {
 		t.Fatal("expected stats query_range request to be issued")
 	}
-	if !strings.Contains(statsQuery, `(service_name:!"" OR "service.name":!""`) {
-		t.Fatalf("expected synthetic service_name non-empty matcher to use OR across source fields, got %q", statsQuery)
+	// Every row carries a derived service_name, so `service_name != ""` matches
+	// every row the exact matcher already selected, and grouping by
+	// service_name computes the derived value before the stats pipe (with
+	// format pipes: the test backend reports no version with the coalesce pipe).
+	if !strings.HasPrefix(statsQuery, `(service_name:="argocd" OR `) ||
+		!strings.Contains(statsQuery, `) * | format "<service.name>" as service_name keep_original_fields`) ||
+		!strings.Contains(statsQuery, `as service_name keep_original_fields | stats by (service_name) count()`) {
+		t.Fatalf("expected derived service_name matchers, got %q", statsQuery)
 	}
 
 	var resp map[string]interface{}
@@ -2532,7 +2457,10 @@ func TestDrilldown_LogsTabCounter_SumCountOverTimeParserReturnsSingleSeries(t *t
 	}
 }
 
-func TestDrilldown_IndexVolume_DerivedTargetLabelsGroupBySourceFields(t *testing.T) {
+// targetLabels=service_name groups by the derived field: the derivation pipes
+// write Loki's value into service_name, so VictoriaLogs groups by one field
+// instead of every source field.
+func TestDrilldown_IndexVolume_DerivedTargetLabelGroupsByDerivedField(t *testing.T) {
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/stats_query" {
@@ -2551,10 +2479,17 @@ func TestDrilldown_IndexVolume_DerivedTargetLabelsGroupBySourceFields(t *testing
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bservice_name%3D~%60.%2B%60%7D&start=1&end=2&targetLabels=service_name", nil)
 	p.handleVolume(w, r)
 
-	for _, want := range []string{"service_name", "`service.name`", "app"} {
-		if !strings.Contains(receivedQuery[strings.Index(receivedQuery, "stats by ("):], want) {
-			t.Fatalf("expected derived field %q in the stats grouping, got %q", want, receivedQuery)
+	grouping := receivedQuery[strings.Index(receivedQuery, "stats by ("):]
+	if !strings.Contains(grouping, "service_name") {
+		t.Fatalf("expected the derived field in the stats grouping, got %q", receivedQuery)
+	}
+	for _, unwanted := range []string{"`service.name`", "app", "container"} {
+		if strings.Contains(grouping, unwanted) {
+			t.Fatalf("expected one group field, got %q", receivedQuery)
 		}
+	}
+	if !strings.Contains(receivedQuery, "as service_name keep_original_fields") && !strings.Contains(receivedQuery, "| coalesce(") {
+		t.Fatalf("expected the service_name derivation before the stats pipe, got %q", receivedQuery)
 	}
 }
 

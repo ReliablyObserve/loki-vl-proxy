@@ -211,6 +211,9 @@ func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 				case "/select/logsql/field_names", "/select/logsql/stream_field_names":
 					// No service-name source field in the window: native lookup is empty.
 					writeVLFieldNames(w, nil)
+				case "/select/logsql/field_values":
+					// No derived service name in the window either.
+					writeVLFieldValues(w, nil)
 				case "/select/logsql/query":
 					// A recent-data sample would find a service here.
 					w.Header().Set("Content-Type", "application/stream+json")

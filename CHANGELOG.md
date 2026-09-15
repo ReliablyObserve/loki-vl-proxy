@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Group `by (service_name)` on the service name Loki assigns. VictoriaLogs
+  grouped by the stored `service_name` field (or `service.name` with the
+  underscore label style), so streams that carry only `app`, `service` or
+  `container` were counted under one unlabelled series:
+  `sum by (service_name) (count_over_time({env="production"}[360s]))` over 6h
+  returned 18 series with `billing-service`, `checkout-service`,
+  `java-service` and seven more folded into `{}`, where Loki returns 27. Every
+  metric subquery that groups by `service_name` now computes the derived value
+  in VictoriaLogs before its stats pipe (after the selector, before parser
+  stages), with the same field order and `unknown_service` fallback as the
+  selector: the `coalesce` pipe on VictoriaLogs v1.51+, and on older versions
+  `format` pipes that keep a non-empty destination, which return the same
+  groups (checked on v1.30, v1.50, v1.51 and v1.52). The stats pipe groups by
+  `service_name` alone, so `service.name` and `service_name` rows of one
+  service form one series. Cost on a 24h window over 1.5M rows: 60 ms with
+  `coalesce`, 110 ms with `format`, 30 ms before.
+- Apply Loki's label-filter rules to a `| service_name=~"…"` stage. The stage
+  kept a field-level regexp on one source field, so `| service_name=~"gateway"`
+  returned `api-gateway` (Loki, which compares the whole value, returns
+  nothing) and `| service_name!~"gateway"` dropped 19% of the volume it should
+  return. The stage now matches the derived name with the semantics Loki gives
+  a label matcher after its own simplification: a bare literal is an equality
+  check, a literal wrapped in `.*` a substring check, alternation legs follow
+  the same rules per leg, and anything else stays a fully anchored match.
+  `{service_name=~"…"}` selectors stay anchored, as Prometheus matchers are.
+- Group `/index/volume` and `/index/volume_range` with
+  `targetLabels=service_name` by the derived field. They grouped upstream by
+  all 17 source fields, multiplying the cardinality VictoriaLogs had to track
+  on exactly the long-range queries Logs Drilldown sends; one group field
+  replaces them.
+- List the derived service names in `/label/service_name/values` and
+  `/detected_field/service_name/values`. They listed the values of every
+  source field, so a stream labelled `app="checkout", container="web"` offered
+  `web`, which `{service_name="web"}` does not select (an empty Drilldown
+  page). Both endpoints now read the distinct values of the same derivation in
+  one VictoriaLogs `field_values` call (it replaces one call per source
+  field), including `unknown_service`.
+- Match `{service_name="x"}` selectors on the service name Loki assigns, not on
+  any source label. Loki sets `service_name` once per stream: an existing
+  `service_name` label, else the first non-empty label of its
+  `discover_service_name` list (`service`, `app`, `application`, `app_name`,
+  `name`, `app_kubernetes_io_name`, `container`, `container_name`,
+  `k8s_container_name`, `component`, `workload`, `job`, `k8s_job_name`; OTLP
+  `service.name`), else `unknown_service`. The proxy translated the selector
+  to an OR over every source field, so `{service_name="web"}` also returned
+  streams Loki names `checkout` because a lower-priority `container` label
+  was `web`, `=~` matched substrings (`service_name=~"check"` returned
+  `checkout`, Loki returns nothing), and `{service_name="unknown_service"}`
+  returned no lines. The matcher, in a selector or in an exact
+  `| service_name="x"` label filter stage, now selects a row exactly when its derived
+  service name satisfies it: one branch per priority position, each requiring
+  every higher-priority field to be empty
+  (`(service_name:="x" OR (service_name:="" "service.name":="x") OR ...)`),
+  anchored regexps, `unknown_service` for rows without any source field,
+  `service_name=""` matching nothing and `service_name!=""` everything. It
+  stays a plain field filter, so VictoriaLogs keeps its bloom-filter path and
+  pipe-stripping fast paths still apply; on a 24h window it costs the same as
+  the old OR (30-45 ms, VictoriaLogs v1.52.0), and the same filters select the
+  same rows on v1.30.0. A stream filter restricted to stream labels was also
+  measured and rejected: its empty-label matchers took 0.1-8 s for each new
+  value until VictoriaLogs cached them. VictoriaLogs does not record whether a
+  field was a Loki stream label, so a source field stored outside `_stream`
+  (for example a `service` key unpacked from a JSON line) takes part in the
+  derivation, where Loki reads stream labels only. The derivation keeps a
+  value that is only whitespace, as Loki does, instead of trimming it.
+
 - **Grafana Explore's logs volume works for `| json` queries with label filters.**
   Adding a label filter in the query builder, for example
   `{env="production"} | json | status=`200``, made the logs volume query

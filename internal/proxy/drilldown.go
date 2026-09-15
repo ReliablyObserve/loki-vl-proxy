@@ -20,6 +20,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 const unknownServiceName = "unknown_service"
@@ -83,25 +84,9 @@ var otelUnderscorePrefixes = []string{
 	"service_",
 }
 
-var serviceNameSourceFields = []string{
-	"service_name",
-	"service.name",
-	"service",
-	"app",
-	"application",
-	"app_name",
-	"name",
-	"app_kubernetes_io_name",
-	"container",
-	"container_name",
-	"k8s.container.name",
-	"k8s_container_name",
-	"component",
-	"workload",
-	"job",
-	"k8s.job.name",
-	"k8s_job_name",
-}
+// serviceNameSourceFields is the derivation's field order, shared with the
+// translator so the LogsQL and the response side stay in step.
+var serviceNameSourceFields = translator.ServiceNameSourceFields()
 
 type detectedFieldSummary struct {
 	label       string
@@ -132,7 +117,9 @@ func hasServiceSignal(labels map[string]string) bool {
 		return false
 	}
 	for _, key := range serviceNameSourceFields {
-		if strings.TrimSpace(labels[key]) != "" {
+		// Loki tests the label value for emptiness only, so a value that is
+		// only whitespace is a service name like any other.
+		if labels[key] != "" {
 			return true
 		}
 	}
@@ -141,7 +128,7 @@ func hasServiceSignal(labels map[string]string) bool {
 
 func deriveServiceName(labels map[string]string) string {
 	for _, key := range serviceNameSourceFields {
-		if value := strings.TrimSpace(labels[key]); value != "" {
+		if value := labels[key]; value != "" {
 			return value
 		}
 	}
@@ -152,7 +139,7 @@ func ensureSyntheticServiceName(labels map[string]string) {
 	if labels == nil {
 		return
 	}
-	if value := strings.TrimSpace(labels["service_name"]); value != "" {
+	if labels["service_name"] != "" {
 		return
 	}
 	labels["service_name"] = deriveServiceName(labels)
@@ -545,148 +532,28 @@ func isVLUnsupportedPath(body []byte) bool {
 }
 
 func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, start, end string) ([]string, error) {
-	values := make([]string, 0, 16)
-	seen := make(map[string]struct{}, 16)
-	var lastErr error
+	// Loki lists the service names it assigned at ingest, one per stream. The
+	// proxy derives that value per row (the same derivation the selector and
+	// metric grouping use) and asks VictoriaLogs for its distinct values, so a
+	// listed value always selects rows: listing the values of every source
+	// field would offer values that `{service_name="..."}` does not match.
+	// No time-range cap: /label/service_name/values must list every service with
+	// data in the requested [start, end] range, like Loki.
 	params, err := p.metadataQueryParams(ctx, relaxedFieldDetectionQuery(query), start, end, "", "")
 	if err != nil {
 		return nil, err
 	}
-	// No time-range cap: /label/service_name/values must list every service with
-	// data in the requested [start, end] range, like Loki.
-	appendFieldValues := func(fieldValues []string) {
-		for _, value := range fieldValues {
-			value = strings.TrimSpace(value)
-			if value == "" {
-				continue
-			}
-			if _, ok := seen[value]; ok {
-				continue
-			}
-			seen[value] = struct{}{}
-			values = append(values, value)
-		}
+	params.Set("query", translator.WithDerivedServiceName(params.Get("query"), p.logsqlCapabilities()))
+	params.Set("field", "service_name")
+	values, err := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", params)
+	if err != nil {
+		return nil, err
 	}
-
-	// Phase 1: use field_names (fast, ~0.25s) instead of stream_field_names (~2-4s).
-	// field_names returns a superset of all field names including stream-indexed labels,
-	// so it covers both plain labels (app, service_name) and dotted OTel fields (service.name).
-	// On VL v1.50+ use field_values (20x faster than stream_field_values at any range).
-	// On older backends use stream_field_values so stream-indexed labels return correctly.
-	// Phase 2 (field_values fallback) only runs when Phase 1 is unavailable — avoiding the
-	// redundant second field_names call that the old two-phase design required.
-	phase1Succeeded := false
-	if p.supportsStreamMetadataEndpoints() {
-		allFields, err := p.fetchAllFieldNamesCached(ctx, params)
-		if err == nil {
-			phase1Succeeded = true
-			allFields = appendUniqueStrings(allFields, p.snapshotDeclaredLabelFields()...)
-			available := make(map[string]struct{}, len(allFields))
-			for _, field := range allFields {
-				available[field] = struct{}{}
-			}
-			// Collect matching fields first, then fetch their values in parallel.
-			// Sequential fetches caused N×RTT latency (5-10 calls at ~200ms each = 1-2s).
-			candidates := make([]string, 0, 8)
-			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; ok {
-					candidates = append(candidates, field)
-				}
-			}
-			// VL v1.50+: field_values is identical to stream_field_values for stream fields
-			// but ~20x faster (37ms vs 700ms at 1h). Use it when available.
-			fieldValuesEndpoint := "/select/logsql/stream_field_values"
-			if p.supportsColumnIndexedFields() {
-				fieldValuesEndpoint = "/select/logsql/field_values"
-			}
-			type fieldResult struct {
-				values []string
-				err    error
-			}
-			results := make([]fieldResult, len(candidates))
-			var wg sync.WaitGroup
-			sem := make(chan struct{}, 4) // limit parallelism to 4 concurrent VL calls
-			for i, field := range candidates {
-				wg.Add(1)
-				go func(i int, field string) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-					queryParams := cloneURLValues(params)
-					queryParams.Set("field", field)
-					fv, fErr := p.fetchVLFieldValues(ctx, fieldValuesEndpoint, queryParams)
-					results[i] = fieldResult{values: fv, err: fErr}
-				}(i, field)
-			}
-			wg.Wait()
-			for _, r := range results {
-				if r.err != nil {
-					lastErr = r.err
-					continue
-				}
-				appendFieldValues(r.values)
-			}
-		} else if !shouldFallbackToGenericMetadata(err) {
-			lastErr = err
-		}
-	}
-
-	// Phase 2: fallback when stream metadata endpoints are unavailable or Phase 1 failed.
-	// Discovers document-level fields (service.name, …) via field_values on the full range.
-	// Skipped when Phase 1 succeeded — fetchAllFieldNamesCached already returns a superset,
-	// so a second field_names round-trip would be redundant.
-	if !phase1Succeeded {
-		fieldNames, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
-		if err == nil {
-			available := make(map[string]struct{}, len(fieldNames))
-			for _, field := range fieldNames {
-				available[field] = struct{}{}
-			}
-			candidates2 := make([]string, 0, 8)
-			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; ok {
-					candidates2 = append(candidates2, field)
-				}
-			}
-			results2 := make([]struct {
-				values []string
-				err    error
-			}, len(candidates2))
-			var wg2 sync.WaitGroup
-			sem2 := make(chan struct{}, 4)
-			for i, field := range candidates2 {
-				wg2.Add(1)
-				go func(i int, field string) {
-					defer wg2.Done()
-					sem2 <- struct{}{}
-					defer func() { <-sem2 }()
-					queryParams := cloneURLValues(params)
-					queryParams.Set("field", field)
-					fv, fErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
-					results2[i] = struct {
-						values []string
-						err    error
-					}{values: fv, err: fErr}
-				}(i, field)
-			}
-			wg2.Wait()
-			for _, r := range results2 {
-				if r.err != nil {
-					lastErr = r.err
-					continue
-				}
-				appendFieldValues(r.values)
-			}
-		} else if lastErr == nil {
-			lastErr = err
-		}
-	}
-
 	values = uniqueSortedNonEmptyStrings(values)
 	if len(values) > 0 {
 		return values, nil
 	}
-	return nil, lastErr
+	return nil, nil
 }
 
 func uniqueSortedNonEmptyStrings(values []string) []string {
@@ -813,9 +680,9 @@ func (p *Proxy) derivedVolumeSourceFields(targets []string) []string {
 	for _, target := range targets {
 		switch strings.TrimSpace(target) {
 		case "service_name":
-			for _, source := range serviceNameSourceFields {
-				addField(source)
-			}
+			// The derivation pipes write the Loki value into service_name, so
+			// one group field replaces every source field.
+			addField("service_name")
 		case "detected_level":
 			addField("detected_level")
 			addField("level")
