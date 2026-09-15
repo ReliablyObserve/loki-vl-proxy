@@ -13,7 +13,7 @@ description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-
 | `GET/POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 5m (2) | 1+ (1) |
 | `GET/POST /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 5m (2) | 1+ (1) |
 | `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 5m (3) | 3 |
-| `GET /loki/api/v1/label/{name}/values` | Implemented | `field_names` (candidate resolution, capped to 5m) → `stream_field_names` (endpoint gate) → `stream_field_values` if stream-indexed, else `field_values` | 5m (3) | 3 |
+| `GET /loki/api/v1/label/{name}/values` | Implemented | `field_names` (label alias resolution) → `stream_field_values` when the backend supports stream metadata endpoints, else `field_values` (also used when `stream_field_values` returns a 4xx) | 5m (3) | 3 |
 | `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
 | `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/hits` | 10s | 2 |
 | `GET /loki/api/v1/index/volume` | Implemented | `/select/logsql/hits` (field grouping) | 10s | 2 |
@@ -29,7 +29,7 @@ description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-
 
 **(2)** Final-response cache. Requests ending within `-recent-tail-refresh-window` (default `2m`) of now are refetched once the cached entry is older than `-recent-tail-refresh-max-staleness` (default `2s`).
 
-**(3)** Base TTL for request windows up to 1h (`-labels-cache-ttl` for labels and label values); longer windows scale it up, capped at 1h. When a client omits both `start` and `end` on `/labels`, `/label/{name}/values` or `/series`, the proxy bounds the backend lookup to `-metadata-default-lookback` (default `12h`).
+**(3)** Base TTL for request windows up to 1h (`-labels-cache-ttl` for labels and label values); longer windows scale it up, capped at 1h. Like Loki, `/labels` and `/label/{name}/values` return every label name or value with data anywhere in the requested `start`–`end` range on the first response: every backend call, including background refreshes, covers the full range. A window without data returns an empty list (no synthetic `service_name`); empty answers are cached for only 30 seconds (or the higher of `-disk-cache-min-ttl` and `-peer-write-through-min-ttl`), through the same memory, disk and peer write paths as other answers, so they replace an earlier non-empty answer for the same request. If VictoriaLogs fails, the last cached answer for the same request is served when one exists, marked with the `X-Proxy-Stale-Response: true` and `Cache-Control: no-store` headers and never stored in the compatibility-edge or multi-tenant merge caches (an expired empty list is never used as that answer); otherwise the error is returned, never a partial list. When a client omits both `start` and `end` on `/labels`, `/label/{name}/values` or `/series`, the proxy bounds the backend lookup to `-metadata-default-lookback` (default `12h`).
 
 ### Drilldown Field Shaping
 

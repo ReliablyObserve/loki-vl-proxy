@@ -58,17 +58,11 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// After the 5-min cap applied by capMetadataStartOnly (no bucketing — preserves
-	// original end so recently-ingested data is never hidden):
-	//   cappedStart = endNs - 5min = 1609545600e9 - 300e9 = 1609545300e9
-	//   end         = 1609545600e9 (preserved, normalized to nanoseconds)
-	//
-	// Note: the handler also fires a background full-range refresh goroutine (because the
-	// 24h input range exceeds the 5-min synchronous cap), which sends the raw uncapped
-	// params to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
+	// Loki returns every label with data in [start, end], so the requested range is
+	// forwarded unchanged and no background refresh call follows.
 	const (
-		wantStart = "1609545300000000000"
-		wantEnd   = "1609545600000000000"
+		wantStart = "1609459200"
+		wantEnd   = "1609545600"
 	)
 	type call struct{ start, end string }
 	var mu sync.Mutex
@@ -83,16 +77,11 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 
 	doGet(t, vlBackend.URL, "/loki/api/v1/labels?start=1609459200&end=1609545600")
 
-	// The synchronous path must have made at least one capped VL call.
-	// (The background full-range refresh will also appear with uncapped params — that is correct.)
 	mu.Lock()
 	defer mu.Unlock()
-	for _, c := range calls {
-		if c.start == wantStart && c.end == wantEnd {
-			return // pass
-		}
+	if len(calls) != 1 || calls[0].start != wantStart || calls[0].end != wantEnd {
+		t.Errorf("want exactly one VL call with start=%s end=%s; all calls: %v", wantStart, wantEnd, calls)
 	}
-	t.Errorf("no VL call with capped start=%s end=%s; all calls: %v", wantStart, wantEnd, calls)
 }
 
 func TestContract_Labels_EmptyResult(t *testing.T) {
@@ -102,9 +91,10 @@ func TestContract_Labels_EmptyResult(t *testing.T) {
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/labels")
 	assertLokiSuccess(t, resp)
 
+	// Loki returns no label names for a window without data (no synthetic service_name).
 	data := assertDataIsStringArray(t, resp)
-	if len(data) != 1 || data[0] != "service_name" {
-		t.Errorf("expected synthetic service_name label, got %v", data)
+	if len(data) != 0 {
+		t.Errorf("expected no labels for an empty window, got %v", data)
 	}
 }
 
@@ -3394,9 +3384,8 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 	//   floor(1700000000000000000 / 300000000000) = 5666666 → same bucket as T+1ms.
 	// A shift of +5 min (300e9 ns) moves to the next bucket.
 	//
-	// Use a 4-minute range so rangeExceedsWindow(≤5min) stays false; that prevents
-	// handleLabels from spawning a background refresh goroutine that would make an
-	// extra VL call and corrupt the callCount assertions below.
+	// A 4-minute range keeps the metadata TTL at its base value, so the cache hits
+	// below cannot schedule a background refresh that would add VL calls.
 	const (
 		// req1: T, req2: T+1ms (same 5-min bucket), req3: T+5min (next bucket)
 		req1 = "start=1700000000000000000&end=1700000240000000000"

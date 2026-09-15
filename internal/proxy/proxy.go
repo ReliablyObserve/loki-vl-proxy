@@ -587,6 +587,7 @@ type Proxy struct {
 	requestSampler                        *observability.RequestSampler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
+	metadataNegativeCacheTTL              time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
 	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
@@ -1169,6 +1170,7 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
@@ -1296,6 +1298,7 @@ func New(cfg Config) (*Proxy, error) {
 			peerAuthToken:                         p.peerAuthToken,
 			cacheTTLLabels:                        p.cacheTTLLabels,
 			cacheTTLLabelValues:                   p.cacheTTLLabelValues,
+			metadataNegativeCacheTTL:              p.metadataNegativeCacheTTL,
 			logSampleN:                            p.logSampleN,
 		},
 		// State shares the exact same mutex instances and map/channel references as

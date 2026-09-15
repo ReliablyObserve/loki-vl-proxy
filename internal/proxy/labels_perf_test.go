@@ -76,20 +76,17 @@ func labelsPath(window time.Duration) string {
 }
 
 // =============================================================================
-// Correctness: VL always receives a ≤1h window regardless of dashboard range
+// Correctness: VL receives the full requested window for every dashboard range
 // =============================================================================
 
-// TestPerf_Labels_BackendWindowCap verifies that for every Grafana time-picker
-// preset the proxy caps the VL backend call to ≤1h+1bucket (5 min tolerance).
-// Wide ranges (2d, 7d) must not trigger full-range stream-index scans.
-func TestPerf_Labels_BackendWindowCap(t *testing.T) {
+// TestPerf_Labels_BackendFullRange verifies that for every Grafana time-picker
+// preset the synchronous VL backend call covers the exact requested range, so the
+// first /labels response lists every label with data in [start, end] like Loki.
+func TestPerf_Labels_BackendFullRange(t *testing.T) {
 	for _, tc := range labelsWindowCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// Capture only the FIRST non-health VL call so that the background
-			// refresh goroutine (launched for wide ranges like 24h/7d) cannot
-			// overwrite the params with the full user-selected range before the
-			// assertion runs.
+			// Capture only the FIRST non-health VL call: it is the synchronous one.
 			var firstStart, firstEnd atomic.Value
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/health" {
@@ -120,11 +117,9 @@ func TestPerf_Labels_BackendWindowCap(t *testing.T) {
 			}
 			gotWindow := time.Duration(gotEnd - gotStart)
 
-			// Allow one extra bucket (5 min) for rounding.
-			const maxWindow = time.Hour + 5*time.Minute
-			if gotWindow > maxWindow {
-				t.Errorf("window=%s: VL received %v window (want ≤%v); start=%s end=%s",
-					tc.name, gotWindow, maxWindow, receivedStart, receivedEnd)
+			if gotWindow != tc.duration {
+				t.Errorf("window=%s: VL received %v window (want the full %v); start=%s end=%s",
+					tc.name, gotWindow, tc.duration, receivedStart, receivedEnd)
 			}
 		})
 	}
@@ -175,10 +170,10 @@ func TestPerf_Labels_ColdAndWarmLatency(t *testing.T) {
 	}
 }
 
-// TestPerf_Labels_SameVLCallForAllWindows confirms that 1h and 7d label
-// requests — after capping — hit the same VL time window and therefore
-// produce identical proxy cache keys once the first request lands.
-func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
+// TestPerf_Labels_OneFullRangeVLCallPerWindow confirms that each time-picker
+// preset issues exactly one VL call covering its own full window: no shared
+// capped window and no follow-up background refresh call.
+func TestPerf_Labels_OneFullRangeVLCallPerWindow(t *testing.T) {
 	var mu sync.Mutex
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,12 +181,9 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// Capture the bucketed window the proxy sends to VL.
-		// Mutex required: background refresh goroutines may call VL concurrently.
 		q := r.URL.Query()
-		entry := q.Get("start") + "/" + q.Get("end")
 		mu.Lock()
-		calls = append(calls, entry)
+		calls = append(calls, q.Get("start")+"/"+q.Get("end"))
 		mu.Unlock()
 		writeVLFieldNames(w, []fieldHit{{"app", 100}})
 	}))
@@ -199,33 +191,23 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 
 	mux := newPerfProxy(t, srv.URL)
 
-	// Issue one request per window using a fixed anchor so all
-	// requests share the same bucket.
 	endNs := perfBaseTimeNs
+	want := make([]string, 0, len(labelsWindowCases))
 	for _, tc := range labelsWindowCases {
 		startNs := endNs - int64(tc.duration)
+		want = append(want, fmt.Sprintf("%d/%d", startNs, endNs))
 		path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", startNs, endNs)
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		mux.ServeHTTP(httptest.NewRecorder(), req)
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
 
 	mu.Lock()
-	snapshot := append([]string(nil), calls...)
-	mu.Unlock()
-
-	// All windows share the same capped end; the capped start differs by at
-	// most one bucket.  Every window > 1h should produce the same VL params
-	// (the 1h cap collapses them).
-	if len(snapshot) == 0 {
-		t.Fatal("no VL calls recorded")
+	defer mu.Unlock()
+	if len(calls) != len(want) {
+		t.Fatalf("want %d VL calls (one per window), got %d: %v", len(want), len(calls), calls)
 	}
-	first := snapshot[0]
-	for i, c := range snapshot[1:] {
-		if c != first {
-			// Two different VL windows is fine for the 1h case vs longer cases
-			// as long as each window is ≤1h+5min — that is verified by
-			// TestPerf_Labels_BackendWindowCap.  Log for visibility.
-			t.Logf("window[0]=%s window[%d]=%s (bucket drift OK if within 5 min)", first, i+1, c)
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Errorf("window %s: VL call %s, want full range %s", labelsWindowCases[i].name, calls[i], want[i])
 		}
 	}
 }
@@ -240,8 +222,7 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 // allowed for bucket-boundary rounding).
 //
 // Design notes:
-//   - warmLabelWindows caps all windows to the same 1h VL call, so streamFieldNamesCache
-//     deduplication means only 1 backend call is made (not 4). The poll waits for ≥1.
+//   - warmLabelWindows issues one full-range VL call per window. The poll waits for ≥1.
 //   - LabelCacheTTL matches startupWarmupTTL (10s) so shouldRefreshLabelsInBackground
 //     does not trigger on post-warmup cache hits (remaining ≈ TTL > 4/5·TTL threshold).
 func TestPerf_Labels_WarmupCoverage(t *testing.T) {
@@ -283,7 +264,7 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	// makes the warmup deterministic (all four windows are populated on return).
 	// The args mirror the startup wrapper's constants (warmupStaleThreshold=30s,
 	// startupWarmupTTL=warmupTTL).
-	p.warmLabelWindows(context.Background(), 30*time.Second, warmupTTL)
+	p.warmLabelWindows(context.Background(), 30*time.Second, warmupTTL, false)
 
 	warmupCallCount := backendCalls.Load()
 	if warmupCallCount == 0 {

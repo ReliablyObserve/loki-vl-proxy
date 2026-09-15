@@ -641,25 +641,25 @@ func TestMemLeak_BucketMetadataTime_HighVolume(t *testing.T) {
 	mlAssert(t, "cache-keys/bucket-metadata-time", before, mlHeapAfter(), cycles, boundMB)
 }
 
-// ── capMetadataTimeRange ──────────────────────────────────────────────────────
+// ── capMetadataStartOnly ──────────────────────────────────────────────────────
 
-// TestMemLeak_CapMetadataTimeRange_HighVolume verifies that repeated capMetadataTimeRange
+// TestMemLeak_CapMetadataStartOnly_HighVolume verifies that repeated capMetadataStartOnly
 // calls on the same params produce bounded allocations. The function copies url.Values
 // only when capping is required; the copy path must not leak.
-func TestMemLeak_CapMetadataTimeRange_HighVolume(t *testing.T) {
+func TestMemLeak_CapMetadataStartOnly_HighVolume(t *testing.T) {
 	const (
 		cycles  = 10_000
 		boundMB = 5
 	)
 	params := url.Values{
 		"start": {"1700000000000000000"},
-		"end":   {"1700090000000000000"}, // 25h → gets capped to 1h
+		"end":   {"1700090000000000000"}, // 25h → gets capped to 5m
 		"query": {`{app="nginx"}`},
 	}
 
 	before := mlHeapBefore()
 	for i := 0; i < cycles; i++ {
-		_ = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+		_ = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	}
 	mlAssert(t, "label-metadata/cap-time-range", before, mlHeapAfter(), cycles, boundMB)
 }

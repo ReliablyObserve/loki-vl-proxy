@@ -361,7 +361,11 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 			}
 		}
 	}
-	key := "compat:v2:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
+	prefix := "compat:v2:" + endpoint + ":"
+	if version := readCacheKeyVersion(endpoint); version != "" {
+		prefix += version + ":"
+	}
+	key := prefix + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
@@ -539,6 +543,9 @@ func compatCacheCaptureAllowed(code int, flushed bool, header http.Header) bool 
 	if len(header.Values("Set-Cookie")) > 0 {
 		return false
 	}
+	if header.Get(staleResponseHeader) != "" {
+		return false
+	}
 	contentType := strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }
@@ -647,6 +654,11 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 					capture.Release()
 					return
 				}
+			}
+			// Empty label lists get the same short negative TTL as the endpoint
+			// cache, so labels that appear later are not hidden for the full TTL.
+			if captureAllowed && (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(body) {
+				ttl = p.metadataNegativeTTL()
 			}
 			if captureAllowed {
 				p.compatCache.SetWithTTL(cacheKey, append([]byte(nil), body...), ttl)

@@ -175,7 +175,7 @@ func TestCapMetadataStartOnly_ExceedsWindow_CapsStart(t *testing.T) {
 
 func TestCapMetadataStartOnly_PreservesEnd(t *testing.T) {
 	t.Parallel()
-	// Verify that end is never bucketed (unlike capMetadataTimeRange).
+	// Verify that end is never bucketed.
 	// It IS normalized to nanoseconds for consistent VL query format.
 	endNs := int64(1_779_700_123_456_789_000) // nanoseconds, deliberately not aligned to any bucket
 	startNs := endNs - int64(48*time.Hour)

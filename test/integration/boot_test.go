@@ -158,12 +158,11 @@ func TestBinaryFailsWhenPeerCacheLacksToken(t *testing.T) {
 //
 // We boot with a 1h lookback, send /loki/api/v1/series with no time
 // bounds, and inspect what the stub backend received on
-// /select/logsql/streams. We probe /series rather than /labels because
-// handleLabels additionally caps the synchronous VL fetch to
-// metadataMaxFieldNamesWindow (5m) for fast initial response, which
-// obscures the lookback boundary; handleSeries injects the lookback and
-// forwards start/end unmodified, which is the cleanest assertion surface
-// for the lookback injection itself (see applyDefaultMetadataLookback).
+// /select/logsql/streams. /series injects the lookback and forwards
+// start/end unmodified through a single backend call, which is the cleanest
+// assertion surface for the lookback injection itself (see
+// applyDefaultMetadataLookback); /labels and /label/{name}/values share the
+// same helper.
 func TestMetadataDefaultLookbackInjectsStartEnd(t *testing.T) {
 	backend := startStubBackend(t)
 	p := startProxy(t, backend,

@@ -456,6 +456,15 @@ func (pc *PeerCache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	go pc.pushToOwner(owner, key, value, ttl)
 }
 
+// WriteThroughMinTTL returns the minimum TTL a write needs to be pushed to its
+// owner peer, or 0 when write-through is disabled.
+func (pc *PeerCache) WriteThroughMinTTL() time.Duration {
+	if pc == nil || !pc.writeThrough {
+		return 0
+	}
+	return pc.wtMinTTL
+}
+
 func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
 	defer cancel()

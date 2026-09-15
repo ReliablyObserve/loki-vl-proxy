@@ -148,6 +148,7 @@ Behavior when enabled:
 - Supports optional pagination-style parameters on the same endpoint: `limit` and `offset`.
 - Supports optional in-proxy value filtering with `search` (alias `q`), without forcing a full backend refetch when index is warm.
 - Query-scoped requests (`query={...}`) keep standard behavior and still update index state.
+- The index is not time-scoped. Once a label has indexed values, empty-query browse returns them for any `start`/`end`, including values only seen in other windows. The first browse of a label that is not indexed yet, and every query-scoped request, reads the full requested range from VictoriaLogs.
 - Startup warm order: restore disk snapshot first, then warm from peer cache when disk snapshot is stale/missing.
 - Rolling update safety: graceful shutdown writes a final snapshot before exit.
 - Readiness behavior: `/ready` stays `503` until label-values startup warm is finished.
@@ -309,7 +310,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-cache-ttl` | — | `60s` | Default cache TTL |
 | `-cache-max` | — | `10000` | Maximum cache entries |
 | `-cache-max-bytes` | — | `268435456` | Maximum in-memory L1 cache size in bytes (256 MiB by default) |
-| `-labels-cache-ttl` | — | `0` (uses `5m`) | Cache TTL for `/labels` and `/label/{name}/values` responses. `0` uses the built-in 5-minute default. The keep-warm loop runs at 75% of the built-in 5-minute labels TTL. |
+| `-labels-cache-ttl` | — | `0` (uses `5m`) | Cache TTL for `/labels` and `/label/{name}/values` responses. `0` uses the built-in 5-minute default. The keep-warm loop runs at 75% of this TTL (the built-in 5 minutes when unset). A cache miss queries VictoriaLogs over the full requested `start`–`end` range, so the first response is complete; there is no reduced first scan. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
 | `-compat-cache-max-percent` | — | `10` | Percent of `-cache-max-bytes` reserved for Tier0 (`0` disables, max `50`) |
 
@@ -327,7 +328,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 
 | Endpoint | TTL |
 |---|---|
-| `labels`, `label_values` | 5m (`-labels-cache-ttl`) for request windows up to 1h; longer windows scale the TTL up (×3 up to 6h, ×10 up to 24h, ×20 up to 7d), capped at 1h |
+| `labels`, `label_values` | 5m (`-labels-cache-ttl`) for request windows up to 1h; longer windows scale the TTL up (×3 up to 6h, ×10 up to 24h, ×20 up to 7d), capped at 1h. Background refreshes re-query the same full range and keep the scaled TTL |
 | `detected_fields`, `detected_field_values`, `detected_labels` | 90s, scaled for longer request windows the same way, capped at 1h |
 | `series` | 30s |
 | `patterns` | `100y` (effectively persistent; update-on-write) |
@@ -342,7 +343,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-compress` | — | `true` | Gzip compression for disk cache |
 | `-disk-cache-flush-size` | — | `100` | Flush write buffer after N entries |
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
-| `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes |
+| `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes. Empty `/labels` and `/label/{name}/values` answers are cached for max(`30s`, this, `-peer-write-through-min-ttl`), so they still overwrite an older non-empty copy on disk and peers when either minimum is raised (new labels can then take that long to appear after an empty answer) |
 | `-disk-cache-max-bytes` | — | `0` | Maximum on-disk L2 cache size in bytes (`0` = unlimited) |
 
 ## Cold Storage Backend
@@ -867,7 +868,7 @@ These protective limits are built in (not configurable unless a flag is named). 
 | `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. **Required by default in v1.56.0** — the proxy refuses to start when peer cache is configured (via `-peer-discovery` or `-peer-static`) and this token is empty, unless `-peer-insecure-ip-allowlist=true` is set. |
 | `-peer-insecure-ip-allowlist` | — | `false` | Explicit opt-in for the legacy IP-allowlist-only peer auth (membership in the discovered peer set is the only check). When `true`, the proxy boots with `-peer-auth-token=""` and falls back to source-IP membership for `/_cache/get` and `/_cache/set`. **BREAKING in v1.56.0** — without this flag, a configured peer cache with an empty token now fails startup. |
 | `-peer-write-through` | — | `true` | Push eligible non-owner cache writes to the owner peer (`/_cache/set`) to keep owner shards warm under skewed traffic |
-| `-peer-write-through-min-ttl` | — | `30s` | Minimum TTL required to push a write-through copy to the owner peer |
+| `-peer-write-through-min-ttl` | — | `30s` | Minimum TTL required to push a write-through copy to the owner peer. Also raises the TTL of empty label-list answers: max(`30s`, `-disk-cache-min-ttl`, this) |
 | `-peer-hot-read-ahead-enabled` | — | `false` | Enable bounded periodic hot-read-ahead prefetch from peer hot indexes |
 | `-peer-hot-read-ahead-interval` | — | `30s` | Base interval for hot-index pull cycles |
 | `-peer-hot-read-ahead-jitter` | — | `5s` | Random jitter added to the read-ahead interval |
