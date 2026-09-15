@@ -650,8 +650,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		// CRITICAL: Loki |= is SUBSTRING match, not word match.
 		// VL's "text" is word-only; VL's ~"text" is substring/regexp.
 		// We must use ~"text" to match Loki's substring semantics.
-		// The proxy's reconstructLogLine puts the full JSON into _msg, so
-		// searching _msg via ~"text" finds text in any original JSON field.
+		// Loki matches the raw line; VictoriaLogs stores that line in _msg.
 
 		// ip() line filter: Loki searches raw log text for IPs matching the pattern.
 		// VL has no native ip() support; translate to a regex approximation.

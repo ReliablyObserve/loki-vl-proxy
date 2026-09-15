@@ -203,6 +203,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	}()
 
 	captureFields := regexpCaptureFields(originalQuery)
+	lineFields := logQueryLineFields(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(
 		hasLabelParserStage(originalQuery),
 		categorizedLabels, emitStructuredMetadata,
@@ -225,7 +226,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		streamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = reconstructLogLine(msg, entry, streamLabels, originalQuery)
+		msg = storedLogLineFromEntry(msg, entry, streamLabels, lineFields, p.defaultMsgValue())
 
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
@@ -465,14 +466,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		}
 		tsNanos := strconv.FormatInt(ts.UnixNano(), 10)
 
-		// Reconstruct JSON log line from VL's extracted fields. No originalQuery
-		// context is available here — pass empty string so only auto-ingestion
-		// fields are reconstructed (no text-extraction parser stages present).
 		tailStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		if len(entry) > len(tailStreamLabels)+5 {
-			msg = reconstructLogLine(msg, entry, tailStreamLabels, "")
-		}
-
+		msg = storedLogLineFromEntry(msg, entry, tailStreamLabels, nil, "")
 		labels := buildEntryLabelsWithStream(entry, tailStreamLabels)
 		streamKey := canonicalLabelsKey(labels)
 
@@ -524,7 +519,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 }
 
 type cachedLogQueryStreamDescriptor struct {
-	key              string // canonicalLabelsKey(translatedLabels): the emitted stream identity
+	key              string            // canonicalLabelsKey(translatedLabels): the emitted stream identity
+	streamLabels     map[string]string // labels parsed from _stream (shared, read-only)
 	rawLabels        map[string]string
 	translatedLabels map[string]string
 }
@@ -555,7 +551,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := regexpCaptureFields(originalQuery)
-	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
+	lineFields := logQueryLineFields(originalQuery)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0
@@ -614,8 +610,6 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg := string(fjVal.GetStringBytes("_msg"))
-
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
 		// logQueryStreamDescriptorBytes uses m[string([]byte)] (zero-alloc lookup)
 		// and only promotes to heap strings on cache miss (once per unique stream).
@@ -624,21 +618,16 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			fjVal.GetStringBytes("level"),
 			streamLabelCache, streamDescriptorCache,
 		)
+		msg := storedLogLineFromFJ(fjVal, desc.streamLabels, lineFields, p.defaultMsgValue())
 
-		// Object() is needed for reconstruction or classification.
-		needsObject := needsClassification || !skipLogLineReconstruction
 		var fjObj *fj.Object
-		if needsObject {
+		if needsClassification {
 			obj, fjErr := fjVal.Object()
 			if fjErr != nil {
 				vlFJParserPool.Put(fjParser)
 				continue
 			}
 			fjObj = obj
-		}
-
-		if !skipLogLineReconstruction {
-			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
 		}
 
 		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
@@ -869,6 +858,7 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 
 	desc := cachedLogQueryStreamDescriptor{
 		key:              canonicalLabelsKey(translatedLabels),
+		streamLabels:     baseLabels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
 	}

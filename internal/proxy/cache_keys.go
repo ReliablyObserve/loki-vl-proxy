@@ -25,6 +25,13 @@ const labelMetadataCacheKeyVersion = "@full-range-v2"
 // at bucket starts; volumes are now bytes stamped like Loki.
 const volumeCacheKeyVersion = "@bytes-v1"
 
+// logLineCacheKeyVersion versions the cache keys of log query responses and
+// query_range windows, which the disk (L2) and peer (L3) tiers keep for up to
+// a day. "line-v3": older binaries wrapped _msg and the row's other fields into
+// a {"_msg":...} JSON line instead of returning the stored line, or returned
+// VictoriaLogs' missing-message placeholder as the line.
+const logLineCacheKeyVersion = "line-v3"
+
 // readCacheKeyVersion returns the key version segment for endpoint, if any.
 func readCacheKeyVersion(endpoint string) string {
 	switch endpoint {

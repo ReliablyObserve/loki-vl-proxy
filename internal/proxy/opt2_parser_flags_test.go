@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -70,48 +69,6 @@ func TestOPT2_ClassifyEntryFieldsWithFlags_ParityWithOriginal(t *testing.T) {
 			}
 			if !reflect.DeepEqual(pf1, pf2) {
 				t.Errorf("parsedFields mismatch\n  original: %v\n  withFlags: %v", pf1, pf2)
-			}
-		})
-	}
-}
-
-// TestOPT2_ReconstructLogLineWithFlag_ParityWithOriginal verifies the fast-path
-// reconstruction variant produces byte-identical output to the original.
-func TestOPT2_ReconstructLogLineWithFlag_ParityWithOriginal(t *testing.T) {
-	queries := []string{
-		`{app="api-gateway"}`,
-		`{app="api-gateway"} | json`,
-		`{app="api-gateway"} | logfmt`,
-		`{app="api-gateway"} | regexp "(?P<m>\\w+)"`,
-		`{app="api-gateway"} | pattern "<m> <_>"`,
-		``,
-	}
-	entry := map[string]interface{}{
-		"_time":  "2026-01-15T10:30:00Z",
-		"_msg":   "GET /api/users 200",
-		"method": "GET",
-		"status": "200",
-	}
-	streamLabels := map[string]string{"app": "api-gateway"}
-	msg := "GET /api/users 200"
-
-	for _, q := range queries {
-		t.Run(q, func(t *testing.T) {
-			want := reconstructLogLine(msg, entry, streamLabels, q)
-			skipFlag := hasTextExtractionParser(q)
-			got := reconstructLogLineWithFlag(msg, entry, streamLabels, skipFlag)
-			// Both may produce JSON with non-deterministic key order; compare parsed.
-			if got != want {
-				var wantParsed, gotParsed interface{}
-				wantIsJSON := json.Unmarshal([]byte(want), &wantParsed) == nil
-				gotIsJSON := json.Unmarshal([]byte(got), &gotParsed) == nil
-				if wantIsJSON && gotIsJSON {
-					if !reflect.DeepEqual(wantParsed, gotParsed) {
-						t.Errorf("reconstructLogLineWithFlag(%q): JSON content differs\n  got:  %v\n  want: %v", q, gotParsed, wantParsed)
-					}
-				} else {
-					t.Errorf("reconstructLogLineWithFlag(%q):\n  got:  %q\n  want: %q", q, got, want)
-				}
 			}
 		})
 	}

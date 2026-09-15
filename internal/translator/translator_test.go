@@ -191,7 +191,7 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "substring matches partial words like Loki does",
 			logql: `{app="nginx"} |= "err"`,
-			// ~"err" is VL regex/substring on _msg; with reconstructLogLine, _msg contains the full JSON.
+			// ~"err" is VL regex/substring on _msg, which holds the raw log line.
 			want: `app:="nginx" ~"err"`,
 		},
 		{

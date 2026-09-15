@@ -105,6 +105,7 @@ type proxyRuntimeConfig struct {
 	derivedFieldsJSON                   string
 	streamResponse                      bool
 	emitStructuredMetadata              bool
+	backendDefaultMsgValue              string
 	patternsEnabled                     bool
 	patternsAutodetectFromQueries       bool
 	patternsCustomRaw                   string
@@ -498,6 +499,7 @@ func run(
 	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
+	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
@@ -780,6 +782,7 @@ func run(
 			derivedFieldsJSON:                   *derivedFieldsJSON,
 			streamResponse:                      *streamResponse,
 			emitStructuredMetadata:              *emitStructuredMetadata,
+			backendDefaultMsgValue:              *backendDefaultMsgValue,
 			patternsEnabled:                     *patternsEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
 			patternsCustomRaw:                   *patternsCustomRaw,
@@ -1954,6 +1957,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DerivedFields:                      derivedFields,
 		StreamResponse:                     cfg.streamResponse,
 		EmitStructuredMetadata:             cfg.emitStructuredMetadata,
+		BackendDefaultMsgValue:             cfg.backendDefaultMsgValue,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		PatternsCustom:                     customPatterns,
