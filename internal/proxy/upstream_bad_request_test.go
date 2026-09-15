@@ -369,9 +369,11 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 
 	t.Run("unknown_stats_func_is_not_a_client_error", func(t *testing.T) {
 		p := newTestProxy(t, "http://unused")
-		err := p.redactedBackendStatusError("", http.StatusUnprocessableEntity, []byte(vlBodyUnknownStatsFirst))
-		if isUpstreamQueryRejected(err) {
-			t.Fatalf("an unknown stats function is a proxy translation gap, not an invalid user query")
+		for _, body := range []string{vlBodyUnknownStatsFirst, vlBody152UnknownStatsFirst} {
+			err := p.redactedBackendStatusError("", http.StatusUnprocessableEntity, []byte(body))
+			if isUpstreamQueryRejected(err) {
+				t.Fatalf("an unknown stats function is a proxy translation gap, not an invalid user query: %s", body)
+			}
 		}
 	})
 
@@ -548,7 +550,20 @@ const (
 	// A parse error whose echoed query quotes a limit marker is still a parse error.
 	vlBodyParseEchoingLimit = "cannot parse `query` arg: unexpected token after [app:=\"x\"]: \")\"; expecting '|' or ')'; query=app:=\"since it requires more than\")"
 	vlBodyUnsupportedPath   = `unsupported path requested: "/select/logsql/stream_field_names"`
-	vlBodyUnknown           = "error from storage node: unexpected response"
+	// VictoriaLogs v1.52.0+ moved the query echo in front of the reason:
+	// "cannot parse `query` arg [<query>]: <reason>; context: [...]". Captured
+	// from victoria-logs:v1.52.0.
+	vlBody152ParsePattern    = "cannot parse `query` arg [app:=\"billing-secret-value\" | extract \"<_>\"]: cannot parse \"extract\" pipe: cannot parse 'pattern' \"<_>\": pattern \"<_>\" must contain at least a single named field in the form <field_name>; context: [app:=\"billing-secret-value\" | extract \"<_>\"]"
+	vlBody152ParseRegexStats = `{"status":"error","errorType":"422","error":"cannot parse ` + "`query`" + ` arg [app:~\"(billing-secret-value\" | stats count() c]: invalid regexp \"app\":\"(billing-secret-value\": error parsing regexp: missing closing ): ` + "`(billing-secret-value`" + `; context: [app:~\"(billing-secret-value\" |]"}`
+	vlBody152UnexpectedPipe  = "cannot parse `query` arg [app:=\"billing-secret-value\" | foo]: unexpected pipe name \"foo\"; probably, 'filter' is missing in front of \"foo\"; see https://docs.victoriametrics.com/victorialogs/logsql/#filter-pipe; context: [app:=\"billing-secret-value\" | foo]"
+	// The echoed query quotes "]: " and a proxy-gap marker; the reason itself holds "[...]: ".
+	vlBody152EchoFakesGapMarker = "cannot parse `query` arg [app:=\"billing-secret-value\" ~\"]: unexpected pipe [x]: \" | fields a ~\"y\"]: unexpected token after [fields a]: \"~\"; expecting '|', ';' or ')'; context: [\"billing-secret-value\" ~\"]: unexpected pipe [x]: \" | fields a ~]"
+	vlBody152ParseEchoingLimit  = "cannot parse `query` arg [app:=\"since it requires more than\")]: unexpected unparsed tail after [app:=\"since it requires more than\"]; context: [app:=\"since it requires more than\")]; tail: [)]"
+	vlBody152UnknownStatsFirst  = `{"status":"error","errorType":"422","error":"cannot parse ` + "`query`" + ` arg [app:=\"billing\" | unpack_logfmt | stats by (_stream) first(latency) as c]: cannot parse \"stats\" pipe: unknown stats func \"first\"; context: [illing\" | unpack_logfmt | stats by (_stream) first]"}`
+	// An unterminated echo: the reason cannot be told apart from user text.
+	vlBody152UnterminatedEcho = "cannot parse `query` arg [app:=\"billing-secret-value unknown stats func"
+
+	vlBodyUnknown = "error from storage node: unexpected response"
 )
 
 func TestClassifyVLError_RealVictoriaLogsTexts(t *testing.T) {
@@ -575,6 +590,13 @@ func TestClassifyVLError_RealVictoriaLogsTexts(t *testing.T) {
 		{"unsupported_path", http.StatusBadRequest, vlBodyUnsupportedPath, vlErrorUnsupportedPath},
 		{"unknown_400", http.StatusBadRequest, vlBodyUnknown, vlErrorUnclassified},
 		{"parse_text_on_5xx_is_not_classified", http.StatusBadGateway, vlBodyParsePattern, vlErrorUnclassified},
+		{"v152_parse_pattern_400", http.StatusBadRequest, vlBody152ParsePattern, vlErrorQueryRejected},
+		{"v152_parse_regex_stats_422", http.StatusUnprocessableEntity, vlBody152ParseRegexStats, vlErrorQueryRejected},
+		{"v152_parse_echoing_limit_text", http.StatusBadRequest, vlBody152ParseEchoingLimit, vlErrorQueryRejected},
+		{"v152_echo_quoting_gap_marker_is_rejected", http.StatusBadRequest, vlBody152EchoFakesGapMarker, vlErrorQueryRejected},
+		{"v152_unterminated_echo_is_rejected", http.StatusBadRequest, vlBody152UnterminatedEcho, vlErrorQueryRejected},
+		{"v152_unexpected_pipe_is_proxy_gap", http.StatusBadRequest, vlBody152UnexpectedPipe, vlErrorUnclassified},
+		{"v152_unknown_stats_func_is_proxy_gap", http.StatusUnprocessableEntity, vlBody152UnknownStatsFirst, vlErrorUnclassified},
 	}
 	p := newTestProxy(t, "http://unused")
 	for _, tc := range cases {
@@ -618,6 +640,8 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 	}{
 		{"parse_400", http.StatusBadRequest, vlBodyParsePattern, true},
 		{"parse_422", http.StatusUnprocessableEntity, vlBodyParseRegexStats, true},
+		{"v152_parse_400", http.StatusBadRequest, vlBody152ParsePattern, true},
+		{"v152_parse_422", http.StatusUnprocessableEntity, vlBody152ParseRegexStats, true},
 		{"memory_limit_422", http.StatusUnprocessableEntity, vlBodyStatsMemory, false},
 		{"rows_memory_400", http.StatusBadRequest, vlBodyRowsMemory, false},
 		{"storage_eof_400", http.StatusBadRequest, vlBodyMetadataFailure, false},
@@ -892,6 +916,10 @@ func TestRedactBackendError_DropsVictoriaLogsQueryEchoes(t *testing.T) {
 		{"line_filter_bracket_comma", `cannot execute query [app:="billing" AND "[WARN], " AND user_email:="bob@corp.io" | stats count() c]: cannot calculate [stats count(*) as c], since it requires more than 512MB of memory`, "since it requires more than 512MB of memory"},
 		{"line_filter_bracket_because", `cannot execute query [app:="billing" AND "[x] because" AND user_email:="bob@corp.io"]: cannot load rows for [app:="billing" AND "[x] because" AND user_email:="bob@corp.io"] because they occupy more than 512MB of memory`, "because they occupy more than 512MB of memory"},
 		{"nested_brackets_in_quotes", `cannot execute query [app:="billing" AND "a[b[c]]: d]," AND user_email:="bob@corp.io" | stats by (x) count() c]: cannot calculate [stats by (x) count(*) as c], since it requires more than 256MB of memory`, "since it requires more than 256MB of memory"},
+		{"v152_parse_echo", `cannot parse ` + "`query`" + ` arg [app:="billing" AND user_email:="bob@corp.io" | foo]: unexpected pipe name "foo"; probably, 'filter' is missing in front of "foo"; context: [app:="billing" AND user_email:="bob@corp.io" | foo]`, `unexpected pipe name "foo"`},
+		{"v152_parse_echo_json_422", `{"status":"error","errorType":"422","error":"cannot parse ` + "`query`" + ` arg [app:=\"billing\" AND user_email:=\"bob@corp.io\" | stats first(x)]: cannot parse \"stats\" pipe: unknown stats func \"first\"; context: [app:=\"billing\" AND user_email:=\"bob@corp.io\" | stats first]"}`, "cannot parse query arg […]: cannot parse"},
+		{"v152_parse_echo_with_bracket_colon", `cannot parse ` + "`query`" + ` arg [app:="billing" "[ERROR]: " user_email:="bob@corp.io" | fields a ~"y"]: unexpected token after [fields a]: "~"; context: [app:="billing" "[ERROR]: " user_email:="bob@corp.io" | fields a ~]`, `unexpected token after [fields a]`},
+		{"v152_parse_echo_unterminated", `cannot parse ` + "`query`" + ` arg [app:="billing" "bob@corp.io]: x`, "cannot parse query arg […]"},
 		{"pipe_echo_with_bracket_colon", `cannot execute query [app:="billing" | filter user_email:="bob@corp.io"]: cannot calculate [filter "[ERROR]: " user_email:="bob@corp.io" | stats count(*) as c], since it requires more than 128MB of memory`, "since it requires more than 128MB of memory"},
 	}
 	for _, tc := range cases {

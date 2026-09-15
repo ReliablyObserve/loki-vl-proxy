@@ -587,11 +587,11 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 		},
 		{
 			// After a parser, the translated filter is wrapped in | filter.
-			// -level:* uses negated-any syntax which is NOT a standard field filter
-			// (no :="/:~/etc."), so it lands in the main query position for now.
+			// -level:* is not a standard field filter (no :="/:~/etc.), but a
+			// bare filter after a pipe stage still needs its own | filter stage.
 			name:  "detected_level empty after logfmt parser",
 			logql: `{app="nginx"} | logfmt | detected_level=""`,
-			want:  `app:="nginx" | unpack_logfmt -level:*`,
+			want:  `app:="nginx" | unpack_logfmt | filter -level:*`,
 		},
 		{
 			name:  "detected_level empty in stream selector",

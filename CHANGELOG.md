@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Pinned VictoriaLogs backend is now v1.52.0** (was v1.50.0 in the e2e-compat
+  stack and Drilldown workflow, v1.49.0 in the root, e2e-fleet and
+  e2e-pipeline compose files and the Loki/VL compatibility workflows). All
+  pinned runtimes now run the same, latest VictoriaLogs release.
+  `compatibility-matrix.json` pins v1.52.0 and adds v1.51.1 to the weekly
+  matrix (the cluster upgrade bridge release from v1.38–v1.50); older matrix
+  versions stay. The compatibility and testing docs list the new pin and the
+  LogsQL changes from the v1.51.0 and v1.52.0 release notes that matter to the
+  proxy: filter pipes without the `filter` prefix are rejected in v1.51.0
+  unless they start with `field_name:`, and v1.52.0 re-allows those starting
+  with a non-word token or `not`; the `coalesce` pipe; `unpack_json` accepts
+  JSON with leading spaces; `stats_query`/`stats_query_range` answer 502 when
+  a storage node is unavailable; `-search.maxQueueDuration` is honoured for
+  queued requests; distroless images (health probes already exec the binary).
+
+### Fixed
+
+- **Invalid queries stay Loki `400 bad_data` on VictoriaLogs v1.52.0 and
+  newer.** VictoriaLogs v1.52.0 moved the query echo of parse errors in front
+  of the reason (`cannot parse query arg [<query>]: <reason>` instead of
+  `cannot parse query arg: <reason>; query=<query>`). The upstream error
+  classifier only knew the old layout, so on v1.52.0 an unparsable query came
+  back as `502 unavailable` or `422 execution` instead of Loki's
+  `400 bad_data`, went through backend-failure fallbacks, and the redacted
+  message kept part of the echoed query. The
+  classifier and the error redaction now strip the echo, skipping `]: ` inside
+  quoted literals, so both layouts classify the same, proxy translation gaps
+  (`unknown stats func`, `unexpected pipe`) are still told apart from user
+  errors, and the echoed query is not shown.
+- **Line filters and empty-label filters after a pipe stage.** A line filter
+  (`|=`, `!=`, `|~`, `!~`, `|>`, `!>`) or an empty-value label filter
+  (`level=""`) following `| json`, `| logfmt`, `| regexp`, `| pattern`,
+  `| line_format`, `| keep`, `| drop` or `| decolorize` was emitted as a bare
+  filter behind that pipe (`| unpack_json ~"y"`, `| unpack_logfmt -level:*`).
+  VictoriaLogs rejects that form on every version (`unexpected token after
+  [...]`, or the filter is read as the pipe's argument), so these valid LogQL
+  queries failed with 400. The translator now gives such filters their own
+  `| filter` stage, which all supported VictoriaLogs versions accept. The
+  Drilldown field-breakdown fast path
+  (`sum by (<field>) (count_over_time({...} | <field>!="" |= "y" [...]))`)
+  had the same defect: stripping the existence filter from
+  `| filter level:!"" ~"y"` left `~"y"` bare behind the parser, VictoriaLogs
+  rejected its `field_values` and `stats_query_range` requests, and the
+  request fell back to a slower path. The remaining terms now keep their
+  `| filter` prefix.
+
 ## [1.80.1] - 2026-09-15
 
 ### Fixed

@@ -165,12 +165,12 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `ci.yaml` | `e2e-compat` | aggregates the five grouped jobs into one result |
 | `ci.yaml` | `e2e-fleet` | `test/e2e-fleet` 3-proxy stack, `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` only |
 | `ci.yaml` | `e2e-ui (9 shards)` | compose stack with `--profile ui`, one Playwright shard per job (see [CI Shards](#ci-shards)) |
-| `compat-loki.yaml` | `loki-pinned` | Loki 3.7.1, VictoriaLogs v1.49.0, Grafana 12.4.2: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
+| `compat-loki.yaml` | `loki-pinned` | Loki 3.7.1, VictoriaLogs v1.52.0, Grafana 12.4.2: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
 | `compat-loki.yaml` | `loki-matrix` | weekly: the same checks for every `stack.loki.matrix_versions` entry |
-| `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.1, VictoriaLogs v1.50.0, Grafana 13.0.1: `TestDrilldownTrackScore` |
+| `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.1, VictoriaLogs v1.52.0, Grafana 13.0.1: `TestDrilldownTrackScore` |
 | `compat-drilldown.yaml` | `drilldown-grafana-pr-matrix` | runtime profiles with `run_on_pr` (Grafana 13.0.1 `current_smoke`, 12.4.2 `previous_smoke`) |
 | `compat-drilldown.yaml` | `drilldown-contract-matrix`, `drilldown-grafana-runtime-matrix` | weekly/manual: Drilldown app contract checks per version and every Grafana runtime profile |
-| `compat-vl.yaml` | `vl-pinned` | Loki 3.7.1, VictoriaLogs v1.49.0, Grafana 12.4.2: `TestVLTrackScore` |
+| `compat-vl.yaml` | `vl-pinned` | Loki 3.7.1, VictoriaLogs v1.52.0, Grafana 12.4.2: `TestVLTrackScore` |
 | `compat-vl.yaml` | `vl-matrix` | weekly/manual: `TestVLTrackScore` for every `stack.victorialogs.matrix_versions` entry |
 | `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard guardrails |
 | `security-pr.yaml` | `Security / runtime` | compose stack, `scripts/ci/run_security_regressions.sh`, ZAP baseline |
@@ -529,7 +529,7 @@ The repo now keeps four separate compatibility tracks/contracts:
 The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 
 - Loki `3.7.1`
-- VictoriaLogs `v1.50.0`
+- VictoriaLogs `v1.52.0`
 - vmalert `v1.138.0` and vmauth `v1.138.0`
 - VictoriaMetrics `v1.119.0` (remote-write target for vmalert recording rules and scrape store for the stack)
 - Grafana `13.0.1` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app@2.0.4`

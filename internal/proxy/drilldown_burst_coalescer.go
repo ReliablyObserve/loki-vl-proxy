@@ -70,6 +70,29 @@ func allFiltersAreExistenceChecks(vlQuery string) bool {
 	return !strings.Contains(drilldownFieldFilterRE.ReplaceAllString(vlQuery, ""), "| filter ")
 }
 
+// stripDrilldownExistenceFilters removes the pipe-style existence filters
+// matched by drilldownFieldFilterRE. When the removed | filter stage carried
+// more terms (an implicit AND such as `| filter level:!"" ~"y"`), the rest keeps
+// its own | filter prefix: a bare `~"y"` after `| unpack_logfmt` or `| format`
+// is not a valid LogsQL pipe on any VictoriaLogs version.
+func stripDrilldownExistenceFilters(query string) string {
+	matches := drilldownFieldFilterRE.FindAllStringIndex(query, -1)
+	if len(matches) == 0 {
+		return query
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range matches {
+		b.WriteString(query[last:m[0]])
+		if rest := strings.TrimLeft(query[m[1]:], " "); rest != "" && rest[0] != '|' {
+			b.WriteString("| filter")
+		}
+		last = m[1]
+	}
+	b.WriteString(query[last:])
+	return b.String()
+}
+
 // fieldHasExistenceFilter returns true if field appears as an existence check
 // (field:!"" or field!="") in baseQuery — either as a | filter pipe stage or
 // directly in the stream selector (stream-label existence checks are written
@@ -122,7 +145,7 @@ func detectDrilldownSingleFieldWithParser(effectiveQuery string) (cleanBase, fie
 		return "", "", false
 	}
 	// Strip existence filters and delete pipes; preserve parser stages.
-	base := drilldownFieldFilterRE.ReplaceAllString(spec.BaseQuery, "")
+	base := stripDrilldownExistenceFilters(spec.BaseQuery)
 	base = drilldownDeletePipeRE.ReplaceAllString(base, "")
 	return strings.TrimSpace(base), f, true
 }
@@ -164,7 +187,7 @@ func detectDrilldownSingleField(effectiveQuery string) (cleanBase, field string,
 	// Strip pipe-style existence filters and delete pipes. Stream-selector
 	// existence filters (level:!"") remain in cleanBase — they are valid VL
 	// selector predicates that the batcher query passes through unchanged.
-	base := drilldownFieldFilterRE.ReplaceAllString(spec.BaseQuery, "")
+	base := stripDrilldownExistenceFilters(spec.BaseQuery)
 	base = drilldownDeletePipeRE.ReplaceAllString(base, "")
 	return strings.TrimSpace(base), f, true
 }

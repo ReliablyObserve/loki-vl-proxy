@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:13.0.1
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
@@ -80,7 +80,7 @@ jobs:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_pr_runtime_profiles) }}
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
@@ -133,7 +133,7 @@ jobs:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_runtime_profiles) }}
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:

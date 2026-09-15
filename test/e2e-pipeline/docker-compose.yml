@@ -1,6 +1,6 @@
 services:
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.49.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.52.0}
     container_name: e2e-pipeline-vl
     ports:
       - "19528:9428"
