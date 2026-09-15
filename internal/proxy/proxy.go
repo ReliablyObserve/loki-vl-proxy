@@ -567,6 +567,8 @@ type Proxy struct {
 	backendSupportsDensePatternWindowing  bool
 	backendSupportsMetadataSubstring      bool
 	backendSupportsColumnFieldValues      bool
+	backendSupportsStatsRangeOffset       bool
+	backendVersionProbedAt                atomic.Int64 // Unix ns of the last metrics version probe
 	backendVersionLogged                  bool
 	labelValuesIndexWarmReady             atomic.Bool
 	labelValuesIndexPersistStarted        atomic.Bool
@@ -1193,6 +1195,9 @@ func New(cfg Config) (*Proxy, error) {
 	// initialise a fresh State.  The Proxy struct still holds the live mutable fields;
 	// State on the Handler is the canonical home for those fields once receiver
 	// migration completes in a follow-on PR.
+	// The startup compatibility check probes the version; later probes run only
+	// while it stays unknown (see maybeReprobeBackendVersion).
+	p.backendVersionProbedAt.Store(time.Now().UnixNano())
 	p.handler = &Handler{
 		Deps: Deps{
 			backend:               p.backend,
@@ -1956,6 +1961,55 @@ func (p *Proxy) peerCacheMetrics() string {
 }
 
 // handleQueryRange translates Loki range queries.
+// lokiMaxPointsPerSeries and errLokiStepTooSmall mirror Loki's query_range
+// resolution limit (pkg/loghttp.ParseRangeQuery): (end-start)/step, as integer
+// duration division, may not exceed 11000.
+const (
+	lokiMaxPointsPerSeries = 11000
+	errLokiStepTooSmall    = "exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter"
+)
+
+// exceedsLokiRangeResolution reports whether Loki would reject the request's
+// range parameters for exceeding lokiMaxPointsPerSeries. It applies Loki's
+// defaults (end=now, start=min(end, now)-since, since=1h). A missing step uses
+// Loki's range/250 default, which never exceeds the limit; unparseable or
+// inverted parameters are left to the handlers that already report them.
+func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok {
+		return false
+	}
+	end := now
+	if raw := strings.TrimSpace(r.FormValue("end")); raw != "" {
+		ns, ok := parseLokiTimeToUnixNano(raw)
+		if !ok {
+			return false
+		}
+		end = time.Unix(0, ns)
+	}
+	var start time.Time
+	if raw := strings.TrimSpace(r.FormValue("start")); raw != "" {
+		ns, ok := parseLokiTimeToUnixNano(raw)
+		if !ok {
+			return false
+		}
+		start = time.Unix(0, ns)
+	} else {
+		since := time.Hour
+		if raw := strings.TrimSpace(r.FormValue("since")); raw != "" {
+			if since, ok = parsePositiveStepDuration(raw); !ok {
+				return false
+			}
+		}
+		endOrNow := end
+		if end.After(now) {
+			endOrNow = now
+		}
+		start = endOrNow.Add(-since)
+	}
+	return end.After(start) && end.Sub(start)/step > lokiMaxPointsPerSeries
+}
+
 // Loki: GET /loki/api/v1/query_range?query={...}&start=...&end=...&limit=...&step=...
 // VL stats: POST /select/logsql/stats_query_range with query, start, end, step
 // VL logs:  POST /select/logsql/query with query, start, end, limit
@@ -1963,6 +2017,12 @@ func (p *Proxy) peerCacheMetrics() string {
 //nolint:gocyclo // dispatches across cache, multi-tenant fanout, windowing, stats vs logs, streaming and tuple modes; branching is inherent to Loki query_range parity.
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	// Loki validates the range parameters before it parses the query.
+	if exceedsLokiRangeResolution(r, start) {
+		p.writeError(w, http.StatusBadRequest, errLokiStepTooSmall)
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
 	logqlQuery := r.FormValue("query")
 	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder
 	// emits while the unwrap field picker is open. These are syntactically invalid

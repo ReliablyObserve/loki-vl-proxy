@@ -89,9 +89,26 @@ Grafana Logs Drilldown renders per-field histograms by sending `sum by (field) (
    `as _c | sort by (_c desc) | limit 500` (`maxDrilldownSeries`). The step is
    coarsened to at most 120 buckets, 30 buckets for likely high-cardinality
    fields, and relaxed back towards the requested step (floor of range / 1000)
-   when `field_values` shows 50 or fewer distinct values. Missing buckets are
-   zero-filled. Two-phase fallback (single-bucket Phase 1 + filtered Phase 2)
-   handles high-cardinality cases that overflow the direct path.
+   when `field_values` shows 50 or fewer distinct values. Missing buckets of
+   this field-breakdown fallback are zero-filled. Two-phase fallback
+   (single-bucket Phase 1 + filtered Phase 2) handles high-cardinality cases
+   that overflow the direct path.
+
+Zero-fill is limited to those Drilldown field-breakdown call sites. Sliding
+range metrics (`count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with a
+range different from the step, plus `topk`/`bottomk` over them) follow Loki for
+every client, including Drilldown-tagged requests: a step whose window
+`(t-range, t]` holds no log line is absent, not `0`. Each window is summed from
+`stats_query_range` buckets of `gcd(step, range)` whose edges are anchored to
+the request start with the `offset` argument (VictoriaLogs v1.45+) and shifted
+by one nanosecond, so a line on a window edge counts where Loki counts it. The
+bucket count has no budget because VictoriaLogs returns only non-empty buckets.
+The raw-sample evaluator answers with the same `(t-range, t]` boundaries when a
+bucket would be below 1 ms, when the stats response exceeds its byte limit, or
+when an unaligned grid meets a backend older than v1.45 or one whose version
+could not be detected. On such older backends an
+epoch-aligned grid still uses buckets without the one-nanosecond shift, so a
+line exactly on a window edge counts in the neighbouring window.
 
 **Routing of Drilldown-shaped queries is source-agnostic** — Explore, Drilldown,
 dashboard panels, and direct API clients all reach the `/hits` fast path for the

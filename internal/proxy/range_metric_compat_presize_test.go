@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +39,7 @@ func TestBuildHitsRangeMetricMatrix_PreSizedValuesSlice(t *testing.T) {
 		"a": {Metric: map[string]string{"pod": "a"}, Samples: samples},
 	}
 
-	body := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, window)
+	body := mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, end, step, window)
 	if len(body) == 0 {
 		t.Fatal("empty body")
 	}
@@ -84,7 +86,7 @@ func TestBuildHitsRangeMetricMatrix_HeapBoundedAcrossManyCalls(t *testing.T) {
 
 	// Warm-up.
 	for i := 0; i < 5; i++ {
-		_ = buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, window)
+		_ = mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, end, step, window)
 	}
 
 	runtime.GC()
@@ -93,7 +95,7 @@ func TestBuildHitsRangeMetricMatrix_HeapBoundedAcrossManyCalls(t *testing.T) {
 	runtime.ReadMemStats(&before)
 
 	for i := 0; i < 100; i++ {
-		body := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, window)
+		body := mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, end, step, window)
 		if len(body) == 0 {
 			t.Fatalf("iter %d: empty", i)
 		}
@@ -134,10 +136,39 @@ func TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist(t *testing.T) {
 	series := map[string]manualSeriesSamples{
 		"a": {Metric: map[string]string{"k": "a"}, Samples: nil},
 	}
-	body := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, window)
+	body := mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, end, step, window)
 	// Result is empty (no samples) but the matrix construction must not have
 	// allocated 600 billion bucket slots or this test wouldn't return.
 	if len(body) == 0 {
 		t.Fatal("expected non-empty envelope even with no samples")
+	}
+}
+
+func mustBuildHitsRangeMetricMatrix(t testing.TB, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
+	t.Helper()
+	body, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// The bucket evaluator shares the raw evaluator's response byte bound, so a
+// wide steps x series request fails fast instead of buffering without limit.
+func TestBuildHitsRangeMetricMatrix_ResponseByteLimit(t *testing.T) {
+	start := time.Unix(1_700_000_000, 0)
+	step := time.Second
+	end := start.Add(11000 * time.Second)
+	series := make(map[string]manualSeriesSamples, 300)
+	for i := 0; i < 300; i++ {
+		samples := make([]rangeMetricSample, 0, 11002)
+		for ts := start.Add(-time.Second); !ts.After(end); ts = ts.Add(step) {
+			samples = append(samples, rangeMetricSample{ts: ts.UnixNano(), value: 123456789})
+		}
+		key := strconv.Itoa(i)
+		series[key] = manualSeriesSamples{Metric: map[string]string{"pod": key}, Samples: samples}
+	}
+	if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, time.Second); err == nil || !strings.Contains(err.Error(), "manual metric response exceeds") {
+		t.Fatalf("expected the response byte limit error, got %v", err)
 	}
 }

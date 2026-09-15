@@ -283,6 +283,7 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 	p.backendSupportsDensePatternWindowing = caps.supportsDensePatternWin
 	p.backendSupportsMetadataSubstring = caps.supportsMetadataSubstring
 	p.backendSupportsColumnFieldValues = caps.supportsColumnFieldValues
+	p.backendSupportsStatsRangeOffset = semverAtLeast(semver, 1, 45, 0)
 	if !p.backendVersionLogged {
 		p.backendVersionLogged = true
 		p.log.Info(
@@ -345,6 +346,56 @@ func (p *Proxy) supportsColumnIndexedFields() bool {
 	p.backendVersionMu.RLock()
 	defer p.backendVersionMu.RUnlock()
 	return p.backendSupportsColumnFieldValues
+}
+
+// backendVersionReprobeInterval spaces metrics version probes while the backend
+// version is still unknown.
+const backendVersionReprobeInterval = 5 * time.Minute
+
+// supportsStatsRangeOffset reports whether stats_query_range honours the offset
+// arg (VictoriaLogs v1.45+). Older releases silently ignore it and align buckets
+// to the epoch, so an unknown version (failed or pending probe) is treated as
+// unsupported: only epoch-aligned grids use buckets, others the raw evaluator.
+// While the version is unknown, the metrics probe is retried in the background.
+func (p *Proxy) supportsStatsRangeOffset() bool {
+	p.backendVersionMu.RLock()
+	known, supported := p.backendVersionSemver != "", p.backendSupportsStatsRangeOffset
+	p.backendVersionMu.RUnlock()
+	if !known {
+		p.maybeReprobeBackendVersion(time.Now())
+	}
+	return supported
+}
+
+// maybeReprobeBackendVersion starts at most one background metrics probe per
+// backendVersionReprobeInterval, bounded by the version check timeout, so a
+// startup probe that failed (backend not ready, /metrics not routed) does not
+// pin version-gated behaviour for the process lifetime. It never blocks the
+// calling request.
+func (p *Proxy) maybeReprobeBackendVersion(now time.Time) {
+	last := p.backendVersionProbedAt.Load()
+	if now.UnixNano()-last < int64(backendVersionReprobeInterval) || !p.backendVersionProbedAt.CompareAndSwap(last, now.UnixNano()) {
+		return
+	}
+	timeout := p.backendVersionCheckTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	stop := p.keepWarmStop // closed by Shutdown
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if stop != nil {
+			go func() {
+				select {
+				case <-stop:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+		}
+		p.probeBackendVersionFromMetrics(ctx)
+	}()
 }
 
 func (p *Proxy) backendVersionState() (raw, semver, profile string) {

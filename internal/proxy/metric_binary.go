@@ -1422,10 +1422,11 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	}
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
-	// Zero-fill missing time buckets so Grafana renders a continuous histogram
-	// rather than disconnected spikes — VL stats_query_range omits zero-count
-	// buckets while Loki count_over_time always emits every step. The hybrid path
-	// already does this; without it here, parser-stage fields (most Drilldown
+	// Zero-fill missing time buckets so the Drilldown field histogram renders a
+	// continuous chart rather than disconnected spikes. This is a Drilldown
+	// rendering choice for this call site: Loki itself omits steps without
+	// samples, and generic range metrics keep those steps absent. The hybrid
+	// path does the same; without it, parser-stage fields (most Drilldown
 	// queries — they include "| json field=..." stages) get gappy charts.
 	if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
 		startNs, sok := parseLokiTimeToUnixNano(startRaw)
@@ -2015,9 +2016,10 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 					rawBody = renameStatsBodyMetricKey(rawBody, field, lokiField)
 				}
 				rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
-				// Zero-fill missing time steps so Grafana draws a continuous line rather
-				// than disconnected spikes. VL stats_query_range omits zero-count buckets;
-				// Loki always emits every step in the query window.
+				// Zero-fill missing time steps so the Drilldown chart draws a continuous
+				// line rather than disconnected spikes. This is a Drilldown rendering
+				// choice: Loki omits steps without samples, and generic range metrics
+				// keep those steps absent.
 				if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
 					stepSec := int64(stepDur / time.Second)
 					rawBody = zerofillStatsMatrix(rawBody,

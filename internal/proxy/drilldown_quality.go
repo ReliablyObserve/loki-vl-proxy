@@ -12,11 +12,10 @@ import (
 // from each series in body. body must be a Loki matrix JSON produced by
 // a VL stats_query_range call.
 //
-// VictoriaLogs stats_query_range omits time buckets with zero count.
-// Loki's count_over_time emits every step in the query window, including
-// zeros. Filling the gaps makes the proxy response match Loki's
-// continuous-line behaviour — Grafana draws a solid line rather than
-// disconnected spikes.
+// VictoriaLogs stats_query_range omits time buckets with zero count, and Loki
+// also omits steps without samples. The Drilldown field-breakdown call sites
+// fill the gaps as a rendering choice so Grafana draws a solid line rather than
+// disconnected spikes; generic range metrics must not use it.
 //
 // startSec is aligned UP and endSec aligned DOWN to step boundaries so the axis
 // matches VL's stats_query_range grid (VL always returns timestamps as multiples
