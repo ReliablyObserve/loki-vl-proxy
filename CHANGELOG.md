@@ -25,6 +25,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `error.type=canceled` (`504` when their deadline expired) instead of
   `502` `transport`.
 
+### Changed
+
+- Benchmark harness (`bench/`) now measures equivalent work on Loki, the proxy
+  and VictoriaLogs, and refuses to produce publishable numbers unless both
+  backends answered without errors, limits or fallbacks on identical,
+  non-empty, verified data.
+  - **Windows.** Workload windows are pinned to the seeded data
+    (`loki-bench --data-end=auto`, the `run-comparison.sh` default) instead of
+    the wall clock, range queries are floored to their step, and `--jitter`
+    stays inside the data. A query window (including range-vector lookback)
+    that begins before the seeded data aborts a strict run; the documented seed
+    is `--days=4` (the longest window reads up to 74h back). A unit test keeps
+    every Loki workload within the 11,000 points-per-series limit.
+    `--unique-windows` now shifts requests by whole steps inside the data, and
+    requires the cold cache mode.
+  - **Identical data.** The seed pushes identical line bytes to both backends
+    (Loki push and VictoriaLogs `/insert/jsonline` `_msg`), attaches the level
+    identically, gives every `--services` index a distinct label set and
+    interleaves service timestamps so limit-capped queries cut at the same
+    line. It refuses to seed when either backend already holds data in the
+    target span or streams with the seeded app labels (unless `--force`), and
+    exits non-zero at the first failed push (it waits up to `--ready-timeout` for
+    a backend that is still starting). A benchmark-only Loki config
+    layered by `docker-compose.bench.yml` disables stream sharding; the CI e2e
+    Loki config is unchanged.
+  - **Entry check.** `--wait-ingested` waits until Loki and VictoriaLogs hold
+    the same line count for every service in every 1h window, not one total,
+    and data-span detection fails when a 1h window inside the span is empty.
+  - **Verification.** `--verify-strict` compares every query on Loki with
+    every timed proxy target (`proxy`, `proxy_partial`, `proxy_nocache`,
+    `proxy_coalescer`): HTTP status, degraded answers (`Warning`,
+    `X-Proxy-Stale-Response`, `X-Proxy-Drilldown-Hits-Fallback`,
+    `X-Proxy-Upstream-Status`/`-Error`, `X-Loki-VL-Partial-Response`,
+    `X-Multi-Tenant-Partial-Failures`, or a non-empty `warnings` array, on
+    either side), result shape, and content: label names and values, series,
+    stream and metric label sets, detected field names and a timestamp-ordered
+    20-entry log sample. VictoriaLogs-native queries must answer 200, not
+    degraded and non-empty. Level queries group by `detected_level`; volume and
+    `index/stats` queries are excluded from the Loki comparison. Native range
+    stats use `stats_query_range` and level breakdowns use `/hits` with
+    `field=level`.
+  - **Cache modes.** `--cache-mode=warm` (default) times Loki with its results
+    caches against the cached proxies after the same warm-up for every target
+    (the verification pass plus `--warmup`, no cache flushes);
+    `--cache-mode=cold` times Loki with every results cache off (new
+    `loki-bench-nocache-config.yaml`, selected with `LOKI_BENCH_CONFIG`)
+    against proxies without a response cache, with no warm-up. `loki-bench`
+    checks Loki's `/config` matches the mode. Queries that do different work in
+    a mode are excluded from it with the reason printed: warm mode excludes log
+    queries, detected fields and patterns (Loki caches only empty log results
+    and neither of the others), and cold mode excludes labels and label values
+    (the proxy keeps a 30s stream-field-names cache even with
+    `-cache-disabled`). `--unique-windows` requires cold mode and excludes
+    queries with fewer distinct whole-step windows inside the data than
+    clients.
+  - **Error gate.** Timed runs count errors (transport, timeouts, HTTP >= 400)
+    and degraded answers; a run above `--max-error-rate` (default 0) stops the
+    benchmark with a non-zero exit and writes its results as
+    `-NOT-PUBLISHABLE`. `--skip-loki`, missing verification, entry check or
+    data pinning also mark the report not publishable, with a banner; the
+    threshold, cache mode and publishability are in every report header and
+    JSON record.
+  - CI vets and race-tests the `bench` module.
+
+  Benchmark tooling only; the proxy binary and chart are unaffected.
+
 ## [1.77.0] - 2026-09-15
 
 ### Changed

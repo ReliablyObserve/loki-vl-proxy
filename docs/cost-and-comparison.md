@@ -236,21 +236,30 @@ workload simultaneously and reports resource deltas from each service's
 `/metrics` endpoint:
 
 ```bash
-# Start the e2e stack with both Loki and VL
-cd test/e2e-compat && docker compose up -d
+# Start a fresh e2e stack with both Loki and VL plus the benchmark override
+cd test/e2e-compat && docker compose down -v && docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d && cd ../..
 
-# Seed realistic data (3 days, dense)
-go run ./bench/cmd/seed/ \
-  --loki=http://localhost:3101 \
-  --vl=http://localhost:9428 \
-  --days=3 --lines-per-batch=200
+# Seed identical realistic data into both backends (4 days: long_range reads
+# up to 74h back including step flooring and range lookback; 6 days or fewer)
+(cd bench && go run ./cmd/seed/ --days=4 --lines-per-batch=200)
 
-# Run 3-way comparison
+# Run 3-way comparison (windows pinned to the seeded data end, per-service
+# entry check and strict verification of every timed proxy target before
+# timing; any error or degraded answer stops the run)
 ./bench/run-comparison.sh \
   --workloads=small,heavy,long_range \
   --clients=10,50,100,500 \
   --duration=60s
+
+# Cold comparison: restart only Loki with every results cache off, then run
+# against the no-cache proxy
+(cd test/e2e-compat && LOKI_BENCH_CONFIG=./loki-bench-nocache-config.yaml \
+  docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d loki)
+CACHE_MODE=cold ./bench/run-comparison.sh --workloads=small,heavy,long_range --clients=10,50,100,500
 ```
+
+See `bench/README.md` for the equivalent-work methodology, the warm and cold
+cache modes and when results are publishable.
 
 With `--vl-direct` (auto-detected when VL is reachable), the report adds a
 **VL native (LogsQL)** column showing raw VL throughput and resource use

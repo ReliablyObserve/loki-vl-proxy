@@ -13,6 +13,50 @@ type Query struct {
 	Method string // GET or POST
 	Path   string // URL path
 	Params url.Values
+	// Excluded, when non-empty, removes the query from the Loki-compared set
+	// (Loki and proxy timing runs and shape verification) and states why the
+	// two backends cannot be compared on it.
+	Excluded string
+	// Shape relaxes strict shape verification where Loki semantics legitimately
+	// differ. The zero value requires an exact shape match.
+	Shape Tolerance
+}
+
+// Tolerance is the per-query allowance used by shape verification.
+type Tolerance struct {
+	// SeriesPct is the allowed relative difference (0.05 = 5%) in the number of
+	// series, streams, or metadata items.
+	SeriesPct float64
+	// PointsPct is the allowed relative difference in total points (metric
+	// queries) or lines (log queries), and in index/stats entries and bytes.
+	PointsPct float64
+	// AllowEmpty accepts a response where both backends return no data.
+	AllowEmpty bool
+	// Skip, when non-empty, disables shape comparison for the query and states
+	// why; the query is still benchmarked.
+	Skip string
+}
+
+// Compared returns the workload without queries marked Excluded.
+func (w Workload) Compared() Workload {
+	out := Workload{Name: w.Name, Queries: make([]Query, 0, len(w.Queries))}
+	for _, q := range w.Queries {
+		if q.Excluded == "" {
+			out.Queries = append(out.Queries, q)
+		}
+	}
+	return out
+}
+
+// ExcludedQueries returns the queries marked Excluded.
+func (w Workload) ExcludedQueries() []Query {
+	var out []Query
+	for _, q := range w.Queries {
+		if q.Excluded != "" {
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 func (q Query) URL(base string) string {
@@ -52,9 +96,11 @@ func Small(now time.Time) Workload {
 			Path:   "/loki/api/v1/label/namespace/values",
 			Params: url.Values{"start": {start5m}, "end": {end}},
 		},
+		// `level` is not an index label in Loki (the seed attaches it as
+		// structured metadata), so label values are browsed for a stream label.
 		{
-			Name:   "label_values_level",
-			Path:   "/loki/api/v1/label/level/values",
+			Name:   "label_values_cluster",
+			Path:   "/loki/api/v1/label/cluster/values",
 			Params: url.Values{"start": {start5m}, "end": {end}},
 		},
 		{
@@ -122,8 +168,9 @@ func Small(now time.Time) Workload {
 			},
 		},
 		{
-			Name: "index_stats",
-			Path: "/loki/api/v1/index/stats",
+			Name:     "index_stats",
+			Excluded: indexStatsExcluded,
+			Path:     "/loki/api/v1/index/stats",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start5m},
@@ -200,7 +247,7 @@ func Heavy(now time.Time) Workload {
 			Name: "regex_filter",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`{namespace="prod"} |~ "status=(4|5)[0-9][0-9]"`},
+				"query": {`{namespace="prod"} |~ "status.:(4|5)[0-9][0-9]"`},
 				"start": {start30m},
 				"end":   {end},
 				"limit": {"500"},
@@ -227,11 +274,14 @@ func Heavy(now time.Time) Workload {
 				"step":  {"60"},
 			},
 		},
+		// Grouped by detected_level (the Logs Drilldown volume shape): `level` is
+		// structured metadata, not a stream label, so `by (level)` would collapse
+		// to one series in Loki.
 		{
-			Name: "metric_count_by_level",
+			Name: "metric_count_by_detected_level",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`sum by (level) (count_over_time({namespace="prod"}[5m]))`},
+				"query": {`sum by (detected_level) (count_over_time({namespace="prod"}[5m]))`},
 				"start": {start2h},
 				"end":   {end},
 				"step":  {"60"},
@@ -270,8 +320,9 @@ func Heavy(now time.Time) Workload {
 		},
 		// Patterns — proxy clustering.
 		{
-			Name: "patterns_prod",
-			Path: "/loki/api/v1/patterns",
+			Name:  "patterns_prod",
+			Shape: Tolerance{Skip: "pattern mining is backend-specific (Loki pattern ingester vs proxy clustering); pattern counts are not expected to match"},
+			Path:  "/loki/api/v1/patterns",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start1h},
@@ -291,8 +342,9 @@ func Heavy(now time.Time) Workload {
 		},
 		// Volume endpoint.
 		{
-			Name: "volume_range",
-			Path: "/loki/api/v1/index/volume_range",
+			Name:     "volume_range",
+			Excluded: volumeExcluded,
+			Path:     "/loki/api/v1/index/volume_range",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start1h},
@@ -366,10 +418,10 @@ func LongRange(now time.Time) Workload {
 			},
 		},
 		{
-			Name: "count_by_level_48h",
+			Name: "count_by_detected_level_48h",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`sum by (level) (count_over_time({namespace="prod"}[1h]))`},
+				"query": {`sum by (detected_level) (count_over_time({namespace="prod"}[1h]))`},
 				"start": {start48h},
 				"end":   {end},
 				"step":  {"3600"},
@@ -609,7 +661,7 @@ func UnindexedScan(now time.Time) Workload {
 			Name: "regex_status_codes_6h",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`{namespace="prod"} |~ "status=(4|5)[0-9][0-9]"`},
+				"query": {`{namespace="prod"} |~ "status.:(4|5)[0-9][0-9]"`},
 				"start": {start6h}, "end": {end}, "limit": {"500"},
 			},
 		},
@@ -741,16 +793,18 @@ func HighCardinality(now time.Time) Workload {
 		},
 		// Index stats — at high cardinality, Loki must enumerate all matching streams.
 		{
-			Name: "index_stats_prod_1h",
-			Path: "/loki/api/v1/index/stats",
+			Name:     "index_stats_prod_1h",
+			Excluded: indexStatsExcluded,
+			Path:     "/loki/api/v1/index/stats",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start1h}, "end": {end},
 			},
 		},
 		{
-			Name: "index_stats_prod_24h",
-			Path: "/loki/api/v1/index/stats",
+			Name:     "index_stats_prod_24h",
+			Excluded: indexStatsExcluded,
+			Path:     "/loki/api/v1/index/stats",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start24h}, "end": {end},
@@ -869,7 +923,7 @@ func Machinery(now time.Time) Workload {
 			Name: "logfmt_level_filter_5m",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`{app="auth-service"} | logfmt | level="error"`},
+				"query": {`{app="worker-service"} | logfmt | level="error"`},
 				"start": {start5m}, "end": {end}, "limit": {"100"},
 			},
 		},
@@ -893,12 +947,12 @@ func Machinery(now time.Time) Workload {
 				"start": {start15m}, "end": {end}, "step": {"60"},
 			},
 		},
-		// rate grouped by level — different grouping dimension.
+		// rate grouped by detected_level — different grouping dimension.
 		{
-			Name: "rate_by_level_5m",
+			Name: "rate_by_detected_level_5m",
 			Path: "/loki/api/v1/query_range",
 			Params: url.Values{
-				"query": {`sum by (level) (rate({namespace="prod"}[1m]))`},
+				"query": {`sum by (detected_level) (rate({namespace="prod"}[1m]))`},
 				"start": {start5m}, "end": {end}, "step": {"60"},
 			},
 		},
@@ -963,10 +1017,10 @@ func Machinery(now time.Time) Workload {
 			Path:   "/loki/api/v1/label/app/values",
 			Params: url.Values{"start": {start5m}, "end": {end}},
 		},
-		// label_values for level — low-cardinality dimension.
+		// label_values for cluster — low-cardinality stream label.
 		{
-			Name:   "label_values_level_5m",
-			Path:   "/loki/api/v1/label/level/values",
+			Name:   "label_values_cluster_5m",
+			Path:   "/loki/api/v1/label/cluster/values",
 			Params: url.Values{"start": {start5m}, "end": {end}},
 		},
 		// series — stream label enumeration.
@@ -1002,8 +1056,9 @@ func Machinery(now time.Time) Workload {
 		// ── Index stats + volume ───────────────────────────────────────────────
 		// index_stats — exercises stats endpoint translation.
 		{
-			Name: "index_stats_prod_5m",
-			Path: "/loki/api/v1/index/stats",
+			Name:     "index_stats_prod_5m",
+			Excluded: indexStatsExcluded,
+			Path:     "/loki/api/v1/index/stats",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start5m}, "end": {end},
@@ -1011,8 +1066,9 @@ func Machinery(now time.Time) Workload {
 		},
 		// volume — exercises volume endpoint shaping.
 		{
-			Name: "volume_prod_5m",
-			Path: "/loki/api/v1/index/volume",
+			Name:     "volume_prod_5m",
+			Excluded: volumeExcluded,
+			Path:     "/loki/api/v1/index/volume",
 			Params: url.Values{
 				"query": {`{namespace="prod"}`},
 				"start": {start5m}, "end": {end},
@@ -1033,12 +1089,27 @@ func AllEdgeCases(now time.Time) []Workload {
 	return []Workload{UnindexedScan(now), HighCardinality(now)}
 }
 
-// ByName returns the named workloads, including edge-case and machinery workloads.
+// volumeExcluded is the reason volume queries are not compared with Loki.
+const volumeExcluded = "proxy index/volume reports line hits where Loki reports bytes; not comparable until the proxy returns bytes"
+
+// indexStatsExcluded is the reason index/stats queries are not compared with
+// Loki: Loki answers from TSDB index chunk statistics, the proxy runs a
+// VictoriaLogs query and reports a single stream, so neither the work nor the
+// result shape is equivalent.
+const indexStatsExcluded = "Loki index/stats is served from TSDB index chunk statistics while the proxy counts entries with a VictoriaLogs query and reports one stream; not comparable"
+
+// ByName returns the named workloads, including edge-case and machinery
+// workloads, built for the reference time now with range queries aligned to
+// their step (see AlignToStep).
 func ByName(names []string, now time.Time) []Workload {
 	all := append(All(now), AllEdgeCases(now)...)
 	all = append(all, Machinery(now))
+	return AlignToStep(selectByName(all, names, All(now)))
+}
+
+func selectByName(all []Workload, names []string, defaults []Workload) []Workload {
 	if len(names) == 0 {
-		return All(now)
+		return defaults
 	}
 	m := make(map[string]Workload, len(all))
 	for _, w := range all {

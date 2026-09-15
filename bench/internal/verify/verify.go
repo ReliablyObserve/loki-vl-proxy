@@ -1,3 +1,6 @@
+// Package verify checks, before any timing, that Loki and every timed proxy
+// target return the same, non-degraded result for every compared query, so the
+// benchmark measures equivalent work on all targets.
 package verify
 
 import (
@@ -6,19 +9,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/degraded"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/workload"
 )
 
 // QueryResult is the raw response from one target for one query.
 type QueryResult struct {
 	StatusCode int
+	Header     http.Header
 	Body       []byte
 	Err        error
+}
+
+// Target is one proxy endpoint verified against Loki.
+type Target struct {
+	Name string
+	URL  string
 }
 
 // Diff describes a mismatch between two targets for one query.
@@ -31,53 +41,88 @@ type Diff struct {
 // Result is the verification outcome for one query.
 type Result struct {
 	QueryName string
-	URL       string
-	Passed    bool
-	Diffs     []Diff
-	LokiErr   error
-	ProxyErr  error
+	// Target names the proxy target compared with Loki.
+	Target string
+	URL    string
+	Passed bool
+	// Skipped carries the reason when the query's shape is not compared.
+	Skipped    string
+	Diffs      []Diff
+	LokiErr    error
+	ProxyErr   error
+	LokiShape  Shape
+	ProxyShape Shape
 }
 
-// Run fetches every query in the workload from lokiURL and proxyURL and compares responses.
-func Run(ctx context.Context, lokiURL, proxyURL string, queries []workload.Query, timeout time.Duration) []Result {
-	results := make([]Result, 0, len(queries))
+// Shape is the comparable outline of one Loki API response.
+type Shape struct {
+	// Status is the API "status" field ("success" / "error").
+	Status string
+	// Kind is the response family: streams, matrix, vector, scalar, strings
+	// (labels / label values), series, detected_fields, index_stats, patterns,
+	// object (other JSON objects) or empty (no data array/object).
+	Kind string
+	// Series counts streams, series, metadata items or detected fields.
+	Series int
+	// Points counts log lines (streams), samples (matrix / vector / scalar) or
+	// pattern samples.
+	Points int
+	// Stats holds index/stats counters (streams, chunks, bytes, entries).
+	Stats map[string]float64
+	// Keys is the sorted content identity of the items: label names or values
+	// (strings), label sets (series, streams, matrix, vector) or field names
+	// (detected_fields).
+	Keys []string
+	// Sample holds the first SampleSize log entries ("<ts> <line>") of a
+	// streams result, ordered by timestamp and line.
+	Sample []string
+}
+
+// SampleSize is the number of log entries compared by content.
+const SampleSize = 20
+
+func (s Shape) String() string {
+	if s.Kind == "index_stats" {
+		return fmt.Sprintf("index_stats streams=%.0f entries=%.0f bytes=%.0f", s.Stats["streams"], s.Stats["entries"], s.Stats["bytes"])
+	}
+	return fmt.Sprintf("%s series=%d points=%d", s.Kind, s.Series, s.Points)
+}
+
+// Run fetches every query once from Loki and once from each target and
+// compares each target's response with Loki's. It returns one Result per query
+// and target.
+func Run(ctx context.Context, lokiURL string, targets []Target, queries []workload.Query, timeout time.Duration) []Result {
+	client := &http.Client{Timeout: timeout}
+	results := make([]Result, 0, len(queries)*len(targets))
 	for _, q := range queries {
 		lURL := q.URL(lokiURL)
-		pURL := q.URL(proxyURL)
-
-		lRes := fetchRaw(ctx, lURL, timeout)
-		pRes := fetchRaw(ctx, pURL, timeout)
-
-		r := Result{
-			QueryName: q.Name,
-			URL:       lURL,
-			LokiErr:   lRes.Err,
-			ProxyErr:  pRes.Err,
-		}
-
-		if lRes.Err != nil || pRes.Err != nil {
-			r.Passed = false
-			results = append(results, r)
+		if q.Excluded != "" {
+			for _, tgt := range targets {
+				results = append(results, Result{QueryName: q.Name, Target: tgt.Name, URL: lURL, Passed: true, Skipped: q.Excluded})
+			}
 			continue
 		}
-
-		// Skip non-JSON or VL-native responses.
-		if !isJSON(lRes.Body) || !isJSON(pRes.Body) {
-			r.Passed = true
+		lRes := fetchRaw(ctx, client, lURL)
+		for _, tgt := range targets {
+			r := Result{QueryName: q.Name, Target: tgt.Name, URL: lURL}
+			pRes := fetchRaw(ctx, client, q.URL(tgt.URL))
+			r.LokiErr, r.ProxyErr = lRes.Err, pRes.Err
+			if lRes.Err != nil || pRes.Err != nil {
+				results = append(results, r)
+				continue
+			}
+			r.Diffs, r.LokiShape, r.ProxyShape = CompareResponses(lRes, pRes, q.Shape)
+			if q.Shape.Skip != "" && len(r.Diffs) == 0 {
+				r.Skipped = q.Shape.Skip
+			}
+			r.Passed = len(r.Diffs) == 0
 			results = append(results, r)
-			continue
 		}
-
-		diffs := compare(q.Name, lRes.Body, pRes.Body)
-		r.Diffs = diffs
-		r.Passed = len(diffs) == 0
-		results = append(results, r)
 	}
 	return results
 }
 
-func fetchRaw(ctx context.Context, url string, timeout time.Duration) QueryResult {
-	client := &http.Client{Timeout: timeout}
+func fetchRaw(ctx context.Context, client *http.Client, url string) QueryResult {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return QueryResult{Err: err}
@@ -91,146 +136,299 @@ func fetchRaw(ctx context.Context, url string, timeout time.Duration) QueryResul
 	if err != nil {
 		return QueryResult{Err: err}
 	}
-	return QueryResult{StatusCode: resp.StatusCode, Body: body}
+	return QueryResult{StatusCode: resp.StatusCode, Header: resp.Header, Body: body}
 }
 
-func isJSON(b []byte) bool {
-	for _, c := range b {
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-			continue
-		}
-		return c == '{'
-	}
-	return false
-}
-
-func compare(queryName string, lokiBody, proxyBody []byte) []Diff {
-	var loki, proxy map[string]any
-	if err := json.Unmarshal(lokiBody, &loki); err != nil {
-		return []Diff{{Field: "parse_loki", Loki: err.Error(), Proxy: ""}}
-	}
-	if err := json.Unmarshal(proxyBody, &proxy); err != nil {
-		return []Diff{{Field: "parse_proxy", Loki: "", Proxy: err.Error()}}
-	}
-
+// CompareResponses compares the HTTP status, degradation signals and the
+// response shapes and content of one query. A query whose tolerance has Skip
+// set still has to succeed without degradation on both targets; only its shape
+// and content are not compared.
+func CompareResponses(loki, proxy QueryResult, tol workload.Tolerance) ([]Diff, Shape, Shape) {
 	var diffs []Diff
-
-	// Compare status fields.
-	lokiStatus, _ := loki["status"].(string)
-	proxyStatus, _ := proxy["status"].(string)
-	if lokiStatus != proxyStatus {
-		diffs = append(diffs, Diff{Field: "status", Loki: lokiStatus, Proxy: proxyStatus})
+	lDeg, pDeg := degraded.Reasons(loki.Header, loki.Body), degraded.Reasons(proxy.Header, proxy.Body)
+	if len(lDeg) > 0 || len(pDeg) > 0 {
+		diffs = append(diffs, Diff{Field: "degraded", Loki: reasonString(lDeg), Proxy: reasonString(pDeg)})
 	}
+	if loki.StatusCode != proxy.StatusCode {
+		diffs = append(diffs, Diff{Field: "http_status", Loki: fmt.Sprint(loki.StatusCode), Proxy: fmt.Sprint(proxy.StatusCode)})
+	} else if loki.StatusCode != http.StatusOK {
+		diffs = append(diffs, Diff{Field: "http_status", Loki: fmt.Sprintf("%d %s", loki.StatusCode, snippet(loki.Body)), Proxy: fmt.Sprintf("%d %s", proxy.StatusCode, snippet(proxy.Body))})
+	}
+	ls, lErr := ParseShape(loki.Body)
+	ps, pErr := ParseShape(proxy.Body)
+	if lErr != nil || pErr != nil {
+		diffs = append(diffs, Diff{Field: "parse", Loki: errString(lErr), Proxy: errString(pErr)})
+		return diffs, ls, ps
+	}
+	if len(diffs) > 0 {
+		return diffs, ls, ps
+	}
+	if tol.Skip != "" {
+		return nil, ls, ps
+	}
+	return CompareShapes(ls, ps, tol), ls, ps
+}
 
-	lokiData := loki["data"]
-	proxyData := proxy["data"]
-
-	switch d := lokiData.(type) {
-	case []any:
-		// labels, label_values, or series
-		pd, ok := proxyData.([]any)
-		if !ok {
-			diffs = append(diffs, Diff{Field: "data_type", Loki: "array", Proxy: fmt.Sprintf("%T", proxyData)})
-			return diffs
-		}
-		if len(d) > 0 {
-			switch d[0].(type) {
-			case string:
-				// labels / label_values
-				diffs = append(diffs, compareStringArrays(d, pd)...)
-			case map[string]any:
-				// series
-				diffs = append(diffs, compareSeries(d, pd)...)
+// CompareShapes applies strict shape comparison with the given tolerance.
+func CompareShapes(l, p Shape, tol workload.Tolerance) []Diff {
+	var diffs []Diff
+	// Some endpoints (index/stats, detected_fields) have no status field in
+	// Loki's encoding; only compare it when both sides carry one.
+	if l.Status != "" && p.Status != "" && l.Status != p.Status {
+		diffs = append(diffs, Diff{Field: "status", Loki: l.Status, Proxy: p.Status})
+	}
+	if l.Kind != p.Kind {
+		// An empty result on one side is reported as a kind mismatch too:
+		// e.g. Loki `streams` with lines vs proxy `empty`.
+		diffs = append(diffs, Diff{Field: "kind", Loki: l.String(), Proxy: p.String()})
+		return diffs
+	}
+	if l.Kind == "index_stats" {
+		// VictoriaLogs has no chunks, so `chunks` is not compared.
+		for _, f := range []string{"streams", "entries", "bytes"} {
+			pct := tol.PointsPct
+			if f == "streams" {
+				pct = tol.SeriesPct
 			}
-		} else if len(pd) > 0 {
-			diffs = append(diffs, Diff{Field: "data_length", Loki: "0", Proxy: fmt.Sprintf("%d", len(pd))})
-		}
-
-	case map[string]any:
-		pd, ok := proxyData.(map[string]any)
-		if !ok {
-			diffs = append(diffs, Diff{Field: "data_type", Loki: "object", Proxy: fmt.Sprintf("%T", proxyData)})
-			return diffs
-		}
-
-		// detected_fields
-		if fields, ok := d["fields"]; ok {
-			diffs = append(diffs, compareDetectedFields(fields, pd["fields"])...)
-			return diffs
-		}
-
-		// index_stats
-		if streams, ok := d["streams"]; ok {
-			diffs = append(diffs, compareIndexStats(streams, d, pd)...)
-			return diffs
-		}
-
-		// query_range / instant result (resultType + result)
-		if resultType, ok := d["resultType"]; ok {
-			pResultType := pd["resultType"]
-			if resultType != pResultType {
-				diffs = append(diffs, Diff{Field: "resultType", Loki: fmt.Sprintf("%v", resultType), Proxy: fmt.Sprintf("%v", pResultType)})
+			if !withinPct(l.Stats[f], p.Stats[f], pct) {
+				diffs = append(diffs, Diff{Field: "index_stats." + f, Loki: fmt.Sprintf("%.0f", l.Stats[f]), Proxy: fmt.Sprintf("%.0f", p.Stats[f])})
 			}
-			diffs = append(diffs, compareQueryResult(d["result"], pd["result"])...)
+		}
+		if l.Stats["entries"] == 0 && p.Stats["entries"] == 0 && !tol.AllowEmpty {
+			diffs = append(diffs, emptyDiff())
+		}
+		return diffs
+	}
+	seriesOK := withinPct(float64(l.Series), float64(p.Series), tol.SeriesPct)
+	if !seriesOK {
+		diffs = append(diffs, Diff{Field: "series_count", Loki: fmt.Sprint(l.Series), Proxy: fmt.Sprint(p.Series)})
+	}
+	pointsOK := withinPct(float64(l.Points), float64(p.Points), tol.PointsPct)
+	if !pointsOK {
+		diffs = append(diffs, Diff{Field: "point_count", Loki: fmt.Sprint(l.Points), Proxy: fmt.Sprint(p.Points)})
+	}
+	// Equal counts can still hide different content: compare the item identities
+	// and a log-line sample when the counts must match exactly.
+	if seriesOK && tol.SeriesPct == 0 {
+		if lk, pk, differ := firstDifference(l.Keys, p.Keys); differ {
+			diffs = append(diffs, Diff{Field: keysField(l.Kind), Loki: lk, Proxy: pk})
 		}
 	}
-
+	if pointsOK && tol.PointsPct == 0 {
+		if ls, ps, differ := firstDifference(l.Sample, p.Sample); differ {
+			diffs = append(diffs, Diff{Field: "entry_content_sample", Loki: ls, Proxy: ps})
+		}
+	}
+	if l.Series == 0 && p.Series == 0 && l.Points == 0 && p.Points == 0 && !tol.AllowEmpty {
+		diffs = append(diffs, emptyDiff())
+	}
 	return diffs
 }
 
-func compareStringArrays(loki, proxy []any) []Diff {
-	ls := anyToStrings(loki)
-	ps := anyToStrings(proxy)
-	sort.Strings(ls)
-	sort.Strings(ps)
-	if reflect.DeepEqual(ls, ps) {
-		return nil
+// keysField names the Diff field for a Keys mismatch of the given kind.
+func keysField(kind string) string {
+	switch kind {
+	case "strings":
+		return "values"
+	case "detected_fields":
+		return "field_names"
+	default:
+		return "label_sets"
 	}
-	return []Diff{{
-		Field: "data",
-		Loki:  fmt.Sprintf("[%s]", strings.Join(ls, ", ")),
-		Proxy: fmt.Sprintf("[%s]", strings.Join(ps, ", ")),
-	}}
 }
 
-func compareSeries(loki, proxy []any) []Diff {
-	lokiKeys := seriesLabelSets(loki)
-	proxyKeys := seriesLabelSets(proxy)
-	sort.Strings(lokiKeys)
-	sort.Strings(proxyKeys)
-	if reflect.DeepEqual(lokiKeys, proxyKeys) {
-		return nil
+// firstDifference reports the first position where two sorted lists differ,
+// formatted for a Diff ("<index>: <item>", or "missing").
+func firstDifference(a, b []string) (string, string, bool) {
+	n := len(a)
+	if len(b) > n {
+		n = len(b)
 	}
-	lokiShort := truncList(lokiKeys, 5)
-	proxyShort := truncList(proxyKeys, 5)
-	return []Diff{{
-		Field: "series_label_sets",
-		Loki:  strings.Join(lokiShort, " | "),
-		Proxy: strings.Join(proxyShort, " | "),
-	}}
+	for i := 0; i < n; i++ {
+		var av, bv string
+		if i < len(a) {
+			av = a[i]
+		}
+		if i < len(b) {
+			bv = b[i]
+		}
+		if i >= len(a) || i >= len(b) || av != bv {
+			return itemAt(i, a), itemAt(i, b), true
+		}
+	}
+	return "", "", false
 }
 
-func seriesLabelSets(series []any) []string {
-	out := make([]string, 0, len(series))
-	for _, s := range series {
-		m, ok := s.(map[string]any)
+func itemAt(i int, list []string) string {
+	if i >= len(list) {
+		return fmt.Sprintf("#%d missing (%d items)", i, len(list))
+	}
+	v := list[i]
+	if len(v) > 200 {
+		v = v[:200] + "…"
+	}
+	return fmt.Sprintf("#%d %s", i, v)
+}
+
+func reasonString(reasons []string) string {
+	if len(reasons) == 0 {
+		return "ok"
+	}
+	return strings.Join(reasons, "; ")
+}
+
+func emptyDiff() Diff {
+	const msg = "no data (window outside the seeded data, or data not ingested)"
+	return Diff{Field: "empty_result", Loki: msg, Proxy: msg}
+}
+
+// ParseShape extracts the comparable shape of a Loki API JSON response.
+func ParseShape(body []byte) (Shape, error) {
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return Shape{}, fmt.Errorf("not a JSON object: %v", err)
+	}
+	s := Shape{Kind: "empty"}
+	s.Status, _ = resp["status"].(string)
+
+	// index/stats and detected_fields are served as bare objects without data.
+	if _, ok := resp["data"]; !ok {
+		if _, hasEntries := resp["entries"]; hasEntries {
+			return indexStatsShape(resp), nil
+		}
+		if fields, ok := resp["fields"].([]any); ok && len(fields) > 0 {
+			s.Kind, s.Series, s.Keys = "detected_fields", len(fields), fieldNames(fields)
+		}
+		return s, nil
+	}
+
+	switch d := resp["data"].(type) {
+	case nil:
+		return s, nil
+	case []any:
+		if len(d) == 0 {
+			return s, nil
+		}
+		switch first := d[0].(type) {
+		case string:
+			s.Kind, s.Series, s.Keys = "strings", len(d), sortedStrings(d)
+		case map[string]any:
+			_, hasLabel := first["label"]
+			_, hasParsers := first["parsers"]
+			if hasLabel && hasParsers {
+				// detected_fields encoded under data (the proxy's encoding).
+				s.Kind, s.Series, s.Keys = "detected_fields", len(d), fieldNames(d)
+			} else if _, ok := first["pattern"]; ok {
+				s.Kind, s.Series = "patterns", len(d)
+				for _, item := range d {
+					if m, ok := item.(map[string]any); ok {
+						samples, _ := m["samples"].([]any)
+						s.Points += len(samples)
+					}
+				}
+			} else {
+				s.Kind, s.Series = "series", len(d)
+				for _, item := range d {
+					if m, ok := item.(map[string]any); ok {
+						s.Keys = append(s.Keys, labelSetKey(m))
+					}
+				}
+				sort.Strings(s.Keys)
+			}
+		default:
+			s.Kind, s.Series = "object", len(d)
+		}
+		return s, nil
+	case map[string]any:
+		if fields, ok := d["fields"]; ok {
+			arr, _ := fields.([]any)
+			if len(arr) > 0 {
+				s.Kind, s.Series, s.Keys = "detected_fields", len(arr), fieldNames(arr)
+			}
+			return s, nil
+		}
+		if _, ok := d["entries"]; ok {
+			return indexStatsShape(d), nil
+		}
+		rt, _ := d["resultType"].(string)
+		if rt == "" {
+			s.Kind = "object"
+			return s, nil
+		}
+		return resultShape(s, rt, d["result"]), nil
+	default:
+		s.Kind = fmt.Sprintf("%T", d)
+		return s, nil
+	}
+}
+
+func resultShape(s Shape, resultType string, result any) Shape {
+	if resultType == "scalar" {
+		s.Kind, s.Series, s.Points = "scalar", 1, 1
+		return s
+	}
+	arr, _ := result.([]any)
+	if len(arr) == 0 {
+		// Loki and the proxy may disagree on resultType for an empty result;
+		// both are "no data" for shape purposes.
+		return s
+	}
+	s.Kind = resultType
+	s.Series = len(arr)
+	type logEntry struct{ ts, line string }
+	var entries []logEntry
+	for _, item := range arr {
+		m, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		// Series entries may have a "labels" key or be flat label maps.
-		labels, hasLabels := m["labels"]
-		if hasLabels {
-			if lm, ok := labels.(map[string]any); ok {
-				out = append(out, labelMapKey(lm))
-				continue
+		switch resultType {
+		case "vector":
+			if _, ok := m["value"]; ok {
+				s.Points++
+			}
+			s.Keys = append(s.Keys, labelSetKey(asMap(m["metric"])))
+		case "matrix":
+			values, _ := m["values"].([]any)
+			s.Points += len(values)
+			s.Keys = append(s.Keys, labelSetKey(asMap(m["metric"])))
+		default: // streams
+			values, _ := m["values"].([]any)
+			s.Points += len(values)
+			s.Keys = append(s.Keys, labelSetKey(asMap(m["stream"])))
+			for _, v := range values {
+				// [ts, line] or [ts, line, metadata]: only ts and line are compared.
+				if pair, ok := v.([]any); ok && len(pair) >= 2 {
+					entries = append(entries, logEntry{ts: fmt.Sprint(pair[0]), line: fmt.Sprint(pair[1])})
+				}
 			}
 		}
-		out = append(out, labelMapKey(m))
 	}
-	return out
+	sort.Strings(s.Keys)
+	if len(entries) > 0 {
+		sort.Slice(entries, func(i, j int) bool {
+			if len(entries[i].ts) != len(entries[j].ts) {
+				return len(entries[i].ts) < len(entries[j].ts)
+			}
+			if entries[i].ts != entries[j].ts {
+				return entries[i].ts < entries[j].ts
+			}
+			return entries[i].line < entries[j].line
+		})
+		for i := 0; i < len(entries) && i < SampleSize; i++ {
+			s.Sample = append(s.Sample, entries[i].ts+" "+entries[i].line)
+		}
+	}
+	return s
 }
 
-func labelMapKey(m map[string]any) string {
+func asMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
+// labelSetKey formats a label map as {k="v",...} with sorted keys.
+func labelSetKey(m map[string]any) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -238,183 +436,44 @@ func labelMapKey(m map[string]any) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, m[k]))
+		parts = append(parts, fmt.Sprintf("%s=%q", k, fmt.Sprint(m[k])))
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-func compareDetectedFields(lokiFields, proxyFields any) []Diff {
-	ls := extractFieldNames(lokiFields)
-	ps := extractFieldNames(proxyFields)
-	sort.Strings(ls)
-	sort.Strings(ps)
-	if reflect.DeepEqual(ls, ps) {
-		return nil
+func sortedStrings(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, v := range items {
+		out = append(out, fmt.Sprint(v))
 	}
-	return []Diff{{
-		Field: "detected_fields",
-		Loki:  fmt.Sprintf("[%s]", strings.Join(ls, ", ")),
-		Proxy: fmt.Sprintf("[%s]", strings.Join(ps, ", ")),
-	}}
-}
-
-func extractFieldNames(v any) []string {
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(arr))
-	for _, item := range arr {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if name, ok := m["label"].(string); ok {
-			out = append(out, name)
-		}
-	}
+	sort.Strings(out)
 	return out
 }
 
-func compareIndexStats(lokiStreams any, loki, proxy map[string]any) []Diff {
-	toFloat := func(v any) float64 {
-		switch n := v.(type) {
-		case float64:
-			return n
-		case json.Number:
-			f, _ := n.Float64()
-			return f
-		}
-		return 0
-	}
-	withinTolerance := func(a, b float64) bool {
-		if a == 0 && b == 0 {
-			return true
-		}
-		max := a
-		if b > max {
-			max = b
-		}
-		diff := a - b
-		if diff < 0 {
-			diff = -diff
-		}
-		return diff/max <= 0.05
-	}
-
-	fields := []string{"streams", "chunks", "bytes", "entries"}
-	var diffs []Diff
-	_ = lokiStreams
-	for _, f := range fields {
-		lv := toFloat(loki[f])
-		pv := toFloat(proxy[f])
-		if !withinTolerance(lv, pv) {
-			diffs = append(diffs, Diff{
-				Field: "index_stats." + f,
-				Loki:  fmt.Sprintf("%.0f", lv),
-				Proxy: fmt.Sprintf("%.0f", pv),
-			})
+// fieldNames returns the sorted "label" names of detected_fields entries.
+func fieldNames(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, fmt.Sprint(m["label"]))
 		}
 	}
-	return diffs
-}
-
-func compareQueryResult(lokiResult, proxyResult any) []Diff {
-	lStreams, ok1 := lokiResult.([]any)
-	pStreams, ok2 := proxyResult.([]any)
-	if !ok1 || !ok2 {
-		if fmt.Sprintf("%T", lokiResult) != fmt.Sprintf("%T", proxyResult) {
-			return []Diff{{Field: "result_type", Loki: fmt.Sprintf("%T", lokiResult), Proxy: fmt.Sprintf("%T", proxyResult)}}
-		}
-		return nil
-	}
-
-	var diffs []Diff
-
-	// Stream count within 5% tolerance.
-	lc, pc := len(lStreams), len(pStreams)
-	if !withinPct(float64(lc), float64(pc), 0.05) {
-		diffs = append(diffs, Diff{
-			Field: "stream_count",
-			Loki:  fmt.Sprintf("%d", lc),
-			Proxy: fmt.Sprintf("%d", pc),
-		})
-	}
-
-	// Total entry count.
-	lEntries := totalEntries(lStreams)
-	pEntries := totalEntries(pStreams)
-	if !withinPct(float64(lEntries), float64(pEntries), 0.05) {
-		diffs = append(diffs, Diff{
-			Field: "entry_count",
-			Loki:  fmt.Sprintf("%d", lEntries),
-			Proxy: fmt.Sprintf("%d", pEntries),
-		})
-	}
-
-	// Compare first 20 entries by timestamp-sorted content.
-	lVals := collectEntries(lStreams, 20)
-	pVals := collectEntries(pStreams, 20)
-	if len(lVals) > 0 && len(pVals) > 0 && !reflect.DeepEqual(lVals, pVals) {
-		diffs = append(diffs, Diff{
-			Field: "entry_content_sample",
-			Loki:  strings.Join(truncList(lVals, 3), " | "),
-			Proxy: strings.Join(truncList(pVals, 3), " | "),
-		})
-	}
-
-	return diffs
-}
-
-func totalEntries(streams []any) int {
-	total := 0
-	for _, s := range streams {
-		m, ok := s.(map[string]any)
-		if !ok {
-			continue
-		}
-		values, _ := m["values"].([]any)
-		total += len(values)
-	}
-	return total
-}
-
-// collectEntries gathers up to n log line values from all streams, sorted by timestamp.
-func collectEntries(streams []any, n int) []string {
-	type entry struct {
-		ts  string
-		val string
-	}
-	var all []entry
-	for _, s := range streams {
-		m, ok := s.(map[string]any)
-		if !ok {
-			continue
-		}
-		values, _ := m["values"].([]any)
-		for _, v := range values {
-			pair, ok := v.([]any)
-			if !ok || len(pair) < 2 {
-				continue
-			}
-			ts, _ := pair[0].(string)
-			val, _ := pair[1].(string)
-			all = append(all, entry{ts, val})
-		}
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].ts < all[j].ts })
-	out := make([]string, 0, n)
-	for i, e := range all {
-		if i >= n {
-			break
-		}
-		out = append(out, e.ts+":"+e.val)
-	}
+	sort.Strings(out)
 	return out
+}
+
+func indexStatsShape(m map[string]any) Shape {
+	s := Shape{Kind: "index_stats", Stats: map[string]float64{}}
+	for _, f := range []string{"streams", "chunks", "bytes", "entries"} {
+		if v, ok := m[f].(float64); ok {
+			s.Stats[f] = v
+		}
+	}
+	return s
 }
 
 func withinPct(a, b, pct float64) bool {
-	if a == 0 && b == 0 {
+	if a == b {
 		return true
 	}
 	max := a
@@ -428,19 +487,55 @@ func withinPct(a, b, pct float64) bool {
 	return diff/max <= pct
 }
 
-func anyToStrings(in []any) []string {
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if s, ok := v.(string); ok {
-			out = append(out, s)
-		}
+func errString(err error) string {
+	if err == nil {
+		return "ok"
 	}
-	return out
+	return err.Error()
 }
 
-func truncList(s []string, n int) []string {
-	if len(s) <= n {
-		return s
+func snippet(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) > 160 {
+		s = s[:160] + "…"
 	}
-	return append(s[:n:n], fmt.Sprintf("…+%d", len(s)-n))
+	return s
+}
+
+// Summary formats the mismatches of a verification run as a report. It returns
+// an empty string when every query passed.
+func Summary(workloadName string, results []Result) string {
+	var failed []Result
+	for _, r := range results {
+		if !r.Passed {
+			failed = append(failed, r)
+		}
+	}
+	if len(failed) == 0 {
+		return ""
+	}
+	sort.SliceStable(failed, func(i, j int) bool {
+		if failed[i].QueryName != failed[j].QueryName {
+			return failed[i].QueryName < failed[j].QueryName
+		}
+		return failed[i].Target < failed[j].Target
+	})
+	var b strings.Builder
+	for _, r := range failed {
+		if r.Target != "" {
+			fmt.Fprintf(&b, "  %s/%s (loki vs %s)\n", workloadName, r.QueryName, r.Target)
+		} else {
+			fmt.Fprintf(&b, "  %s/%s\n", workloadName, r.QueryName)
+		}
+		if r.LokiErr != nil {
+			fmt.Fprintf(&b, "      loki error:  %v\n", r.LokiErr)
+		}
+		if r.ProxyErr != nil {
+			fmt.Fprintf(&b, "      proxy error: %v\n", r.ProxyErr)
+		}
+		for _, d := range r.Diffs {
+			fmt.Fprintf(&b, "      %-14s loki=%s  proxy=%s\n", d.Field, d.Loki, d.Proxy)
+		}
+	}
+	return b.String()
 }

@@ -4,10 +4,18 @@
 // with LogsQL syntax instead of LogQL.
 //
 // Tested against VictoriaLogs v1.50.0:
-//   - count() without by() clause works in stats_query
-//   - count() by (field) is NOT supported — use hits endpoint instead
+//   - range stats use /select/logsql/stats_query_range (start/end/step); the
+//     instant /select/logsql/stats_query takes only `time`, so start/end/step
+//     would be ignored and the query would scan
+//     all stored data
+//   - count() without by() clause works in stats_query_range
+//   - grouped counts over time use /select/logsql/hits with field=<name> (the
+//     equivalent of LogQL `sum by (detected_level) (count_over_time(...))`)
 //   - rate() and bytes_rate() pipes are NOT supported
 //   - hits endpoint uses step= (not granularity=)
+//   - parsing uses the unpack_json / unpack_logfmt pipes: the seed stores the
+//     raw line in _msg (no ingest-time parsing), and `| json` / `| logfmt` are
+//     not LogsQL parser pipes (they return an empty result).
 package workload
 
 import (
@@ -38,9 +46,9 @@ func VLSmall(now time.Time) Workload {
 			Params: url.Values{"field": {"namespace"}, "query": {"*"}, "start": {start5m}, "end": {end}},
 		},
 		{
-			Name:   "field_values_level",
+			Name:   "field_values_cluster",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"field": {"level"}, "query": {"*"}, "start": {start5m}, "end": {end}},
+			Params: url.Values{"field": {"cluster"}, "query": {"*"}, "start": {start5m}, "end": {end}},
 		},
 		{
 			Name:   "stream_ids",
@@ -63,9 +71,9 @@ func VLSmall(now time.Time) Workload {
 			Params: url.Values{"query": {`app:"api-gateway" "error"`}, "start": {start1m}, "end": {end}, "limit": {"100"}},
 		},
 		{
-			// stats_query count() without by() is supported in VL v1.50.0
+			// stats_query_range count() without by() is supported in VL v1.50.0
 			Name:   "stats_count_5m",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`app:"api-gateway" | count()`}, "start": {start5m}, "end": {end}, "step": {"5m"}},
 		},
 		{
@@ -81,7 +89,7 @@ func VLSmall(now time.Time) Workload {
 		},
 		{
 			Name:   "count_uniq_app",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`* | count_uniq(app)`}, "start": {start5m}, "end": {end}, "step": {"5m"}},
 		},
 	}}
@@ -99,32 +107,32 @@ func VLHeavy(now time.Time) Workload {
 		{
 			Name:   "log_json_status_filter",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400`}, "start": {start30m}, "end": {end}, "limit": {"1000"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400`}, "start": {start30m}, "end": {end}, "limit": {"1000"}},
 		},
 		{
 			Name:   "log_json_multi_field",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=200 | status:<500 | latency_ms:>100`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=200 | status:<500 | latency_ms:>100`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
 		},
 		{
 			Name:   "log_json_extract",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"api-gateway" | json`}, "start": {start15m}, "end": {end}, "limit": {"200"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json`}, "start": {start15m}, "end": {end}, "limit": {"200"}},
 		},
 		{
 			Name:   "log_logfmt_error",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"payment-service" | logfmt | level:"error"`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
+			Params: url.Values{"query": {`app:"payment-service" | unpack_logfmt | level:"error"`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
 		},
 		{
 			Name:   "log_logfmt_latency",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"worker-service" | logfmt | duration_ms:>5000`}, "start": {start1h}, "end": {end}, "limit": {"200"}},
+			Params: url.Values{"query": {`app:"worker-service" | unpack_logfmt | duration_ms:>5000`}, "start": {start1h}, "end": {end}, "limit": {"200"}},
 		},
 		{
 			Name:   "log_regex_filter",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`namespace:"prod" ~"status=(4|5)[0-9][0-9]"`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
+			Params: url.Values{"query": {`namespace:"prod" ~"status.:(4|5)[0-9][0-9]"`}, "start": {start30m}, "end": {end}, "limit": {"500"}},
 		},
 		{
 			Name:   "hits_prod_1h_1m",
@@ -134,27 +142,27 @@ func VLHeavy(now time.Time) Workload {
 		{
 			Name:   "hits_errors_1h_1m",
 			Path:   "/select/logsql/hits",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		{
 			Name:   "hits_level_2h_1m",
 			Path:   "/select/logsql/hits",
-			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start2h}, "end": {end}, "step": {"1m"}},
+			Params: url.Values{"query": {`namespace:"prod"`}, "field": {"level"}, "start": {start2h}, "end": {end}, "step": {"1m"}},
 		},
 		{
 			Name:   "stats_count_errors",
-			Path:   "/select/logsql/stats_query",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400 | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+			Path:   "/select/logsql/stats_query_range",
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400 | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		{
 			Name:   "stats_count_prod",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		{
 			Name:   "field_names_json",
 			Path:   "/select/logsql/field_names",
-			Params: url.Values{"query": {`namespace:"prod" | json`}, "start": {start30m}, "end": {end}},
+			Params: url.Values{"query": {`namespace:"prod" | unpack_json`}, "start": {start30m}, "end": {end}},
 		},
 		{
 			Name:   "log_full_volume_1h",
@@ -211,7 +219,7 @@ func VLLongRange(now time.Time) Workload {
 		{
 			Name:   "hits_level_48h",
 			Path:   "/select/logsql/hits",
-			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start48h}, "end": {end}, "step": {"1h"}},
+			Params: url.Values{"query": {`namespace:"prod"`}, "field": {"level"}, "start": {start48h}, "end": {end}, "step": {"1h"}},
 		},
 		{
 			Name:   "hits_prod_72h",
@@ -231,13 +239,13 @@ func VLLongRange(now time.Time) Workload {
 		{
 			Name:   "log_json_errors_24h",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400`}, "start": {start24h}, "end": {end}, "limit": {"5000"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400`}, "start": {start24h}, "end": {end}, "limit": {"5000"}},
 		},
 	}}
 }
 
 // VLCompute mirrors Compute using VictoriaLogs native LogsQL.
-// Uses hits (time-series), stats_query count(), multi-stage parse pipelines,
+// Uses hits (time-series), stats_query_range count(), multi-stage parse pipelines,
 // and count_uniq for cardinality — the VL equivalents of multi-layer LogQL aggregations.
 func VLCompute(now time.Time) Workload {
 	start5m := ns(now.Add(-5 * time.Minute))
@@ -257,36 +265,36 @@ func VLCompute(now time.Time) Workload {
 		{
 			Name:   "hits_errors_1m_step",
 			Path:   "/select/logsql/hits",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		// hits: 5xx only
 		{
 			Name:   "hits_5xx_1m_step",
 			Path:   "/select/logsql/hits",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=500`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=500`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		// stats_query count() on prod logs (equivalent of sum rate)
 		{
 			Name:   "stats_count_prod_1h",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		// stats_query count() on errors (equivalent of error rate numerator)
 		{
 			Name:   "stats_count_errors_1h",
-			Path:   "/select/logsql/stats_query",
-			Params: url.Values{"query": {`app:"api-gateway" | json | status:>=400 | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+			Path:   "/select/logsql/stats_query_range",
+			Params: url.Values{"query": {`app:"api-gateway" | unpack_json | status:>=400 | count()`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
 		},
 		// count_uniq: cardinality of unique apps (equivalent of topk cardinality)
 		{
 			Name:   "count_uniq_apps",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" | count_uniq(app)`}, "start": {start1h}, "end": {end}, "step": {"5m"}},
 		},
 		// count_uniq: unique (app, region) combinations
 		{
 			Name:   "count_uniq_app_region",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" | count_uniq(app, region)`}, "start": {start1h}, "end": {end}, "step": {"5m"}},
 		},
 		// Multi-stage parse: JSON + multi-field filter (latency > threshold + error status)
@@ -294,7 +302,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "json_multi_stage_filter",
 			Path: "/select/logsql/query",
 			Params: url.Values{
-				"query": {`namespace:"prod" | json | status:>=400 | level:"error" | latency_ms:>100`},
+				"query": {`namespace:"prod" | unpack_json | status:>=400 | level:"error" | latency_ms:>100`},
 				"start": {start15m}, "end": {end}, "limit": {"500"},
 			},
 		},
@@ -303,7 +311,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "logfmt_latency_filter",
 			Path: "/select/logsql/query",
 			Params: url.Values{
-				"query": {`namespace:"prod" | logfmt | duration_ms:>1000 | level:"error"`},
+				"query": {`namespace:"prod" | unpack_logfmt | duration_ms:>1000 | level:"error"`},
 				"start": {start30m}, "end": {end}, "limit": {"200"},
 			},
 		},
@@ -312,7 +320,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "regex_then_json_filter",
 			Path: "/select/logsql/query",
 			Params: url.Values{
-				"query": {`namespace:"prod" ~"status=(4|5)[0-9][0-9]" | json | latency_ms:>500`},
+				"query": {`namespace:"prod" ~"status.:(4|5)[0-9][0-9]" | unpack_json | latency_ms:>500`},
 				"start": {start15m}, "end": {end}, "limit": {"200"},
 			},
 		},
@@ -325,9 +333,9 @@ func VLCompute(now time.Time) Workload {
 		// stats_query with logfmt parse (logfmt + field filter + count)
 		{
 			Name: "stats_logfmt_errors",
-			Path: "/select/logsql/stats_query",
+			Path: "/select/logsql/stats_query_range",
 			Params: url.Values{
-				"query": {`app:"payment-service" | logfmt | level:"error" | count()`},
+				"query": {`app:"payment-service" | unpack_logfmt | level:"error" | count()`},
 				"start": {start1h}, "end": {end}, "step": {"1m"},
 			},
 		},
@@ -336,7 +344,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "json_full_pipeline",
 			Path: "/select/logsql/query",
 			Params: url.Values{
-				"query": {`app:"api-gateway" | json | status:>=200 | status:<500 | method:"POST" | latency_ms:>100`},
+				"query": {`app:"api-gateway" | unpack_json | status:>=200 | status:<500 | method:"POST" | latency_ms:>100`},
 				"start": {start5m}, "end": {end}, "limit": {"500"},
 			},
 		},
@@ -345,7 +353,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "hits_errors_30s_step",
 			Path: "/select/logsql/hits",
 			Params: url.Values{
-				"query": {`namespace:"prod" | json | status:>=400`},
+				"query": {`namespace:"prod" | unpack_json | status:>=400`},
 				"start": {start30m}, "end": {end}, "step": {"30s"},
 			},
 		},
@@ -354,7 +362,7 @@ func VLCompute(now time.Time) Workload {
 			Name: "field_names_json_filtered",
 			Path: "/select/logsql/field_names",
 			Params: url.Values{
-				"query": {`app:"api-gateway" | json | status:>=400`},
+				"query": {`app:"api-gateway" | unpack_json | status:>=400`},
 				"start": {start1h}, "end": {end},
 			},
 		},
@@ -391,7 +399,7 @@ func VLUnindexedScan(now time.Time) Workload {
 		{
 			Name:   "regex_status_codes_6h",
 			Path:   "/select/logsql/query",
-			Params: url.Values{"query": {`namespace:"prod" ~"status=(4|5)[0-9][0-9]"`}, "start": {start6h}, "end": {end}, "limit": {"500"}},
+			Params: url.Values{"query": {`namespace:"prod" ~"status.:(4|5)[0-9][0-9]"`}, "start": {start6h}, "end": {end}, "limit": {"500"}},
 		},
 		// Negation — VL can skip blocks whose inverted index lacks the word.
 		{
@@ -424,7 +432,7 @@ func VLUnindexedScan(now time.Time) Workload {
 		// Stats count on content filter — equivalent of count_over_time.
 		{
 			Name:   "stats_count_errors_24h",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" "error" | count()`}, "start": {start24h}, "end": {end}, "step": {"1h"}},
 		},
 	}}
@@ -477,7 +485,7 @@ func VLHighCardinality(now time.Time) Workload {
 		// count_uniq(pod) — count distinct pod values.
 		{
 			Name:   "count_uniq_pod_1h",
-			Path:   "/select/logsql/stats_query",
+			Path:   "/select/logsql/stats_query_range",
 			Params: url.Values{"query": {`namespace:"prod" | count_uniq(pod)`}, "start": {start1h}, "end": {end}, "step": {"5m"}},
 		},
 		// field_names — VL scans column headers, not all log lines.
@@ -513,18 +521,5 @@ func VLAllEdgeCases(now time.Time) []Workload {
 // VLByName returns the named VL-native workloads, including edge-case workloads.
 func VLByName(names []string, now time.Time) []Workload {
 	all := append(VLAll(now), VLAllEdgeCases(now)...)
-	if len(names) == 0 {
-		return VLAll(now)
-	}
-	m := make(map[string]Workload, len(all))
-	for _, w := range all {
-		m[w.Name] = w
-	}
-	var result []Workload
-	for _, n := range names {
-		if w, ok := m[n]; ok {
-			result = append(result, w)
-		}
-	}
-	return result
+	return AlignToStep(selectByName(all, names, VLAll(now)))
 }

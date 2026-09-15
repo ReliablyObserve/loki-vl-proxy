@@ -1,10 +1,28 @@
 #!/usr/bin/env bash
 # Run the full Loki vs VL+proxy read-path comparison benchmark.
 #
-# Prerequisites:
-#   - Loki running at $LOKI_URL (default: http://localhost:3101)
-#   - loki-vl-proxy running at $PROXY_URL (default: http://localhost:3100)
-#   - Both have data ingested (use the e2e compose stack: cd test/e2e-compat && docker compose up -d)
+# Prerequisites (defaults match test/e2e-compat compose ports):
+#   - Loki running at $LOKI_URL (default: http://localhost:13101)
+#   - loki-vl-proxy running at $PROXY_URL (default: http://localhost:13100)
+#   - VictoriaLogs at $VL_URL (default: http://localhost:19428)
+#   - Identical data seeded into both backends with bench/cmd/seed, on a stack
+#     started with docker-compose.bench.yml layered on docker-compose.yml
+#
+# Equivalent-work guards (see bench/README.md):
+#   - DATA_END (default "auto" when VictoriaLogs is reachable) pins every workload
+#     window to the seeded data end instead of the wall clock.
+#   - ENTRY_CHECK_TIMEOUT (default 45m) waits until Loki's line count over the
+#     seeded span equals VictoriaLogs'; LOKI_FLUSH=true (default) first asks Loki
+#     to flush its ingesters. ENTRY_CHECK_TIMEOUT=0 disables the check.
+#   - VERIFY_STRICT=true (default) compares every query on Loki and every timed
+#     proxy target (status, degraded answers, shape and content) before timing
+#     and aborts the run on a mismatch.
+#   - CACHE_MODE=warm (default) compares Loki with its results caches against
+#     the cached proxy; CACHE_MODE=cold compares Loki with every results cache
+#     off (test/e2e-compat/loki-bench-nocache-config.yaml) against proxies
+#     without a response cache. loki-bench checks Loki's /config matches.
+#   - MAX_ERROR_RATE=0 (default): any error or degraded answer in a timed run
+#     stops the benchmark with a non-zero exit and NOT-PUBLISHABLE output.
 #
 # Usage:
 #   ./bench/run-comparison.sh                          # full suite (all workloads, 10/50/100/500 clients)
@@ -12,29 +30,49 @@
 #   ./bench/run-comparison.sh --clients=10,50          # fewer concurrency levels
 #   ./bench/run-comparison.sh --duration=60s           # longer per-level runs
 #   ./bench/run-comparison.sh --jitter=2h              # randomize time windows (realistic cache sim)
-#   ./bench/run-comparison.sh --skip-loki              # proxy only (no Loki comparison)
+#   ./bench/run-comparison.sh --skip-loki              # proxy only (no Loki comparison; not publishable)
+#   CACHE_MODE=cold ./bench/run-comparison.sh          # cold comparison (Loki started with the no-cache config)
 #   ./bench/run-comparison.sh --version=v1.17.1        # tag results for tracking
 #   PROXY_NO_CACHE_URL=http://localhost:3199 ./bench/run-comparison.sh  # pre-started no-cache proxy
 #   PROXY_PARTIAL_URL=http://localhost:3198 ./bench/run-comparison.sh   # pre-started partial-cache proxy
 #
-# Partial-cache proxy auto-spawn:
+# Partial-cache proxy auto-spawn (CACHE_MODE=warm):
 #   Spawned automatically with -cache-ttl=6s (≈20% hit rate for 30s run) and
 #   coalescer enabled (≈25% backend forwarding at moderate concurrency).
 #   Models a partially-warm production scenario between warm and cold extremes.
 #   Override port: PARTIAL_PORT=3198 (default)
 #
-# No-cache proxy auto-spawn:
-#   If loki-vl-proxy binary is in $PATH or at $PROXY_BINARY, the script starts a no-cache
-#   proxy instance automatically on port 3199 and kills it when done.
+# No-cache proxy auto-spawn (CACHE_MODE=cold):
+#   The script builds loki-vl-proxy (or uses $PROXY_BINARY), starts a no-cache
+#   proxy instance on port 3199 and kills it when done.
 #
 # All extra flags are forwarded to loki-bench.
 set -euo pipefail
 
-LOKI_URL="${LOKI_URL:-http://localhost:3101}"
-PROXY_URL="${PROXY_URL:-http://localhost:3100}"
-VL_URL="${VL_URL:-http://localhost:9428}"
+LOKI_URL="${LOKI_URL:-http://localhost:13101}"
+PROXY_URL="${PROXY_URL:-http://localhost:13100}"
+VL_URL="${VL_URL:-http://localhost:19428}"
 LOKI_METRICS="${LOKI_METRICS:-}"
-PROXY_METRICS="${PROXY_METRICS:-http://localhost:3100/metrics}"
+PROXY_METRICS="${PROXY_METRICS:-${PROXY_URL}/metrics}"
+DATA_END="${DATA_END:-}"
+ENTRY_CHECK_TIMEOUT="${ENTRY_CHECK_TIMEOUT:-45m}"
+LOKI_FLUSH="${LOKI_FLUSH:-true}"
+VERIFY_STRICT="${VERIFY_STRICT:-true}"
+CACHE_MODE="${CACHE_MODE:-warm}"
+MAX_ERROR_RATE="${MAX_ERROR_RATE:-0}"
+case "$CACHE_MODE" in
+  warm|cold) ;;
+  *) echo "CACHE_MODE must be warm or cold, got '$CACHE_MODE'" >&2; exit 1 ;;
+esac
+# The cache mode decides which proxies are spawned and whether the machinery
+# pass runs, so it is set only through the environment.
+for arg in "$@"; do
+  case "$arg" in
+    --cache-mode|--cache-mode=*|--max-error-rate|--max-error-rate=*)
+      echo "Set CACHE_MODE / MAX_ERROR_RATE in the environment instead of passing $arg" >&2
+      exit 1 ;;
+  esac
+done
 VL_METRICS="${VL_METRICS:-}"
 VL_DIRECT_URL="${VL_DIRECT_URL:-}"
 PROXY_NO_CACHE_URL="${PROXY_NO_CACHE_URL:-}"
@@ -68,6 +106,38 @@ if [ -z "$VL_DIRECT_URL" ]; then
   fi
 fi
 
+# Pin workload windows to the seeded data end (max(_time) in VictoriaLogs).
+# Without it windows follow the wall clock and drift past historical data.
+if [ -z "$DATA_END" ]; then
+  if [ -n "$VL_DIRECT_URL" ]; then
+    DATA_END="auto"
+  else
+    echo "⚠ VictoriaLogs not reachable: workload windows follow the wall clock (set DATA_END to pin them)"
+  fi
+fi
+DATA_ARGS=()
+if [ -n "$DATA_END" ]; then
+  DATA_ARGS+=("--data-end=$DATA_END")
+  if [ "$DATA_END" = "auto" ]; then
+    DATA_ARGS+=("--data-start=auto")
+  fi
+fi
+
+# Entry check and strict shape verification run once, in the main pass.
+CHECK_ARGS=()
+if [ -n "$DATA_END" ] && [ "$ENTRY_CHECK_TIMEOUT" != "0" ]; then
+  CHECK_ARGS+=("--wait-ingested=$ENTRY_CHECK_TIMEOUT")
+  if [ "$LOKI_FLUSH" = "true" ]; then
+    # Ask Loki's ingesters to flush in-memory chunks so seeded history becomes
+    # visible to the read path sooner; the entry check still waits for parity.
+    curl -s -o /dev/null -X POST "$LOKI_URL/flush" 2>/dev/null || true
+  fi
+fi
+if [ "$VERIFY_STRICT" = "true" ]; then
+  CHECK_ARGS+=("--verify-strict")
+fi
+MODE_ARGS=("--cache-mode=$CACHE_MODE" "--max-error-rate=$MAX_ERROR_RATE")
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/results}"
@@ -87,7 +157,7 @@ echo
 # ensures the no-cache instance runs the same code as the warm proxy and has
 # all current flags (including -server.enable-pprof). Relying on a pre-built
 # binary risks using a stale build that lacks recently added flags.
-if [ -z "$PROXY_NO_CACHE_URL" ]; then
+if [ -z "$PROXY_NO_CACHE_URL" ] && [ "$CACHE_MODE" = "cold" ]; then
   PROXY_BINARY="${PROXY_BINARY:-}"
   if [ -z "$PROXY_BINARY" ]; then
     echo "Building loki-vl-proxy for no-cache instance..."
@@ -141,8 +211,12 @@ fi
 # the cache during a 30s run. The singleflight coalescer remains enabled, giving
 # ~25% backend forwarding at moderate concurrency. This models a partially-warm
 # production instance between the warm (high hit rate) and cold (0% hit rate) extremes.
-if [ -z "$PROXY_PARTIAL_URL" ]; then
-  PROXY_BINARY="${PROXY_BINARY:-/tmp/loki-vl-proxy}"
+if [ -z "$PROXY_PARTIAL_URL" ] && [ "$CACHE_MODE" = "warm" ]; then
+  if [ -z "${PROXY_BINARY:-}" ]; then
+    echo "Building loki-vl-proxy for partial-cache instance..."
+    go build -o /tmp/loki-vl-proxy "$REPO_ROOT/cmd/proxy/"
+    PROXY_BINARY="/tmp/loki-vl-proxy"
+  fi
   if [ -n "$PROXY_BINARY" ] && [ -x "$PROXY_BINARY" ]; then
     # Find a free port.
     while lsof -ti:"$PARTIAL_PORT" &>/dev/null 2>&1; do
@@ -189,14 +263,19 @@ echo "════════════════════════�
 echo " loki-vl-proxy Read Performance Benchmark"
 echo "════════════════════════════════════════════════════════════"
 echo " Loki target:    $LOKI_URL"
-echo " Proxy (warm):   $PROXY_URL"
-echo " Proxy (cold):   ${PROXY_NO_CACHE_URL:-not configured}"
-echo " Proxy (partial): ${PROXY_PARTIAL_URL:-not configured (cache-ttl=6s, ~20% hit rate)}"
+echo " Cache mode:     $CACHE_MODE"
+echo " Proxy (warm):   $([ "$CACHE_MODE" = "warm" ] && echo "$PROXY_URL" || echo "not timed in cold mode")"
+echo " Proxy (cold):   $([ "$CACHE_MODE" = "cold" ] && echo "${PROXY_NO_CACHE_URL:-not configured}" || echo "not timed in warm mode")"
+echo " Proxy (partial): $([ "$CACHE_MODE" = "warm" ] && echo "${PROXY_PARTIAL_URL:-not configured (cache-ttl=6s, ~20% hit rate)}" || echo "not timed in cold mode")"
 echo " VL backend:     ${VL_URL:-not configured}"
 echo " VL native:      ${VL_DIRECT_URL:-not configured (2-way only)}"
 echo " Loki metrics:   ${LOKI_METRICS:-not configured}"
 echo " Proxy metrics:  ${PROXY_METRICS:-not configured}"
 echo " VL metrics:     ${VL_METRICS:-not configured}"
+echo " Data end:       ${DATA_END:-wall clock}"
+echo " Entry check:    $([ -n "$DATA_END" ] && [ "$ENTRY_CHECK_TIMEOUT" != "0" ] && echo "up to $ENTRY_CHECK_TIMEOUT" || echo "disabled")"
+echo " Verification:   $([ "$VERIFY_STRICT" = "true" ] && echo "strict (every timed proxy target vs Loki)" || echo "disabled (results not publishable)")"
+echo " Error gate:     max error and degraded-answer rate $MAX_ERROR_RATE"
 echo " Output:         $OUTPUT_DIR"
 echo "════════════════════════════════════════════════════════════"
 echo
@@ -247,18 +326,29 @@ mkdir -p "$OUTPUT_DIR"
   --pprof-partial="${PROXY_PARTIAL_URL}" \
   --pprof-auth-token="${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
   --output="$OUTPUT_DIR" \
+  ${DATA_ARGS[@]+"${DATA_ARGS[@]}"} \
+  ${CHECK_ARGS[@]+"${CHECK_ARGS[@]}"} \
+  "${MODE_ARGS[@]}" \
   "$@"
 
-# --- Machinery pass: unique windows defeat cache + coalescer -----------------
-# Every worker gets a distinct non-overlapping time window so the singleflight
-# coalescer never fires and the response cache never warms. This isolates raw
-# proxy translation + HTTP overhead from caching artifacts.
-# Skips partial/coalescer variants (irrelevant: cache can't help) and pprof
-# (already captured in the main pass above).
-# Forwards the same workload/clients/duration/version/jitter flags from $@
-# but overrides --output and injects --unique-windows.
+# --- Machinery pass: unique windows defeat caches + coalescer ---------------
+# Every request is shifted back by a distinct number of whole steps inside the
+# data, so step alignment cannot map two requests onto one window and the
+# singleflight coalescer cannot answer one request from another. Queries with
+# fewer distinct windows inside the data than the highest client count are
+# excluded by loki-bench. Only equal against targets without response caches,
+# so it runs in CACHE_MODE=cold only (loki-bench refuses --unique-windows
+# otherwise). It repeats the entry check and strict verification, so its
+# results carry the same publishability guarantees.
+# Forwards the same workload/clients/duration/version flags from $@ but
+# overrides --output and injects --unique-windows.
 # ------------------------------------------------------------------------------
 SKIP_MACHINERY="${SKIP_MACHINERY:-false}"
+if [ "$CACHE_MODE" != "cold" ] && [ "$SKIP_MACHINERY" != "true" ]; then
+  echo
+  echo "ℹ Machinery pass skipped: unique windows need CACHE_MODE=cold"
+  SKIP_MACHINERY=true
+fi
 if [ "$SKIP_MACHINERY" != "true" ]; then
   # Build passthrough args: drop --output=*, --unique-windows, --pprof-*,
   # --proxy-partial*, --proxy-coalescer*, and --proxy-*-metrics flags
@@ -278,7 +368,7 @@ if [ "$SKIP_MACHINERY" != "true" ]; then
 
   echo
   echo "════════════════════════════════════════════════════════════"
-  echo " Machinery Pass — unique windows, no cache/coalescer benefit"
+  echo " Machinery Pass — unique whole-step windows, no cache/coalescer benefit"
   echo " (raw proxy translation + HTTP overhead)"
   echo "════════════════════════════════════════════════════════════"
 
@@ -292,15 +382,19 @@ if [ "$SKIP_MACHINERY" != "true" ]; then
     --proxy-metrics="$PROXY_METRICS" \
     --vl-metrics="$VL_METRICS" \
     --unique-windows \
-    --skip-proxy-partial \
     --output="$MACHINERY_DIR" \
-    "${MACHINERY_PASSTHROUGH[@]}"
+    ${DATA_ARGS[@]+"${DATA_ARGS[@]}"} \
+    ${CHECK_ARGS[@]+"${CHECK_ARGS[@]}"} \
+    "${MODE_ARGS[@]}" \
+    ${MACHINERY_PASSTHROUGH[@]+"${MACHINERY_PASSTHROUGH[@]}"}
 fi
 
 echo
 echo "════════════════════════════════════════════════════════════"
 echo " Results saved to $OUTPUT_DIR"
 ls -lh "$OUTPUT_DIR"/*.json "$OUTPUT_DIR"/*.md 2>/dev/null || true
-echo "  Machinery: $MACHINERY_DIR"
-ls -lh "$MACHINERY_DIR"/*.md 2>/dev/null || true
+if [ "$SKIP_MACHINERY" != "true" ]; then
+  echo "  Machinery: $MACHINERY_DIR"
+  ls -lh "$MACHINERY_DIR"/*.md 2>/dev/null || true
+fi
 echo "════════════════════════════════════════════════════════════"

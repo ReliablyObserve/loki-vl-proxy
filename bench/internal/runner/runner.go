@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/degraded"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/histogram"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/workload"
 )
@@ -25,15 +26,23 @@ type Config struct {
 	Verbose     bool
 	// TimeJitter, if non-zero, randomly shifts each request's time window by a
 	// uniform random amount in [-TimeJitter, 0].  Shifting only backward keeps
-	// queries valid (no future timestamps) while producing a realistic mix of
-	// cache hits (small shift → overlapping windows), partial hits, and misses.
+	// every window at or before the workload reference time (the seeded data
+	// end) while producing a realistic mix of cache hits (small shift →
+	// overlapping windows), partial hits, and misses.  For range queries the
+	// shift is a whole number of steps so the step-aligned axis is preserved.
 	TimeJitter time.Duration
-	// UniqueWindows, if true, applies a deterministic per-worker time offset so
-	// every worker sends a distinct URL on every request.  The offset is
-	// workerID × 1 s shifted backward, guaranteeing the singleflight coalescer
-	// never fires and the response cache never warms.  Use this to measure raw
-	// proxy machinery overhead (translation + HTTP proxying + response shaping)
-	// without cache or coalescer short-circuiting the result.
+	// MinTime, when set, is the start of the seeded data: jitter never shifts a
+	// query's evaluated window (start or time minus its range-vector lookback)
+	// before it.
+	MinTime time.Time
+	// UniqueWindows, if true, shifts every request backward by a distinct
+	// number of whole steps (whole seconds for queries without a step), so
+	// step alignment on the backend cannot map two requests onto the same
+	// window and neither the singleflight coalescer nor a response cache can
+	// answer one request from another. With MinTime set the shifted window
+	// stays inside the data; once a query runs out of distinct windows the
+	// sequence wraps. Only meaningful against targets without response caches
+	// (loki-bench allows it only with --cache-mode=cold).
 	UniqueWindows bool
 }
 
@@ -71,6 +80,7 @@ func Run(ctx context.Context, cfg Config) Result {
 		latency    time.Duration
 		bytes      int64
 		isErr      bool
+		degraded   bool
 		statusCode int
 	}
 
@@ -86,14 +96,6 @@ func Run(ctx context.Context, cfg Config) Result {
 			defer wg.Done()
 			qi := workerID % len(cfg.Queries) // round-robin query selection
 			rng := rand.New(rand.NewSource(int64(workerID) ^ time.Now().UnixNano()))
-			// Deterministic per-worker offset: each worker shifts its queries
-			// backward by workerID × 1 s.  Combined with the per-request
-			// request-count increment below, this guarantees every URL is unique
-			// across all workers and all requests within a worker, so the
-			// singleflight coalescer never fires and the response cache never
-			// warms.  The shift stays well within any workload window (even a
-			// 1-minute window accommodates up to 60 unique workers).
-			workerOffset := time.Duration(workerID) * time.Second
 			requestSeq := 0 // monotonically increments per request within worker
 			for {
 				if ctx.Err() != nil || time.Now().After(deadline) {
@@ -105,23 +107,23 @@ func Run(ctx context.Context, cfg Config) Result {
 				rawURL := q.URL(cfg.TargetURL)
 				switch {
 				case cfg.UniqueWindows:
-					// Deterministic offset = worker offset + per-request sequential
-					// step (1 ms per request) so even within a single worker no two
-					// requests share the same URL key.
-					uniqueShift := workerOffset + time.Duration(requestSeq)*time.Millisecond
-					rawURL = shiftTimeParams(rawURL, uniqueShift)
+					rawURL = shiftTimeParams(rawURL, uniqueShift(q.Params, workerID, cfg.Concurrency, requestSeq, cfg.MinTime))
 					requestSeq++
 				case cfg.TimeJitter > 0:
-					rawURL = applyJitter(rawURL, cfg.TimeJitter, rng)
+					rawURL = applyJitter(rawURL, cfg.TimeJitter, cfg.MinTime, rng)
 				}
 				start := time.Now()
-				n, statusCode, err := doRequest(rawURL)
+				n, statusCode, isDegraded, err := doRequest(rawURL)
 				elapsed := time.Since(start)
+				if err != nil && cfg.Verbose {
+					fmt.Printf("    error %s: %v\n", q.Name, err)
+				}
 				samples <- sample{
 					name:       q.Name,
 					latency:    elapsed,
 					bytes:      n,
 					isErr:      err != nil,
+					degraded:   isDegraded,
 					statusCode: statusCode,
 				}
 			}
@@ -146,6 +148,10 @@ func Run(ctx context.Context, cfg Config) Result {
 		}
 		h.Record(s.latency, s.bytes, s.isErr, s.statusCode)
 		overall.Record(s.latency, s.bytes, s.isErr, s.statusCode)
+		if s.degraded {
+			h.RecordDegraded()
+			overall.RecordDegraded()
+		}
 	}
 
 	byQuery := make(map[string]*histogram.Stats, len(hists))
@@ -167,12 +173,43 @@ func Run(ctx context.Context, cfg Config) Result {
 }
 
 // applyJitter shifts the start/end/time nanosecond params of a query URL
-// backward by a uniform random amount in [0, jitter].  All three params are
-// shifted by the same offset so window sizes are preserved; shifting only
-// backward keeps every timestamp in the past (no future queries).
-func applyJitter(rawURL string, jitter time.Duration, rng *rand.Rand) string {
-	shift := time.Duration(rng.Int63n(int64(jitter))) // uniform in [0, jitter)
+// backward by a random amount in [0, jitter).  All three params are shifted
+// by the same offset so window sizes are preserved; shifting only backward
+// keeps every timestamp at or before the reference time.
+func applyJitter(rawURL string, jitter time.Duration, minTime time.Time, rng *rand.Rand) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	shift := jitterShift(u.Query(), time.Duration(rng.Int63n(int64(jitter))), minTime)
 	return shiftTimeParams(rawURL, shift)
+}
+
+// jitterShift bounds a raw backward shift for one request: range queries shift
+// by whole steps (keeping start/end aligned to the step), and no shift moves
+// the earliest evaluated time (start or time minus the range-vector lookback)
+// before minTime (the start of the seeded data).
+func jitterShift(params url.Values, raw time.Duration, minTime time.Time) time.Duration {
+	step := workload.StepOf(params)
+	shift := raw
+	if step > 0 {
+		shift -= shift % step
+	}
+	if !minTime.IsZero() {
+		if earliest, ok := workload.EarliestEvaluated(params); ok {
+			room := time.Duration(earliest - minTime.UnixNano())
+			if room < 0 {
+				room = 0
+			}
+			if step > 0 {
+				room -= room % step
+			}
+			if shift > room {
+				shift = room
+			}
+		}
+	}
+	return shift
 }
 
 // shiftTimeParams shifts start/end/time nanosecond params of a query URL
@@ -203,18 +240,65 @@ func shiftTimeParams(rawURL string, shift time.Duration) string {
 	return u.String()
 }
 
-func doRequest(url string) (int64, int, error) {
+// uniqueShift returns the backward shift of request seq from worker workerID
+// among concurrency workers: (seq × concurrency + workerID) whole units, where
+// the unit is the query's step or one second without a step. The index is
+// distinct for every (worker, request) pair. With minTime set it wraps within
+// the DistinctWindows that keep the evaluated window (start or time minus the
+// range-vector lookback) at or after minTime.
+func uniqueShift(params url.Values, workerID, concurrency, seq int, minTime time.Time) time.Duration {
+	unit := shiftUnit(params)
+	idx := int64(seq)*int64(concurrency) + int64(workerID)
+	if n, bounded := DistinctWindows(params, minTime); bounded {
+		idx %= n
+	}
+	return time.Duration(idx) * unit
+}
+
+func shiftUnit(params url.Values) time.Duration {
+	if unit := workload.StepOf(params); unit > 0 {
+		return unit
+	}
+	return time.Second
+}
+
+// DistinctWindows returns how many distinct whole-unit backward shifts (the
+// unshifted window included) keep a query's evaluated window at or after
+// minTime. bounded is false when minTime is zero or the query has no time
+// bound. A query with fewer distinct windows than concurrent workers repeats
+// windows under --unique-windows, so coalescing can answer one request from
+// another.
+func DistinctWindows(params url.Values, minTime time.Time) (n int64, bounded bool) {
+	if minTime.IsZero() {
+		return 0, false
+	}
+	earliest, ok := workload.EarliestEvaluated(params)
+	if !ok {
+		return 0, false
+	}
+	slots := (earliest - minTime.UnixNano()) / int64(shiftUnit(params))
+	if slots < 0 {
+		slots = 0
+	}
+	return slots + 1, true
+}
+
+// doRequest sends one request and drains the body. err is set for transport
+// errors and HTTP status >= 400; degraded is set for a successful response that
+// carries a degraded-response header or a non-empty "warnings" array.
+func doRequest(url string) (int64, int, bool, error) {
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	defer resp.Body.Close()
-	n, err := io.Copy(io.Discard, resp.Body)
+	scanner := &degraded.Scanner{}
+	n, err := io.Copy(scanner, resp.Body)
 	if err != nil {
-		return n, resp.StatusCode, err
+		return n, resp.StatusCode, false, err
 	}
 	if resp.StatusCode >= 400 {
-		return n, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return n, resp.StatusCode, false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return n, resp.StatusCode, nil
+	return n, resp.StatusCode, scanner.Warnings || len(degraded.FromHeaders(resp.Header)) > 0, nil
 }

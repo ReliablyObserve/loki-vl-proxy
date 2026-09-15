@@ -1,4 +1,5 @@
-# Benchmark-only VictoriaLogs tuning. Layer on top of the base stack:
+# Benchmark-only VictoriaLogs tuning and Loki ingestion parity. Layer on top of
+# the base stack:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d
 #
@@ -8,6 +9,19 @@
 # VictoriaLogs >= v1.37.0; the base compose omits them so the compatibility
 # matrix can start older versions.
 services:
+  loki:
+    # Same config file as CI e2e (loki-local-config.yaml) plus benchmark-only
+    # ingestion parity: stream sharding disabled so Loki holds the same streams
+    # as VictoriaLogs (see bench/README.md). Compose merges volumes by container
+    # path, so this mount replaces the base config mount.
+    #
+    # The cold comparison (loki-bench --cache-mode=cold) needs every Loki
+    # results cache off. Recreate only Loki with the cold config; its data
+    # volume and WAL are kept:
+    #   LOKI_BENCH_CONFIG=./loki-bench-nocache-config.yaml \
+    #     docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d loki
+    volumes:
+      - ${LOKI_BENCH_CONFIG:-./loki-bench-config.yaml}:/etc/loki/local-config.yaml:ro
   victorialogs:
     command:
       - "-storageDataPath=/vlogs"
