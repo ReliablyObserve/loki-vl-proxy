@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Metric queries now keep the labels Loki returns when grouping by `level` or `service_name`.**
+  `sum by (level) (...)` came back grouped by `detected_level`; Loki returns the
+  `level` label the query named, and returns `detected_level` only when the query
+  groups by it. With the default underscore label style, grouping by
+  `service_name` translated to VictoriaLogs `stats by (service.name)` on instant
+  queries and on the outer stats pipe of `rate()`, `bytes_over_time()` and
+  similar pipelines, so every stream stored with a plain `service_name` field
+  (Loki push, JSON lines) was grouped under an empty `service_name` together.
+  Each stats pipe now also groups by the underscore field and the two are
+  merged into one Loki label, as range `count_over_time` already did.
+- **Range metric queries between 10,000 and 11,000 points no longer fail.**
+  The `| json` metric evaluator rejected more than 10,000 evaluation points,
+  while Loki accepts up to 11,000 per series. Grafana splits a 24-hour logs
+  volume into chunks whose `$__auto` step can land in that band, so Explore
+  showed "maximum 10000 evaluation points" where Loki draws the chart. The
+  evaluator now uses Loki's limit and Loki's error message.
+- **Grafana Explore's logs volume no longer fails for `| json` and returns
+  Loki's labels for plain and `| logfmt` selectors.** For `{...} | json` the
+  volume query
+  `sum by (level, detected_level) (count_over_time({...} | json | drop __error__[1m]))`
+  went to the proxy-side JSON evaluator, which fetched and parsed every raw
+  line. Busy selectors failed from about 15 minutes upward with HTTP 502
+  `ordered JSON metric response exceeds 67108864 bytes`, and parallel
+  long-range scans overloaded VictoriaLogs. The plain and `| logfmt` volume
+  queries answered 200, but they dropped the `level` label, returned
+  `{level=""}` instead of `{detected_level="unknown"}`, and let body values
+  overwrite stored labels. Summed `count_over_time`, `rate`,
+  `bytes_over_time` and `bytes_rate` range queries that drop parser errors are
+  now computed from VictoriaLogs `stats_query_range` buckets on the anchored
+  window grid, and the proxy reads only aggregated buckets. This covers
+  `| json` queries grouped by `detected_level` or labels without an
+  underscore, plus plain and `| logfmt` queries grouped by `detected_level`.
+  The bucket query runs `unpack_json`/`unpack_logfmt fields (...)
+  keep_original_fields`, so a parsed key that collides with a stored label
+  keeps the stored value, as Loki's `_extracted` suffix does. `detected_level`
+  is read from the stored `detected_level` or `level`, normalized as Loki does
+  at ingest (`WARNING` becomes `warn`), and falls back to `unknown`. A stream
+  without a stored level that Loki classifies from its body still reads
+  `unknown`, as on the other metric routes. More series than
+  `-max-stats-query-series` fail the query, as in Loki, instead of being cut.
+
+  Before using buckets, the proxy sends a `| limit 1` VictoriaLogs query to
+  find lines that VictoriaLogs and Loki parse differently. For JSON these are
+  a body with leading whitespace, trailing bytes or a syntax error after the
+  key, a key padded with spaces, escaped or repeated, an array value, or
+  U+FFFD. For logfmt these are tabs, malformed or escaped tokens, values
+  starting with a single quote or backtick, a repeated key or a non-ASCII
+  value. Such a line keeps the previous route: the raw evaluator for `| json`,
+  the native stats route for plain and `| logfmt`. On
+  about 290k lines per hour, the JSON volume query now answers in 33 ms (1h),
+  0.28 s (24h) and 0.8 s (7d), where Loki took 1.1 s, 1.5 s and 11 s.
+- **The ordered JSON metric byte cap is configurable.** The new
+  `-ordered-json-metric-max-bytes` flag bounds the raw rows response and the
+  result of the remaining proxy-side JSON metric evaluator, and the error now
+  names the flag. Its default rises from a fixed 64 MiB (about 13 minutes of
+  the e2e generator's rows) to 1 GiB, which admits about the one million rows
+  the `-manual-range-metric-row-limit` default allows. `0` uses the default and
+  there is no upper bound. Rows are streamed, so raising the cap costs
+  VictoriaLogs scan work and transfer rather than proxy memory. It is a safety
+  cap: the logs volume shapes above no longer read raw rows.
+
 ## [1.80.0] - 2026-09-15
 
 ### Fixed

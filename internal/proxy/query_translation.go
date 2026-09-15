@@ -2052,6 +2052,49 @@ func dropEmptyLabelValues(labels map[string]string) bool {
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
 var statsTranslateFJPool fj.ParserPool
 
+// levelGroupingRequest records which of level and detected_level a metric
+// query's by() clauses name. known is false when no by() clause names either.
+type levelGroupingRequest struct {
+	known, level, detectedLevel bool
+}
+
+var byClauseRE = regexp.MustCompile(`\bby\s*\(([^)]*)\)`)
+
+// apply sets detected_level and level on one stats result's labels. A raw
+// stream metric (hadStream) keeps its level stream label and gains
+// detected_level. An aggregated result keeps only the level labels the query
+// grouped by: VictoriaLogs answers by (detected_level) with its level field,
+// which becomes detected_level, while by (level) keeps level as Loki does.
+// Without a by() clause naming either, level becomes detected_level.
+func (req levelGroupingRequest) apply(labels, translated map[string]string, hadStream bool) {
+	hadLevel := labels["level"] != ""
+	if hadStream || !req.known || req.detectedLevel {
+		ensureDetectedLevel(labels)
+	}
+	if hadLevel && !hadStream && labels["detected_level"] != "" && (!req.known || !req.level) {
+		delete(labels, "level")
+		delete(translated, "level")
+	}
+}
+
+func requestedLevelGrouping(logql string) levelGroupingRequest {
+	var req levelGroupingRequest
+	if !strings.Contains(logql, "level") {
+		return req
+	}
+	for _, match := range byClauseRE.FindAllStringSubmatch(logql, -1) {
+		for _, label := range strings.Split(match[1], ",") {
+			switch strings.TrimSpace(label) {
+			case "level":
+				req.level, req.known = true, true
+			case "detected_level":
+				req.detectedLevel, req.known = true, true
+			}
+		}
+	}
+	return req
+}
+
 // translateStatsResponseLabelsWithContext remaps VL stats response label names to Loki conventions.
 // Uses fastjson for in-place manipulation — lower allocation than encoding/json with typed structs.
 //
@@ -2098,6 +2141,8 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "no_results", time.Since(start))
 		return body
 	}
+
+	levelGrouping := requestedLevelGrouping(originalQuery)
 
 	// Reuse maps across iterations (same pattern as original).
 	translated := make(map[string]string, 8)
@@ -2170,17 +2215,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 			}
 			serviceSignal := hasServiceSignal(syntheticLabels)
 			beforeSyntheticCount := len(syntheticLabels)
-			hadLevel := syntheticLabels["level"] != ""
-			ensureDetectedLevel(syntheticLabels)
-			// Remove the raw level label only when it came from an explicit VL grouping
-			// dimension (no _stream in the response), i.e. "sum by (detected_level)"
-			// translates to VL's "sum by (level)" and back. In that case level must be
-			// replaced by detected_level. When _stream IS present, level is a genuine
-			// stream label that Loki also returns alongside detected_level — keep both.
-			if hadLevel && !hadStream && syntheticLabels["detected_level"] != "" {
-				delete(syntheticLabels, "level")
-				delete(translated, "level")
-			}
+			levelGrouping.apply(syntheticLabels, translated, hadStream)
 			// Only synthesize service_name for raw stream metrics (hadStream=true).
 			// For aggregated results like "sum by (container)", the metric should only
 			// contain the by() labels — adding service_name derived from container would

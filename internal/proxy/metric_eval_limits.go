@@ -10,8 +10,8 @@ import (
 )
 
 // Evaluation bounds shared by proxy-side metric evaluation (ordered JSON
-// metrics and manual range-metric budgets).
-const maxMetricEvalPoints = 10000
+// metrics and manual range-metric budgets). The point bound is Loki's
+// query_range resolution limit, lokiMaxPointsPerSeries.
 const maxMetricEvalSamples = 1000000
 
 var errMetricEvalBudget = errors.New("metric evaluation exceeds its point or sample limit")
@@ -23,7 +23,7 @@ func metricEvalPointCount(start, end time.Time, step time.Duration) (int, error)
 		return 0, fmt.Errorf("invalid metric evaluation bounds or step")
 	}
 	distance := end.Sub(start)
-	if distance == time.Duration(1<<63-1) || distance/step >= maxMetricEvalPoints {
+	if distance == time.Duration(1<<63-1) || distance/step > lokiMaxPointsPerSeries {
 		return 0, errMetricEvalBudget
 	}
 	return int(distance/step) + 1, nil

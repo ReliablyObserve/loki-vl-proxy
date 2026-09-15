@@ -209,7 +209,7 @@ func orderedJSONMetricTimes(r *http.Request, isRange bool) (time.Time, time.Time
 		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid range timestamps or step"}
 	}
 	if _, err := metricEvalPointCount(time.Unix(0, start), time.Unix(0, end), time.Duration(step)); err != nil {
-		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid range timestamps or step; maximum 10000 evaluation points"}
+		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{errLokiStepTooSmall}
 	}
 	return time.Unix(0, start), time.Unix(0, end), time.Duration(step), nil
 }
