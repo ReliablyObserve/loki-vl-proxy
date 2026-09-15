@@ -13,7 +13,7 @@ import (
 //	maybeAutodetectPatternsFromWindowEntries     (patterns.go:1207)
 //	proxyLogQueryWindowed                        (query_range_windowing.go:235)
 //
-// applyStreamLabelMutations aliases the descriptor cache's translatedLabels
+// resolveLogQueryStream aliases the descriptor cache's translatedLabels
 // map when no drop/keep change applies, so the spawned autodetect goroutine
 // read entry.Stream["detected_level"] while the main thread's
 // applyDerivedFields wrote into the same map. snapshotEntriesForPatterns

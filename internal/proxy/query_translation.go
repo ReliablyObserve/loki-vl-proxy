@@ -495,7 +495,11 @@ func hasTextExtractionParser(query string) bool {
 			patternParserStageRE.MatchString(query) ||
 			jsonParserStageRE.MatchString(query)
 	}
-	for _, stage := range lq.Pipeline {
+	return pipelineHasParserStage(lq.Pipeline)
+}
+
+func pipelineHasParserStage(pipeline []logqlpkg.Stage) bool {
+	for _, stage := range pipeline {
 		if _, ok := stage.(*logqlpkg.ParserStage); ok {
 			return true
 		}
@@ -504,21 +508,32 @@ func hasTextExtractionParser(query string) bool {
 }
 
 func hasParserStage(query, parser string) bool {
+	if parser == "logfmt" {
+		return hasParserStageOf(query, false, true)
+	}
+	return hasParserStageOf(query, true, false)
+}
+
+// hasLabelParserStage reports whether query has a | json or | logfmt stage,
+// the parsers whose extracted labels join the stream label set. It parses the
+// query once instead of once per parser.
+func hasLabelParserStage(query string) bool {
+	return hasParserStageOf(query, true, true)
+}
+
+func hasParserStageOf(query string, jsonStage, logfmtStage bool) bool {
 	lq, err := logqlpkg.ParseLogQuery(query)
 	if err != nil {
-		re := jsonParserStageRE
-		if parser == "logfmt" {
-			re = logfmtParserStageRE
-		}
-		return re.MatchString(query)
+		return (jsonStage && jsonParserStageRE.MatchString(query)) ||
+			(logfmtStage && logfmtParserStageRE.MatchString(query))
 	}
-	want := logqlpkg.ParserJSON
-	if parser == "logfmt" {
-		want = logqlpkg.ParserLogfmt
-	}
-	for _, stage := range lq.Pipeline {
+	return pipelineHasParserStageOf(lq.Pipeline, jsonStage, logfmtStage)
+}
+
+func pipelineHasParserStageOf(pipeline []logqlpkg.Stage, jsonStage, logfmtStage bool) bool {
+	for _, stage := range pipeline {
 		ps, ok := stage.(*logqlpkg.ParserStage)
-		if ok && ps.Type == want {
+		if ok && ((jsonStage && ps.Type == logqlpkg.ParserJSON) || (logfmtStage && ps.Type == logqlpkg.ParserLogfmt)) {
 			return true
 		}
 	}
