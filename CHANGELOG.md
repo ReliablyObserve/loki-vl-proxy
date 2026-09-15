@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.69.4] - 2026-09-15
+
 ### Security
 
 - Fix cross-tenant data exposure from two data races on the process-wide
