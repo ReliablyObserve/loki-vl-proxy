@@ -37,20 +37,21 @@ services:
         condition: service_healthy
 
   loki:
-    image: grafana/loki:3.4.2
+    image: grafana/loki:3.7.7
     container_name: loki-direct
     ports:
       - "3200:3100"
     command: -config.file=/etc/loki/local-config.yaml
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:3100/ready"]
+      # Loki 3.7.x images have no shell or wget; probe the binary instead.
+      test: ["CMD", "/usr/bin/loki", "-version"]
       interval: 3s
       timeout: 2s
       retries: 10
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:12.4.2
+    image: grafana/grafana:13.2.1
     container_name: grafana-proxy-test
     ports:
       - "3000:3000"

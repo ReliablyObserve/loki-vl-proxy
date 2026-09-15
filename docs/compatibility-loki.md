@@ -29,8 +29,11 @@ The Loki matrix is a moving window. When a new Loki minor becomes current, the m
 
 | Loki version | Coverage path | Version-specific focus |
 |---|---|---|
-| `3.7.1` | PR and main CI pinned runtime | Primary supported reference; LogQL validation error format, logfmt type inference, bare `\| unwrap` drop, metric label pollution, nested JSON field exclusion |
+| `3.7.7` | PR and main CI pinned runtime | Primary supported reference; merged `detected_labels` keep the HyperLogLog `sketch` (multi-tenant `detected_labels` no longer fails with `too short binary`) |
+| `3.7.2`–`3.7.6` | Scheduled and manual matrix | Patch releases of the current family |
+| `3.7.1` | Scheduled and manual matrix | Previous pinned reference; LogQL validation error format, logfmt type inference, bare `\| unwrap` drop, metric label pollution, nested JSON field exclusion |
 | `3.7.0` | Scheduled and manual matrix | `detected_level` metric grouping, OTel label parity |
+| `3.6.11`–`3.6.16` | Scheduled and manual matrix | Range query matrix shape, detected fields stability |
 | `3.6.10` | Scheduled and manual matrix | Range query matrix shape, detected fields stability |
 | `3.6.9` | Scheduled and manual matrix | Range query matrix shape, detected fields stability |
 | `3.6.8` | Scheduled and manual matrix | Range query matrix shape, detected fields stability |
