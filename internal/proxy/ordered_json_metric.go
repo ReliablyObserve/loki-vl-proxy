@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/grafana/jsonparser"
 )
@@ -64,6 +65,9 @@ type orderedJSONMetricPlan struct {
 	// unpackFields lists the keys a VictoriaLogs stats pushdown groups by and
 	// unpacks (see setStatsPushdown); empty when the pushdown is not exact.
 	unpackFields []string
+	// pushdownFilters are the string label filters that follow the parser in
+	// a pushdown plan; VictoriaLogs applies them after unpacking.
+	pushdownFilters []translator.DropCondition
 	// parser is "json", "logfmt" or "" (no parser). Only JSON plans have a raw
 	// evaluator; the others answer through the stats pushdown or fall through.
 	parser string
@@ -375,7 +379,11 @@ var orderedJSONUnpackLabelRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 // detected_level is structured metadata Loki sets at ingest, so JSON never
 // yields it; it is derived from level like the other metric paths.
 func (plan *orderedJSONMetricPlan) setStatsPushdown() {
-	if !plan.aggregated || plan.grouping == nil || plan.grouping.Without || len(plan.grouping.Labels) == 0 || !plan.errorsDroppedAfterParser() {
+	if !plan.aggregated || plan.grouping == nil || plan.grouping.Without || len(plan.grouping.Labels) == 0 {
+		return
+	}
+	filters, ok := plan.pushdownLabelFilters()
+	if !ok {
 		return
 	}
 	var fields []string
@@ -390,6 +398,61 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 		}
 	}
 	plan.unpackFields = fields
+	plan.pushdownFilters = filters
+}
+
+// pushdownLabelFilters reports whether the pipeline fits the stats pushdown
+// and returns its label filters. Like errorsDroppedAfterParser, the last
+// parser's errors must be dropped and every other stage must be a line filter
+// or a drop of the error labels; string label filters (=, !=, =~, !~) on plain
+// keys after the parser are also accepted. A filter only removes lines, so
+// every remaining line still counts once, and a label missing from a line
+// compares as the empty string on both sides.
+func (plan *orderedJSONMetricPlan) pushdownLabelFilters() ([]translator.DropCondition, bool) {
+	var filters []translator.DropCondition
+	parsed, errorCleared := false, false
+	for _, stage := range plan.stages {
+		switch {
+		case stage.parser:
+			if parsed {
+				return nil, false
+			}
+			parsed, errorCleared = true, false
+		case stage.line != nil:
+			continue
+		case stage.filter != nil:
+			if !parsed || !orderedJSONUnpackLabelRE.MatchString(stage.filter.Field) {
+				return nil, false
+			}
+			filters = append(filters, *stage.filter)
+		case stage.keep || len(stage.match) != 0:
+			return nil, false
+		default:
+			for field := range stage.fields {
+				if field != "__error__" && field != "__error_details__" {
+					return nil, false
+				}
+			}
+			errorCleared = errorCleared || stage.fields["__error__"]
+		}
+	}
+	return filters, errorCleared
+}
+
+// logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
+// with the same semantics: exact comparison, and a fully anchored RE2 regexp.
+func logsQLLabelFilter(filter translator.DropCondition) string {
+	field := quoteLogsQLIdent(filter.Field)
+	switch filter.Op {
+	case "=":
+		return " | filter " + field + ":=" + logsql.QuoteValue(filter.Value)
+	case "!=":
+		return " | filter -" + field + ":=" + logsql.QuoteValue(filter.Value)
+	case "=~":
+		return " | filter " + field + ":~" + logsql.QuotePattern("^(?:"+filter.Value+")$")
+	default:
+		return " | filter -" + field + ":~" + logsql.QuotePattern("^(?:"+filter.Value+")$")
+	}
 }
 
 // lokiNormalizedLevel mirrors the level normalization Loki applies when it
@@ -425,7 +488,13 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if len(plan.unpackFields) == 0 || p.labelTranslator == nil {
 		return nil, false, nil
 	}
-	for _, field := range plan.unpackFields {
+	unpack := append([]string(nil), plan.unpackFields...)
+	for _, filter := range plan.pushdownFilters {
+		if !containsString(unpack, filter.Field) {
+			unpack = append(unpack, filter.Field)
+		}
+	}
+	for _, field := range unpack {
 		if p.labelTranslator.ToVL(field) != field {
 			return nil, false, nil
 		}
@@ -439,16 +508,21 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		return nil, false, err
 	}
 	windowStart := start.Add(-plan.window)
-	var risky bool
-	switch plan.parser {
-	case "json":
-		risky, err = p.orderedJSONPartialParseRisk(ctx, base, plan.unpackFields, windowStart, end)
-	case "logfmt":
-		risky, err = p.logfmtParseRisk(ctx, base, plan.unpackFields, windowStart, end)
+	// The parse-risk check and the bucket query run concurrently; the buckets
+	// are discarded when the check finds a line the parsers read differently.
+	riskCtx, cancelRisk := context.WithCancel(ctx)
+	defer cancelRisk()
+	type riskResult struct {
+		risky bool
+		err   error
 	}
-	if err != nil || risky {
-		return nil, false, err
-	}
+	riskDone := make(chan riskResult, 1)
+	go func() {
+		risky, err := p.cachedStatsPushdownRisk(riskCtx, plan.parser, base, unpack, windowStart, end)
+		riskDone <- riskResult{risky, err}
+	}()
+	statsCtx, cancelStats := context.WithCancel(ctx)
+	defer cancelStats()
 	groupBy := plan.unpackFields
 	if containsString(plan.grouping.Labels, "detected_level") {
 		groupBy = append(append([]string(nil), groupBy...), "detected_level")
@@ -459,9 +533,27 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	query := base
 	if plan.parser != "" {
-		query += " | unpack_" + plan.parser + " fields (" + strings.Join(plan.unpackFields, ", ") + ") keep_original_fields"
+		query += " | unpack_" + plan.parser + " fields (" + strings.Join(unpack, ", ") + ") keep_original_fields"
 	}
-	series, err := p.collectRangeMetricHits(ctx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
+	for _, filter := range plan.pushdownFilters {
+		query += logsQLLabelFilter(filter)
+	}
+	type statsResult struct {
+		series map[string]manualSeriesSamples
+		err    error
+	}
+	statsDone := make(chan statsResult, 1)
+	go func() {
+		series, err := p.collectRangeMetricHits(statsCtx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
+		statsDone <- statsResult{series, err}
+	}()
+	risk := <-riskDone
+	if risk.err != nil || risk.risky {
+		cancelStats()
+		return nil, false, risk.err
+	}
+	stats := <-statsDone
+	series, err := stats.series, stats.err
 	if err != nil {
 		return nil, false, err
 	}
@@ -572,18 +664,18 @@ func newLogfmtRiskPatterns(field string) logfmtRiskPatterns {
 // value it extracts first for a repeated key and replaces U+FFFD, where
 // unpack_json does not. One matching line keeps the exact raw evaluator.
 func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fields []string, start, end time.Time) (bool, error) {
-	absent := make([]string, len(fields))
-	empty := make([]string, len(fields))
-	for i, field := range fields {
-		absent[i] = "-" + field + ":*"
-		empty[i] = field + `:=""`
-	}
 	// escapedKey: unpack_json unescapes keys, Loki keeps them raw. replaced:
 	// Loki turns U+FFFD in string values into a space.
 	const escapedKey, replaced = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`, `\x{FFFD}|\\u[Ff]{3}[Dd]`
+	absent := make([]string, len(fields))
+	empty := make([]string, len(fields))
 	names := make([]string, len(fields))
 	for i, field := range fields {
 		names[i] = regexp.QuoteMeta(field)
+		absent[i] = "-" + field + ":*"
+		// A field is at risk only on a line whose body has its own key:
+		// a line with another unpacked key but not this one is parsed alike.
+		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(`"\s*`+names[i]+`\s*"\s*:`) + ")"
 	}
 	// Loki trims spaces around a key before sanitizing it.
 	key := `"\s*(?:` + strings.Join(names, "|") + `)\s*"\s*:`
@@ -598,6 +690,69 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 	query := base + " | filter (" + strings.Join(absent, " or ") + ") _msg:~" + strconv.Quote(pattern) +
 		" | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter " + strings.Join(empty, " or ") + " | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered.
+// Coverage never extends past statsPushdownRiskSettle before now, so lines that
+// arrive late for recent timestamps are still checked on the next request.
+const (
+	statsPushdownRiskCacheTTL = 5 * time.Minute
+	statsPushdownRiskSettle   = 5 * time.Minute
+)
+
+// cachedStatsPushdownRisk answers the parse-risk check for [start, end],
+// remembering the window already found free of risky lines per tenant, query
+// and field set, so a refresh or a wider range checks only the uncovered part.
+// A window with a risky line is never cached.
+func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, start, end time.Time) (bool, error) {
+	check := func(from, to time.Time) (bool, error) {
+		switch parser {
+		case "json":
+			return p.orderedJSONPartialParseRisk(ctx, base, fields, from, to)
+		case "logfmt":
+			return p.logfmtParseRisk(ctx, base, fields, from, to)
+		}
+		return false, nil
+	}
+	if p.cache == nil {
+		return check(start, end)
+	}
+	key := "stats-pushdown-risk:v1:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(fields, ",") + ":" + base
+	type window struct{ from, to time.Time }
+	todo := []window{{start, end}}
+	coveredFrom, coveredTo := start, end
+	if raw, _, ok := p.cache.GetWithTTL(key); ok {
+		var fromNs, toNs int64
+		if _, err := fmt.Sscanf(string(raw), "%d %d", &fromNs, &toNs); err == nil {
+			cachedFrom, cachedTo := time.Unix(0, fromNs), time.Unix(0, toNs)
+			if !start.After(cachedTo) && !end.Before(cachedFrom) {
+				todo = todo[:0]
+				if start.Before(cachedFrom) {
+					todo = append(todo, window{start, cachedFrom})
+				} else {
+					coveredFrom = cachedFrom
+				}
+				if end.After(cachedTo) {
+					todo = append(todo, window{cachedTo, end})
+				} else {
+					coveredTo = cachedTo
+				}
+			}
+		}
+	}
+	for _, w := range todo {
+		risky, err := check(w.from, w.to)
+		if err != nil || risky {
+			return risky, err
+		}
+	}
+	if settled := time.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
+		coveredTo = settled
+	}
+	if coveredTo.After(coveredFrom) {
+		p.cache.SetLocalOnlyWithTTL(key, []byte(fmt.Sprintf("%d %d", coveredFrom.UnixNano(), coveredTo.UnixNano())), statsPushdownRiskCacheTTL)
+	}
+	return false, nil
 }
 
 // statsPushdownRiskExists runs a `| limit 1` risk query over [start, end] and
