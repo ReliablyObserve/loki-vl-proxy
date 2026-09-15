@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // jsonVolumeLine is one stored line: level is the stream label (empty when the
@@ -52,6 +55,10 @@ func vlUnpackJSONLevel(msg string) string {
 }
 
 var jsonVolumeMsgFilterRE = regexp.MustCompile(`_msg:~("(?:[^"\\]|\\.)*")`)
+
+// fakeVLLevelFilterRE matches the `| filter [-]level:="v"` pipe the pushdown
+// renders for a Loki level=/!= label filter.
+var fakeVLLevelFilterRE = regexp.MustCompile(`\| filter (-?)level:="([^"]*)"`)
 
 func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server, *jsonVolumeFakeVL) {
 	t.Helper()
@@ -104,6 +111,9 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 				if unpack && (!keep || level == "") {
 					// Without keep_original_fields unpacking overwrites stored fields.
 					level = unpacked
+				}
+				if m := fakeVLLevelFilterRE.FindStringSubmatch(query); m != nil && (level == m[2]) == (m[1] == "-") {
+					continue
 				}
 				bucket := vlTruncate(ts, step, offset)
 				value := 1.0
@@ -381,8 +391,9 @@ func TestOrderedJSONLogsVolumePartialJSONKeepsRawEvaluator(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.rawCalls != 1 || len(fake.statsCalls) != 0 || len(fake.guardCalls) != 1 {
-				t.Fatalf("expected the guard to keep the raw evaluator: raw=%d stats=%d guard=%d", fake.rawCalls, len(fake.statsCalls), len(fake.guardCalls))
+			// The bucket query runs beside the guard and its result is discarded.
+			if fake.rawCalls != 1 || len(fake.guardCalls) != 1 {
+				t.Fatalf("expected the guard to keep the raw evaluator: raw=%d guard=%d", fake.rawCalls, len(fake.guardCalls))
 			}
 		})
 	}
@@ -396,7 +407,6 @@ func TestLevelVolumePlanRequiresDetectedLevelAndDroppedErrors(t *testing.T) {
 		`sum by (detected_level) (count_over_time({env="production"}[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"} | logfmt [1m]))`,
 		`sum by (detected_level, service_name) (count_over_time({env="production"} | drop __error__[1m]))`,
-		`sum by (detected_level) (count_over_time({env="production"} | logfmt | level="error" | drop __error__[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"} | json | logfmt | drop __error__[1m]))`,
 		`sum by (detected_level) (count_over_time({env="production"} | logfmt level | drop __error__[1m]))`,
 	} {
@@ -420,11 +430,15 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum by (__error__) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
 		{`sum without (level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | drop __error__ | level="info" [1m]))`, nil},
+		{`sum by (level) (count_over_time({env="production"} | json | drop __error__ | level="info" [1m]))`, []string{"level"}},
+		{`sum by (level, detected_level) (count_over_time({env="production"} | json | status=` + "`200`" + ` | drop __error__ [1m]))`, []string{"level"}},
+		{`sum by (level) (count_over_time({env="production"} | level="info" | json | drop __error__ [1m]))`, nil},
+		{`sum by (level) (count_over_time({env="production"} | json | trace_id="x" | drop __error__ [1m]))`, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__, level [1m]))`, nil},
 		{`count_over_time({env="production"} | json | drop __error__ [1m])`, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | drop __error__[1m]))`, []string{"level"}},
 		{`sum by (detected_level) (rate({env="production"} |= "x" | logfmt | drop __error__, __error_details__[1m]))`, []string{"level"}},
+		{`sum by (detected_level) (count_over_time({env="production"} | logfmt | level="error" | drop __error__[1m]))`, []string{"level"}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			plan, ok := compileOrderedJSONMetric(tc.query)
@@ -562,6 +576,93 @@ func TestOrderedJSONMetricMaxBytesFlag(t *testing.T) {
 		_, err := p.collectOrderedJSONMetric(t.Context(), plan, stamp.Add(time.Second), stamp.Add(time.Second), time.Second)
 		if (err != nil) != tc.fails || (err != nil && !strings.Contains(err.Error(), "-ordered-json-metric-max-bytes")) {
 			t.Fatalf("limit %d: err=%v, want failure %v naming the flag", tc.limit, err, tc.fails)
+		}
+	}
+}
+
+// Grafana Explore adds label filters from the query builder after `| json`,
+// e.g. `{env="production"} | json | status=` + "`200`" + `; its logs volume
+// must stay on stats buckets instead of scanning raw rows up to the row cap.
+func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	lines := jsonVolumeFixture(s0)
+	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
+	for _, tc := range []struct {
+		query, op, stats string
+	}{
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", `unpack_json fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | level!="warn" [1m]))`, "!=", `unpack_json fields (level) keep_original_fields | filter -level:="warn" | stats by (level, detected_level) count() as c`},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			srv, fake := newJSONVolumeFakeVL(t, lines)
+			p := newSlidingTestProxy(t, srv.URL)
+			var kept []jsonVolumeLine
+			for _, line := range lines {
+				level := line.level
+				if level == "" {
+					level = vlUnpackJSONLevel(line.msg)
+				}
+				if (level == "warn") == (tc.op == "=") {
+					kept = append(kept, line)
+				}
+			}
+			want := lokiJSONVolumeReference(kept, "count_over_time", []string{"level", "detected_level"}, start, end, time.Minute, time.Minute)
+			got := runJSONVolumeQueryRange(t, p, tc.query, start, end, time.Minute)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+			}
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || !strings.HasSuffix(fake.statsCalls[0], tc.stats) {
+				t.Fatalf("expected one stats call ending %q without raw rows: raw=%d stats=%q", tc.stats, fake.rawCalls, fake.statsCalls)
+			}
+		})
+	}
+}
+
+func TestLogsQLLabelFilter(t *testing.T) {
+	for _, tc := range []struct{ op, value, want string }{
+		{"=", "200", ` | filter status:="200"`},
+		{"!=", `a"b`, ` | filter -status:="a\"b"`},
+		{"=~", `2\d\d`, ` | filter status:~"^(?:2\d\d)$"`},
+		{"!~", "5..", ` | filter -status:~"^(?:5..)$"`},
+	} {
+		condition, err := translator.NewDropCondition("status", tc.op, tc.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := logsQLLabelFilter(condition); got != tc.want {
+			t.Errorf("%s %q: got %s, want %s", tc.op, tc.value, got, tc.want)
+		}
+	}
+}
+
+// A refreshed or widened volume query re-checks only the part of its window
+// not already found free of lines the parsers read differently.
+func TestCachedStatsPushdownRiskChecksOnlyUncoveredWindow(t *testing.T) {
+	s0 := time.Now().Add(-2 * time.Hour).Truncate(time.Minute)
+	srv, fake := newJSONVolumeFakeVL(t, jsonVolumeFixture(s0))
+	p := newSlidingTestProxy(t, srv.URL)
+	ctx := context.Background()
+	calls := func() int {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return len(fake.guardCalls)
+	}
+	for i, tc := range []struct {
+		from, to time.Duration
+		calls    int
+	}{
+		{0, 30 * time.Minute, 1},
+		{5 * time.Minute, 20 * time.Minute, 1},
+		{0, 40 * time.Minute, 2},
+		{-10 * time.Minute, 40 * time.Minute, 3},
+	} {
+		if risky, err := p.cachedStatsPushdownRisk(ctx, "json", `app:="api"`, []string{"level"}, s0.Add(tc.from), s0.Add(tc.to)); err != nil || risky {
+			t.Fatalf("step %d: risky=%v err=%v", i, risky, err)
+		}
+		if got := calls(); got != tc.calls {
+			t.Fatalf("step %d: %d guard calls, want %d", i, got, tc.calls)
 		}
 	}
 }
