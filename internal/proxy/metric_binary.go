@@ -122,7 +122,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 
 // proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
 // bypassing the compat layer and the rate-shift gate. Call this when the caller
-// has already applied any necessary start shift (e.g. proxyBareParserMetricViaStats).
+// has already applied any necessary start shift (e.g. the range == step relabel in proxyStatsQueryRange).
 // maxStatsQueryRangeBytes caps the VL stats_query_range response size in the
 // direct (non-coalesced) path. High-cardinality by() clauses (e.g. by(extracted_float_field))
 // on broad selectors can return tens of megabytes per query; the Drilldown Fields

@@ -33,7 +33,7 @@ func TestUnwrapLabelsArePreserved(t *testing.T) {
 	}))
 	defer vlBackend.Close()
 
-	p := newGapTestProxy(t, vlBackend.URL)
+	p := newSlidingTestProxy(t, vlBackend.URL) // offset support anchors the unaligned bucket grid
 	params := url.Values{}
 	params.Set("query", `sum_over_time({app="api-gateway"} | json | unwrap latency [5m])`)
 	params.Set("start", strconv.FormatInt(base.Add(-60*time.Second).Unix(), 10))

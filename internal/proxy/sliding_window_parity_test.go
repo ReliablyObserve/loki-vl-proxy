@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,6 +30,7 @@ type slidingFakeVL struct {
 	mu           sync.Mutex
 	lines        []slidingFixtureLine
 	statsCalls   []slidingStatsCall
+	hitsCalls    []slidingStatsCall
 	rawCalls     int
 	metrics      string // /metrics body; empty answers 503
 	metricsCalls int
@@ -40,9 +42,47 @@ func (f *slidingFakeVL) snapshot() ([]slidingStatsCall, int) {
 	return append([]slidingStatsCall(nil), f.statsCalls...), f.rawCalls
 }
 
+func (f *slidingFakeVL) hitsSnapshot() []slidingStatsCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]slidingStatsCall(nil), f.hitsCalls...)
+}
+
+// slidingLogfmtFields returns the key=value pairs of a fixture line, as
+// VictoriaLogs unpack_logfmt exposes them.
+func slidingLogfmtFields(msg string) map[string]string {
+	fields := map[string]string{}
+	for _, token := range strings.Fields(msg) {
+		if k, v, ok := strings.Cut(token, "="); ok && k != "" {
+			fields[k] = v
+		}
+	}
+	return fields
+}
+
+// slidingBucketParams parses the start, end, step and offset args shared by
+// stats_query_range and /hits.
+func slidingBucketParams(t testing.TB, r *http.Request) (start, end, step, offset int64, ok bool) {
+	start = parseFakeVLTime(t, r.Form.Get("start"))
+	end = parseFakeVLTime(t, r.Form.Get("end"))
+	stepDur, err := time.ParseDuration(r.Form.Get("step"))
+	if err != nil || stepDur <= 0 {
+		t.Errorf("fake VL: bad step %q", r.Form.Get("step"))
+		return 0, 0, 0, 0, false
+	}
+	var offsetDur time.Duration
+	if raw := r.Form.Get("offset"); raw != "" {
+		if offsetDur, err = time.ParseDuration(raw); err != nil {
+			t.Errorf("fake VL: bad offset %q", raw)
+			return 0, 0, 0, 0, false
+		}
+	}
+	return start, end, int64(stepDur), int64(offsetDur), true
+}
+
 // parseFakeVLTime accepts the timestamp forms VictoriaLogs accepts on its
 // query args: integer or fractional Unix seconds, and RFC3339Nano.
-func parseFakeVLTime(t *testing.T, raw string) int64 {
+func parseFakeVLTime(t testing.TB, raw string) int64 {
 	t.Helper()
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
 		return parsed.UnixNano()
@@ -74,7 +114,7 @@ func vlTruncate(ts, bucket, offset int64) int64 {
 // newSlidingFakeVL serves stats_query_range with VictoriaLogs bucket semantics
 // ([start, end) filter, buckets aligned to step at the given offset, labelled by
 // their start) and the raw /select/logsql/query endpoint for the exact evaluator.
-func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Server, *slidingFakeVL) {
+func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Server, *slidingFakeVL) {
 	t.Helper()
 	fake := &slidingFakeVL{lines: lines}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,24 +128,21 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 			fake.mu.Lock()
 			fake.statsCalls = append(fake.statsCalls, slidingStatsCall{query: q, start: r.Form.Get("start"), end: r.Form.Get("end"), step: r.Form.Get("step"), offset: r.Form.Get("offset")})
 			fake.mu.Unlock()
-			start := parseFakeVLTime(t, r.Form.Get("start"))
-			end := parseFakeVLTime(t, r.Form.Get("end"))
-			step, err := time.ParseDuration(r.Form.Get("step"))
-			if err != nil || step <= 0 {
-				t.Errorf("fake VL: bad step %q", r.Form.Get("step"))
+			start, end, step, offset, ok := slidingBucketParams(t, r)
+			if !ok {
 				return
 			}
-			var offset time.Duration
-			if raw := r.Form.Get("offset"); raw != "" {
-				if offset, err = time.ParseDuration(raw); err != nil {
-					t.Errorf("fake VL: bad offset %q", raw)
-					return
-				}
-			}
 			byApp := strings.Contains(q, "stats by (app)")
+			byStream := strings.Contains(q, "stats by (_stream)")
 			metricName := "c"
 			bytesMetric := strings.Contains(q, "sum_len(_msg) as c")
 			withPresence := strings.Contains(q, "count() as __sample_count")
+			unwrapAgg := ""
+			for _, agg := range []string{"sum", "max", "min"} {
+				if strings.Contains(q, "stats by (_stream) "+agg+"(n) as c") {
+					unwrapAgg = agg
+				}
+			}
 			type key struct {
 				name, app string
 			}
@@ -114,20 +151,37 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 				if points[k] == nil {
 					points[k] = map[int64]float64{}
 				}
-				points[k][ts] += v
+				prev, seen := points[k][ts]
+				switch {
+				case !seen:
+					points[k][ts] = v
+				case unwrapAgg == "max" && k.name == metricName:
+					points[k][ts] = math.Max(prev, v)
+				case unwrapAgg == "min" && k.name == metricName:
+					points[k][ts] = math.Min(prev, v)
+				default:
+					points[k][ts] = prev + v
+				}
 			}
 			for _, line := range fake.lines {
 				if line.ts < start || line.ts >= end {
 					continue
 				}
 				app := ""
-				if byApp {
+				if byApp || byStream {
 					app = line.app
 				}
-				bucket := vlTruncate(line.ts, int64(step), int64(offset))
-				if bytesMetric {
+				bucket := vlTruncate(line.ts, step, offset)
+				switch {
+				case unwrapAgg != "":
+					n, err := strconv.ParseFloat(slidingLogfmtFields(line.msg)["n"], 64)
+					if err != nil {
+						continue
+					}
+					add(key{metricName, app}, bucket, n)
+				case bytesMetric:
 					add(key{metricName, app}, bucket, float64(len(line.msg)))
-				} else {
+				default:
 					add(key{metricName, app}, bucket, 1)
 				}
 				if withPresence {
@@ -149,6 +203,9 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 				if byApp {
 					fmt.Fprintf(&sb, `,"app":%q`, k.app)
 				}
+				if byStream {
+					fmt.Fprintf(&sb, `,"_stream":%q`, `{app="`+k.app+`"}`)
+				}
 				sb.WriteString(`},"values":[`)
 				tss := make([]int64, 0, len(points[k]))
 				for ts := range points[k] {
@@ -167,6 +224,64 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 			sb.WriteString(`]}}`)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(sb.String()))
+		case "/select/logsql/hits":
+			fake.mu.Lock()
+			fake.hitsCalls = append(fake.hitsCalls, slidingStatsCall{query: r.Form.Get("query"), start: r.Form.Get("start"), end: r.Form.Get("end"), step: r.Form.Get("step"), offset: r.Form.Get("offset")})
+			fake.mu.Unlock()
+			start, end, step, offset, ok := slidingBucketParams(t, r)
+			if !ok {
+				return
+			}
+			byApp := false
+			for _, field := range r.Form["field"] {
+				byApp = byApp || field == "app"
+			}
+			counts := map[string]map[int64]int{}
+			for _, line := range fake.lines {
+				if line.ts < start || line.ts >= end {
+					continue
+				}
+				app := ""
+				if byApp {
+					app = line.app
+				}
+				if counts[app] == nil {
+					counts[app] = map[int64]int{}
+				}
+				counts[app][vlTruncate(line.ts, step, offset)]++
+			}
+			type hit struct {
+				Fields     map[string]string `json:"fields"`
+				Timestamps []string          `json:"timestamps"`
+				Values     []int             `json:"values"`
+				Total      int               `json:"total"`
+			}
+			apps := make([]string, 0, len(counts))
+			for app := range counts {
+				apps = append(apps, app)
+			}
+			sort.Strings(apps)
+			hits := make([]hit, 0, len(apps))
+			for _, app := range apps {
+				h := hit{Fields: map[string]string{}}
+				if byApp {
+					h.Fields["app"] = app
+				}
+				tss := make([]int64, 0, len(counts[app]))
+				for ts := range counts[app] {
+					tss = append(tss, ts)
+				}
+				sort.Slice(tss, func(i, j int) bool { return tss[i] < tss[j] })
+				for _, ts := range tss {
+					// VictoriaLogs /hits formats bucket starts as RFC3339 with nanoseconds.
+					h.Timestamps = append(h.Timestamps, time.Unix(0, ts).UTC().Format(time.RFC3339Nano))
+					h.Values = append(h.Values, counts[app][ts])
+					h.Total += counts[app][ts]
+				}
+				hits = append(hits, h)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"hits": hits})
 		case "/select/logsql/query":
 			fake.mu.Lock()
 			fake.rawCalls++
@@ -178,12 +293,12 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 				if line.ts < start || line.ts >= end {
 					continue
 				}
-				row, _ := json.Marshal(map[string]string{
-					"_time":   time.Unix(0, line.ts).UTC().Format(time.RFC3339Nano),
-					"_msg":    line.msg,
-					"_stream": `{app="` + line.app + `"}`,
-					"app":     line.app,
-				})
+				fields := slidingLogfmtFields(line.msg)
+				fields["_time"] = time.Unix(0, line.ts).UTC().Format(time.RFC3339Nano)
+				fields["_msg"] = line.msg
+				fields["_stream"] = `{app="` + line.app + `"}`
+				fields["app"] = line.app
+				row, _ := json.Marshal(fields)
 				_, _ = w.Write(append(row, '\n'))
 			}
 		case "/metrics":
@@ -206,12 +321,14 @@ func newSlidingFakeVL(t *testing.T, lines []slidingFixtureLine) (*httptest.Serve
 }
 
 // lokiSlidingReference evaluates a range aggregation with Loki semantics: the
-// sample at t covers (t-window, t], and a step without samples is absent.
+// sample at t covers (t-window, t], and a step without samples is absent. The
+// unwrap functions read the logfmt field n of every line.
 func lokiSlidingReference(lines []slidingFixtureLine, fn string, byApp bool, divisor float64, start, end time.Time, step, window time.Duration) map[string]map[int64]string {
 	out := map[string]map[int64]string{}
 	for t := start; !t.After(end); t = t.Add(step) {
 		counts := map[string]float64{}
 		bytes := map[string]float64{}
+		values := map[string]float64{} // unwrap n: sum, max or min
 		for _, line := range lines {
 			if line.ts <= t.Add(-window).UnixNano() || line.ts > t.UnixNano() {
 				continue
@@ -219,6 +336,13 @@ func lokiSlidingReference(lines []slidingFixtureLine, fn string, byApp bool, div
 			app := ""
 			if byApp {
 				app = line.app
+			}
+			n, _ := strconv.ParseFloat(slidingLogfmtFields(line.msg)["n"], 64)
+			switch {
+			case counts[app] == 0 || (fn == "max_over_time" && n > values[app]) || (fn == "min_over_time" && n < values[app]):
+				values[app] = n
+			case fn == "sum_over_time":
+				values[app] += n
 			}
 			counts[app]++
 			bytes[app] += float64(len(line.msg))
@@ -234,6 +358,8 @@ func lokiSlidingReference(lines []slidingFixtureLine, fn string, byApp bool, div
 				v = bytes[app]
 			case "bytes_rate":
 				v = bytes[app] / window.Seconds()
+			case "sum_over_time", "max_over_time", "min_over_time":
+				v = values[app]
 			}
 			if divisor != 0 {
 				v /= divisor
@@ -247,7 +373,7 @@ func lokiSlidingReference(lines []slidingFixtureLine, fn string, byApp bool, div
 	return out
 }
 
-func runSlidingQueryRange(t *testing.T, p *Proxy, query string, start, end time.Time, step time.Duration, headers map[string]string) map[string]map[int64]string {
+func runSlidingQueryRange(t testing.TB, p *Proxy, query string, start, end time.Time, step time.Duration, headers map[string]string) map[string]map[int64]string {
 	t.Helper()
 	params := url.Values{}
 	params.Set("query", query)

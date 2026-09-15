@@ -632,7 +632,7 @@ func TestQueryRange_FirstOverTimeStatsPath(t *testing.T) {
 	}))
 	defer vlBackend.Close()
 
-	p := newGapTestProxy(t, vlBackend.URL)
+	p := newSlidingTestProxy(t, vlBackend.URL) // offset support anchors the unaligned bucket grid
 	params := url.Values{}
 	params.Set("query", `first_over_time({app="nginx"} | json | unwrap latency [2m])`)
 	params.Set("start", strconv.FormatInt(base.Add(60*time.Second).Unix(), 10))
@@ -690,7 +690,7 @@ func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
 	}))
 	defer vlBackend.Close()
 
-	p := newGapTestProxy(t, vlBackend.URL)
+	p := newSlidingTestProxy(t, vlBackend.URL) // offset support anchors the unaligned bucket grid
 	params := url.Values{}
 	// window=2m > step=60s → sliding window
 	params.Set("query", `sum_over_time({app="api"} | json | unwrap duration [2m])`)
@@ -720,6 +720,11 @@ func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
 	}
 	if len(resp.Data.Result) == 0 {
 		t.Fatalf("expected at least one series, got empty result: %s", rec.Body.String())
+	}
+	// The bucket labelled L covers (L, L+60s]: the window (T-60s, T+60s] holds
+	// only the T+0 bucket, and (T, T+120s] the T+0 and T+60s buckets.
+	if got := fmt.Sprint(resp.Data.Result[0].Values); got != "[[1.70000006e+09 100] [1.70000012e+09 300]]" {
+		t.Fatalf("unexpected sliding sums %s: %s", got, rec.Body.String())
 	}
 }
 

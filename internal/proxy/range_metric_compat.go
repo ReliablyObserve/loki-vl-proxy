@@ -695,14 +695,16 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	return true
 }
 
-func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) {
+// writeHitsRangeMetricMatrix writes the bucket matrix and returns the HTTP status.
+func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) int {
 	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window)
 	if err != nil {
 		p.writeError(w, http.StatusServiceUnavailable, err.Error())
-		return
+		return http.StatusServiceUnavailable
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return http.StatusOK
 }
 
 func isSumAllLogRange(query string) bool {
@@ -902,13 +904,19 @@ func snapSlidingBucketTimestamp(v *fj.Value, start time.Time, hitStep time.Durat
 	if err != nil || hitStep <= 0 {
 		return 0, false
 	}
+	return snapSlidingBucketNanos(int64(math.Round(sec*1e9)), start, hitStep), true
+}
+
+// snapSlidingBucketNanos maps a bucket timestamp in nanoseconds, which may carry
+// the 1ns edge shift, to the nearest edge of the start+k*hitStep grid.
+func snapSlidingBucketNanos(ts int64, start time.Time, hitStep time.Duration) int64 {
 	anchor, size := start.UnixNano(), int64(hitStep)
-	offset := int64(math.Round(sec*1e9)) - anchor + size/2
+	offset := ts - anchor + size/2
 	k := offset / size
 	if offset%size < 0 {
 		k--
 	}
-	return anchor + k*size, true
+	return anchor + k*size
 }
 
 // collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
@@ -1073,7 +1081,7 @@ func (p *Proxy) collectRangeMetricHits(
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
 	if entry.PresentBuckets == nil {
-		entry.PresentBuckets = make(map[int64]struct{})
+		entry.PresentBuckets = make([]int64, 0, len(values))
 	}
 	for _, pair := range values {
 		arr := pair.GetArray()
@@ -1083,8 +1091,13 @@ func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start tim
 		ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
 		count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
 		if tsOK && countErr == nil && count > 0 {
-			entry.PresentBuckets[ts] = struct{}{}
+			entry.PresentBuckets = append(entry.PresentBuckets, ts)
 		}
+	}
+	// VictoriaLogs returns ascending buckets; merged streams can interleave.
+	present := entry.PresentBuckets
+	if !sort.SliceIsSorted(present, func(i, j int) bool { return present[i] < present[j] }) {
+		sort.Slice(present, func(i, j int) bool { return present[i] < present[j] })
 	}
 }
 
@@ -1485,9 +1498,10 @@ func addExcludedField(excluded map[string]struct{}, key string) {
 type manualSeriesSamples struct {
 	Metric  map[string]string
 	Samples []rangeMetricSample
-	// PresentBuckets distinguishes real zero-byte lines from absent buckets.
-	// Allocated only for byte ranking; raw log samples retain their compact shape.
-	PresentBuckets map[int64]struct{}
+	// PresentBuckets distinguishes real zero-byte lines from absent buckets: the
+	// ascending left edges of buckets holding lines. Non-nil (possibly empty) only
+	// for byte sums; raw log samples retain their compact shape.
+	PresentBuckets []int64
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -1689,8 +1703,11 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 
 	perSeries := make(map[string]*binaryMatchedSeries)
 	keys := make([]string, 0, len(series))
-	for key := range series {
+	sorted := make(map[string]bool, len(series))
+	for key, entry := range series {
 		keys = append(keys, key)
+		samples := entry.Samples
+		sorted[key] = sort.SliceIsSorted(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
 	}
 	sort.Strings(keys)
 
@@ -1705,7 +1722,15 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 				return nil, err
 			}
 			seriesEntry := series[key]
-			value, ok := aggregateManualWindow(functionName, quantile, seriesEntry.Samples, windowStart, windowEnd, window.Seconds())
+			samples := seriesEntry.Samples
+			if sorted[key] {
+				// Narrow time-ordered samples to [windowStart, windowEnd]; the
+				// aggregator applies the exact window bounds to that slice.
+				lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStart })
+				hi := lo + sort.Search(len(samples)-lo, func(i int) bool { return samples[lo+i].ts > windowEnd })
+				samples = samples[lo:hi]
+			}
+			value, ok := aggregateManualWindow(functionName, quantile, samples, windowStart, windowEnd, window.Seconds())
 			if !ok {
 				continue
 			}
@@ -1774,14 +1799,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		for i, sample := range samples {
 			prefix[i+1] = prefix[i] + sample.value
 		}
-		var present []int64
-		if seriesEntry.PresentBuckets != nil {
-			present = make([]int64, 0, len(seriesEntry.PresentBuckets))
-			for ts := range seriesEntry.PresentBuckets {
-				present = append(present, ts)
-			}
-			sort.Slice(present, func(i, j int) bool { return present[i] < present[j] })
-		}
+		present := seriesEntry.PresentBuckets // ascending; nil without presence data
 
 		for k, v := range seriesEntry.Metric {
 			encodedBytes += len(k) + len(v) + 6
