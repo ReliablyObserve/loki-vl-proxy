@@ -205,6 +205,16 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	return spec, true
 }
 
+// isLogRangeWindowFunc reports the log-line range functions whose Loki window
+// (t-range, t] excludes lines on its lower edge and includes the evaluation time.
+func isLogRangeWindowFunc(manualFunc string) bool {
+	switch manualFunc {
+	case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
+		return true
+	}
+	return false
+}
+
 func isManualRangeStatsFunc(funcName string) bool {
 	switch strings.TrimSpace(funcName) {
 	case "rate", "count", "sum_len", "sum", "avg", "max", "min", "stddev", "stdvar", "quantile", "first", "last", "__rate_counter__":
@@ -569,13 +579,11 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	}
 }
 
+// proxyManualRangeMetricRange evaluates a range metric in the proxy. Like Loki,
+// it emits a sample only for steps whose window (t-range, t] holds log lines,
+// for every client: absent steps stay absent (no zero-fill), which also keeps
+// absent series out of topk/bottomk ranking.
 func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {
-	return p.proxyManualRangeMetricRangeWithFill(w, r, spec, origSpec, manualFunc, true)
-}
-
-// Ranking must preserve absent evaluations: chart zero-fill would turn an
-// absent series into a candidate that can win topk/bottomk before it has data.
-func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string, fillMissing bool) bool {
 	// The first translated stats clause may group by stream before the outer
 	// sum. For additive log metrics, combine the raw counts/bytes before window
 	// evaluation and keep the native stats fast path for aggregate-all queries.
@@ -619,12 +627,15 @@ func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *ht
 	case "__count__":
 		statsAggFunc = "count() as c"
 	case "__bytes__":
-		statsAggFunc = "sum_len(_msg) as c"
-		if !fillMissing {
-			// Retain empty log lines without scanning raw logs: byte sum zero
-			// alone cannot distinguish an absent bucket from a present empty line.
-			statsAggFunc += ", count() as __sample_count"
-		}
+		// Retain empty log lines without scanning raw logs: byte sum zero
+		// alone cannot distinguish an absent bucket from a present empty line.
+		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
+	}
+	// Bucket edges must coincide with every evaluation window edge. When no
+	// bounded bucket grid exists, the exact raw-sample evaluator answers.
+	bucket, bucketsOK := p.slidingStatsBucket(startTS, step, origSpec.Window)
+	if !bucketsOK {
+		statsAggFunc = ""
 	}
 	// Sliding-window parser-stage queries (range > step) reach this path via
 	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
@@ -639,38 +650,32 @@ func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *ht
 		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
 			orgID := r.Header.Get("X-Scope-OrgID")
 			bKey := burstKey{
-				scope:    p.contextScopeFingerprint(r.Context()),
-				orgID:    orgID,
-				base:     base,
-				startSec: startTS.Add(-origSpec.Window).Unix(),
-				endSec:   endTS.Unix(),
-				stepNs:   int64(step),
+				scope:   p.contextScopeFingerprint(r.Context()),
+				orgID:   orgID,
+				base:    base,
+				startNs: startTS.Add(-origSpec.Window).UnixNano(),
+				endNs:   endTS.UnixNano(),
+				stepNs:  int64(bucket),
 			}
-			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, step)
+			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, bucket)
 			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
-				result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(result) // nosemgrep
+				p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
 				return true
 			}
 			// Fall through on error — coalescer failure is non-fatal.
 		}
 	}
-	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(result) // nosemgrep
+	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, bucket); ok {
+		p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
 		return true
 	}
-	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(result) // nosemgrep
+	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, bucket); ok {
+		p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
 		return true
 	}
 
 	fetchEnd := endTS
-	if manualFunc == "quantile" {
+	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
 		// VL's raw-query end is exclusive; Loki includes the evaluation time.
 		fetchEnd = fetchEnd.Add(time.Nanosecond)
 	}
@@ -688,6 +693,16 @@ func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *ht
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
+}
+
+func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) {
+	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window)
+	if err != nil {
+		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 }
 
 func isSumAllLogRange(query string) bool {
@@ -736,7 +751,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	}
 
 	fetchEnd := evalTS
-	if manualFunc == "quantile" {
+	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
 		fetchEnd = fetchEnd.Add(time.Nanosecond)
 	}
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
@@ -836,9 +851,70 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 	return p.labelTranslator.ToVL(field), 0, nil
 }
 
+// slidingStatsBucket returns gcd(step, window): the widest bucket for which every
+// evaluation window (t-window, t], t = start+k*step, is an exact union of buckets
+// anchored at start-window. There is no bucket-count budget: VictoriaLogs returns
+// only non-empty buckets, so a response never holds more points than the log
+// lines the raw evaluator would transfer, and collectRangeMetricHits already
+// bounds the response bytes (an oversized response falls back to the raw
+// evaluator). ok is false below a 1ms bucket, where float response timestamps
+// cannot be snapped reliably, and when the backend cannot anchor bucket edges to
+// the request (stats_query_range offset, VictoriaLogs v1.45+) and the anchor is
+// not epoch-aligned; callers then use the raw-sample evaluator.
+func (p *Proxy) slidingStatsBucket(start time.Time, step, window time.Duration) (time.Duration, bool) {
+	bucket, rest := step, window
+	for rest > 0 {
+		bucket, rest = rest, bucket%rest
+	}
+	if bucket < time.Millisecond {
+		return 0, false
+	}
+	if !p.supportsStatsRangeOffset() && start.Add(-window).UnixNano()%int64(bucket) != 0 {
+		return 0, false
+	}
+	return bucket, true
+}
+
+// setSlidingStatsRangeParams requests buckets of hitStep whose edges sit at
+// start+k*hitStep. With offset support each bucket is (edge, edge+hitStep],
+// Loki's left-open, right-closed range boundary: VictoriaLogs buckets cover
+// [T, T+step) with edges at k*step-offset, so edges are shifted by 1ns. The end
+// is exclusive in VictoriaLogs and inclusive in Loki, hence end+1ns.
+func (p *Proxy) setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep time.Duration) {
+	params.Set("start", start.UTC().Format(time.RFC3339Nano))
+	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
+	if hitStep%time.Second == 0 {
+		params.Set("step", strconv.FormatInt(int64(hitStep/time.Second), 10)+"s")
+	} else {
+		params.Set("step", strconv.FormatInt(int64(hitStep), 10)+"ns")
+	}
+	if p.supportsStatsRangeOffset() {
+		shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
+		params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
+	}
+}
+
+// snapSlidingBucketTimestamp maps a stats_query_range timestamp (float seconds)
+// to the left edge of its bucket on the start+k*hitStep grid. The float form
+// cannot carry the 1ns edge shift or exact nanoseconds, so the nearest edge wins.
+func snapSlidingBucketTimestamp(v *fj.Value, start time.Time, hitStep time.Duration) (int64, bool) {
+	sec, err := v.Float64()
+	if err != nil || hitStep <= 0 {
+		return 0, false
+	}
+	anchor, size := start.UnixNano(), int64(hitStep)
+	offset := int64(math.Round(sec*1e9)) - anchor + size/2
+	k := offset / size
+	if offset%size < 0 {
+		k--
+	}
+	return anchor + k*size, true
+}
+
 // collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
-// returns pre-bucketed samples (ts=bucket_start_ns, value=bucket_value). This
-// avoids reading all raw log entries for count_over_time / rate / bytes_rate queries.
+// returns pre-bucketed samples (ts=bucket left edge ns on the start+k*hitStep
+// grid, value=bucket_value). This avoids reading all raw log entries for
+// count_over_time / rate / bytes_rate queries.
 //
 // statsAggFunc is the VL stats aggregation clause appended after "| stats [by (...)]",
 // e.g. "count() as c" or "sum_len(_msg) as c".
@@ -869,9 +945,7 @@ func (p *Proxy) collectRangeMetricHits(
 
 	params := url.Values{}
 	params.Set("query", statsQuery)
-	params.Set("start", strconv.FormatInt(start.Unix(), 10))
-	params.Set("end", strconv.FormatInt(end.Unix(), 10))
-	params.Set("step", strconv.FormatFloat(hitStep.Seconds(), 'f', 0, 64)+"s")
+	p.setSlidingStatsRangeParams(params, start, end, hitStep)
 
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
@@ -958,7 +1032,7 @@ func (p *Proxy) collectRangeMetricHits(
 		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
-			addPresentBuckets(&entry, res.GetArray("values"))
+			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
 			seriesMap[seriesKey] = entry
 			continue
 		}
@@ -970,8 +1044,8 @@ func (p *Proxy) collectRangeMetricHits(
 			if len(arr) < 2 {
 				continue
 			}
-			tsUnix, tsErr := arr[0].Int64()
-			if tsErr != nil {
+			ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
+			if !tsOK {
 				continue
 			}
 			valStr := string(arr[1].GetStringBytes())
@@ -979,7 +1053,7 @@ func (p *Proxy) collectRangeMetricHits(
 			if valErr != nil {
 				continue
 			}
-			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
+			samples = append(samples, rangeMetricSample{ts: ts, value: val})
 		}
 
 		if existing, ok := seriesMap[seriesKey]; ok {
@@ -997,7 +1071,7 @@ func (p *Proxy) collectRangeMetricHits(
 	return seriesMap, nil
 }
 
-func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value) {
+func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
 	if entry.PresentBuckets == nil {
 		entry.PresentBuckets = make(map[int64]struct{})
 	}
@@ -1006,10 +1080,10 @@ func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value) {
 		if len(arr) < 2 {
 			continue
 		}
-		ts, tsErr := arr[0].Int64()
+		ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
 		count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
-		if tsErr == nil && countErr == nil && count > 0 {
-			entry.PresentBuckets[ts*int64(time.Second)] = struct{}{}
+		if tsOK && countErr == nil && count > 0 {
+			entry.PresentBuckets[ts] = struct{}{}
 		}
 	}
 }
@@ -1656,23 +1730,23 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 }
 
 // buildHitsRangeMetricMatrix builds a Prometheus matrix response from pre-bucketed
-// hit counts returned by collectRangeMetricHits. Each sample is a bucket count;
-// the window is applied by summing all buckets whose start falls in [T-window, T)
-// for each step point T. Supports count_over_time (sum) and rate (sum/window_s).
+// counts returned by collectRangeMetricHits. Buckets are labelled by their left
+// edge on a grid that contains every window edge, so the window (T-window, T] of
+// step point T is the sum of all buckets whose label falls in [T-window, T).
+// Supports count_over_time/bytes_over_time (sum) and rate/bytes_rate (sum/window_s).
 //
-// Pre-sizes the per-series `values` slice to the expected step count rather
-// than the previous starting cap of 16. For a 24 h / 5 s step range that's
-// 17 280 points per series; the 16 → 17 280 doubling cascade was a hot spot
-// in pprof's cumulative allocation profile (1.31 GB total). Pre-sizing
-// eliminates the cascade — one allocation per series instead of ten.
-func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
-	return buildHitsRangeMetricMatrixWithFill(manualFunc, series, start, end, step, window, true)
-}
-
-func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, fillMissing bool) []byte {
-	if end.Before(start) {
-		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
+// Like Loki, a step whose window holds no log line is absent rather than zero.
+// Series with PresentBuckets (byte sums) use them to keep windows that contain
+// only empty lines. Per-series prefix sums keep each step O(log buckets), so
+// finer buckets do not multiply the work by the window length.
+//
+// The encoded response is bounded by maxBufferedBackendBodyBytes, like the raw
+// evaluator's output; an estimate above it returns an error instead.
+func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) ([]byte, error) {
+	if end.Before(start) || step <= 0 {
+		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
 	}
+	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
 
@@ -1682,89 +1756,73 @@ func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]man
 	}
 	sort.Strings(keys)
 
-	// Estimate the number of step buckets the loop will iterate over so we
-	// can pre-grow per-series `values` slices. Caps protect against absurd
-	// inputs (step=0 or negative duration). Most series won't hit `expected`
-	// (zero-buckets are skipped) — but doubling from 16 is more expensive
-	// than over-allocating once at the expected upper bound.
-	expectedBuckets := 16
-	if step > 0 && !end.Before(start) {
-		expectedBuckets = int(end.Sub(start)/step) + 1
-		if expectedBuckets < 16 {
-			expectedBuckets = 16
-		}
-		if expectedBuckets > 32768 { // safety cap — no Drilldown query exceeds this
-			expectedBuckets = 32768
-		}
+	expectedBuckets := int(end.Sub(start)/step) + 1
+	if expectedBuckets > 32768 { // pre-size cap; appends grow beyond it
+		expectedBuckets = 32768
 	}
 
-	perSeries := make(map[string]map[string]interface{}, len(series))
-
-	for t := start; !t.After(end); t = t.Add(step) {
-		tNS := t.UnixNano()
-		windowStartNS := tNS - windowNS
-
-		for _, key := range keys {
-			seriesEntry := series[key]
-			var sum float64
-			for _, s := range seriesEntry.Samples {
-				if s.ts >= windowStartNS && s.ts < tNS {
-					sum += s.value
-				}
+	results := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		seriesEntry := series[key]
+		samples := seriesEntry.Samples
+		if !sort.SliceIsSorted(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts }) {
+			// Coalesced results are shared between requests: sort a copy.
+			samples = append([]rangeMetricSample(nil), samples...)
+			sort.Slice(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
+		}
+		prefix := make([]float64, len(samples)+1)
+		for i, sample := range samples {
+			prefix[i+1] = prefix[i] + sample.value
+		}
+		var present []int64
+		if seriesEntry.PresentBuckets != nil {
+			present = make([]int64, 0, len(seriesEntry.PresentBuckets))
+			for ts := range seriesEntry.PresentBuckets {
+				present = append(present, ts)
 			}
-			present := sum != 0
-			if !present && !fillMissing {
-				for ts := range seriesEntry.PresentBuckets {
-					if ts >= windowStartNS && ts < tNS {
-						present = true
-						break
-					}
-				}
+			sort.Slice(present, func(i, j int) bool { return present[i] < present[j] })
+		}
+
+		for k, v := range seriesEntry.Metric {
+			encodedBytes += len(k) + len(v) + 6
+		}
+		var points [][]interface{}
+		for t := start; !t.After(end); t = t.Add(step) {
+			tNS := t.UnixNano()
+			windowStartNS := tNS - windowNS
+			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStartNS })
+			hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= tNS })
+			sum := prefix[hi] - prefix[lo]
+			hasLines := sum != 0
+			if present != nil {
+				pLo := sort.Search(len(present), func(i int) bool { return present[i] >= windowStartNS })
+				hasLines = pLo < len(present) && present[pLo] < tNS
 			}
-			// Count/rate ranking excludes zero-filled absent windows. Byte
-			// ranking also retains real zero-byte lines using the count buckets.
-			if !fillMissing && !present {
+			if !hasLines {
 				continue
 			}
-			// Chart mode emits a datapoint per step bucket — zero-filling missing
-			// values. Previously we skipped sum==0 to save bytes, but for
-			// sparse series (high-cardinality fields like trace_id where each
-			// value appears at only a few timestamps) the result was a series
-			// with 3 datapoints clustered together. Drilldown rendered that as
-			// "one spike at the beginning" because the chart x-axis got
-			// collapsed to the sparse data extent instead of the full request
-			// range. Continuous datapoints render correctly. Cost is bounded
-			// by topk(N) at the caller — Drilldown's high-card panels cap at
-			// 10-50 series so worst case is ~288 buckets × 50 series ≈ 14k
-			// datapoints per response (~200 KB).
-			var value float64
+			value := sum
 			if manualFunc == "rate" || manualFunc == "bytes_rate" {
 				value = sum / windowSec
-			} else {
-				value = sum
 			}
-
-			dst := perSeries[key]
-			if dst == nil {
-				dst = map[string]interface{}{
-					"metric": seriesEntry.Metric,
-					"values": make([][]interface{}, 0, expectedBuckets),
-				}
-				perSeries[key] = dst
+			if points == nil {
+				points = make([][]interface{}, 0, expectedBuckets)
 			}
-			points := dst["values"].([][]interface{})
-			points = append(points, []interface{}{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
-			dst["values"] = points
+			formatted := strconv.FormatFloat(value, 'f', -1, 64)
+			// `[1700000000,"<value>"],`: a timestamp of at most 20 bytes plus punctuation.
+			if encodedBytes += len(formatted) + 26; encodedBytes > maxBufferedBackendBodyBytes {
+				return nil, fmt.Errorf("manual metric response exceeds %d bytes", maxBufferedBackendBodyBytes)
+			}
+			points = append(points, []interface{}{float64(t.Unix()), formatted})
+		}
+		if points != nil {
+			results = append(results, map[string]interface{}{
+				"metric": seriesEntry.Metric,
+				"values": points,
+			})
 		}
 	}
-
-	results := make([]map[string]interface{}, 0, len(perSeries))
-	for _, key := range keys {
-		if r, ok := perSeries[key]; ok {
-			results = append(results, r)
-		}
-	}
-	return marshalManualMetricResponse("matrix", results)
+	return marshalManualMetricResponse("matrix", results), nil
 }
 
 func buildManualRangeMetricVector(functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration) []byte {
@@ -1874,8 +1932,10 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		lastVal  float64
 		hasFirst bool
 	)
+	// Log-line windows are (start, end], as the bucket path evaluates them.
+	excludeStart := isLogRangeWindowFunc(functionName)
 	for _, sample := range samples {
-		if sample.ts < windowStart || sample.ts > windowEnd {
+		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
 			continue
 		}
 		v := sample.value

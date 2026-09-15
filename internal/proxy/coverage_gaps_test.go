@@ -2186,6 +2186,7 @@ func TestUnusedJSONParser_SummedRateSlidingUsesStats(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	base := time.Unix(1700000000, 0)
 	// step=60 != range=[5m]=300 → sliding window → stats fast path (not 1M log fetch).
 	params := url.Values{}

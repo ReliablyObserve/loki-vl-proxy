@@ -164,21 +164,23 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 		}
 	}
 
-	if got, ok := aggregateManualWindow("count_over_time", 0, samples, 0, 20, 20); !ok || got != 3 {
-		t.Fatalf("count_over_time: expected 3,true got %v,%v", got, ok)
+	// Loki log-line windows are (start, end]: the line at ts=0 sits on the
+	// excluded lower edge, so log-line functions see only ts=10 and ts=20.
+	if got, ok := aggregateManualWindow("count_over_time", 0, samples, 0, 20, 20); !ok || got != 2 {
+		t.Fatalf("count_over_time: expected 2,true got %v,%v", got, ok)
 	}
 	if got, ok := aggregateManualWindow("rate", 0, samples, 0, 20, 20); !ok {
 		t.Fatal("rate: expected success")
 	} else {
-		assertClose("rate", got, 0.15)
+		assertClose("rate", got, 0.1)
 	}
-	if got, ok := aggregateManualWindow("bytes_over_time", 0, samples, 0, 20, 20); !ok || got != 6 {
-		t.Fatalf("bytes_over_time: expected 6,true got %v,%v", got, ok)
+	if got, ok := aggregateManualWindow("bytes_over_time", 0, samples, 0, 20, 20); !ok || got != 5 {
+		t.Fatalf("bytes_over_time: expected 5,true got %v,%v", got, ok)
 	}
 	if got, ok := aggregateManualWindow("bytes_rate", 0, samples, 0, 20, 20); !ok {
 		t.Fatal("bytes_rate: expected success")
 	} else {
-		assertClose("bytes_rate", got, 0.3)
+		assertClose("bytes_rate", got, 0.25)
 	}
 	if got, ok := aggregateManualWindow("sum", 0, samples, 0, 20, 20); !ok || got != 6 {
 		t.Fatalf("sum: expected 6,true got %v,%v", got, ok)

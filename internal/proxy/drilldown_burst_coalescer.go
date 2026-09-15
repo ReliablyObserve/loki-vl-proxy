@@ -197,12 +197,12 @@ func extractCommonBase(baseQuery string) (base, field string, ok bool) {
 }
 
 type burstKey struct {
-	scope    string
-	orgID    string
-	base     string
-	startSec int64
-	endSec   int64
-	stepNs   int64
+	scope   string
+	orgID   string
+	base    string
+	startNs int64 // bucket grid anchor (evaluation start minus window)
+	endNs   int64
+	stepNs  int64 // bucket width
 }
 
 type fieldResult struct {
@@ -357,9 +357,7 @@ func (p *Proxy) fusedFieldHits(
 
 		params := url.Values{}
 		params.Set("query", fusedQuery)
-		params.Set("start", strconv.FormatInt(start.Unix(), 10))
-		params.Set("end", strconv.FormatInt(end.Unix(), 10))
-		params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', 0, 64)+"s")
+		p.setSlidingStatsRangeParams(params, start, end, step)
 
 		// Acquire the same concurrency slot used by individual stats_query_range calls
 		// so burst-fused calls don't bypass the back-pressure contract.
@@ -411,8 +409,8 @@ func (p *Proxy) fusedFieldHits(
 				if len(arr) < 2 {
 					continue
 				}
-				tsUnix, tsErr := arr[0].Int64()
-				if tsErr != nil {
+				ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, step)
+				if !tsOK {
 					continue
 				}
 				val, parseFloatErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
@@ -420,7 +418,7 @@ func (p *Proxy) fusedFieldHits(
 					continue
 				}
 				samples = append(samples, rangeMetricSample{
-					ts:    tsUnix * int64(time.Second), // nanoseconds, exact integer arithmetic
+					ts:    ts,
 					value: val,
 				})
 			}

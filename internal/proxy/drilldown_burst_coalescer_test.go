@@ -274,7 +274,7 @@ func TestDrilldownBurstCoalescer_CoalescesTwoFields(t *testing.T) {
 	}
 
 	c := newDrilldownBurstCoalescer(50, 30)
-	key := burstKey{orgID: "default", base: `{app="foo"}`, startSec: 1000, endSec: 2000, stepNs: int64(time.Minute)}
+	key := burstKey{orgID: "default", base: `{app="foo"}`, startNs: 1000, endNs: 2000, stepNs: int64(time.Minute)}
 
 	var wg sync.WaitGroup
 	for _, f := range []string{"trace_id", "span_id"} {
@@ -312,7 +312,7 @@ func TestDrilldownBurstCoalescer_MaxFieldsSplitsGroups(t *testing.T) {
 	}
 
 	c := newDrilldownBurstCoalescer(200, 2)
-	key := burstKey{orgID: "default", base: `{app="foo"}`, startSec: 1000, endSec: 2000, stepNs: int64(time.Minute)}
+	key := burstKey{orgID: "default", base: `{app="foo"}`, startNs: 1000, endNs: 2000, stepNs: int64(time.Minute)}
 
 	var wg sync.WaitGroup
 	for _, f := range []string{"f1", "f2", "f3"} {
@@ -339,7 +339,7 @@ func TestDrilldownBurstCoalescer_ContextCancellation(t *testing.T) {
 	}
 
 	c := newDrilldownBurstCoalescer(100, 30)
-	key := burstKey{orgID: "default", base: `{app="foo"}`, startSec: 1000, endSec: 2000, stepNs: int64(time.Minute)}
+	key := burstKey{orgID: "default", base: `{app="foo"}`, startNs: 1000, endNs: 2000, stepNs: int64(time.Minute)}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

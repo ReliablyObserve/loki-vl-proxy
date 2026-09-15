@@ -533,6 +533,7 @@ func TestQueryRange_SummedBytesWithUnusedJSONScalesFromSumLen(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	params := url.Values{}
 	params.Set("query", `sum(bytes_rate({app="nginx"} | json [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Add(180*time.Second).Unix(), 10))
@@ -1197,6 +1198,7 @@ func TestSumByCountOverTime_NoParser_UsesStatsQueryRange(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	params := url.Values{}
 	params.Set("query", `sum by (app) (count_over_time({env="prod"}[5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
@@ -1280,6 +1282,7 @@ func TestSumByBytesRate_NoParser_UsesSumLen(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	params := url.Values{}
 	params.Set("query", `sum by (app) (bytes_rate({namespace="prod"}[5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))

@@ -71,7 +71,8 @@ func TestTopK_BytesRankingKeepsRealZeroAndUsesStats(t *testing.T) {
 	}))
 	defer backend.Close()
 	p := newGapTestProxy(t, backend.URL)
-	p.maxStatsQuerySeries = 2 // two logical series, four upstream metrics
+	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
+	p.maxStatsQuerySeries = 2                   // two logical series, four upstream metrics
 	for _, tc := range []struct{ op, app, value string }{{"topk", "full", "20"}, {"bottomk", "empty", "0"}} {
 		q := url.Values{"query": {tc.op + `(1, sum by(app)(bytes_rate({app=~".+"}[5m])))`}, "start": {"1700000000"}, "end": {"1700000900"}, "step": {"300"}}
 		r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
@@ -113,7 +114,7 @@ func TestTopK_EmptyWindowsCannotBecomeWinners(t *testing.T) {
 		}},
 	}
 	for _, descending := range []bool{true, false} {
-		body := buildHitsRangeMetricMatrixWithFill("count_over_time", series, start, start.Add(4*time.Minute), time.Minute, time.Minute, false)
+		body := mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, start.Add(4*time.Minute), time.Minute, time.Minute)
 		var response struct {
 			Data struct {
 				Result []struct {
@@ -137,18 +138,21 @@ func TestTopK_EmptyWindowsCannotBecomeWinners(t *testing.T) {
 			t.Fatalf("descending=%v unexpected winner/samples: %+v", descending, got)
 		}
 	}
-	// Ordinary Drilldown charts still retain their full requested time axis.
+	// Plain range queries follow Loki too: a step whose window (t-1m, t] holds
+	// no log line is absent, not zero. Loki's range-vector evaluator emits no
+	// sample for an empty window, so zero-filling here invented points that
+	// Loki never returns (for Explore, dashboards and Drilldown alike).
 	var chart struct {
 		Data struct {
 			Result []struct{ Values [][]any }
 		}
 	}
-	if err := json.Unmarshal(buildHitsRangeMetricMatrix("count_over_time", series, start, start.Add(4*time.Minute), time.Minute, time.Minute), &chart); err != nil {
+	if err := json.Unmarshal(mustBuildHitsRangeMetricMatrix(t, "count_over_time", series, start, start.Add(4*time.Minute), time.Minute, time.Minute), &chart); err != nil {
 		t.Fatal(err)
 	}
 	for _, result := range chart.Data.Result {
-		if len(result.Values) != 5 {
-			t.Fatalf("chart lost its full time axis: %+v", result.Values)
+		if len(result.Values) != 1 || result.Values[0][0] != float64(start.Add(2*time.Minute).Unix()) {
+			t.Fatalf("chart must keep only the step whose window holds lines: %+v", result.Values)
 		}
 	}
 }

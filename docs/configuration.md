@@ -386,6 +386,7 @@ When multiple limits are configured, the most specific takes effect:
 ### Behavior
 
 - Enforced on `query_range` requests
+- Independently of this flag, `query_range` requests where `(end - start) / step` exceeds 11,000 (integer division, as in Loki) return HTTP 400 with `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` before any backend call, for log and metric queries alike
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
 - Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not
 - Rejected queries return HTTP 400 with `{"status":"error","errorType":"bad_data","error":"query length ... exceeds limit ..."}`
@@ -749,7 +750,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-max-lines` | — | `1000` | Default max lines per query |
-| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.). Exceeding it rejects the query with HTTP `502` (`manual range metric row limit exceeded`) instead of returning truncated results |
+| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.). Exceeding it rejects the query with HTTP `502` (`manual range metric row limit exceeded`) instead of returning truncated results. `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` normally avoid raw rows by summing `stats_query_range` buckets of `gcd(step, range)`; they fall back to raw rows only when that bucket is below 1 ms, the stats response exceeds 64 MiB, or the evaluation grid is not epoch-aligned and VictoriaLogs is older than v1.45 or its version could not be detected. The 64 MiB response limit is the binding bound on that bucket path: there is no bucket-count budget, the encoded range-metric response is capped at the same 64 MiB (HTTP `503` above it), and Loki's 11,000-points-per-series limit bounds the evaluation steps |
 | `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests |
 | `-backend-min-version` | — | `v1.30.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate |
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
@@ -788,6 +789,7 @@ Backend version gate notes:
 - If detected version is below `-backend-min-version`, startup is blocked by default.
 - Set `-backend-allow-unsupported-version=true` to bypass the gate at your own risk.
 - If version cannot be detected from headers, proxy logs a warning and continues startup.
+- Version-gated behaviour stays on its conservative path while the version is unknown. Sliding range metrics then use `stats_query_range` buckets only for epoch-aligned grids (VictoriaLogs before v1.45 ignores the `offset` argument). While the version remains unknown, for example when the startup probe ran before VictoriaLogs was ready or `/metrics` is not routed through a proxy in front of it, the proxy retries the `/metrics` version probe in the background at most once every 5 minutes, bounded by `-backend-version-check-timeout`. There is no version override flag; make `/metrics` or a version response header reachable to enable version-gated paths.
 
 ## Built-In Protection Defaults
 
