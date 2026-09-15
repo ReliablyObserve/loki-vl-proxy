@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,6 +28,8 @@ type patternFetchDiagnostics struct {
 	minedPreMerge        int
 	minedPostMerge       int
 	lowCoverage          bool
+	// badRequest holds the backend's rejection of the pattern source query.
+	badRequest error
 }
 
 func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {
@@ -180,6 +184,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logsqlQuery, err := p.translatePatternQuery(query)
+	var parseErr *translator.ParseError
+	if errors.As(err, &parseErr) {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.metrics.RecordRequest("patterns", http.StatusBadRequest, time.Since(start))
+		return
+	}
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
 			"status": "success",
@@ -209,6 +219,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode >= http.StatusBadRequest {
+				body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+				if statusErr := p.redactedBackendStatusError("", resp.StatusCode, body); isUpstreamQueryRejected(statusErr) {
+					diag.badRequest = statusErr
+				}
 				return nil, false
 			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
@@ -245,6 +259,9 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 					if windowDiag.lowCoverage {
 						diag.markLowCoverage()
 					}
+					if windowDiag.badRequest != nil {
+						diag.badRequest = windowDiag.badRequest
+					}
 					if len(windowEntries) > diag.minedPostMerge {
 						diag.minedPostMerge = len(windowEntries)
 					}
@@ -267,6 +284,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	// Use /query with stratified windowing to preserve full selected-range buckets.
 	entries, _ := fetchPatterns("/select/logsql/query")
+	if len(entries) == 0 && diag.badRequest != nil {
+		// A rejected query must not be answered from the last pattern snapshot.
+		p.writeError(w, http.StatusBadRequest, diag.badRequest.Error())
+		p.metrics.RecordRequest("patterns", http.StatusBadRequest, time.Since(start))
+		return
+	}
 	if len(entries) == 0 {
 		if fallbackPayload, ok := p.latestPatternSnapshotPayload(cacheWriteKey); ok {
 			p.metrics.RecordPatternsSnapshotHit(true)
@@ -413,6 +436,12 @@ func (p *Proxy) fetchPatternsFromWindows(
 				"end_ns", window.endNs,
 				"status_code", resp.StatusCode,
 			)
+			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+			if statusErr := p.redactedBackendStatusError("", resp.StatusCode, body); isUpstreamQueryRejected(statusErr) {
+				mu.Lock()
+				diag.badRequest = statusErr
+				mu.Unlock()
+			}
 			return nil, patternExtractionStats{}, false
 		}
 		extracted, stats := extractLogPatternsStreamWithStats(resp.Body, stepParam, patternLimit)

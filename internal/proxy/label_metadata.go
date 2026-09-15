@@ -17,24 +17,15 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
-type vlAPIError struct {
-	status int
-	body   string
-}
-
-func (e *vlAPIError) Error() string {
-	if strings.TrimSpace(e.body) == "" {
-		return fmt.Sprintf("victorialogs api error: status %d", e.status)
-	}
-	return strings.TrimSpace(e.body)
-}
-
+// shouldFallbackToGenericMetadata reports a 4xx from a stream metadata endpoint
+// that means the endpoint is unavailable (older VictoriaLogs answers unknown
+// paths with 400 "unsupported path requested"). A rejected query is not retried.
 func shouldFallbackToGenericMetadata(err error) bool {
-	apiErr, ok := err.(*vlAPIError)
-	if !ok {
+	var apiErr *upstreamStatusError
+	if !errors.As(err, &apiErr) {
 		return false
 	}
-	return apiErr.status >= 400 && apiErr.status < 500
+	return apiErr.status >= 400 && apiErr.status < 500 && !isUpstreamQueryRejected(err)
 }
 
 // metadataWindowTTL scales a base TTL upward for wide time ranges where metadata
@@ -282,7 +273,7 @@ func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.V
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, &vlAPIError{status: status, body: string(body)}
+		return nil, p.redactedBackendStatusError("", status, body)
 	}
 	fields, err := decodeVLFieldHits(body)
 	if err != nil {
@@ -420,7 +411,7 @@ func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, &vlAPIError{status: status, body: string(body)}
+		return nil, p.redactedBackendStatusError("", status, body)
 	}
 	return decodeVLFieldHits(body)
 }

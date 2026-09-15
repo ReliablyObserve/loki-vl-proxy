@@ -243,12 +243,17 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 		targetLabels = inferPrimaryTargetLabel(query)
 	}
 	if usesDerivedVolumeLabels(targetLabels) {
+		// Proxy-built optimisation: any failure, a backend rejection included,
+		// falls back to the direct hits translation below.
 		result, err := p.volumeByDerivedLabels(ctx, query, start, end, targetLabels, "")
 		if err == nil {
 			return result, nil
 		}
 	}
-	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
@@ -373,7 +378,10 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 			return result, nil
 		}
 	}
-	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 
 	// For single-label volume_range with a limit, use stats_query_range so VL applies
 	// the limit natively — the hits endpoint returns ALL unique label values (up to
@@ -384,7 +392,8 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 		if result, err := p.computeVolumeRangeViaStats(ctx, logsqlQuery, targetLabels, start, end, step, limit); err == nil {
 			return result, nil
 		}
-		// Fall through to hits on error.
+		// Fall through to hits on any error: the stats query is a proxy rewrite,
+		// so only the hits translation decides whether the user's query is invalid.
 	}
 
 	params := url.Values{}

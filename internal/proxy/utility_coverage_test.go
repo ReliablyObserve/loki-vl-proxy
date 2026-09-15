@@ -651,19 +651,20 @@ func TestNormalizeMetadataPairTuples_AndCategorizedDetection(t *testing.T) {
 }
 
 func TestVLErrorHelpers(t *testing.T) {
-	blank := (&vlAPIError{status: http.StatusBadGateway, body: "   "}).Error()
-	if blank != "victorialogs api error: status 502" {
+	p := newTestProxy(t, "http://unused")
+	blank := p.redactedBackendStatusError("", http.StatusBadGateway, []byte("   ")).Error()
+	if blank != "VL backend returned 502" {
 		t.Fatalf("unexpected blank-body error text: %q", blank)
 	}
-	trimmed := (&vlAPIError{status: http.StatusBadGateway, body: " backend overloaded  "}).Error()
+	trimmed := p.redactedBackendStatusError("", http.StatusBadGateway, []byte(" backend overloaded  ")).Error()
 	if trimmed != "backend overloaded" {
 		t.Fatalf("unexpected trimmed-body error text: %q", trimmed)
 	}
 
-	if !shouldFallbackToGenericMetadata(&vlAPIError{status: http.StatusNotFound}) {
+	if !shouldFallbackToGenericMetadata(&upstreamStatusError{status: http.StatusNotFound}) {
 		t.Fatalf("expected 4xx vl api error to trigger generic metadata fallback")
 	}
-	if shouldFallbackToGenericMetadata(&vlAPIError{status: http.StatusInternalServerError}) {
+	if shouldFallbackToGenericMetadata(&upstreamStatusError{status: http.StatusInternalServerError}) {
 		t.Fatalf("expected 5xx vl api error to skip generic metadata fallback")
 	}
 	if shouldFallbackToGenericMetadata(errors.New("plain error")) {
@@ -844,8 +845,8 @@ func TestFetchVLFieldValues_ErrorPaths(t *testing.T) {
 
 	if _, err := p.fetchVLFieldValues(ctx, "/bad", url.Values{}); err == nil {
 		t.Fatalf("expected API status error from /bad")
-	} else if _, ok := err.(*vlAPIError); !ok {
-		t.Fatalf("expected vlAPIError from /bad, got %T", err)
+	} else if _, ok := err.(*upstreamStatusError); !ok {
+		t.Fatalf("expected upstreamStatusError from /bad, got %T", err)
 	}
 
 	if _, err := p.fetchVLFieldValues(ctx, "/invalid", url.Values{}); err == nil {

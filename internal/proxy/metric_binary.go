@@ -177,7 +177,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		// Non-Grafana clients (curl, scripts, /ready probes) still see the
 		// upstream status so they can react meaningfully.
 		if isGrafanaSourcedRequest(r) {
-			p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
+			p.writeGrafanaStatsFailure(w, err)
 			return false
 		}
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
@@ -188,10 +188,10 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		if isGrafanaSourcedRequest(r) {
-			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
+			p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
 			return false
 		}
-		p.writeError(w, resp.StatusCode, p.redactBackendError(errBody))
+		p.writeBackendError(w, resp.StatusCode, errBody)
 		return false
 	}
 
@@ -1250,14 +1250,14 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 		if err != nil {
 			// Drilldown contract — partial-results 200 instead of raw VL error.
-			p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
+			p.writeGrafanaStatsFailure(w, err)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
 			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
+			p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
 			return
 		}
 
@@ -1392,7 +1392,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 		// plugin — Loki itself converts these to partial-results 200s. Same
 		// behavior here keeps the panel rendering an empty chart + warning
 		// badge instead of a hard error toast.
-		p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
+		p.writeGrafanaStatsFailure(w, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -1404,7 +1404,8 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 		// per-bucket limit exceeded; 503 from VL queue saturation), return a
 		// Loki-compatible 200 + Warning header instead of the raw VL status.
 		// See pkg/querier/queryrange/limits.go::seriesLimiter.Do upstream.
-		p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
+		// A query VictoriaLogs rejected is Loki's 400 for Drilldown too.
+		p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
 		return
 	}
 
@@ -3328,7 +3329,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 
 	// Propagate VL error status
 	if status >= 400 {
-		p.writeError(w, status, p.redactBackendError(body))
+		p.writeBackendError(w, status, body)
 		return
 	}
 
@@ -3670,7 +3671,7 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType 
 		return nil, false, err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, false, fmt.Errorf("binary operand backend returned status %d: %s", resp.StatusCode, p.redactBackendError(body))
+		return nil, false, p.redactedBackendStatusError("binary operand backend returned status", resp.StatusCode, body)
 	}
 	return body, false, nil
 }

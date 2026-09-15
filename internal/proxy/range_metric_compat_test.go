@@ -617,18 +617,23 @@ func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 // TestQueryRange_FirstOverTimeStatsPath verifies that first_over_time with an
 // unwrap field uses the stats_query_range fast path (not raw log fetch) and
 // produces the correct first-value result from per-step bucket aggregates.
-func TestQueryRange_FirstOverTimeStatsPath(t *testing.T) {
+// TestQueryRange_FirstOverTimeUsesRawEvaluator: VictoriaLogs has no first()
+// stats function, so first_over_time over unwrap is evaluated from raw rows and
+// never sent to stats_query_range.
+func TestQueryRange_FirstOverTimeUsesRawEvaluator(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/stats_query_range" {
-			t.Fatalf("unexpected backend path %s (expected stats_query_range)", r.URL.Path)
+		if r.URL.Path != "/select/logsql/query" {
+			t.Errorf("unexpected backend path %s (expected the raw query path)", r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+			return
 		}
-		// Return per-step first(latency) values: bucket at T+0 has first=10,
-		// T+60 has first=20, T+120 has first=30.
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
-			`{"metric":{"_stream":"{app=\"nginx\"}"},` +
-			`"values":[[1700000000,"10"],[1700000060,"20"],[1700000120,"30"]]}]}}`))
+		// Samples inside the windows: 10 at T+1s, 20 at T+61s, 30 at T+119s.
+		w.Header().Set("Content-Type", "application/stream+json")
+		for i, v := range []string{"10", "20", "30"} {
+			ts := base.Add(time.Duration([]int{1, 61, 119}[i]) * time.Second).Format(time.RFC3339Nano)
+			_, _ = fmt.Fprintf(w, `{"_time":%q,"_stream":"{app=\"nginx\"}","_msg":"{\"latency\":%s}","app":"nginx","latency":%q}`+"\n", ts, v, v)
+		}
 	}))
 	defer vlBackend.Close()
 

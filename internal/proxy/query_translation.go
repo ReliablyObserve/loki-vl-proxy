@@ -1068,8 +1068,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
-		return nil, &vlAPIError{status: resp.StatusCode, body: msg}
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 
 	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
@@ -1665,8 +1664,8 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if resp.StatusCode >= http.StatusBadRequest {
-		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
-		p.metrics.RecordRequest("query", resp.StatusCode, time.Since(start))
+		code := p.writeBackendError(w, resp.StatusCode, body)
+		p.metrics.RecordRequest("query", code, time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
 	}
@@ -1920,7 +1919,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	}
 
 	// Stats fast path for unwrap aggregations that compose correctly from
-	// buckets: sum, max, min, first, last. Skip when unwrapConv is set
+	// buckets: sum, max, min. Skip when unwrapConv is set
 	// (duration()/bytes()): VL operates on raw strings, not converted floats.
 	if p.tryUnwrapViaStatsFastPath(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
 		return
@@ -1943,7 +1942,9 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 // anchored buckets: /hits for sliding count_over_time and rate when stream label
 // fields are declared, otherwise stats_query_range by stream. Returns false,
 // without writing, when no bucket grid holds every window edge or VL fails, so
-// the caller falls through to the raw evaluator.
+// the caller falls through to the raw evaluator. A VL rejection counts as a
+// failure too: these bucket queries are proxy rewrites, so only the raw
+// evaluator decides whether the user's query is invalid.
 func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec, startNanos, endNanos, stepNanos int64) bool {
 	var (
 		series map[string]manualSeriesSamples
@@ -1958,7 +1959,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 		series, ok, err = p.fetchBareParserMetricSeriesViaHits(r.Context(), spec, startNanos, endNanos, stepNanos)
 		if err != nil {
 			slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to stats",
-				"err", err, "query", originalQuery)
+				"err", err, "query", redactQuery(originalQuery, p.debugLogRawQueries))
 		}
 	}
 	if !ok || err != nil {
@@ -1973,7 +1974,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 		}
 		if err != nil {
 			slog.WarnContext(r.Context(), "stats bucket path failed, falling back to full-fetch",
-				"err", err, "query", originalQuery)
+				"err", err, "query", redactQuery(originalQuery, p.debugLogRawQueries))
 			return false
 		}
 	}
@@ -2000,11 +2001,10 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 		statsAggFunc, aggFunc = "max("+vlField+") as c", "max"
 	case "min_over_time":
 		statsAggFunc, aggFunc = "min("+vlField+") as c", "min"
-	case "first_over_time":
-		statsAggFunc, aggFunc = "first("+vlField+") as c", "first"
-	case "last_over_time":
-		statsAggFunc, aggFunc = "last("+vlField+") as c", "last"
 	}
+	// first_over_time and last_over_time have no VictoriaLogs stats function
+	// (lib/logstorage/stats_*.go has no first/last); VictoriaLogs rejects them as
+	// a query parse error, so they go straight to the exact raw evaluator.
 	if statsAggFunc == "" {
 		return false
 	}
@@ -2014,7 +2014,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	}
 	if uwErr != nil {
 		slog.WarnContext(r.Context(), "unwrap stats fast path failed, falling back to full-fetch",
-			"err", uwErr, "query", originalQuery)
+			"err", uwErr, "query", redactQuery(originalQuery, p.debugLogRawQueries))
 		return false
 	}
 	// The bucket (L, L+bucket] is labelled by its left edge L. Moving the label to

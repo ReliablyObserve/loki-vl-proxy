@@ -604,7 +604,8 @@ func TestSyntheticTailSeenBoundsMemory(t *testing.T) {
 	}
 }
 
-func TestHandlePatterns_InvalidQueryReturnsEmptySuccess(t *testing.T) {
+// Loki parses the patterns query before querying and answers 400 bad_data.
+func TestHandlePatterns_InvalidQueryReturnsBadData(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backendCalls++
@@ -618,21 +619,21 @@ func TestHandlePatterns_InvalidQueryReturnsEmptySuccess(t *testing.T) {
 
 	p.handlePatterns(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
 	}
 	if backendCalls != 0 {
 		t.Fatalf("expected no backend calls, got %d", backendCalls)
 	}
 	var resp struct {
-		Status string        `json:"status"`
-		Data   []interface{} `json:"data"`
+		Status    string `json:"status"`
+		ErrorType string `json:"errorType"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Status != "success" || len(resp.Data) != 0 {
-		t.Fatalf("expected empty success response, got %#v", resp)
+	if resp.Status != "error" || resp.ErrorType != "bad_data" {
+		t.Fatalf("expected bad_data error response, got %#v", resp)
 	}
 }
 

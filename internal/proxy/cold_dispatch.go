@@ -207,7 +207,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 
 		ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, endNs, originalLimit)
 		if fetchErr != nil {
-			p.writeError(w, http.StatusBadGateway, "cold backend error: "+fetchErr.Error())
+			p.writeError(w, badRequestStatusOr(fetchErr, http.StatusBadGateway), "cold backend error: "+fetchErr.Error())
 			return
 		}
 		trimmed := trimNDJSONBodyToLimit(reverseNDJSONBody(ascBody), r.FormValue("limit"))
@@ -231,7 +231,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
+		p.writeBackendError(w, resp.StatusCode, body)
 		return
 	}
 	p.processLogQueryResponse(w, r, resp)
@@ -326,7 +326,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		if hotResp != nil {
 			hotResp.Body.Close()
 		}
-		p.writeError(w, coldResp.StatusCode, p.redactBackendError(body))
+		p.writeBackendError(w, coldResp.StatusCode, body)
 		return
 	}
 
@@ -342,7 +342,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		body, _ := readBodyLimited(hotResp.Body, maxUpstreamErrorBodyBytes)
 		hotResp.Body.Close()
 		coldResp.Body.Close()
-		p.writeError(w, hotResp.StatusCode, p.redactBackendError(body))
+		p.writeBackendError(w, hotResp.StatusCode, body)
 		return
 	}
 
@@ -410,7 +410,7 @@ func bufferMergeResponse(resp *http.Response, limit int64) error {
 func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, resp *http.Response) {
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
+		p.writeBackendError(w, resp.StatusCode, body)
 		return
 	}
 

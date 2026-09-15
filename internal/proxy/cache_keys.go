@@ -337,6 +337,10 @@ func markStaleResponse(h http.Header) {
 }
 
 func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cacheKey string, started time.Time, err error) bool {
+	// A rejected query is not a backend outage: answer it, never mask it.
+	if isUpstreamQueryRejected(err) {
+		return false
+	}
 	body, remaining, tier, ok := p.staleEndpointCacheEntry(endpoint, cacheKey)
 	if !ok || len(body) == 0 {
 		return false

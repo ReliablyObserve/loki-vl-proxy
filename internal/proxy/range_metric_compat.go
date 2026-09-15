@@ -681,7 +681,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
 		return true
 	}
 
@@ -758,7 +758,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	}
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
 		return true
 	}
 

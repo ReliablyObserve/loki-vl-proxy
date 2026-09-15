@@ -46,20 +46,16 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	}
 
 	switch endpoint {
-	case "detected_fields":
-		body, contentType, err := p.multiTenantDetectedFieldsResponse(filteredReq, filteredTenants)
-		if err != nil {
-			p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+	case "detected_fields", "detected_labels":
+		merge := p.multiTenantDetectedFieldsResponse
+		if endpoint == "detected_labels" {
+			merge = p.multiTenantDetectedLabelsResponse
+		}
+		body, contentType, err := merge(filteredReq, filteredTenants)
+		if isUpstreamQueryRejected(err) {
+			p.writeError(w, http.StatusBadRequest, err.Error())
 			return true
 		}
-		w.Header().Set("Content-Type", contentType)
-		_, _ = w.Write(body)
-		if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
-			p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
-		}
-		return true
-	case "detected_labels":
-		body, contentType, err := p.multiTenantDetectedLabelsResponse(filteredReq, filteredTenants)
 		if err != nil {
 			p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 			return true
@@ -93,6 +89,25 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		}(i, tenantID)
 	}
 	wg.Wait()
+
+	// Loki validates the query once before splitting by tenant, so a query
+	// rejected for every tenant fails the whole request with that 400 instead of
+	// "all sub-requests failed". A backend 400 passed through for every tenant
+	// gets the same 400, matching a single-tenant request. A failure on only
+	// some tenants (a backend limit or outage) keeps the per-tenant skipping
+	// below. Sub-responses carry only a status, not the error class, so a
+	// rejection on one tenant mixed with a 5xx or transport failure on another
+	// still reports "all sub-requests failed".
+	allRejected := len(results) > 0
+	for _, res := range results {
+		allRejected = allRejected && res.rec.Code == http.StatusBadRequest
+	}
+	if allRejected {
+		w.Header().Set("Content-Type", results[0].rec.Header().Get("Content-Type"))
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(results[0].rec.Body.Bytes())
+		return true
+	}
 
 	// Collect results in original order (deterministic merge).
 	successTenants := make([]string, 0, len(filteredTenants))
@@ -997,6 +1012,9 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		subReq = p.withRequestScope(subReq)
 
 		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
+		if isUpstreamQueryRejected(err) {
+			return nil, "", err
+		}
 		if err != nil {
 			p.log.Warn("detected_fields unavailable for tenant, skipping", "tenant", tenantID, "err", err)
 			continue
@@ -1097,6 +1115,9 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 		subReq = p.withRequestScope(subReq)
 
 		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
+		if isUpstreamQueryRejected(err) {
+			return nil, "", err
+		}
 		if err != nil {
 			p.log.Warn("detected_labels unavailable for tenant, skipping", "tenant", tenantID, "err", err)
 			continue
