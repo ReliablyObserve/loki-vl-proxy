@@ -21,11 +21,17 @@ import (
 // collide with unversioned ones.
 const labelMetadataCacheKeyVersion = "@full-range-v2"
 
+// volumeCacheKeyVersion: older binaries cached volumes as line counts stamped
+// at bucket starts; volumes are now bytes stamped like Loki.
+const volumeCacheKeyVersion = "@bytes-v1"
+
 // readCacheKeyVersion returns the key version segment for endpoint, if any.
 func readCacheKeyVersion(endpoint string) string {
 	switch endpoint {
 	case "labels", "label_values", "label_inventory":
 		return labelMetadataCacheKeyVersion
+	case "volume", "volume_range":
+		return volumeCacheKeyVersion
 	default:
 		return ""
 	}
@@ -109,20 +115,9 @@ func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extra
 	case "detected_fields", "detected_field_values", "detected_labels":
 		params.Set("limit", strconv.Itoa(parseDetectedLineLimit(r)))
 	}
-	if endpoint == "volume" || endpoint == "volume_range" {
-		query := strings.TrimSpace(params.Get("query"))
-		if query == "" {
-			query = "*"
-		}
-		if strings.TrimSpace(params.Get("targetLabels")) == "" {
-			if inferred := inferPrimaryTargetLabel(query); inferred != "" {
-				params.Set("targetLabels", inferred)
-			}
-		}
-		if endpoint == "volume_range" {
-			if step := strings.TrimSpace(params.Get("step")); step != "" {
-				params.Set("step", formatVLStep(step))
-			}
+	if endpoint == "volume_range" {
+		if step := strings.TrimSpace(params.Get("step")); step != "" {
+			params.Set("step", formatVLStep(step))
 		}
 	}
 

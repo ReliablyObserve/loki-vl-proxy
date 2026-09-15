@@ -15,11 +15,11 @@ import (
 func TestVolumeEndpoint_UsesCacheOnRepeatQueries(t *testing.T) {
 	var hitsCalls atomic.Int64
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected backend path: %s", r.URL.Path)
 		}
 		hitsCalls.Add(1)
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"app":"api"},"timestamps":["2026-04-10T00:00:00Z"],"values":[3]}]}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"api"},"value":[1775779200,"300"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -59,8 +59,7 @@ func TestVolumeRangeEndpoint_UsesCacheOnRepeatQueries(t *testing.T) {
 			t.Fatalf("unexpected backend path: %s", r.URL.Path)
 		}
 		hitsCalls.Add(1)
-		// Single-label volume_range uses stats_query_range and returns Loki matrix format.
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1746057600,"2"],[1746057660,"1"]]}]}}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"_b","app":"api"},"values":[[1746057600,"200"],[1746057660,"100"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 

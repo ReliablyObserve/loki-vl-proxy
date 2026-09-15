@@ -63,7 +63,7 @@ flowchart TD
             PATTERN["Pattern mining<br/>Drain-like clustering<br/>autodetect from queries"]
             PATSNAP["Pattern persistence<br/>disk snapshot + peer sync<br/>cross-window merge"]
             DRILLDOWN["Drilldown metadata<br/>detected labels, field values<br/>service_name synthesis"]
-            VOLUME["Volume / index stats<br/>hits estimation"]
+            VOLUME["Volume / index stats<br/>sum_len bytes, hits estimation"]
         end
     end
 

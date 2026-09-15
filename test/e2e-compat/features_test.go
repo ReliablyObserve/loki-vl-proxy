@@ -149,10 +149,11 @@ func TestFeature_IndexVolumeRange_ReturnsMatrix(t *testing.T) {
 	}
 
 	if data, ok := proxyResp["data"].(map[string]interface{}); ok {
-		if rt := data["resultType"]; rt == "matrix" {
-			score.pass("volume_range", "resultType=matrix")
+		// Loki answers a vector when every series has one sample, else a matrix.
+		if rt := data["resultType"]; rt == "matrix" || rt == "vector" {
+			score.pass("volume_range", fmt.Sprintf("resultType=%v", rt))
 		} else {
-			score.fail("volume_range", fmt.Sprintf("expected resultType=matrix, got %v", rt))
+			score.fail("volume_range", fmt.Sprintf("expected resultType=matrix or vector, got %v", rt))
 		}
 	}
 

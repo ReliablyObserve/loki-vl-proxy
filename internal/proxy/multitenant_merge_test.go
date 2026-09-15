@@ -624,3 +624,41 @@ func TestIsMultiTenantQueryPathCoverage(t *testing.T) {
 		t.Fatal("expected tail path to reject multi-tenant fanout")
 	}
 }
+
+// Loki answers volume_range with a vector when every series has one sample, so
+// tenants can return different result types; no tenant's samples may be lost.
+func TestMergeMultiTenantResponsesVolumeRangeMixedVectorAndMatrix(t *testing.T) {
+	for _, order := range [][]string{{"vector", "matrix"}, {"matrix", "vector"}} {
+		bodies := map[string]string{
+			"vector": `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"a"},"value":[60,"5"]}]}}`,
+			"matrix": `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"b"},"values":[[60,"7"],[120,"9"]]}]}}`,
+		}
+		body, _, err := mergeMultiTenantResponses("volume_range", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
+			recorderWithJSON(bodies[order[0]]),
+			recorderWithJSON(bodies[order[1]]),
+		})
+		if err != nil {
+			t.Fatalf("merge failed: %v", err)
+		}
+		var resp struct {
+			Data struct {
+				ResultType string `json:"resultType"`
+				Result     []struct {
+					Metric map[string]string `json:"metric"`
+					Values [][]interface{}   `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Data.ResultType != "matrix" || len(resp.Data.Result) != 2 {
+			t.Fatalf("order %v: want both tenants in a matrix, got %s", order, body)
+		}
+		for _, r := range resp.Data.Result {
+			if len(r.Values) == 0 {
+				t.Fatalf("order %v: series without samples: %s", order, body)
+			}
+		}
+	}
+}

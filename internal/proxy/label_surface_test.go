@@ -238,10 +238,11 @@ func TestLabelSurface_VolumeTargetLabelsResolveCustomAlias(t *testing.T) {
 		case "/select/logsql/stream_field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"host.id","hits":2}]}`))
-		case "/select/logsql/hits":
-			requestedField = r.URL.Query().Get("field")
+		case "/select/logsql/stats_query":
+			_ = r.ParseForm()
+			requestedField = r.FormValue("query")
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"hits":[{"fields":{"host.id":"i-host-1"},"timestamps":["2026-04-04T17:18:49Z"],"values":[3]}]}`))
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","host.id":"i-host-1"},"value":[2,"300"]}]}}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -268,7 +269,7 @@ func TestLabelSurface_VolumeTargetLabelsResolveCustomAlias(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/volume?"+params.Encode(), nil)
 	p.handleVolume(w, r)
 
-	if requestedField != "host.id" {
+	if !strings.Contains(requestedField, "stats by (`host.id`") {
 		t.Fatalf("expected volume targetLabels alias host_id to resolve to host.id, got %q", requestedField)
 	}
 

@@ -404,7 +404,7 @@ func emptyMultiTenantResponse(endpoint string) map[string]interface{} {
 	case "volume":
 		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "vector", "result": []interface{}{}}}
 	case "volume_range":
-		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "matrix", "result": []interface{}{}}}
+		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "vector", "result": []interface{}{}}}
 	case "detected_fields":
 		return map[string]interface{}{"status": "success", "data": []interface{}{}, "fields": []interface{}{}}
 	case "detected_field_values":
@@ -794,6 +794,14 @@ func mergeLokiQueryResponses(tenantIDs []string, recorders []*httptest.ResponseR
 				matrixes = append(matrixes, item)
 			}
 		}
+	}
+	// Loki's volume_range answers a vector when every series has one sample, so
+	// tenants can disagree: keep every sample by promoting vectors to a matrix.
+	if len(matrixes) > 0 && (resultType == "vector" || len(vectors) > 0) {
+		for _, item := range vectors {
+			matrixes = append(matrixes, lokiMatrixResult{Metric: item.Metric, Values: [][]interface{}{item.Value}})
+		}
+		resultType = "matrix"
 	}
 	if resultType == "streams" {
 		sort.SliceStable(streams, func(i, j int) bool {

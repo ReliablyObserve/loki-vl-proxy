@@ -283,13 +283,14 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/hits":
-			receivedQuery = r.URL.Query().Get("query")
+		case "/select/logsql/stats_query":
+			_ = r.ParseForm()
+			receivedQuery = r.FormValue("query")
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"hints":{},"hits":[` +
-				`{"fields":{"app":"api-gateway","cluster":"us-east-1","level":"info"},"timestamps":["2026-04-04T17:18:49Z"],"values":[1]},` +
-				`{"fields":{"service.name":"payment-service","cluster":"us-east-1","level":"error"},"timestamps":["2026-04-04T17:18:50Z"],"values":[1]}` +
-				`]}`))
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+				`{"metric":{"__name__":"_b","app":"api-gateway"},"value":[2,"120"]},` +
+				`{"metric":{"__name__":"_b","service.name":"payment-service"},"value":[2,"80"]}` +
+				`]}}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -316,14 +317,14 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 
 func TestDrilldown_IndexVolume_TargetLabelsServiceNameUsesDerivedAggregation(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hints":{},"hits":[` +
-			`{"fields":{"app":"api-gateway","cluster":"us-east-1","level":"info"},"timestamps":["2026-04-04T17:18:49Z"],"values":[2]},` +
-			`{"fields":{"service.name":"payment-service","cluster":"us-east-1","level":"error"},"timestamps":["2026-04-04T17:18:50Z"],"values":[1]}` +
-			`]}`))
+		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"_b","app":"api-gateway"},"value":[2,"200"]},` +
+			`{"metric":{"__name__":"_b","service.name":"payment-service"},"value":[2,"100"]}` +
+			`]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -347,56 +348,24 @@ func TestDrilldown_IndexVolume_TargetLabelsServiceNameUsesDerivedAggregation(t *
 		value := obj["value"].([]interface{})
 		got[metric["service_name"].(string)] = value[1].(string)
 	}
-	if got["api-gateway"] != "2" || got["payment-service"] != "1" {
-		t.Fatalf("expected service_name aggregation to count derived services, got %v", got)
-	}
-}
-
-func TestDrilldown_InferPrimaryTargetLabel(t *testing.T) {
-	tests := []struct {
-		name  string
-		query string
-		want  string
-	}{
-		{name: "empty", query: "", want: ""},
-		{name: "wildcard", query: "*", want: ""},
-		{name: "simple regex", query: `{cluster=~` + "`.+`" + `}`, want: "cluster"},
-		{name: "first matcher wins", query: `{cluster=~` + "`.+`" + `,namespace="prod"}`, want: "cluster"},
-		{name: "translated alias", query: `{k8s_pod_name="api-1",namespace="prod"}`, want: "k8s_pod_name"},
-		{name: "quoted dotted", query: `{service.name="auth"}`, want: "service.name"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := inferPrimaryTargetLabel(tt.query); got != tt.want {
-				t.Fatalf("inferPrimaryTargetLabel(%q) = %q, want %q", tt.query, got, tt.want)
-			}
-		})
+	if got["api-gateway"] != "200" || got["payment-service"] != "100" {
+		t.Fatalf("expected service_name aggregation to sum derived service bytes, got %v", got)
 	}
 }
 
 func TestDrilldown_IndexVolume_InfersPrimaryTargetLabelForAdditionalTabs(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		receivedField = r.URL.Query().Get("field")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hints": map[string]interface{}{},
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"cluster": "us-east-1"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{12},
-				},
-				{
-					"fields":     map[string]string{"cluster": "us-west-2"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{8},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"_b","cluster":"us-east-1"},"value":[2,"1200"]},` +
+			`{"metric":{"__name__":"_b","cluster":"us-west-2"},"value":[2,"800"]}` +
+			`]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -405,8 +374,8 @@ func TestDrilldown_IndexVolume_InfersPrimaryTargetLabelForAdditionalTabs(t *test
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2", nil)
 	p.handleVolume(w, r)
 
-	if receivedField != "cluster" {
-		t.Fatalf("expected inferred volume field=cluster, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "stats by (cluster)") {
+		t.Fatalf("expected selector label cluster to name the volume, got %q", receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -425,22 +394,19 @@ func TestDrilldown_IndexVolume_InfersPrimaryTargetLabelForAdditionalTabs(t *test
 }
 
 func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/select/logsql/stats_query":
+			_ = r.ParseForm()
+			receivedQuery = r.FormValue("query")
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+				`{"metric":{"__name__":"_b","k8s.pod.name":"api-1"},"value":[2,"500"]}]}}`))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[]}`))
 		}
-		receivedField = r.URL.Query().Get("field")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hints": map[string]interface{}{},
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"k8s.pod.name": "api-1"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{5},
-				},
-			},
-		})
 	}))
 	defer vlBackend.Close()
 
@@ -459,8 +425,8 @@ func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bk8s_pod_name%3D~%60.%2B%60%7D&start=1&end=2", nil)
 	p.handleVolume(w, r)
 
-	if receivedField != "k8s.pod.name" {
-		t.Fatalf("expected translated backend field k8s.pod.name, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "stats by (`k8s.pod.name`") {
+		t.Fatalf("expected translated backend field k8s.pod.name, got %q", receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -477,22 +443,16 @@ func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T
 }
 
 func TestDrilldown_IndexVolume_UsesDrilldownFieldByFallbackForTargetLabels(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		receivedField = r.URL.Query().Get("field")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hints": map[string]interface{}{},
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"method": "GET"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{4},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"_b","method":"GET"},"value":[2,"400"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -505,8 +465,8 @@ func TestDrilldown_IndexVolume_UsesDrilldownFieldByFallbackForTargetLabels(t *te
 	)
 	p.handleVolume(w, r)
 
-	if receivedField != "method" {
-		t.Fatalf("expected drilldown fieldBy fallback to drive target label mapping, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "stats by (method)") {
+		t.Fatalf("expected drilldown fieldBy fallback to drive target label mapping, got %q", receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -597,22 +557,29 @@ func TestDrilldown_IndexVolumeRange_UsesDrilldownFieldByFallbackForTargetLabels(
 }
 
 func TestDrilldown_IndexVolumeRange_TargetLabelsDetectedLevelUsesDerivedAggregation(t *testing.T) {
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hints":{},"hits":[` +
-			`{"fields":{"level":"info","app":"api-gateway"},"timestamps":["2026-04-04T17:18:10Z","2026-04-04T17:19:05Z"],"values":[1,1]},` +
-			`{"fields":{"level":"error","app":"api-gateway"},"timestamps":["2026-04-04T17:18:20Z"],"values":[1]}` +
-			`]}`))
+		w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","level":"info","app":"api-gateway"},"values":[[1775322480,"100"],[1775322540,"90"]]},` +
+			`{"metric":{"__name__":"_b","level":"error","app":"api-gateway"},"values":[[1775322480,"70"]]}` +
+			`]}}`))
 	}))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bservice_name%3D%22api-gateway%22%7D&start=2026-04-04T17:18:00Z&end=2026-04-04T17:20:00Z&step=60&targetLabels=detected_level", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bservice_name%3D%22api-gateway%22%7D&start=2026-04-04T17:08:00Z&end=2026-04-04T17:10:00Z&step=60&targetLabels=detected_level", nil)
 	p.handleVolumeRange(w, r)
+
+	if !strings.Contains(receivedQuery, "unpack_json") || !strings.Contains(receivedQuery, "sum_len(_msg)") {
+		t.Fatalf("detected_level volume must unpack levels and sum line bytes, got %q", receivedQuery)
+	}
 
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
@@ -626,120 +593,11 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsDetectedLevelUsesDerivedAggregat
 	for _, item := range result {
 		obj := item.(map[string]interface{})
 		metric := obj["metric"].(map[string]interface{})
-		got[metric["detected_level"].(string)] = obj["values"].([]interface{})
+		values, _ := obj["values"].([]interface{})
+		got[metric["detected_level"].(string)] = values
 	}
 	if len(got["info"]) == 0 || len(got["error"]) == 0 {
 		t.Fatalf("expected detected_level values for info and error, got %v", got)
-	}
-}
-
-func TestDrilldown_IndexVolume_DerivedTargetLabelsSendRepeatedFieldParams(t *testing.T) {
-	var receivedFields []string
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-		receivedFields = append([]string(nil), r.URL.Query()["field"]...)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hints":{},"hits":[` +
-			`{"fields":{"app":"api-gateway","level":"info"},"timestamps":["2026-04-04T17:18:49Z"],"values":[1]}` +
-			`]}`))
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bservice_name%3D~%60.%2B%60%7D&start=1&end=2&targetLabels=service_name", nil)
-	p.handleVolume(w, r)
-
-	if len(receivedFields) < 2 {
-		t.Fatalf("expected repeated field params for derived service_name grouping, got %v", receivedFields)
-	}
-	for _, field := range receivedFields {
-		if strings.Contains(field, ",") {
-			t.Fatalf("expected each field in its own query param, got combined field %q (%v)", field, receivedFields)
-		}
-	}
-	for _, want := range []string{"service_name", "service.name", "app"} {
-		if !contains(receivedFields, want) {
-			t.Fatalf("expected derived field %q in query params, got %v", want, receivedFields)
-		}
-	}
-}
-
-func TestDrilldown_IndexVolumeRange_MultipleTargetLabelsSendRepeatedFieldParams(t *testing.T) {
-	var receivedFields []string
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-		receivedFields = append([]string(nil), r.URL.Query()["field"]...)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hints":{},"hits":[` +
-			`{"fields":{"cluster":"us-east-1","namespace":"prod"},"timestamps":["2026-04-04T17:18:49Z"],"values":[1]}` +
-			`]}`))
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2&step=60&targetLabels=cluster,namespace", nil)
-	p.handleVolumeRange(w, r)
-
-	if len(receivedFields) != 2 {
-		t.Fatalf("expected two repeated field params for cluster+namespace grouping, got %v", receivedFields)
-	}
-	for _, field := range receivedFields {
-		if strings.Contains(field, ",") {
-			t.Fatalf("expected each field in its own query param, got combined field %q (%v)", field, receivedFields)
-		}
-	}
-	if !contains(receivedFields, "cluster") || !contains(receivedFields, "namespace") {
-		t.Fatalf("expected cluster and namespace field params, got %v", receivedFields)
-	}
-}
-
-func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_FillsFullRangeBuckets(t *testing.T) {
-	const (
-		start = "2026-04-01T00:00:00Z"
-		end   = "2026-04-08T00:00:00Z"
-	)
-
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hints":{},"hits":[` +
-			`{"fields":{"app":"api-gateway","level":"info"},"timestamps":["2026-04-01T00:00:00Z","2026-04-04T00:00:00Z","2026-04-08T00:00:00Z"],"values":[5,4,3]}` +
-			`]}`))
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bservice_name%3D%22api-gateway%22%7D&start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end)+"&step=3600&targetLabels=service_name", nil)
-	p.handleVolumeRange(w, r)
-
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	data := assertDataIsObject(t, resp)
-	result := assertResultIsArray(t, data)
-	if len(result) != 1 {
-		t.Fatalf("expected one service_name matrix series, got %v", result)
-	}
-	series := result[0].(map[string]interface{})
-	values := series["values"].([]interface{})
-	if len(values) != (7*24 + 1) {
-		t.Fatalf("expected full 7-day hourly bucket coverage (169 points), got %d", len(values))
-	}
-	first := values[0].([]interface{})
-	last := values[len(values)-1].([]interface{})
-	if first[1].(string) != "5" {
-		t.Fatalf("expected first bucket count=5, got %v", first)
-	}
-	if last[1].(string) != "3" {
-		t.Fatalf("expected last bucket count=3, got %v", last)
 	}
 }
 
@@ -2666,5 +2524,96 @@ func TestDrilldown_LogsTabCounter_SumCountOverTimeParserReturnsSingleSeries(t *t
 	}
 	if len(resp.Data.Result) > 0 && len(resp.Data.Result[0].Metric) != 0 {
 		t.Errorf("Drilldown logs counter: expected empty metric labels, got %v (causes label shown instead of count)", resp.Data.Result[0].Metric)
+	}
+}
+
+func TestDrilldown_IndexVolume_DerivedTargetLabelsGroupBySourceFields(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"_b","app":"api-gateway"},"value":[2,"10"]}]}}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bservice_name%3D~%60.%2B%60%7D&start=1&end=2&targetLabels=service_name", nil)
+	p.handleVolume(w, r)
+
+	for _, want := range []string{"service_name", "`service.name`", "app"} {
+		if !strings.Contains(receivedQuery[strings.Index(receivedQuery, "stats by ("):], want) {
+			t.Fatalf("expected derived field %q in the stats grouping, got %q", want, receivedQuery)
+		}
+	}
+}
+
+func TestDrilldown_IndexVolumeRange_MultipleTargetLabelsGroupByEachField(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","cluster":"us-east-1","namespace":"prod"},"values":[[0,"10"],[60,"20"]]}]}}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=120&step=60&targetLabels=cluster,namespace", nil)
+	p.handleVolumeRange(w, r)
+
+	if !strings.Contains(receivedQuery, "| filter cluster:* namespace:* | stats by (cluster, namespace) sum_len(_msg) as _b") {
+		t.Fatalf("expected cluster and namespace grouping, got %q", receivedQuery)
+	}
+}
+
+func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_SparseBucketsLikeLoki(t *testing.T) {
+	const (
+		start = "2026-04-01T00:00:00Z"
+		end   = "2026-04-08T00:00:00Z"
+	)
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","app":"api-gateway"},"values":[[1775001600,"500"],[1775260800,"400"],[1775602800,"300"]]}]}}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bservice_name%3D%22api-gateway%22%7D&start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end)+"&step=3600&targetLabels=service_name", nil)
+	p.handleVolumeRange(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one service_name matrix series, got %v", result)
+	}
+	series := result[0].(map[string]interface{})
+	values := series["values"].([]interface{})
+	// Loki only emits buckets that hold data; the last bucket is stamped at end.
+	want := []interface{}{
+		[]interface{}{1775005199.999, "500"},
+		[]interface{}{1775264399.999, "400"},
+		[]interface{}{float64(1775606400), "300"},
+	}
+	if fmt.Sprint(values) != fmt.Sprint(want) {
+		t.Fatalf("got %v, want %v", values, want)
 	}
 }

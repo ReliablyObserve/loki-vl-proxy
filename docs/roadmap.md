@@ -19,7 +19,7 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] L2 disk cache with gzip compression, write-back buffer (encryption via cloud provider)
 - [x] OTLP telemetry push (gzip/zstd compression, TLS)
 - [x] HTTP hardening (timeouts, body limits, security headers)
-- [x] Index stats, volume, volume_range via VL `/select/logsql/hits`
+- [x] Index stats via VL `/select/logsql/hits`; volume and volume_range in bytes via VL `sum_len(_msg)` stats
 - [x] Query fingerprinting + analytics (`/debug/queries`)
 - [x] Graceful HTTP server shutdown (SIGTERM/SIGINT)
 - [x] Grafana datasource config (maxLines, basic auth, backend timeout, TLS, header/cookie forwarding, optional listener mTLS)
