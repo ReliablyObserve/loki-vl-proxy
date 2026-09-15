@@ -542,8 +542,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 	}
 
 	// Record exactly one circuit-breaker outcome for the entire window fetch attempt.
-	// Transport failures (connection refused, EOF) count; HTTP errors do not.
-	if shouldRecordBreakerFailure(lastFetchErr) {
+	// Transport failures (connection refused, EOF) count; HTTP errors do not, and
+	// neither does a fetch aborted by its own context (a failing sibling window
+	// cancels the batch errgroup, which must not count as N backend failures).
+	if shouldRecordBreakerFailure(fetchCtx, lastFetchErr) {
 		p.breaker.RecordFailure()
 	}
 	return queryRangeWindowCacheEntry{}, lastFetchErr

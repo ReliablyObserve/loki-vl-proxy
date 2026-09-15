@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Internal cancellations such as budget limits or a failed sibling request no
+  longer open the circuit breaker for all clients.** When the proxy aborts its
+  own in-flight VictoriaLogs requests (a subquery evaluation budget, one window
+  of a windowed `query_range` failing and cancelling the rest), Go's HTTP client
+  reports each aborted request with the context's cancel cause instead of
+  `context canceled`. The breaker counted every one of them as a backend
+  transport failure, so one over-budget query sent 6-9 aborted calls into the
+  failure window, opened the global breaker, and answered unrelated requests
+  from every tenant with `503 circuit breaker open — backend unavailable` while
+  VictoriaLogs was healthy. A failed backend call now counts towards the breaker
+  only when its own request context is still live; connection refused, DNS, TLS
+  and connection-reset failures on a live request still open it. Aborted calls
+  are now recorded in upstream logs and `loki_vl_proxy_requests_total` as `499`
+  with `error.type=canceled` (`504` when their deadline expired) instead of
+  `502` `transport`.
+
 ## [1.77.0] - 2026-09-15
 
 ### Changed

@@ -708,7 +708,7 @@ func TestCompatCacheResponseAllowedAndBreakerFailure(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldRecordBreakerFailure(tc.err); got != tc.want {
+			if got := shouldRecordBreakerFailure(context.Background(), tc.err); got != tc.want {
 				t.Fatalf("shouldRecordBreakerFailure(%v)=%v want %v", tc.err, got, tc.want)
 			}
 		})

@@ -193,7 +193,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 	duration := time.Since(start)
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
-		mappedStatus := statusFromUpstreamErr(err)
+		mappedStatus := upstreamErrorStatus(r.Context(), err)
 		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		return nil, err
 	}
