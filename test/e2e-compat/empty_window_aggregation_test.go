@@ -128,16 +128,32 @@ func emptyWindowInstant(t *testing.T, base, query string, at time.Time) []float6
 // any comparison: Loki's instant count and VictoriaLogs' native count match.
 func waitForEmptyWindowFixture(t *testing.T, app, selector string, fixtureEnd time.Time, lines int) {
 	t.Helper()
+	waitForFixtureOnBothBackends(t, fmt.Sprintf("app:=%q", app), selector, fixtureEnd.Add(-5*time.Minute), fixtureEnd, lines)
+}
+
+// waitForFixtureOnBothBackends polls until Loki's instant count over
+// (rangeStart, rangeEnd] and VictoriaLogs' native count over [rangeStart, rangeEnd)
+// both equal lines. VictoriaLogs buffers freshly ingested rows per day partition
+// and makes them searchable only when that partition's buffer flushes (up to 1s
+// later, on a timer armed by the first rows that reached it), so a fixture that
+// spans a UTC midnight can be visible on one side of midnight but not the other
+// for a moment; comparing before this wait returns yields false parity diffs.
+func waitForFixtureOnBothBackends(t *testing.T, vlFilter, selector string, rangeStart, rangeEnd time.Time, lines int) {
+	t.Helper()
 	want := strconv.Itoa(lines)
+	lokiParams := url.Values{
+		"query": {fmt.Sprintf("sum(count_over_time(%s[%ds]))", selector, int64(rangeEnd.Sub(rangeStart)/time.Second))},
+		"time":  {strconv.FormatInt(rangeEnd.Unix(), 10)},
+	}
 	vlParams := url.Values{
-		"query": {fmt.Sprintf(`app:=%q | stats count() as n`, app)},
-		"time":  {strconv.FormatInt(fixtureEnd.Unix(), 10)},
-		"start": {strconv.FormatInt(fixtureEnd.Add(-5*time.Minute).Unix(), 10)},
-		"end":   {strconv.FormatInt(fixtureEnd.Unix(), 10)},
+		"query": {vlFilter + " | stats count() as n"},
+		"time":  {strconv.FormatInt(rangeEnd.Unix(), 10)},
+		"start": {strconv.FormatInt(rangeStart.Unix(), 10)},
+		"end":   {strconv.FormatInt(rangeEnd.Unix(), 10)},
 	}
 	deadline := time.Now().Add(3 * time.Minute)
 	for {
-		loki := emptyWindowInstantRaw(t, lokiURL+"/loki/api/v1/query?"+url.Values{"query": {"sum(count_over_time(" + selector + "[5m]))"}, "time": {strconv.FormatInt(fixtureEnd.Unix(), 10)}}.Encode())
+		loki := emptyWindowInstantRaw(t, lokiURL+"/loki/api/v1/query?"+lokiParams.Encode())
 		vl := emptyWindowInstantRaw(t, vlURL+"/select/logsql/stats_query?"+vlParams.Encode())
 		if loki == want && vl == want {
 			return
@@ -148,7 +164,7 @@ func waitForEmptyWindowFixture(t *testing.T, app, selector string, fixtureEnd ti
 		select {
 		case <-t.Context().Done():
 			t.Fatal(t.Context().Err())
-		case <-time.After(2 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }

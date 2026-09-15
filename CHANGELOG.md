@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make the Drilldown pattern parity e2e tests reliable when their two-hour
+  fixture spans a UTC midnight. VictoriaLogs makes freshly ingested rows
+  searchable per day partition when that partition's buffer flushes, so the
+  tests could compare Loki against only one side of midnight. Seeding now
+  force-flushes VictoriaLogs and waits until Loki and VictoriaLogs both report
+  the seeded line count before comparing; assertions are unchanged. A unit test
+  checks the patterns handler returns every step bucket across a UTC midnight.
+  No proxy behaviour changed.
+
 ## [1.69.2] - 2026-09-15
 
 ### Fixed

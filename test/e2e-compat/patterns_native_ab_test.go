@@ -248,9 +248,11 @@ func seedPatternMessagesToLokiAndVL(t *testing.T, serviceName string, start, end
 		linesInBatch = 0
 	}
 
+	totalLines := 0
 	for bucket := start; !bucket.After(end); bucket = bucket.Add(cfg.step) {
 		for _, message := range messagesForBucket(bucket) {
 			ts := bucket.UTC()
+			totalLines++
 			lokiValues = append(lokiValues, []string{fmt.Sprintf("%d", ts.UnixNano()), message})
 			vlBody.WriteString("{\"_time\":\"")
 			vlBody.WriteString(ts.Format(time.RFC3339Nano))
@@ -268,6 +270,20 @@ func seedPatternMessagesToLokiAndVL(t *testing.T, serviceName string, start, end
 		}
 	}
 	flush()
+
+	// Both backends must hold the whole fixture before the pattern comparison:
+	// VictoriaLogs' per-day-partition ingest buffers otherwise let a window that
+	// spans UTC midnight surface only one day's buckets for up to a second,
+	// which Loki's in-memory pattern ingester never does.
+	forceVLFlush(t)
+	waitForFixtureOnBothBackends(
+		t,
+		fmt.Sprintf("service_name:=%q", serviceName),
+		fmt.Sprintf(`{service_name=%q}`, serviceName),
+		start.Add(-time.Second),
+		end.Add(time.Second),
+		totalLines,
+	)
 }
 
 func waitForPatternsViaGrafanaDatasource(t *testing.T, dsUID, query string, start, end time.Time, step time.Duration, minPatterns int) []densePatternEntry {
