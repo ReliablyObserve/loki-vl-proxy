@@ -85,6 +85,7 @@ type proxyRuntimeConfig struct {
 	tenantLimitsJSON                    string
 	maxLines                            int
 	rangeMetricRowLimit                 int
+	orderedJSONMetricMaxBytes           int64
 	backendTimeout                      time.Duration
 	cbFailThreshold                     int
 	cbOpenDuration                      time.Duration
@@ -478,6 +479,7 @@ func run(
 
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
+	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
@@ -758,6 +760,7 @@ func run(
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
 			maxLines:                            *maxLines,
 			rangeMetricRowLimit:                 *rangeMetricRowLimit,
+			orderedJSONMetricMaxBytes:           *orderedJSONMetricMaxBytes,
 			backendTimeout:                      *backendTimeout,
 			cbFailThreshold:                     *cbFailThreshold,
 			cbOpenDuration:                      *cbOpenDuration,
@@ -1931,6 +1934,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TenantLimits:                       tenantLimits,
 		MaxLines:                           cfg.maxLines,
 		RangeMetricRowLimit:                cfg.rangeMetricRowLimit,
+		OrderedJSONMetricMaxBytes:          cfg.orderedJSONMetricMaxBytes,
 		BackendTimeout:                     cfg.backendTimeout,
 		CBFailThreshold:                    cfg.cbFailThreshold,
 		CBOpenDuration:                     cfg.cbOpenDuration,
