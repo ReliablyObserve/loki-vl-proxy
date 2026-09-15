@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grafana Explore's logs volume works for `| json` queries with label filters.**
+  Adding a label filter in the query builder, for example
+  `{env="production"} | json | status=`200``, made the logs volume query
+  `sum by (level, detected_level) (count_over_time({...} | json | status=`200` | drop __error__ [...]))`
+  scan raw rows and fail with "manual range metric row limit exceeded
+  (1000000)" from about 6 hours of busy data. String label filters (`=`, `!=`,
+  `=~`, `!~`) on plain keys after `| json` or `| logfmt` now run in the
+  VictoriaLogs stats query after `unpack_json`/`unpack_logfmt`, with regexps
+  fully anchored as in Loki. The check for lines the two parsers read
+  differently now flags a field only on lines that contain that field's key;
+  before, a line with any other unpacked key but no `level` sent the query to
+  raw rows. The check runs beside the stats query, and a window found free of
+  such lines is remembered for five minutes (excluding the last five minutes),
+  so a refreshed or widened range checks only the uncovered part.
+
 ### Changed
 
 - **Pinned Loki 3.7.7, Grafana 13.2.1, Logs Drilldown 2.5.2 and VictoriaLogs
