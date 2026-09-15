@@ -23,11 +23,33 @@ type slidingLiveLine struct {
 type slidingLiveFixture struct {
 	app   string
 	lines []slidingLiveLine
+	// service names the stream with a service_name label and stores
+	// detected_level=unknown on both backends (Loki structured metadata, a
+	// VictoriaLogs stream field), so bare range metrics, which keep every
+	// label, have identical label sets. Otherwise the stream label is app.
+	service bool
+}
+
+// streamLabels returns the fixture's stream labels as pushed to Loki.
+func (fx slidingLiveFixture) streamLabels() map[string]string {
+	if fx.service {
+		return map[string]string{"service_name": fx.app}
+	}
+	return map[string]string{"app": fx.app}
+}
+
+// selector returns the LogQL stream selector for the fixture.
+func (fx slidingLiveFixture) selector() string {
+	for name, value := range fx.streamLabels() {
+		return `{` + name + `="` + value + `"}`
+	}
+	return ""
 }
 
 type slidingLiveFixtures struct {
-	gap, edge slidingLiveFixture
-	hour0, s0 time.Time
+	gap, edge                        slidingLiveFixture
+	bareLogfmt, bareJSON, bareUnwrap slidingLiveFixture
+	hour0, s0                        time.Time
 }
 
 var (
@@ -35,17 +57,20 @@ var (
 	slidingFixtures     *slidingLiveFixtures
 )
 
-// ensureSlidingFixtures ingests the gap and edge fixtures once per test binary,
-// so both tests share one flush and one readiness poll.
+// ensureSlidingFixtures ingests the sliding fixtures once per test binary,
+// so every test shares one flush and one readiness poll.
 func ensureSlidingFixtures(t *testing.T) *slidingLiveFixtures {
 	t.Helper()
 	slidingFixturesOnce.Do(func() {
 		now := time.Now()
 		fx := &slidingLiveFixtures{
-			gap:   slidingLiveFixture{app: fmt.Sprintf("sliding-gap-%d", now.UnixNano())},
-			edge:  slidingLiveFixture{app: fmt.Sprintf("sliding-edge-%d", now.UnixNano())},
-			hour0: now.Add(-20 * time.Hour).Truncate(time.Hour),
-			s0:    now.Add(-10 * time.Hour).Truncate(time.Hour),
+			gap:        slidingLiveFixture{app: fmt.Sprintf("sliding-gap-%d", now.UnixNano())},
+			edge:       slidingLiveFixture{app: fmt.Sprintf("sliding-edge-%d", now.UnixNano())},
+			bareLogfmt: slidingLiveFixture{app: fmt.Sprintf("sliding-bare-logfmt-%d", now.UnixNano()), service: true},
+			bareJSON:   slidingLiveFixture{app: fmt.Sprintf("sliding-bare-json-%d", now.UnixNano()), service: true},
+			bareUnwrap: slidingLiveFixture{app: fmt.Sprintf("sliding-bare-unwrap-%d", now.UnixNano()), service: true},
+			hour0:      now.Add(-20 * time.Hour).Truncate(time.Hour),
+			s0:         now.Add(-10 * time.Hour).Truncate(time.Hour),
 		}
 		for _, h := range []int{0, 5} {
 			for i := 0; i < 60; i++ {
@@ -54,9 +79,17 @@ func ensureSlidingFixtures(t *testing.T) *slidingLiveFixtures {
 			}
 		}
 		for i := 0; i < 180; i++ { // one line every 10s for 30 minutes, on whole 10s marks
-			fx.edge.lines = append(fx.edge.lines, slidingLiveLine{ts: fx.s0.Add(time.Duration(i) * 10 * time.Second), msg: fmt.Sprintf("edge line %03d", i)})
+			ts := fx.s0.Add(time.Duration(i) * 10 * time.Second)
+			fx.edge.lines = append(fx.edge.lines, slidingLiveLine{ts: ts, msg: fmt.Sprintf("edge line %03d", i)})
+			// Bare parser metrics keep parsed labels, so every line parses to the
+			// same label set while line sizes vary: a logfmt key without a value
+			// adds no label, and JSON whitespace adds no field.
+			pad := strings.Repeat("x", i%4)
+			fx.bareLogfmt.lines = append(fx.bareLogfmt.lines, slidingLiveLine{ts: ts, msg: "tick" + pad})
+			fx.bareJSON.lines = append(fx.bareJSON.lines, slidingLiveLine{ts: ts, msg: `{` + strings.Repeat(" ", i%4) + `"msg":"tick"}`})
+			fx.bareUnwrap.lines = append(fx.bareUnwrap.lines, slidingLiveLine{ts: ts, msg: fmt.Sprintf("n=%d", i%7)})
 		}
-		ingestSlidingFixtures(t, fx.gap, fx.edge)
+		ingestSlidingFixtures(t, fx.gap, fx.edge, fx.bareLogfmt, fx.bareJSON, fx.bareUnwrap)
 		slidingFixtures = fx
 	})
 	if slidingFixtures == nil {
@@ -73,16 +106,26 @@ func ingestSlidingFixtures(t *testing.T, fixtures ...slidingLiveFixture) {
 	var vlRows strings.Builder
 	streams := make([]any, 0, len(fixtures))
 	for _, fx := range fixtures {
-		values := make([][]string, 0, len(fx.lines))
+		values := make([][]any, 0, len(fx.lines))
 		for _, line := range fx.lines {
-			row, _ := json.Marshal(map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "app": fx.app})
+			fields := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg}
+			for name, value := range fx.streamLabels() {
+				fields[name] = value
+			}
+			value := []any{strconv.FormatInt(line.ts.UnixNano(), 10), line.msg}
+			if fx.service {
+				fields["detected_level"] = "unknown"
+				value = append(value, map[string]string{"detected_level": "unknown"})
+			}
+			row, _ := json.Marshal(fields)
 			vlRows.Write(row)
 			vlRows.WriteByte('\n')
-			values = append(values, []string{strconv.FormatInt(line.ts.UnixNano(), 10), line.msg})
+			values = append(values, value)
 		}
-		streams = append(streams, map[string]any{"stream": map[string]string{"app": fx.app}, "values": values})
+		streams = append(streams, map[string]any{"stream": fx.streamLabels(), "values": values})
 	}
-	status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=app", vlRows.String(), map[string]string{"Content-Type": "application/stream+json"})
+	// Rows without a listed field leave it out of their stream.
+	status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=app,service_name,detected_level", vlRows.String(), map[string]string{"Content-Type": "application/stream+json"})
 	if status != http.StatusOK {
 		t.Fatalf("VL ingest: %d %s", status, body)
 	}
@@ -122,7 +165,7 @@ func ingestSlidingFixtures(t *testing.T, fixtures ...slidingLiveFixture) {
 func slidingFixtureCounts(t *testing.T, fx slidingLiveFixture) (lokiCount, vlCount int) {
 	t.Helper()
 	first, last := fx.lines[0].ts, fx.lines[len(fx.lines)-1].ts
-	selector := `{app="` + fx.app + `"}`
+	selector := fx.selector()
 	vlParams := url.Values{"query": {selector}, "start": {first.UTC().Format(time.RFC3339Nano)}, "end": {last.Add(time.Second).UTC().Format(time.RFC3339Nano)}, "limit": {"100000"}}
 	status, body := hardeningRequest(t, http.MethodGet, vlURL+"/select/logsql/query?"+vlParams.Encode(), "", nil)
 	if status != http.StatusOK {

@@ -1183,34 +1183,34 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 }
 
 // fetchBareParserMetricSeriesViaHits is the fast path for count_over_time / rate
-// sliding windows. Instead of fetching raw log entries, it calls VL's /select/logsql/hits
-// endpoint which returns pre-aggregated counts per bucket — no log body transfer.
+// sliding windows when stream label fields are declared. Instead of fetching raw
+// log entries, it calls VL's /select/logsql/hits endpoint, which returns line
+// counts per bucket grouped by the declared fields — no log body transfer.
+// Buckets use the anchored grid of slidingStatsBucket (hits accepts the same
+// start, end, step and offset args as stats_query_range) and are labelled by
+// their left edge, ready for buildHitsRangeMetricMatrix. ok is false when no
+// bucket grid holds every evaluation window edge.
 //
 // evalStart, evalEnd, stepNs are in nanoseconds.
 func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 	ctx context.Context,
 	spec bareParserMetricCompatSpec,
 	evalStart, evalEnd, stepNs int64,
-) ([]bareParserMetricSeries, error) {
+) (series map[string]manualSeriesSamples, ok bool, err error) {
+	bucket, ok := p.slidingStatsBucket(time.Unix(0, evalStart), time.Duration(stepNs), spec.rangeWindow)
+	if !ok {
+		return nil, false, nil
+	}
 	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
-	// Fetch one extra range-window of history before evalStart so the first
-	// sliding window evaluation has enough bucketed data.
-	fetchStart := evalStart - spec.rangeWindow.Nanoseconds()
-
-	stepSecs := stepNs / int64(time.Second)
-	if stepSecs < 1 {
-		stepSecs = 1
-	}
-
+	// The first evaluation window starts one range before evalStart.
+	fetchStart := time.Unix(0, evalStart).Add(-spec.rangeWindow)
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
-	params.Set("start", nanosToVLTimestamp(fetchStart))
-	params.Set("end", nanosToVLTimestamp(evalEnd))
-	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
+	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	// Group by declared stream label fields so we get per-stream series.
 	p.configMu.RLock()
@@ -1223,22 +1223,21 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 
 	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("hits: status", resp.StatusCode, body)
+		return nil, true, p.redactedBackendStatusError("hits: status", resp.StatusCode, body)
 	}
 
 	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	hits := parseHits(body)
 
-	buckets := make(map[string]map[int64]int64, len(hits.Hits))
-	labelSets := make(map[string]map[string]string, len(hits.Hits))
+	series = make(map[string]manualSeriesSamples, len(hits.Hits))
 	for _, hit := range hits.Hits {
 		// Translate VL field names to Loki label names.
 		translated := make(map[string]string, len(hit.Fields))
@@ -1246,231 +1245,78 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 			translated[lt.ToLoki(k)] = v
 		}
 		key := canonicalLabelsKey(translated)
-		if _, ok := buckets[key]; !ok {
-			buckets[key] = make(map[int64]int64, len(hit.Timestamps))
-			labelSets[key] = translated
+		entry, seen := series[key]
+		if !seen {
+			entry = manualSeriesSamples{Metric: translated, Samples: make([]rangeMetricSample, 0, len(hit.Timestamps))}
 		}
 		for i, ts := range hit.Timestamps {
-			tsNanos, ok := parseFlexibleUnixNanos(string(ts))
-			if !ok || i >= len(hit.Values) {
+			tsNanos, tsOK := parseFlexibleUnixNanos(string(ts))
+			if !tsOK || i >= len(hit.Values) || hit.Values[i] == 0 {
 				continue
 			}
-			buckets[key][tsNanos] += int64(hit.Values[i])
+			entry.Samples = append(entry.Samples, rangeMetricSample{ts: snapSlidingBucketNanos(tsNanos, fetchStart, bucket), value: float64(hit.Values[i])})
 		}
+		series[key] = entry
 	}
-
-	isRate := spec.funcName == "rate"
-	return buildSlidingWindowSumsFromHits(buckets, labelSets, evalStart, evalEnd, stepNs, spec.rangeWindow.Nanoseconds(), isRate), nil
+	// Keep the busiest series, as the stats bucket path does.
+	return capSeriesByTotalCount(series, p.resolvedMaxStatsQuerySeries()), true, nil
 }
 
-// fetchBareParserCountBytesViaStats is the stats-based fast path for
-// count_over_time, rate, bytes_over_time, and bytes_rate with any window size
-// (sliding or tumbling). It calls VL's stats_query_range with per-step
-// aggregations (count() or sum_len(_msg)) grouped by _stream, then returns the
-// per-step bucket values in manualSeriesSamples format for use with
-// buildManualRangeMetricMatrix. This avoids the 1M-row log fetch limit that
-// causes memory exhaustion on long time ranges.
+// fetchBareParserStatsBuckets fetches per-stream stats_query_range buckets for a
+// bare parser range metric, avoiding the raw log fetch and its row limit on long
+// ranges. statsAggFunc is the stats clause appended after "| stats by (_stream)",
+// e.g. "count() as c", "sum_len(_msg) as c, count() as __sample_count" (byte
+// sums with line presence) or "max(duration) as c". Buckets use the anchored grid
+// of slidingStatsBucket and are labelled by their left edge, so the Loki window
+// (t-range, t] is the union of the buckets labelled in [t-range, t). Series carry
+// the stream labels. ok is false when no bucket grid holds every evaluation
+// window edge; callers then use the raw evaluator.
 //
 // evalStart, evalEnd, stepNs are in nanoseconds.
-// Returns the aggFunc name to pass to buildManualRangeMetricMatrix:
-//   - count_over_time → "sum"
-//   - rate            → "bytes_rate" (sum/windowSecs matches Loki rate semantics)
-//   - bytes_over_time → "sum"
-//   - bytes_rate      → "bytes_rate"
-func (p *Proxy) fetchBareParserCountBytesViaStats(
-	ctx context.Context,
-	spec bareParserMetricCompatSpec,
-	evalStart, evalEnd, stepNs int64,
-) (series map[string]manualSeriesSamples, aggFunc string, err error) {
-	var statsFunc string
-	switch spec.funcName {
-	case "count_over_time", "rate":
-		statsFunc = "count() as c"
-		if spec.funcName == "count_over_time" {
-			aggFunc = "sum"
-		} else {
-			aggFunc = "bytes_rate"
-		}
-	case "bytes_over_time", "bytes_rate":
-		statsFunc = "sum_len(_msg) as c"
-		if spec.funcName == "bytes_over_time" {
-			aggFunc = "sum"
-		} else {
-			aggFunc = "bytes_rate"
-		}
-	default:
-		return nil, "", fmt.Errorf("unsupported function for stats path: %s", spec.funcName)
-	}
-
-	logsqlQuery, translateErr := p.translateQueryWithContext(ctx, spec.baseQuery)
-	if translateErr != nil {
-		return nil, "", translateErr
-	}
-
-	// Fetch one extra range-window of history before evalStart so the first
-	// sliding window evaluation has enough data for client-side aggregation.
-	fetchStartNs := evalStart - spec.rangeWindow.Nanoseconds()
-	stepSecs := stepNs / int64(time.Second)
-	if stepSecs < 1 {
-		stepSecs = 1
-	}
-
-	p.configMu.RLock()
-	lt := p.labelTranslator
-	p.configMu.RUnlock()
-
-	params := url.Values{}
-	params.Set("query", logsqlQuery+" | stats by (_stream) "+statsFunc)
-	params.Set("start", nanosToVLTimestamp(fetchStartNs))
-	params.Set("end", nanosToVLTimestamp(evalEnd))
-	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
-
-	resp, vlErr := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
-	if vlErr != nil {
-		return nil, "", vlErr
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, "", p.redactedBackendStatusError("stats_query_range", resp.StatusCode, body)
-	}
-
-	const maxBytes = 64 << 20
-	body, readErr := readBodyLimited(resp.Body, maxBytes)
-	if readErr != nil {
-		return nil, "", readErr
-	}
-
-	v, parseErr := fj.ParseBytes(body)
-	if parseErr != nil {
-		return nil, "", fmt.Errorf("parse stats_query_range: %w", parseErr)
-	}
-	if status := string(v.GetStringBytes("status")); status != "success" {
-		return nil, "", fmt.Errorf("stats_query_range non-success status: %s", status)
-	}
-
-	results := v.GetArray("data", "result")
-	// Cap to the busiest maxStatsQuerySeries by total count to bound response
-	// size for high-cardinality by() clauses (churn-heavy pod names, *_id where
-	// each value appears 1-2× in the window). Mirrors the identical top-N clamp
-	// in collectRangeMetricHits — the sibling stats path. Ranking by count
-	// (not VL's alphabetical order) keeps the signal, not the noise floor.
-	// Without this the detected_level="error" labels-page query returned ~142k
-	// sparse single-point series at 24h, which Drilldown cannot render.
-	// Default 500 matches maxDrilldownSeries and Loki's default max_query_series.
-	// See memory [[drilldown-high-card-fields-known-limit]].
-	results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
-	seriesMap := make(map[string]manualSeriesSamples, len(results))
-	streamLabelCache := make(map[string]map[string]string, len(results))
-
-	for _, res := range results {
-		metricObj := res.GetObject("metric")
-		streamStr := string(metricObj.Get("_stream").GetStringBytes())
-
-		baseLabels, ok := streamLabelCache[streamStr]
-		if !ok {
-			baseLabels = parseStreamLabels(streamStr)
-			streamLabelCache[streamStr] = baseLabels
-		}
-
-		metric := make(map[string]string, len(baseLabels))
-		for k, lv := range baseLabels {
-			if lt != nil {
-				metric[lt.ToLoki(k)] = lv
-			} else {
-				metric[k] = lv
-			}
-		}
-		ensureDetectedLevel(metric)
-		ensureSyntheticServiceName(metric)
-
-		seriesKey := canonicalLabelsKey(metric)
-		values := res.GetArray("values")
-		samples := make([]rangeMetricSample, 0, len(values))
-		for _, pair := range values {
-			arr := pair.GetArray()
-			if len(arr) < 2 {
-				continue
-			}
-			tsUnix, tsErr := arr[0].Int64()
-			if tsErr != nil {
-				continue
-			}
-			valStr := string(arr[1].GetStringBytes())
-			val, valErr := strconv.ParseFloat(valStr, 64)
-			if valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
-				continue
-			}
-			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
-		}
-
-		if existing, ok := seriesMap[seriesKey]; ok {
-			existing.Samples = append(existing.Samples, samples...)
-			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
-			seriesMap[seriesKey] = existing
-		} else {
-			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
-		}
-	}
-	return seriesMap, aggFunc, nil
-}
-
-// fetchBareParserUnwrapViaStats fetches pre-aggregated per-step samples from
-// VL's stats_query_range endpoint for unwrap-based metric functions.
-// statsAggFunc is the VL stats expression appended to the query (e.g. "sum(duration) as c").
-// The returned map is keyed by canonical Loki label string and ready for use with
-// buildManualRangeMetricMatrix — the caller supplies the matching aggFunc name
-// ("sum", "max", "min", "first", or "last").
-func (p *Proxy) fetchBareParserUnwrapViaStats(
+func (p *Proxy) fetchBareParserStatsBuckets(
 	ctx context.Context,
 	spec bareParserMetricCompatSpec,
 	statsAggFunc string,
-	evalStartNs, evalEndNs, stepNs int64,
-) (map[string]manualSeriesSamples, error) {
+	evalStart, evalEnd, stepNs int64,
+) (seriesMap map[string]manualSeriesSamples, ok bool, err error) {
+	bucket, ok := p.slidingStatsBucket(time.Unix(0, evalStart), time.Duration(stepNs), spec.rangeWindow)
+	if !ok {
+		return nil, false, nil
+	}
 	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
-	// Shift start back one range window so the first evaluation point can
-	// accumulate enough bucketed history for the sliding window.
-	fetchStartNs := evalStartNs - spec.rangeWindow.Nanoseconds()
-
-	stepSecs := stepNs / int64(time.Second)
-	if stepSecs < 1 {
-		stepSecs = 1
-	}
-
+	// The first evaluation window starts one range before evalStart.
+	fetchStart := time.Unix(0, evalStart).Add(-spec.rangeWindow)
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | stats by (_stream) "+statsAggFunc)
-	params.Set("start", nanosToVLTimestamp(fetchStartNs))
-	params.Set("end", nanosToVLTimestamp(evalEndNs))
-	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
+	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("stats_query_range", resp.StatusCode, body)
+		return nil, true, p.redactedBackendStatusError("stats_query_range", resp.StatusCode, body)
 	}
 
-	const maxBytes = 64 << 20 // 64 MB
+	const maxBytes = 64 << 20
 	body, err := readBodyLimited(resp.Body, maxBytes)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
-	v, parseErr := fj.ParseBytes(body)
-	if parseErr != nil {
-		return nil, fmt.Errorf("parse stats_query_range: %w", parseErr)
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return nil, true, fmt.Errorf("parse stats_query_range: %w", err)
 	}
 	if status := string(v.GetStringBytes("status")); status != "success" {
-		return nil, fmt.Errorf("stats_query_range non-success status: %s", status)
+		return nil, true, fmt.Errorf("stats_query_range non-success status: %s", status)
 	}
 
 	p.configMu.RLock()
@@ -1478,15 +1324,25 @@ func (p *Proxy) fetchBareParserUnwrapViaStats(
 	p.configMu.RUnlock()
 
 	results := v.GetArray("data", "result")
-	seriesMap := make(map[string]manualSeriesSamples, len(results))
+	// Cap to the busiest maxStatsQuerySeries by total value to bound response
+	// size for high-cardinality streams (churn-heavy pod names), mirroring the
+	// clamp in collectRangeMetricHits. Ranking by value (not VL's alphabetical
+	// order) keeps the signal, not the noise floor. Default 500 matches
+	// maxDrilldownSeries and Loki's default max_query_series. Byte sums with
+	// line presence are capped as complete logical series below.
+	withPresence := strings.Contains(statsAggFunc, "as __sample_count")
+	if !withPresence {
+		results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
+	}
+	seriesMap = make(map[string]manualSeriesSamples, len(results))
 	streamLabelCache := make(map[string]map[string]string, len(results))
 
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
 		streamStr := string(metricObj.Get("_stream").GetStringBytes())
 
-		baseLabels, ok := streamLabelCache[streamStr]
-		if !ok {
+		baseLabels, cached := streamLabelCache[streamStr]
+		if !cached {
 			baseLabels = parseStreamLabels(streamStr)
 			streamLabelCache[streamStr] = baseLabels
 		}
@@ -1503,35 +1359,37 @@ func (p *Proxy) fetchBareParserUnwrapViaStats(
 		ensureSyntheticServiceName(metric)
 
 		seriesKey := canonicalLabelsKey(metric)
-
+		entry := seriesMap[seriesKey]
+		entry.Metric = metric
+		merged := len(entry.Samples) > 0
 		values := res.GetArray("values")
-		samples := make([]rangeMetricSample, 0, len(values))
+		if withPresence && string(metricObj.Get("__name__").GetStringBytes()) == "__sample_count" {
+			addPresentBuckets(&entry, values, fetchStart, bucket)
+			seriesMap[seriesKey] = entry
+			continue
+		}
 		for _, pair := range values {
 			arr := pair.GetArray()
 			if len(arr) < 2 {
 				continue
 			}
-			tsUnix, tsErr := arr[0].Int64()
-			if tsErr != nil {
+			ts, tsOK := snapSlidingBucketTimestamp(arr[0], fetchStart, bucket)
+			val, valErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+			if !tsOK || valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
 				continue
 			}
-			valStr := string(arr[1].GetStringBytes())
-			val, valErr := strconv.ParseFloat(valStr, 64)
-			if valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
-				continue
-			}
-			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
+			entry.Samples = append(entry.Samples, rangeMetricSample{ts: ts, value: val})
 		}
-
-		if existing, ok := seriesMap[seriesKey]; ok {
-			existing.Samples = append(existing.Samples, samples...)
-			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
-			seriesMap[seriesKey] = existing
-		} else {
-			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
+		if merged {
+			// Streams that translate to one label set: keep time order for first/last.
+			sort.Slice(entry.Samples, func(i, j int) bool { return entry.Samples[i].ts < entry.Samples[j].ts })
 		}
+		seriesMap[seriesKey] = entry
 	}
-	return seriesMap, nil
+	if withPresence {
+		seriesMap = capSeriesByTotalCount(seriesMap, p.resolvedMaxStatsQuerySeries())
+	}
+	return seriesMap, true, nil
 }
 
 func bareParserMetricWindowValue(funcName string, window []bareParserMetricSample, spec bareParserMetricCompatSpec) float64 {
@@ -2022,85 +1880,7 @@ func stripParserStages(baseQuery string) string {
 	return strings.TrimSpace(result)
 }
 
-// proxyBareParserMetricViaStats routes bare parser metric queries (e.g.
-// rate({app} | json [5m])) to native VL stats_query_range for the tumbling-window
-// case (range==step). Loki groups these by stream labels only (not parsed fields),
-// and VL native stats matches that behaviour. Returns true when the fast path handled
-// the request.
-func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Request, reqStart time.Time, originalQuery string, spec bareParserMetricCompatSpec) bool {
-	window := "[" + spec.rangeWindowExpr + "]"
-	switch spec.funcName {
-	case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
-	default:
-		return false
-	}
-	reconstructed := spec.funcName + "(" + spec.baseQuery + " " + window + ")"
-
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), reconstructed)
-	if err != nil || !isStatsQuery(logsqlQuery) {
-		return false
-	}
-	// Range == step: Loki's sample at T covers (T-W, T] while VL's bucket
-	// labelled T covers [T, T+W). Fetch from start-W and relabel every bucket to
-	// its Loki evaluation timestamp (relabelTumblingStatsQueryRange).
-	origStartNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
-	var effectiveR *http.Request
-	if hasStart && spec.rangeWindow > 0 {
-		shiftedR := r.Clone(r.Context())
-		_ = shiftedR.ParseForm()
-		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-spec.rangeWindow.Nanoseconds()))
-		effectiveR = shiftedR
-	} else {
-		effectiveR = r
-	}
-
-	buf := &bufferedResponseWriter{}
-	p.proxyStatsQueryRangeDirect(buf, effectiveR, logsqlQuery)
-
-	body := buf.body
-	if hasStart && spec.rangeWindow > 0 {
-		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
-		body = relabelTumblingStatsQueryRange(body, origStartNs, endNs, spec.rangeWindow.Nanoseconds())
-	}
-
-	code := buf.code
-	if code == 0 {
-		code = http.StatusOK
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if code != http.StatusOK {
-		w.WriteHeader(code)
-	}
-	_, _ = w.Write(body)
-
-	elapsed := time.Since(reqStart)
-	p.metrics.RecordRequest("query_range", code, elapsed)
-	p.queryTracker.Record("query_range", originalQuery, elapsed, code >= 400)
-	return true
-}
-
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
-	// Tumbling-window fast path: for count-like functions with no post-parser pipeline
-	// stages, no unwrap, and range==step, route to native VL stats_query_range.
-	//
-	// VL counts all log lines including those that fail parsing (e.g. non-JSON for
-	// | json), while Loki excludes such lines from metric aggregation. In practice
-	// the difference is negligible and far preferable to the OOM failures that occur
-	// when long-range queries (e.g. 24h with $__auto range) fall back to the 1M-limit
-	// raw log fetch path. Queries with post-parser filter stages (e.g. | status >= 400)
-	// bypass this fast path because their filter semantics cannot be replicated by VL
-	// stats alone (hasPostParserPipeStage check below).
-	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
-	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && (!hasPostParserPipeStage(spec.baseQuery) || hasDropErrorOnlyPostParserStage(spec.baseQuery)) {
-		switch spec.funcName {
-		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
-			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {
-				return
-			}
-		}
-	}
-
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
@@ -2120,61 +1900,26 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Sliding-window fast path: for count_over_time / rate without post-parser stages
-	// and with configured stream label fields, use the hits endpoint (pre-aggregated
-	// counts, no log body transfer). Falls back to stats path on any error.
-	p.configMu.RLock()
-	hasDeclaredFields := len(p.declaredLabelFields) > 0
-	p.configMu.RUnlock()
-	if spec.unwrapField == "" && !hasPostParserPipeStage(spec.baseQuery) && hasDeclaredFields {
-		switch spec.funcName {
-		case "rate", "count_over_time":
-			if spec.rangeWindow > 0 && spec.rangeWindow.Nanoseconds() > stepNanos {
-				series, hitsErr := p.fetchBareParserMetricSeriesViaHits(
-					r.Context(), spec,
-					startNanos, endNanos, stepNanos,
-				)
-				if hitsErr == nil {
-					p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, startNanos, endNanos, stepNanos, spec, true)
-					return
-				}
-				slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to stats",
-					"err", hitsErr, "query", originalQuery)
-			}
+	// Bucket fast path for count_over_time, rate, bytes_over_time and bytes_rate
+	// with range >= step and no post-parser filter stages (range == step also
+	// accepts a lone "| drop __error__" stage). Buckets avoid the 1M-row raw log
+	// fetch that exhausts memory on long ranges (e.g. 24h with $__auto range).
+	//
+	// VL counts all log lines including those that fail parsing (e.g. non-JSON for
+	// | json), while Loki excludes such lines from metric aggregation. In practice
+	// the difference is negligible and far preferable to the OOM failures of the
+	// raw fetch. Queries with post-parser filter stages (e.g. | status >= 400)
+	// bypass this fast path because their filter semantics cannot be replicated by
+	// VL stats alone.
+	rangeNanos := spec.rangeWindow.Nanoseconds()
+	if spec.unwrapField == "" && isLogRangeWindowFunc(spec.funcName) && rangeNanos >= stepNanos &&
+		(!hasPostParserPipeStage(spec.baseQuery) || (rangeNanos == stepNanos && hasDropErrorOnlyPostParserStage(spec.baseQuery))) {
+		if p.tryBareParserLogRangeBuckets(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
+			return
 		}
 	}
 
-	// Sliding-window stats path: for count_over_time, rate, bytes_over_time, bytes_rate
-	// without post-parser filter stages and with a true sliding window (range > step).
-	// Uses VL stats_query_range for O(buckets) aggregation — avoids the 1M-row limit
-	// that causes memory exhaustion on long time ranges (e.g. 24h with a small step).
-	if spec.unwrapField == "" && !hasPostParserPipeStage(spec.baseQuery) && spec.rangeWindow > 0 && spec.rangeWindow.Nanoseconds() > stepNanos {
-		switch spec.funcName {
-		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
-			statsSeries, statsAggFn, statsErr := p.fetchBareParserCountBytesViaStats(r.Context(), spec, startNanos, endNanos, stepNanos)
-			if statsErr == nil {
-				startT := time.Unix(0, startNanos)
-				endT := time.Unix(0, endNanos)
-				stepD := time.Duration(stepNanos)
-				// statsSeries already capped to top-N in fetchBareParserCountBytesViaStats; pass 0 to avoid double-capping.
-				result, err := buildManualRangeMetricMatrixContext(r.Context(), statsAggFn, 0, statsSeries, startT, endT, stepD, spec.rangeWindow, 0)
-				if err != nil {
-					p.writeError(w, statusFromUpstreamErr(err), err.Error())
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
-				elapsed := time.Since(start)
-				p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
-				p.queryTracker.Record("query_range", originalQuery, elapsed, false)
-				return
-			}
-			slog.WarnContext(r.Context(), "stats sliding-window path failed, falling back to full-fetch",
-				"err", statsErr, "query", originalQuery)
-		}
-	}
-
-	// Stats fast path for unwrap aggregations that compose correctly from per-step
+	// Stats fast path for unwrap aggregations that compose correctly from
 	// buckets: sum, max, min, first, last. Skip when unwrapConv is set
 	// (duration()/bytes()): VL operates on raw strings, not converted floats.
 	if p.tryUnwrapViaStatsFastPath(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
@@ -2192,6 +1937,51 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		return
 	}
 	p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, startNanos, endNanos, stepNanos, spec, true)
+}
+
+// tryBareParserLogRangeBuckets answers a bare parser log-line range metric from
+// anchored buckets: /hits for sliding count_over_time and rate when stream label
+// fields are declared, otherwise stats_query_range by stream. Returns false,
+// without writing, when no bucket grid holds every window edge or VL fails, so
+// the caller falls through to the raw evaluator.
+func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec, startNanos, endNanos, stepNanos int64) bool {
+	var (
+		series map[string]manualSeriesSamples
+		ok     bool
+		err    error
+	)
+	p.configMu.RLock()
+	hasDeclaredFields := len(p.declaredLabelFields) > 0
+	p.configMu.RUnlock()
+	if hasDeclaredFields && (spec.funcName == "rate" || spec.funcName == "count_over_time") &&
+		spec.rangeWindow.Nanoseconds() > stepNanos && !hasPostParserPipeStage(spec.baseQuery) {
+		series, ok, err = p.fetchBareParserMetricSeriesViaHits(r.Context(), spec, startNanos, endNanos, stepNanos)
+		if err != nil {
+			slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to stats",
+				"err", err, "query", originalQuery)
+		}
+	}
+	if !ok || err != nil {
+		statsAggFunc := "count() as c"
+		if spec.funcName == "bytes_over_time" || spec.funcName == "bytes_rate" {
+			// A byte sum of zero cannot tell an absent bucket from empty lines.
+			statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
+		}
+		series, ok, err = p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+		if !ok {
+			return false
+		}
+		if err != nil {
+			slog.WarnContext(r.Context(), "stats bucket path failed, falling back to full-fetch",
+				"err", err, "query", originalQuery)
+			return false
+		}
+	}
+	status := p.writeHitsRangeMetricMatrix(w, spec.funcName, series, time.Unix(0, startNanos), time.Unix(0, endNanos), time.Duration(stepNanos), spec.rangeWindow)
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query_range", status, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, status != http.StatusOK)
+	return true
 }
 
 // tryUnwrapViaStatsFastPath attempts to satisfy an unwrap range aggregation using
@@ -2218,11 +2008,22 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	if statsAggFunc == "" {
 		return false
 	}
-	uwSeries, uwErr := p.fetchBareParserUnwrapViaStats(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+	uwSeries, ok, uwErr := p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+	if !ok {
+		return false
+	}
 	if uwErr != nil {
 		slog.WarnContext(r.Context(), "unwrap stats fast path failed, falling back to full-fetch",
 			"err", uwErr, "query", originalQuery)
 		return false
+	}
+	// The bucket (L, L+bucket] is labelled by its left edge L. Moving the label to
+	// L+1ns puts it inside the inclusive evaluation interval [t-range, t] exactly
+	// when the bucket lies inside Loki's window (t-range, t].
+	for _, entry := range uwSeries {
+		for i := range entry.Samples {
+			entry.Samples[i].ts++
+		}
 	}
 	startT := time.Unix(0, startNanos)
 	endT := time.Unix(0, endNanos)

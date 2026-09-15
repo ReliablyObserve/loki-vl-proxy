@@ -7,6 +7,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Sliding range metrics now return the samples Loki returns. Two defects
+  affected `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` with a
+  range different from the step (including `sum by (...)`, ungrouped `sum`,
+  scalar arithmetic such as `/ 3600`, and `topk`/`bottomk` over them), verified
+  against Loki 3.7.1 and VictoriaLogs v1.50.0 with identical fixtures:
+  - **Zero-filled data gaps.** Every step without log lines in its window was
+    emitted as `0` for all clients (an 8h range holding two one-hour blocks of
+    lines returned 97 points at `[1h]`/300s where Loki returns 46, and 481
+    instead of 128 at `[5m]`/60s).
+    Loki omits a step whose window `(t-range, t]` holds no line; the proxy now
+    does the same for Explore, dashboards, API clients and Drilldown-tagged
+    requests. Zero-fill remains only on the Drilldown field-breakdown fallback
+    call sites.
+  - **Wrong window sums.** Windows were summed from `stats_query_range` buckets
+    one step wide aligned to the epoch, so a range that is not a multiple of the
+    step, an unaligned start, or a line on a window edge produced wrong values
+    (`[90s]` at a 60s step returned 6 lines per window instead of 9). Buckets are
+    now `gcd(step, range)` wide and anchored to the request start with the
+    `offset` argument shifted by one nanosecond, so every bucket covers
+    `(T, T+bucket]` and every Loki window is an exact union of buckets. The
+    request end is sent as `end+1ns` because VictoriaLogs treats it as
+    exclusive.
+  - Buckets have no count budget: VictoriaLogs returns only non-empty buckets,
+    so even fine grids (`[7m]` at a 1h step over 30 days needs 60s buckets,
+    `[5m]` at a 17s step over 24h needs 1s buckets) stay one cheap
+    `stats_query_range` call, bounded by the existing 64 MiB backend response
+    limit. Both shapes were checked against Loki on the compatibility stack (144
+    and 4423 samples, no mismatches) and answer in about 13 ms and 8 ms.
+  - The raw-sample evaluator is used only when a bucket would be below 1 ms,
+    when the stats response exceeds its byte limit, or when the grid is not
+    epoch-aligned and the backend cannot anchor buckets: VictoriaLogs releases
+    older than v1.45 ignore `offset`, and a backend whose version could not be
+    detected is treated the same way instead of risking silently misaligned
+    sums. That evaluator now also excludes lines on the lower window edge and
+    fetches through the evaluation time for these four functions (range and
+    instant queries), where it previously counted both edges and dropped a line
+    exactly at the query end. On releases older than v1.45 an epoch-aligned grid
+    keeps using buckets, so a line exactly on a window edge still counts in the
+    neighbouring window there.
+  - Ranges that are a multiple of the step keep their bucket count, byte
+    metrics add a `count()` presence column to the same call, and response
+    assembly uses per-series prefix sums (a 24h, 10s-step, 20-series benchmark
+    dropped from 532 ms to 40 ms per response).
+- Bare parser range metrics (no outer aggregation, such as
+  `count_over_time({...} | logfmt [90s])`, and likewise `| regexp`, `| pattern`
+  and `| json` with parameters) now return Loki's window values. These queries
+  bypass the paths fixed above and used buckets one step wide aligned to the
+  epoch, summed over a window that included both edges, verified against Loki
+  3.7.1 and VictoriaLogs v1.50.0 with identical fixtures (one line every 10s,
+  lines on every window edge):
+  - `count_over_time` returned 12 lines per window instead of 9 at `[90s]`/60s
+    and 18 instead of 12 at `[2m]`/60s, `rate` returned 0.15 instead of 0.1 at
+    `[2m]`, and `bytes_over_time`/`bytes_rate` were wrong the same way. With
+    stream label fields declared (`-stream-fields`/`-extra-label-fields`),
+    `count_over_time` and `rate` came from VictoriaLogs `/hits` with the same
+    epoch step buckets and were wrong too.
+  - With range equal to the step, these queries were sent without a stream
+    grouping, so every stream selected was merged into one series without
+    labels, and lines on a window edge were counted one step late.
+  - `sum_over_time`, `max_over_time` and `min_over_time` over `unwrap` were
+    wrong for every range (for example `sum_over_time(... | unwrap n [1m])`
+    returned 31 where Loki returns 21).
+  All of them now use the anchored `gcd(step, range)` buckets of the sliding
+  window fix: `stats_query_range` grouped by stream (byte metrics add the
+  `count()` presence column, so a window holding only empty lines stays a zero
+  sample), `/hits` with the same `offset` argument, and unwrap bucket values
+  moved inside the evaluation window. Unaligned grids on VictoriaLogs older
+  than v1.45 or of unknown version use the raw evaluator; the four log-line
+  functions with a range smaller than the step, and queries with filter
+  stages after the parser, keep it too. Bare `| json` without parameters was
+  already exact through the ordered JSON evaluator. Raw window evaluation over
+  time-ordered samples now narrows each window by binary search instead of
+  scanning every sample per step, and byte-metric presence buckets are kept as
+  a sorted slice instead of a map.
+- Drilldown zero-fill comments no longer claim that Loki emits every step; the
+  fill on the Drilldown field-breakdown call sites is a rendering choice.
+- `query_range` now rejects requests where `(end - start) / step` exceeds 11,000
+  with HTTP 400 `exceeded maximum resolution of 11,000 points per time series.
+  Try increasing the value of the step parameter`, as Loki does
+  (`pkg/loghttp.ParseRangeQuery`, integer division, so exactly 11,000 steps is
+  still accepted). The check runs before query parsing and any backend call,
+  for log and metric queries, and applies Loki's defaults for a missing `end`,
+  `start` or `since`. Previously a request such as a 1s step over 30 days was
+  evaluated with 2.59 million steps per series. The bucket-based range-metric
+  response is also capped at the 64 MiB buffered-response limit shared with the
+  raw evaluator (HTTP 503 above it). Grafana's Loki datasource derives its
+  default step as at least `range / 11000` (`pkg/tsdb/loki/step.go`), so
+  Explore, dashboards and Drilldown stay under the limit; only an explicitly
+  configured step can exceed it, which Loki rejects the same way.
+- While the VictoriaLogs version is unknown (a failed or early startup probe),
+  the proxy retries the `/metrics` version probe in the background at most once
+  every 5 minutes instead of keeping version-gated paths, such as anchored
+  sliding-window buckets, disabled for the whole process lifetime.
+
 ## [1.72.0] - 2026-09-15
 
 ### Fixed
