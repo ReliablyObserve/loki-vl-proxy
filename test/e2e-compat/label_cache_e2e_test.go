@@ -203,19 +203,20 @@ func TestLabelCache_WideWindowSecondRequestIsCacheHit(t *testing.T) {
 }
 
 // =============================================================================
-// Background full-range refresh: no cap at 1h for wide windows
+// Full-range fetch for wide windows
 // =============================================================================
 
-// TestLabelCache_BackgroundRefreshFetchesFullRange verifies that a request for
-// a 7d window triggers a background full-range VL fetch (not capped at 1h) so
-// subsequent requests have complete historical label data.
-func TestLabelCache_BackgroundRefreshFetchesFullRange(t *testing.T) {
+// TestLabelCache_WideWindowRepeatedRequestsStayHealthy verifies that a 7d window
+// stays healthy across repeated requests. The synchronous fetch already covers
+// the full requested range (see TestCompat_LabelsFullRangeFixture); background
+// refreshes re-query that same range when an entry nears expiry.
+func TestLabelCache_WideWindowRepeatedRequestsStayHealthy(t *testing.T) {
 	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 
 	// Prime the cache with a 7d request.
 	assertLabelsOK(t, 7*24*time.Hour)
 
-	// Allow background goroutine time to complete its full-range VL fetch.
+	// Allow any background refresh to complete.
 	time.Sleep(2 * time.Second)
 
 	// The response must still be healthy and contain labels.
@@ -226,7 +227,7 @@ func TestLabelCache_BackgroundRefreshFetchesFullRange(t *testing.T) {
 
 	data, _ := resp["data"].([]interface{})
 	if len(data) == 0 {
-		t.Error("expected non-empty labels after background full-range refresh")
+		t.Error("expected non-empty labels for a 7d window")
 	}
 }
 

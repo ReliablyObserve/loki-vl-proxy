@@ -663,13 +663,14 @@ func TestLabelSurface_LabelValueWindowHelpersCoverLimitBranches(t *testing.T) {
 }
 
 func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
-	// Background refresh uses field_names (fast) instead of stream_field_names (slow at 12-24h).
+	// Background refresh uses stream_field_names, like the synchronous path:
+	// field_names would add non-stream fields Loki never lists as labels.
 	var fieldNamesCalls atomic.Int32
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/select/logsql/field_names":
+		case "/select/logsql/stream_field_names":
 			fieldNamesCalls.Add(1)
 			w.Write([]byte(`{"values":[{"value":"service.name","hits":2},{"value":"app","hits":2},{"value":"_msg","hits":2}]}`))
 		default:
@@ -695,7 +696,7 @@ func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
 	raw := waitForCachedKey(t, c, cacheKey)
 
 	if fieldNamesCalls.Load() == 0 {
-		t.Fatalf("expected field_names backend call for background refresh")
+		t.Fatalf("expected stream_field_names backend call for background refresh")
 	}
 
 	var resp struct {
@@ -713,10 +714,10 @@ func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
 }
 
 func TestLabelSurface_RefreshLabelsCacheAsync_ForwardsSubstringFilterWhenSupported(t *testing.T) {
-	// Background refresh uses field_names (fast path) not stream_field_names.
+	// Background refresh uses stream_field_names, like the synchronous path.
 	var gotQ, gotFilter atomic.Value
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/field_names" {
+		if r.URL.Path != "/select/logsql/stream_field_names" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		gotQ.Store(r.URL.Query().Get("q"))

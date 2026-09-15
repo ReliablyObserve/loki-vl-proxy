@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Return every label name and value with data in the requested `start`–`end`
+  range on the first `/loki/api/v1/labels` and `/loki/api/v1/label/{name}/values`
+  response, as Loki does. `/labels` previously asked VictoriaLogs only for the
+  last 5 minutes of the range and relied on a background refresh to fill in the
+  rest, which in practice did not reach the cache, so labels with data only
+  earlier in the range were missing on every call. Label values were limited
+  to the last 6 hours, and their field-alias resolution and
+  `/label/service_name/values` to the last 5 minutes. Every call now covers the
+  full range. The background refresh uses `stream_field_names` like the request
+  path; it previously used `field_names`, which added message and structured
+  fields that Loki never lists as labels. There is no capped fallback: when
+  VictoriaLogs fails, both endpoints serve the last cached answer for the same
+  request if one exists (as the detected-field endpoints already do) and
+  otherwise return the error, never a silently incomplete list.
+  `/label/service_name/values` no longer answers a failed streams call from the
+  recent-data detection sample: transport errors, 5xx and rejected queries
+  (VictoriaLogs 400) return the error; only a backend without the streams
+  endpoint (`unsupported path requested`) keeps the full-range field lookup.
+  The 12h `-metadata-default-lookback` still applies when `start` and `end` are
+  omitted. Drilldown `detected_labels` sampling is unchanged.
+- Version the cache keys of `/labels`, `/label/{name}/values`, the label-name
+  inventory and their compatibility-edge entries. The same keys address the
+  memory, disk and peer cache tiers and the stale-on-error lookup, so answers
+  cached by earlier releases (covering only the end of the range) are never
+  served after an upgrade, fresh or stale. Those entries age out unused.
+- Mark responses served from a stale cache entry after a backend failure with
+  `X-Proxy-Stale-Response: true` and `Cache-Control: no-store`, and never store
+  them in the compatibility-edge cache or, when any tenant of a multi-tenant
+  request was answered stale, in the multi-tenant merge cache (the merged
+  response carries the same headers). Previously such a stale answer could be
+  served as fresh for up to its full TTL after the backend recovered; this
+  applies to every endpoint that serves stale on error (labels, label values,
+  detected fields, detected labels, detected field values, index stats and
+  volume). An expired empty label list is never used as a stale answer.
+- Return no label names for a window without data, as Loki does, instead of the
+  synthetic `service_name` and operator-declared label fields. Empty label-name
+  and label-value answers, including merged multi-tenant ones, are cached for
+  30 seconds instead of the full metadata TTL and are not refreshed in the
+  background: repeated polling of an idle tenant or a selector without data
+  does not rescan the full range on every request, and data that arrives later
+  is visible within 30 seconds (the previous 30-second field-name cache could
+  hide new labels as long). Empty answers use the same write paths as other
+  answers with a TTL of max(30s, `-disk-cache-min-ttl`,
+  `-peer-write-through-min-ttl`), derived at startup, so they are never skipped
+  by the disk or write-through minimum and overwrite an earlier non-empty
+  answer in memory, on disk and, for write-through writes, on the owner peer:
+  the older list is not served again once the empty entry expires, and a later
+  outage returns the error rather than that older list. Raising either minimum
+  therefore also delays new labels after an empty answer by up to that TTL.
+- Write background refreshes of `labels`, `label_values`, `detected_fields`,
+  `detected_labels` and `detected_field_values`, and the label keep-warm loop,
+  back with the window-scaled TTL their handlers compare against. They used the
+  base TTL, so every cache hit on a range wider than 1h scheduled another
+  refresh. The `detected_fields` refresh now keeps `limit: 1000` like the
+  handler instead of echoing `line_limit`. The keep-warm loop allows 60s per
+  full-range window (was 10s) and derives its schedule and TTL from
+  `-labels-cache-ttl`, the base the handlers use, instead of the built-in
+  5-minute default.
+- Performance: a cold wide-range request now scans the whole range in
+  VictoriaLogs. On the e2e stack (VictoriaLogs v1.50.0, about 1.1 million
+  entries per day) cold medians moved from 1.2–1.5 ms to 1.6–3.4 ms for
+  `/labels` and from 2.3–4.7 ms to 4.5–7.3 ms for `/label/app/values` over
+  1h/24h/7d; `/label/service_name/values` measured 3–8 ms (was 6–20 ms). Cache
+  hits are unchanged. In-process benchmarks show no significant proxy-time change and
+  about 10% fewer allocations per cold `/labels` request, since no follow-up
+  refresh runs. Expect higher cold latency on large datasets.
+
 ## [1.70.0] - 2026-09-15
 
 ### Fixed

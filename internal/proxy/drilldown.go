@@ -158,7 +158,12 @@ func ensureSyntheticServiceName(labels map[string]string) {
 	labels["service_name"] = deriveServiceName(labels)
 }
 
+// appendSyntheticLabels de-duplicates labels and adds the synthetic service_name
+// label. A window without data stays empty: Loki returns no label names for it.
 func appendSyntheticLabels(labels []string) []string {
+	if len(labels) == 0 {
+		return []string{}
+	}
 	seen := make(map[string]struct{}, len(labels)+1)
 	out := make([]string, 0, len(labels)+1)
 	for _, label := range labels {
@@ -447,9 +452,9 @@ func formatDetectedLabelSummaries(summaries map[string]*detectedLabelSummary) []
 }
 
 func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string) ([]string, error) {
-	values, err := p.serviceNameValuesFromNativeFields(ctx, query, start, end)
-	if err == nil && len(values) > 0 {
-		return values, nil
+	nativeValues, nativeErr := p.serviceNameValuesFromNativeFields(ctx, query, start, end)
+	if nativeErr == nil && len(nativeValues) > 0 {
+		return nativeValues, nil
 	}
 
 	selectorQuery := streamSelectorPrefix(query)
@@ -475,17 +480,34 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	if end != "" {
 		params.Set("end", end)
 	}
-	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+	// Full requested range: /label/service_name/values must list every value with
+	// data in [start, end], like Loki.
 
 	resp, err := p.vlGet(ctx, "/select/logsql/streams", params)
 	if err != nil {
-		return p.serviceNameValuesFromDetectedLabels(ctx, detectionQuery, start, end)
+		// A failed full-range call is returned as an error (callers serve a stale
+		// answer or the error), never answered from the recent-data detection
+		// sample below, which would be a partial list.
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return p.serviceNameValuesFromDetectedLabels(ctx, detectionQuery, start, end)
+		if isVLUnsupportedPath(body) {
+			// A backend without /select/logsql/streams: the full-range native
+			// field lookup above is the complete answer (or its error).
+			if nativeErr != nil {
+				return nil, nativeErr
+			}
+			return []string{}, nil
+		}
+		// Invalid query or rejected request: return the error, as Loki does,
+		// instead of answering from a recent-data sample.
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 	var vlResp struct {
 		Values []struct {
@@ -515,6 +537,13 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	return fallbackValues, nil
 }
 
+// isVLUnsupportedPath reports whether a VictoriaLogs error body says the
+// requested endpoint does not exist on this version (HTTP 400,
+// `unsupported path requested: "..."`), as opposed to a rejected query.
+func isVLUnsupportedPath(body []byte) bool {
+	return bytes.Contains(body, []byte("unsupported path requested"))
+}
+
 func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, start, end string) ([]string, error) {
 	values := make([]string, 0, 16)
 	seen := make(map[string]struct{}, 16)
@@ -523,12 +552,8 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	if err != nil {
 		return nil, err
 	}
-	// Cap time range for stream_field_values calls. metadataQueryParams passes the raw
-	// user range (e.g. 12h) which causes O(data-volume) scans on VL. Capping to 1h matches
-	// the cap already applied to stream_field_names/field_names calls and brings cold
-	// stream_field_values latency from 5-8s to <400ms. fetchAllFieldNamesCached applies
-	// its own internal 1h cap, so double-capping is harmless.
-	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+	// No time-range cap: /label/service_name/values must list every service with
+	// data in the requested [start, end] range, like Loki.
 	appendFieldValues := func(fieldValues []string) {
 		for _, value := range fieldValues {
 			value = strings.TrimSpace(value)
@@ -2696,12 +2721,15 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 		if end != "" {
 			params.Set("end", end)
 		}
-		names, err := p.fetchStreamFieldNamesCached(ctx, params)
+		// detected_labels samples recent data: discover names over the same capped
+		// window its values are fetched from.
+		capped := capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+		names, err := p.fetchStreamFieldNamesCached(ctx, capped)
 		if err != nil || len(names) == 0 {
 			continue
 		}
 		labelNames = names
-		baseParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+		baseParams = capped
 		break
 	}
 	if len(labelNames) == 0 {

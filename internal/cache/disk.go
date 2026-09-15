@@ -144,7 +144,7 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 	dc.writeMu.Lock()
 	if entry, ok := dc.writeBuf[key]; ok {
 		dc.writeMu.Unlock()
-		remaining := time.Until(time.Unix(0, entry.ExpiresAt))
+		remaining := time.Unix(0, entry.ExpiresAt).Sub(clockNow())
 		if remaining <= 0 && !allowStale {
 			dc.Misses.Add(1)
 			return nil, 0, false
@@ -186,7 +186,7 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 		return nil, 0, false
 	}
 	expiresAt := int64(binary.BigEndian.Uint64(raw[:8]))
-	remaining := time.Until(time.Unix(0, expiresAt))
+	remaining := time.Unix(0, expiresAt).Sub(clockNow())
 	if remaining <= 0 && !allowStale {
 		dc.Misses.Add(1)
 		dc.Evictions.Add(1)
@@ -202,6 +202,14 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 	return raw[8:], remaining, true
 }
 
+// MinTTL returns the minimum TTL a write needs to reach disk (0: no minimum).
+func (dc *DiskCache) MinTTL() time.Duration {
+	if dc == nil {
+		return 0
+	}
+	return dc.minTTL
+}
+
 // Set stores a value in the write buffer (will be flushed to disk).
 func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 	if ttl <= 0 {
@@ -214,7 +222,7 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 	dc.writeMu.Lock()
 	dc.writeBuf[key] = diskEntry{
 		Value:     value,
-		ExpiresAt: time.Now().Add(ttl).UnixNano(),
+		ExpiresAt: clockNow().Add(ttl).UnixNano(),
 	}
 	shouldFlush := len(dc.writeBuf) >= dc.flushSize
 	dc.writeMu.Unlock()
@@ -302,7 +310,7 @@ func (dc *DiskCache) sweepExpired(b *bolt.Bucket) int64 {
 			key, value = cursor.First()
 		}
 	}
-	now := time.Now().UnixNano()
+	now := clockNow().UnixNano()
 	deadline := time.Now().Add(10 * time.Millisecond)
 	var reclaimed int64
 	for scanned := 0; key != nil && scanned < 1024; scanned++ {

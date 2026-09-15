@@ -130,6 +130,14 @@ const nonOwnerShadowMaxTTL = 30 * time.Second
 const defaultHotIndexMaxEntries = 50000
 const maxHotIndexQueryLimit = 2000
 
+// DiskMinTTL returns the attached L2 disk cache's minimum write TTL, or 0.
+func (c *Cache) DiskMinTTL() time.Duration {
+	if c == nil {
+		return 0
+	}
+	return c.l2.MinTTL()
+}
+
 // SetL2 attaches an L2 disk cache. On L1 miss, L2 is checked.
 // On L1 set, values are also written to L2.
 func (c *Cache) SetL2(dc *DiskCache) {
@@ -255,7 +263,7 @@ func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
-		remaining := time.Until(e.expiresAt)
+		remaining := e.expiresAt.Sub(clockNow())
 		if remaining > 0 {
 			v := e.value
 			c.mu.RUnlock()
@@ -333,21 +341,29 @@ func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
 	if !ok {
 		return nil, 0, false
 	}
-	return e.value, time.Until(e.expiresAt), true
+	return e.value, e.expiresAt.Sub(clockNow()), true
 }
 
 // GetRecoverableStaleWithTTL returns the last known-good value from local memory or local disk.
 // It never reads peers for stale data, which keeps degraded-path fallback local-first.
 func (c *Cache) GetRecoverableStaleWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	return c.GetRecoverableStaleWithTTLMatching(key, nil)
+}
+
+// GetRecoverableStaleWithTTLMatching is GetRecoverableStaleWithTTL restricted to
+// values accepted by usable (nil accepts all): a rejected memory value falls
+// through to disk, so a short-lived placeholder in memory cannot shadow the last
+// usable value on disk.
+func (c *Cache) GetRecoverableStaleWithTTLMatching(key string, usable func([]byte) bool) ([]byte, time.Duration, string, bool) {
 	if c == nil || c.disabled {
 		return nil, 0, "", false
 	}
-	if v, ttl, ok := c.GetStaleWithTTL(key); ok {
+	if v, ttl, ok := c.GetStaleWithTTL(key); ok && (usable == nil || usable(v)) {
 		c.recordTierStaleHit("l1")
 		return v, ttl, "l1_memory", true
 	}
 	if c.l2 != nil {
-		if v, ttl, ok := c.l2.GetStaleWithTTL(key); ok {
+		if v, ttl, ok := c.l2.GetStaleWithTTL(key); ok && (usable == nil || usable(v)) {
 			c.recordTierStaleHit("l2")
 			return v, ttl, "l2_disk", true
 		}
@@ -361,7 +377,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	}
 	c.mu.RLock()
 	e, ok := c.entries[key]
-	if ok && !time.Now().After(e.expiresAt) {
+	if ok && !clockNow().After(e.expiresAt) {
 		v := e.value
 		c.mu.RUnlock()
 		c.Hits.Add(1)
@@ -442,7 +458,7 @@ func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration)
 
 	c.entries[key] = entry{
 		value:     value,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: clockNow().Add(ttl),
 		sizeBytes: size,
 	}
 	c.curBytes += size
@@ -536,7 +552,7 @@ func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, si
 
 	c.entries[key] = entry{
 		value:     value,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: clockNow().Add(ttl),
 		sizeBytes: size,
 	}
 	c.curBytes += size
@@ -601,7 +617,7 @@ func (c *Cache) Size() (entries int, bytes int) {
 }
 
 func (c *Cache) evictIfNeeded(incomingSize int) {
-	now := time.Now()
+	now := clockNow()
 	// First pass: remove expired entries
 	if len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
 		for k, v := range c.entries {
@@ -645,7 +661,7 @@ func (c *Cache) cleanup() {
 		case <-ticker.C:
 		}
 		c.mu.Lock()
-		now := time.Now()
+		now := clockNow()
 		for k, v := range c.entries {
 			if now.After(v.expiresAt) {
 				c.curBytes -= v.sizeBytes
@@ -674,7 +690,7 @@ func (c *Cache) recordHotLocked(key string) {
 		c.l0Stats.misses.Add(1)
 	}
 	hs.score++
-	hs.lastAccess = time.Now().UnixNano()
+	hs.lastAccess = clockNow().UnixNano()
 	if hs.tenant == "" {
 		hs.tenant = tenantFromCacheKey(key)
 	}
@@ -727,7 +743,7 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 		return nil
 	}
 
-	now := time.Now()
+	now := clockNow()
 	capHint := len(c.hot)
 	if capHint > maxHotIndexQueryLimit {
 		capHint = maxHotIndexQueryLimit
@@ -738,7 +754,7 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 		if !ok {
 			continue
 		}
-		remaining := time.Until(e.expiresAt)
+		remaining := e.expiresAt.Sub(clockNow())
 		if remaining <= 0 || now.After(e.expiresAt) {
 			continue
 		}
@@ -772,7 +788,7 @@ func (c *Cache) getL1WithTTL(key string) ([]byte, time.Duration, bool) {
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
-		remaining := time.Until(e.expiresAt)
+		remaining := e.expiresAt.Sub(clockNow())
 		if remaining > 0 {
 			v := e.value
 			c.mu.RUnlock()

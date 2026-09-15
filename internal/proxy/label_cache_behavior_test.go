@@ -347,14 +347,10 @@ func TestHandleLabels_VLInternalFieldsFiltered(t *testing.T) {
 }
 
 // waitForBackendIdle blocks until the backend call counter has stopped moving.
-// A cache miss on /labels serves the synchronous fetch capped to
-// metadataMaxFieldNamesWindow and then schedules refreshLabelsCacheAsync for
-// the full user range whenever the range is wider, so the first request below
-// (1h > 5m) always produces a second, asynchronous backend call. Sampling the
-// counter while that refresh is in flight attributes it to whichever request
-// happens to be under test (seen under -race on a loaded CI runner as "second
-// request triggered 1 extra VL call"). Waiting for the counter to settle keeps
-// the assertion about the second request exact.
+// Background refreshes (scheduled on hits near expiry) issue asynchronous
+// backend calls; sampling the counter while one is in flight attributes it to
+// whichever request happens to be under test. Waiting for the counter to
+// settle keeps assertions about a following request exact.
 func waitForBackendIdle(t *testing.T, calls *atomic.Int64) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -379,7 +375,7 @@ func TestHandleLabels_SecondRequestIsCacheHit(t *testing.T) {
 	_, mux := newBehaviorProxy(t, srv.URL, 5*time.Minute)
 
 	_ = getLabels(t, mux, time.Hour)
-	waitForBackendIdle(t, calls) // let the background full-range refresh land
+	waitForBackendIdle(t, calls) // let any in-flight backend work land
 	callsAfterFirst := calls.Load()
 
 	_ = getLabels(t, mux, time.Hour)

@@ -98,6 +98,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	successTenants := make([]string, 0, len(filteredTenants))
 	failedTenants := make([]string, 0)
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
+	stale := false
 	for _, r := range results {
 		if r.failed {
 			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
@@ -107,6 +108,9 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		}
 		successTenants = append(successTenants, r.tenantID)
 		recorders = append(recorders, r.rec)
+		if r.rec.Header().Get(staleResponseHeader) != "" {
+			stale = true
+		}
 	}
 
 	if len(recorders) == 0 {
@@ -141,11 +145,26 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		contentType = "application/json"
 	}
 	w.Header().Set("Content-Type", contentType)
+	if stale {
+		// A tenant answered from a stale cache entry: mark the merged response
+		// (so the edge cache skips it) and do not store it in the merge cache.
+		markStaleResponse(w.Header())
+	}
 	_, _ = w.Write(body)
-	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
-		p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
+	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable && !stale {
+		p.setMultiTenantMergeCache(endpoint, cacheKey, body)
 	}
 	return true
+}
+
+// setMultiTenantMergeCache stores a merged multi-tenant response through the
+// normal write path; empty merged label lists use the negative TTL.
+func (p *Proxy) setMultiTenantMergeCache(endpoint, cacheKey string, body []byte) {
+	ttl := CacheTTLs[endpoint]
+	if (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(body) {
+		ttl = p.metadataNegativeTTL()
+	}
+	p.cache.SetWithTTL(cacheKey, body, ttl)
 }
 
 func (p *Proxy) serveEndpoint(endpoint string, w http.ResponseWriter, r *http.Request) {

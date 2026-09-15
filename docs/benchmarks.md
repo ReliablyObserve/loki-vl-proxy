@@ -19,12 +19,12 @@ Label endpoints (`/loki/api/v1/labels`, `/loki/api/v1/label/{name}/values`) are 
 
 ### How the proxy makes label fetches fast and accurate
 
-**Progressive two-stage fetch** — when a request arrives for a wide time range (e.g. 7d) the proxy returns an initial response from a 1h VL scan immediately, then triggers a background goroutine that fetches the full user-requested range. The second request for the same window gets the complete historical label set from cache (sub-ms). This means:
+**Full-range fetch on the first request** — like Loki, the first response for any time range (1h to 7d) contains every label name and value with data anywhere in `start`–`end`. A cache miss issues the VictoriaLogs metadata calls (`stream_field_names` for names; `field_names` plus `stream_field_values`/`field_values` for values) over the whole requested range; there is no reduced first scan and no follow-up refresh. This means:
 
-- First request: fast (~200 µs proxy overhead + one VL round-trip against 1h of data)
+- First request: complete (proxy overhead plus the VictoriaLogs metadata round-trip for the full range)
 - Second request: complete and fast (cache hit, sub-ms)
 
-Labels do change over time (services added, removed, renamed across deployments), so the full-range background fetch ensures historical labels are not silently omitted.
+Labels do change over time (services added, removed, renamed across deployments), so scanning only the recent end of a range would silently omit historical labels.
 
 **Time-bucketed cache keys** — Grafana's time picker slides by seconds between dashboard refreshes. The proxy quantises start/end timestamps to fixed bucket boundaries before building the cache key:
 
@@ -40,27 +40,26 @@ Labels do change over time (services added, removed, renamed across deployments)
 
 **Periodic keep-warm loop** — a background goroutine runs every 90 seconds and refreshes label cache entries for all four standard Grafana presets (Last 1h / 6h / 24h / 7d) before their 2-minute TTL expires. This keeps the cache hot even with no user queries.
 
-**Background stale refresh on hits** — when a cached entry is served but has less than ~30% of its TTL remaining, the proxy automatically triggers a background full-range refresh so the next request sees fresher data.
+**Background stale refresh on hits** — once a cached entry has used 20% of its window-scaled TTL, a hit triggers one background refresh over the same full range, which writes the entry back with that same window-scaled TTL so later hits do not refresh again.
 
 ### Measured latency (proxy overhead against a local VL mock)
 
-| Time range | First request | Second request | VL scan on first |
+| Time range | First request | Second request | VL range on first |
 |---|---|---|---|
-| 1 h | ~200 µs | ~5 µs (cache hit) | 1 h |
-| 6 h | ~200 µs | ~5 µs (cache hit) | 1 h (sync) → 6 h (background) |
-| 12 h | ~200 µs | ~5 µs (cache hit) | 1 h (sync) → 12 h (background) |
-| 24 h | ~200 µs | ~5 µs (cache hit) | 1 h (sync) → 24 h (background) |
-| 2 d | ~200 µs | ~5 µs (cache hit) | 1 h (sync) → 2 d (background) |
-| 7 d | ~200 µs | ~5 µs (cache hit) | 1 h (sync) → 7 d (background) |
+| 1 h | ~300 µs | ~4 µs (cache hit) | 1 h |
+| 7 d | ~300 µs | ~4 µs (cache hit) | 7 d |
 
-Numbers above are proxy-only overhead measured with a zero-latency in-process VL mock (`go test -bench BenchmarkLabels_`). In production, add your actual VL round-trip (~50–300 ms on first request; sub-ms on cache hit).
+Numbers above are proxy-only overhead measured with a zero-latency in-process VL mock (`go test -bench BenchmarkLabels_`, Apple M5 Pro, median of 7). In production, add your actual VictoriaLogs round-trip for the requested range.
 
-**Against a real VictoriaLogs instance (manual measurement, 15 services, 8 M entries):**
+**Against the e2e compose stack (VictoriaLogs v1.50.0, ~1.1 M entries per day, local, median of 7 cold requests with a unique no-op matcher per request):**
 
-| Time range | First request | Second request |
-|---|---|---|
-| 1 h (pre-warmed at startup) | sub-ms (cache hit) | sub-ms |
-| 7 d (sync: 1h VL scan + background: 7d scan) | ~300 ms | sub-ms with full historical data |
+| Endpoint | 1 h | 24 h | 7 d |
+|---|---|---|---|
+| `/labels` | 1.6 ms | 2.9 ms | 3.4 ms |
+| `/label/app/values` | 4.5 ms | 7.3 ms | 5.4 ms |
+| `/label/service_name/values` | 3.1 ms | 4.1 ms | 8.0 ms |
+
+Cache hits stay around 0.5–1.2 ms end-to-end. Scanning the full range costs more on larger datasets; the time-bucketed cache keys and window-scaled TTLs keep that cost to one VictoriaLogs call per window per TTL.
 
 ### Running the label perf tests
 

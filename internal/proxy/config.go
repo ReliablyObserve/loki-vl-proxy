@@ -88,5 +88,6 @@ type HandlerConfig struct {
 	peerAuthToken                         string
 	cacheTTLLabels                        time.Duration
 	cacheTTLLabelValues                   time.Duration
+	metadataNegativeCacheTTL              time.Duration
 	logSampleN                            uint64
 }
