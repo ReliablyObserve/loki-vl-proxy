@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking behaviour change: multi-tenant requests now fail as a whole when
+  any tenant fails, matching Loki; the `X-Multi-Tenant-Partial-Failures` header
+  and partial `warnings` are removed.** Loki's multi-tenant querier
+  (`pkg/querier/multi_tenant_querier.go`, v3.7.1) returns the first tenant
+  error for logs and metric queries, labels, series, index stats, volume,
+  patterns and detected labels instead of merging the remaining tenants. The
+  proxy used to skip a failed tenant and answer `200` with the other tenants'
+  data, and `/detected_fields` and `/detected_labels` skipped failed tenants
+  without any marker. A multi-tenant (`a|b`) request with a failed tenant now
+  returns Loki's status in the proxy's usual JSON error envelope: `400
+  bad_data` when a tenant rejects the query, `504` on a timeout, and `500` for
+  any other backend failure (other client errors keep their status). A query
+  rejected by any tenant is reported as `400` even when another tenant failed
+  first. A Grafana-sourced metric query whose stats call fails on one tenant
+  also fails the whole request: that tenant's `200` partial-results reply
+  (with `warnings` and `X-Proxy-Upstream-Status`) counts as a failed tenant
+  with the backend status it replaced, instead of being merged as a success
+  with its warnings dropped. The former `502` for "all multi-tenant
+  sub-requests failed" is gone, since one failed tenant already fails the
+  request. Clients that relied on partial multi-tenant answers or on the
+  header must handle the error instead. `/patterns` still answers a backend
+  outage for one tenant with that tenant's last snapshot or an empty list, as
+  it does for single-tenant requests; a rejected pattern query fails the whole
+  request.
+
+### Fixed
+
+- Stop caching incomplete multi-tenant responses. A merged answer that skipped
+  a failed tenant was stored in the multi-tenant merge cache and the
+  compatibility-edge cache for the endpoint's full TTL, and cache hits replay
+  only the body, so later requests got the incomplete data without the
+  partial-failure header or warnings until the entry expired, even after the
+  tenant recovered. The same happened when one tenant answered a Grafana
+  stats failure with a Drilldown partial-results reply. With the change above
+  a failed tenant fails the request, so nothing is merged or cached, and the
+  next request after the tenant recovers returns the complete result. Merges
+  that include a stale tenant answer are still marked stale and not cached.
+  Known gap: multi-tenant `/patterns` can still merge and cache a tenant's
+  degraded answer (its last pattern snapshot or an empty list) during that
+  tenant's backend outage, because the single-tenant patterns handler does
+  not report backend failures as errors.
+
 ## [1.74.0] - 2026-09-15
 
 ### Fixed
