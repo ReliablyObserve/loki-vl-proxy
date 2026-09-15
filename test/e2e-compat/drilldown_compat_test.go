@@ -638,32 +638,53 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("combined_label_and_field_filters_apply", func(t *testing.T) {
+	// Loki's /index/volume accepts only label matchers (syntax.ParseMatchers):
+	// a field filter in the selector is a 400 "only label matchers are
+	// supported" on the Loki datasource, and must be the same through the
+	// proxy. Logs Drilldown 2.0.4 sends only stream selectors to index/volume.
+	t.Run("volume_rejects_field_filters_like_loki", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"} | detected_level="error"`)
 		params.Set("start", start)
 		params.Set("end", end)
 		params.Set("targetLabels", "detected_level")
 
-		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
-		data := extractMap(resp, "data")
-		result := extractArray(data, "result")
-		if len(result) != 1 {
-			t.Fatalf("expected combined filters to narrow Drilldown volume to one detected_level bucket, got %v", resp)
+		lokiUID := grafanaDatasourceUID(t, "Loki (direct)")
+		for name, uid := range map[string]string{"loki": lokiUID, "proxy": dsUID} {
+			status, body := grafanaResourceGet(t, grafanaURL+"/api/datasources/uid/"+uid+"/resources/index/volume?"+params.Encode())
+			if status != http.StatusBadRequest || !strings.Contains(body, "only label matchers are supported") {
+				t.Fatalf("%s: expected 400 only label matchers are supported for a pipeline volume query, got %d %s", name, status, body)
+			}
 		}
-		metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
-		if metric["detected_level"] != "error" {
-			t.Fatalf("expected combined filters to keep only detected_level=error, got %v", resp)
+	})
+
+	t.Run("label_filters_narrow_volume_buckets", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "detected_level")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		result := extractArray(extractMap(resp, "data"), "result")
+		if len(result) == 0 {
+			t.Fatalf("expected detected_level volume buckets for the label-filtered selector, got %v", resp)
+		}
+		for _, item := range result {
+			metric, _ := item.(map[string]interface{})["metric"].(map[string]interface{})
+			if metric["detected_level"] == nil {
+				t.Fatalf("expected every bucket to carry detected_level, got %v", resp)
+			}
 		}
 	})
 
 	t.Run("empty_result_filters_keep_success_shape", func(t *testing.T) {
-		params := url.Values{}
-		params.Set("query", `{service_name="api-gateway",namespace="staging"} | detected_level="error"`)
-		params.Set("start", start)
-		params.Set("end", end)
+		volumeParams := url.Values{}
+		volumeParams.Set("query", `{service_name="api-gateway",namespace="no-such-namespace"}`)
+		volumeParams.Set("start", start)
+		volumeParams.Set("end", end)
 
-		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+volumeParams.Encode())
 		volumeData := extractMap(volumeResp, "data")
 		if volumeData == nil {
 			t.Fatalf("expected success payload for empty volume query, got %v", volumeResp)
@@ -672,6 +693,10 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			t.Fatalf("expected empty volume result set, got %v", volumeResp)
 		}
 
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",namespace="staging"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
 		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
 		values := extractStrings(valuesResp, "values")
 		if len(values) != 1 || values[0] != "200" {
@@ -1347,4 +1372,17 @@ func assertLokiVolumeRangeShape(t *testing.T, data map[string]interface{}) {
 	default:
 		t.Fatalf("unexpected volume_range resultType %v", data["resultType"])
 	}
+}
+
+// grafanaResourceGet returns the HTTP status and body of a Grafana datasource
+// resource call, including error responses.
+func grafanaResourceGet(t *testing.T, target string) (int, string) {
+	t.Helper()
+	resp, err := http.Get(target)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
 }

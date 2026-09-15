@@ -157,7 +157,7 @@ func analyzeRule(group string, r Rule) []Warning {
 			Group:  group,
 			Rule:   name,
 			Expr:   expr,
-			Reason: "uses subquery [range:step] syntax, which the proxy evaluates above VictoriaLogs but vmalert cannot reproduce natively through translated LogsQL alone",
+			Reason: "uses subquery [range:step] syntax, which is not valid LogQL: Loki and the proxy reject it with HTTP 400",
 		})
 	}
 	if r.Record != "" && strings.Contains(strings.ToLower(expr), "histogram(") {

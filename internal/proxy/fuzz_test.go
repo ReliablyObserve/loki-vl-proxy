@@ -40,28 +40,6 @@ func FuzzParseTimestamp(f *testing.F) {
 	})
 }
 
-// FuzzSubqueryAggregate tests aggregation with random values.
-func FuzzSubqueryAggregate(f *testing.F) {
-	f.Add("max_over_time", 1.0, 5.0, 3.0)
-	f.Add("min_over_time", 1.0, 5.0, 3.0)
-	f.Add("avg_over_time", 2.0, 4.0, 6.0)
-	f.Add("sum_over_time", 2.0, 4.0, 6.0)
-	f.Add("count_over_time", 1.0, 2.0, 3.0)
-	f.Add("stddev_over_time", 1.0, 2.0, 3.0)
-	f.Add("unknown_func", 1.0, 2.0, 3.0)
-
-	f.Fuzz(func(t *testing.T, fn string, a, b, c float64) {
-		values := []float64{a, b, c}
-		// Must never panic
-		result := subqueryAggregate(fn, values)
-		// Result should be finite for finite inputs
-		if !isFinite(a) || !isFinite(b) || !isFinite(c) {
-			return
-		}
-		_ = result
-	})
-}
-
 func isFinite(f float64) bool {
 	return f == f && f != f+1e308 // not NaN and not Inf
 }

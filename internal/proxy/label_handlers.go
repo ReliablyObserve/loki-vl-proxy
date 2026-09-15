@@ -9,6 +9,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // handleLabels returns label names.
@@ -283,7 +286,8 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = p.withRequestScope(r)
-	matchQueries := r.Form["match[]"]
+	// Loki reads both match and match[] (loghttp.ParseSeriesQuery).
+	matchQueries := append(append([]string(nil), r.Form["match[]"]...), r.Form["match"]...)
 	query := "*"
 	if len(matchQueries) > 0 {
 		translated, err := p.translateQueryWithContext(r.Context(), matchQueries[0])
@@ -742,4 +746,151 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	}
 	sort.Strings(values)
 	return values
+}
+
+// lokiQueryParamRule describes how Loki v3.7 parses the selector parameter of a
+// read endpoint before doing any work.
+type lokiQueryParamRule int
+
+const (
+	// syntax.ParseMatchers(query, true) when query is set (/labels,
+	// /label/<name>/values, /detected_labels).
+	lokiMatchersOptional lokiQueryParamRule = iota + 1
+	// syntax.ParseMatchers(query, true); a missing query is a parse error
+	// (/index/stats, /patterns).
+	lokiMatchersRequired
+	// Like lokiMatchersRequired, but the literal "{}" means every stream
+	// (seriesvolume.MatchAny on /index/volume and /index/volume_range).
+	lokiVolumeMatchers
+	// Every match[] value is a bare selector; {} selects all series (/series).
+	lokiSeriesMatchers
+	// syntax.ParseLogSelector(query, true) plus pipeline construction; a missing
+	// query is a parse error (/detected_fields, /detected_field/<name>/values).
+	lokiLogSelectorRequired
+	// syntax.ParseExpr(query) before the websocket upgrade (/tail).
+	lokiTailQuery
+)
+
+var lokiQueryParamRules = map[string]lokiQueryParamRule{
+	"labels":                lokiMatchersOptional,
+	"label_values":          lokiMatchersOptional,
+	"detected_labels":       lokiMatchersOptional,
+	"index_stats":           lokiMatchersRequired,
+	"patterns":              lokiMatchersRequired,
+	"volume":                lokiVolumeMatchers,
+	"volume_range":          lokiVolumeMatchers,
+	"series":                lokiSeriesMatchers,
+	"detected_fields":       lokiLogSelectorRequired,
+	"detected_field_values": lokiLogSelectorRequired,
+	"tail":                  lokiTailQuery,
+}
+
+// lokiEmptyQueryError is what Loki's parser reports for a missing query.
+const lokiEmptyQueryError = "parse error : syntax error: unexpected $end"
+
+// cachedSelectorValidation memoizes a deterministic selector validation in the
+// bounded validationCache shared with validateLogQLSyntax. The NUL-delimited
+// kind prefix keeps each validator's results apart from raw query keys. Only
+// short queries are cached (validationCacheMaxQueryBytes), so the cache holds
+// at most validationCacheMaxSize small entries.
+func cachedSelectorValidation(kind, query string, validate func(string) string) string {
+	if len(query) > validationCacheMaxQueryBytes {
+		return validate(query)
+	}
+	key := "\x00" + kind + "\x00" + query
+	if v, ok := validationCache.Load(key); ok {
+		return v.(string)
+	}
+	result := validate(query)
+	storeValidationResult(key, result)
+	return result
+}
+
+// queryLengthError rejects an oversized query before it is parsed or cached:
+// Loki's "input size too long" at or above syntax.maxInputSize, the proxy's
+// maxQueryLength message for anything longer than that limit.
+func queryLengthError(query string) string {
+	if msg := logqlpkg.InputSizeError(query); msg != "" {
+		return msg
+	}
+	if len(query) > maxQueryLength {
+		return fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength)
+	}
+	return ""
+}
+
+// maxEchoedErrorBytes bounds how much of a rejected query a validation error
+// echoes into the response body and the request log.
+const maxEchoedErrorBytes = 2048
+
+// truncateQueryError shortens an error message that embeds query text to
+// maxEchoedErrorBytes, cutting on a UTF-8 boundary.
+func truncateQueryError(msg string) string {
+	if len(msg) <= maxEchoedErrorBytes {
+		return msg
+	}
+	cut := maxEchoedErrorBytes
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+	return msg[:cut] + "... (truncated)"
+}
+
+// lokiQueryParamError returns Loki's 400 message for an invalid selector
+// parameter on endpoint, or "" when Loki would accept the request.
+func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request) string {
+	query := r.FormValue("query")
+	if rule == lokiSeriesMatchers {
+		// Loki reads both match and match[] (loghttp.ParseSeriesQuery).
+		groups := append(append([]string(nil), r.Form["match"]...), r.Form["match[]"]...)
+		for _, group := range groups {
+			if msg := queryLengthError(group); msg != "" {
+				return msg
+			}
+		}
+		return logqlpkg.ValidateSeriesMatchers(groups)
+	}
+	if msg := queryLengthError(query); msg != "" {
+		return msg
+	}
+	switch rule {
+	case lokiMatchersOptional:
+		if query == "" {
+			return ""
+		}
+		return cachedSelectorValidation("matchers", query, logqlpkg.ValidateMatchersQuery)
+	case lokiMatchersRequired, lokiVolumeMatchers:
+		if query == "" {
+			return lokiEmptyQueryError
+		}
+		if rule == lokiVolumeMatchers && query == "{}" {
+			return ""
+		}
+		return cachedSelectorValidation("matchers", query, logqlpkg.ValidateMatchersQuery)
+	case lokiLogSelectorRequired:
+		return cachedSelectorValidation("log_selector", query, logqlpkg.ValidateLogSelectorQuery)
+	case lokiTailQuery:
+		return validateLogQLSyntax(query)
+	}
+	return ""
+}
+
+// lokiQueryParamValidation rejects requests whose selector parameter Loki
+// answers with 400 bad_data (a non-selector expression, an empty-compatible
+// selector such as {app=""}, an oversized input or a parse error) before cache
+// lookup, tenant fan-out or any VictoriaLogs call. Endpoints without a rule
+// pass through.
+func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc) http.HandlerFunc {
+	rule, ok := lokiQueryParamRules[endpoint]
+	if !ok {
+		return next
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if msg := lokiQueryParamError(rule, r); msg != "" {
+			p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
+			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+			return
+		}
+		next(w, r)
+	}
 }

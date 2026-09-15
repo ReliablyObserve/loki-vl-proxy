@@ -205,7 +205,6 @@ That means proxy-only runtime emulation does not automatically exist in `vmalert
 - `without()`
 - `on()` / `ignoring()`
 - `group_left()` / `group_right()`
-- subquery `[range:step]`
 - `histogram()` recording rules
 - other behaviors that the proxy currently emulates above VictoriaLogs rather than translating directly into a backend-native equivalent
 

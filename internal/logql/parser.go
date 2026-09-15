@@ -6,6 +6,24 @@ import (
 	"strings"
 )
 
+// ParseError is a query rejection whose message is already formatted the way
+// Loki's parser reports it (e.g. "parse error at line 1, col 15: ..." or
+// "parse error : ..."). ValidateLogQL surfaces it verbatim.
+type ParseError struct {
+	Msg string
+}
+
+func (e *ParseError) Error() string { return e.Msg }
+
+// newParseError mirrors logqlmodel.NewParseError: line/col 0 renders as
+// "parse error : msg".
+func newParseError(line, col int, msg string) *ParseError {
+	if line == 0 && col == 0 {
+		return &ParseError{Msg: "parse error : " + msg}
+	}
+	return &ParseError{Msg: fmt.Sprintf("parse error at line %d, col %d: %s", line, col, msg)}
+}
+
 // Parse parses a LogQL expression string and returns the typed AST.
 // It accepts log queries, range aggregations, and vector aggregations.
 func Parse(input string) (Expr, error) {
@@ -406,12 +424,20 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	case "json":
 		start := p.sc.pos
 		p.advance()
-		return &ParserStage{Type: ParserJSON, Param: p.consumeExplicitFieldList(start)}, nil
+		param, fields, err := p.consumeExplicitFieldList(start)
+		if err != nil {
+			return nil, err
+		}
+		return &ParserStage{Type: ParserJSON, Param: param, Fields: fields}, nil
 
 	case "logfmt":
 		start := p.sc.pos
 		p.advance()
-		return &ParserStage{Type: ParserLogfmt, Param: p.consumeExplicitFieldList(start)}, nil
+		param, fields, err := p.consumeExplicitFieldList(start)
+		if err != nil {
+			return nil, err
+		}
+		return &ParserStage{Type: ParserLogfmt, Param: param, Fields: fields}, nil
 
 	case "regexp":
 		p.advance()
@@ -467,8 +493,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 	case "label_format":
 		p.advance()
-		raw := p.consumeRestOfStage()
-		return &LabelFormatStage{Raw: raw}, nil
+		return p.parseLabelFormat()
 	}
 
 	// Unknown keyword after `|`: consume the identifier and the rest of the
@@ -629,31 +654,112 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 }
 
 // consumeExplicitFieldList consumes an optional comma-separated field list
-// after | json or | logfmt. Each item is a bare name or name="alias" form.
+// after | json or | logfmt. Each item is a bare name or name="expression" form.
 // Preserve exact extraction expressions, including raw strings and escapes,
 // because the AST is also used to execute nested metric operands.
-func (p *parser) consumeExplicitFieldList(start int) string {
+// Loki's grammar (labelExtractionExpression: IDENTIFIER EQ STRING | IDENTIFIER)
+// requires a string after '=', so `| json foo=` is a syntax error.
+func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField, error) {
 	end := start
+	var fields []ExtractionField
 	for p.cur.Typ == TokIdent {
 		end = p.sc.pos
-		p.advance() // field name
-		// Optional ="alias" assignment
+		name := p.advance().Val // field name
+		field := ExtractionField{Name: name, Expression: name}
 		if p.cur.Typ == TokEq {
-			end = p.sc.pos
 			p.advance()
-			if p.cur.Typ == TokString || p.cur.Typ == TokRawString || p.cur.Typ == TokIdent {
-				end = p.sc.pos
-				p.advance()
+			if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+				return "", nil, p.syntaxError("STRING")
 			}
-		}
-		if p.cur.Typ == TokComma {
 			end = p.sc.pos
-			p.advance()
-		} else {
+			field.Expression = p.advance().Val
+		}
+		fields = append(fields, field)
+		if p.cur.Typ != TokComma {
 			break
 		}
+		end = p.sc.pos
+		p.advance()
+		if p.cur.Typ != TokIdent {
+			return "", nil, p.syntaxError("IDENTIFIER")
+		}
 	}
-	return strings.TrimSpace(p.input[start:end])
+	return strings.TrimSpace(p.input[start:end]), fields, nil
+}
+
+// parseLabelFormat parses `dst="template"` / `dst=src` entries separated by
+// commas (Loki: labelFormat: IDENTIFIER EQ IDENTIFIER | IDENTIFIER EQ STRING).
+// Raw keeps the historical token rendering consumed by the string translator.
+func (p *parser) parseLabelFormat() (Stage, error) {
+	var (
+		raw     strings.Builder
+		formats []LabelFormat
+	)
+	for {
+		if p.cur.Typ != TokIdent {
+			return nil, p.syntaxError("IDENTIFIER")
+		}
+		name := p.cur.Val
+		appendStageToken(&raw, p.advance())
+		if p.cur.Typ != TokEq {
+			return nil, p.syntaxError("=")
+		}
+		appendStageToken(&raw, p.advance())
+		format := LabelFormat{Name: name}
+		switch p.cur.Typ {
+		case TokString, TokRawString:
+		case TokIdent:
+			format.Rename = true
+		default:
+			return nil, p.syntaxError("IDENTIFIER or STRING")
+		}
+		format.Value = p.cur.Val
+		appendStageToken(&raw, p.advance())
+		formats = append(formats, format)
+		if p.cur.Typ != TokComma {
+			return &LabelFormatStage{Raw: raw.String(), Formats: formats}, nil
+		}
+		appendStageToken(&raw, p.advance())
+	}
+}
+
+// syntaxError reports an unexpected current token the way Loki's yacc parser
+// does ("syntax error: unexpected $end, expecting STRING").
+func (p *parser) syntaxError(expecting string) error {
+	msg := "syntax error: unexpected " + lokiTokenName(p.cur)
+	if expecting != "" {
+		msg += ", expecting " + expecting
+	}
+	if p.cur.Typ == TokEOF {
+		return newParseError(1, len(p.input)+1, msg)
+	}
+	return newParseError(0, 0, msg)
+}
+
+// lokiTokenName renders a token with the name Loki's grammar uses for it.
+func lokiTokenName(tok Token) string {
+	switch tok.Typ {
+	case TokEOF:
+		return "$end"
+	case TokNumber:
+		return "NUMBER"
+	case TokString, TokRawString:
+		return "STRING"
+	case TokDuration:
+		return "RANGE"
+	case TokIdent:
+		if tok.Val == "label_replace" {
+			return tok.Val
+		}
+		if _, ok := rangeOps[tok.Val]; ok {
+			return strings.ToUpper(tok.Val)
+		}
+		if _, ok := vectorOps[tok.Val]; ok || tok.Val == "vector" {
+			return strings.ToUpper(tok.Val)
+		}
+		return "IDENTIFIER"
+	}
+	return tok.Typ.String()
 }
 
 // consumeBalancedParens consumes tokens including nested parentheses until the
@@ -704,20 +810,24 @@ func (p *parser) consumeRestOfStage() string {
 				return b.String()
 			}
 		}
-		raw := tokenRaw(p.cur)
-		// Insert a space when adjacent tokens would merge without one.
-		// Two cases:
-		//   (a) alphanumeric + alphanumeric: `200`+`and` → `200and` (unparseable)
-		//   (b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
-		if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
-			prev := b.String()[b.Len()-1]
-			if isAlphanumeric(prev) || prev == '"' || prev == '`' {
-				b.WriteByte(' ')
-			}
-		}
-		b.WriteString(raw)
-		p.advance()
+		appendStageToken(&b, p.advance())
 	}
+}
+
+// appendStageToken appends a token's source rendering to b. It inserts a space
+// when adjacent tokens would merge without one:
+//
+//	(a) alphanumeric + alphanumeric: `200`+`and` → `200and` (unparseable)
+//	(b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
+func appendStageToken(b *strings.Builder, tok Token) {
+	raw := tokenRaw(tok)
+	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
+		prev := b.String()[b.Len()-1]
+		if isAlphanumeric(prev) || prev == '"' || prev == '`' {
+			b.WriteByte(' ')
+		}
+	}
+	b.WriteString(raw)
 }
 
 // isAlphanumeric reports whether c is a letter, digit, or underscore —
@@ -787,8 +897,10 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 	return nil
 }
 
-// parseRangeAggregation parses `rate({...}[5m])` or a subquery
-// like `max_over_time(rate({...}[5m])[1h:5m])`.
+// parseRangeAggregation parses `rate({...}[5m])`. LogQL (unlike PromQL) has
+// no subquery grammar: the argument must be a log selector, optionally
+// parenthesised, so `max_over_time(rate({...}[5m])[1h:5m])` is rejected with
+// Loki's syntax error.
 //
 // For quantile_over_time the optional phi parameter comes before the
 // inner expression: quantile_over_time(0.95, {app="nginx"}[5m]).
@@ -807,7 +919,10 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		}
 	}
 
-	// Inner expression: log query ({...}) or metric expr (subquery).
+	// Inner expression: a log query ({...}), optionally parenthesised.
+	if err := p.checkRangeAggregationArgument(!ra.HasParam); err != nil {
+		return nil, err
+	}
 	var err error
 	if p.cur.Typ == TokLBrace {
 		lq, lqErr := p.parseLogQuery()
@@ -820,9 +935,14 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		if err != nil {
 			return nil, err
 		}
+		if _, ok := ra.Inner.(*LogQuery); !ok {
+			return nil, newParseError(0, 0, "syntax error: unexpected expression in range aggregation, expecting { or (")
+		}
 	}
 
-	// Expect [duration] or [duration:step]
+	// Expect [duration]. bracketCol is the 1-based column of '[' (the scanner
+	// position just past it), which Loki reports for a malformed duration.
+	bracketCol := p.sc.pos
 	if _, err := p.expect(TokLBracket); err != nil {
 		return nil, fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
 	}
@@ -832,14 +952,14 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	}
 	ra.Range = dur.Val
 
-	// Optional :step for subqueries — the colon is not a scanner keyword so it
-	// arrives as TokError with Val ":".
+	// A PromQL-style [range:step] is not LogQL. Loki's lexer rejects the
+	// duration token itself; the colon arrives here as TokError ":".
 	if p.cur.Typ == TokError && p.cur.Val == ":" {
-		p.advance() // consume ':'
-		step, stepErr := p.expect(TokDuration)
-		if stepErr == nil {
-			ra.Step = step.Val
+		literal := ra.Range + ":"
+		if p.advance(); p.cur.Typ == TokDuration {
+			literal += p.cur.Val
 		}
+		return nil, newParseError(0, bracketCol, fmt.Sprintf("unknown unit %q in duration %q", durationUnit(ra.Range)+":", literal))
 	}
 
 	if _, err := p.expect(TokRBracket); err != nil {
@@ -883,6 +1003,45 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	return ra, nil
 }
 
+// checkRangeAggregationArgument rejects a range aggregation whose argument is
+// not a (parenthesised) log selector before it is parsed, reporting the first
+// offending token like Loki's grammar does: `max_over_time(sum(...)[30m:5m])`
+// → "parse error at line 1, col 15: syntax error: unexpected SUM, expecting
+// NUMBER or { or (". The probe runs on a scanner copy and consumes nothing.
+func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
+	sc := *p.sc
+	probe := parser{sc: &sc, cur: p.cur, input: p.input}
+	expecting := "{ or ("
+	if numberAllowed {
+		expecting = "NUMBER or { or ("
+	}
+	for probe.cur.Typ == TokLParen {
+		probe.advance()
+		expecting = "{ or ("
+	}
+	if probe.cur.Typ == TokLBrace {
+		return nil
+	}
+	msg := "syntax error: unexpected " + lokiTokenName(probe.cur) + ", expecting " + expecting
+	switch probe.cur.Typ {
+	case TokEOF:
+		return newParseError(1, len(p.input)+1, msg)
+	case TokIdent, TokNumber:
+		return newParseError(1, sc.pos-len(probe.cur.Val)+1, msg)
+	}
+	return newParseError(0, 0, msg)
+}
+
+// durationUnit returns the trailing unit letters of a duration literal
+// ("30m" → "m"), used to mirror Loki's duration lexer error text.
+func durationUnit(d string) string {
+	i := len(d)
+	for i > 0 && (d[i-1] < '0' || d[i-1] > '9') {
+		i--
+	}
+	return d[i:]
+}
+
 // parseVectorAggregation parses `sum by (...) (inner)`.
 func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error) {
 	p.advance() // consume function name
@@ -908,8 +1067,15 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		if err != nil {
 			return nil, fmt.Errorf("logql: %s requires a numeric k parameter", op)
 		}
-		k, _ := strconv.ParseFloat(kTok.Val, 64)
-		va.Param = k
+		// Loki (syntax.mustNewVectorAggregationExpr) requires an integer k > 0.
+		k, err := strconv.Atoi(kTok.Val)
+		if err != nil {
+			return nil, newParseError(0, 0, fmt.Sprintf("invalid parameter %s(%s,", op, kTok.Val))
+		}
+		if k <= 0 {
+			return nil, newParseError(0, 0, fmt.Sprintf("invalid parameter (must be greater than 0) %s(%s", op, kTok.Val))
+		}
+		va.Param = float64(k)
 		va.HasParam = true
 		if _, err := p.expect(TokComma); err != nil {
 			return nil, fmt.Errorf("logql: expected ',' after k in %s", op)

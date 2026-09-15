@@ -54,7 +54,7 @@ func bareParserRawSampleWeight(entry map[string]interface{}, spec bareParserMetr
 // building an arbitrarily large document and checking its serialized size.
 func buildBoundedBareParserMetric(ctx context.Context, series []bareParserMetricSeries, start, end, step int64, spec bareParserMetricCompatSpec, isRange bool) ([]byte, error) {
 	distance := time.Unix(0, end).Sub(time.Unix(0, start))
-	if step <= 0 || end < start || distance == time.Duration(math.MaxInt64) || distance/time.Duration(step) >= maxSubquerySamples {
+	if step <= 0 || end < start || distance == time.Duration(math.MaxInt64) || distance/time.Duration(step) >= maxMetricEvalSamples {
 		return nil, fmt.Errorf("invalid or excessive manual metric evaluation points")
 	}
 	ctx = binaryEvaluationContext(ctx)

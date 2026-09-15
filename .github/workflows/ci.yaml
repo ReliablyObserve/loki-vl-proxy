@@ -107,9 +107,6 @@ jobs:
       - name: Fuzz smoke (parse timestamp)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseTimestamp -fuzztime=12s
 
-      - name: Fuzz smoke (subquery aggregate)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzSubqueryAggregate -fuzztime=12s
-
       - name: Fuzz smoke (series key from metric)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzSeriesKeyFromMetric -fuzztime=20s -timeout=60s
 
@@ -147,14 +144,8 @@ jobs:
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s
 
-      - name: Fuzz smoke (translate subquery)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateSubquery -fuzztime=12s
-
       - name: Fuzz smoke (parse binary metric expr)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzParseBinaryMetricExpr -fuzztime=12s
-
-      - name: Fuzz smoke (parse subquery expr)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzParseSubqueryExpr -fuzztime=12s
 
       - name: Fuzz smoke (is scalar)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzIsScalar -fuzztime=12s

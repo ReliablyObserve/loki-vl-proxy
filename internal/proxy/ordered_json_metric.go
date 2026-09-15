@@ -180,7 +180,7 @@ func orderedJSONMetricTimes(r *http.Request, isRange bool) (time.Time, time.Time
 	if !startOK || !endOK || !stepOK {
 		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid range timestamps or step"}
 	}
-	if _, err := subqueryPointCount(time.Unix(0, start), time.Unix(0, end), time.Duration(step)); err != nil {
+	if _, err := metricEvalPointCount(time.Unix(0, start), time.Unix(0, end), time.Duration(step)); err != nil {
 		return time.Time{}, time.Time{}, 0, &orderedJSONPipelineError{"invalid range timestamps or step; maximum 10000 evaluation points"}
 	}
 	return time.Unix(0, start), time.Unix(0, end), time.Duration(step), nil
@@ -203,7 +203,7 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 		expr = outer.Inner
 	}
 	rangeExpr, ok := expr.(*logqlpkg.RangeAggregation)
-	if !ok || rangeExpr.Step != "" || rangeExpr.Offset != "" || rangeExpr.Grouping != nil {
+	if !ok || rangeExpr.Offset != "" || rangeExpr.Grouping != nil {
 		return nil, false
 	}
 	switch rangeExpr.Op {
@@ -826,8 +826,8 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 			}
 			if right > left {
 				totalPoints++
-				if totalPoints > maxSubquerySamples {
-					return nil, fmt.Errorf("ordered JSON metric output exceeds %d samples", maxSubquerySamples)
+				if totalPoints > maxMetricEvalSamples {
+					return nil, fmt.Errorf("ordered JSON metric output exceeds %d samples", maxMetricEvalSamples)
 				}
 				value := metricWindowValue(plan.function, total, plan.window)
 				points = append(points, []interface{}{float64(eval.UnixNano()) / float64(time.Second), formatMetricSampleValue(value)})

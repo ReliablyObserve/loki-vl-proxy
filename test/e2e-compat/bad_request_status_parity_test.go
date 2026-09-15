@@ -13,10 +13,10 @@ import (
 )
 
 // TestCompat_RejectedQueryStatusParity pins Loki's status for queries that are
-// invalid: 400 on every read endpoint, never a 5xx. The regex selectors pass
-// the proxy's metadata path untouched and are rejected by VictoriaLogs itself,
-// so they cover the proxy's mapping of a backend 400; the truncated selector is
-// rejected by the proxy's own translator on the same endpoints. The metric
+// invalid: 400 on every read endpoint, never a 5xx. Loki rejects the invalid
+// regex selectors while parsing, and so does the proxy's selector validation
+// on the metadata endpoints (VictoriaLogs would reject them too); the truncated
+// selector is a parse error on the same endpoints. The metric
 // query_range cases carry the headers Grafana sends: VictoriaLogs rejects their
 // line-filter regex or pattern on stats_query_range (422), and Loki still
 // answers Grafana with 400 rather than a partial-results reply.

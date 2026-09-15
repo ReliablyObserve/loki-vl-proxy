@@ -1595,7 +1595,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
-					p.compatCacheMiddleware(endpoint, route, h)))))
+					p.lokiQueryParamValidation(endpoint,
+						p.compatCacheMiddleware(endpoint, route, h))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2217,15 +2218,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
 	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
-	if ra, ok := parsedForRouting.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
-		// Subquery: max_over_time(rate(...)[1h:5m])
-		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
-		if innerErr != nil {
-			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
-		} else {
-			p.proxySubqueryRange(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
-		}
-	} else if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
+	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
@@ -2320,7 +2313,7 @@ func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 
 // handleQuery translates Loki instant queries.
 //
-//nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, subquery, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
+//nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
@@ -2452,14 +2445,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
 	parsedForRoutingQ, _ := logqlpkg.Parse(logqlQuery)
-	if ra, ok := parsedForRoutingQ.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
-		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
-		if innerErr != nil {
-			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
-		} else {
-			p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
-		}
-	} else if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
+	if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {

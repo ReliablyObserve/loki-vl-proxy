@@ -124,6 +124,16 @@ const (
 type ParserStage struct {
 	Type  ParserType
 	Param string
+	// Fields holds the explicit `| json a="expr", b` / `| logfmt ...`
+	// extraction list; nil when the stage extracts every field.
+	Fields []ExtractionField
+}
+
+// ExtractionField is one `name="expression"` (or bare `name`) entry of an
+// explicit json/logfmt extraction list. Expression equals Name for the bare form.
+type ExtractionField struct {
+	Name       string
+	Expression string
 }
 
 func (s *ParserStage) String() string {
@@ -241,7 +251,15 @@ func (s *LineFormatStage) stage() {}
 
 // LabelFormatStage is a `| label_format ...` stage (raw expression).
 type LabelFormatStage struct {
-	Raw string
+	Raw     string
+	Formats []LabelFormat
+}
+
+// LabelFormat is one `dst="template"` or `dst=src` (Rename) label_format entry.
+type LabelFormat struct {
+	Name   string
+	Value  string
+	Rename bool
 }
 
 func (s *LabelFormatStage) String() string {
@@ -303,13 +321,12 @@ const (
 	RangeRateCounter      RangeOp = "rate_counter"
 )
 
-// RangeAggregation is e.g. `rate({app="api"}[5m])` or a subquery
-// `max_over_time(rate({app="api"}[5m])[1h:5m])`.
+// RangeAggregation is e.g. `rate({app="api"}[5m])`. LogQL has no subquery
+// grammar, so Inner is always the (possibly parenthesised) log query.
 type RangeAggregation struct {
 	Op       RangeOp
-	Inner    Expr    // *LogQuery for plain range; any Expr for subquery
-	Range    string  // outer range, e.g. "5m" or "1h"
-	Step     string  // subquery step (e.g. "5m" from [1h:5m]); empty for plain range
+	Inner    Expr    // *LogQuery
+	Range    string  // range, e.g. "5m" or "1h"
 	Offset   string  // optional offset modifier, e.g. "1h" from [5m] offset 1h
 	Param    float64 // for quantile_over_time
 	HasParam bool
@@ -318,9 +335,6 @@ type RangeAggregation struct {
 
 func (r *RangeAggregation) String() string {
 	rangeStr := "[" + r.Range + "]"
-	if r.Step != "" {
-		rangeStr = "[" + r.Range + ":" + r.Step + "]"
-	}
 	if r.Offset != "" {
 		rangeStr += " offset " + r.Offset
 	}

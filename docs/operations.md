@@ -384,7 +384,7 @@ Not every `502` or `503` means VictoriaLogs is down. Built-in execution limits r
 - `502` with `maximum metric series exceeded` or `503` with `manual metric series limit exceeded` — narrow the query or raise `-max-stats-query-series`
 - `503` with `too many concurrent queries` — the `-max-concurrent` admission cap was reached
 
-Subquery, `line_format` and binary-expression evaluation limits return `400`. See [Fixed Execution Limits](configuration.md#fixed-execution-limits).
+`line_format` and binary-expression evaluation limits return `400`. See [Fixed Execution Limits](configuration.md#fixed-execution-limits).
 
 ### Circuit Breaker Tripping
 
