@@ -832,6 +832,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		}
 	}
 
+	wrapBareFiltersAfterPipes(parts)
 	result := strings.Join(parts, " ")
 
 	// Prepend VL native stream selector for known _stream_fields
@@ -848,6 +849,27 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		return "*", nil
 	}
 	return result, nil
+}
+
+// wrapBareFiltersAfterPipes gives every bare filter part (a line filter such as
+// ~"y", or -level:* for level="") that directly follows a non-filter pipe stage
+// (| unpack_json, | format, | fields, | delete, | decolorize, | extract, ...)
+// its own | filter stage. Left bare, every VictoriaLogs version rejects it with
+// "unexpected token after [<pipe>]" or reads it as the pipe's argument. | filter
+// is accepted by every supported VictoriaLogs version. A bare filter following a
+// | filter stage (including the "| unpack_logfmt | filter" part emitted for
+// detected_level) stays an implicit AND inside it.
+func wrapBareFiltersAfterPipes(parts []string) {
+	for i := 1; i < len(parts); i++ {
+		cur := strings.TrimSpace(parts[i])
+		if cur == "" || strings.HasPrefix(cur, "|") {
+			continue
+		}
+		prev := strings.TrimSpace(parts[i-1])
+		if strings.HasPrefix(prev, "|") && !strings.HasPrefix(prev, "| filter ") && !strings.HasPrefix(prev, "| unpack_logfmt | filter ") {
+			parts[i] = "| filter " + cur
+		}
+	}
 }
 
 // knownParsers is the set of bare-word LogQL parser names.

@@ -28,7 +28,7 @@
     },
     "victorialogs": {
       "image_repo": "victoriametrics/victoria-logs",
-      "pinned_version": "v1.50.0",
+      "pinned_version": "v1.52.0",
       "support_window": {
         "policy": "v1_3x_to_v1_5x_transition",
         "description": "Support VictoriaLogs releases across v1.3x.x through v1.5x.x during migration windows. The current family is v1.5x.x, but we intentionally retain older bands to avoid backend upgrade lockstep.",
@@ -61,6 +61,7 @@
         "v1.49.0",
         "v1.50.0",
         "v1.51.0",
+        "v1.51.1",
         "v1.52.0"
       ],
     "capability_profiles": [

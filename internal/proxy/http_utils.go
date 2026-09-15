@@ -357,6 +357,8 @@ var vlQueryRejectedPrefixes = []string{
 	// "unexpected token" (lib/logstorage/pipe.go:130), "unexpected pipe"
 	// (pipe.go:164), "missing ')'" (parser.go:1891), "invalid regexp"
 	// (parser.go:2675), "cannot parse 'pattern'" (pipe_extract.go:244).
+	// VictoriaLogs v1.52.0 moved the query echo in front of the reason; see
+	// stripVLParseEcho, which normalizes that form to this prefix.
 	"cannot parse query arg:",
 	"query arg cannot be empty",          // logsql.go:110
 	"missing 'field' query arg",          // logsql.go:472, 554
@@ -399,7 +401,11 @@ func classifyVLError(status int, rawMsg string) vlErrorClass {
 	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
 		return vlErrorUnclassified
 	}
-	msg := strings.ReplaceAll(strings.TrimSpace(rawMsg), "`", "")
+	msg := strings.TrimSpace(rawMsg)
+	if reason, ok := stripVLParseEcho(msg); ok {
+		msg = "cannot parse query arg:" + reason
+	}
+	msg = strings.ReplaceAll(msg, "`", "")
 	switch {
 	case strings.HasPrefix(msg, "unsupported path requested"): // app/vlselect/main.go:373
 		return vlErrorUnsupportedPath
@@ -413,6 +419,53 @@ func classifyVLError(status int, rawMsg string) vlErrorClass {
 		return vlErrorResourceLimit
 	}
 	return vlErrorUnclassified
+}
+
+// vlParseEchoPrefixes start VictoriaLogs' parse-error wrapper from v1.52.0:
+// "cannot parse `query` arg [<query>]: <reason>" (app/vlselect/logsql/logsql.go:117).
+// Up to v1.51.1 the query followed the reason as "; query=<query>".
+var vlParseEchoPrefixes = []string{"cannot parse `query` arg [", "cannot parse query arg ["}
+
+// stripVLParseEcho removes the leading query echo of a VictoriaLogs v1.52+
+// parse error and returns the text after it: ": <reason>", with the parser
+// context still attached. ok is false for any other message.
+// The echoed LogsQL can hold "]: " inside quoted literals and the reason can
+// hold "[...]: " ("unexpected token after [fields a]: ..."), so the end of the
+// echo is the first "]: " outside quotes with balanced brackets. When no such
+// end exists the reason is dropped: the whole message may be user text. The
+// scan assumes brackets outside quoted literals are balanced in proxy-built
+// LogsQL; an unbalanced one also drops the reason, which still classifies as a
+// rejected query and never exposes the echo.
+func stripVLParseEcho(msg string) (string, bool) {
+	for _, prefix := range vlParseEchoPrefixes {
+		rest, found := strings.CutPrefix(msg, prefix)
+		if !found {
+			continue
+		}
+		depth := 0
+		var quote byte
+		for i := 0; i < len(rest); i++ {
+			c := rest[i]
+			switch {
+			case quote != 0:
+				if c == '\\' && quote != '`' {
+					i++
+				} else if c == quote {
+					quote = 0
+				}
+			case c == '"' || c == '\'' || c == '`':
+				quote = c
+			case c == '[':
+				depth++
+			case c == ']' && depth > 0:
+				depth--
+			case c == ']' && strings.HasPrefix(rest[i+1:], ": "):
+				return rest[i+1:], true
+			}
+		}
+		return ":", true
+	}
+	return "", false
 }
 
 func hasAnyPrefix(s string, prefixes []string) bool {
@@ -613,6 +666,9 @@ func (p *Proxy) redactBackendError(body []byte) string {
 	msg := extractVLErrorMsg(body)
 	if msg == "" || p.debugLogRawQueries {
 		return msg
+	}
+	if reason, ok := stripVLParseEcho(msg); ok {
+		msg = "cannot parse `query` arg […]" + reason
 	}
 	msg = RedactSecrets(msg)
 	msg = reErrQueryEcho.ReplaceAllString(msg, "")

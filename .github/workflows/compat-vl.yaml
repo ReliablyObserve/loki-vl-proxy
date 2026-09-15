@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:12.4.2
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:

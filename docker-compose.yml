@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.49.0
+    image: victoriametrics/victoria-logs:v1.52.0
     container_name: vl-proxy-test
     ports:
       - "9428:9428"
