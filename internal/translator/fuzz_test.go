@@ -62,32 +62,6 @@ func FuzzTranslateLogQL(f *testing.F) {
 	})
 }
 
-// FuzzTranslateSubquery tests subquery parsing with random inputs.
-func FuzzTranslateSubquery(f *testing.F) {
-	seeds := []string{
-		`max_over_time(rate({app="nginx"}[5m])[1h:5m])`,
-		`min_over_time(count_over_time({job="x"}[5m])[30m:1m])`,
-		`avg_over_time(rate({app="api"}[1m])[6h:30m])`,
-		`sum_over_time(rate({app="api"}[1m])[30m:5m])`,
-		`stddev_over_time(rate({app="api"}[5m])[1h:5m])`,
-		`rate({app="nginx"}[5m])[1h:5m]`,              // no outer func
-		`max_over_time(rate({app="nginx"}[5m]))`,      // no subquery range
-		`max_over_time(rate({app="nginx"}[5m])[])`,    // empty brackets
-		`max_over_time(rate({app="nginx"}[5m])[1h:])`, // missing step
-		`max_over_time(rate({app="nginx"}[5m])[:5m])`, // missing range
-		`max_over_time(`,
-		`sum_over_time(rate({app="x"}[5m])[1h:5m]) / rate({app="y"}[5m])`,
-	}
-	for _, s := range seeds {
-		f.Add(s)
-	}
-
-	f.Fuzz(func(t *testing.T, query string) {
-		// Must never panic
-		_, _ = TranslateLogQL(query)
-	})
-}
-
 // FuzzParseBinaryMetricExpr tests binary expression parsing with random inputs.
 func FuzzParseBinaryMetricExpr(f *testing.F) {
 	seeds := []string{
@@ -110,27 +84,6 @@ func FuzzParseBinaryMetricExpr(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input string) {
 		_, _, _, _ = ParseBinaryMetricExpr(input)
-	})
-}
-
-// FuzzParseSubqueryExpr tests subquery expression parsing with random inputs.
-func FuzzParseSubqueryExpr(f *testing.F) {
-	seeds := []string{
-		"__subquery__:max_over_time:app:=nginx | stats rate():1h:5m",
-		"__subquery__:min_over_time:query:30m:1m",
-		"__subquery__:",
-		"__subquery__:func:",
-		"__subquery__:func:query:range",
-		"",
-		"regular query",
-		"__binary__:/:left|||right",
-	}
-	for _, s := range seeds {
-		f.Add(s)
-	}
-
-	f.Fuzz(func(t *testing.T, input string) {
-		_, _, _, _, _ = ParseSubqueryExpr(input)
 	})
 }
 

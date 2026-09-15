@@ -153,7 +153,7 @@ func TestQueryRange_TopKFiltersToKSeries(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	params := url.Values{}
-	params.Set("query", `topk(2, sum by (app) (rate({app=~".*"}[5m])))`)
+	params.Set("query", `topk(2, sum by (app) (rate({app=~".+"}[5m])))`)
 	// One populated evaluation window: no all-zero buckets with tied winners.
 	// Changing winners across steps are covered by TestTopK_RangeWinnersChangeAtEachStep.
 	params.Set("start", "1700000600")
@@ -204,7 +204,7 @@ func TestQueryRange_BottomKFiltersToKSeries(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	p.storeBackendVersion("v1.50.0", "v1.50.0") // anchored stats buckets need offset support (v1.45+)
 	params := url.Values{}
-	params.Set("query", `bottomk(1, sum by (app) (count_over_time({app=~".*"}[5m])))`)
+	params.Set("query", `bottomk(1, sum by (app) (count_over_time({app=~".+"}[5m])))`)
 	params.Set("start", "1700000600")
 	params.Set("end", "1700000600")
 	params.Set("step", "300")

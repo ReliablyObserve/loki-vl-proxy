@@ -264,16 +264,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
 
 	var dispatched bool
-	if ra, ok := parsedInner.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
-		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
-		if innerErr != nil {
-			p.writeError(w, http.StatusBadRequest, innerErr.Error())
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
-		dispatched = true
-	} else if binOp, ok := parsedInner.(*logqlpkg.BinOpExpr); ok {
+	if binOp, ok := parsedInner.(*logqlpkg.BinOpExpr); ok {
 		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
 		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
 		if leftErr != nil {

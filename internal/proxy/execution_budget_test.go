@@ -12,46 +12,6 @@ import (
 	"time"
 )
 
-func TestHardening_SubqueryFailureAndWorkLimits(t *testing.T) {
-	for _, response := range []struct {
-		code int
-		body string
-	}{{503, "unavailable"}, {401, "denied"}, {200, "broken"}, {200, `{"status":"success","data":{"result":[{"metric":{},"value":[1,"bad"]}]}}`}} {
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(response.code)
-			fmt.Fprint(w, response.body)
-		}))
-		p := newTestProxy(t, backend.URL)
-		w := httptest.NewRecorder()
-		p.proxySubquery(w, httptest.NewRequest("GET", "/loki/api/v1/query?time=1700000000", nil), "max_over_time", "* | stats count()", "2s", "1s")
-		backend.Close()
-		if w.Code < 400 || strings.Contains(w.Body.String(), `"status":"success"`) {
-			t.Fatalf("upstream %d/%s became %d/%s", response.code, response.body, w.Code, w.Body)
-		}
-	}
-	var calls atomic.Int32
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
-	}))
-	defer backend.Close()
-	p := newTestProxy(t, backend.URL)
-	start := time.Unix(1700000000, 0)
-	for _, step := range []time.Duration{0, -time.Second, time.Nanosecond, time.Second} {
-		if _, _, err := p.evaluateSubqueryWindow(t.Context(), "*", start, start.Add(365*24*time.Hour), step, ""); err == nil {
-			t.Fatalf("unbounded range accepted with step %s", step)
-		}
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, _, err := p.evaluateSubqueryWindow(ctx, "*", start, start.Add(time.Second), time.Second, ""); err == nil {
-		t.Fatal("canceled query accepted")
-	}
-	if calls.Load() != 0 {
-		t.Fatal("rejected work reached backend")
-	}
-}
-
 func TestHardening_BackendBudgetBoundsFanout(t *testing.T) {
 	var active, peak atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

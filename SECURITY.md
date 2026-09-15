@@ -44,7 +44,7 @@ Do NOT open a public issue for security vulnerabilities.
 - **Global tenant denial**: an unmapped `X-Scope-OrgID: *` returns `403` in both native and label-routing modes unless `-tenant.allow-global=true`
 - **Tenant-scoped caches**: response, window, metadata, persisted and peer cache keys and coalescer keys include the resolved tenant routing and forwarded-identity fingerprint
 - **Query redaction**: debug logs record queries as `sha256:<8hex> len=<n>` unless `-debug-log-raw-queries=true`; VictoriaLogs error bodies and transport errors are redacted before they are logged or returned to clients
-- **Execution limits**: raw metric row/series limits, binary-expression and subquery budgets, `line_format` output limits and bounded coalesced bodies reject excessive work with an explicit error instead of partial results; see [Security hardening migration](docs/security-hardening-migration.md#execution-and-storage-limits)
+- **Execution limits**: raw metric row/series limits, binary-expression budgets, `line_format` output limits and bounded coalesced bodies reject excessive work with an explicit error instead of partial results; see [Security hardening migration](docs/security-hardening-migration.md#execution-and-storage-limits)
 - **Sensitive metrics off by default**: per-tenant and per-client identity labels are not exported unless explicitly enabled
 - **No secrets in logs**: all log output passes through a redacting slog handler that detects and masks API keys, bearer tokens, passwords, AWS credentials, and URL-embedded credentials
 

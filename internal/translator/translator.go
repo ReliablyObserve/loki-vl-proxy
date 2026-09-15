@@ -454,12 +454,6 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return "*", nil
 	}
 
-	// Detect subquery syntax: outer_func(inner_query[range:step])
-	// The proxy evaluates these by running the inner query at sub-step intervals.
-	if result, ok := tryTranslateSubquery(logql); ok {
-		return result, nil
-	}
-
 	// label_replace and label_join are transform wrappers around a complete metric
 	// expression. Handle them before the without/binary/metric path so the inner
 	// expression is translated correctly and the marker is appended last.
@@ -1893,15 +1887,14 @@ var rangeByClauseRE = regexp.MustCompile(`^by\s*\(([^)]*)\)`)
 
 // Package-level compiled regexes — compiled once at program start, not per-request.
 var (
-	boolModifierRE   = regexp.MustCompile(`\s+bool\s+`)
-	withoutMarkerRE  = regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
-	goTemplateRE     = regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
-	vectorMatchRE    = regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
-	aggByBeforeRE    = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
-	aggFuncRE        = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s*\(`)
-	aggByAfterRE     = regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
-	subqueryInlineRE = regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]`)
-	durationPartRE   = regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
+	boolModifierRE  = regexp.MustCompile(`\s+bool\s+`)
+	withoutMarkerRE = regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
+	goTemplateRE    = regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
+	vectorMatchRE   = regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
+	aggByBeforeRE   = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
+	aggFuncRE       = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s*\(`)
+	aggByAfterRE    = regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
+	durationPartRE  = regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
 )
 
 // extractRangeByClause parses a trailing "by (...)" modifier that appears after
@@ -2893,7 +2886,7 @@ func translateBareFilter(s string) string {
 // with `<identifier> [op] "value"` (or backtick value). This avoids
 // false-positives on text-with-equals or expressions that contain matchers
 // nested inside parens (e.g. `sum(rate({app="x"}[5m])) by (app)` — those
-// reach this code path only after the metric/binary/subquery extractors
+// reach this code path only after the metric/binary extractors
 // declined them, but the leading char would be `s` followed by `u`, not an
 // identifier directly followed by `=`).
 //
@@ -2957,117 +2950,6 @@ func looksLikeBareLabelMatcher(s string) bool {
 	}
 	// Must be followed by an opening quote (`"` or `` ` ``).
 	return s[i] == '"' || s[i] == '`'
-}
-
-// =============================================================================
-// Subquery support: outer_func(inner_metric_query[range:step])
-// Proxy evaluates inner query at sub-step intervals and aggregates.
-// =============================================================================
-
-// SubqueryPrefix marks a translated subquery expression for proxy-side evaluation.
-const SubqueryPrefix = "__subquery__:"
-
-// tryTranslateSubquery detects and translates subquery syntax.
-// Output is a proxy-internal protocol string (__subquery__:func:innerQuery:range:step),
-// not a LogsQL expression — LogQL AST migration does not apply here.
-// The inner query is already translated via recursive TranslateLogQL.
-// Input: max_over_time(rate({app="nginx"}[5m])[1h:5m])
-// Output: __subquery__:max_over_time:<translated inner query>:1h:5m
-func tryTranslateSubquery(logql string) (string, bool) {
-	// Look for [range:step] pattern inside the expression
-	if !subqueryInlineRE.MatchString(logql) {
-		return "", false
-	}
-
-	// Extract the outer function: everything before the first "("
-	// E.g., "max_over_time(rate({app="nginx"}[5m])[1h:5m])" → "max_over_time"
-	parenIdx := strings.Index(logql, "(")
-	if parenIdx < 0 {
-		return "", false
-	}
-	outerFunc := strings.TrimSpace(logql[:parenIdx])
-
-	// Validate it's a known aggregation function
-	knownOuter := map[string]bool{
-		"max_over_time": true, "min_over_time": true,
-		"avg_over_time": true, "sum_over_time": true,
-		"count_over_time": true, "stddev_over_time": true,
-		"stdvar_over_time": true, "last_over_time": true,
-		"first_over_time": true, "quantile_over_time": true,
-	}
-	if !knownOuter[outerFunc] {
-		return "", false
-	}
-
-	// The body is everything inside the outer function's parens
-	body := logql[parenIdx+1:]
-	// Find the last closing paren
-	lastParen := strings.LastIndex(body, ")")
-	if lastParen < 0 {
-		return "", false
-	}
-	body = body[:lastParen]
-
-	// Find [range:step] at the end of body
-	loc := subqueryInlineRE.FindStringSubmatchIndex(body)
-	if loc == nil {
-		return "", false
-	}
-
-	// Check that this [range:step] is at the END of the body (after the inner query's closing paren)
-	// The inner query ends just before the [range:step]
-	rangeStepStart := loc[0]
-	rng := body[loc[2]:loc[3]]
-	step := body[loc[4]:loc[5]]
-
-	innerQuery := strings.TrimSpace(body[:rangeStepStart])
-
-	// The inner query should be a complete metric expression.
-	// Translate it as a normal metric query.
-	translatedInner, err := TranslateLogQL(innerQuery)
-	if err != nil {
-		return "", false
-	}
-
-	return fmt.Sprintf("%s%s:%s:%s:%s", SubqueryPrefix, outerFunc, translatedInner, rng, step), true
-}
-
-// ParseSubqueryExpr parses a "__subquery__:func:innerQuery:range:step" string.
-// Returns the outer function, inner translated query, range, step, and whether it's a subquery.
-func ParseSubqueryExpr(s string) (outerFunc, innerQuery, rng, step string, ok bool) {
-	if !strings.HasPrefix(s, SubqueryPrefix) {
-		return "", "", "", "", false
-	}
-	rest := s[len(SubqueryPrefix):]
-
-	// Format: "func:innerQuery:range:step"
-	// The innerQuery may contain colons (e.g., in field filters), so we parse from both ends.
-	// The last two colon-separated segments are range and step (simple duration strings).
-	// Find the step (last segment)
-	lastColon := strings.LastIndex(rest, ":")
-	if lastColon < 0 {
-		return "", "", "", "", false
-	}
-	step = rest[lastColon+1:]
-	rest = rest[:lastColon]
-
-	// Find the range (now last segment)
-	lastColon = strings.LastIndex(rest, ":")
-	if lastColon < 0 {
-		return "", "", "", "", false
-	}
-	rng = rest[lastColon+1:]
-	rest = rest[:lastColon]
-
-	// Find the outer function (first segment)
-	firstColon := strings.Index(rest, ":")
-	if firstColon < 0 {
-		return "", "", "", "", false
-	}
-	outerFunc = rest[:firstColon]
-	innerQuery = rest[firstColon+1:]
-
-	return outerFunc, innerQuery, rng, step, true
 }
 
 // extractIPFilterArg parses the argument from an ip("...") expression.

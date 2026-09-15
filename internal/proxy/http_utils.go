@@ -68,13 +68,13 @@ var (
 // validateQuery checks query string length and returns a sanitized version.
 // It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
-	if len(query) > maxQueryLength {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength))
+	if msg := queryLengthError(query); msg != "" {
+		p.writeError(w, http.StatusBadRequest, msg)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
 	if err := validateLogQLSyntax(query); err != "" {
-		p.writeError(w, http.StatusBadRequest, err)
+		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -94,6 +94,11 @@ var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]
 // unbounded growth from uniquely-parameterized queries.
 const validationCacheMaxSize = 1024
 
+// validationCacheMaxQueryBytes is the longest query whose validation result is
+// cached; longer queries are validated on every request so the cache memory
+// stays bounded by validationCacheMaxSize small entries.
+const validationCacheMaxQueryBytes = 4096
+
 var (
 	validationCache     sync.Map
 	validationCacheSize atomic.Int32
@@ -104,16 +109,25 @@ var (
 // Results are cached by query string to avoid repeated AST allocations for
 // identical queries (the common case in real workloads and benchmarks).
 func validateLogQLSyntax(query string) string {
+	if len(query) > validationCacheMaxQueryBytes {
+		return logql.ValidateLogQL(query)
+	}
 	if v, ok := validationCache.Load(query); ok {
 		return v.(string)
 	}
 	result := logql.ValidateLogQL(query)
+	storeValidationResult(query, result)
+	return result
+}
+
+// storeValidationResult adds a validation result while the cache is below
+// validationCacheMaxSize entries.
+func storeValidationResult(key, result string) {
 	if validationCacheSize.Load() < validationCacheMaxSize {
-		if _, loaded := validationCache.LoadOrStore(query, result); !loaded {
+		if _, loaded := validationCache.LoadOrStore(key, result); !loaded {
 			validationCacheSize.Add(1)
 		}
 	}
-	return result
 }
 
 // rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.

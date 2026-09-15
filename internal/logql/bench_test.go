@@ -15,7 +15,6 @@ var benchQueries = map[string]string{
 	"vector_topk":     `topk(10, sum by (app) (rate({app="api"}[5m])))`,
 	"binary_ratio": `100 * sum by (app) (rate({app="api", status=~"5.."}[5m])) ` +
 		`/ sum by (app) (rate({app="api"}[5m]))`,
-	"subquery":      `max_over_time(rate({app="api"}[5m])[1h:5m])`,
 	"vector_match":  `rate({app="api"}[5m]) * on (app) group_left (team) rate({app="api"}[5m])`,
 	"long_pipeline": `{app="nginx"} |= "error" | json | level="error" | drop trace_id, span_id | line_format "{{.msg}}"`,
 	"many_labels":   `{app="nginx", env="prod", region="us-east", host=~"host-[0-9]+", dc!="eu"}`,

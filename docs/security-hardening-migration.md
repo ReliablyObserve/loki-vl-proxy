@@ -90,11 +90,6 @@ not comparable to older runs that mostly measured primary-cache hits.
   children respect cancellation. The existing outer HTTP admission limit remains
   separate; zero still means unlimited. Native tail streams retain their
   dedicated streaming client, and readiness/peer control requests remain separate.
-- Subqueries reject more than 10,000 total inner evaluations, counting outer
-  points × inner points, before allocating work. At most ten workers run per
-  subquery window. Decoded results are limited to 8 MiB per step, 64 MiB across
-  the evaluation, and one million samples. Excess work returns a limit error;
-  invalid or failed upstream results return an error, not successful empty data.
 - `line_format` permits 64 KiB output per line and 16 MiB per response, with
   bounded intermediate formatting, input, template depth and execution work.
   Exceeding these limits returns HTTP 400. Normal printf, control flow, string

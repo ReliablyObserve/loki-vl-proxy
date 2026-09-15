@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 )
@@ -94,6 +93,12 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		{"topk_n_negative", `topk(-1, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
 		{"bottomk_n_zero", `bottomk(0, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
 		{"topk_n_float", `topk(1.5, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+
+		// ── Subqueries: LogQL has no [range:step] grammar (Loki 3.7.1 parse error) ──
+		{"subquery_max_rate", `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`, "subquery"},
+		{"subquery_avg_rate", `avg_over_time(rate({env="production"}[5m])[30m:5m])`, "subquery"},
+		{"subquery_min_outer", `min_over_time(rate({env="production"}[5m])[5m:1m])`, "subquery"},
+		{"subquery_count_avg", `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`, "subquery"},
 
 		// ── outer quantile() aggregation (LogQL has quantile_over_time, not quantile()) ──
 		{"quantile_outer_agg", `quantile(0.5, sum by(app)(rate({env="production"}[5m])))`, "invalid_agg"},
@@ -385,8 +390,8 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
 
 		// ── Subqueries ────────────────────────────────────────────────────────
-		// subquery_max_rate, subquery_avg_rate: Loki 3.7.1 rejects applying max/avg_over_time
-		// to a subquery over rate() — these are proxy extensions tracked in TestLogQL_Exhaustive_KnownGaps.
+		// Loki 3.7.1 and the proxy both reject every subquery form (matching 400);
+		// the rest are in TestLogQL_Exhaustive_ErrorParity.
 		{"subquery_rate_count", `rate(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery"},
 		{"subquery_sum_by", `sum by (app)(max_over_time(rate({env="production"}[5m])[30m:5m]))`, "subquery"},
 
@@ -518,8 +523,7 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"quantile_by_label_95", `quantile_over_time(0.95, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (level)`, "unwrap_quantile"},
 		{"quantile_by_label_50", `quantile_over_time(0.50, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (app)`, "unwrap_quantile"},
 
-		// ── subquery min / avg ────────────────────────────────────────────────
-		// subquery_min_outer and subquery_count_avg: Loki 3.7.1 rejects these — tracked in KnownGaps.
+		// ── subquery min / avg (both reject) ──────────────────────────────────
 		{"subquery_sum_by_outer", `sum by(app)(max_over_time(rate({env="production"}[5m])[5m:1m]))`, "subquery_ext"},
 
 		// ── logfmt filter + line_format ───────────────────────────────────────
@@ -722,7 +726,6 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 
 		// ── Extended subquery ops ─────────────────────────────────────────────
 		// Both Loki 3.7.1 and the proxy reject these (matching 400) — parity holds.
-		// avg/min_over_time of count_over_time are proxy_extension gaps (tracked in KnownGaps).
 		{"subquery_quantile_count", `quantile_over_time(0.5, count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery_ext"},
 		{"subquery_vec_avg", `sum by(app)(avg_over_time(count_over_time({env="production"}[5m])[30m:5m]))`, "subquery_ext"},
 
@@ -846,19 +849,12 @@ func (s *exhaustiveScore) report(t *testing.T) {
 
 // exhaustiveQueryClient is a shared HTTP client with a per-request timeout.
 // Without a timeout, queries against the proxy can hang indefinitely when
-// VictoriaLogs restarts mid-request (subquery evaluation under load).
+// VictoriaLogs restarts mid-request.
 var exhaustiveQueryClient = &http.Client{Timeout: 20 * time.Second}
 
 func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	t.Helper()
 	return exhaustiveQueryWithRange(t, baseURL, query, 30*time.Minute, 60)
-}
-
-// exhaustiveShortWindowQuery uses a 2-minute window to avoid overloading VL
-// during proxy-side subquery evaluation (which fans out many inner queries).
-func exhaustiveShortWindowQuery(t *testing.T, baseURL, query string) (int, string) {
-	t.Helper()
-	return exhaustiveQueryWithRange(t, baseURL, query, 2*time.Minute, 120)
 }
 
 func exhaustiveQueryWithRange(t *testing.T, baseURL, query string, window time.Duration, stepSec int) (int, string) {
@@ -945,16 +941,6 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 		lokiExpect  int
 		proxyExpect int
 		note        string
-		// shortWindow uses a 2-minute query range instead of 30 minutes.
-		// Required for proxy-side subquery evaluation: a 30m window with 60s step
-		// generates ~150 inner VL calls per case, crashing VictoriaLogs under load.
-		// A 2-minute window reduces inner calls to ~10 while still verifying the gap.
-		shortWindow bool
-		// skipUnlessE2ESubquery marks cases that require a stable, lightly-loaded
-		// VictoriaLogs instance. Set E2E_SUBQUERY_TESTS=1 to include them.
-		// These are proxy_extension gaps (proxy accepts, Loki rejects) — the proxy
-		// is correct; the skip is purely about VL reliability under concurrent load.
-		skipUnlessE2ESubquery bool
 	}
 
 	gaps := []gap{
@@ -963,59 +949,23 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`rate({app="api-gateway"}[5m] @ 1000000000)`,
 			"proxy_extension", 400, 200,
 			"proxy supports @ step-alignment modifier (maps to VL query time); Loki 3.7.1 parse error",
-			false, false,
 		},
 		{
 			"at_start_modifier",
 			`rate({app="api-gateway"}[5m] @ start())`,
 			"proxy_extension", 400, 200,
 			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
-			false, false,
 		},
 		{
 			"label_join_function",
 			`label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`,
 			"proxy_extension", 400, 200,
 			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
-			false, false,
 		},
 		// stddev_outer_aggregation, stdvar_outer_aggregation, quantile_neg_error_code were
 		// proxy_bug/code_mismatch gaps but are now fixed — moved to QueryParity/ErrorParity.
-		// Subquery-over-range-function extensions: Loki 3.7.1 rejects applying
-		// max/avg/min_over_time to a subquery over rate() or count_over_time().
-		// The proxy evaluates these via proxy-side subquery evaluation (extension).
-		{
-			name:    "subquery_max_rate",
-			query:   `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
-			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
-			note:                  "Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
-			shortWindow:           true,
-			skipUnlessE2ESubquery: true,
-		},
-		{
-			name:    "subquery_avg_rate",
-			query:   `avg_over_time(rate({env="production"}[5m])[30m:5m])`,
-			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
-			note:                  "Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
-			shortWindow:           true,
-			skipUnlessE2ESubquery: true,
-		},
-		{
-			name:    "subquery_min_outer",
-			query:   `min_over_time(rate({env="production"}[5m])[5m:1m])`,
-			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
-			note:                  "Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
-			shortWindow:           true,
-			skipUnlessE2ESubquery: true,
-		},
-		{
-			name:    "subquery_count_avg",
-			query:   `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
-			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
-			note:                  "Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
-			shortWindow:           true,
-			skipUnlessE2ESubquery: true,
-		},
+		// Subquery extensions were removed: every [range:step] form is now rejected
+		// like Loki 3.7.1 — covered by ErrorParity.
 		// All proxy_strict and proxy_bug gaps above have been fixed and moved to
 		// ErrorParity / QueryParity. Only proxy_extension gaps remain below.
 		// quantile_over_time_gt_one fixed: proxy now clamps phi>1 to 1.0 — moved to QueryParity.
@@ -1029,20 +979,11 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 	t.Log("  Known Parity Gaps (proxy vs Loki 3.7.1)")
 	t.Log("══════════════════════════════════════════════════════════")
 
-	e2eSubqueryEnabled := os.Getenv("E2E_SUBQUERY_TESTS") == "1"
-
 	for _, g := range gaps {
 		g := g
 		t.Run(g.name, func(t *testing.T) {
-			if g.skipUnlessE2ESubquery && !e2eSubqueryEnabled {
-				t.Skipf("proxy_extension subquery gap skipped under load (set E2E_SUBQUERY_TESTS=1 to run): %s", g.note)
-			}
-			queryFn := exhaustiveQuery
-			if g.shortWindow {
-				queryFn = exhaustiveShortWindowQuery
-			}
-			lokiCode, _ := queryFn(t, lokiURL, g.query)
-			proxyCode, _ := queryFn(t, proxyURL, g.query)
+			lokiCode, _ := exhaustiveQuery(t, lokiURL, g.query)
+			proxyCode, _ := exhaustiveQuery(t, proxyURL, g.query)
 
 			t.Logf("[%s] %s", g.gapType, g.note)
 			t.Logf("  Loki=%d (expected %d)  Proxy=%d (expected %d)", lokiCode, g.lokiExpect, proxyCode, g.proxyExpect)

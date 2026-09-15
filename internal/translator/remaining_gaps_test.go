@@ -63,7 +63,7 @@ func TestUnwrapBytes_FieldExtracted(t *testing.T) {
 }
 
 // =============================================================================
-// Subquery syntax — proxy-side evaluation
+// Subquery syntax — must not panic
 // =============================================================================
 
 func TestSubquery_NestedRate_NoPanic(t *testing.T) {
@@ -117,17 +117,13 @@ func TestVectorMatching_GroupLeftStripped(t *testing.T) {
 }
 
 // =============================================================================
-// Subquery syntax — proxy-side evaluation (returns __subquery__ prefix)
+// Subquery syntax is not LogQL: the translator has no subquery protocol
 // =============================================================================
 
-func TestSubquery_ReturnsSubqueryPrefix(t *testing.T) {
-	logql := `max_over_time(rate({app="nginx"}[5m])[1h:5m])`
-	result, err := TranslateLogQL(logql)
-	if err != nil {
-		t.Fatalf("subquery should not error: %v", err)
-	}
-	if !strings.HasPrefix(result, SubqueryPrefix) {
-		t.Errorf("expected __subquery__ prefix, got %q", result)
+func TestSubquery_NoProxyEvaluationMarker(t *testing.T) {
+	result, _ := TranslateLogQL(`max_over_time(rate({app="nginx"}[5m])[1h:5m])`)
+	if strings.Contains(result, "__subquery__") {
+		t.Errorf("subquery translated into a proxy evaluation marker: %q", result)
 	}
 }
 

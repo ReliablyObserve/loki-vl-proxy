@@ -437,17 +437,19 @@ func TestEdge_RangeWithOffset(t *testing.T) {
 	}
 }
 
+// LogQL has no subquery grammar: Loki 3.7.1 rejects every [range:step] form.
 func TestEdge_Subqueries(t *testing.T) {
-	valid := []string{
+	invalid := []string{
 		`max_over_time(rate({app="api"}[5m])[1h:5m])`,
 		`avg_over_time(rate({app="api"}[1m])[1h:5m])`,
 		`min_over_time(rate({app="api"}[1m])[30m:1m])`,
 		`sum_over_time(rate({app="api"}[1m])[1h:])`,
 		`max_over_time(sum by (app) (rate({app="api"}[5m]))[1h:5m])`,
 		`max_over_time(rate({app="api"}[5m])[24h:1h])`,
+		`count_over_time({app="api"}[30m:5m])`,
 	}
-	for _, q := range valid {
-		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustFail(t, q) })
 	}
 }
 
@@ -558,7 +560,6 @@ func TestEdge_ComplexNested(t *testing.T) {
 		`bottomk(5, max by (env) (count_over_time({app="api"}[1h])))`,
 		`sum by (app) (rate({app="api"} | json | status>=500 [5m]))`,
 		`sum by (app) (rate({app="api"}[5m])) > 1`,
-		`max_over_time(rate({app="api"}[1m])[5m:]) / sum by (app) (rate({app="api"}[5m]))`,
 		`sum without (instance) (rate({job="integrations/node_exporter"}[5m]))`,
 		`sort_desc(sum by (app) (rate({app="api"}[5m])))`,
 		`topk(5, sum by (namespace, pod) (rate({namespace="default"}[5m])))`,
@@ -627,7 +628,6 @@ func TestEdge_Semantic_Valid(t *testing.T) {
 		`{app="nginx"} | unwrap duration`,
 		`{app="nginx"} | json | unwrap latency`,
 		`rate({app="api"}[5m] offset 1h)`,
-		`max_over_time(rate({app="api"}[5m])[1h:5m])`,
 	}
 	for _, q := range valid {
 		t.Run(q, func(t *testing.T) { mustValidate(t, q) })
@@ -644,18 +644,21 @@ func TestEdge_Semantic_Invalid(t *testing.T) {
 		`quantile_over_time(-1, {app="api"} | unwrap lat [5m])`,      // negative phi
 		`{app="nginx"} | unwrap a | unwrap b`,                        // double unwrap
 		`avg_over_time({app="api"} | unwrap a [5m] | unwrap b [5m])`, // double unwrap in range
-	}
-	for _, q := range invalid {
-		t.Run(q, func(t *testing.T) { mustReject(t, q) })
-	}
-	// Loki 3.7.1 accepts __error__/__error_details__ inside rate()/bytes_rate()
-	// and does not validate line_format template syntax at parse time.
-	acceptedByLoki := []string{
+		// Loki 3.7.1 answers 400 for an empty-compatible selector and for a
+		// line_format template it cannot build.
 		`rate({__error__=""}[5m])`,
 		`rate({__error_details__=""}[5m])`,
 		`bytes_rate({__error__=""}[5m])`,
 		`{app="nginx"} | line_format "{{.msg"`,
 		`{app="nginx"} | line_format "{{.level"`,
+	}
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustReject(t, q) })
+	}
+	// Loki drops line_format from line-independent range aggregations before
+	// building the pipeline, so an invalid template there still answers 200.
+	acceptedByLoki := []string{
+		`count_over_time({app="nginx"} | line_format "{{.msg" [5m])`,
 	}
 	for _, q := range acceptedByLoki {
 		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidate(t, q) })
@@ -674,7 +677,6 @@ func TestEdge_ValidateLogQL_Valid(t *testing.T) {
 		`sum(rate({app="api"}[5m])) by (app)`,
 		`rate({app="api"}[5m]) / rate({app="api"}[5m])`,
 		`100 * sum by (app) (rate({app="api", status=~"5.."}[5m])) / sum by (app) (rate({app="api"}[5m]))`,
-		`max_over_time(rate({app="api"}[5m])[1h:5m])`,
 		`rate({app="api"}[5m] offset 1h)`,
 		`rate_counter({app="api"} | unwrap latency [5m])`,
 		`quantile_over_time(0.99, {app="api"} | unwrap latency [5m])`,
@@ -703,17 +705,12 @@ func TestEdge_ValidateLogQL_Invalid(t *testing.T) {
 		`rate_counter({app="api"}[5m])`,
 		`quantile_over_time(-0.5, {app="api"} | unwrap lat [5m])`,
 		`{app="nginx"} | unwrap a | unwrap b`,
+		`rate({__error__=""}[5m])`,
+		`{app="nginx"} | line_format "{{.msg"`,
+		`max_over_time(rate({app="api"}[5m])[1h:5m])`,
 	}
 	for _, q := range invalid {
 		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
-	}
-	// Loki 3.7.1 accepts these at parse time.
-	lokiAccepts := []string{
-		`rate({__error__=""}[5m])`,
-		`{app="nginx"} | line_format "{{.msg"`,
-	}
-	for _, q := range lokiAccepts {
-		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidateV(t, q) })
 	}
 }
 
@@ -909,10 +906,10 @@ func TestEdge_LabelReplace_Extended(t *testing.T) {
 	}
 }
 
-// ─── subqueries – all over_time ops on metric subqueries ─────────────────────
+// ─── subqueries – rejected for every over_time op (no LogQL subquery grammar) ─
 
 func TestEdge_Subqueries_Extended(t *testing.T) {
-	valid := []string{
+	invalid := []string{
 		// Already tested: rate(count_over_time(...)[range:step])
 		// Additional over_time ops applied to subquery:
 		`avg_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
@@ -931,8 +928,8 @@ func TestEdge_Subqueries_Extended(t *testing.T) {
 		// Subquery with unwrap inner
 		`max_over_time(sum_over_time({app="a"} | json | unwrap duration_ms [5m])[1h:5m])`,
 	}
-	for _, q := range valid {
-		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustFail(t, q) })
 	}
 }
 
@@ -1035,18 +1032,20 @@ func TestEdge_BinaryOp_Precedence(t *testing.T) {
 // ─── semantic validation – deep nesting ───────────────────────────────────────
 
 func TestEdge_Semantic_DeepNesting(t *testing.T) {
-	// Loki 3.7.1 accepts __error__/__error_details__ inside rate()/bytes_rate()
-	// at parse time — any rejection happens at evaluation time, not parse time.
-	valid := []string{
-		// __error__ in rate nested inside vector agg — Loki accepts at parse time
+	// Loki 3.7.1 applies the empty-compatible matcher rule to every selector,
+	// however deeply nested; __error__ selectors are valid when they select.
+	invalid := []string{
 		`sum by(app)(rate({__error__=""}[5m]))`,
-		`max by(level)(rate({__error__!=""}[5m]))`,
-		`avg(rate({__error__="timeout"}[5m]))`,
-		// __error_details__ in bytes_rate nested inside vector agg
 		`sum by(app)(bytes_rate({__error_details__=""}[5m]))`,
 		`count(bytes_rate({__error__=""}[5m]))`,
-		// doubly nested
 		`sum(max by(app)(rate({__error__=""}[5m])))`,
+	}
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+	valid := []string{
+		`max by(level)(rate({__error__!=""}[5m]))`,
+		`avg(rate({__error__="timeout"}[5m]))`,
 		// __error__ via label filter inside rate
 		`sum by(app)(rate({app="a"} | json | __error__!="" [5m]))`,
 		`rate({app="a"} | json | __error_details__!="" [5m])`,

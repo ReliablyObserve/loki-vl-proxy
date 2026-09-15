@@ -142,7 +142,7 @@ All error responses from the proxy use the standard Loki JSON error envelope:
 
 | HTTP Status | `errorType` | Typical causes |
 |---|---|---|
-| 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), subquery / `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
+| 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
 | 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant or unmapped wildcard `X-Scope-OrgID: *` without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
 | 404 | `not_found` | rules lookups with no matching rule group |
 | 406 / 422 | `not_acceptable` / `execution` | Loki status mapping (for example a backend returning that status) |

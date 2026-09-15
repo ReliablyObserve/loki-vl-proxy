@@ -11,12 +11,12 @@ The `internal/logql` package provides a typed LogQL parser that powers query val
 
 The old approach used regular expressions layered on top of the raw query string. This worked for simple cases but broke on:
 
-- Nested expressions (subqueries, vector matching with `on()`/`group_left()`)
+- Nested expressions (vector matching with `on()`/`group_left()`)
 - Embedded regex inside label matchers (e.g. `{app=~"api|web"}`)
 - Ambiguous operator sequences (`!=` inside a string vs. between labels)
 - `rate_counter` requiring `| unwrap` — impossible to validate structurally without an AST
 
-The typed AST makes these cases explicit. Each node type is a Go struct with typed fields, so routing logic (is this a range aggregation? a binary expression? a subquery?) becomes a type switch rather than a regex match.
+The typed AST makes these cases explicit. Each node type is a Go struct with typed fields, so routing logic (is this a range aggregation? a binary expression?) becomes a type switch rather than a regex match.
 
 ## Package Structure
 
@@ -102,7 +102,7 @@ flowchart TD
 
 1. **Validation** (`ValidateLogQL`) — called on every inbound query before any work is done. Returns a Loki-shaped error string (`"parse error at line 1, col 1: ..."`) or `""` if valid.
 
-2. **Routing** (`proxy.go`) — calls `logql.Parse()` on the validated query and type-switches to dispatch subqueries, binary expressions, and range aggregations to separate execution paths.
+2. **Routing** (`proxy.go`) — calls `logql.Parse()` on the validated query and type-switches to dispatch binary expressions and range aggregations to separate execution paths.
 
 3. **Translation** (`TranslateLogQLWithCapabilities` and `logql.Translate`) — two paths described in detail below.
 
@@ -119,12 +119,12 @@ Expr (interface)
 │       ├── *ParserStage             | json / | logfmt / | regexp / | pattern / | unpack
 │       ├── *LabelFilterStage        | level="error" (raw, opaque)
 │       ├── *LineFormatStage         | line_format "{{.msg}}"
-│       ├── *LabelFormatStage        | label_format dst=src (raw, opaque)
+│       ├── *LabelFormatStage        | label_format dst=src, tmpl="{{.x}}" (parsed entries + raw)
 │       ├── *UnwrapStage             | unwrap bytes(label)
 │       ├── *DropStage               | drop a, b, c=~"re"
 │       ├── *KeepStage               | keep a, b
 │       └── *DecolorizeStage         | decolorize
-├── *RangeAggregation        rate({...}[5m]) / max_over_time(...[1h:5m]) subquery
+├── *RangeAggregation        rate({...}[5m]) — argument is always a log query (no subqueries)
 ├── *VectorAggregation       sum by (label) (rate(...)) / topk(5, ...)
 ├── *BinOpExpr               left op right, optional VectorMatching
 ├── *LiteralExpr             scalar 3.14
@@ -289,14 +289,11 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 ```mermaid
 flowchart TD
     P["logql.Parse(query)"]
-    RA{"*RangeAggregation\nwith Step?"}
     BE{"*BinOpExpr?"}
     ST{"isStatsQuery?"}
     LQ["Default: log stream\nor instant metric proxy"]
 
-    P --> RA
-    RA -- yes --> SQ["proxySubqueryRange\n(subquery execution)"]
-    RA -- no --> BE
+    P --> BE
     BE -- yes --> BM["proxyBinaryMetricQueryRangeVM\n(left + right translated separately)"]
     BE -- no --> ST
     ST -- yes --> SP["proxyStatsQueryRange"]

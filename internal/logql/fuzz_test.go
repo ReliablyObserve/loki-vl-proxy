@@ -60,11 +60,22 @@ func FuzzParse(f *testing.F) {
 		`sum by (`,
 		`{app="nginx"} |`,
 		`topk(`,
+		// stage validation
+		`{app="nginx"} | json a="b[0][\"c\"].d", e`,
+		`{app="nginx"} | logfmt a="b" "c"`,
+		`{app="nginx"} | label_format a=b, c="{{ .d | trunc 3 }}"`,
+		`{app="nginx"} | pattern "<_> <a><b"`,
+		`label_replace(rate({app=""}[5m]), "a", "b", "c", "d")`,
 	}
 	for _, s := range seeds {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
+		// Validation entry points must never panic on arbitrary input.
+		_ = ValidateLogQL(input)
+		_ = ValidateMatchersQuery(input)
+		_ = ValidateSeriesMatchers([]string{input, `{app="a"}`})
+		_ = ValidateLogSelectorQuery(input)
 		expr, err := Parse(input)
 		if err != nil {
 			return

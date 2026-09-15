@@ -817,7 +817,6 @@ These protective limits are built in (not configurable unless a flag is named). 
 
 | Area | Limit | When exceeded |
 |---|---|---|
-| Subqueries | 10,000 total inner evaluations (outer points × inner points); at most 10 workers per subquery window; 8 MiB per inner step response; 64 MiB decoded across the evaluation; 1,000,000 samples | `400` |
 | `line_format` | 64 KiB output per line; 16 MiB per response; 1 MiB template input per line; bounded template execution work | `400` |
 | Binary metric expressions | nesting depth 64; 1,024 child evaluations per request; 256 MiB of captured operand bytes; 64 MiB per operand response and encoded result; 1,000,000 output samples | `400` for evaluation and operand limits; `500` for errors raised while joining operands (including implicit many-to-one matches) |
 | Manual range-metric rows | `-manual-range-metric-row-limit` (default 1,000,000 rows); 64 MiB backend response | `502` |

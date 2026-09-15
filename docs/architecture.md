@@ -49,7 +49,6 @@ flowchart TD
             STATS["stats_query_range<br/>rate, count_over_time, topK"]
             BINARY["Binary metric ops<br/>sum(rate) / sum(rate)"]
             VECM["Vector matching<br/>on/ignoring, group_left/right"]
-            SUBQ["Subquery expansion"]
         end
         subgraph StreamP["Stream Processing"]
             STREAM["VL → Loki streams<br/>label shaping, dedup, sorting"]
@@ -211,7 +210,7 @@ flowchart TD
 | Query-length enforcement | Reject requests whose time range exceeds the configured maximum | `-default-max-query-length=0` (disabled); per-tenant override via limits config; tenant limit takes precedence |
 | Stats series and concurrency caps | Bound stats responses and parallel `stats_query_range` calls | `-max-stats-query-series=0` (built-in `500`), `-stats-query-range-concurrency=0` (built-in `4`) |
 | Metadata lookback | Bound `/labels`, `/label/{name}/values` and `/series` when the client omits `start`/`end` | `-metadata-default-lookback=12h` |
-| Execution budgets | Reject oversized raw metric scans, binary expressions, subqueries and `line_format` output with explicit errors instead of partial results | `-manual-range-metric-row-limit=1000000` plus fixed budgets; see [Security hardening migration](security-hardening-migration.md) |
+| Execution budgets | Reject oversized raw metric scans, binary expressions and `line_format` output with explicit errors instead of partial results | `-manual-range-metric-row-limit=1000000` plus fixed budgets; see [Security hardening migration](security-hardening-migration.md) |
 | Circuit breaker | Protect VL from cascading failure | `-cb-fail-threshold=5` failures within `-cb-window-duration=30s`, `-cb-open-duration=10s` |
 | Backend error redaction | Strip query-like content (selectors, long quoted literals, long hex ids) from VictoriaLogs error bodies and transport errors before logging or returning them | Enabled; disabled only by `-debug-log-raw-queries=true` |
 | Admin and peer exposure | Keep admin/debug routes off the public listener and authenticate peer cache traffic | Admin routes on `-admin-listen=127.0.0.1:3101` unless `-server.admin-auth-token` is set; `/metrics` requires `-server.register-instrumentation=true`; peer cache refuses to start without `-peer-auth-token` unless `-peer-insecure-ip-allowlist=true` |
@@ -374,7 +373,7 @@ flowchart LR
 Typed recursive-descent parser for LogQL. Produces a fully-typed AST (`Expr` interface with concrete node types: `*LogQuery`, `*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`, …) that drives three subsystems:
 
 - **Validation** — `ValidateLogQL(query)` returns Loki-compatible error strings for invalid queries before any work is done.
-- **Routing** — `proxy.go` type-switches on the parsed AST to dispatch subqueries, binary metric expressions, and stream queries to separate execution paths (more reliable than regex-based marker injection).
+- **Routing** — `proxy.go` type-switches on the parsed AST to dispatch binary metric expressions, range aggregations and stream queries to separate execution paths (more reliable than regex-based marker injection).
 - **Drop/Keep extraction** — `stream_processing.go` extracts `| drop`/`| keep` matchers from the AST for VL response post-processing.
 
 The parser includes a semantic pass for structural constraints (missing `| unwrap` inside `rate_counter`, `__error__` inside `rate()`, malformed `ip()` filters, quantile phi bounds, line-format template validity). All error messages are formatted to match Loki 3.x exactly so Grafana clients receive the expected error shape.
@@ -482,7 +481,7 @@ The `Proxy` struct is decomposed into three explicit types (migration in progres
 | `telemetry.go` | Per-route Prometheus instrumentation, OTLP push, request duration histograms |
 | `time_utils.go` | Timestamp parsing, range normalization, step alignment helpers |
 | `http_utils.go` | HTTP error helpers, response header forwarding, Accept-Encoding negotiation |
-| `subquery.go` | Subquery expansion and execution planning |
+| `metric_eval_limits.go` | Evaluation point/sample bounds and numeric helpers shared by proxy-side metric evaluation |
 | `range_metric_compat.go` | Range metric compatibility shims for Loki 2.x vs 3.x divergences |
 | `vector_matching.go` | Vector matching logic for binary metric operations |
 | `unwrap_convert.go` | `unwrap` expression conversion between LogQL and LogsQL forms |

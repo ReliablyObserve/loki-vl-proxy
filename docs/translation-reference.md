@@ -144,13 +144,13 @@ Binary expression notes:
 
 The following Loki semantics are implemented in the proxy to bridge gaps where VictoriaLogs primitives do not directly match Loki behavior.
 
-### Time and Subquery Semantics
+### Time Semantics
 
 | LogQL feature | Proxy behavior |
 |---|---|
 | `offset 1h` on range vectors | Supported: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch; multiple distinct offsets in the same query return HTTP 400 |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
-| Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation. More than 10,000 total inner evaluations (outer points × inner points) returns HTTP 400; decoded results are limited to 8 MiB per step, 64 MiB per evaluation and one million samples. Failed inner queries return an error, not an empty result |
+| Subquery `max_over_time(rate(...)[1h:5m])` | Not LogQL: Loki's grammar has no `[range:step]` form. Rejected with Loki's HTTP 400 parse error (`syntax error: unexpected RATE, expecting NUMBER or { or (`) before any backend call |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
 | `label_replace(expr, dst, repl, src, regex)` | Proxy post-processing: inner expr translated to VL, spec embedded as marker, applied to matrix response (Prometheus semantics: no-match leaves dst unchanged) |
 | `label_join(v, dst, sep, src1, ...)` | Proxy post-processing: same marker pattern as `label_replace`; missing src labels are skipped |

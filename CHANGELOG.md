@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Behaviour change:** queries that Loki v3.7 rejects while parsing now
+  return HTTP 400 `bad_data` with Loki's message instead of a result. Clients
+  that relied on the previous answers must change the query:
+  - Subqueries (`max_over_time(rate({app="a"}[1m])[30m:5m])`,
+    `count_over_time({app="a"}[30m:5m])`). LogQL has no `[range:step]`
+    grammar; Loki answers `parse error at line 1, col 15: syntax error:
+    unexpected RATE, expecting NUMBER or { or (`. The proxy-side subquery
+    evaluator is removed.
+  - Selectors whose every matcher matches the empty string: `{app=""}`,
+    `{app=~""}`, `{app=~".*"}`, `{app!="x"}`, `{app!~"x"}` and `{}`, at any
+    depth of a metric query and on `query`, `query_range`, `tail`, `/labels`,
+    `/label/{name}/values`, `/series`, `/index/stats`, `/index/volume`,
+    `/index/volume_range`, `/patterns`, `/detected_labels`, `/detected_fields`
+    and `/detected_field/{name}/values`. Add one selecting matcher, for example
+    `{app=~".+"}` or `{app="", pod="a"}`. As in Loki, `/series` still accepts
+    `{}` as its only matcher group (next to another group it is `0 matchers in
+    group`), and `/index/volume(_range)` still accepts the literal `{}`.
+    `rules-migrate` rejects rules with these selectors, as Loki's ruler does.
+  - A line filter, parser or metric expression in the `query`/`match[]`/`match` of
+    `/labels`, `/label/{name}/values`, `/series`, `/index/stats`,
+    `/index/volume(_range)`, `/patterns` and `/detected_labels`
+    (`only label matchers are supported`), and a metric expression on
+    `/detected_fields` and `/detected_field/{name}/values`
+    (`only log selector is supported`).
+  - A missing `query` on `/index/stats`, `/index/volume(_range)`, `/patterns`,
+    `/detected_fields` and `/detected_field/{name}/values`.
+  - A `query`, `match` or `match[]` of 128 KiB or more (Loki's
+    `input size too long`) on every query and metadata endpoint including
+    `tail`. The proxy's existing 64 KiB query limit now also applies to the
+    metadata endpoints and `tail`.
+
+### Fixed
+
+- Reject the queries above, plus these pipeline and aggregation errors, with
+  the same HTTP 400 and message Loki v3.7 returns, before any cache lookup,
+  tenant fan-out or VictoriaLogs call. Previously the proxy answered 200:
+  subqueries leaked `__name__`/`_stream` labels and ran unbounded per-step
+  `stats_query` calls without a start time; `{app=~""}` returned every stream
+  in the tenant; `/labels` with `| logfmt` returned the full label list.
+  - `topk(0, …)`/`bottomk(0, …)` (`invalid parameter (must be greater than 0)
+    topk(0`) and non-integer `k` such as `topk(0.5, …)` returned the full
+    result.
+  - Invalid `label_format` templates (`x="{{ .pod"`, `{{ nofunc .pod }}`),
+    duplicate target labels and `__error__` as a target. Templates are checked
+    against Loki's function set (including sprig helpers such as `trunc` and
+    `__line__`), and `dst=src` renames are accepted. Invalid `line_format`
+    templates in log queries now carry Loki's stage message. In range
+    aggregations other than `bytes_*` they are rejected only when a parser or
+    line filter follows the `line_format`, because otherwise Loki drops the
+    stage before building the pipeline.
+  - Invalid `| json` and `| logfmt` extraction expressions (`foo="bar["`,
+    `foo="a.b[0"`, `foo="a..b"`, `foo=`, `foo=bar`), validated with the same
+    grammar as Loki's `jsonexpr` and `logfmt` expression parsers.
+  - `| pattern` with duplicate or consecutive captures and `| regexp` with
+    duplicate named groups, which previously reached VictoriaLogs or returned
+    200.
+  - The empty-compatible selector rule inside `label_replace(...)`.
+  - `/series` now reads `match` as well as `match[]`, as Loki does.
+  - Selector validation bounds its work and memory: oversized inputs are
+    rejected before parsing, validation results are cached only for queries
+    up to 4 KiB, and error messages echo at most 2 KiB of the query.
+- `sum_over_time(... | unwrap field [5m])` over non-numeric values remains a
+  documented difference: Loki fails the query with `SampleExtractionErr`, the
+  proxy returns the numeric samples. See `docs/KNOWN_ISSUES.md`.
+
 ## [1.76.0] - 2026-09-15
 
 ### Fixed

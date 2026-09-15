@@ -99,7 +99,7 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.24.0)
 - [x] `@` timestamp modifier (0.20.0)
 - [x] `unwrap duration()/bytes()` unit conversion (0.21.0)
-- [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (0.23.0)
+- [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (0.23.0); later removed for Loki parity: LogQL has no subquery grammar, so these queries now return Loki's HTTP 400
 - [x] LRU cache eviction (0.21.0)
 - [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (0.24.0)
 - [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (0.20.0)
