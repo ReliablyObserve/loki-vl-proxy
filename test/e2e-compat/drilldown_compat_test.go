@@ -985,17 +985,7 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		if len(result) == 0 {
 			t.Fatalf("expected non-empty result array for multi-tenant volume_range, got %v", resp)
 		}
-		// Every series must have a non-empty values array (matrix type)
-		for i, item := range result {
-			obj, ok := item.(map[string]interface{})
-			if !ok {
-				t.Fatalf("result[%d] is not an object: %v", i, item)
-			}
-			values, _ := obj["values"].([]interface{})
-			if len(values) == 0 {
-				t.Fatalf("result[%d] has no values (expected matrix data points): %v", i, obj)
-			}
-		}
+		assertLokiVolumeRangeShape(t, data)
 	})
 
 	t.Run("multi_tenant_volume_range_without_tenant_filter_injects_tenant_id_label", func(t *testing.T) {
@@ -1322,5 +1312,39 @@ func TestDrilldown_TenantLimitsEndpointContract(t *testing.T) {
 		if !strings.Contains(payload, required) {
 			t.Fatalf("tenant limits response missing %q: %s", required, payload)
 		}
+	}
+}
+
+// assertLokiVolumeRangeShape checks a volume_range answer against Loki's
+// result-type rule (pkg/querier/queryrange/volume.go toPrometheusData, verified
+// live on Loki 3.7.1): a vector when every series has exactly one sample, with
+// each series carrying "value"; otherwise a matrix whose series all carry
+// non-empty "values" and at least one of which has several samples.
+func assertLokiVolumeRangeShape(t *testing.T, data map[string]interface{}) {
+	t.Helper()
+	result := extractArray(data, "result")
+	switch data["resultType"] {
+	case "vector":
+		for i, item := range result {
+			obj, _ := item.(map[string]interface{})
+			if value, _ := obj["value"].([]interface{}); len(value) != 2 || obj["values"] != nil {
+				t.Fatalf("vector result[%d] must carry one [ts, value] sample: %v", i, obj)
+			}
+		}
+	case "matrix":
+		multi := false
+		for i, item := range result {
+			obj, _ := item.(map[string]interface{})
+			values, _ := obj["values"].([]interface{})
+			if len(values) == 0 {
+				t.Fatalf("matrix result[%d] has no values: %v", i, obj)
+			}
+			multi = multi || len(values) > 1
+		}
+		if len(result) > 0 && !multi {
+			t.Fatalf("Loki answers a vector when every series has one sample, got a single-sample matrix: %v", result)
+		}
+	default:
+		t.Fatalf("unexpected volume_range resultType %v", data["resultType"])
 	}
 }

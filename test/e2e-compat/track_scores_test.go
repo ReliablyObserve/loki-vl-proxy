@@ -274,7 +274,7 @@ func TestVLTrackScore(t *testing.T) {
 	volData := extractMap(volRange, "data")
 	volResult := extractArray(volData, "result")
 	if len(volResult) > 0 {
-		score.pass("volume_range", "volume_range is backed by VictoriaLogs hits data")
+		score.pass("volume_range", "volume_range returns series")
 	} else {
 		score.fail("volume_range", "volume_range returned no series")
 	}

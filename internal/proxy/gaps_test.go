@@ -2,8 +2,10 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,23 +71,13 @@ func TestGap_IndexStats_QueriesVLHits(t *testing.T) {
 // =============================================================================
 
 func TestGap_Volume_QueriesVLHits(t *testing.T) {
-	var receivedPath string
+	var receivedPath, receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []int64{1705312200000},
-					"values":     []int{100},
-				},
-				{
-					"fields":     map[string]string{"app": "api"},
-					"timestamps": []int64{1705312200000},
-					"values":     []int{50},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"_b","namespace":"prod"},"value":[1705312800,"1000"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -94,8 +86,9 @@ func TestGap_Volume_QueriesVLHits(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bnamespace%3D%22prod%22%7D&start=1705312200000000000&end=1705312800000000000", nil)
 	p.handleVolume(w, r)
 
-	if receivedPath != "/select/logsql/hits" {
-		t.Errorf("expected VL path /select/logsql/hits, got %q", receivedPath)
+	// Loki volume is bytes: VictoriaLogs sum_len(_msg), never /hits line counts.
+	if receivedPath != "/select/logsql/stats_query" || !strings.Contains(receivedQuery, "sum_len(_msg)") {
+		t.Errorf("expected VL stats_query with sum_len(_msg), got %q %q", receivedPath, receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -114,26 +107,13 @@ func TestGap_Volume_QueriesVLHits(t *testing.T) {
 	}
 
 	result, ok := data["result"].([]interface{})
-	if !ok {
-		t.Fatalf("result must be array")
+	if !ok || len(result) != 1 {
+		t.Fatalf("result must be a one-entry array, got %v", data["result"])
 	}
-	if len(result) < 2 {
-		t.Errorf("expected >=2 volume entries, got %d", len(result))
-	}
-
-	// Each entry must have "metric" (map) and "value" ([ts, count_string])
-	for i, entry := range result {
-		obj, ok := entry.(map[string]interface{})
-		if !ok {
-			t.Fatalf("result[%d] must be object", i)
-		}
-		if _, ok := obj["metric"]; !ok {
-			t.Errorf("result[%d] missing 'metric'", i)
-		}
-		val, ok := obj["value"].([]interface{})
-		if !ok || len(val) != 2 {
-			t.Errorf("result[%d] 'value' must be [ts, count], got %v", i, obj["value"])
-		}
+	obj := result[0].(map[string]interface{})
+	val, ok := obj["value"].([]interface{})
+	if !ok || len(val) != 2 || val[0] != float64(1705312800) || val[1] != "1000" {
+		t.Errorf("'value' must be [end, bytes], got %v", obj["value"])
 	}
 }
 
@@ -141,17 +121,10 @@ func TestGap_Volume_AcceptsFromToParams(t *testing.T) {
 	var receivedStart string
 	var receivedEnd string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStart = r.URL.Query().Get("start")
-		receivedEnd = r.URL.Query().Get("end")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []int64{1705312200000},
-					"values":     []int{100},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedStart = r.FormValue("start")
+		receivedEnd = r.FormValue("end")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -160,7 +133,7 @@ func TestGap_Volume_AcceptsFromToParams(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7B%7D&from=1705312200000000000&to=1705312800000000000", nil)
 	p.handleVolume(w, r)
 
-	if receivedStart == "" || receivedEnd == "" {
+	if receivedStart != "1705312200000000000" || receivedEnd != "1705312800000000000" {
 		t.Fatalf("expected from/to params to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
 	}
 }
@@ -173,16 +146,10 @@ func TestGap_Volume_AcceptsFromToParams(t *testing.T) {
 func TestGap_VolumeRange_QueriesVLHits(t *testing.T) {
 	var receivedStep string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStep = r.URL.Query().Get("step")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []int64{1705312200000, 1705312260000},
-					"values":     []int{100, 80},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedStep = r.FormValue("step")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","_stream":"{app=\"nginx\"}"},"values":[[1705312200,"100"],[1705312260,"80"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -207,53 +174,16 @@ func TestGap_VolumeRange_QueriesVLHits(t *testing.T) {
 	}
 
 	result := data["result"].([]interface{})
-	if len(result) == 0 {
-		t.Error("expected non-empty result")
+	if len(result) != 1 {
+		t.Fatalf("expected one series, got %v", result)
 	}
-
-	// Matrix entries have "values" (array of [ts, val] pairs)
 	entry := result[0].(map[string]interface{})
+	if metric := entry["metric"].(map[string]interface{}); metric["app"] != "nginx" {
+		t.Errorf("an empty selector names the volume by the whole stream, got %v", metric)
+	}
 	values, ok := entry["values"].([]interface{})
-	if !ok {
-		t.Fatal("matrix entry missing 'values'")
-	}
-	if len(values) < 2 {
-		t.Errorf("expected >=2 time-series points, got %d", len(values))
-	}
-}
-
-func TestGap_VolumeRange_FillsMissingBucketsAcrossRequestedRange(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []string{"2024-01-15T10:30:00Z", "2024-01-15T10:32:00Z"},
-					"values":     []int{100, 80},
-				},
-			},
-		})
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2024-01-15T10:30:00Z&end=2024-01-15T10:33:00Z&step=60", nil)
-	p.handleVolumeRange(w, r)
-
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	result := data["result"].([]interface{})
-	entry := result[0].(map[string]interface{})
-	values := entry["values"].([]interface{})
-	if len(values) != 4 {
-		t.Fatalf("expected 4 filled buckets, got %d", len(values))
-	}
-	second := values[1].([]interface{})
-	fourth := values[3].([]interface{})
-	if second[1] != "0" || fourth[1] != "0" {
-		t.Fatalf("expected zero-filled missing buckets, got values=%v", values)
+	if !ok || len(values) != 2 {
+		t.Fatalf("expected two points, got %v", entry["values"])
 	}
 }
 
@@ -262,18 +192,12 @@ func TestGap_VolumeRange_AcceptsFromToParams(t *testing.T) {
 	var receivedEnd string
 	var receivedStep string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStart = r.URL.Query().Get("start")
-		receivedEnd = r.URL.Query().Get("end")
-		receivedStep = r.URL.Query().Get("step")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []string{"2024-01-15T10:30:00Z", "2024-01-15T10:32:00Z"},
-					"values":     []int{100, 80},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedStart = r.FormValue("start")
+		receivedEnd = r.FormValue("end")
+		receivedStep = r.FormValue("step")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","_stream":"{app=\"nginx\"}"},"values":[[1705314600,"100"],[1705314720,"80"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -295,90 +219,8 @@ func TestGap_VolumeRange_AcceptsFromToParams(t *testing.T) {
 	result := data["result"].([]interface{})
 	entry := result[0].(map[string]interface{})
 	values := entry["values"].([]interface{})
-	if len(values) != 4 {
-		t.Fatalf("expected 4 filled buckets from from/to range, got %d", len(values))
-	}
-}
-
-func TestGap_VolumeRange_FillsSevenDayMinuteRangePastLegacyBucketCap(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []string{"2026-04-16T00:00:00Z"},
-					"values":     []int{7},
-				},
-			},
-		})
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2026-04-09T00:00:00Z&end=2026-04-16T00:00:00Z&step=60", nil)
-	p.handleVolumeRange(w, r)
-
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	result := data["result"].([]interface{})
-	if len(result) != 1 {
-		t.Fatalf("expected single series, got %d", len(result))
-	}
-	entry := result[0].(map[string]interface{})
-	values := entry["values"].([]interface{})
-	if len(values) != 10081 {
-		t.Fatalf("expected fully filled 7d minute range with 10081 buckets, got %d", len(values))
-	}
-	first := values[0].([]interface{})
-	last := values[len(values)-1].([]interface{})
-	if first[1] != "0" || last[1] != "7" {
-		t.Fatalf("expected zero-filled leading buckets and retained trailing hit, got first=%v last=%v", first, last)
-	}
-}
-
-func TestGap_VolumeRange_FillsSevenDayFloatSecondRange(t *testing.T) {
-	var receivedStep string
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStep = r.URL.Query().Get("step")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"app": "nginx"},
-					"timestamps": []string{"2026-04-16T00:00:00Z"},
-					"values":     []int{7},
-				},
-			},
-		})
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2026-04-09T00:00:00Z&end=2026-04-16T00:00:00Z&step=60.000", nil)
-	p.handleVolumeRange(w, r)
-
-	if receivedStep != "60s" {
-		t.Fatalf("expected float-second step to be normalized to 60s, got %q", receivedStep)
-	}
-
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	data := resp["data"].(map[string]interface{})
-	result := data["result"].([]interface{})
-	if len(result) != 1 {
-		t.Fatalf("expected single series, got %d", len(result))
-	}
-	entry := result[0].(map[string]interface{})
-	values := entry["values"].([]interface{})
-	if len(values) != 10081 {
-		t.Fatalf("expected fully filled 7d float-step range with 10081 buckets, got %d", len(values))
-	}
-	first := values[0].([]interface{})
-	last := values[len(values)-1].([]interface{})
-	if first[1] != "0" || last[1] != "7" {
-		t.Fatalf("expected zero-filled leading buckets and retained trailing hit, got first=%v last=%v", first, last)
+	if len(values) != 2 {
+		t.Fatalf("expected the two buckets with data from the from/to range, got %d", len(values))
 	}
 }
 
@@ -730,5 +572,65 @@ func TestCoverage_GetMetrics(t *testing.T) {
 	m := p.GetMetrics()
 	if m == nil {
 		t.Fatal("expected non-nil metrics")
+	}
+}
+
+func TestGap_VolumeRange_EmitsOnlyBucketsWithData(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","_stream":"{app=\"nginx\"}"},"values":[[1705314600,"100"],[1705314720,"80"]]}]}}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2024-01-15T10:30:00Z&end=2024-01-15T10:33:00Z&step=60", nil)
+	p.handleVolumeRange(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := resp["data"].(map[string]interface{})
+	result := data["result"].([]interface{})
+	entry := result[0].(map[string]interface{})
+	values := entry["values"].([]interface{})
+	// Loki does not zero-fill volume buckets.
+	if fmt.Sprint(values) != fmt.Sprint([]interface{}{
+		[]interface{}{1705314659.999, "100"},
+		[]interface{}{float64(1705314780), "80"},
+	}) {
+		t.Fatalf("unexpected values %v", values)
+	}
+}
+
+func TestGap_VolumeRange_SevenDayMinuteRange(t *testing.T) {
+	var receivedStep string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		receivedStep = r.FormValue("step")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"__name__":"_b","_stream":"{app=\"nginx\"}"},"values":[[1775692800,"3"],[1776297540,"7"]]}]}}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	for _, step := range []string{"60", "60.000"} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2026-04-09T00:00:00Z&end=2026-04-16T00:00:00Z&step="+step, nil)
+		p.handleVolumeRange(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("step %s: 7d at 60s is 10080 points, under Loki's 11000 cap; got %d %s", step, w.Code, w.Body.String())
+		}
+		if receivedStep != "60s" {
+			t.Fatalf("expected float-second step to be normalized to 60s, got %q", receivedStep)
+		}
+		var resp map[string]interface{}
+		mustUnmarshal(t, w.Body.Bytes(), &resp)
+		values := resp["data"].(map[string]interface{})["result"].([]interface{})[0].(map[string]interface{})["values"].([]interface{})
+		if fmt.Sprint(values) != fmt.Sprint([]interface{}{
+			[]interface{}{1775692859.999, "3"},
+			[]interface{}{float64(1776297600), "7"},
+		}) {
+			t.Fatalf("unexpected values %v", values)
+		}
 	}
 }

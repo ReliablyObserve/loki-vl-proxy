@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Unit change:** `/loki/api/v1/index/volume` and `/index/volume_range` now
+  report volume in bytes, as Loki v3.7 does, instead of line counts. The values
+  were VictoriaLogs `/hits` counts (for example `162` where Loki reported
+  `13218` bytes), so Drilldown service ordering and volume graphs disagreed with
+  Loki. The proxy now asks VictoriaLogs for `sum_len(_msg)` through
+  `stats_query` / `stats_query_range`; VictoriaLogs exposes no exact cheaper
+  byte source (`block_stats` sizes are compressed). Dashboards or alerts that
+  read these endpoints as line counts must be adjusted. The rest of the
+  response now follows Loki's volume semantics too:
+  - the instant volume is stamped at `end` (was the start of the last hour
+    bucket); a `volume_range` bucket is stamped at its end minus 1ms and the
+    last bucket at `end` (were bucket starts), and the first and last buckets
+    cover only the requested range;
+  - `aggregateBy=labels` returns one `{label=""}` volume per label name (it was
+    ignored); invalid `aggregateBy` or `limit` values return HTTP 400;
+  - without `targetLabels`, results are named by every label of the selector,
+    not only the first; every `targetLabels` entry must be present on a stream,
+    so streams without it no longer produce `""` buckets, and streams without a
+    service label count as `service_name="unknown_service"`;
+  - `limit` defaults to `100` and keeps the largest volumes of each bucket
+    (ties by name); results are ordered by volume;
+  - `volume_range` no longer zero-fills buckets without data and answers a
+    `vector` when every series has one sample; multi-tenant merges keep every
+    tenant's samples when tenants return different result types;
+  - volume cache keys carry a new version, so count-based entries cached by
+    older binaries (memory, disk and peer tiers) are never served as bytes.
+
+  Loki's own figure also counts structured metadata (about 8 bytes per line per
+  pair, such as `detected_level`), estimates bucket shares from chunk time
+  spans, and rounds flushed chunks to whole KiB; see Known Issues. On the e2e
+  stack's 7-day window (8.5M lines, 2.4 GB) the VictoriaLogs `sum_len(_msg)`
+  query takes about 150-210 ms against about 20 ms for `/hits`, and the
+  Drilldown service volume request rose from about 76 ms to 183 ms; 1h windows
+  are unchanged (1-6 ms).
+
 ## [1.75.0] - 2026-09-15
 
 ### Changed

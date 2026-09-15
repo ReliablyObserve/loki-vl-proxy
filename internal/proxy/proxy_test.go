@@ -748,7 +748,7 @@ func TestContract_IndexStats_ResponseFormat(t *testing.T) {
 
 func TestContract_Volume_ResponseFormat(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"api"},"value":[1767225600,"300"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -772,13 +772,13 @@ func TestContract_Volume_ResponseFormat(t *testing.T) {
 
 func TestContract_VolumeRange_ResponseFormat(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"_b","app":"api"},"values":[[1705312200,"300"],[1705312260,"120"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=1&end=2&step=60", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=1705312200&end=1705312800&step=60", nil)
 	p.handleVolumeRange(w, r)
 
 	var resp map[string]interface{}
@@ -1903,11 +1903,11 @@ func TestRecentTailCacheBypass_Decision(t *testing.T) {
 func TestContract_Volume_BypassesNearNowStaleCache(t *testing.T) {
 	var backendCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		backendCalls++
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"api"},"value":[1767225600,"300"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -1936,7 +1936,7 @@ func TestContract_Volume_ServesStaleCacheWhenNearNowRefreshFails(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backendCalls++
 		if backendCalls == 1 {
-			_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"api"},"value":[1767225600,"300"]}]}}`))
 			return
 		}
 		http.Error(w, "backend unavailable", http.StatusBadGateway)
@@ -2438,16 +2438,16 @@ func TestContract_Patterns_CachedPayloadStillPrependsCustomPatterns(t *testing.T
 
 func TestContract_RefreshVolumeCacheAsync_PopulatesCache(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"api"},"value":[1767225600,"300"]}]}}`))
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume:test-refresh"
-	p.refreshVolumeCacheAsync("", cacheKey, `{app="api"}`, "", "", "", nil)
+	p.refreshVolumeCacheAsync("volume", "", cacheKey, volumeRequest{query: `{app="api"}`, startNs: 1767222000e9, endNs: 1767225600e9, limit: defaultVolumeSeriesLimit}, nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -2473,14 +2473,13 @@ func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		// stats_query_range returns Loki matrix format directly.
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1746057600,"5"]]}]}}`))
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"_b","app":"api"},"values":[[1746057600,"5"],[1746057660,"7"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume_range:test-refresh"
-	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", defaultVolumeSeriesLimit, nil)
+	p.refreshVolumeCacheAsync("volume_range", "", cacheKey, volumeRequest{query: `{app="api"}`, startNs: 1746057600e9, endNs: 1746061200e9, stepNs: 60e9, limit: defaultVolumeSeriesLimit}, nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {

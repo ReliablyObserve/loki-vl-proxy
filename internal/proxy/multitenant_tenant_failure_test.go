@@ -49,6 +49,9 @@ func newTenantFailureBackend(t *testing.T, fail *atomic.Pointer[tenantFailure]) 
 		case "/select/logsql/stats_query_range":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"` + name + `-app"},"values":[[1704063600,"5"],[1704063900,"7"]]}]}}`))
+		case "/select/logsql/stats_query":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"_b","app":"` + name + `-app"},"value":[1704067200,"500"]}]}}`))
 		case "/select/logsql/hits":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"hits":[{"fields":{"app":"` + name + `-app"},"timestamps":["2024-01-01T00:00:00Z"],"values":[5],"total":5}]}`))

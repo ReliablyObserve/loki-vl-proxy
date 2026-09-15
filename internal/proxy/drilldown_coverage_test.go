@@ -142,9 +142,6 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		if got := streamSelectorPrefix(`{app="api|web"} |= "error"`); got != `{app="api|web"}` {
 			t.Fatalf("unexpected selector prefix %q", got)
 		}
-		if got := inferPrimaryTargetLabel(`{namespace="prod",pod=~"api-.*"} |= "error"`); got != "namespace" {
-			t.Fatalf("unexpected primary target label %q", got)
-		}
 		if got := normalizeBareSelectorQuery(`app="api"`); got != `{app="api"}` {
 			t.Fatalf("expected bare selector to be wrapped, got %q", got)
 		}

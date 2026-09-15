@@ -440,9 +440,9 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 		}
 	})
 
-	t.Run("volume_derived_labels_rejection_falls_back_to_hits", func(t *testing.T) {
+	t.Run("volume_derived_labels_rejection_falls_back_to_stream_stats", func(t *testing.T) {
 		vl := newFallbackBackend(t, func(r *http.Request, call int) (int, string) {
-			if r.URL.Path == "/select/logsql/hits" && call == 1 {
+			if r.URL.Path == "/select/logsql/stats_query" && call == 1 {
 				return http.StatusBadRequest, vlBodyParsePattern
 			}
 			return 0, ""
@@ -451,20 +451,19 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleVolume(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/index/volume", map[string]string{"query": `{app="billing"}`, "targetLabels": "service_name"}), nil))
-		hitsCalls := 0
+		if w.Code != http.StatusOK || len(vl.calls) != 2 || !strings.Contains(vl.calls[1], "| stats by (_stream) sum_len(_msg) as _b") {
+			t.Fatalf("want the derived stats call then the plain _stream bytes fallback with 200, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
+		}
 		for _, call := range vl.calls {
 			if strings.HasPrefix(call, "/select/logsql/hits ") {
-				hitsCalls++
+				t.Fatalf("volume must never fall back to /hits line counts: %v", vl.calls)
 			}
-		}
-		if w.Code != http.StatusOK || hitsCalls < 2 {
-			t.Fatalf("want the derived hits call then the hits fallback with 200, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
 		}
 	})
 
-	t.Run("volume_range_stats_rejection_falls_back_to_hits", func(t *testing.T) {
+	t.Run("volume_range_stats_rejection_falls_back_to_stream_stats", func(t *testing.T) {
 		vl := newFallbackBackend(t, func(r *http.Request, _ int) (int, string) {
-			if r.URL.Path == "/select/logsql/stats_query_range" {
+			if r.URL.Path == "/select/logsql/stats_query_range" && strings.Contains(r.Form.Get("query"), "filter app:*") {
 				return http.StatusUnprocessableEntity, vlBodyParseRegexStats
 			}
 			return 0, ""
@@ -473,8 +472,8 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleVolumeRange(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/index/volume_range", map[string]string{"query": `{app="billing"}`, "step": "60", "targetLabels": "app"}), nil))
-		if w.Code != http.StatusOK || !vl.called("/select/logsql/hits") {
-			t.Fatalf("want 200 from the hits fallback, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
+		if w.Code != http.StatusOK || len(vl.calls) != 2 || vl.called("/select/logsql/hits") {
+			t.Fatalf("want 200 from the plain stats fallback, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
 		}
 	})
 }
@@ -483,16 +482,15 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 // query is rejected on every path, so the fallbacks run and the exact path's
 // rejection is answered with Loki's 400.
 func TestUpstreamBadRequest_InvalidQueryFailsAfterFallbacks(t *testing.T) {
-	t.Run("volume_range_stats_then_hits", func(t *testing.T) {
+	t.Run("volume_range_optimised_then_plain_stats", func(t *testing.T) {
 		vl := newVLBadRequestBackend(t)
 		p := newTestProxy(t, vl.URL)
 		w := httptest.NewRecorder()
 		p.handleVolumeRange(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/index/volume_range", map[string]string{"query": `{app="billing"}`, "step": "60", "targetLabels": "app"}), nil))
 		assertLokiBadData(t, w)
-		calls := strings.Join(vl.calls(), " ")
-		if !strings.Contains(calls, "/select/logsql/stats_query_range") || !strings.Contains(calls, "/select/logsql/hits") {
-			t.Fatalf("want the stats fast path and the hits fallback, got %v", vl.calls())
+		if calls := vl.calls(); len(calls) != 2 || calls[0] != "/select/logsql/stats_query_range" || calls[1] != "/select/logsql/stats_query_range" {
+			t.Fatalf("want the optimised stats query and the plain stats fallback, got %v", calls)
 		}
 	})
 	t.Run("tryBareParserLogRangeBuckets_hits_stats_then_raw", func(t *testing.T) {
