@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.69.3] - 2026-09-15
+
 ### Fixed
 
 - Make the Drilldown pattern parity e2e tests reliable when their two-hour
