@@ -2486,38 +2486,68 @@ func limitLokiMatrixSeries(body []byte, maxSeries int) []byte {
 	return buf
 }
 
-// addUnderscorefallbackByLabels augments a translated LogsQL stats query's by()
-// clause with underscore fallbacks for any label that was translated to a dotted
-// OTel form (e.g. service_name → service.name). VL returns whichever field exists
-// in the log data; translateStatsResponseLabelsWithContext then coalesces the two
-// fields into a single Loki label by preferring the non-empty value. This ensures
-// correct grouping for Loki-push data (stream labels use underscore names) and OTel
-// data (fields use dotted names) without requiring two separate backend calls.
+// addUnderscorefallbackByLabels augments every by() clause of a translated LogsQL
+// stats query with the underscore fallback of each dotted OTel field it groups by
+// (e.g. service.name gains service_name). Loki-push data stores these as stream
+// labels under the underscore name; OTel data uses the dotted field. VL groups by
+// whichever exists; translateStatsResponseLabelsWithContext then coalesces the two
+// fields into a single Loki label by preferring the non-empty value. Every clause
+// is augmented, so multi-stage pipelines (rate's inner count and outer sum) keep
+// both fields through to the final stats pipe. origGroupBy, when given, limits
+// the fallbacks to labels the Loki query grouped by.
 func (p *Proxy) addUnderscorefallbackByLabels(logsqlQuery string, origGroupBy []string) string {
 	if p.labelTranslator == nil || p.labelTranslator.IsPassthrough() ||
-		p.labelTranslator.style != LabelStyleUnderscores || len(origGroupBy) == 0 {
+		p.labelTranslator.style != LabelStyleUnderscores {
 		return logsqlQuery
 	}
-	var extras []string
-	for _, orig := range origGroupBy {
-		vlLabel := p.labelTranslator.ToVL(orig)
-		if vlLabel != orig && strings.Contains(vlLabel, ".") {
-			extras = append(extras, orig)
+	const marker = "| stats by ("
+	var b strings.Builder
+	rest := logsqlQuery
+	changed := false
+	for {
+		idx := strings.Index(rest, marker)
+		if idx < 0 {
+			break
 		}
+		open := idx + len(marker)
+		closeIdx := strings.Index(rest[open:], ")")
+		if closeIdx < 0 {
+			break
+		}
+		list := rest[open : open+closeIdx]
+		present := map[string]bool{}
+		for _, item := range strings.Split(list, ",") {
+			present[strings.Trim(strings.TrimSpace(item), "\"`")] = true
+		}
+		var extras []string
+		for _, item := range strings.Split(list, ",") {
+			vlField := strings.Trim(strings.TrimSpace(item), "\"`")
+			if !strings.Contains(vlField, ".") {
+				continue
+			}
+			lokiLabel := p.labelTranslator.ToLoki(vlField)
+			if lokiLabel == vlField || strings.Contains(lokiLabel, ".") || present[lokiLabel] ||
+				p.labelTranslator.ToVL(lokiLabel) != vlField {
+				continue
+			}
+			if len(origGroupBy) > 0 && !containsString(origGroupBy, lokiLabel) {
+				continue
+			}
+			present[lokiLabel] = true
+			extras = append(extras, lokiLabel)
+		}
+		b.WriteString(rest[:open+closeIdx])
+		if len(extras) > 0 {
+			b.WriteString(", " + strings.Join(extras, ", "))
+			changed = true
+		}
+		rest = rest[open+closeIdx:]
 	}
-	if len(extras) == 0 {
+	if !changed {
 		return logsqlQuery
 	}
-	byIdx := strings.Index(logsqlQuery, "| stats by (")
-	if byIdx < 0 {
-		return logsqlQuery
-	}
-	closeIdx := strings.Index(logsqlQuery[byIdx:], ")")
-	if closeIdx < 0 {
-		return logsqlQuery
-	}
-	insertAt := byIdx + closeIdx
-	return logsqlQuery[:insertAt] + ", " + strings.Join(extras, ", ") + logsqlQuery[insertAt:]
+	b.WriteString(rest)
+	return b.String()
 }
 
 // allRangeWindowsEqual returns (window, true) when every range vector in logql
@@ -2941,6 +2971,7 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 	}
 
 	// Workspace maps reused across items (same pattern as translateStatsResponseLabelsWithContext).
+	levelGrouping := requestedLevelGrouping(originalQuery)
 	translated := make(map[string]string, 8)
 	syntheticLabels := make(map[string]string, 8)
 
@@ -3019,12 +3050,7 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 
 			serviceSignal := hasServiceSignal(syntheticLabels)
 			beforeSyntheticCount := len(syntheticLabels)
-			hadLevel := syntheticLabels["level"] != ""
-			ensureDetectedLevel(syntheticLabels)
-			if hadLevel && !hadStream && syntheticLabels["detected_level"] != "" {
-				delete(syntheticLabels, "level")
-				delete(translated, "level")
-			}
+			levelGrouping.apply(syntheticLabels, translated, hadStream)
 			if hadStream {
 				ensureSyntheticServiceName(syntheticLabels)
 				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
@@ -3399,6 +3425,9 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		return
 	}
 
+	// Group Loki-push rows (service_name) and OTel rows (service.name) under
+	// one Loki label, as proxyStatsQueryRangeDirect does.
+	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, parseOriginalByLabels(r.FormValue("query")))
 	logsqlQuery, guarded := withEmptyInputGuard(logsqlQuery)
 	params := url.Values{}
 	params.Set("query", logsqlQuery)

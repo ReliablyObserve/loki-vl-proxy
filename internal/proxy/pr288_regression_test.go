@@ -221,8 +221,10 @@ func TestTranslateStatsResponseLabels_LevelPreservedWithStream(t *testing.T) {
 }
 
 // TestTranslateStatsResponseLabels_LevelRemovedWithoutStream checks the complementary
-// case: when _stream is absent (VL returned only explicit by-group keys), level must
-// be replaced by detected_level for Loki compatibility.
+// case: when _stream is absent (VL returned only explicit by-group keys) and the
+// query grouped by detected_level, which VL answers with its level field, level
+// must be replaced by detected_level. A query grouping by level keeps level, as
+// Loki 3.7.1 answers it (TestStatsResponseKeepsRequestedLevelLabel).
 func TestTranslateStatsResponseLabels_LevelRemovedWithoutStream(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
@@ -230,7 +232,7 @@ func TestTranslateStatsResponseLabels_LevelRemovedWithoutStream(t *testing.T) {
 	body := []byte(`{"results":[{"metric":{"level":"error"}}]}`)
 	got := p.translateStatsResponseLabelsWithContext(
 		context.Background(), body,
-		`sum by (level) (count_over_time({app="api"}[5m]))`,
+		`sum by (detected_level) (count_over_time({app="api"}[5m]))`,
 	)
 
 	var resp struct {

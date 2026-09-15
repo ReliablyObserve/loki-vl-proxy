@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"context"
 	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
@@ -286,12 +288,26 @@ func TestAddUnderscorefallbackByLabels(t *testing.T) {
 		}
 	})
 
-	t.Run("empty origGroupBy returns query unchanged", func(t *testing.T) {
+	t.Run("empty origGroupBy derives fallbacks from the by clause", func(t *testing.T) {
 		p := newUnderscoreProxy(t)
 		input := `app:="svc" | stats by (service.name) count()`
-		got := p.addUnderscorefallbackByLabels(input, nil)
-		if got != input {
-			t.Fatalf("expected empty origGroupBy to leave query unchanged, got %q", got)
+		want := `app:="svc" | stats by (service.name, service_name) count()`
+		if got := p.addUnderscorefallbackByLabels(input, nil); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("every stats pipe keeps the fallback", func(t *testing.T) {
+		// rate() translates to an inner count and an outer sum; grouping only the
+		// outer pipe by service.name collapsed Loki-push streams into "".
+		p := newUnderscoreProxy(t)
+		input := `namespace:="data" | stats by (service.name) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by ("service.name") sum(__lvp_rate)`
+		want := `namespace:="data" | stats by (service.name, service_name) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by ("service.name", service_name) sum(__lvp_rate)`
+		if got := p.addUnderscorefallbackByLabels(input, []string{"service_name"}); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		if got := p.addUnderscorefallbackByLabels(want, []string{"service_name"}); got != want {
+			t.Fatalf("not idempotent: %q", got)
 		}
 	})
 
@@ -305,4 +321,115 @@ func TestAddUnderscorefallbackByLabels(t *testing.T) {
 			t.Fatalf("expected unclosed by-clause guard to return query unchanged, got %q", got)
 		}
 	})
+}
+
+// Instant `sum by (service_name)` must group Loki-push rows (stream field
+// service_name) and OTel rows (field service.name) under one Loki label, as the
+// range path does. Without the fallback every Loki-push stream grouped as "".
+func TestProxyStatsQueryGroupsByUnderscoreFallback(t *testing.T) {
+	var backendQuery atomic.Value
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = r.ParseForm()
+		backendQuery.Store(r.Form.Get("query"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"service.name":"","service_name":"cache-redis"},"value":[1789450000,"25"]},` +
+			`{"metric":{"service.name":"api-gateway","service_name":""},"value":[1789450000,"60"]}]}}`))
+	}))
+	defer backend.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60e9, 100), LogLevel: "error", LabelStyle: LabelStyleUnderscores})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+	params := url.Values{"query": {`sum by (service_name) (count_over_time({env="production"}[1h]))`}, "time": {"1789450000"}}
+	w := httptest.NewRecorder()
+	p.handleQuery(w, withOrgID(httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)))
+	if q, _ := backendQuery.Load().(string); !strings.Contains(q, "service_name") {
+		t.Fatalf("backend stats query lacks the service_name fallback: %q", q)
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := stdjson.Unmarshal(w.Body.Bytes(), &resp); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body)
+	}
+	got := map[string]bool{}
+	for _, series := range resp.Data.Result {
+		got[series.Metric["service_name"]] = true
+	}
+	if len(got) != 2 || !got["cache-redis"] || !got["api-gateway"] {
+		t.Fatalf("service_name groups=%v body=%s", got, w.Body)
+	}
+}
+
+// Loki returns the label the query grouped by: `by (level)` yields level,
+// `by (detected_level)` yields detected_level and `by (level, detected_level)`
+// yields both. VictoriaLogs answers all three with its level field.
+func TestStatsResponseKeepsRequestedLevelLabel(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:9999", Cache: cache.New(60e9, 100), LogLevel: "error", LabelStyle: LabelStyleUnderscores})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+	body := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"level":"info","service.name":"api"},"value":[1789450000,"5"]}]}}`)
+	cases := []struct {
+		query string
+		want  map[string]string
+	}{
+		{`sum by (service_name, level) (count_over_time({app="a"}[5m]))`, map[string]string{"service_name": "api", "level": "info"}},
+		{`topk(3, sum by (level, service_name) (count_over_time({app="a"}[5m])))`, map[string]string{"service_name": "api", "level": "info"}},
+		{`sum by (service_name, detected_level) (count_over_time({app="a"}[5m]))`, map[string]string{"service_name": "api", "detected_level": "info"}},
+		{`sum by (service_name, level, detected_level) (count_over_time({app="a"}[5m]))`, map[string]string{"service_name": "api", "level": "info", "detected_level": "info"}},
+	}
+	for _, tc := range cases {
+		out := p.translateStatsResponseLabelsWithContext(context.Background(), body, tc.query)
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string `json:"metric"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := stdjson.Unmarshal(out, &resp); err != nil || len(resp.Data.Result) != 1 {
+			t.Fatalf("%s: body=%s err=%v", tc.query, out, err)
+		}
+		if got := resp.Data.Result[0].Metric; fmt.Sprint(got) != fmt.Sprint(tc.want) {
+			t.Fatalf("%s: metric=%v, want %v", tc.query, got, tc.want)
+		}
+	}
+}
+
+func TestStatsQueryRangeResponseKeepsRequestedLevelLabel(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:9999", Cache: cache.New(60e9, 100), LogLevel: "error", LabelStyle: LabelStyleUnderscores})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+	body := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"info"},"values":[[1789450000,"5"]]}]}}`)
+	for query, want := range map[string]string{
+		`sum by (level) (count_over_time({app="a"}[1m]))`:          `{"level":"info"}`,
+		`sum by (detected_level) (count_over_time({app="a"}[1m]))`: `{"detected_level":"info"}`,
+	} {
+		out := p.trimAndTranslateStatsQRFJ(context.Background(), body, nil, query)
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string `json:"metric"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := stdjson.Unmarshal(out, &resp); err != nil || len(resp.Data.Result) != 1 {
+			t.Fatalf("%s: body=%s err=%v", query, out, err)
+		}
+		got, _ := stdjson.Marshal(resp.Data.Result[0].Metric)
+		if string(got) != want {
+			t.Fatalf("%s: metric=%s, want %s", query, got, want)
+		}
+	}
 }

@@ -107,6 +107,37 @@ func TestMetricEvalPointCountBounds(t *testing.T) {
 	if n, err := metricEvalPointCount(start, start.Add(time.Minute), 10*time.Second); err != nil || n != 7 {
 		t.Fatalf("points=%d err=%v", n, err)
 	}
+	// Loki accepts (end-start)/step up to lokiMaxPointsPerSeries inclusive.
+	if n, err := metricEvalPointCount(start, start.Add(lokiMaxPointsPerSeries*time.Second), time.Second); err != nil || n != lokiMaxPointsPerSeries+1 {
+		t.Fatalf("Loki-accepted resolution rejected: points=%d err=%v", n, err)
+	}
+	if _, err := metricEvalPointCount(start, start.Add((lokiMaxPointsPerSeries+1)*time.Second), time.Second); err == nil {
+		t.Fatal("resolution above Loki's limit accepted")
+	}
+}
+
+// A Grafana logs volume chunk over 24h at an 8s step has 10,800 points. Loki
+// answers it, so the ordered JSON metric route must not reject it.
+func TestOrderedJSONMetricTimesAcceptsLokiResolution(t *testing.T) {
+	end := int64(1789450000)
+	for _, tc := range []struct {
+		start, step string
+		ok          bool
+	}{
+		{strconv.FormatInt(end-86400, 10), "8", true},
+		{strconv.FormatInt(end-lokiMaxPointsPerSeries, 10), "1", true},
+		{strconv.FormatInt(end-lokiMaxPointsPerSeries-1, 10), "1", false},
+	} {
+		params := url.Values{"start": {tc.start}, "end": {strconv.FormatInt(end, 10)}, "step": {tc.step}}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+		_, _, _, err := orderedJSONMetricTimes(r, true)
+		if tc.ok && err != nil {
+			t.Fatalf("start=%s step=%s rejected: %v", tc.start, tc.step, err)
+		}
+		if !tc.ok && (err == nil || err.Error() != errLokiStepTooSmall) {
+			t.Fatalf("start=%s step=%s err=%v, want %q", tc.start, tc.step, err, errLokiStepTooSmall)
+		}
+	}
 }
 
 func TestParseLokiDuration(t *testing.T) {
