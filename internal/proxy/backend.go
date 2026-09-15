@@ -623,7 +623,7 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // Callers must either hold a breaker.Allow() token or use DoWithGuard (which
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	params = p.scopedTenantParams(ctx, params)
+	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path
 	u.RawQuery = params.Encode()
@@ -635,10 +635,16 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	}
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
+	serverPort, _ := strconv.Atoi(u.Port())
+	release, err := p.admitBackendRequest(ctx, path, params)
+	if err != nil {
+		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, upstreamErrorStatus(ctx, err), 0, err)
+		return nil, err
+	}
 	start := time.Now()
 	resp, err := p.doBackendRequest(req, p.client)
+	resp = attachRelease(resp, release)
 	duration := time.Since(start)
-	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		err = p.sanitizeUpstreamError(err)
 		mappedStatus := upstreamErrorStatus(ctx, err)
@@ -695,7 +701,7 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // decodes compression. It does NOT interact with the circuit breaker — callers are
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	params = p.scopedTenantParams(ctx, params)
+	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
@@ -706,10 +712,16 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
+	serverPort, _ := strconv.Atoi(u.Port())
+	release, err := p.admitBackendRequest(ctx, path, params)
+	if err != nil {
+		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, upstreamErrorStatus(ctx, err), 0, err)
+		return nil, err
+	}
 	start := time.Now()
 	resp, err := p.doBackendRequest(req, p.client)
+	resp = attachRelease(resp, release)
 	duration := time.Since(start)
-	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		err = p.sanitizeUpstreamError(err)
 		mappedStatus := upstreamErrorStatus(ctx, err)

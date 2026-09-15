@@ -677,6 +677,10 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = p.slidingStatsBucket(startTS, step, step)
 	}
+	if p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
+		p.writeSlidingWindowStatsRange(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
+		return true
+	}
 	if !bucketsOK {
 		statsAggFunc = ""
 	}
@@ -1298,6 +1302,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	// limit pipe streams an arbitrary subset instead; successful responses are
 	// complete because overflow is rejected, and samples are sorted below.
 	params.Set("query", baseQuery+" | limit "+strconv.Itoa(rowLimit+1))
+	if err := p.precheckRawMetricRows(ctx, baseQuery, params, end.Sub(start), rowLimit); err != nil {
+		return nil, err
+	}
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {

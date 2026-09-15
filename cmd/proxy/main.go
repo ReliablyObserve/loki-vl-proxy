@@ -205,6 +205,9 @@ type proxyRuntimeConfig struct {
 	defaultMaxQueryLength               time.Duration
 	maxStatsQuerySeries                 int
 	statsQueryRangeConcurrency          int
+	backendMaxConcurrentHeavyQueries    int
+	backendHeavyQueryQueueWait          time.Duration
+	backendHeavyQueryMinRange           time.Duration
 	drilldownBurstWindowMs              int
 	drilldownBurstMaxFields             int
 	drilldownFieldBatchWindowMs         int
@@ -482,7 +485,10 @@ func run(
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
 	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
-	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
+	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend. The remaining budget is also passed to VictoriaLogs as its per-query timeout argument, so VictoriaLogs stops work the proxy has given up on")
+	backendMaxConcurrentHeavyQueries := fs.Int("backend-max-concurrent-heavy-queries", proxy.DefaultBackendMaxConcurrentHeavyQueries, "Maximum concurrent heavy VictoriaLogs calls per replica: raw-row metric fetches, and stats or hits calls spanning at least -backend-heavy-query-min-range or finer than 11000 buckets. Further heavy calls queue for -backend-heavy-query-queue-wait, then fail with 429 \"too many outstanding requests\". VictoriaLogs lets each stats pipe use up to 40% of its allowed memory, so the default of 2 keeps concurrent stats state within its memory budget. 0 disables the limiter")
+	backendHeavyQueryQueueWait := fs.Duration("backend-heavy-query-queue-wait", proxy.DefaultBackendHeavyQueryQueueWait, "How long a heavy VictoriaLogs call waits for a -backend-max-concurrent-heavy-queries slot before the request fails with 429. 0 rejects immediately when all slots are busy")
+	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
 	cbWindowDuration := fs.Duration("cb-window-duration", 30*time.Second, "Circuit breaker: sliding window for failure counting; failures older than this are discarded")
@@ -883,6 +889,9 @@ func run(
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
+			backendMaxConcurrentHeavyQueries:    *backendMaxConcurrentHeavyQueries,
+			backendHeavyQueryQueueWait:          *backendHeavyQueryQueueWait,
+			backendHeavyQueryMinRange:           *backendHeavyQueryMinRange,
 			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
 			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
 			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
@@ -1890,6 +1899,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	default:
 		return proxy.Config{}, fmt.Errorf("invalid -tail.mode: %q (must be 'auto', 'native', or 'synthetic')", cfg.tailMode)
 	}
+	if err := validateHeavyQueryLimits(cfg); err != nil {
+		return proxy.Config{}, err
+	}
 
 	var peerCache *cache.PeerCache
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
@@ -2038,6 +2050,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
 		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
 		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
+		BackendMaxConcurrentHeavyQueries: cfg.backendMaxConcurrentHeavyQueries,
+		BackendHeavyQueryQueueWait:       cfg.backendHeavyQueryQueueWait,
+		BackendHeavyQueryMinRange:        cfg.backendHeavyQueryMinRange,
 		DrilldownBurstWindowMs:           cfg.drilldownBurstWindowMs,
 		DrilldownBurstMaxFields:          cfg.drilldownBurstMaxFields,
 		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
@@ -2047,6 +2062,19 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
 		DrilldownScanTimeout:             cfg.drilldownScanTimeout,
 	}, nil
+}
+
+func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
+	if cfg.backendMaxConcurrentHeavyQueries < 0 {
+		return fmt.Errorf("invalid -backend-max-concurrent-heavy-queries: %d (must be >= 0; 0 disables the limiter)", cfg.backendMaxConcurrentHeavyQueries)
+	}
+	if cfg.backendHeavyQueryQueueWait < 0 {
+		return fmt.Errorf("invalid -backend-heavy-query-queue-wait: %s (must be >= 0)", cfg.backendHeavyQueryQueueWait)
+	}
+	if cfg.backendMaxConcurrentHeavyQueries > 0 && cfg.backendHeavyQueryMinRange <= 0 {
+		return fmt.Errorf("invalid -backend-heavy-query-min-range: %s (must be > 0)", cfg.backendHeavyQueryMinRange)
+	}
+	return nil
 }
 
 func buildServerTLSConfig(clientCAFile string, requireClientCert bool) (*tls.Config, error) {

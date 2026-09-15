@@ -358,7 +358,10 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 			switch fn {
 			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
 				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
-				handled = p.proxyManualRangeMetricRange(sc, innerR, spec, orig, fn)
+				// Rank every series per step from VictoriaLogs window stats
+				// instead of truncating to the busiest series first.
+				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk"))
+				handled = p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
 			}
 		}
 	}

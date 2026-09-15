@@ -33,6 +33,9 @@ type requestTelemetry struct {
 	upstreamDurationByType map[string]time.Duration
 	internalOpsByType      map[string]int
 	internalDurationByType map[string]time.Duration
+	// heavyAdmissionRejected memoizes a heavy-query queue rejection so later
+	// heavy backend calls of the same request fail fast instead of queueing again.
+	heavyAdmissionRejected error
 }
 
 type requestTelemetrySnapshot struct {

@@ -1,14 +1,54 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// precheckRawMetricRows counts the rows a long-range raw metric fetch would
+// read before fetching them. The count runs as a stats pipe over the same
+// filter, so VictoriaLogs ships one row instead of the log lines. Only
+// pipe-free queries are checked: their count is exact, whereas filtering pipes
+// could shrink the result below the limit.
+func (p *Proxy) precheckRawMetricRows(ctx context.Context, baseQuery string, fetchParams url.Values, span time.Duration, rowLimit int) error {
+	if strings.Contains(baseQuery, "|") || span < p.backendHeavyQueryMinRange {
+		return nil
+	}
+	params := url.Values{
+		"query": {baseQuery + " | stats count() as rows"},
+		"start": {fetchParams.Get("start")},
+		"end":   {fetchParams.Get("end")},
+	}
+	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+	if err != nil || resp.StatusCode >= http.StatusBadRequest {
+		// The fetch itself reports backend errors; the estimate is best effort.
+		return nil
+	}
+	var row struct {
+		Rows string `json:"rows"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(body), &row) != nil {
+		return nil
+	}
+	if rows, convErr := strconv.ParseInt(row.Rows, 10, 64); convErr == nil && rows > int64(rowLimit) {
+		return fmt.Errorf("manual range metric row limit exceeded (%d); the query matches %d log lines; narrow the query or increase -manual-range-metric-row-limit", rowLimit, rows)
+	}
+	return nil
+}
 
 func (p *Proxy) manualMetricRowBudget() (int, error) {
 	limit := p.rangeMetricRowLimit

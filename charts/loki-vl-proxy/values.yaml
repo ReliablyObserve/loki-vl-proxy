@@ -143,6 +143,18 @@ extraArgs:
   # Remote backends continue to use zstd/gzip. Override with "none", "gzip",
   # or "zstd" if your deployment topology requires a fixed policy.
   backend-compression: "auto"
+  # --- Heavy VictoriaLogs query admission ---
+  # Heavy calls are raw-row metric fetches and stats/hits calls spanning at
+  # least backend-heavy-query-min-range or finer than 11000 buckets. At most
+  # backend-max-concurrent-heavy-queries run per replica; the rest wait up to
+  # backend-heavy-query-queue-wait, then get 429 "too many outstanding requests".
+  # VictoriaLogs lets each stats pipe of one query use up to 40% of its allowed
+  # memory, so 2 keeps concurrent stats state within that budget. Raise it
+  # (with VictoriaLogs memory) for large fleets; the total across replicas is
+  # replicas x this value. 0 disables the limiter.
+  backend-max-concurrent-heavy-queries: "2"
+  backend-heavy-query-queue-wait: "20s"
+  # backend-heavy-query-min-range: "6h"     # time range from which stats, hits and unbounded raw calls count as heavy (> 0)
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
   # cb-open-duration: "10s"                 # circuit breaker open duration before probe
   # cb-window-duration: "30s"               # circuit breaker sliding window for failure counting
