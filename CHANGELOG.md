@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.80.1] - 2026-09-15
+
 ### Fixed
 
 - **Metric queries now keep the labels Loki returns when grouping by `level` or `service_name`.**
