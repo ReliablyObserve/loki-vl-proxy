@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.81.0] - 2026-09-15
+
 ### Changed
 
 - **Pinned VictoriaLogs backend is now v1.52.0** (was v1.50.0 in the e2e-compat
