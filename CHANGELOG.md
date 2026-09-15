@@ -7,6 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Answer invalid queries with Loki's `400 bad_data` instead of `502`
+  (or an empty `200`) on the metadata, index and Drilldown endpoints. When
+  VictoriaLogs rejected a query that the proxy had forwarded (for example
+  `{app=~"(a"}`, which VictoriaLogs answers with HTTP 400 `cannot parse query`),
+  the error lost its status and was reported as a backend failure. The same
+  happened when the proxy's own translator rejected the query (`{app=`).
+  Loki v3.7 answers both with 400. Affected: `/labels`,
+  `/label/{name}/values` (including `service_name`), `/index/stats`,
+  `/index/volume`, `/index/volume_range`, `/detected_fields`,
+  `/detected_labels`, `/detected_field/{name}/values`, `/patterns`, metric
+  `query_range` fallback paths, and multi-tenant (`a|b`) requests, which
+  returned `502 all sub-requests failed`. `/series` and `/patterns` with an
+  unparsable selector returned `200`, and `/series` then listed every stream
+  in the window. Backend errors now carry VictoriaLogs' status and a
+  classification of its message through one typed, redacted error. A
+  rejected query (a VictoriaLogs parse or argument error, see below, or a
+  translator parse error) maps to 400 `bad_data`. It is never answered from
+  the stale read cache or the last pattern snapshot, and it is not retried on
+  the generic metadata endpoint. A rejection of LogsQL the proxy built as an
+  optimisation (the bare parser `/hits` and `stats_query_range` bucket paths,
+  the unwrap stats bucket path, and the derived-label and stats volume paths)
+  still falls back to the next
+  path, because it says nothing about the user's query: only the exact path's
+  rejection is answered with 400. `unknown stats func` and `unexpected pipe`
+  parse errors are never treated as a user mistake, since only proxy-built
+  LogsQL can cause them. `first_over_time` and `last_over_time` over `unwrap`
+  no longer try the stats fast path at all (VictoriaLogs has no `first` or
+  `last` stats function) and go straight to the raw evaluator. When every tenant of a multi-tenant request answers 400, the
+  request fails with that 400 instead of `502 all sub-requests failed`: a
+  rejected query fails for every tenant, as in Loki, which validates the
+  query once before splitting by tenant. This also covers a backend 400 that
+  a pass-through endpoint (such as `/series` or the stats `query_range`
+  paths) returns for every tenant, matching the single-tenant status. A
+  tenant that fails alone is still skipped. VictoriaLogs also answers
+  resource limits and
+  storage failures with 400 or 422. Those, unrecognised 400s, 5xx, timeouts,
+  cancellation, circuit-breaker and transport errors keep their previous
+  handling: fallbacks run, stale answers are served, and statuses stay as
+  before (502 on remapped paths, the backend status where it was passed
+  through). VictoriaLogs' 400 `unsupported path requested` from older
+  backends still falls back to the generic metadata endpoint. Backend HTTP
+  errors still do not count as circuit-breaker failures.
+- Answer Grafana-sourced metric queries that VictoriaLogs rejects with
+  Loki's `400 bad_data` instead of an empty `200` with a partial-results
+  warning. This covers Explore, dashboard panels and Drilldown, for example
+  `sum(count_over_time({app="x"} |~ "a{2,1}" [1m]))` or a `pattern "<_>"`
+  without a capture. Direct API clients also got `422 execution` for the
+  same queries on the stats paths and now get `400`. VictoriaLogs reports a
+  query it cannot parse and a query that hit a resource limit with the same
+  status (400 from plain handlers, 422 from `stats_query` and
+  `stats_query_range`), so the proxy now classifies the message. A message
+  starting with a parse or argument prefix (`` cannot parse `query` arg: ``,
+  `` `query` arg cannot be empty``, `missing 'field' query arg`,
+  `'step' must be bigger than zero`, `cannot parse duration from the arg`,
+  `cannot parse start=`/`end=`/`time=`) is a rejected query and gets 400 for
+  every client. A message with a limit or execution marker (`since it
+  requires more than`, `of memory is needed`, `because they occupy more
+  than`, `passed to 'stream_context'`, `-search.max`, `cannot execute query
+  [`, `cannot obtain `) and any unrecognised 400 keep the partial-results
+  reply for Grafana-sourced stats queries, the existing Drilldown contract,
+  and their previous status for API clients. The markers come from
+  VictoriaLogs v1.50.0
+  (`app/vlselect/logsql/logsql.go`, `app/vlselect/main.go`,
+  `lib/logstorage/pipe_*.go`, `lib/logstorage/storage_search.go`).
+  Redaction now also drops the query echoes VictoriaLogs puts in error
+  messages, where quote pairing could expose query literals such as
+  `user_email:="bob@corp.io"`: the `; context: [...]; query=...` tail of
+  parse errors, `cannot execute query [...]`, `cannot calculate [...]`,
+  `cannot load rows for [...]`, `the query [...] cannot be used in live
+  tailing`, and the quoted `filter` of metadata errors. The fast-path
+  fallback warnings no longer log the raw LogQL query unless
+  `-debug-log-raw-queries` is set.
+- The label-name and label-value paths also returned the raw VictoriaLogs
+  body. They now use the shared redaction, which additionally no longer lets
+  VictoriaLogs' `` `query` `` prefix shift backtick pairing and expose the
+  quoted literal that follows. Unit tests cover every endpoint family, the
+  message classification with real VictoriaLogs texts, Grafana and API
+  clients, stale-cache suppression for rejected queries, fallbacks after a
+  rejection of an optimised query, the unwrap `first`/`last` raw path, the
+  unchanged fallback, stale, status and multi-tenant handling for limit and
+  storage errors, and the breaker. A new
+  `TestCompat_RejectedQueryStatusParity` e2e test in the `core` group
+  compares proxy and Loki statuses on the live stack, including
+  Grafana-sourced `query_range` requests.
+
 ## [1.73.0] - 2026-09-15
 
 ### Fixed

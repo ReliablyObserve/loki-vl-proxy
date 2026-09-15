@@ -1601,7 +1601,7 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 	if !shouldRetryQueryRangeWindow(nerr) {
 		t.Fatal("expected timeout net error to be retryable")
 	}
-	if !shouldRetryQueryRangeWindow(&queryRangeWindowHTTPError{status: http.StatusBadGateway, msg: "bad gateway"}) {
+	if !shouldRetryQueryRangeWindow(&upstreamStatusError{status: http.StatusBadGateway, msg: "bad gateway"}) {
 		t.Fatal("expected 502 to be retryable")
 	}
 	if !shouldRetryQueryRangeWindow(errors.New("all the 1 backends for the user \"\" are unavailable for proxying the request")) {
@@ -1611,7 +1611,7 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 		t.Fatal("expected generic validation error to be non-retryable")
 	}
 
-	if got := statusFromQueryRangeWindowErr(&queryRangeWindowHTTPError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusServiceUnavailable {
+	if got := statusFromBackendErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusServiceUnavailable {
 		t.Fatalf("expected http status passthrough, got=%d", got)
 	}
 

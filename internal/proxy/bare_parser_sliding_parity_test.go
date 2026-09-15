@@ -249,16 +249,20 @@ func TestBareParserRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 // merged buckets must still follow time order.
 func TestBareParserRangeMetric_MergedStreamsKeepTimeOrder(t *testing.T) {
 	t0 := int64(1700000040) // minute-aligned
+	// VictoriaLogs has no first/last stats function, so first_over_time and
+	// last_over_time are evaluated from raw rows. Rows of two streams that merge
+	// into one series arrive out of time order.
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/stats_query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Errorf("unexpected backend path %s", r.URL.Path)
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
-			`{"metric":{"_stream":"{app=\"merged\"}"},"values":[[%d.000000001,"1"]]},`+
-			`{"metric":{"_stream":"{app=\"merged\",service_name=\"merged\"}"},"values":[[%d.000000001,"5"]]}]}}`, t0+60, t0)
+		w.Header().Set("Content-Type", "application/stream+json")
+		fmt.Fprintf(w, `{"_time":%q,"_stream":"{app=\"merged\"}","_msg":"n=1","app":"merged","n":"1"}`+"\n",
+			time.Unix(t0+60, 1).UTC().Format(time.RFC3339Nano))
+		fmt.Fprintf(w, `{"_time":%q,"_stream":"{app=\"merged\",service_name=\"merged\"}","_msg":"n=5","app":"merged","service_name":"merged","n":"5"}`+"\n",
+			time.Unix(t0, 1).UTC().Format(time.RFC3339Nano))
 	}))
 	defer vl.Close()
 	p := newBareParserTestProxy(t, vl.URL, "v1.50.0", nil)

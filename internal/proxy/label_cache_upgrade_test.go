@@ -178,16 +178,19 @@ func TestCompatCache_DoesNotCaptureStaleOnErrorResponses(t *testing.T) {
 }
 
 // On a 4xx from the streams endpoint, /label/service_name/values must not answer
-// from the recent-data detection sample. A rejected query returns the error (as
-// Loki does); a backend without the endpoint keeps the full-range native answer.
+// from the recent-data detection sample. A rejected query returns Loki's 400
+// bad_data; a resource limit or storage failure reported with the same 400 is a
+// backend failure (502); a backend without the endpoint keeps the full-range
+// native answer.
 func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		streamsErr string
-		wantError  bool
+		wantStatus int
 	}{
-		{name: "rejected query returns the error", streamsErr: "cannot parse `query` arg: unexpected token", wantError: true},
-		{name: "unsupported endpoint keeps full-range native answer", streamsErr: `unsupported path requested: "/select/logsql/streams"`},
+		{name: "rejected query returns the error", streamsErr: "cannot parse `query` arg: unexpected token", wantStatus: http.StatusBadRequest},
+		{name: "storage failure is a backend error", streamsErr: "cannot obtain streams: cannot read index: unexpected EOF", wantStatus: http.StatusBadGateway},
+		{name: "unsupported endpoint keeps full-range native answer", streamsErr: `unsupported path requested: "/select/logsql/streams"`, wantStatus: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			end := perfBaseTimeNs
@@ -225,8 +228,11 @@ func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 			if strings.Contains(rec.Body.String(), "sampled") {
 				t.Fatalf("answered from the recent-data sample: %d %s", rec.Code, rec.Body.String())
 			}
-			if tc.wantError != (rec.Code >= 400) {
-				t.Fatalf("got %d %s, want error=%v", rec.Code, rec.Body.String(), tc.wantError)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("got %d %s, want %d", rec.Code, rec.Body.String(), tc.wantStatus)
+			}
+			if tc.wantStatus == http.StatusBadRequest && !strings.Contains(rec.Body.String(), `"errorType":"bad_data"`) {
+				t.Fatalf("want errorType bad_data, got %s", rec.Body.String())
 			}
 			mu.Lock()
 			defer mu.Unlock()

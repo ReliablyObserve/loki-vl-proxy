@@ -288,7 +288,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				)
 				break
 			}
-			status := statusFromQueryRangeWindowErr(err)
+			status := statusFromBackendErr(err)
 			p.log.Warn("query_range windowed fetch failed",
 				"error", err,
 				"window_count", len(windows),
@@ -516,8 +516,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 		} else {
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
-			msg := p.redactedBackendErrorMessage(resp.StatusCode, errBody)
-			fetchErr = &queryRangeWindowHTTPError{status: resp.StatusCode, msg: msg}
+			fetchErr = p.redactedBackendStatusError("", resp.StatusCode, errBody)
 		}
 		lastFetchErr = fetchErr
 
@@ -646,8 +645,7 @@ func (p *Proxy) queryRangeWindowHitEstimate(
 			return hitEstimate, nil
 		}
 		if err == nil {
-			msg := p.redactedBackendErrorMessage(status, body)
-			err = &queryRangeWindowHTTPError{status: status, msg: msg}
+			err = p.redactedBackendStatusError("", status, body)
 		}
 		if attempt >= queryRangePrefilterAttempts || !shouldRetryQueryRangeWindow(err) {
 			return 0, err
@@ -732,19 +730,6 @@ func queryRangePrefilterQuery(logsqlQuery string) string {
 	return query
 }
 
-type queryRangeWindowHTTPError struct {
-	status int
-	msg    string
-}
-
-func (e *queryRangeWindowHTTPError) Error() string {
-	return e.msg
-}
-
-func (e *queryRangeWindowHTTPError) StatusCode() int {
-	return e.status
-}
-
 func shouldRetryQueryRangeWindow(err error) bool {
 	if err == nil {
 		return false
@@ -779,14 +764,6 @@ func shouldRetryQueryRangeWindow(err error) bool {
 		strings.Contains(lower, "connection reset") ||
 		strings.Contains(lower, "timeout") ||
 		strings.Contains(lower, "temporarily unavailable")
-}
-
-func statusFromQueryRangeWindowErr(err error) int {
-	var httpErr interface{ StatusCode() int }
-	if errors.As(err, &httpErr) {
-		return httpErr.StatusCode()
-	}
-	return statusFromUpstreamErr(err)
 }
 
 func queryRangeWindowRetryBackoff(attempt int) time.Duration {

@@ -182,9 +182,9 @@ func TestProxyHelpers_FetchBareParserMetricSeries_PropagatesBackendStatus(t *tes
 		baseQuery:   `{app="api-gateway"} | json | status >= 500`,
 		rangeWindow: 5 * time.Minute,
 	}, "1704067200000000000", "1704067500000000000")
-	var apiErr *vlAPIError
+	var apiErr *upstreamStatusError
 	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected vlAPIError, got %v", err)
+		t.Fatalf("expected upstreamStatusError, got %v", err)
 	}
 	if apiErr.status != http.StatusBadGateway {
 		t.Fatalf("expected propagated 502, got %d", apiErr.status)

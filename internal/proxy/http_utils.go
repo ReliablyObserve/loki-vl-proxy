@@ -25,6 +25,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
 	fj "github.com/valyala/fastjson"
 )
@@ -244,6 +245,9 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 func statusFromUpstreamErr(err error) int {
+	if isUpstreamQueryRejected(err) {
+		return http.StatusBadRequest
+	}
 	var matchingErr vectorMatchError
 	if errors.As(err, &matchingErr) {
 		return http.StatusInternalServerError
@@ -285,9 +289,192 @@ func isCanceledErr(err error) bool {
 }
 
 // httpStatusCoder is implemented by errors that carry an upstream HTTP status
-// (e.g. queryRangeWindowHTTPError). An HTTP-level error from VL proves the
+// (e.g. upstreamStatusError). An HTTP-level error from VL proves the
 // backend is reachable and therefore must not trip the circuit breaker.
 type httpStatusCoder interface{ StatusCode() int }
+
+// upstreamStatusError is a completed VictoriaLogs HTTP response with an error
+// status. msg is already redacted (redactedBackendStatusError) so it is safe to
+// log and to return to clients; class comes from the raw message.
+type upstreamStatusError struct {
+	status int
+	msg    string
+	class  vlErrorClass
+}
+
+// vlErrorClass tells apart the failures VictoriaLogs reports with the same
+// status: 400 from httpserver.Errorf, 422 from httpserver.SendPrometheusError
+// on stats_query and stats_query_range.
+type vlErrorClass uint8
+
+const (
+	vlErrorUnclassified vlErrorClass = iota
+	// vlErrorQueryRejected: the query or an argument is invalid (Loki: 400).
+	vlErrorQueryRejected
+	// vlErrorResourceLimit: the query parsed but hit a limit or failed while
+	// executing; Loki answers Drilldown limit hits with partial results.
+	vlErrorResourceLimit
+	// vlErrorUnsupportedPath: an older VictoriaLogs lacks the endpoint.
+	vlErrorUnsupportedPath
+)
+
+// vlQueryRejectedPrefixes start VictoriaLogs messages for invalid queries and
+// arguments (source references: VictoriaLogs v1.50.0). They are prefixes
+// because VictoriaLogs writes the message verbatim, and parsing fails before
+// execution, so a user literal echoed later in the text cannot fake one.
+// Backticks are stripped before matching so redacted text classifies the same.
+var vlQueryRejectedPrefixes = []string{
+	// app/vlselect/logsql/logsql.go:117 wraps every LogsQL parser error, e.g.
+	// "unexpected token" (lib/logstorage/pipe.go:130), "unexpected pipe"
+	// (pipe.go:164), "missing ')'" (parser.go:1891), "invalid regexp"
+	// (parser.go:2675), "cannot parse 'pattern'" (pipe_extract.go:244).
+	"cannot parse query arg:",
+	"query arg cannot be empty",          // logsql.go:110
+	"missing 'field' query arg",          // logsql.go:472, 554
+	"'step' must be bigger than zero",    // logsql.go:230, 891
+	"cannot parse duration from the arg", // logsql.go:1837 (step, offset)
+	"cannot parse start=",                // logsql.go:1650
+	"cannot parse end=",                  // logsql.go:1650
+	"cannot parse time=",                 // logsql.go:1650
+}
+
+// vlProxyGapMarkers are parse errors only proxy-built LogsQL can cause: users
+// send LogQL, and the translator alone picks pipes and stats functions. They
+// mean a translation or fast-path gap (for example a stats function
+// VictoriaLogs lacks), not an invalid user query (VictoriaLogs v1.50.0).
+var vlProxyGapMarkers = []string{
+	"unknown stats func", // lib/logstorage/pipe_stats.go:1549, pipe_running_stats.go:461
+	"unexpected pipe ",   // lib/logstorage/pipe.go:164
+}
+
+// vlResourceLimitMarkers occur in VictoriaLogs messages for queries that parsed
+// but exceeded a limit or failed during execution (VictoriaLogs v1.50.0).
+var vlResourceLimitMarkers = []string{
+	// lib/logstorage/pipe_stats.go:1123, pipe_sort.go:478, pipe_sort_topk.go:383,
+	// pipe_top.go:300, pipe_uniq.go:268, pipe_facets.go:355,
+	// pipe_running_stats.go:224, pipe_stream_context.go:638
+	"since it requires more than",
+	"of memory is needed",           // pipe_stream_context.go:181, 335
+	"because they occupy more than", // storage_search.go:427
+	"passed to 'stream_context'",    // pipe_stream_context.go:669, 683
+	// -search.maxQueryDuration / maxQueueDuration / maxConcurrentRequests
+	// (app/vlselect/main.go:237, 268-272), -search.maxQueryLen (logsql.go:113),
+	// -search.maxQueryTimeRange (logsql.go:1577)
+	"-search.max",
+	"cannot execute query [", // logsql.go:194, 302, 1011, 1147: any failure after parsing
+	"cannot obtain ",         // logsql.go:445, 493, 527, 575, 613, 651, 1466
+}
+
+// classifyVLError classifies a raw (unredacted) VictoriaLogs error message.
+func classifyVLError(status int, rawMsg string) vlErrorClass {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		return vlErrorUnclassified
+	}
+	msg := strings.ReplaceAll(strings.TrimSpace(rawMsg), "`", "")
+	switch {
+	case strings.HasPrefix(msg, "unsupported path requested"): // app/vlselect/main.go:373
+		return vlErrorUnsupportedPath
+	case containsAny(reErrQueryEcho.ReplaceAllString(msg, ""), vlProxyGapMarkers):
+		// Checked on the message without its query echo, so a user literal
+		// quoting a marker cannot change the class.
+		return vlErrorUnclassified
+	case hasAnyPrefix(msg, vlQueryRejectedPrefixes):
+		return vlErrorQueryRejected
+	case containsAny(msg, vlResourceLimitMarkers):
+		return vlErrorResourceLimit
+	}
+	return vlErrorUnclassified
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAny(s string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *upstreamStatusError) Error() string { return e.msg }
+
+func (e *upstreamStatusError) StatusCode() int { return e.status }
+
+// isUpstreamQueryRejected reports whether err is certainly the query's fault, a
+// client mistake Loki answers with 400 bad_data for every client: a VictoriaLogs
+// parse or argument error (vlErrorQueryRejected) or a translator parse error.
+// translator.UnsupportedError is excluded: it marks valid LogQL (for example
+// count_values) that Loki accepts. A rejected query fails on every tenant and
+// every retry, so callers must not retry it, fall back to another backend path,
+// or mask it with a stale answer. VictoriaLogs also answers resource limits and
+// execution failures with 400/422; those, and unrecognised messages, are not
+// rejections and keep the backend-failure handling (fallbacks, stale reads,
+// partial results, per-tenant skipping, 5xx mapping).
+func isUpstreamQueryRejected(err error) bool {
+	var statusErr *upstreamStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.class == vlErrorQueryRejected
+	}
+	var parseErr *translator.ParseError
+	return errors.As(err, &parseErr)
+}
+
+// statusFromBackendErr maps an error for a client: a rejected query is 400, a
+// completed backend response keeps its status, anything else goes through
+// statusFromUpstreamErr.
+func statusFromBackendErr(err error) int {
+	if isUpstreamQueryRejected(err) {
+		return http.StatusBadRequest
+	}
+	var hsc httpStatusCoder
+	if errors.As(err, &hsc) {
+		return hsc.StatusCode()
+	}
+	return statusFromUpstreamErr(err)
+}
+
+// writeBackendError answers a completed VictoriaLogs error response and returns
+// the status written: 400 bad_data for a rejected query (including VL's 422 from
+// stats endpoints), the backend status otherwise.
+func (p *Proxy) writeBackendError(w http.ResponseWriter, status int, body []byte) int {
+	err := p.redactedBackendStatusError("", status, body)
+	code := statusFromBackendErr(err)
+	p.writeError(w, code, err.Error())
+	return code
+}
+
+// writeGrafanaStatsFailure answers a failed stats call for Grafana-sourced
+// traffic: a rejected query is Loki's 400, every other failure keeps the
+// partial-results reply (writeDrilldownPartialFromUpstream).
+func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
+	if isUpstreamQueryRejected(err) {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := statusFromUpstreamErr(err)
+	var hsc httpStatusCoder
+	if errors.As(err, &hsc) {
+		status = hsc.StatusCode()
+	}
+	p.writeDrilldownPartialFromUpstream(w, status, err.Error())
+}
+
+// badRequestStatusOr returns 400 for a rejected query and fallback otherwise, for
+// call sites that map every other backend failure to one fixed status.
+func badRequestStatusOr(err error, fallback int) int {
+	if isUpstreamQueryRejected(err) {
+		return http.StatusBadRequest
+	}
+	return fallback
+}
 
 func shouldRecordBreakerFailure(err error) bool {
 	if err == nil {
@@ -347,8 +534,32 @@ var (
 	reErrQuoted         = regexp.MustCompile(`"[^"]{12,}"`)
 	reErrSingleQuoted   = regexp.MustCompile(`'[^']{12,}'`)
 	reErrBacktickQuoted = regexp.MustCompile("`[^`]{12,}`")
+	// Short backticked identifiers such as VL's "cannot parse `query` arg" are
+	// unquoted first so they cannot shift backtick pairing and expose the long
+	// literal that follows. At most 11 characters, so anything reErrBacktickQuoted
+	// hides stays hidden.
+	reErrBacktickIdent = regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]{0,10})`")
 	// Long hex/id runs (request ids, hashes).
 	reErrLongHex = regexp.MustCompile(`\b[0-9a-fA-F]{16,}\b`)
+	// VictoriaLogs parse errors end with the whole query echoed back
+	// ("; context: [...]; query=...", app/vlselect/logsql/logsql.go:117). Quote
+	// pairing cannot be trusted across that echo, so it is dropped entirely.
+	reErrQueryEcho = regexp.MustCompile(`(?s);\s*(?:context: \[|query=).*$`)
+	// Bracketed echoes of the query or a pipe in execution errors: "cannot execute
+	// query [<LogsQL>]: …", "cannot execute tail query [...]: …" and "the query
+	// [...] cannot be used in live tailing" (app/vlselect/logsql/logsql.go:194,
+	// 302, 678, 733, 738, 1011, 1147), "cannot calculate [<pipe>], since …"
+	// (lib/logstorage/pipe_stats.go:1123 and the other pipe memory limits) and
+	// "cannot load rows for [<LogsQL>] because …" (storage_search.go:427).
+	// The echoed LogsQL can itself contain "]:", "]," or "] because" (a line
+	// filter such as "[ERROR]: "), so the span is greedy: from the first echo
+	// keyword to the LAST "]" followed by a terminator. Over-redacting part of
+	// the reason is safe; the reason after that terminator is kept.
+	reErrBracketEcho = regexp.MustCompile(`(?s)\b(query|calculate|rows for) \[.*\](:|,| because| cannot)`)
+	// Quoted filters in metadata errors: "with filter=%q:" and "with filter %q:"
+	// (logsql.go:445, 493, 527, 575); %q escapes inner quotes, which defeats
+	// the quote pairing of reErrQuoted.
+	reErrFilterEcho = regexp.MustCompile(`filter[= ]"(?:[^"\\]|\\.)*"`)
 )
 
 // redactBackendError extracts a VictoriaLogs error message and strips query-like
@@ -362,9 +573,13 @@ func (p *Proxy) redactBackendError(body []byte) string {
 		return msg
 	}
 	msg = RedactSecrets(msg)
+	msg = reErrQueryEcho.ReplaceAllString(msg, "")
+	msg = reErrBracketEcho.ReplaceAllString(msg, "$1 […]$2")
+	msg = reErrFilterEcho.ReplaceAllString(msg, `filter="…"`)
 	msg = reErrSelector.ReplaceAllString(msg, "{…}")
 	msg = reErrQuoted.ReplaceAllString(msg, `"…"`)
 	msg = reErrSingleQuoted.ReplaceAllString(msg, `'…'`)
+	msg = reErrBacktickIdent.ReplaceAllString(msg, "$1")
 	msg = reErrBacktickQuoted.ReplaceAllString(msg, "`…`")
 	msg = reErrLongHex.ReplaceAllString(msg, "…")
 	if len(msg) > 500 {
@@ -383,10 +598,10 @@ func (p *Proxy) redactedBackendErrorMessage(status int, body []byte) string {
 
 func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byte) error {
 	msg := p.redactedBackendErrorMessage(status, body)
-	if prefix == "" {
-		return errors.New(msg)
+	if prefix != "" {
+		msg = fmt.Sprintf("%s %d: %s", prefix, status, msg)
 	}
-	return fmt.Errorf("%s %d: %s", prefix, status, msg)
+	return &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, extractVLErrorMsg(body))}
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.

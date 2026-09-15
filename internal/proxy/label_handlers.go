@@ -287,9 +287,12 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	query := "*"
 	if len(matchQueries) > 0 {
 		translated, err := p.translateQueryWithContext(r.Context(), matchQueries[0])
-		if err == nil {
-			query = translated
+		if err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.metrics.RecordRequest("series", http.StatusBadRequest, time.Since(start))
+			return
 		}
+		query = translated
 	}
 
 	params := url.Values{}
@@ -318,8 +321,8 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	// Propagate VL error status
 	if status >= 400 {
-		p.writeError(w, status, p.redactBackendError(body))
-		p.metrics.RecordRequest("series", status, time.Since(start))
+		code := p.writeBackendError(w, status, body)
+		p.metrics.RecordRequest("series", code, time.Since(start))
 		return
 	}
 
@@ -431,7 +434,10 @@ func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end s
 	if query == "" {
 		query = "*"
 	}
-	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)

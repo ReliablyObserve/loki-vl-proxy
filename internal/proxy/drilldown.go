@@ -1014,7 +1014,7 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, fmt.Errorf("derived volume hits request failed: status=%d body=%s", resp.StatusCode, p.redactedBackendErrorMessage(resp.StatusCode, body))
+		return nil, p.redactedBackendStatusError("derived volume hits request failed: status", resp.StatusCode, body)
 	}
 
 	body, _ := io.ReadAll(resp.Body)
@@ -1636,18 +1636,16 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		if resp.StatusCode >= http.StatusInternalServerError {
 			errBody, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			msg := p.redactedBackendErrorMessage(resp.StatusCode, errBody)
-			lastErr = fmt.Errorf("%s", msg)
+			lastErr = p.redactedBackendStatusError("", resp.StatusCode, errBody)
 			hadScanFailure = true
 			continue
 		}
 		if resp.StatusCode >= http.StatusBadRequest {
 			errBody, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			msg := p.redactedBackendErrorMessage(resp.StatusCode, errBody)
 			// Collect native result before returning so the goroutine doesn't leak.
 			<-nativeCh
-			return nil, nil, fmt.Errorf("%s", msg)
+			return nil, nil, p.redactedBackendStatusError("", resp.StatusCode, errBody)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
 		scanFieldList, scanFieldValues, scanStreamLabels = p.detectFieldSummariesStream(resp.Body)
@@ -2520,8 +2518,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode >= http.StatusBadRequest {
-			msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
-			lastErr = fmt.Errorf("%s", msg)
+			lastErr = p.redactedBackendStatusError("", resp.StatusCode, body)
 			if i+1 < len(candidates) {
 				p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_relaxed_after_error", 0)
 			}
@@ -2877,8 +2874,7 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		if resp.StatusCode >= http.StatusBadRequest {
 			errBody, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			msg := p.redactedBackendErrorMessage(resp.StatusCode, errBody)
-			lastErr = fmt.Errorf("%s", msg)
+			lastErr = p.redactedBackendStatusError("", resp.StatusCode, errBody)
 			if i+1 < len(candidates) {
 				p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_relaxed_after_error", 0)
 			}
