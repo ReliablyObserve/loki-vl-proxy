@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.79.0] - 2026-09-15
+
 ### Fixed
 
 - **Grafana Explore's logs volume no longer fails for `| json` and returns
