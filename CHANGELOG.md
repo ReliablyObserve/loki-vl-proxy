@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.77.0] - 2026-09-15
+
 ### Changed
 
 - **Behaviour change:** queries that Loki v3.7 rejects while parsing now
