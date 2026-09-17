@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **LogQL label-matcher regexps are anchored to the whole label value.**
+  `{namespace=~"nch"}` is a full-value match in Loki — Prometheus'
+  `labels.NewMatcher` compiles a `MatchRegexp` as `^(?:<pattern>)$` — while
+  VictoriaLogs' `field:~"re"` is unanchored, so every `=~` / `!~` matcher was
+  silently widened and `{namespace=~"nch"}` also selected `anch` and `nch-b`.
+  A widened matcher inflates results instead of erroring, so nothing surfaced
+  it. Stream-selector matchers, pipeline label filters (`| status =~ "5.."`)
+  and the synthetic `service_name` fan-out now emit `^(?:…)$`, with leading
+  inline flags scoped to the body so `(?m)` cannot move the anchors to line
+  boundaries. Line filters (`|~`, `!~`) are unchanged: those are substring
+  regexps in Loki, which is what VictoriaLogs already does.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed

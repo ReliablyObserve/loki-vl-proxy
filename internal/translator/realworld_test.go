@@ -57,7 +57,7 @@ func TestRealWorld_NegativeLineFilters(t *testing.T) {
 		{
 			name:  "kafka exclude replica manager noise",
 			logql: `{instance=~"kafka-[23]",name="kafka"} != "kafka.server:type=ReplicaManager"`,
-			want:  `instance:~"kafka-[23]" name:="kafka" NOT ~"kafka\\.server:type=ReplicaManager"`,
+			want:  `instance:~"^(?:kafka-[23])$" name:="kafka" NOT ~"kafka\\.server:type=ReplicaManager"`,
 		},
 		{
 			name:  "case insensitive regex match",
@@ -92,12 +92,12 @@ func TestRealWorld_ComplexKubernetes(t *testing.T) {
 		{
 			name:  "cross cluster pod search with json filter",
 			logql: `{cluster=~"eks-.*",namespace="payments"} | json | status >= 500`,
-			want:  `cluster:~"eks-.*" namespace:="payments" | unpack_json | filter status:>=500`,
+			want:  `cluster:~"^(?:eks-.*)$" namespace:="payments" | unpack_json | filter status:>=500`,
 		},
 		{
 			name:  "container restart correlation",
 			logql: `{namespace=~"prod.*",container!=""} |= "Back-off restarting failed container"`,
-			want:  `namespace:~"prod.*" container:!"" ~"Back-off restarting failed container"`,
+			want:  `namespace:~"^(?:prod.*)$" container:!"" ~"Back-off restarting failed container"`,
 		},
 	}
 	for _, tt := range tests {

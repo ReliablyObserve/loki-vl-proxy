@@ -302,7 +302,7 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bservice_name%3D~%60.%2B%60%7D&start=1&end=2", nil)
 	p.handleVolume(w, r)
 
-	if !strings.Contains(receivedQuery, `service_name:~".+"`) || !strings.Contains(receivedQuery, `app:~".+"`) {
+	if !strings.Contains(receivedQuery, `service_name:~"^(?:.+)$"`) || !strings.Contains(receivedQuery, `app:~"^(?:.+)$"`) {
 		t.Fatalf("expected service_name regex expansion with backtick support, got %q", receivedQuery)
 	}
 

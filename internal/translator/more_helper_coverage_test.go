@@ -107,7 +107,7 @@ func TestServiceNameMatcherFilter(t *testing.T) {
 
 	// Positive regex match: OR of all fields with :~ op.
 	got = serviceNameMatcherFilter(":~", "auth.*", false, true)
-	if !strings.Contains(got, `service_name:~"auth.*"`) {
+	if !strings.Contains(got, `service_name:~"^(?:auth.*)$"`) {
 		t.Fatalf("expected regex service_name field: %q", got)
 	}
 	if !strings.Contains(got, ` OR `) {
@@ -119,7 +119,7 @@ func TestServiceNameMatcherFilter(t *testing.T) {
 	if strings.Contains(got, " OR ") {
 		t.Fatalf("expected AND (space) join in regex negative match: %q", got)
 	}
-	if !strings.Contains(got, `-service_name:~"auth.*"`) {
+	if !strings.Contains(got, `-service_name:~"^(?:auth.*)$"`) {
 		t.Fatalf("expected negated regex service_name field: %q", got)
 	}
 

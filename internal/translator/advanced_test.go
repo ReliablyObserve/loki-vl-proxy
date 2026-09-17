@@ -166,7 +166,7 @@ func TestAdvanced_RegexpParser(t *testing.T) {
 
 func TestAdvanced_RegexLabelFilter(t *testing.T) {
 	logql := `{app="api"} | json | status =~ "5.."`
-	want := `app:="api" | unpack_json | filter status:~"5.."`
+	want := `app:="api" | unpack_json | filter status:~"^(?:5..)$"`
 
 	got, err := TranslateLogQL(logql)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestAdvanced_RegexLabelFilter(t *testing.T) {
 
 func TestAdvanced_NegativeRegexLabelFilter(t *testing.T) {
 	logql := `{app="api"} | json | method !~ "GET|HEAD"`
-	want := `app:="api" | unpack_json | filter -method:~"GET|HEAD"`
+	want := `app:="api" | unpack_json | filter -method:~"^(?:GET|HEAD)$"`
 
 	got, err := TranslateLogQL(logql)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestAdvanced_NegativeRegexLabelFilter(t *testing.T) {
 
 func TestAdvanced_MultipleStreamLabelsWithMixedOps(t *testing.T) {
 	logql := `{cluster="prod",namespace=~"api-.*",app!="debug-tool",level!~"debug|trace"}`
-	want := `cluster:="prod" namespace:~"api-.*" -app:="debug-tool" -level:~"debug|trace"`
+	want := `cluster:="prod" namespace:~"^(?:api-.*)$" -app:="debug-tool" -level:~"^(?:debug|trace)$"`
 
 	got, err := TranslateLogQL(logql)
 	if err != nil {

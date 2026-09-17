@@ -1262,6 +1262,13 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false), true
 			}
 
+			if entry.entry.isRe {
+				// `| label =~ "re"` is a label matcher, so Loki requires a
+				// full-value match. Anchored here rather than above so the
+				// empty-value branch keeps its absent-or-empty semantics.
+				value = logsql.AnchorLabelMatcherRegex(value)
+			}
+
 			return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
 		}
 	}
@@ -2751,6 +2758,9 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			}
 
 			value = streamMatcherValue(value, op.isRe)
+			if op.isRe {
+				value = logsql.AnchorLabelMatcherRegex(value)
+			}
 
 			if value == "" && !op.isRe {
 				// detected_level="" in the stream selector means "no level detected":
@@ -2840,6 +2850,9 @@ func streamMatcherValue(value string, isRegex bool) string {
 
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 	value = streamMatcherValue(value, isRegex)
+	if isRegex {
+		value = logsql.AnchorLabelMatcherRegex(value)
+	}
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
 		// Quote dotted field names so VL can parse them.
