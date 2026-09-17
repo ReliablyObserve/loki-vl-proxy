@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- fix(range): a LogQL range vector is `(start, end]` for every function, not only
+  the log-line ones. `aggregateManualWindow` kept a sample sitting exactly on
+  `windowStart` for unwrapped ranges (`sum_over_time`, `avg_over_time`,
+  `min_over_time`, `first_over_time`, `quantile_over_time`, `rate_counter`),
+  so those read one sample high against Loki.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed

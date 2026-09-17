@@ -164,8 +164,11 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 		}
 	}
 
-	// Loki log-line windows are (start, end]: the line at ts=0 sits on the
-	// excluded lower edge, so log-line functions see only ts=10 and ts=20.
+	// A LogQL range vector is (start, end] for every function, not only the
+	// log-line ones: Loki's batchRangeVectorIterator.load skips
+	// `sample.Timestamp <= start` ("the lower bound of the range is not
+	// inclusive") and unwrapped ranges share that iterator. The sample at
+	// ts=0 therefore sits on the excluded lower edge for all of them.
 	if got, ok := aggregateManualWindow("count_over_time", 0, samples, 0, 20, 20); !ok || got != 2 {
 		t.Fatalf("count_over_time: expected 2,true got %v,%v", got, ok)
 	}
@@ -182,14 +185,14 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 	} else {
 		assertClose("bytes_rate", got, 0.25)
 	}
-	if got, ok := aggregateManualWindow("sum", 0, samples, 0, 20, 20); !ok || got != 6 {
-		t.Fatalf("sum: expected 6,true got %v,%v", got, ok)
+	if got, ok := aggregateManualWindow("sum", 0, samples, 0, 20, 20); !ok || got != 5 {
+		t.Fatalf("sum: expected 5,true got %v,%v", got, ok)
 	}
-	if got, ok := aggregateManualWindow("avg", 0, samples, 0, 20, 20); !ok || got != 2 {
-		t.Fatalf("avg: expected 2,true got %v,%v", got, ok)
+	if got, ok := aggregateManualWindow("avg", 0, samples, 0, 20, 20); !ok || got != 2.5 {
+		t.Fatalf("avg: expected 2.5,true got %v,%v", got, ok)
 	}
-	if got, ok := aggregateManualWindow("min", 0, samples, 0, 20, 20); !ok || got != 1 {
-		t.Fatalf("min: expected 1,true got %v,%v", got, ok)
+	if got, ok := aggregateManualWindow("min", 0, samples, 0, 20, 20); !ok || got != 2 {
+		t.Fatalf("min: expected 2,true got %v,%v", got, ok)
 	}
 	if got, ok := aggregateManualWindow("max", 0, samples, 0, 20, 20); !ok || got != 3 {
 		t.Fatalf("max: expected 3,true got %v,%v", got, ok)
@@ -197,19 +200,19 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 	if got, ok := aggregateManualWindow("stddev", 0, samples, 0, 20, 20); !ok {
 		t.Fatal("stddev: expected success")
 	} else {
-		assertClose("stddev", got, math.Sqrt(2.0/3.0))
+		assertClose("stddev", got, 0.5)
 	}
 	if got, ok := aggregateManualWindow("stdvar", 0, samples, 0, 20, 20); !ok {
 		t.Fatal("stdvar: expected success")
 	} else {
-		assertClose("stdvar", got, 2.0/3.0)
+		assertClose("stdvar", got, 0.25)
 	}
 	// Loki excludes the sample exactly at the lower window boundary.
 	if got, ok := aggregateManualWindow("quantile", 0.5, samples, 0, 20, 20); !ok || got != 2.5 {
 		t.Fatalf("quantile: expected 2.5,true got %v,%v", got, ok)
 	}
-	if got, ok := aggregateManualWindow("first", 0, samples, 0, 20, 20); !ok || got != 1 {
-		t.Fatalf("first: expected 1,true got %v,%v", got, ok)
+	if got, ok := aggregateManualWindow("first", 0, samples, 0, 20, 20); !ok || got != 2 {
+		t.Fatalf("first: expected 2,true got %v,%v", got, ok)
 	}
 	if got, ok := aggregateManualWindow("last", 0, samples, 0, 20, 20); !ok || got != 3 {
 		t.Fatalf("last: expected 3,true got %v,%v", got, ok)
@@ -224,7 +227,9 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 	if got, ok := aggregateManualWindow("rate_counter", 0, counterSamples, 0, 30, 30); !ok {
 		t.Fatal("rate_counter: expected success")
 	} else {
-		assertClose("rate_counter", got, 2.0)
+		// (0,30] drops the 100 at ts=0, so the increases are the reset to 10
+		// plus 30-10, i.e. 30 over 30s.
+		assertClose("rate_counter", got, 1.0)
 	}
 
 	if _, ok := aggregateManualWindow("unknown", 0, samples, 0, 20, 20); ok {
