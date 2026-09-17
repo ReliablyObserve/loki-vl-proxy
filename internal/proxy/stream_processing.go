@@ -76,11 +76,16 @@ func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
 func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	// Loki direction param: "forward" = oldest first, "backward" (default) = newest first
 	direction := r.FormValue("direction")
-	if direction == "forward" {
-		logsqlQuery += " | sort by (_time)"
-	} else {
-		logsqlQuery += " | sort by (_time desc)"
+	limit := r.FormValue("limit")
+	if limit == "" {
+		limit = strconv.Itoa(p.maxLines)
 	}
+	limit = sanitizeLimit(limit)
+	// The row budget goes ON THE SORT, not only into the `limit` argument: an
+	// unbounded sort buffers the whole match in VictoriaLogs before it returns
+	// a row. See sortByTimePipe.
+	rows, _ := strconv.Atoi(limit)
+	logsqlQuery += sortByTimePipe(direction == "forward", rows)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
@@ -90,11 +95,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	limit := r.FormValue("limit")
-	if limit == "" {
-		limit = strconv.Itoa(p.maxLines)
-	}
-	params.Set("limit", sanitizeLimit(limit))
+	params.Set("limit", limit)
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {

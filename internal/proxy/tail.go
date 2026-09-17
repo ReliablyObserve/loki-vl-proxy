@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,7 +174,7 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("query", logsqlQuery+sortByTimePipe(false, 1))
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
 	params.Set("limit", "1")
@@ -269,12 +270,15 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	}
 }
 
+// syntheticTailBatchLimit is the per-poll row budget of the synthetic tail.
+const syntheticTailBatchLimit = 200
+
 func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, lineFields map[string]bool, windowStart *time.Time, lastSeen *syntheticTailSeen) error {
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time)")
+	params.Set("query", logsqlQuery+sortByTimePipe(true, syntheticTailBatchLimit))
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
-	params.Set("limit", "200")
+	params.Set("limit", strconv.Itoa(syntheticTailBatchLimit))
 
 	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
 	if err != nil {

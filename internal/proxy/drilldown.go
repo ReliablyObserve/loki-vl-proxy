@@ -2489,7 +2489,7 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		}
 
 		params := url.Values{}
-		params.Set("query", logsqlQuery+" | sort by (_time desc)")
+		params.Set("query", logsqlQuery+sortByTimePipe(false, lineLimit))
 		params.Set("limit", strconv.Itoa(lineLimit))
 		if start != "" {
 			params.Set("start", formatVLTimestamp(start))

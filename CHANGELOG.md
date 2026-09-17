@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The raw-row read paths bound their `| sort` with VictoriaLogs' own sort
+  limit.** `sort` is a blocking pipe: without a limit VictoriaLogs holds every
+  matching row before it can emit the first one, so the HTTP `limit` argument,
+  which trims the result, never bounded the work — a 1000-line panel over a busy
+  stream buffered the whole match. `sort by (_time desc) limit N` makes
+  VictoriaLogs keep an N-row heap instead. Applied to the log query path (the
+  effective `limit`), the tail bootstrap (1 row) and the synthetic tail batch
+  (200 rows); callers that fold the whole match client-side keep the unbounded
+  form.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed
