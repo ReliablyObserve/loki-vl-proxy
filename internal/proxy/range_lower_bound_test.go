@@ -19,12 +19,10 @@ func TestLowerBoundIsExclusiveForEveryRangeFunction(t *testing.T) {
 		{"avg", 2.5}, // (2+3)/2, not 2
 		{"min", 2},   // not 1
 		{"max", 3},   // unchanged, but must not read the excluded sample
-		{"quantile", 3},
+		// q=0 discriminates: over {1,2,3} it is 1, over the correct {2,3} it is 2.
+		{"quantile", 2},
 	} {
 		q := 0.0
-		if tc.fn == "quantile" {
-			q = 1
-		}
 		got, ok := aggregateManualWindow(tc.fn, q, samples, 0, 20, 20)
 		if !ok {
 			t.Fatalf("%s: aggregateManualWindow reported no data", tc.fn)

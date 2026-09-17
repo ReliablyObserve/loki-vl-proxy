@@ -722,11 +722,11 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	fetchEnd := endTS
-	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
-		// VL's raw-query end is exclusive; Loki includes the evaluation time.
-		fetchEnd = fetchEnd.Add(time.Nanosecond)
-	}
+	// VL's raw-query end is exclusive; Loki includes the evaluation time. That
+	// holds for every range function, the same way the lower bound is excluded
+	// for every one of them, so the fetch is extended unconditionally — leaving
+	// it to a subset made the window open at BOTH ends for the rest.
+	fetchEnd := endTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
@@ -836,10 +836,8 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	fetchEnd := evalTS
-	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
-		fetchEnd = fetchEnd.Add(time.Nanosecond)
-	}
+	// Inclusive upper bound for every function, as above.
+	fetchEnd := evalTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())

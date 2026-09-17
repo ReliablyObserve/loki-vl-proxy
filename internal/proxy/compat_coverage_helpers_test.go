@@ -228,7 +228,12 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 		t.Fatal("rate_counter: expected success")
 	} else {
 		// (0,30] drops the 100 at ts=0, so the increases are the reset to 10
-		// plus 30-10, i.e. 30 over 30s.
+		// plus 30-10, i.e. 30 over 30s. NB this is the value THIS evaluator
+		// produces, not Loki's: Loki runs rate_counter through Prometheus'
+		// extrapolatedRate, which scales the result by the gap between the
+		// window edges and the first/last sample (1.25 here). manualWindowValues
+		// discards timestamps, so the extrapolation cannot be reproduced from
+		// it — a pre-existing gap this change does not close.
 		assertClose("rate_counter", got, 1.0)
 	}
 
