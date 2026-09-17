@@ -85,7 +85,8 @@
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
-      "test/e2e-compat/range_metric_offset_series_limit_test.go"
+      "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/step_grid_parity_test.go"
     ],
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
@@ -244,9 +245,12 @@
       "semantics/offset-sample-timestamps",
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
+    ],
+    "test/e2e-compat/step_grid_parity_test.go": [
+      "loki_api_v1_query_range"
     ]
   },
-  "tests_with_markers": 17,
+  "tests_with_markers": 18,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

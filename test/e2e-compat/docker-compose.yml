@@ -272,6 +272,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -345,6 +346,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -410,6 +412,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -476,6 +479,7 @@ services:
       # exercised by the e2e suite. Every other proxy here matches this
       # stack's Loki (max_query_series: 1000000) so parity tests compare
       # answers rather than two different limits.
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -520,6 +524,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -569,6 +574,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -617,6 +623,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -660,6 +667,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -703,6 +711,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -746,6 +755,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"
@@ -788,6 +798,7 @@ services:
       # sides at the same cardinality, so parity tests compare answers
       # rather than two different limits.
       - "-max-stats-query-series=1000000"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"

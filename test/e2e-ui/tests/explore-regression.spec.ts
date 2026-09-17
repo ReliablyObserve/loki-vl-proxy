@@ -401,13 +401,20 @@ test.describe("@regression Proxy series cap", () => {
     // ingesters) and the proxy both list them immediately.
     const query = `rate({app="api-gateway"}[5m])`;
     await ensureStackWarm(page);
-    const end = windowEnd();
+    // The proxy runs with -align-queries-with-step, like this stack's Loki, so
+    // a query_range is evaluated on the window truncated down to the step
+    // grid. Count indexed streams over that same window: with an unaligned end
+    // the index also lists streams created in the last partial step, which the
+    // aligned query no longer covers.
+    const step = 60;
+    const rawEnd = windowEnd();
+    const end = rawEnd - (rawEnd % step);
     // 15 minutes is enough to reach the cap on a stack older than a few
     // minutes and keeps both the proxy's zero-filled matrix and Loki's series
     // listing bounded on a long-running stack.
     const windowSec = 15 * 60;
     const [proxy, indexed] = await Promise.all([
-      queryRange(page, proxyUID, query, { step: "60", windowSec, endSec: end }),
+      queryRange(page, proxyUID, query, { step: String(step), windowSec, endSec: end }),
       lokiIndexedStreamCount(page, lokiUID, `{app="api-gateway"}`, end - windowSec, end),
     ]);
     expect(proxy.statusCode, "raw rate: status code").toBe(200);

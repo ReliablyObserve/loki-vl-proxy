@@ -7,8 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-align-queries-with-step` puts metric range queries on Loki's evaluation
+  grid.** Loki's step-align middleware truncates a range query's `start` and
+  `end` down to multiples of `step`, so on 3.7.1 with `step=137s` every returned
+  timestamp satisfies `ts % 137 == 0` and the first point sits before the
+  requested start. The proxy started its grid at the request's own `start`,
+  which shifted the whole series by `start mod step` — invisible whenever the
+  step happened to divide the start, which is why it only shows on odd steps.
+  Off by default, matching Loki's binary default; the Loki Helm chart turns the
+  option on, so set the flag to `true` to match a chart-deployed Loki. Log
+  queries are never moved: they have no evaluation grid, and shifting their
+  bounds would change which lines they return. Requests that omit `step`, and
+  `/loki/api/v1/patterns`, are left unaligned: Loki aligns both to a default
+  step of `range/250` that this proxy does not use downstream, so aligning to
+  it here would move the bounds off the grid the response is actually built on.
+  A request without `start` or `end` is aligned on the bounds Loki derives for
+  it (`end=now`, `start=end-since`). Binary expressions joining two vector
+  operands keep aligning both bounds whatever the flag says, as before: with
+  the flag off the join would otherwise have no common timestamps whenever one
+  operand is served from tumbling VictoriaLogs buckets. The e2e stack runs
+  every proxy variant with the flag on, matching its Loki.
 ### Fixed
 
+- **`max_query_length` is checked on the range the client asked for**, before
+  step alignment, as Loki's limits middleware runs before its step-align
+  middleware. Alignment can grow the range by up to `step-1ns`, so a query
+  exactly at the limit was rejected where Loki accepts it.
+- **The 11,000-point resolution check reads the step as the evaluators do.** It
+  parsed the step with a duration-only parser, so the raw nanosecond integer
+  Grafana sometimes sends (a proxy extension; Loki reads a bare integer as
+  seconds) was exempt from the limit while being evaluated, and now aligned,
+  on that step.
 - **A release is validated, tagged and published from the commit its version
   was computed from.** Since releases queue instead of cancelling each other,
   the first release job re-reads `main` before computing the next version, but

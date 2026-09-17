@@ -458,6 +458,7 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-align-queries-with-step` | — | `false` | Truncate a metric range query's `start` and `end` down to multiples of `step` before evaluation, the way Loki's step-align middleware does under `query_range.align_queries_with_step`. Off matches Loki's binary default; the Loki Helm chart turns the option on, so set this to `true` to match a chart-deployed Loki. Log queries are never moved |
 | `-drilldown-scan-timeout` | — | `5s` | Per-request timeout for the `detected_fields` / `detected_field/{name}/values` log-scan path. `0` disables the cap |
 | `-max-stats-query-series` | — | `0` (uses `500`) | Maximum series a metric query may return (`count_over_time`, `rate`, `bytes_rate`, ...), the proxy's equivalent of Loki's `max_query_series`; `0` uses the built-in default of `500`, which is also Loki's default. Above it the query is rejected with HTTP `400` and Loki's message `maximum number of series (N) reached for a single query`, on range and instant queries alike; the log line for the rejected request names this flag. Grafana Logs Drilldown requests receive a partial result (the busiest series) with Loki's `... returning partial results` warning instead, as Loki does for that client (see [Fixed Execution Limits](#fixed-execution-limits)) |
 | `-stats-query-range-concurrency` | — | `0` (uses `4`) | Maximum concurrent `stats_query_range` calls to VictoriaLogs. `0` uses the built-in default of `4` |
