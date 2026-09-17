@@ -119,15 +119,22 @@ func TestPipeString(t *testing.T) {
 		{"unpack_logfmt_from", logsql.PipeUnpackLogfmt{From: "_msg"}, "| unpack_logfmt from _msg"},
 		{"extract", logsql.PipeExtract{Pattern: "<_> <level>", From: "_msg"}, `| extract "<_> <level>" from _msg`},
 		{"extract_if", logsql.PipeExtract{Pattern: "<level>", From: "_msg", If: `level:*`}, `| extract "<level>" from _msg if (level:*)`},
-		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, "| extract_regexp `(?P<level>\\w+)` from _msg"},
+		// `| regexp` is the one parser stage that reaches this emitter, so the
+		// pattern goes through QuotePattern like every other emitted regexp:
+		// a backtick literal made VictoriaLogs answer 400 on any pattern
+		// carrying a backslash.
+		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, `| extract_regexp "(?P<level>\\w+)" from _msg`},
+		{"extract_regexp_backtick", logsql.PipeExtractRegexp{Pattern: "(?P<v>[`]+)", From: "_msg"}, `| extract_regexp "(?P<v>[` + "`" + `]+)" from _msg`},
 		{"filter", logsql.PipeFilter{Expr: logsql.FieldFilter{Field: "status", Op: logsql.FieldOpGTE, Value: "500"}}, "| filter status:>=500"},
 		{"fields", logsql.PipeFields{Labels: []string{"level", "status"}}, "| fields level, status"},
 		{"delete", logsql.PipeDelete{Labels: []string{"debug", "trace"}}, "| delete debug, trace"},
 		{"format", logsql.PipeFormat{Template: "<level> <status>", ResultField: "_msg"}, `| format "<level> <status>" as _msg`},
 		{"rename", logsql.PipeRename{Pairs: [][2]string{{"old", "new"}}}, "| rename old as new"},
 		{"rename_multi", logsql.PipeRename{Pairs: [][2]string{{"a", "b"}, {"c", "d"}}}, "| rename a as b, c as d"},
-		{"replace", logsql.PipeReplace{Field: "level", Old: "warn", New: "warning"}, `| replace (level, "warn", "warning")`},
-		{"replace_regexp", logsql.PipeReplaceRegexp{Field: "url", Regex: `https?://`, Replacement: ""}, "| replace_regexp (url, `https?://`, \"\")"},
+		// The field is named by the trailing `at` clause; the three-argument
+		// form is a VictoriaLogs parse error.
+		{"replace", logsql.PipeReplace{Field: "level", Old: "warn", New: "warning"}, `| replace ("warn", "warning") at level`},
+		{"replace_regexp", logsql.PipeReplaceRegexp{Field: "url", Regex: `https?://`, Replacement: ""}, `| replace_regexp ("https?://", "") at url`},
 		{"pack_json", logsql.PipePackJSON{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_json fields (a, b) as packed"},
 		{"pack_logfmt", logsql.PipePackLogfmt{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_logfmt fields (a, b) as packed"},
 		{"limit", logsql.PipeLimit{N: 100}, "| limit 100"},

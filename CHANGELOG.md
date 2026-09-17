@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Regexps embedded in a LogsQL query are quoted so VictoriaLogs' unquoting
+  preserves them.** `QuotePattern` left backslashes verbatim, so every
+  `|~ "\\d+"` line filter, `field:~"re"` filter and `Regexp` node carrying an
+  escape produced a literal VictoriaLogs rejects outright — v1.52.0 answers
+  `~"\\d+"` with HTTP 400 `compound token cannot start with "\\""`. The literal
+  is now built with `strconv.Quote`, the exact inverse of the unquoting pass
+  VictoriaLogs runs before it compiles the regexp.
+- **`replace` and `replace_regexp` pipes name their field in the trailing `at`
+  clause.** The three-argument form both emitted, `replace (field, "old",
+  "new")`, is a parse error in VictoriaLogs v1.52.0
+  (`missing ')' after 'replace("field", "old"'`). `replace_regexp` also quotes
+  its pattern through `QuotePattern` instead of a backtick literal, which could
+  not carry a backtick.
+- **`extract_regexp` quotes its pattern too.** `PipeExtractRegexp.String()` also
+  emitted a backtick literal, and it is the one of these emitters a user reaches
+  today: the LogQL `| regexp` parser stage compiles to it. A pattern carrying a
+  backslash was the same HTTP 400, and one carrying a backtick could not be
+  emitted at all.
+
+### Changed
+
+- **A pattern double-escaped to work around the old behaviour now matches
+  literally.** `|~ "\\\\d+"` used to reach VictoriaLogs as `"\\d+"`, unquote back
+  to `\d+` and match digits by accident. With the literal built correctly it
+  unquotes to `\\d+`, which RE2 reads as a literal backslash — the query still
+  answers `200`, with no rows. Write `|~ "\\d+"`, as Loki takes it.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed
