@@ -548,7 +548,7 @@ type PipeExtractRegexp struct {
 }
 
 func (p PipeExtractRegexp) String() string {
-	return fmt.Sprintf("| extract_regexp `%s` from %s", p.Pattern, p.From)
+	return fmt.Sprintf("| extract_regexp %s from %s", QuotePattern(p.Pattern), p.From)
 }
 func (p PipeExtractRegexp) pipe() {}
 

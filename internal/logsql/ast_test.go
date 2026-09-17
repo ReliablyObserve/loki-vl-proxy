@@ -119,7 +119,12 @@ func TestPipeString(t *testing.T) {
 		{"unpack_logfmt_from", logsql.PipeUnpackLogfmt{From: "_msg"}, "| unpack_logfmt from _msg"},
 		{"extract", logsql.PipeExtract{Pattern: "<_> <level>", From: "_msg"}, `| extract "<_> <level>" from _msg`},
 		{"extract_if", logsql.PipeExtract{Pattern: "<level>", From: "_msg", If: `level:*`}, `| extract "<level>" from _msg if (level:*)`},
-		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, "| extract_regexp `(?P<level>\\w+)` from _msg"},
+		// `| regexp` is the one parser stage that reaches this emitter, so the
+		// pattern goes through QuotePattern like every other emitted regexp:
+		// a backtick literal made VictoriaLogs answer 400 on any pattern
+		// carrying a backslash.
+		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, `| extract_regexp "(?P<level>\\w+)" from _msg`},
+		{"extract_regexp_backtick", logsql.PipeExtractRegexp{Pattern: "(?P<v>[`]+)", From: "_msg"}, `| extract_regexp "(?P<v>[` + "`" + `]+)" from _msg`},
 		{"filter", logsql.PipeFilter{Expr: logsql.FieldFilter{Field: "status", Op: logsql.FieldOpGTE, Value: "500"}}, "| filter status:>=500"},
 		{"fields", logsql.PipeFields{Labels: []string{"level", "status"}}, "| fields level, status"},
 		{"delete", logsql.PipeDelete{Labels: []string{"debug", "trace"}}, "| delete debug, trace"},
