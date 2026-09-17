@@ -4,6 +4,7 @@ package logsql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -15,21 +16,29 @@ func quoteLogsQL(s string) string {
 	return `"` + s + `"`
 }
 
-// quoteLogsQLPattern is like quoteLogsQL but for regexp/pattern strings that
-// carry their own backslash escape semantics. Only double-quotes are escaped;
-// backslashes pass through verbatim so regex escapes (\d, \w, etc.) are preserved.
-func quoteLogsQLPattern(s string) string {
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
-}
+// quoteLogsQLPattern quotes a regexp for embedding in a LogsQL double-quoted
+// string literal. VictoriaLogs UNQUOTES the literal with Go semantics before it
+// hands the result to RE2, so every backslash the regexp needs has to survive
+// that pass: `\\d` in the literal is what reaches RE2 as `\d`.
+//
+// Passing a single backslash through verbatim does not produce a looser match,
+// it produces a parse error and the query never runs — VictoriaLogs v1.52.0
+// answers `~"\d+"` with HTTP 400:
+//
+//	cannot read regexp for field "_msg": compound token cannot start with "\"";
+//	put it into quotes if needed
+//
+// strconv.Quote is exactly the inverse of that unquoting pass.
+func quoteLogsQLPattern(s string) string { return strconv.Quote(s) }
 
 // QuoteValue wraps s in double-quotes and escapes embedded backslashes and
 // double-quote characters so the result is always a valid LogsQL quoted string.
 func QuoteValue(s string) string { return quoteLogsQL(s) }
 
-// QuotePattern is like QuoteValue but for regexp/pattern strings that carry
-// their own backslash escape semantics. Only double-quotes are escaped;
-// backslashes pass through verbatim so regex escapes (\d, \w, etc.) are preserved.
+// QuotePattern quotes a REGEXP for embedding in a LogsQL query. Every regexp
+// that reaches a LogsQL string literal must go through here: VictoriaLogs
+// unquotes the literal before compiling it, so a lone backslash is a parse
+// error rather than an escape.
 func QuotePattern(s string) string { return quoteLogsQLPattern(s) }
 
 // Expr is the top-level LogsQL expression interface.
@@ -589,8 +598,13 @@ type PipeReplace struct {
 	New   string
 }
 
+// Syntax: | replace ("old", "new") at <field>
+//
+// The field is named by a trailing `at` clause, not by a first argument:
+// VictoriaLogs v1.52.0 rejects `replace (field, "old", "new")` with
+// `missing ')' after 'replace("field", "old"'`.
 func (p PipeReplace) String() string {
-	return fmt.Sprintf(`| replace (%s, %q, %q)`, p.Field, p.Old, p.New)
+	return fmt.Sprintf(`| replace (%q, %q) at %s`, p.Old, p.New, p.Field)
 }
 func (p PipeReplace) pipe() {}
 
@@ -601,8 +615,12 @@ type PipeReplaceRegexp struct {
 	Replacement string
 }
 
+// Syntax: | replace_regexp ("<regexp>", "<replacement>") at <field>
+//
+// Same shape as replace: the three-argument form is a parse error in
+// VictoriaLogs v1.52.0.
 func (p PipeReplaceRegexp) String() string {
-	return fmt.Sprintf("| replace_regexp (%s, `%s`, %q)", p.Field, p.Regex, p.Replacement)
+	return fmt.Sprintf("| replace_regexp (%s, %q) at %s", QuotePattern(p.Regex), p.Replacement, p.Field)
 }
 func (p PipeReplaceRegexp) pipe() {}
 

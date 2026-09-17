@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Regexps embedded in a LogsQL query are quoted so VictoriaLogs' unquoting
+  preserves them.** `QuotePattern` left backslashes verbatim, so every
+  `|~ "\\d+"` line filter, `field:~"re"` filter and `Regexp` node carrying an
+  escape produced a literal VictoriaLogs rejects outright — v1.52.0 answers
+  `~"\\d+"` with HTTP 400 `compound token cannot start with "\\""`. The literal
+  is now built with `strconv.Quote`, the exact inverse of the unquoting pass
+  VictoriaLogs runs before it compiles the regexp.
+- **`replace` and `replace_regexp` pipes name their field in the trailing `at`
+  clause.** The three-argument form both emitted, `replace (field, "old",
+  "new")`, is a parse error in VictoriaLogs v1.52.0
+  (`missing ')' after 'replace("field", "old"'`). `replace_regexp` also quotes
+  its pattern through `QuotePattern` instead of a backtick literal, which could
+  not carry a backtick.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed

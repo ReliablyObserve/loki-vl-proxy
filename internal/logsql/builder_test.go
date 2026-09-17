@@ -92,7 +92,9 @@ func TestBestTopN_v150(t *testing.T) {
 func TestBestIPv4Range_pre145(t *testing.T) {
 	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.44.0"))
 	f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
-	want := `client_ip:~"^192\.168\.1\."`
+	// Escapes are doubled in the literal: VictoriaLogs unquotes it before
+	// compiling, so `\\.` is what RE2 sees as `\.`.
+	want := `client_ip:~"^192\\.168\\.1\\."`
 	if got := f.String(); got != want {
 		t.Errorf("v1.44 fallback = %q, want %q", got, want)
 	}

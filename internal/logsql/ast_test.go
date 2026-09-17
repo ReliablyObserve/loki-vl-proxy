@@ -126,8 +126,10 @@ func TestPipeString(t *testing.T) {
 		{"format", logsql.PipeFormat{Template: "<level> <status>", ResultField: "_msg"}, `| format "<level> <status>" as _msg`},
 		{"rename", logsql.PipeRename{Pairs: [][2]string{{"old", "new"}}}, "| rename old as new"},
 		{"rename_multi", logsql.PipeRename{Pairs: [][2]string{{"a", "b"}, {"c", "d"}}}, "| rename a as b, c as d"},
-		{"replace", logsql.PipeReplace{Field: "level", Old: "warn", New: "warning"}, `| replace (level, "warn", "warning")`},
-		{"replace_regexp", logsql.PipeReplaceRegexp{Field: "url", Regex: `https?://`, Replacement: ""}, "| replace_regexp (url, `https?://`, \"\")"},
+		// The field is named by the trailing `at` clause; the three-argument
+		// form is a VictoriaLogs parse error.
+		{"replace", logsql.PipeReplace{Field: "level", Old: "warn", New: "warning"}, `| replace ("warn", "warning") at level`},
+		{"replace_regexp", logsql.PipeReplaceRegexp{Field: "url", Regex: `https?://`, Replacement: ""}, `| replace_regexp ("https?://", "") at url`},
 		{"pack_json", logsql.PipePackJSON{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_json fields (a, b) as packed"},
 		{"pack_logfmt", logsql.PipePackLogfmt{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_logfmt fields (a, b) as packed"},
 		{"limit", logsql.PipeLimit{N: 100}, "| limit 100"},
