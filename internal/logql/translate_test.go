@@ -22,7 +22,7 @@ func TestTranslate_StreamSelector(t *testing.T) {
 		},
 		{
 			`{app=~"api.*"}`,
-			`app:~"api.*"`,
+			`app:~"^(?:api.*)$"`,
 		},
 		{
 			`{app!="debug"}`,
@@ -30,7 +30,7 @@ func TestTranslate_StreamSelector(t *testing.T) {
 		},
 		{
 			`{app!~"kube-.*"}`,
-			`-app:~"kube-.*"`,
+			`-app:~"^(?:kube-.*)$"`,
 		},
 	}
 	for _, tc := range tests {

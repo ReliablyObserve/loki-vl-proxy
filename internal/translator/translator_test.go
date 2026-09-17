@@ -175,17 +175,17 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "regex label in stream selector",
 			logql: `{app=~"api-.*",namespace="prod"}`,
-			want:  `app:~"api-.*" namespace:="prod"`,
+			want:  `app:~"^(?:api-.*)$" namespace:="prod"`,
 		},
 		{
 			name:  "negative regex in stream selector",
 			logql: `{namespace!~"kube-.*"}`,
-			want:  `-namespace:~"kube-.*"`,
+			want:  `-namespace:~"^(?:kube-.*)$"`,
 		},
 		{
 			name:  "regex with alternation",
 			logql: `{namespace=~"prod|staging"}`,
-			want:  `namespace:~"prod|staging"`,
+			want:  `namespace:~"^(?:prod|staging)$"`,
 		},
 		// Substring semantics test — critical correctness
 		{
@@ -1061,7 +1061,7 @@ func TestFieldFilterMigration(t *testing.T) {
 		{
 			name:  "negated regex pipeline label filter",
 			logql: `{app="api"} | status !~ "5.."`,
-			want:  `app:="api" -status:~"5.."`,
+			want:  `app:="api" -status:~"^(?:5..)$"`,
 		},
 		{
 			name:  "empty value — non-level field in stream selector",

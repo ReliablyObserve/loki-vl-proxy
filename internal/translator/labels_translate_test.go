@@ -52,7 +52,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "regex matcher with synthetic service_name",
 			logql: `{service_name=~"auth.*"}`,
-			want:  `(service_name:~"auth.*" OR "service.name":~"auth.*" OR service:~"auth.*" OR app:~"auth.*" OR application:~"auth.*" OR app_name:~"auth.*" OR name:~"auth.*" OR app_kubernetes_io_name:~"auth.*" OR container:~"auth.*" OR container_name:~"auth.*" OR "k8s.container.name":~"auth.*" OR k8s_container_name:~"auth.*" OR component:~"auth.*" OR workload:~"auth.*" OR job:~"auth.*" OR "k8s.job.name":~"auth.*" OR k8s_job_name:~"auth.*")`,
+			want:  `(service_name:~"^(?:auth.*)$" OR "service.name":~"^(?:auth.*)$" OR service:~"^(?:auth.*)$" OR app:~"^(?:auth.*)$" OR application:~"^(?:auth.*)$" OR app_name:~"^(?:auth.*)$" OR name:~"^(?:auth.*)$" OR app_kubernetes_io_name:~"^(?:auth.*)$" OR container:~"^(?:auth.*)$" OR container_name:~"^(?:auth.*)$" OR "k8s.container.name":~"^(?:auth.*)$" OR k8s_container_name:~"^(?:auth.*)$" OR component:~"^(?:auth.*)$" OR workload:~"^(?:auth.*)$" OR job:~"^(?:auth.*)$" OR "k8s.job.name":~"^(?:auth.*)$" OR k8s_job_name:~"^(?:auth.*)$")`,
 		},
 		{
 			name:  "negated matcher with synthetic service_name",
@@ -62,7 +62,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "negated regex with synthetic service_name",
 			logql: `{service_name!~"auth.*"}`,
-			want:  `-service_name:~"auth.*" -"service.name":~"auth.*" -service:~"auth.*" -app:~"auth.*" -application:~"auth.*" -app_name:~"auth.*" -name:~"auth.*" -app_kubernetes_io_name:~"auth.*" -container:~"auth.*" -container_name:~"auth.*" -"k8s.container.name":~"auth.*" -k8s_container_name:~"auth.*" -component:~"auth.*" -workload:~"auth.*" -job:~"auth.*" -"k8s.job.name":~"auth.*" -k8s_job_name:~"auth.*"`,
+			want:  `-service_name:~"^(?:auth.*)$" -"service.name":~"^(?:auth.*)$" -service:~"^(?:auth.*)$" -app:~"^(?:auth.*)$" -application:~"^(?:auth.*)$" -app_name:~"^(?:auth.*)$" -name:~"^(?:auth.*)$" -app_kubernetes_io_name:~"^(?:auth.*)$" -container:~"^(?:auth.*)$" -container_name:~"^(?:auth.*)$" -"k8s.container.name":~"^(?:auth.*)$" -k8s_container_name:~"^(?:auth.*)$" -component:~"^(?:auth.*)$" -workload:~"^(?:auth.*)$" -job:~"^(?:auth.*)$" -"k8s.job.name":~"^(?:auth.*)$" -k8s_job_name:~"^(?:auth.*)$"`,
 		},
 		{
 			name:  "service_name with line filter",
@@ -82,7 +82,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "backtick regex matcher",
 			logql: "{service_name=~`auth.*`}",
-			want:  `(service_name:~"auth.*" OR "service.name":~"auth.*" OR service:~"auth.*" OR app:~"auth.*" OR application:~"auth.*" OR app_name:~"auth.*" OR name:~"auth.*" OR app_kubernetes_io_name:~"auth.*" OR container:~"auth.*" OR container_name:~"auth.*" OR "k8s.container.name":~"auth.*" OR k8s_container_name:~"auth.*" OR component:~"auth.*" OR workload:~"auth.*" OR job:~"auth.*" OR "k8s.job.name":~"auth.*" OR k8s_job_name:~"auth.*")`,
+			want:  `(service_name:~"^(?:auth.*)$" OR "service.name":~"^(?:auth.*)$" OR service:~"^(?:auth.*)$" OR app:~"^(?:auth.*)$" OR application:~"^(?:auth.*)$" OR app_name:~"^(?:auth.*)$" OR name:~"^(?:auth.*)$" OR app_kubernetes_io_name:~"^(?:auth.*)$" OR container:~"^(?:auth.*)$" OR container_name:~"^(?:auth.*)$" OR "k8s.container.name":~"^(?:auth.*)$" OR k8s_container_name:~"^(?:auth.*)$" OR component:~"^(?:auth.*)$" OR workload:~"^(?:auth.*)$" OR job:~"^(?:auth.*)$" OR "k8s.job.name":~"^(?:auth.*)$" OR k8s_job_name:~"^(?:auth.*)$")`,
 		},
 		{
 			name:  "non empty app matcher",
