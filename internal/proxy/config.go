@@ -48,6 +48,7 @@ type HandlerConfig struct {
 	tenantDefaultLimits                   map[string]any            // snapshot at construction — not hot-reloadable via HandlerConfig
 	tenantLimits                          map[string]map[string]any // snapshot at construction — not hot-reloadable via HandlerConfig
 	defaultMaxQueryLength                 time.Duration
+	alignQueriesWithStep                  bool
 	queryRangeWindowing                   bool
 	queryRangeSplitInterval               time.Duration
 	queryRangeMaxParallel                 int

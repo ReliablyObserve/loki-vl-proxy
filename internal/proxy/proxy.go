@@ -276,6 +276,10 @@ type Config struct {
 	PatternsStartupStale time.Duration
 	// PatternsPeerWarmTimeout bounds startup peer warm attempts when disk is stale/missing.
 	PatternsPeerWarmTimeout time.Duration
+	// AlignQueriesWithStep truncates a metric range query's start and end to
+	// multiples of the step before evaluation, as Loki's step-align middleware
+	// does under query_range.align_queries_with_step.
+	AlignQueriesWithStep bool
 
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
@@ -510,6 +514,7 @@ type Proxy struct {
 	tenantLimits                          map[string]map[string]any
 	defaultMaxQueryLength                 time.Duration // 0 = unlimited
 	translationCache                      *cache.Cache
+	alignQueriesWithStep                  bool // Loki's query_range.align_queries_with_step
 	queryRangeWindowing                   bool
 	queryRangeSplitInterval               time.Duration
 	queryRangeMaxParallel                 int
@@ -1131,6 +1136,7 @@ func New(cfg Config) (*Proxy, error) {
 		defaultMaxQueryLength:                 cfg.DefaultMaxQueryLength,
 		translationCache:                      cache.New(5*time.Minute, 5000),
 		streamFieldNamesCache:                 cache.New(30*time.Second, 500),
+		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
 		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
 		queryRangeMaxParallel:                 queryRangeMaxParallel,
@@ -1269,6 +1275,7 @@ func New(cfg Config) (*Proxy, error) {
 			tenantDefaultLimits:                   p.tenantDefaultLimits,
 			tenantLimits:                          p.tenantLimits,
 			defaultMaxQueryLength:                 p.defaultMaxQueryLength,
+			alignQueriesWithStep:                  p.alignQueriesWithStep,
 			queryRangeWindowing:                   p.queryRangeWindowing,
 			queryRangeSplitInterval:               p.queryRangeSplitInterval,
 			queryRangeMaxParallel:                 p.queryRangeMaxParallel,
@@ -2070,6 +2077,14 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+
+	// Loki evaluates a metric range query on the grid of `k * step`, not on the
+	// client's `start`: its step-align middleware truncates BOTH bounds down to
+	// a multiple of the step. Align here, at the entry, so every downstream path
+	// builds its request and its grid from Loki's bounds.
+	if p.alignQueriesWithStep {
+		alignRangeRequestToStepGrid(r, logqlQuery)
 	}
 
 	categorizedLabels := requestWantsCategorizedLabels(r)
