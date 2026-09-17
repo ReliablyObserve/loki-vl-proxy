@@ -722,11 +722,11 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	fetchEnd := endTS
-	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
-		// VL's raw-query end is exclusive; Loki includes the evaluation time.
-		fetchEnd = fetchEnd.Add(time.Nanosecond)
-	}
+	// VL's raw-query end is exclusive; Loki includes the evaluation time. That
+	// holds for every range function, the same way the lower bound is excluded
+	// for every one of them, so the fetch is extended unconditionally — leaving
+	// it to a subset made the window open at BOTH ends for the rest.
+	fetchEnd := endTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
@@ -836,10 +836,8 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	fetchEnd := evalTS
-	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
-		fetchEnd = fetchEnd.Add(time.Nanosecond)
-	}
+	// Inclusive upper bound for every function, as above.
+	fetchEnd := evalTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
@@ -2090,7 +2088,7 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 	switch functionName {
 	case "quantile", "stddev", "stdvar", "rate_counter":
 		// Loki quantile range vectors exclude the lower boundary and include the end.
-		values := manualWindowValues(samples, windowStart, windowEnd, functionName == "quantile")
+		values := manualWindowValues(samples, windowStart, windowEnd, true)
 		if len(values) == 0 {
 			return 0, false
 		}
@@ -2123,8 +2121,10 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		lastVal  float64
 		hasFirst bool
 	)
-	// Log-line windows are (start, end], as the bucket path evaluates them.
-	excludeStart := isLogRangeWindowFunc(functionName)
+	// A LogQL range vector is (start, end] for EVERY function: Loki's
+	// batchRangeVectorIterator.load skips `sample.Timestamp <= start` and the
+	// iterator is shared by unwrapped ranges too (pkg/logql/range_vector.go).
+	const excludeStart = true
 	for _, sample := range samples {
 		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
 			continue
