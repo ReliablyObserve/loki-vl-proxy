@@ -44,38 +44,39 @@ func TestAnchorLabelMatcherRegex(t *testing.T) {
 			want: "^(?:api-.*)$",
 		},
 		{
-			// Flags are SCOPED to the body, never hoisted in front of the
-			// anchors — see the multiline case below for why.
-			name: "case-insensitive flag is scoped to the body",
+			// An inline flag stays inside the non-capturing group, so it cannot
+			// reach the anchors — see the multiline case below.
+			name: "case-insensitive flag stays inside the group",
 			in:   "(?i)prod",
-			want: "^(?:(?i:prod))$",
+			want: "^(?:(?i)prod)$",
 		},
 		{
 			name: "multiple flags in one group stay together",
 			in:   "(?is)prod",
-			want: "^(?:(?is:prod))$",
+			want: "^(?:(?is)prod)$",
 		},
 		{
-			// The reason flags must not be hoisted: a hoisted (?m) makes ^ and $
-			// match at line boundaries, so "foo\nbar" would pass a matcher for
-			// "foo". Scoped, the anchors keep meaning "the whole value".
-			name: "multiline flag is scoped so the anchors stay value-anchored",
+			// This is why the group matters: (?m) makes ^ and $ match at line
+			// boundaries, so a hoisted one would let "foo\nbar" pass a matcher
+			// written for "foo". Inside the group, the outer anchors keep
+			// meaning "the whole value".
+			name: "multiline flag cannot reach the outer anchors",
 			in:   "(?m)foo",
-			want: "^(?:(?m:foo))$",
+			want: "^(?:(?m)foo)$",
 		},
 		{
-			name: "successive flag groups nest in order",
+			name: "successive flag groups are passed through",
 			in:   "(?i)(?s)foo",
-			want: "^(?:(?i:(?s:foo)))$",
+			want: "^(?:(?i)(?s)foo)$",
 		},
 		{
 			name: "negated flag group",
 			in:   "(?-s)foo",
-			want: "^(?:(?-s:foo))$",
+			want: "^(?:(?-s)foo)$",
 		},
 		{
-			// A scoped group carries its own body and must stay inside.
-			name: "scoped flag group is not hoisted",
+			// A scoped group carries its own body and is passed through as-is.
+			name: "scoped flag group is passed through",
 			in:   "(?i:prod)",
 			want: "^(?:(?i:prod))$",
 		},
@@ -99,7 +100,7 @@ func TestAnchorLabelMatcherRegex(t *testing.T) {
 		{
 			name: "flags with no body anchor to the empty value",
 			in:   "(?i)",
-			want: "^(?:(?i:))$",
+			want: "^(?:(?i))$",
 		},
 	}
 

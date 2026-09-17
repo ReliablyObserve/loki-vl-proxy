@@ -16,10 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently widened and `{namespace=~"nch"}` also selected `anch` and `nch-b`.
   A widened matcher inflates results instead of erroring, so nothing surfaced
   it. Stream-selector matchers, pipeline label filters (`| status =~ "5.."`)
-  and the synthetic `service_name` fan-out now emit `^(?:…)$`, with leading
-  inline flags scoped to the body so `(?m)` cannot move the anchors to line
-  boundaries. Line filters (`|~`, `!~`) are unchanged: those are substring
+  and the synthetic `service_name` fan-out now emit `^(?:…)$`. An inline flag in
+  the pattern stays inside that group, so a `(?m)` cannot move the anchors to
+  line boundaries. Line filters (`|~`, `!~`) are unchanged: those are substring
   regexps in Loki, which is what VictoriaLogs already does.
+- **`__tenant_id__=~` is anchored too.** The multi-tenant fan-out matched that
+  label with a bare `regexp.Compile`, so `{__tenant_id__=~"prod"}` also queried
+  `prod-eu` and `nonprod`. It is the same widening on the axis that decides
+  which tenants a query reaches.
+
+### Changed
+
+- **A substring-style `=~` stops matching and has to be written as one.**
+  Anchoring only ever removes rows: `{namespace=~"prod"}` no longer selects
+  `production`, `{pod=~"api"}` no longer selects `api-7d9`, `{app=~"a|b"}` no
+  longer selects `ab`. Panels built on the old behaviour go to "No data", and a
+  rule migrated with `rules-migrate` can stop firing. Write `.*prod.*` where a
+  substring was meant, as Loki requires.
 
 ## [1.81.0] - 2026-09-15
 

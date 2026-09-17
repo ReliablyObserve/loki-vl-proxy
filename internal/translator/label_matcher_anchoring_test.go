@@ -39,16 +39,16 @@ func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 			want: `namespace:~"^(?:.*)$"`,
 		},
 		{
-			// Flags are scoped to the body, never hoisted: a hoisted (?m) would
+			// An inline flag stays inside the group: hoisted, a (?m) would
 			// make the anchors match at line boundaries.
 			name: "inline flag scoped inside the anchors",
 			in:   `{namespace=~"(?i)prod"}`,
-			want: `namespace:~"^(?:(?i:prod))$"`,
+			want: `namespace:~"^(?:(?i)prod)$"`,
 		},
 		{
 			name: "multiline flag cannot widen the anchors",
 			in:   `{namespace=~"(?m)prod"}`,
-			want: `namespace:~"^(?:(?m:prod))$"`,
+			want: `namespace:~"^(?:(?m)prod)$"`,
 		},
 		{
 			name: "exact matcher is untouched",
