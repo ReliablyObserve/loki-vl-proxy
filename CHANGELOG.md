@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-align-queries-with-step` puts metric range queries on Loki's evaluation
+  grid.** Loki's step-align middleware truncates a range query's `start` and
+  `end` down to multiples of `step`, so on 3.7.1 with `step=137s` every returned
+  timestamp satisfies `ts % 137 == 0` and the first point sits before the
+  requested start. The proxy started its grid at the request's own `start`,
+  which shifted the whole series by `start mod step` — invisible whenever the
+  step happened to divide the start, which is why it only shows on odd steps.
+  Off by default, matching Loki's binary default; the Loki Helm chart turns the
+  option on, so set the flag to `true` to match a chart-deployed Loki. Log
+  queries are never moved: they have no evaluation grid, and shifting their
+  bounds would change which lines they return. Requests that omit `step`, and
+  `/loki/api/v1/patterns`, are left unaligned: Loki aligns both to a default
+  step of `range/250` that this proxy does not use downstream, so aligning to
+  it here would move the bounds off the grid the response is actually built on.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed
