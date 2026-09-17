@@ -204,6 +204,7 @@ type proxyRuntimeConfig struct {
 	coldBackendManifestRefresh          time.Duration
 	coldBackendTimeout                  time.Duration
 	defaultMaxQueryLength               time.Duration
+	alignQueriesWithStep                bool
 	maxStatsQuerySeries                 int
 	statsQueryRangeConcurrency          int
 	backendMaxConcurrentHeavyQueries    int
@@ -627,6 +628,7 @@ func run(
 	patternsPersistInterval := fs.Duration("patterns-persist-interval", 30*time.Second, "How often to persist in-memory patterns snapshots to disk")
 	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
+	alignQueriesWithStep := fs.Bool("align-queries-with-step", false, "Truncate a metric range query's start and end down to multiples of the step before evaluation, the way Loki's step-align middleware does under query_range.align_queries_with_step. Applies to /loki/api/v1/query_range with an explicit step. Off by default, matching Loki's binary default; the Loki Helm chart turns it on, so set this to true to match a chart-deployed Loki.")
 	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
 
 	// Cold storage backend (Victoria Lakehouse)
@@ -916,6 +918,7 @@ func run(
 			coldBackendManifestRefresh:          *coldBackendManifestRefresh,
 			coldBackendTimeout:                  *coldBackendTimeout,
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
+			alignQueriesWithStep:                *alignQueriesWithStep,
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
 			backendMaxConcurrentHeavyQueries:    *backendMaxConcurrentHeavyQueries,
@@ -2094,6 +2097,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			Timeout:         cfg.coldBackendTimeout,
 		},
 		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
+		AlignQueriesWithStep:             cfg.alignQueriesWithStep,
 		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
 		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
 		BackendMaxConcurrentHeavyQueries: cfg.backendMaxConcurrentHeavyQueries,

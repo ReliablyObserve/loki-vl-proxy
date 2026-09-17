@@ -71,7 +71,8 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/translator/regexp_escaping_test.go",
-      "test/e2e-compat/heavy_query_protection_test.go"
+      "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/step_grid_parity_test.go"
     ],
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
@@ -204,9 +205,12 @@
       "loki_api_v1_query_range",
       "semantics/sliding-window-recurrence-exact",
       "series-limits-and-partial-results"
+    ],
+    "test/e2e-compat/step_grid_parity_test.go": [
+      "loki_api_v1_query_range"
     ]
   },
-  "tests_with_markers": 15,
+  "tests_with_markers": 16,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -290,18 +290,23 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 // the operands are evaluated. Operands with different range windows take
 // different execution paths: sliding windows are evaluated at start+k*step,
 // tumbling windows come from VictoriaLogs buckets on the epoch-aligned grid.
-// Sharing one aligned axis lets the join match samples, and mirrors Loki's
-// query frontend with align_queries_with_step. Requests without a parseable
-// start, end or step are returned unchanged.
+// Sharing one aligned axis lets the join match samples at all.
+//
+// This runs regardless of -align-queries-with-step, and that is a recorded
+// deviation rather than an oversight: with the flag off the join would
+// otherwise have no common timestamps whenever one operand is tumbling and the
+// start is unaligned, and an empty join is worse than one shifted by less than
+// a step against a default Loki. With the flag on the request arrives already
+// aligned and this is a no-op. Requests without a parseable start, end or step
+// are returned unchanged.
 func alignBinaryRangeRequest(r *http.Request) *http.Request {
 	start, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 	end, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
-	step, stepOK := parsePositiveStepDuration(r.FormValue("step"))
+	stepNs, stepOK := parseStepToNanos(r.FormValue("step"))
 	if !startOK || !endOK || !stepOK || end < start {
 		return r
 	}
-	stepNs := int64(step)
-	alignedStart, alignedEnd := start-start%stepNs, end-end%stepNs
+	alignedStart, alignedEnd := alignDownToStep(start, stepNs), alignDownToStep(end, stepNs)
 	if alignedStart == start && alignedEnd == end {
 		return r
 	}
