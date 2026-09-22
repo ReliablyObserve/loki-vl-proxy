@@ -8,6 +8,10 @@ const (
 	ConfigurationReferencePath = "docs/reference/configuration-reference.md"
 	LimitsRegistryPath         = "docs/reference/limits-registry.md"
 	ErrorsAndAlertsPath        = "docs/reference/errors-and-alerts.md"
+	// LimitsJSONPath is the machine-readable export the conformance registry
+	// reads, so limits are inventoried from this registry rather than listed
+	// again by hand.
+	LimitsJSONPath = "conformance/registry/generated/proxy/limits.json"
 )
 
 // MainGoPath is where the flags are declared.
@@ -28,9 +32,14 @@ func Generate(root string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	limitsJSON, err := RenderLimitsJSON(flags)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]string{
 		ConfigurationReferencePath: RenderConfigurationReference(flags),
 		LimitsRegistryPath:         limits,
 		ErrorsAndAlertsPath:        errors,
+		LimitsJSONPath:             limitsJSON,
 	}, nil
 }

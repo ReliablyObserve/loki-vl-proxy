@@ -40,7 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/reference/errors-and-alerts.md` (from an error or alert back to its
   limit). The flags stay declared once in `cmd/proxy/main.go`; the registry in
   `internal/config` adds the operator metadata, and CI fails when the committed
-  documents, the chart values or the alert names drift.
+  documents, the chart values or the alert names drift. The same run writes
+  `conformance/registry/generated/proxy/limits.json`, so the conformance
+  registry inventories limits from the flags instead of keeping a second list.
+  `-max-stats-query-series` and `-backend-max-buffered-response-bytes` now
+  document how they interact: raising the series cap alone turns Loki's
+  series-limit error into `manual metric response exceeds N bytes`, and both
+  sizing entries carry the series x steps x 40 bytes estimate.
 
 ### Fixed
 

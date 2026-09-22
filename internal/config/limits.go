@@ -55,7 +55,7 @@ var Limits = []Limit{
 		Alert:      "none",
 		LokiParity: "max_query_series (500)",
 		PerTenant:  true,
-		Sizing:     "500 matches Loki's default and the Drilldown series cap. Raise it for dashboards that legitimately render thousands of series, at the cost of response size and browser rendering; topk and bottomk rank every series regardless of this cap.",
+		Sizing:     "500 matches Loki's default and the Drilldown series cap. Raise it for dashboards that legitimately render thousands of series, at the cost of response size and browser rendering; topk and bottomk rank every series regardless of this cap. Raise `-backend-max-buffered-response-bytes` with it: this cap is what usually keeps a result inside the byte budget, so raising it alone converts Loki's series-limit error into `manual metric response exceeds N bytes`. Budget about 40 bytes per sample plus about 100 bytes per series - series x steps x 40 bytes - so 64 MiB holds roughly 1,500 dense series over a 1,000-step range. On the e2e stack `sum by (pod) (rate({service_name=\"api-gateway\"}[5m]))` over 7d covers about 240,000 distinct pods: at the 500 default it answers 491 series in 0.5s, and at 1,000,000 it exceeds 64 MiB and returns 502.",
 	},
 	{
 		Flag:       "ordered-json-metric-max-bytes",
@@ -75,7 +75,7 @@ var Limits = []Limit{
 		Metric:     "loki_vl_proxy_requests_total{status=\"502\"}",
 		Alert:      "none",
 		LokiParity: "",
-		Sizing:     "Proxy memory grows with this value times the requests that buffer a response at once, so treat it as per-request memory: 64 MiB x -max-concurrent is the worst case. Raise it for very wide stats responses; lower it on small replicas.",
+		Sizing:     "Proxy memory grows with this value times the requests that buffer a response at once, so treat it as per-request memory: 64 MiB x -max-concurrent is the worst case. Raise it for very wide stats responses; lower it on small replicas. It is the second half of `-max-stats-query-series`: the series cap decides how many series a result may carry, this decides whether the encoded result fits. Raising either one alone moves the failure rather than removing it - a high series cap with the default byte budget fails with `manual metric response exceeds N bytes` instead of the series-limit error. Size it as series x steps x 40 bytes for the widest chart you intend to serve, then check the replica has that much memory per concurrent request.",
 	},
 	{
 		Flag:       "max-entries-limit-per-query",

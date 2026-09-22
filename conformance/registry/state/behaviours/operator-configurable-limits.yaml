@@ -1,0 +1,19 @@
+id: operator-configurable-limits
+state: proven
+reason: |
+  The registry tests in internal/config assert that every limit names a declared
+  flag, that every flag is categorised, that each Helm value and alert exists,
+  and that the committed documents and the conformance export match the
+  generator; CI runs `go run ./cmd/configdoc -check`. The label-values default
+  and the query-length default are each covered by a test comparing against what
+  Loki returns. The series-cap and byte-budget interaction is documented in the
+  sizing entries of both flags and was measured on the e2e stack.
+owner_decision: |
+  Operators must be able to raise every limit as well as lower it; a ceiling is
+  itself a documented flag. Defaults are measured, not guessed, and a default
+  never truncates where Loki answers in full.
+waiver: |
+  Per-tenant enforcement is published for max_query_series and max_query_length
+  through -tenant-limits; the remaining per-tenant overrides are not audited
+  yet, so `per_tenant` in the export is a statement about the flag, not proof of
+  a tested override for every limit.

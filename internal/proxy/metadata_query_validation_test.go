@@ -241,6 +241,7 @@ func TestMetadataQueryValidation_TruncatesEchoedQuery(t *testing.T) {
 
 // The proxy accepts every query Loki parses; an operator who wants a tighter
 // bound sets -max-query-length-bytes, and the error names the flag.
+// conformance: operator-configurable-limits, limits/query-length-limit-is-configurable, loki_api_v1_query_range
 func TestQueryLength_ConfiguredLimitRejectsWhatLokiWouldParse(t *testing.T) {
 	var calls atomic.Int64
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -20,6 +20,10 @@
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "limits/every-cap-is-a-flag": [
+      "cmd/proxy/main_test.go",
+      "internal/config/registry_test.go"
+    ],
     "limits/heavy-query-queue-429": [
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
@@ -30,9 +34,15 @@
     "limits/heavy-query-queue-wait-per-request": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "limits/label-values-not-truncated-by-default": [
+      "internal/proxy/label_surface_test.go"
+    ],
     "limits/metadata-not-queued": [
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "limits/query-length-limit-is-configurable": [
+      "internal/proxy/metadata_query_validation_test.go"
     ],
     "limits/queue-rejection-not-a-backend-failure": [
       "internal/proxy/backend_heavy_test.go"
@@ -51,13 +61,23 @@
       "internal/proxy/volume_test.go",
       "test/e2e-compat/drilldown_volume_bytes_test.go"
     ],
+    "loki_api_v1_label_name_values": [
+      "internal/proxy/label_surface_test.go"
+    ],
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go"
     ],
     "loki_api_v1_query_range": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/metadata_query_validation_test.go",
       "internal/translator/regexp_escaping_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "operator-configurable-limits": [
+      "cmd/proxy/main_test.go",
+      "internal/config/registry_test.go",
+      "internal/proxy/label_surface_test.go",
+      "internal/proxy/metadata_query_validation_test.go"
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
@@ -84,9 +104,17 @@
       "internal/proxy/sliding_window_stats_test.go"
     ]
   },
-  "registry_items": 153,
+  "registry_items": 158,
   "routes_without_registry_item": [],
   "test_to_items": {
+    "cmd/proxy/main_test.go": [
+      "limits/every-cap-is-a-flag",
+      "operator-configurable-limits"
+    ],
+    "internal/config/registry_test.go": [
+      "limits/every-cap-is-a-flag",
+      "operator-configurable-limits"
+    ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
       "backend-deadlines-and-cancellation",
@@ -103,6 +131,16 @@
       "semantics/backend-timeout-argument",
       "semantics/client-cancellation-propagates",
       "series-limits-and-partial-results"
+    ],
+    "internal/proxy/label_surface_test.go": [
+      "limits/label-values-not-truncated-by-default",
+      "loki_api_v1_label_name_values",
+      "operator-configurable-limits"
+    ],
+    "internal/proxy/metadata_query_validation_test.go": [
+      "limits/query-length-limit-is-configurable",
+      "loki_api_v1_query_range",
+      "operator-configurable-limits"
     ],
     "internal/proxy/sliding_window_stats_test.go": [
       "heavy-metric-fetch-bounds",
@@ -136,7 +174,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 6,
+  "tests_with_markers": 10,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -150,6 +188,7 @@
     "api_prom_tail",
     "data-density-and-chart-quality",
     "data-probing-and-freshness",
+    "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_delete",
     "loki_api_v1_detected_field_name_values",
@@ -161,7 +200,6 @@
     "loki_api_v1_index_stats",
     "loki_api_v1_index_volume_range",
     "loki_api_v1_label",
-    "loki_api_v1_label_name_values",
     "loki_api_v1_patterns",
     "loki_api_v1_push",
     "loki_api_v1_query",
@@ -179,5 +217,5 @@
     "severity-detected-level-derivation",
     "severity-exposure-surfaces"
   ],
-  "wired_items": 23
+  "wired_items": 28
 }

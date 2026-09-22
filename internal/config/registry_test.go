@@ -33,6 +33,7 @@ func flags(t *testing.T) []Flag {
 
 // The generated reference documents must match the flags and the registry, so
 // documentation cannot drift from the binary.
+// conformance: operator-configurable-limits, limits/every-cap-is-a-flag
 func TestGeneratedDocsAreUpToDate(t *testing.T) {
 	root := repoRoot(t)
 	documents, err := Generate(root)
@@ -51,6 +52,7 @@ func TestGeneratedDocsAreUpToDate(t *testing.T) {
 }
 
 // Every flag belongs to a category, so no flag disappears from the reference.
+// conformance: operator-configurable-limits, limits/every-cap-is-a-flag
 func TestEveryFlagHasACategory(t *testing.T) {
 	for _, flag := range flags(t) {
 		if CategoryOf(flag.Name) == "other" {
@@ -64,6 +66,7 @@ func TestEveryFlagHasACategory(t *testing.T) {
 
 // Every limit names a flag the binary declares, with a resolved default, a
 // Helm value that the chart documents, and an error or an explicit "none".
+// conformance: operator-configurable-limits, limits/every-cap-is-a-flag
 func TestLimitsRegistryMatchesFlagsAndChart(t *testing.T) {
 	root := repoRoot(t)
 	byName := map[string]Flag{}
@@ -92,6 +95,7 @@ func TestLimitsRegistryMatchesFlagsAndChart(t *testing.T) {
 }
 
 // Alerts named by a limit must exist in the shipped alerting rules.
+// conformance: operator-configurable-limits, limits/every-cap-is-a-flag
 func TestLimitAlertsExist(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(repoRoot(t), "alerting", "loki-vl-proxy-alerting-rules.yaml"))
 	if err != nil {

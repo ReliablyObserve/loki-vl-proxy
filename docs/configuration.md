@@ -15,6 +15,8 @@ Three pages are generated from the flags the binary declares and the limits regi
 - [Limits registry](reference/limits-registry.md) — every bound on work: what it bounds, the error returned when it is hit, its metric and alert, whether a tenant can override it, Loki parity, and how to size it up or down. Includes worked examples for a small and a large deployment.
 - [Errors and alerts index](reference/errors-and-alerts.md) — from an error message or a firing alert back to the limit that produced it.
 
+The same run writes `conformance/registry/generated/proxy/limits.json`, the machine-readable export the conformance registry reads, so the inventory of limits is generated from the flags rather than kept as a second hand-written list.
+
 The sections below stay hand-written: they explain how the pieces fit together.
 
 ## Server

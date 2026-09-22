@@ -24,7 +24,7 @@ from registry_io import load_json, read_text
 ROOT = "conformance/registry"
 GO_MARKER = re.compile(r'//\s*conformance:\s*(.+)')
 TS_MARKER = re.compile(r'@cov:([A-Za-z0-9_/\-]+)')
-TEST_DIRS = ["internal", "test"]
+TEST_DIRS = ["cmd", "internal", "test"]
 
 
 def registry_ids():

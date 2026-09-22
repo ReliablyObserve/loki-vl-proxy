@@ -1,0 +1,24 @@
+id: limits/every-cap-is-a-flag
+title: No bound on work is compiled in, and the reference is generated from the flags
+proves:
+  - operator-configurable-limits
+consumer: operator
+why: |
+  A compiled-in cap is invisible: an operator hits it, gets an error with a bare
+  number, and has no way to raise it. Hand-written limit tables drift from the
+  code the first time a default changes. Both failure modes are the same bug -
+  the operator cannot trust the documentation - so the flags are the single
+  declaration, the registry adds the operator metadata, and every document,
+  including the conformance export, is rendered from them and checked in CI.
+request:
+  scope: build
+  entry: go run ./cmd/configdoc -check
+compare:
+  mode: exact
+  expect: |
+    Every limit in the registry names a flag the binary declares, every flag is
+    categorised, each limit's Helm value exists in charts/loki-vl-proxy, each
+    named alert exists in alerting/, and the committed
+    docs/reference/*.md and conformance/registry/generated/proxy/limits.json
+    match what the generator renders. A negative flag value is rejected at
+    startup with a message naming the flag; `0` selects the built-in default.

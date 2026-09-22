@@ -1,0 +1,30 @@
+id: limits/query-length-limit-is-configurable
+title: The query-length cap is Loki's, and an operator can move it
+proves:
+  - operator-configurable-limits
+  - loki_api_v1_query_range
+consumer: any
+why: |
+  Loki rejects a query longer than syntax.maxInputSize (131,072 bytes) at parse
+  time. The proxy had its own smaller compiled-in cap, so a long generated
+  query - a selector with hundreds of matchers, which Drilldown and alerting
+  rules do produce - was rejected by the proxy where Loki would have run it.
+  The default now matches Loki, and -max-query-length-bytes moves it in either
+  direction, with the error naming the flag.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: a selector longer than -max-query-length-bytes
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status]
+  expect: |
+    At the default, a query Loki parses is parsed. Above the configured value,
+    400 with a message naming -max-query-length-bytes, before any backend work.
+loki_parity: |
+  syntax.maxInputSize = 131072.

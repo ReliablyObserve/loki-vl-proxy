@@ -1145,6 +1145,7 @@ func waitForCachedKey(t *testing.T, c *cache.Cache, key string) []byte {
 
 // A plain /label/{name}/values request returns every value Loki would return,
 // whatever -label-values-hot-limit is; only a client-requested window truncates.
+// conformance: operator-configurable-limits, limits/label-values-not-truncated-by-default, loki_api_v1_label_name_values
 func TestLabelSurface_LabelValuesWithoutLimitReturnsEveryValue(t *testing.T) {
 	const total = 500
 	var payload strings.Builder
