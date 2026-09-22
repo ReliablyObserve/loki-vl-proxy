@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evaluated that way derive `detected_level` from the level they carry, with
   Loki's normalisation, as the stats pushdown already did.
 
+## [1.81.1] - 2026-09-22
+
 ### Changed
 
 - **Pinned Loki 3.7.7, Grafana 13.2.1, Logs Drilldown 2.5.2 and VictoriaLogs
