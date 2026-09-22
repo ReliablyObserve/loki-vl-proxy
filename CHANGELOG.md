@@ -22,7 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before, a line with any other unpacked key but no `level` sent the query to
   raw rows. The check runs beside the stats query, and a window found free of
   such lines is remembered for five minutes (excluding the last five minutes),
-  so a refreshed or widened range checks only the uncovered part.
+  so a refreshed or widened range checks only the uncovered part. Only a window
+  that was actually checked refreshes that entry, so a covered window is still
+  re-examined every five minutes and a line that arrives late for a timestamp
+  inside it is not missed. Regexp filter values are quoted with Go string rules,
+  which VictoriaLogs uses when it unquotes them, so a Loki regexp carrying
+  `\d`, `\w` or `\.` reaches the backend intact.
 
 ### Changed
 

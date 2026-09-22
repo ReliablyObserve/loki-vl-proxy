@@ -449,9 +449,12 @@ func logsQLLabelFilter(filter translator.DropCondition) string {
 	case "!=":
 		return " | filter -" + field + ":=" + logsql.QuoteValue(filter.Value)
 	case "=~":
-		return " | filter " + field + ":~" + logsql.QuotePattern("^(?:"+filter.Value+")$")
+		// strconv.Quote, not QuotePattern: VictoriaLogs unquotes double-quoted
+		// strings with Go rules, so a regexp escape such as \d must stay escaped
+		// or the query is rejected.
+		return " | filter " + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	default:
-		return " | filter -" + field + ":~" + logsql.QuotePattern("^(?:"+filter.Value+")$")
+		return " | filter -" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	}
 }
 
@@ -749,7 +752,10 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 	if settled := time.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
 		coveredTo = settled
 	}
-	if coveredTo.After(coveredFrom) {
+	if len(todo) > 0 && coveredTo.After(coveredFrom) {
+		// Only a window that was actually checked refreshes the entry; sliding the
+		// TTL on a pure cache hit would freeze the interior verdict forever, and a
+		// line arriving late for a timestamp inside it would never be seen.
 		p.cache.SetLocalOnlyWithTTL(key, []byte(fmt.Sprintf("%d %d", coveredFrom.UnixNano(), coveredTo.UnixNano())), statsPushdownRiskCacheTTL)
 	}
 	return false, nil

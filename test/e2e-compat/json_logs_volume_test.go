@@ -255,7 +255,11 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 				if tc.pushed && (stats != 1 || guards != wantGuards || raw != 0) {
 					t.Fatalf("expected %d guard and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d", wantGuards, stats, guards, raw)
 				}
-				if !tc.pushed && (stats != 0 || guards != 1 || raw != 1) {
+				// The bucket query runs beside the guard and is cancelled when the
+				// guard finds a line the parsers read differently, so a stats
+				// request may be observed; the answer must still come from the
+				// raw evaluator.
+				if !tc.pushed && (guards != 1 || raw != 1) {
 					t.Fatalf("expected the guard to keep the raw evaluator: stats=%d guards=%d raw=%d", stats, guards, raw)
 				}
 			}
@@ -268,14 +272,19 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 		query := `sum by (level, detected_level) (count_over_time({app="` + logfmtRisk + `"} | logfmt | drop __error__[1m]))`
 		recorder.reset()
 		slidingRangeSeries(t, route, query, start, end, time.Minute, nil)
-		guards := 0
+		guards, raw := 0, 0
 		for _, call := range recorder.reset() {
-			if strings.HasPrefix(call, "/select/logsql/stats_query_range ") && strings.Contains(call, "keep_original_fields") {
-				t.Fatalf("risky logfmt line used the stats pushdown: %s", call)
-			}
-			if strings.HasSuffix(call, " | limit 1") {
+			switch {
+			case strings.HasSuffix(call, " | limit 1"):
 				guards++
+			case strings.HasPrefix(call, "/select/logsql/query "):
+				raw++
 			}
+		}
+		// A cancelled bucket query may be recorded; what matters is that the
+		// answer came from the raw evaluator, which the value check below proves.
+		if raw != 1 {
+			t.Fatalf("risky logfmt line did not use the raw evaluator: raw=%d", raw)
 		}
 		if guards != 1 {
 			t.Fatalf("expected one logfmt risk check, got %d", guards)

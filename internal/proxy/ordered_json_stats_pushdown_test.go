@@ -621,11 +621,14 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 }
 
 func TestLogsQLLabelFilter(t *testing.T) {
+	// VictoriaLogs unquotes double-quoted strings with Go rules, so every
+	// backslash a Loki regexp carries must survive as an escape.
 	for _, tc := range []struct{ op, value, want string }{
 		{"=", "200", ` | filter status:="200"`},
 		{"!=", `a"b`, ` | filter -status:="a\"b"`},
-		{"=~", `2\d\d`, ` | filter status:~"^(?:2\d\d)$"`},
+		{"=~", `2\d\d`, ` | filter status:~"^(?:2\\d\\d)$"`},
 		{"!~", "5..", ` | filter -status:~"^(?:5..)$"`},
+		{"=~", `/api/.*\.json`, ` | filter status:~"^(?:/api/.*\\.json)$"`},
 	} {
 		condition, err := translator.NewDropCondition("status", tc.op, tc.value)
 		if err != nil {
