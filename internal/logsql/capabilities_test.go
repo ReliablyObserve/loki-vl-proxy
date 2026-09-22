@@ -27,7 +27,9 @@ func TestCapabilitiesFor(t *testing.T) {
 		{"v1.49.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true}},
 		// v1.50 adds dense pattern windowing.
 		{"v1.50.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
-		{"v1.99.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
+		// v1.51 adds the coalesce pipe.
+		{"v1.51.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.99.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
 		// Empty string — safe baseline.
 		{"", logsql.Capabilities{}},
 		// no "v" prefix

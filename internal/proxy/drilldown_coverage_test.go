@@ -244,11 +244,12 @@ func TestDrilldownBackendHelpers_AdditionalCoverage(t *testing.T) {
 	p.translationCache = cache.New(5, 10)
 	t.Cleanup(func() { p.translationCache.Close() })
 
+	// service_name values are the distinct values of the derived field.
 	values, err := p.serviceNameValues(context.Background(), `{app="api"}`, "", "")
 	if err != nil {
 		t.Fatalf("serviceNameValues returned error: %v", err)
 	}
-	if strings.Join(values, ",") != "api,worker" {
+	if strings.Join(values, ",") != "alpha,zulu" {
 		t.Fatalf("unexpected service names %v", values)
 	}
 

@@ -32,12 +32,12 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "service_name expands to synthetic matcher set",
 			logql: `{service_name="auth"}`,
-			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth")`,
+			want:  serviceNameMatcherFilter(`"auth"`, false, false),
 		},
 		{
 			name:  "multiple labels with synthetic service_name",
 			logql: `{service_name="auth",level="error"}`,
-			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth") level:="error"`,
+			want:  serviceNameMatcherFilter(`"auth"`, false, false) + ` level:="error"`,
 		},
 		{
 			name:  "k8s label translated",
@@ -52,22 +52,22 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "regex matcher with synthetic service_name",
 			logql: `{service_name=~"auth.*"}`,
-			want:  `(service_name:~"auth.*" OR "service.name":~"auth.*" OR service:~"auth.*" OR app:~"auth.*" OR application:~"auth.*" OR app_name:~"auth.*" OR name:~"auth.*" OR app_kubernetes_io_name:~"auth.*" OR container:~"auth.*" OR container_name:~"auth.*" OR "k8s.container.name":~"auth.*" OR k8s_container_name:~"auth.*" OR component:~"auth.*" OR workload:~"auth.*" OR job:~"auth.*" OR "k8s.job.name":~"auth.*" OR k8s_job_name:~"auth.*")`,
+			want:  serviceNameMatcherFilter(`"auth.*"`, false, true),
 		},
 		{
 			name:  "negated matcher with synthetic service_name",
 			logql: `{service_name!="auth"}`,
-			want:  `-service_name:="auth" -"service.name":="auth" -service:="auth" -app:="auth" -application:="auth" -app_name:="auth" -name:="auth" -app_kubernetes_io_name:="auth" -container:="auth" -container_name:="auth" -"k8s.container.name":="auth" -k8s_container_name:="auth" -component:="auth" -workload:="auth" -job:="auth" -"k8s.job.name":="auth" -k8s_job_name:="auth"`,
+			want:  serviceNameMatcherFilter(`"auth"`, true, false),
 		},
 		{
 			name:  "negated regex with synthetic service_name",
 			logql: `{service_name!~"auth.*"}`,
-			want:  `-service_name:~"auth.*" -"service.name":~"auth.*" -service:~"auth.*" -app:~"auth.*" -application:~"auth.*" -app_name:~"auth.*" -name:~"auth.*" -app_kubernetes_io_name:~"auth.*" -container:~"auth.*" -container_name:~"auth.*" -"k8s.container.name":~"auth.*" -k8s_container_name:~"auth.*" -component:~"auth.*" -workload:~"auth.*" -job:~"auth.*" -"k8s.job.name":~"auth.*" -k8s_job_name:~"auth.*"`,
+			want:  serviceNameMatcherFilter(`"auth.*"`, true, true),
 		},
 		{
 			name:  "service_name with line filter",
 			logql: `{service_name="auth"} |= "error"`,
-			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth") ~"error"`,
+			want:  serviceNameMatcherFilter(`"auth"`, false, false) + ` ~"error"`,
 		},
 		{
 			name:  "pattern include filter expands placeholder span",
@@ -82,22 +82,22 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "backtick regex matcher",
 			logql: "{service_name=~`auth.*`}",
-			want:  `(service_name:~"auth.*" OR "service.name":~"auth.*" OR service:~"auth.*" OR app:~"auth.*" OR application:~"auth.*" OR app_name:~"auth.*" OR name:~"auth.*" OR app_kubernetes_io_name:~"auth.*" OR container:~"auth.*" OR container_name:~"auth.*" OR "k8s.container.name":~"auth.*" OR k8s_container_name:~"auth.*" OR component:~"auth.*" OR workload:~"auth.*" OR job:~"auth.*" OR "k8s.job.name":~"auth.*" OR k8s_job_name:~"auth.*")`,
+			want:  serviceNameMatcherFilter(`"auth.*"`, false, true),
 		},
 		{
 			name:  "non empty app matcher",
 			logql: `{app!="",service_name!=""}`,
-			want:  `app:!"" (service_name:!"" OR "service.name":!"" OR service:!"" OR app:!"" OR application:!"" OR app_name:!"" OR name:!"" OR app_kubernetes_io_name:!"" OR container:!"" OR container_name:!"" OR "k8s.container.name":!"" OR k8s_container_name:!"" OR component:!"" OR workload:!"" OR job:!"" OR "k8s.job.name":!"" OR k8s_job_name:!"")`,
+			want:  `app:!"" *`,
 		},
 		{
-			name:  "synthetic empty service_name requires all source fields empty",
+			name:  "synthetic empty service_name matches no stream",
 			logql: `{service_name=""}`,
-			want:  `service_name:="" "service.name":="" service:="" app:="" application:="" app_name:="" name:="" app_kubernetes_io_name:="" container:="" container_name:="" "k8s.container.name":="" k8s_container_name:="" component:="" workload:="" job:="" "k8s.job.name":="" k8s_job_name:=""`,
+			want:  matchNoStreamsFilter,
 		},
 		{
-			name:  "synthetic non empty service_name uses any non empty source field",
+			name:  "synthetic non empty service_name matches every stream",
 			logql: `{service_name!=""}`,
-			want:  `(service_name:!"" OR "service.name":!"" OR service:!"" OR app:!"" OR application:!"" OR app_name:!"" OR name:!"" OR app_kubernetes_io_name:!"" OR container:!"" OR container_name:!"" OR "k8s.container.name":!"" OR k8s_container_name:!"" OR component:!"" OR workload:!"" OR job:!"" OR "k8s.job.name":!"" OR k8s_job_name:!"")`,
+			want:  `*`,
 		},
 		{
 			name:  "parsed field non empty filter",
@@ -105,9 +105,9 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `app:="api" | unpack_json | filter path_extracted:!""`,
 		},
 		{
-			name:  "translated field alias after parser maps back to dotted VL field",
+			name:  "service_name label filter after parser matches the derived service name",
 			logql: `{app="api"} | json | service_name="auth"`,
-			want:  `app:="api" | unpack_json | filter "service.name":="auth"`,
+			want:  `app:="api" | unpack_json | filter ` + serviceNameMatcherFilter(`"auth"`, false, false),
 		},
 		{
 			name:  "dotted structured metadata filter after parser is quoted",

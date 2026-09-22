@@ -254,6 +254,9 @@ func TestCapabilitiesAllMinorVersions(t *testing.T) {
 		// boundary: v1.49.9 vs v1.50.0
 		{"v1.49.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true}},
 		{"v1.50.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
+		// boundary: v1.50.9 vs v1.51.0
+		{"v1.50.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
+		{"v1.51.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.semver, func(t *testing.T) {

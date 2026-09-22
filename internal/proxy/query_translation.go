@@ -428,10 +428,7 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		streamFieldsMap := p.streamFieldsMap
 		p.configMu.RUnlock()
 
-		p.backendVersionMu.RLock()
-		semver := p.backendVersionSemver
-		p.backendVersionMu.RUnlock()
-		caps := logsql.CapabilitiesFor(semver)
+		caps := p.logsqlCapabilities()
 
 		translated, err := translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
 		if err != nil {

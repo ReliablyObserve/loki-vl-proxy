@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
@@ -299,8 +301,19 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
 			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
 			"field_values.column_index", p.backendSupportsColumnFieldValues,
+			"service_name.derivation", serviceNameDerivationForm(logsql.CapabilitiesFor(semver)),
 		)
 	}
+}
+
+// serviceNameDerivationForm names the LogsQL the proxy uses to derive
+// service_name on this backend, so an operator can tell the two apart in the
+// logs.
+func serviceNameDerivationForm(caps logsql.Capabilities) string {
+	if caps.PipeCoalesce {
+		return "coalesce"
+	}
+	return "format"
 }
 
 func (p *Proxy) supportsStreamMetadataEndpoints() bool {
@@ -312,6 +325,15 @@ func (p *Proxy) supportsStreamMetadataEndpoints() bool {
 		return true
 	}
 	return p.backendSupportsStreamMetadata
+}
+
+// logsqlCapabilities returns the LogsQL capabilities of the observed backend
+// version. Before the first version observation it returns the safe baseline.
+func (p *Proxy) logsqlCapabilities() logsql.Capabilities {
+	p.backendVersionMu.RLock()
+	semver := p.backendVersionSemver
+	p.backendVersionMu.RUnlock()
+	return logsql.CapabilitiesFor(semver)
 }
 
 func (p *Proxy) supportsDensePatternWindowing() bool {

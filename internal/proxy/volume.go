@@ -12,6 +12,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // Loki volume semantics (pkg/storage/stores/index/seriesvolume, v3.7):
@@ -299,6 +301,10 @@ type volumePlan struct {
 	// each VictoriaLogs row maps to exactly one Loki series.
 	pushLimit    bool
 	unpackLevels bool
+	// serviceNameDerivation holds the pipes that write Loki's service_name
+	// into every row before the stats pipe, so one group field replaces every
+	// source field. Empty when the request does not group by service_name.
+	serviceNameDerivation string
 }
 
 // syntheticVolumeLabel reports the label multi-tenant fan-out fills in after
@@ -341,6 +347,9 @@ func (p *Proxy) planVolume(ctx context.Context, req volumeRequest, logsqlQuery s
 			if key == "detected_level" {
 				plan.unpackLevels = true
 			}
+			if key == "service_name" {
+				plan.serviceNameDerivation = translator.ServiceNameDerivationPipes(p.logsqlCapabilities())
+			}
 			plan.groupFields = appendUniqueStrings(plan.groupFields, p.derivedVolumeSourceFields([]string{key})...)
 		default:
 			fields := p.resolveTargetLabelFields(ctx, key, lookup)
@@ -377,6 +386,10 @@ func volumeStatsQuery(req volumeRequest, logsqlQuery string, plan volumePlan, op
 	}
 	groupFields := []string{volumeStreamField}
 	if optimised {
+		if plan.serviceNameDerivation != "" {
+			b.WriteString(" ")
+			b.WriteString(plan.serviceNameDerivation)
+		}
 		if plan.unpackLevels && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
 			// Unpack only the level fields and keep existing values: a full
 			// unpack could replace _msg (changing its length) or _time.

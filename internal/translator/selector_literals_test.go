@@ -17,7 +17,12 @@ func TestSelectorAndPipelineExactValuesAreDecodedOnce(t *testing.T) {
 			for _, label := range []string{"path", "service_name"} {
 				query := "sum(count_over_time({" + label + "=" + quote + `,app="tail"}[5m]))`
 				translated, err := TranslateLogQL(query)
-				if err != nil || !strings.Contains(translated, label+":="+logsql.QuoteValue(value)) || !strings.Contains(translated, `app:="tail"`) || !strings.Contains(translated, "| stats ") {
+				want := label + ":=" + logsql.QuoteValue(value)
+				if label == "service_name" {
+					// service_name matches the derived value, highest priority first.
+					want = "(service_name:=" + strconv.Quote(value) + " OR "
+				}
+				if err != nil || !strings.Contains(translated, want) || !strings.Contains(translated, `app:="tail"`) || !strings.Contains(translated, "| stats ") {
 					t.Fatalf("query=%s translation=%s err=%v", query, translated, err)
 				}
 			}
