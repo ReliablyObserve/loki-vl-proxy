@@ -1,0 +1,14 @@
+?   	github.com/ReliablyObserve/Loki-VL-proxy/cmd/healthcheck	[no test files]
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy	3.659s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate	1.445s
+?   	github.com/ReliablyObserve/Loki-VL-proxy/cmd/validate_check	[no test files]
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache	31.105s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/logql	2.176s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql	3.336s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit	4.066s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics	6.251s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware	10.805s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/observability	1.818s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	216.414s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate	1.918s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/translator	2.372s

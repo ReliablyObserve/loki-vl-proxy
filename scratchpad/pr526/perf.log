@@ -1,0 +1,6 @@
+=== RUN   TestChaining_MetricQueryPerformanceNotRegressed
+    metric_query_perf_test.go:390: Post "http://localhost:13101/loki/api/v1/push": dial tcp [::1]:13101: connect: connection refused
+--- FAIL: TestChaining_MetricQueryPerformanceNotRegressed (0.02s)
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	0.522s
+FAIL

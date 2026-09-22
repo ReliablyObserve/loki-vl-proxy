@@ -1,0 +1,8 @@
+
+Running 3 tests using 1 worker
+
+  ✓  1 [chromium] › tests/drilldown-cache-regression.spec.ts:63:9 › Drilldown Fields — all time ranges load without errors @drilldown-cache › no errors — 1h range (3.4s)
+  ✓  2 [chromium] › tests/drilldown-cache-regression.spec.ts:95:9 › Drilldown Fields — labels sidebar is populated @drilldown-cache › labels visible — 1h range (1.9s)
+  ✓  3 [chromium] › tests/drilldown-cache-regression.spec.ts:134:9 › Drilldown Fields — no right-edge gap in charts @drilldown-cache › chart data covers end of window — 1h range (5.4s)
+
+  3 passed (11.0s)

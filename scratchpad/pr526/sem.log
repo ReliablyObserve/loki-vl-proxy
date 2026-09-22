@@ -1,0 +1,6 @@
+=== RUN   TestLogQL_Exhaustive_QueryParity
+    compat_extended_test.go:28: timeout waiting for http://localhost:13100/ready
+--- FAIL: TestLogQL_Exhaustive_QueryParity (30.13s)
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	30.683s
+FAIL

@@ -1,0 +1,21 @@
+=== RUN   TestVLTrackScore
+    compat_extended_test.go:31: Rich test data ingested successfully
+    track_scores_test.go:291: 
+        === COMPATIBILITY SCORE ===
+    track_scores_test.go:291: PASS stream_translation: query_range returns translated streams from VictoriaLogs
+    track_scores_test.go:291: PASS detected_fields: VictoriaLogs field method exposed via proxy
+    track_scores_test.go:291: PASS detected_fields: VictoriaLogs field path exposed via proxy
+    track_scores_test.go:291: PASS detected_fields: VictoriaLogs field status exposed via proxy
+    track_scores_test.go:291: PASS detected_fields: VictoriaLogs field duration_ms exposed via proxy
+    track_scores_test.go:291: PASS synthetic_labels: derived service_name label values are exposed
+    track_scores_test.go:291: PASS index_stats: index stats endpoint returns Loki-shaped data
+    track_scores_test.go:291: PASS volume_range: volume_range is backed by VictoriaLogs hits data
+    track_scores_test.go:291: PASS field_values: field value GET present
+    track_scores_test.go:291: PASS field_values: field value POST present
+    track_scores_test.go:291: PASS field_values: field value DELETE present
+    track_scores_test.go:291: 
+        Score: 11/11 (100.0%)
+    track_scores_test.go:291: ===========================
+--- PASS: TestVLTrackScore (5.06s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	5.547s

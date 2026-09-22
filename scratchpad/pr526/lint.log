@@ -1,0 +1,2 @@
+Error: can't load config: the Go language version (go1.26) used to build golangci-lint is lower than the targeted Go version (1.27.1)
+The command is terminated due to an error: can't load config: the Go language version (go1.26) used to build golangci-lint is lower than the targeted Go version (1.27.1)

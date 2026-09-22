@@ -1,0 +1,28 @@
+test(e2e): codify the latest-stack compatibility findings and repair the VictoriaLogs matrix
+
+e2e-compat stack
+- VictoriaLogs healthcheck: exec the binary's -version instead of wget. Images
+  are scratch-based from v1.52.0 (no shell), so the old probe could never pass
+  and every dependent container refused to start.
+- Move -defaultParallelReaders / -fs.maxConcurrency to docker-compose.bench.yml.
+  They do not exist on VictoriaLogs < v1.34 / < v1.37 and an unknown flag exits
+  the process, which silently failed the weekly matrix for v1.30-v1.36.
+- compatibility-matrix.json: add v1.51.0 and v1.52.0.
+
+e2e-ui
+- Logs Drilldown 2.5.x renders "Filter by labels/fields" as role=combobox
+  inputs whose only name source is the placeholder; locate them through
+  drilldownLabelFilter/drilldownFieldFilter (role-or-placeholder).
+- Repair the @regression and @comprehensive-ui suites and add them as the
+  explore-regression / explore-comprehensive CI shards: use the app label the
+  dataset carries, exclude the live edge, compare bounded aggregations and
+  instant count_over_time volumes instead of limit-capped line counts, lock the
+  -max-stats-query-series cap with its own test.
+- Gate every proxy-vs-Loki metric comparison with waitForLokiMetricData: on a
+  fresh stack Loki 3.x answers range metric queries with an empty 200 for the
+  first minutes (shards=0 until the ingester cuts a head block) while the proxy
+  already serves the data.
+- New regression locks: drilldown-limits-gate.spec.ts (Patterns tab follows
+  drilldown-limits.pattern_ingester_enabled per datasource; proxy payload is a
+  key-superset of Loki's) and explore-parity.spec.ts (sum by (level) rate
+  yields the same series set on both datasources).

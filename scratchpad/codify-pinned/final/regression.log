@@ -1,0 +1,851 @@
+
+Running 51 tests using 1 worker
+
+  ✓   1 [chromium] › tests/explore-regression.spec.ts:168:7 › @regression Stream selectors — exact Loki parity › exact label match @regression (175ms)
+  ✓   2 [chromium] › tests/explore-regression.spec.ts:171:7 › @regression Stream selectors — exact Loki parity › multi-label exact match @regression (136ms)
+  ✓   3 [chromium] › tests/explore-regression.spec.ts:178:7 › @regression Stream selectors — exact Loki parity › regex label match @regression (138ms)
+  ✓   4 [chromium] › tests/explore-regression.spec.ts:185:7 › @regression Stream selectors — exact Loki parity › negative label match @regression (135ms)
+  ✓   5 [chromium] › tests/explore-regression.spec.ts:192:7 › @regression Stream selectors — exact Loki parity › negative regex label match @regression (140ms)
+  ✓   6 [chromium] › tests/explore-regression.spec.ts:205:7 › @regression Line filters — exact Loki parity › contains filter |= @regression (69ms)
+  ✓   7 [chromium] › tests/explore-regression.spec.ts:208:7 › @regression Line filters — exact Loki parity › not-contains filter != @regression (67ms)
+  ✓   8 [chromium] › tests/explore-regression.spec.ts:215:7 › @regression Line filters — exact Loki parity › regex filter |~ simple @regression (65ms)
+  ✓   9 [chromium] › tests/explore-regression.spec.ts:222:7 › @regression Line filters — exact Loki parity › contains then not-contains chain @regression (70ms)
+  ✓  10 [chromium] › tests/explore-regression.spec.ts:229:7 › @regression Line filters — exact Loki parity › not-contains then not-contains chain @regression (67ms)
+  ✓  11 [chromium] › tests/explore-regression.spec.ts:242:7 › @regression Parsers — exact Loki parity › json parser @regression (97ms)
+  ✓  12 [chromium] › tests/explore-regression.spec.ts:245:7 › @regression Parsers — exact Loki parity › logfmt parser @regression (140ms)
+  ✓  13 [chromium] › tests/explore-regression.spec.ts:248:7 › @regression Parsers — exact Loki parity › json + field equality filter @regression (64ms)
+  ✓  14 [chromium] › tests/explore-regression.spec.ts:255:7 › @regression Parsers — exact Loki parity › json + field not-equal filter @regression (64ms)
+  ✓  15 [chromium] › tests/explore-regression.spec.ts:262:7 › @regression Parsers — exact Loki parity › json + numeric filter status >= 400 @regression (70ms)
+  ✓  16 [chromium] › tests/explore-regression.spec.ts:269:7 › @regression Parsers — exact Loki parity › json + numeric filter status >= 500 @regression (71ms)
+  ✓  17 [chromium] › tests/explore-regression.spec.ts:276:7 › @regression Parsers — exact Loki parity › json + regex field filter @regression (60ms)
+  ✓  18 [chromium] › tests/explore-regression.spec.ts:283:7 › @regression Parsers — exact Loki parity › json + two field filters @regression (70ms)
+  ✓  19 [chromium] › tests/explore-regression.spec.ts:290:7 › @regression Parsers — exact Loki parity › logfmt + level filter @regression (62ms)
+  ✓  20 [chromium] › tests/explore-regression.spec.ts:303:7 › @regression Pipeline stages — exact Loki parity › json + line_format @regression (95ms)
+  ✓  21 [chromium] › tests/explore-regression.spec.ts:310:7 › @regression Pipeline stages — exact Loki parity › json + keep @regression (106ms)
+  ✓  22 [chromium] › tests/explore-regression.spec.ts:317:7 › @regression Pipeline stages — exact Loki parity › json + drop @regression (116ms)
+  ✓  23 [chromium] › tests/explore-regression.spec.ts:324:7 › @regression Pipeline stages — exact Loki parity › json + label_format @regression (98ms)
+  ✓  24 [chromium] › tests/explore-regression.spec.ts:331:7 › @regression Pipeline stages — exact Loki parity › multi-label + json + two filters @regression (71ms)
+  ✘  25 [chromium] › tests/explore-regression.spec.ts:352:7 › @regression Metric queries — exact Loki parity › rate @regression (74ms)
+  ✘  26 [chromium] › tests/explore-regression.spec.ts:352:7 › @regression Metric queries — exact Loki parity › rate @regression (retry #1) (106ms)
+  ✘  27 [chromium] › tests/explore-regression.spec.ts:359:7 › @regression Metric queries — exact Loki parity › count_over_time @regression (108ms)
+  ✘  28 [chromium] › tests/explore-regression.spec.ts:359:7 › @regression Metric queries — exact Loki parity › count_over_time @regression (retry #1) (107ms)
+  ✓  29 [chromium] › tests/explore-regression.spec.ts:366:7 › @regression Metric queries — exact Loki parity › raw per-stream series honour the documented proxy cap @regression (99ms)
+  ✘  30 [chromium] › tests/explore-regression.spec.ts:390:7 › @regression Metric queries — exact Loki parity › sum by level count_over_time @regression (76ms)
+  ✘  31 [chromium] › tests/explore-regression.spec.ts:390:7 › @regression Metric queries — exact Loki parity › sum by level count_over_time @regression (retry #1) (124ms)
+  ✘  32 [chromium] › tests/explore-regression.spec.ts:397:7 › @regression Metric queries — exact Loki parity › sum by level across apps @regression (121ms)
+  ✘  33 [chromium] › tests/explore-regression.spec.ts:397:7 › @regression Metric queries — exact Loki parity › sum by level across apps @regression (retry #1) (104ms)
+  ✘  34 [chromium] › tests/explore-regression.spec.ts:404:7 › @regression Metric queries — exact Loki parity › rate with line filter |= @regression (107ms)
+  ✘  35 [chromium] › tests/explore-regression.spec.ts:404:7 › @regression Metric queries — exact Loki parity › rate with line filter |= @regression (retry #1) (101ms)
+  ✘  36 [chromium] › tests/explore-regression.spec.ts:411:7 › @regression Metric queries — exact Loki parity › topk within single app @regression (108ms)
+  ✘  37 [chromium] › tests/explore-regression.spec.ts:411:7 › @regression Metric queries — exact Loki parity › topk within single app @regression (retry #1) (98ms)
+  ✘  38 [chromium] › tests/explore-regression.spec.ts:418:7 › @regression Metric queries — exact Loki parity › avg_over_time unwrap duration_ms @regression (119ms)
+  ✘  39 [chromium] › tests/explore-regression.spec.ts:418:7 › @regression Metric queries — exact Loki parity › avg_over_time unwrap duration_ms @regression (retry #1) (107ms)
+  ✘  40 [chromium] › tests/explore-regression.spec.ts:425:7 › @regression Metric queries — exact Loki parity › sum_over_time unwrap status @regression (108ms)
+  ✘  41 [chromium] › tests/explore-regression.spec.ts:425:7 › @regression Metric queries — exact Loki parity › sum_over_time unwrap status @regression (retry #1) (100ms)
+  ✘  42 [chromium] › tests/explore-regression.spec.ts:432:7 › @regression Metric queries — exact Loki parity › sum by level for payment-service @regression (103ms)
+  ✘  43 [chromium] › tests/explore-regression.spec.ts:432:7 › @regression Metric queries — exact Loki parity › sum by level for payment-service @regression (retry #1) (100ms)
+  ✘  44 [chromium] › tests/explore-regression.spec.ts:446:7 › @regression Content verification › json parser exposes method field in log lines (84ms)
+  ✘  45 [chromium] › tests/explore-regression.spec.ts:446:7 › @regression Content verification › json parser exposes method field in log lines (retry #1) (92ms)
+  ✘  46 [chromium] › tests/explore-regression.spec.ts:469:7 › @regression Content verification › json + method=GET filter returns only GET lines (87ms)
+  ✘  47 [chromium] › tests/explore-regression.spec.ts:469:7 › @regression Content verification › json + method=GET filter returns only GET lines (retry #1) (104ms)
+  ✓  48 [chromium] › tests/explore-regression.spec.ts:500:7 › @regression Content verification › status >= 400 returns only error status lines (77ms)
+  ✘  49 [chromium] › tests/explore-regression.spec.ts:527:7 › @regression Content verification › negative filter removes matched content from results (61ms)
+  ✘  50 [chromium] › tests/explore-regression.spec.ts:527:7 › @regression Content verification › negative filter removes matched content from results (retry #1) (95ms)
+  ✘  51 [chromium] › tests/explore-regression.spec.ts:563:7 › @regression Content verification › line_format produces formatted output matching template (86ms)
+  ✘  52 [chromium] › tests/explore-regression.spec.ts:563:7 › @regression Content verification › line_format produces formatted output matching template (retry #1) (94ms)
+  ✘  53 [chromium] › tests/explore-regression.spec.ts:592:7 › @regression Content verification › chained filters narrow results step by step (87ms)
+  ✘  54 [chromium] › tests/explore-regression.spec.ts:592:7 › @regression Content verification › chained filters narrow results step by step (retry #1) (99ms)
+  ✓  55 [chromium] › tests/explore-regression.spec.ts:613:7 › @regression Content verification › empty query returns 200 with zero results (165ms)
+  -  56 [chromium] › tests/explore-regression.spec.ts:633:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › |~ regex with alternation |~ 'POST|PUT|DELETE'
+  -  57 [chromium] › tests/explore-regression.spec.ts:645:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › !~ regex with alternation !~ 'health|ready|metrics'
+  -  58 [chromium] › tests/explore-regression.spec.ts:657:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › line filter after json parser: json |= 'error'
+  -  59 [chromium] › tests/explore-regression.spec.ts:669:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › binary metric expression: rate * 100
+  -  60 [chromium] › tests/explore-regression.spec.ts:678:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › error rate ratio: sum(...) / sum(...)
+  -  61 [chromium] › tests/explore-regression.spec.ts:690:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › count_over_time with json filter in range vector
+  -  62 [chromium] › tests/explore-regression.spec.ts:702:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › label_format then line_format chain
+  -  63 [chromium] › tests/explore-regression.spec.ts:714:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › keep then line_format chain
+  -  64 [chromium] › tests/explore-regression.spec.ts:726:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › sum by app across namespace: proxy returns extra series
+  -  65 [chromium] › tests/explore-regression.spec.ts:737:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › topk across namespace: proxy/Loki series count differs
+
+
+  1) [chromium] › tests/explore-regression.spec.ts:352:7 › @regression Metric queries — exact Loki parity › rate @regression 
+
+    Error: rate: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m1[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: rate: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m1[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-66ace-Loki-parity-rate-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/explore-regression.spec.ts:359:7 › @regression Metric queries — exact Loki parity › count_over_time @regression 
+
+    Error: count_over_time: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m1[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: count_over_time: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m1[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-0cd88--count-over-time-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › tests/explore-regression.spec.ts:390:7 › @regression Metric queries — exact Loki parity › sum by level count_over_time @regression 
+
+    Error: sum by level: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-6799c--count-over-time-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-6799c--count-over-time-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: sum by level: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-6799c--count-over-time-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-6799c--count-over-time-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-6799c--count-over-time-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-6799c--count-over-time-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [chromium] › tests/explore-regression.spec.ts:397:7 › @regression Metric queries — exact Loki parity › sum by level across apps @regression 
+
+    Error: sum by level: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: sum by level: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-eee22-evel-across-apps-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [chromium] › tests/explore-regression.spec.ts:404:7 › @regression Metric queries — exact Loki parity › rate with line filter |= @regression 
+
+    Error: rate + |=: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m2[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-87961-with-line-filter-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-87961-with-line-filter-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: rate + |=: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m2[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-87961-with-line-filter-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-87961-with-line-filter-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-87961-with-line-filter-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-87961-with-line-filter-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) [chromium] › tests/explore-regression.spec.ts:411:7 › @regression Metric queries — exact Loki parity › topk within single app @regression 
+
+    Error: topk within app: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m2[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: topk within app: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m2[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-abb53-ithin-single-app-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) [chromium] › tests/explore-regression.spec.ts:418:7 › @regression Metric queries — exact Loki parity › avg_over_time unwrap duration_ms @regression 
+
+    Error: avg_over_time unwrap: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: avg_over_time unwrap: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-c40d1-wrap-duration-ms-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) [chromium] › tests/explore-regression.spec.ts:425:7 › @regression Metric queries — exact Loki parity › sum_over_time unwrap status @regression 
+
+    Error: sum_over_time unwrap: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: sum_over_time unwrap: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-cb282-me-unwrap-status-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  9) [chromium] › tests/explore-regression.spec.ts:432:7 › @regression Metric queries — exact Loki parity › sum by level for payment-service @regression 
+
+    Error: sum payment-service: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-89709--payment-service-regression-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-89709--payment-service-regression-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: sum payment-service: series count
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m3[39m
+
+      156 |     loki.body?.data?.resultType
+      157 |   );
+    > 158 |   expect(seriesCount(proxy.body), `${label}: series count`).toBe(
+          |                                                             ^
+      159 |     seriesCount(loki.body)
+      160 |   );
+      161 | }
+        at assertMetricParity (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:158:61)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-89709--payment-service-regression-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-89709--payment-service-regression-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-89709--payment-service-regression-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-89709--payment-service-regression-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10) [chromium] › tests/explore-regression.spec.ts:446:7 › @regression Content verification › json parser exposes method field in log lines 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      452 |       values: Array<[string, string]>;
+      453 |     }>;
+    > 454 |     expect(streams.length).toBeGreaterThan(0);
+          |                            ^
+      455 |
+      456 |     let found = false;
+      457 |     for (const s of streams) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:454:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      452 |       values: Array<[string, string]>;
+      453 |     }>;
+    > 454 |     expect(streams.length).toBeGreaterThan(0);
+          |                            ^
+      455 |
+      456 |     let found = false;
+      457 |     for (const s of streams) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:454:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-29356-s-method-field-in-log-lines-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  11) [chromium] › tests/explore-regression.spec.ts:469:7 › @regression Content verification › json + method=GET filter returns only GET lines 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      479 |     const allN = lineCount(all.body);
+      480 |     const getN = lineCount(get.body);
+    > 481 |     expect(getN).toBeGreaterThan(0);
+          |                  ^
+      482 |     expect(getN).toBeLessThanOrEqual(allN);
+      483 |
+      484 |     // Verify each returned line is actually a GET request
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:481:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      479 |     const allN = lineCount(all.body);
+      480 |     const getN = lineCount(get.body);
+    > 481 |     expect(getN).toBeGreaterThan(0);
+          |                  ^
+      482 |     expect(getN).toBeLessThanOrEqual(allN);
+      483 |
+      484 |     // Verify each returned line is actually a GET request
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:481:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-7dbca-lter-returns-only-GET-lines-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  12) [chromium] › tests/explore-regression.spec.ts:527:7 › @regression Content verification › negative filter removes matched content from results 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      540 |       ),
+      541 |     ]);
+    > 542 |     expect(allN).toBeGreaterThan(0);
+          |                  ^
+      543 |     expect(filtN).toBeLessThan(allN);
+      544 |
+      545 |     const filtered = await queryRange(
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:542:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      540 |       ),
+      541 |     ]);
+    > 542 |     expect(allN).toBeGreaterThan(0);
+          |                  ^
+      543 |     expect(filtN).toBeLessThan(allN);
+      544 |
+      545 |     const filtered = await queryRange(
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:542:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-3f59b-atched-content-from-results-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  13) [chromium] › tests/explore-regression.spec.ts:563:7 › @regression Content verification › line_format produces formatted output matching template 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      575 |       values: Array<[string, string]>;
+      576 |     }>;
+    > 577 |     expect(streams.length).toBeGreaterThan(0);
+          |                            ^
+      578 |
+      579 |     let found = false;
+      580 |     for (const s of streams) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:577:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      575 |       values: Array<[string, string]>;
+      576 |     }>;
+    > 577 |     expect(streams.length).toBeGreaterThan(0);
+          |                            ^
+      578 |
+      579 |     let found = false;
+      580 |     for (const s of streams) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:577:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-aca42-ed-output-matching-template-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  14) [chromium] › tests/explore-regression.spec.ts:592:7 › @regression Content verification › chained filters narrow results step by step 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      608 |     expect(n2).toBeLessThanOrEqual(n1);
+      609 |     expect(n3).toBeLessThanOrEqual(n2);
+    > 610 |     expect(n3).toBeGreaterThan(0);
+          |                ^
+      611 |   });
+      612 |
+      613 |   test("empty query returns 200 with zero results", async ({ page }) => {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:610:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      608 |     expect(n2).toBeLessThanOrEqual(n1);
+      609 |     expect(n3).toBeLessThanOrEqual(n2);
+    > 610 |     expect(n3).toBeGreaterThan(0);
+          |                ^
+      611 |   });
+      612 |
+      613 |   test("empty query returns 200 with zero results", async ({ page }) => {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-regression.spec.ts:610:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-regression--regres-1c1a9-narrow-results-step-by-step-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  14 failed
+    [chromium] › tests/explore-regression.spec.ts:352:7 › @regression Metric queries — exact Loki parity › rate @regression 
+    [chromium] › tests/explore-regression.spec.ts:359:7 › @regression Metric queries — exact Loki parity › count_over_time @regression 
+    [chromium] › tests/explore-regression.spec.ts:390:7 › @regression Metric queries — exact Loki parity › sum by level count_over_time @regression 
+    [chromium] › tests/explore-regression.spec.ts:397:7 › @regression Metric queries — exact Loki parity › sum by level across apps @regression 
+    [chromium] › tests/explore-regression.spec.ts:404:7 › @regression Metric queries — exact Loki parity › rate with line filter |= @regression 
+    [chromium] › tests/explore-regression.spec.ts:411:7 › @regression Metric queries — exact Loki parity › topk within single app @regression 
+    [chromium] › tests/explore-regression.spec.ts:418:7 › @regression Metric queries — exact Loki parity › avg_over_time unwrap duration_ms @regression 
+    [chromium] › tests/explore-regression.spec.ts:425:7 › @regression Metric queries — exact Loki parity › sum_over_time unwrap status @regression 
+    [chromium] › tests/explore-regression.spec.ts:432:7 › @regression Metric queries — exact Loki parity › sum by level for payment-service @regression 
+    [chromium] › tests/explore-regression.spec.ts:446:7 › @regression Content verification › json parser exposes method field in log lines 
+    [chromium] › tests/explore-regression.spec.ts:469:7 › @regression Content verification › json + method=GET filter returns only GET lines 
+    [chromium] › tests/explore-regression.spec.ts:527:7 › @regression Content verification › negative filter removes matched content from results 
+    [chromium] › tests/explore-regression.spec.ts:563:7 › @regression Content verification › line_format produces formatted output matching template 
+    [chromium] › tests/explore-regression.spec.ts:592:7 › @regression Content verification › chained filters narrow results step by step 
+  10 skipped
+  27 passed (15.0s)
