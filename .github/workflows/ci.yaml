@@ -596,6 +596,32 @@ jobs:
             exit 1
           fi
 
+  conformance:
+    name: conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      # Unit results feed the evidence check: an item whose state claims
+      # `proven` must have a test that declares it and passed in this run.
+      - name: Unit tests with machine-readable results
+        run: go test ./internal/... -count=1 -json > /tmp/unit-results.json || true
+
+      - name: Conformance gate
+        run: python3 scripts/ci/check_conformance.py --go-results /tmp/unit-results.json
+
+      - name: Registry report for this change
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          python3 conformance/scripts/pr_report.py --base "origin/${{ github.base_ref }}" \
+            | tee "$GITHUB_STEP_SUMMARY"
+
   lint:
     runs-on: ubuntu-latest
     steps:

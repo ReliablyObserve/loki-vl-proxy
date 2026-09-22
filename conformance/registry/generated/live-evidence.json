@@ -1,0 +1,23 @@
+{
+  "cases": {
+    "drilldown/index_volume/single-sample-returns-vector": {
+      "consumer": "drilldown",
+      "detail": {
+        "loki": null,
+        "proxy": "circuit breaker open \u2014 backend unavailable"
+      },
+      "loki_status": 200,
+      "proves": [
+        "loki_api_v1_index_volume",
+        "vl-stats-query"
+      ],
+      "proxy_status": 503,
+      "recorded": "2026-09-22T09:56:52+00:00",
+      "verdict": "blocked",
+      "why": "Loki 200, proxy 503"
+    }
+  },
+  "loki": "http://127.0.0.1:13101",
+  "proxy": "http://127.0.0.1:13100",
+  "recorded": "2026-09-22T09:56:52+00:00"
+}

@@ -371,6 +371,8 @@ extraArgs:
   # peer-self: ""                               # chart-managed when peerCache.enabled=true
   # peer-self-az: ""                            # availability zone for AZ-aware peer selection (e.g. "us-east-1a"); set automatically from node topology labels in Helm
   # peer-static: ""                             # used with peer-discovery=static
+  # peer-srv: ""                                # full SRV record name, used with peer-discovery=srv
+  # peer-http-url: ""                           # URL returning a JSON peer list, used with peer-discovery=http
   # disk-cache-min-ttl: "30s"                   # skip L2 writes for very short-lived entries
   # tls-cert-file: ""                           # enable HTTPS listener when cert+key set
   # tls-key-file: ""
