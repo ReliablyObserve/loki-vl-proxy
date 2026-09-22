@@ -1,0 +1,68 @@
+id: parsed-label-series-identity
+state: partial
+reason: |
+  `| regexp` and `| pattern` captures are part of the series identity on the
+  instant, range and byte routes, proven against a live Loki with a pushed
+  fixture and on generator data (one minute of app="worker-service": Loki 450
+  series with jid, proxy 30 without it before, 450 with it after; a 10-minute
+  range at [2m]: Loki 5400, proxy 5355 with the compat stack's series cap).
+  Confirmed live on the e2e stack for a `| pattern` stage that matches every
+  line: Loki 748 series all carrying mth, proxy 739 carrying none before this
+  change and 739 all carrying it after. Label presence and the set of captured
+  values match Loki; series-count parity is proven only where the parser
+  matches every line - see known_gaps for the partially-matching `| regexp`
+  case. The dynamic-key parsers are the deviation below.
+owner_decision: |
+  Accepted deviation (2026-09-22): `| json` and `| logfmt` keep the stream
+  identity by default, so a metric over them answers with fewer series than
+  Loki (`| logfmt`: Loki 450, proxy 30; `| json`: Loki 1050 on a busier app).
+  Their key set exists only after a row is read, so matching Loki means
+  evaluating the query from rows instead of pushing it down to VictoriaLogs
+  stats, which the no-raw-row rule forbids as a default on wide ranges.
+  `-exact-parser-series-identity=true` (Helm
+  `extraArgs.exact-parser-series-identity`) switches those two to the row
+  evaluator per deployment, bounded by the manual row budget.
+waiver:
+  id: parsed-identity-dynamic-keys
+  rationale: |
+    VictoriaLogs cannot group by keys that are only known once a row is read,
+    and the row evaluator costs orders of magnitude more on wide ranges than
+    the stats pushdown it would replace.
+  expiry: 2027-03-31
+  revisit: |
+    Recheck when VictoriaLogs can group by the remaining fields of a row, or
+    when `unpack_json` can declare its key set to a later stats pipe.
+known_gaps:
+  - id: regexp-partial-match-series-count
+    case: parsed-identity/regexp-partial-match-series-count
+    status: unresolved
+    introduced_by: none — pre-existing, reproduces identically on main
+    summary: |
+      A `| regexp` that matches only some lines returns about three times
+      Loki's series count. Measured 2026-09-22 on the compose stack with
+      -max-stats-query-series=50000 and the listening PID of each proxy
+      verified to be the build under test:
+        sliding 15m/15s : Loki 6927 series (4824 with mth), main 20969
+                          (12606), branch 21000 (12622)
+        tumbling 5m/15s : Loki 1833 series (1277 with mth), main 5495
+                          (3318), branch 5495 (3318)
+      main and branch agree to within 0.15 percent (generator pod rotation
+      between sequential requests), so the divergence is against Loki and is
+      the same on both builds.
+    analysis: |
+      Both sides agree on the label name and on the captured values
+      (GET, POST, PUT), so no label is missing. Loki emits no capture label
+      for a line the expression does not match while keeping that line in its
+      stream's series; the proxy appears to split those lines differently.
+      The equivalent `| pattern` query, which matches every line, shows no
+      divergence, which is the evidence that non-matching lines are the cause.
+      Not a consequence of making captures part of the series identity: that
+      change decides whether a capture joins the identity, not how an
+      unmatched line is attributed.
+    next_step: |
+      Establish Loki's exact attribution for a non-matching line in a metric
+      pipeline (3.7.x vectorAggEvaluator over the pipeline's per-line labels),
+      then decide whether the proxy should drop the row, keep it under the
+      bare stream identity, or emit it with an empty capture. Needs its own
+      change with a Loki-vs-proxy test over a fixture whose match rate is
+      known, not a fix folded into an unrelated PR.

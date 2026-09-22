@@ -1,0 +1,64 @@
+id: parsed-identity/regexp-partial-match-series-count
+title: A partially-matching | regexp returns about 3x Loki's series count
+proves:
+  - parsed-label-series-identity
+consumer: api
+why: |
+  Loki evaluates a `| regexp` stage per line: a line the expression does not
+  match keeps its series but gains no capture label, so the stream contributes
+  one unlabelled series plus one series per capture value it actually produced.
+  Measured against live Loki on the e2e generator, the proxy returns about
+  three times as many series as Loki for the same query - the same factor as
+  the number of distinct capture values - which says the two split the
+  non-matching lines differently rather than that a label is missing: both
+  sides agree on the label name and on the set of captured values
+  (GET, POST, PUT).
+
+  This is unresolved and pre-existing. It reproduces identically on main
+  (2e2304e9) and on the branch that made captures part of the series identity,
+  so it is not introduced by that change, and it is not a consequence of it:
+  the divergence is in how a non-matching line is attributed to a series, not
+  in whether the capture joins the identity. Recorded here so the gap is
+  tracked rather than discovered again.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({app="api-gateway"} | regexp "(?P<mth>GET|POST|PUT)" [5m])'
+    start: now-15m
+    end: now
+    step: "15s"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    -max-stats-query-series=50000 so neither side is truncated by the series
+    cap; at the 500 default both Loki-facing builds return
+    `maximum metric series exceeded (500)` and the counts cannot be compared.
+compare:
+  mode: observed
+  fields: [series_count, label_presence]
+  expect: |
+    Measured 2026-09-22 against Loki 3.7.x and VictoriaLogs v1.52.0 on the
+    compose stack, with proxy binaries whose listening PID was verified to be
+    the build under test:
+
+      sliding, 15m at step 15s:
+        loki   6927 series, 4824 carry mth, values [GET, POST, PUT]
+        main   20969 series, 12606 carry mth, same values
+        branch 21000 series, 12622 carry mth, same values
+
+      tumbling, 5m at step 15s (range == step):
+        loki   1833 series, 1277 carry mth, values [GET, POST, PUT]
+        main   5495 series, 3318 carry mth, same values
+        branch 5495 series, 3318 carry mth, same values
+
+    main and branch agree to within 0.15 percent, which is the drift of the
+    generator's rotating pod names between two sequential requests, so the
+    divergence is against Loki and is the same on both. The expected end state
+    is Loki's count; until then this case records the measurement, not a
+    passing assertion.
+
+    The equivalent `| pattern` query does not show the divergence, because the
+    pattern matches every line: Loki 748 series all carrying mth, branch 739
+    all carrying mth, main 739 carrying none. That contrast is the evidence
+    that the gap is about non-matching lines.

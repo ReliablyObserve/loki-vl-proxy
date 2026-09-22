@@ -103,7 +103,7 @@ func TestProxyHelpers_CanonicalReadCacheKey_NormalizesDetectedLimitsAndDefaults(
 }
 
 func TestProxyHelpers_AddStatsByStreamClause_PreservesStreamIdentity(t *testing.T) {
-	got := addStatsByStreamClause(`app:="api-gateway" | stats count()`)
+	got := addStatsByStreamClause(`app:="api-gateway" | stats count()`, nil)
 	if got != `app:="api-gateway" | stats by (_stream, level) count()` {
 		t.Fatalf("unexpected stats identity clause: %q", got)
 	}
@@ -111,7 +111,7 @@ func TestProxyHelpers_AddStatsByStreamClause_PreservesStreamIdentity(t *testing.
 
 func TestAddStatsByStreamClause(t *testing.T) {
 	t.Run("injects by clause after stats keyword", func(t *testing.T) {
-		got := addStatsByStreamClause(`app:="api" | stats count()`)
+		got := addStatsByStreamClause(`app:="api" | stats count()`, nil)
 		want := `app:="api" | stats by (_stream, level) count()`
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
@@ -120,14 +120,14 @@ func TestAddStatsByStreamClause(t *testing.T) {
 
 	t.Run("no stats pipe returns query unchanged", func(t *testing.T) {
 		input := `app:="api" | unpack_json | filter status:>500`
-		got := addStatsByStreamClause(input)
+		got := addStatsByStreamClause(input, nil)
 		if got != input {
 			t.Fatalf("expected unchanged query when no stats pipe present, got %q", got)
 		}
 	})
 
 	t.Run("empty query returns empty", func(t *testing.T) {
-		got := addStatsByStreamClause(``)
+		got := addStatsByStreamClause(``, nil)
 		if got != `` {
 			t.Fatalf("expected empty output, got %q", got)
 		}
@@ -139,7 +139,7 @@ func TestAddStatsByStreamClause(t *testing.T) {
 		// goes AFTER "| stats " (before any existing by clause), producing valid
 		// but redundant by (x) by (_stream, level) output — this is a known
 		// limitation. The important case is that it doesn't panic or error.
-		got := addStatsByStreamClause(`app:="api" | stats sum(count)`)
+		got := addStatsByStreamClause(`app:="api" | stats sum(count)`, nil)
 		if got == `` {
 			t.Fatal("expected non-empty output")
 		}

@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (208), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (209), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -81,6 +81,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-drilldown-field-batch-max-fields` | int | `6` | `extraArgs.drilldown-field-batch-max-fields` | maximum fields per batched VL call; excess fields form additional batches or fall back to individual calls |
 | `-drilldown-field-batch-window-ms` | int | `100` | `extraArgs.drilldown-field-batch-window-ms` | accumulation window in ms for the multi-field stats batcher: concurrent per-field stats_query_range calls within this window are folded into one multi-field VL query and the result marginalized back into per-field Loki matrix responses (0 disables batching) |
 | `-emit-structured-metadata` | bool | `true` | `extraArgs.emit-structured-metadata` | Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses |
+| `-exact-parser-series-identity` | bool | `false` | `extraArgs.exact-parser-series-identity` | Name the series of a metric over `\| json` or `\| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `\| regexp` and `\| pattern` captures are always part of the identity because the query names them |
 | `-extra-label-fields` | string | (empty) | `extraArgs.extra-label-fields` | host.id,custom.pipeline.processing |
 | `-field-mapping` | string | (empty) | `extraArgs.field-mapping` | vl_field |
 | `-label-style` | string | `"underscores"` | `extraArgs.label-style` | metadata-field-mode |
