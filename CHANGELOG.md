@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.86.0] - 2026-09-22
+
 ### Changed
 
 - Metric series of the raw-sample path (`count_over_time({...} | logfmt [5m])`
