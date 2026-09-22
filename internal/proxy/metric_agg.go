@@ -292,7 +292,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -370,7 +370,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
 	}
 
 	if sc.code >= http.StatusBadRequest {

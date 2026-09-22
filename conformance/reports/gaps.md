@@ -68,10 +68,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 4 | 0 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 9 | 3 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 4 | 2 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 11 | 4 | proven |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 7 | 0 | gap |
-| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 7 | 5 | partial |
+| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 7 | 6 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 4 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 3 | partial |

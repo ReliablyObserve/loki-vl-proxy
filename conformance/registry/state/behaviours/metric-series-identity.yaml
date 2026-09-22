@@ -1,0 +1,31 @@
+id: metric-series-identity
+state: partial
+reason: |
+  count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate
+  and the unwrap functions read one value per series, with `by (...)` and with
+  `without (...)`, proven against a live Loki with a pushed fixture
+  (count by (pod): 1 per pod where the proxy answered 15; max by (service_name):
+  15/7 where it answered 6660/3108; max without (pod): 15 where it answered 450).
+  sum is unchanged. Two parts of Loki's identity are not reproduced, both
+  recorded below.
+owner_decision: |
+  Accepted deviation (2026-09-22): the proxy's series identity is the stream
+  and its level plus the captures a `| regexp` or `| pattern` stage names. Loki
+  also splits a stream per distinct structured-metadata set and per set of
+  labels a `| json` or `| logfmt` stage extracted, so it counts more series:
+  count(count_over_time({app="worker-service"} | logfmt [1m])) is 450 on Loki
+  and 30 here, and count by (service_name) over a namespace whose lines carry a
+  per-line trace_id counts streams, not lines. Reproducing either means
+  evaluating the query from rows, which the no-raw-row rule forbids by default;
+  -exact-parser-series-identity opts in for the parser half per deployment.
+waiver:
+  id: metric-identity-metadata-and-dynamic-keys
+  rationale: |
+    VictoriaLogs cannot group by a key set that is only known after a row is
+    read, and grouping by every stored metadata field costs 1.0-1.2 s for a
+    broad 6h selector against 0.03 s for the stream identity.
+  expiry: 2027-03-31
+  revisit: |
+    Recheck when VictoriaLogs can group by a row's remaining fields (a
+    `by (*)`-style grouping) or when the measured cost of grouping by the known
+    metadata columns drops to the stream-identity cost.

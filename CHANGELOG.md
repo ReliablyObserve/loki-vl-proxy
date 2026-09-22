@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `count`, `min`, `max` and `avg` of a range aggregation read one value per
+  Loki series again. They were translated to the same single `stats` pipe as
+  `sum`, so `count by (pod) (count_over_time({app="x"}[1m]))` returned each
+  pod's line count (30 where Loki answers 1), `count by (service_name)
+  (count_over_time({namespace="data"}[15m]))` returned 9,768 where Loki
+  answers 900, and `max`/`avg` returned the same sums. The inner stats pipe
+  now keeps the series identity (the requested labels plus the stream and its
+  level) and an outer stats pipe aggregates those per-series values, for
+  `count_over_time`, `bytes_over_time`, `rate`, `bytes_rate` and the `unwrap`
+  functions. `sum` keeps its single pipe: summing the values of a group's
+  series is the same as aggregating their rows. Both pipes run in
+  VictoriaLogs, so no rows are buffered.
+- `count`, `min`, `max` and `avg` with `without (...)` aggregate the same way.
+  The outer pipe keeps the identity and the proxy drops the excluded labels
+  and folds the remaining rows with that operator, instead of summing them as
+  it did for every operator: `max without (pod) (count_over_time({app="x"}[1m]))`
+  returned 450 (the line count) where Loki answers 15, and `count without (pod)`
+  30 where Loki answers 1.
+  Known limit for both: the proxy's series identity is the stream and its
+  level, while Loki also splits a stream per distinct structured-metadata set
+  and per set of labels a `| json` or `| logfmt` stage extracted. For streams
+  whose metadata varies per line (a `trace_id` on every line) or a
+  dynamic-key parser pipeline, Loki counts more series than the proxy does;
+  `count(count_over_time({app="worker-service"} | logfmt [1m]))` is 450 on
+  Loki and 30 here.
 - **A release is validated, tagged and published from the commit its version
   was computed from.** Since releases queue instead of cancelling each other,
   the first release job re-reads `main` before computing the next version, but

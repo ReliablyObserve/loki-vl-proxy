@@ -89,7 +89,7 @@ func TestFormatEntryTimestampVariants(t *testing.T) {
 
 func TestApplyWithoutMatrix(t *testing.T) {
 	body := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api","pod":"a"},"values":[[1,"2"]]}]}}`)
-	out := applyWithoutMatrix(body, map[string]bool{"pod": true})
+	out := applyWithoutMatrix(body, map[string]bool{"pod": true}, withoutMergeForOp("sum"))
 
 	var resp struct {
 		Data struct {

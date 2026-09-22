@@ -341,7 +341,7 @@ func TestApplyWithoutGrouping_Unit(t *testing.T) {
 		{"metric":{"app":"nginx","pod":"p1","level":"warn"},"value":[1609459200,"5"]}
 	]}}`)
 
-	result := applyWithoutGrouping(body, []string{"pod"})
+	result := applyWithoutGrouping(body, []string{"pod"}, "sum")
 	var resp struct {
 		Data struct {
 			Result []struct {

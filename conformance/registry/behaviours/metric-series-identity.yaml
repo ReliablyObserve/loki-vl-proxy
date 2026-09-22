@@ -1,0 +1,38 @@
+id: metric-series-identity
+kind: identity
+title: A metric series is named by the stream, its metadata and its parsed labels
+
+loki: |
+  The series of a range aggregation is the stream labels plus the structured
+  metadata of the entry plus every label the pipeline extracted, so one stream
+  can carry many series. The outer aggregation then reads one value per series:
+  sum adds them, count counts them, min/max/avg fold them, and `without (...)`
+  drops the named labels and folds what remains with the same operator.
+
+victorialogs: |
+  A stats pipe groups by the fields named in `by (...)`. There is no notion of
+  a Loki series, and the keys `unpack_json` / `unpack_logfmt` produce are known
+  only after a row is read, so they cannot appear in a `by (...)` clause. A
+  second stats pipe can aggregate the rows of the first, which is how a
+  per-series value is folded without leaving the backend.
+
+proxy: |
+  Translating count/min/max/avg to the same single stats pipe as sum answers
+  with the line count instead of the series count. The inner pipe must keep the
+  series identity (the requested labels plus the stream and its level, plus the
+  captures a `| regexp` or `| pattern` stage names) and an outer pipe folds
+  those per-series values. For `without (...)` the outer pipe keeps the
+  identity and the proxy folds the rows of each remaining label set with the
+  query's operator rather than summing them.
+
+implementation:
+  - "internal/translator/translator.go seriesLevelOuterAggregation, joinByLabels, addByClauseLast"
+  - "internal/proxy/vector_matching.go applyWithoutGrouping, withoutMergeForOp"
+
+cases:
+  - metric-identity/count-by-counts-series
+  - metric-identity/max-by-folds-series-values
+  - metric-identity/count-without-drops-label
+  - metric-identity/sum-is-row-aggregation
+  - metric-identity/structured-metadata-splits-series   # deviation, see state
+  - metric-identity/dynamic-key-parser-labels           # deviation, see state
