@@ -9,7 +9,7 @@
     {
       "name": "selector_regex",
       "category": "selector",
-      "cases": ["multi_label_regex_range", "multi_label_negative_regex"]
+      "cases": ["multi_label_regex_range", "multi_label_negative_regex", "selector_regex_prefix_is_not_substring"]
     },
     {
       "name": "line_filter_substring",

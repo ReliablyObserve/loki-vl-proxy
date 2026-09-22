@@ -1254,6 +1254,13 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false), true
 			}
 
+			if entry.entry.isRe {
+				// `| label =~ "re"` is a label matcher, so Loki requires a
+				// full-value match. Anchored here rather than above so the
+				// empty-value branch keeps its absent-or-empty semantics.
+				value = logsql.AnchorLabelMatcherRegex(value)
+			}
+
 			return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
 		}
 	}
@@ -2932,6 +2939,9 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			}
 
 			value = streamMatcherValue(value, op.isRe)
+			if op.isRe {
+				value = logsql.AnchorLabelMatcherRegex(value)
+			}
 
 			if value == "" && !op.isRe {
 				// level="" matches entries where level is absent or empty.
@@ -3090,7 +3100,7 @@ func serviceNameMatcherFilter(rawValue string, neg, isRegex bool) string {
 	value := streamMatcherValue(rawValue, false)
 	if isRegex {
 		// Loki selector regexps are fully anchored and '.' matches newlines.
-		value = "^(?s:" + value + ")$"
+		value = logsql.AnchorLabelMatcherRegex(value)
 	}
 	return serviceNameDerivedFilter(value, neg, isRegex)
 }
@@ -3177,9 +3187,9 @@ func serviceNameDerivedFilter(value string, neg, isRegex bool) string {
 func serviceNameLabelFilterPattern(value string) string {
 	reg, err := syntax.Parse(value, syntax.Perl)
 	if err != nil {
-		return "^(?s:" + value + ")$"
+		return logsql.AnchorLabelMatcherRegex(value)
 	}
-	return "^(?s:" + effectiveLabelMatcherPattern(reg.Simplify()) + ")$"
+	return logsql.AnchorLabelMatcherRegex(effectiveLabelMatcherPattern(reg.Simplify()))
 }
 
 func effectiveLabelMatcherPattern(reg *syntax.Regexp) string {
