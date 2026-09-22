@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Pinned Loki 3.7.7, Grafana 13.2.1, Logs Drilldown 2.5.2 and VictoriaLogs
+  datasource 0.32.0** in the e2e-compat stack, the root compose file and the
+  compatibility workflows (were Loki 3.7.1 and 3.4.2, Grafana 13.0.1 and
+  12.4.2, Drilldown 2.0.4, datasource 0.26.3), so every compatibility score
+  runs against the latest stable releases. `compatibility-matrix.json` pins
+  the same versions; the Loki matrix gains 3.6.11–3.6.16 and 3.7.2–3.7.7, the
+  Grafana previous-family smoke profile moves to 12.4.10, and the Drilldown
+  contract matrix gains 2.1.0–2.5.2 with the current family widened to `2.x`.
+  Loki 3.7.2–3.7.7 change no LogQL parsing, query_range, volume, patterns or
+  limit code; the only query-path change is that merged `detected_labels`
+  results keep their HyperLogLog sketch (grafana/loki#16315), so Loki's
+  response carries a `sketch` field and multi-tenant `detected_labels` no
+  longer fails with `too short binary`. The Drilldown source-contract check
+  now finds the mixed-parser expression in `MIXED_FORMAT_EXPR` (moved there in
+  2.2.0) and matches the `Add label tab` label; it scores 9/9 on every 1.0.x
+  and 2.x version in the matrix. The Drilldown patterns-tab initialization
+  issue documented for 2.0.4 is unchanged through 2.5.2. The root compose Loki
+  health probe execs the binary: Loki 3.7 images have no `wget`.
+
 ## [1.81.0] - 2026-09-15
 
 ### Changed
@@ -25,7 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON with leading spaces; `stats_query`/`stats_query_range` answer 502 when
   a storage node is unavailable; `-search.maxQueueDuration` is honoured for
   queued requests; distroless images (health probes already exec the binary).
-
 ### Fixed
 
 - **Invalid queries stay Loki `400 bad_data` on VictoriaLogs v1.52.0 and

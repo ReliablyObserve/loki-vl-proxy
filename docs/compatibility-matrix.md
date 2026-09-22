@@ -89,7 +89,7 @@ When a new upstream family becomes current, the oldest family drops out of the m
 |---|---|---|
 | Loki | `3.6.x` and `3.7.x` | Real runtime matrix in GitHub Actions |
 | Grafana Loki datasource runtime | `12.x` and `13.x` | Runtime contracts through Grafana datasource API in GitHub Actions |
-| Logs Drilldown | `1.0.x` and `2.0.x` (current pinned: `2.0.4`) | Pinned runtime e2e plus source-contract matrix |
+| Logs Drilldown | `1.0.x` and `2.x` (current pinned: `2.5.2`) | Pinned runtime e2e plus source-contract matrix |
 | VictoriaLogs | `v1.30.x` through `v1.52.x` | Real runtime matrix in GitHub Actions |
 
 ## Grafana Version Sensing Model
