@@ -1,0 +1,8 @@
+start 19:34:49 loki_started=2026-09-12T17:33:47.253908713Z
+19:35:04 final explore-core: 2 passed 1 failed 0 skipped 
+19:35:20 final regression: 27 passed 14 failed 10 skipped 
+19:36:06 final drilldown-core: 11 passed 0 failed 0 skipped 1 flaky
+19:36:16 final drilldown-mt: 7 passed 0 failed 0 skipped 
+19:36:52 final comprehensive-ui: 15 passed 0 failed 0 skipped 
+loki range queries with shards=0: 6125
+FINAL_DONE

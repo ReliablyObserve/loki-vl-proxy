@@ -1,0 +1,68 @@
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:20:2: no required module provides package github.com/grafana/loki/v3/pkg/iter; to add it:
+	go get github.com/grafana/loki/v3/pkg/iter
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/query.go:17:2: no required module provides package github.com/grafana/loki/v3/pkg/loghttp; to add it:
+	go get github.com/grafana/loki/v3/pkg/loghttp
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/query.go:18:2: no required module provides package github.com/grafana/loki/v3/pkg/loghttp/legacy; to add it:
+	go get github.com/grafana/loki/v3/pkg/loghttp/legacy
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:21:2: no required module provides package github.com/grafana/loki/v3/pkg/logproto; to add it:
+	go get github.com/grafana/loki/v3/pkg/logproto
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:22:2: no required module provides package github.com/grafana/loki/v3/pkg/logql/syntax; to add it:
+	go get github.com/grafana/loki/v3/pkg/logql/syntax
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:23:2: no required module provides package github.com/grafana/loki/v3/pkg/logqlmodel; to add it:
+	go get github.com/grafana/loki/v3/pkg/logqlmodel
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/query.go:21:2: no required module provides package github.com/grafana/loki/v3/pkg/logqlmodel/stats; to add it:
+	go get github.com/grafana/loki/v3/pkg/logqlmodel/stats
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:24:2: no required module provides package github.com/grafana/loki/v3/pkg/querier/plan; to add it:
+	go get github.com/grafana/loki/v3/pkg/querier/plan
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:25:2: no required module provides package github.com/grafana/loki/v3/pkg/storage/chunk/cache/resultscache; to add it:
+	go get github.com/grafana/loki/v3/pkg/storage/chunk/cache/resultscache
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:26:2: no required module provides package github.com/grafana/loki/v3/pkg/util; to add it:
+	go get github.com/grafana/loki/v3/pkg/util
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:27:2: no required module provides package github.com/grafana/loki/v3/pkg/util/constants; to add it:
+	go get github.com/grafana/loki/v3/pkg/util/constants
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/query.go:22:2: no required module provides package github.com/grafana/loki/v3/pkg/util/httpreq; to add it:
+	go get github.com/grafana/loki/v3/pkg/util/httpreq
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/query.go:10:2: no required module provides package github.com/json-iterator/go; to add it:
+	go get github.com/json-iterator/go
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:12:2: no required module provides package github.com/pkg/errors; to add it:
+	go get github.com/pkg/errors
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:13:2: no required module provides package github.com/prometheus/common/model; to add it:
+	go get github.com/prometheus/common/model
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:14:2: no required module provides package github.com/prometheus/prometheus/model/labels; to add it:
+	go get github.com/prometheus/prometheus/model/labels
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:15:2: no required module provides package github.com/prometheus/prometheus/promql; to add it:
+	go get github.com/prometheus/prometheus/promql
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+scratchpad/loki377/evaluator.go:18:2: no required module provides package github.com/prometheus/prometheus/promql/parser; to add it:
+	go get github.com/prometheus/prometheus/promql/parser
+# github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377
+found packages logql (evaluator.go) and marshal (query.go) in /Users/slawomirskowron/claude_projects/loki-vl-proxy/scratchpad/loki377
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/scratchpad/loki377 [setup failed]
+?   	github.com/ReliablyObserve/Loki-VL-proxy/cmd/healthcheck	[no test files]
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy	2.842s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate	1.982s
+?   	github.com/ReliablyObserve/Loki-VL-proxy/cmd/validate_check	[no test files]
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache	34.212s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/logql	4.769s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql	3.094s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit	2.330s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics	7.012s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware	9.655s
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/observability	4.354s

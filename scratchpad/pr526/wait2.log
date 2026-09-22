@@ -1,0 +1,2 @@
+timed out waiting for loki at http://127.0.0.1:13101/ready
+NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS

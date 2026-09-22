@@ -1,0 +1,33 @@
+ready: loki
+ready: victorialogs
+ready: vmalert
+ready: proxy
+ready: proxy-patterns-autodetect
+ready: proxy-underscore
+ready: proxy-native-metadata
+ready: proxy-translated-metadata
+ready: proxy-no-metadata
+ready: proxy-tail
+ready: tail-ingress
+ready: proxy-tail-native
+ready: grafana
+NAME                            IMAGE                                       COMMAND                  SERVICE                             CREATED          STATUS                    PORTS
+e2e-grafana                     grafana/grafana:13.0.1                      "/run.sh"                grafana                             50 seconds ago   Up 32 seconds             0.0.0.0:3002->3000/tcp, [::]:3002->3000/tcp
+e2e-loki                        grafana/loki:3.7.1                          "/usr/bin/loki -conf…"   loki                                51 seconds ago   Up 50 seconds             0.0.0.0:13101->3100/tcp, [::]:13101->3100/tcp
+e2e-proxy                       loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy                       50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13100->3100/tcp, [::]:13100->3100/tcp
+e2e-proxy-native-metadata       loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-native-metadata       50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13106->3100/tcp, [::]:13106->3100/tcp
+e2e-proxy-no-metadata           loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-no-metadata           50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13108->3100/tcp, [::]:13108->3100/tcp
+e2e-proxy-patterns-autodetect   loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-patterns-autodetect   50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13110->3100/tcp, [::]:13110->3100/tcp
+e2e-proxy-peer-a                loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-peer-a                50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13150->3100/tcp, [::]:13150->3100/tcp
+e2e-proxy-peer-b                loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-peer-b                50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13151->3100/tcp, [::]:13151->3100/tcp
+e2e-proxy-tail                  loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-tail                  50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13103->3100/tcp, [::]:13103->3100/tcp
+e2e-proxy-tail-native           loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-tail-native           50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13105->3100/tcp, [::]:13105->3100/tcp
+e2e-proxy-translated-metadata   loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-translated-metadata   50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13107->3100/tcp, [::]:13107->3100/tcp
+e2e-proxy-underscore            loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-underscore            50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13102->3100/tcp, [::]:13102->3100/tcp
+e2e-proxy-vmauth                loki-vl-proxy:e2e-local                     "/usr/local/bin/loki…"   loki-vl-proxy-vmauth                50 seconds ago   Up 38 seconds (healthy)   0.0.0.0:13109->3100/tcp, [::]:13109->3100/tcp
+e2e-tail-ingress                nginx:1.27-alpine                           "/docker-entrypoint.…"   tail-ingress                        50 seconds ago   Up 32 seconds (healthy)   0.0.0.0:13104->8080/tcp, [::]:13104->8080/tcp
+e2e-victorialogs                victoriametrics/victoria-logs:v1.36.0       "/victoria-logs-prod…"   victorialogs                        51 seconds ago   Up 50 seconds (healthy)   0.0.0.0:19428->9428/tcp, [::]:19428->9428/tcp
+e2e-victoriametrics             victoriametrics/victoria-metrics:v1.119.0   "/victoria-metrics-p…"   victoriametrics                     51 seconds ago   Up 50 seconds (healthy)   0.0.0.0:18428->8428/tcp, [::]:18428->8428/tcp
+e2e-vmalert                     victoriametrics/vmalert:v1.138.0            "/vmalert-prod -http…"   vmalert                             51 seconds ago   Up 44 seconds (healthy)   0.0.0.0:18880->8880/tcp, [::]:18880->8880/tcp
+e2e-vmauth                      victoriametrics/vmauth:v1.138.0             "/vmauth-prod -auth.…"   vmauth                              51 seconds ago   Up 44 seconds (healthy)   8427/tcp
+e2e-vmauth-ring                 victoriametrics/vmauth:v1.138.0             "/vmauth-prod -auth.…"   vmauth-ring                         50 seconds ago   Up 32 seconds (healthy)   0.0.0.0:13200->8427/tcp, [::]:13200->8427/tcp

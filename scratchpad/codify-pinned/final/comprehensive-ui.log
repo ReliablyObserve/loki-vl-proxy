@@ -1,0 +1,38 @@
+
+Running 15 tests using 1 worker
+
+✅ Explore page loaded in 1006ms
+  ✓   1 [chromium] › tests/explore-comprehensive-ui.spec.ts:28:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should load Explore page within acceptable time (1.6s)
+✅ Query editor visible after page load
+  ✓   2 [chromium] › tests/explore-comprehensive-ui.spec.ts:38:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should display query editor on page load (1.6s)
+✅ Explore toolbar with run button visible
+  ✓   3 [chromium] › tests/explore-comprehensive-ui.spec.ts:47:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should show Explore toolbar with action buttons (1.6s)
+✅ Query editor visible
+  ✓   4 [chromium] › tests/explore-comprehensive-ui.spec.ts:56:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should render LogQL query editor (1.6s)
+✅ Query editor contains: {app="api-gateway"}
+  ✓   5 [chromium] › tests/explore-comprehensive-ui.spec.ts:66:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should allow entering query in editor (1.9s)
+✅ Query executed and results shown in 1098ms
+  ✓   6 [chromium] › tests/explore-comprehensive-ui.spec.ts:79:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should execute query and show results (3.0s)
+✅ Metric query executed in 1089ms
+  ✓   7 [chromium] › tests/explore-comprehensive-ui.spec.ts:97:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should execute simple metric query (2.8s)
+✅ JSON parsed logs executed in 1102ms
+  ✓   8 [chromium] › tests/explore-comprehensive-ui.spec.ts:111:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should handle parsed JSON logs (3.0s)
+✅ Results displayed in results panel
+  ✓   9 [chromium] › tests/explore-comprehensive-ui.spec.ts:125:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should show results in appropriate panel (3.0s)
+✅ Explore page loads in 1270ms
+  ✓  10 [chromium] › tests/explore-comprehensive-ui.spec.ts:144:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should load page quickly (1.9s)
+✅ Results displayed in 1147ms
+  ✓  11 [chromium] › tests/explore-comprehensive-ui.spec.ts:155:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should display results after query execution (3.1s)
+✅ Empty results handled gracefully in 1081ms
+  ✓  12 [chromium] › tests/explore-comprehensive-ui.spec.ts:169:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should handle empty results gracefully (2.9s)
+✅ Queries with filters execute correctly
+  ✓  13 [chromium] › tests/explore-comprehensive-ui.spec.ts:192:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should accept queries with label filters (3.2s)
+✅ Unwrap operations execute in 1075ms
+  ✓  14 [chromium] › tests/explore-comprehensive-ui.spec.ts:206:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should support unwrap operations (2.8s)
+📊 Average page load: 1006ms
+📊 Average query response: 1094ms
+📊 Average UI interaction: 1209ms
+📊 PERFORMANCE SUMMARY: page loads=1, queries=2, interactions=2
+  ✓  15 [chromium] › tests/explore-comprehensive-ui.spec.ts:222:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Performance Summary › should collect and report metrics (557ms)
+
+  15 passed (34.7s)

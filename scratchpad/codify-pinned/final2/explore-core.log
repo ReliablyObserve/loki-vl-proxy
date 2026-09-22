@@ -1,0 +1,8 @@
+
+Running 3 tests using 1 worker
+
+  ✓  1 [chromium] › tests/explore-parity.spec.ts:39:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core (1.0m)
+  ✓  2 [chromium] › tests/explore.spec.ts:17:7 › Grafana Explore — Proxy Datasource › basic log query returns results without errors @explore-core (2.5s)
+  ✓  3 [chromium] › tests/url-state.spec.ts:10:5 › buildExploreUrl encodes the datasource pane state @explore-core (1ms)
+
+  3 passed (1.1m)

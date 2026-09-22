@@ -1,0 +1,68 @@
+
+Running 3 tests using 1 worker
+
+  ✘  1 [chromium] › tests/explore-parity.spec.ts:39:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core (10.3s)
+  ✘  2 [chromium] › tests/explore-parity.spec.ts:39:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core (retry #1) (103ms)
+  ✓  3 [chromium] › tests/explore.spec.ts:17:7 › Grafana Explore — Proxy Datasource › basic log query returns results without errors @explore-core (2.8s)
+  ✓  4 [chromium] › tests/url-state.spec.ts:10:5 › buildExploreUrl encodes the datasource pane state @explore-core (3ms)
+
+
+  1) [chromium] › tests/explore-parity.spec.ts:39:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core 
+
+    Error: at least one level series
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      61 |       r.data.result.map((s) => s.metric.level ?? "").sort();
+      62 |     expect(levels(proxy.body), "series label set").toEqual(levels(loki.body));
+    > 63 |     expect(levels(proxy.body).length, "at least one level series").toBeGreaterThan(0);
+         |                                                                    ^
+      64 |
+      65 |     for (const series of proxy.body.data.result) {
+      66 |       expect(series.values.length, `proxy series ${series.metric.level} has points`).toBeGreaterThan(0);
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-parity.spec.ts:63:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: at least one level series
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      61 |       r.data.result.map((s) => s.metric.level ?? "").sort();
+      62 |     expect(levels(proxy.body), "series label set").toEqual(levels(loki.body));
+    > 63 |     expect(levels(proxy.body).length, "at least one level series").toBeGreaterThan(0);
+         |                                                                    ^
+      64 |
+      65 |     for (const series of proxy.body.data.result) {
+      66 |       expect(series.values.length, `proxy series ${series.metric.level} has points`).toBeGreaterThan(0);
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-parity.spec.ts:63:68
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/explore-parity.spec.ts:39:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core 
+  2 passed (14.3s)

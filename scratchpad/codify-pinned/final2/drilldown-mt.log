@@ -1,0 +1,12 @@
+
+Running 7 tests using 1 worker
+
+  ✓  1 [chromium] › tests/logs-drilldown.spec.ts:321:7 › Grafana Logs Drilldown › multi-tenant landing shows service buckets without browser errors @drilldown-mt (1.3s)
+  ✓  2 [chromium] › tests/logs-drilldown.spec.ts:364:7 › Grafana Logs Drilldown › multi-tenant service drilldown loads without browser errors @drilldown-mt (1.4s)
+  ✓  3 [chromium] › tests/logs-drilldown.spec.ts:374:7 › Grafana Logs Drilldown › multi-tenant service field view loads detected fields without browser errors @drilldown-mt (1.3s)
+  ✓  4 [chromium] › tests/logs-drilldown.spec.ts:393:7 › Grafana Logs Drilldown › multi-tenant service filter survives reload from URL state @drilldown-mt (2.2s)
+  ✓  5 [chromium] › tests/logs-drilldown.spec.ts:411:7 › Grafana Logs Drilldown › multi-tenant service fields tab shows non-zero cardinality badges @drilldown-mt (1.3s)
+  ✓  6 [chromium] › tests/logs-drilldown.spec.ts:442:7 › Grafana Logs Drilldown › multi-tenant drilldown label filter scopes logs to selected tenant @drilldown-mt (1.3s)
+  ✓  7 [chromium] › tests/logs-drilldown.spec.ts:464:7 › Grafana Logs Drilldown › multi-tenant drilldown with missing tenant shows empty result not error @drilldown-mt (1.1s)
+
+  7 passed (10.4s)

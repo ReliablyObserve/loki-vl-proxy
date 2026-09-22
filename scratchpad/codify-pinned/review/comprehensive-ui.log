@@ -1,0 +1,114 @@
+
+Running 15 tests using 1 worker
+
+✅ Explore page loaded in 1090ms
+  ✓   1 [chromium] › tests/explore-comprehensive-ui.spec.ts:43:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should load Explore page within acceptable time (1.7s)
+✅ Query editor visible after page load
+  ✓   2 [chromium] › tests/explore-comprehensive-ui.spec.ts:53:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should display query editor on page load (1.6s)
+✅ Explore toolbar with run button visible
+  ✓   3 [chromium] › tests/explore-comprehensive-ui.spec.ts:62:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Page Load Performance › should show Explore toolbar with action buttons (1.6s)
+✅ Query editor visible
+  ✓   4 [chromium] › tests/explore-comprehensive-ui.spec.ts:71:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should render LogQL query editor (1.6s)
+✅ Query editor contains: {app="api-gateway"}
+  ✓   5 [chromium] › tests/explore-comprehensive-ui.spec.ts:81:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should allow entering query in editor (2.0s)
+✅ Query executed and results shown in 1119ms
+  ✓   6 [chromium] › tests/explore-comprehensive-ui.spec.ts:94:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Editor UI › should execute query and show results (3.1s)
+✅ Metric query executed in 1079ms
+  ✓   7 [chromium] › tests/explore-comprehensive-ui.spec.ts:112:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should execute simple metric query (2.9s)
+✅ JSON parsed logs executed in 1123ms
+  ✓   8 [chromium] › tests/explore-comprehensive-ui.spec.ts:126:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should handle parsed JSON logs (3.1s)
+✅ Results displayed in results panel
+  ✓   9 [chromium] › tests/explore-comprehensive-ui.spec.ts:140:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Query Execution › should show results in appropriate panel (3.1s)
+✅ Explore page loads in 1338ms
+  ✓  10 [chromium] › tests/explore-comprehensive-ui.spec.ts:159:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should load page quickly (1.9s)
+✅ Results displayed in 1155ms
+  ✓  11 [chromium] › tests/explore-comprehensive-ui.spec.ts:170:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should display results after query execution (3.1s)
+✅ Empty results handled gracefully in 1088ms
+  ✓  12 [chromium] › tests/explore-comprehensive-ui.spec.ts:184:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › UI Interactions › should handle empty results gracefully (2.9s)
+✅ Queries with filters execute correctly
+  ✓  13 [chromium] › tests/explore-comprehensive-ui.spec.ts:207:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should accept queries with label filters (3.0s)
+  ✘  14 [chromium] › tests/explore-comprehensive-ui.spec.ts:221:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should support unwrap operations (14.1s)
+  ✘  15 [chromium] › tests/explore-comprehensive-ui.spec.ts:221:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should support unwrap operations (retry #1) (14.6s)
+📊 PERFORMANCE SUMMARY: page loads=0, queries=0, interactions=0
+  ✓  16 [chromium] › tests/explore-comprehensive-ui.spec.ts:240:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Performance Summary › should collect and report metrics (579ms)
+
+
+  1) [chromium] › tests/explore-comprehensive-ui.spec.ts:221:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should support unwrap operations 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator:  locator('canvas, [data-testid="graph-container"], [class*="panel-content"]').first()
+    Expected: visible
+    Received: hidden
+    Timeout:  10000ms
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for locator('canvas, [data-testid="graph-container"], [class*="panel-content"]').first()[22m
+    [2m    14 × locator resolved to <canvas width="0" height="0" aria-hidden="true" class="decorationsOverviewRuler"></canvas>[22m
+    [2m       - unexpected value "hidden"[22m
+
+
+       at helpers.ts:166
+
+      164 |     'canvas, [data-testid="graph-container"], [class*="panel-content"]'
+      165 |   );
+    > 166 |   await expect(graph.first()).toBeVisible({ timeout: 10_000 });
+          |                               ^
+      167 | }
+      168 |
+      169 | /**
+        at assertGraphVisible (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/helpers.ts:166:31)
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-comprehensive-ui.spec.ts:233:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator:  locator('canvas, [data-testid="graph-container"], [class*="panel-content"]').first()
+    Expected: visible
+    Received: hidden
+    Timeout:  10000ms
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for locator('canvas, [data-testid="graph-container"], [class*="panel-content"]').first()[22m
+    [2m    13 × locator resolved to <canvas width="0" height="0" aria-hidden="true" class="decorationsOverviewRuler"></canvas>[22m
+    [2m       - unexpected value "hidden"[22m
+
+
+       at helpers.ts:166
+
+      164 |     'canvas, [data-testid="graph-container"], [class*="panel-content"]'
+      165 |   );
+    > 166 |   await expect(graph.first()).toBeVisible({ timeout: 10_000 });
+          |                               ^
+      167 | }
+      168 |
+      169 | /**
+        at assertGraphVisible (/Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/helpers.ts:166:31)
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-comprehensive-ui.spec.ts:233:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-comprehensive-ui---bd683-d-support-unwrap-operations-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/explore-comprehensive-ui.spec.ts:221:9 › @comprehensive-ui Loki Explorer - Comprehensive UI Coverage › Time Range & Filters › should support unwrap operations 
+  14 passed (1.0m)
