@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grafana Explore's logs volume works for `| json` queries with label filters.**
+  Adding a label filter in the query builder, for example
+  `{env="production"} | json | status=`200``, made the logs volume query
+  `sum by (level, detected_level) (count_over_time({...} | json | status=`200` | drop __error__ [...]))`
+  scan raw rows and fail with "manual range metric row limit exceeded
+  (1000000)" from about 6 hours of busy data. String label filters (`=`, `!=`,
+  `=~`, `!~`) on plain keys after `| json` or `| logfmt` now run in the
+  VictoriaLogs stats query after `unpack_json`/`unpack_logfmt`, with regexps
+  fully anchored as in Loki. The check for lines the two parsers read
+  differently now flags a field only on lines that contain that field's key;
+  before, a line with any other unpacked key but no `level` sent the query to
+  raw rows. The check runs beside the stats query, and a window found free of
+  such lines is remembered for five minutes (excluding the last five minutes),
+  so a refreshed or widened range checks only the uncovered part. Only a window
+  that was actually checked refreshes that entry, so a covered window is still
+  re-examined every five minutes and a line that arrives late for a timestamp
+  inside it is not missed. Regexp filter values are quoted with Go string rules,
+  which VictoriaLogs uses when it unquotes them, so a Loki regexp carrying
+  `\d`, `\w` or `\.` reaches the backend intact.
+- **Regexp matchers written with backticks no longer fail.** A LogQL regexp
+  reaches VictoriaLogs as a quoted string, and VictoriaLogs unquotes it with
+  Go's rules, so `{app=~`api-\d+`}`, `| level=~`wa\w+`` and `| level!~`inf\w+``
+  were rejected with `cannot parse query arg` (HTTP 400) where Loki returns
+  data: the pattern's own backslashes were emitted raw. Regexp literals are now
+  quoted the way VictoriaLogs unquotes them, and a matcher value is unquoted
+  first, so the backtick and the double-quoted spelling of the same pattern
+  translate identically. The same applies to the IPv4-range fallback on
+  backends older than v1.45 and to every field regexp filter, whose emitted
+  form VictoriaLogs v1.52.0 rejected.
+- **A matcher whose value contains an operator is no longer split on it.**
+  `{app="plain!~val"}` was read as a negated regexp on a field named
+  `app=plain`, and `{app=~`!~`}` produced an empty pattern. Operators are now
+  found outside quoted and backquoted segments, so a value, or a backquoted
+  field name, may contain `=`, `!=`, `=~` or `!~`.
+- **`| logfmt` metrics read a tab-separated line as Loki does.** Loki's logfmt
+  decoder ends a token at any whitespace, so `n=1\tlevel=warn` yields both
+  pairs; the proxy split on spaces alone and VictoriaLogs' `unpack_logfmt` does
+  not split on a tab either, so `sum by (level, detected_level)
+  (count_over_time({...} | logfmt | drop __error__ [1m]))` returned no series at
+  all where Loki returns `{level="warn", detected_level="warn"}`. The line
+  parser now ends a token at any whitespace, and a `| logfmt` volume whose lines
+  the two parsers read differently is evaluated over the rows instead of falling
+  through to the stored-field routes, which cannot see a parsed level. Rows
+  evaluated that way derive `detected_level` from the level they carry, with
+  Loki's normalisation, as the stats pushdown already did.
+
 ### Changed
 
 - **Pinned Loki 3.7.7, Grafana 13.2.1, Logs Drilldown 2.5.2 and VictoriaLogs

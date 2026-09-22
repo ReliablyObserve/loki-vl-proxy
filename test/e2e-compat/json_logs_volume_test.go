@@ -255,30 +255,40 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 				if tc.pushed && (stats != 1 || guards != wantGuards || raw != 0) {
 					t.Fatalf("expected %d guard and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d", wantGuards, stats, guards, raw)
 				}
-				if !tc.pushed && (stats != 0 || guards != 1 || raw != 1) {
+				// The bucket query runs beside the guard and is cancelled when the
+				// guard finds a line the parsers read differently, so a stats
+				// request may be observed; the answer must still come from the
+				// raw evaluator.
+				if !tc.pushed && (guards != 1 || raw != 1) {
 					t.Fatalf("expected the guard to keep the raw evaluator: stats=%d guards=%d raw=%d", stats, guards, raw)
 				}
 			}
 		})
 	}
 
-	// Loki's logfmt decoder splits on the tab, VictoriaLogs does not: the
-	// stats buckets stay out and the query takes the other routes.
+	// Loki's logfmt decoder ends a token at any whitespace, VictoriaLogs'
+	// unpack_logfmt does not, so the stats pushdown must stay out and the
+	// pipeline has to be evaluated over the rows. The proof is the values:
+	// they must equal Loki's.
 	t.Run("logfmt parse risk", func(t *testing.T) {
 		query := `sum by (level, detected_level) (count_over_time({app="` + logfmtRisk + `"} | logfmt | drop __error__[1m]))`
+		loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
+		if len(loki) == 0 {
+			t.Fatal("Loki sanity: expected the tab-separated fixture to produce a series")
+		}
 		recorder.reset()
-		slidingRangeSeries(t, route, query, start, end, time.Minute, nil)
-		guards := 0
+		assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, nil))
+		guards, rows := 0, 0
 		for _, call := range recorder.reset() {
-			if strings.HasPrefix(call, "/select/logsql/stats_query_range ") && strings.Contains(call, "keep_original_fields") {
-				t.Fatalf("risky logfmt line used the stats pushdown: %s", call)
-			}
-			if strings.HasSuffix(call, " | limit 1") {
+			switch {
+			case strings.HasSuffix(call, " | limit 1"):
 				guards++
+			case strings.HasPrefix(call, "/select/logsql/query "):
+				rows++
 			}
 		}
-		if guards != 1 {
-			t.Fatalf("expected one logfmt risk check, got %d", guards)
+		if guards != 1 || rows != 1 {
+			t.Fatalf("expected one risk check and one row fetch: guards=%d rows=%d", guards, rows)
 		}
 	})
 }

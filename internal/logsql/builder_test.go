@@ -92,7 +92,10 @@ func TestBestTopN_v150(t *testing.T) {
 func TestBestIPv4Range_pre145(t *testing.T) {
 	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.44.0"))
 	f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
-	want := `client_ip:~"^192\.168\.1\."`
+	// VictoriaLogs unquotes with Go rules, so the pattern's backslashes are
+	// escaped in the literal it receives (v1.52.0 rejects the single-backslash
+	// form with "compound token cannot start with").
+	want := `client_ip:~"^192\\.168\\.1\\."`
 	if got := f.String(); got != want {
 		t.Errorf("v1.44 fallback = %q, want %q", got, want)
 	}

@@ -1200,7 +1200,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
 	for _, entry := range logqlSingleFilterOps {
-		idx := strings.Index(stage, entry.logql)
+		idx := matcherOperatorIndex(stage, entry.logql)
 		if idx > 0 {
 			label := sanitizeFieldIdentifier(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(entry.logql):])
@@ -2706,6 +2706,37 @@ var streamMatcherOps = []struct {
 	{"=", logsql.FieldOpExact, false, false},
 }
 
+// matcherOperatorIndex finds op in matcher, skipping quoted and backquoted
+// segments: a value may contain the operator text itself, as in
+// {app="plain!~val"}, and splitting inside it would invent a field name. A
+// field name may itself be backquoted, so the scan skips those too rather than
+// stopping at the first quote.
+func matcherOperatorIndex(matcher, op string) int {
+	for i := 0; i < len(matcher); i++ {
+		switch matcher[i] {
+		case '\\':
+			i++
+			continue
+		case '"', '`':
+			quote := matcher[i]
+			for i++; i < len(matcher); i++ {
+				if matcher[i] == '\\' && quote == '"' {
+					i++
+					continue
+				}
+				if matcher[i] == quote {
+					break
+				}
+			}
+			continue
+		}
+		if strings.HasPrefix(matcher[i:], op) {
+			return i
+		}
+	}
+	return -1
+}
+
 // streamMatcherToFieldFilter converts a stream matcher like `level="error"`
 // to a LogsQL field filter like `level:="error"`.
 // Returns "" if the matcher can't be converted (shouldn't happen).
@@ -2713,7 +2744,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	matcher = strings.TrimSpace(matcher)
 
 	for _, op := range streamMatcherOps {
-		idx := strings.Index(matcher, op.logql)
+		idx := matcherOperatorIndex(matcher, op.logql)
 		if idx > 0 {
 			origLabel := sanitizeFieldIdentifier(matcher[:idx])
 			label := origLabel
@@ -2825,16 +2856,17 @@ var syntheticServiceNameFields = []string{
 
 func streamMatcherValue(value string, isRegex bool) string {
 	value = strings.TrimSpace(value)
-	if !isRegex {
-		// Loki's raw literals retain carriage returns; strconv.Unquote applies
-		// Go source's CR removal rule to backquoted strings instead.
-		if len(value) >= 2 && value[0] == '`' && value[len(value)-1] == '`' {
-			return value[1 : len(value)-1]
-		}
-		if decoded, err := strconv.Unquote(value); err == nil {
-			return decoded
-		}
+	// Loki's raw literals retain carriage returns; strconv.Unquote applies
+	// Go source's CR removal rule to backquoted strings instead.
+	if len(value) >= 2 && value[0] == '`' && value[len(value)-1] == '`' {
+		return value[1 : len(value)-1]
 	}
+	if decoded, err := strconv.Unquote(value); err == nil {
+		return decoded
+	}
+	// A regexp written with an escape Go does not accept in a quoted string,
+	// such as "a\d+", reaches Loki's parser as the raw text; keep it, minus the
+	// quotes, so the pattern is what the user wrote either way.
 	return strings.Trim(value, "\"`")
 }
 

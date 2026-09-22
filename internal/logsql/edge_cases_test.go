@@ -20,7 +20,7 @@ func TestFieldFilterAllOps(t *testing.T) {
 		// FieldOpExact — unicode
 		{"exact_unicode", logsql.FieldFilter{Field: "мsg", Op: logsql.FieldOpExact, Value: "日本語"}, `мsg:="日本語"`},
 		// FieldOpRegexp — special chars
-		{"regexp_special", logsql.FieldFilter{Field: "url", Op: logsql.FieldOpRegexp, Value: `^/api/v\d+/`}, `url:~"^/api/v\d+/"`},
+		{"regexp_special", logsql.FieldFilter{Field: "url", Op: logsql.FieldOpRegexp, Value: `^/api/v\d+/`}, `url:~"^/api/v\\d+/"`},
 		// FieldOpPrefix — empty prefix
 		{"prefix_empty", logsql.FieldFilter{Field: "f", Op: logsql.FieldOpPrefix, Value: ""}, "f:*"},
 		// FieldOpSubstring — unicode

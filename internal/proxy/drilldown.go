@@ -1146,7 +1146,9 @@ func parseLogfmtFields(line string) map[string]string {
 			inQuote = !inQuote
 			continue
 		}
-		if c != ' ' || inQuote {
+		// Loki's logfmt decoder ends a token at any whitespace byte, not only a
+		// space: `n=1\tlevel=warn` yields both pairs.
+		if c > ' ' || inQuote {
 			continue
 		}
 		if i > start {
