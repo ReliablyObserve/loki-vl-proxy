@@ -488,8 +488,15 @@ func lokiNormalizedLevel(level string) string {
 // VictoriaLogs spells differently, a possible series-limit overflow, or lines
 // whose JSON VictoriaLogs rejects while Loki may still extract a grouped label.
 func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, err error) {
+	body, served, _, err = p.orderedJSONStatsBucketsWithReason(ctx, plan, start, end, step)
+	return body, served, err
+}
+
+// orderedJSONStatsBucketsWithReason reports, in addition, whether the pushdown
+// declined because a selected line is read differently by the two parsers.
+func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
 	if len(plan.unpackFields) == 0 || p.labelTranslator == nil {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 	unpack := append([]string(nil), plan.unpackFields...)
 	for _, filter := range plan.pushdownFilters {
@@ -499,16 +506,16 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	for _, field := range unpack {
 		if p.labelTranslator.ToVL(field) != field {
-			return nil, false, nil
+			return nil, false, false, nil
 		}
 	}
 	bucket, ok := p.slidingStatsBucket(start, step, plan.window)
 	if !ok {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 	base, err := p.translateQueryWithContext(ctx, plan.fetchQuery)
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	windowStart := start.Add(-plan.window)
 	// The parse-risk check and the bucket query run concurrently; the buckets
@@ -553,16 +560,16 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	risk := <-riskDone
 	if risk.err != nil || risk.risky {
 		cancelStats()
-		return nil, false, risk.err
+		return nil, false, risk.risky, risk.err
 	}
 	stats := <-statsDone
 	series, err := stats.series, stats.err
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	if maxSeries := p.resolvedMaxStatsQuerySeries(); len(series) >= maxSeries {
 		// The bucket collector keeps the busiest series; Loki fails instead.
-		return nil, false, fmt.Errorf("maximum metric series exceeded (%d)", maxSeries)
+		return nil, false, false, fmt.Errorf("maximum metric series exceeded (%d)", maxSeries)
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
 	for _, entry := range series {
@@ -591,7 +598,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		merged[key] = target
 	}
 	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window)
-	return body, err == nil, err
+	return body, err == nil, false, err
 }
 
 // serveLevelVolumeStatsBuckets answers a plain or `| logfmt` logs volume plan
@@ -602,9 +609,19 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return false
 	}
-	body, served, err := p.orderedJSONStatsBuckets(r.Context(), plan, start, end, step)
+	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
 	if err == nil && !served {
-		return false
+		if !parseDisagreement || plan.parser == "" {
+			return false
+		}
+		// VictoriaLogs reads a selected line differently from Loki's decoder, so
+		// neither the buckets nor the stored-field routes can answer it exactly.
+		// Evaluate the pipeline over the rows instead, as the JSON plans do.
+		var series map[string]manualSeriesSamples
+		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
+		if err == nil {
+			body, err = buildOrderedJSONMetric(r.Context(), plan, series, start, end, step, true, p.orderedJSONMetricMaxBytes())
+		}
 	}
 	status := http.StatusOK
 	if err != nil {
@@ -829,6 +846,24 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 	}
 }
 
+// parseLogfmt extracts the line's logfmt pairs the way Loki's decoder does, so
+// a `| logfmt` plan has an exact evaluator for lines VictoriaLogs reads
+// differently (a tab separator, for one). A key that collides with a stream
+// label or structured metadata keeps the stored value, as Loki's _extracted
+// rule does for the value this metric groups by.
+func (plan *orderedJSONMetricPlan) parseLogfmt(line string, collisions, labels map[string]string, extracted map[string]bool) {
+	for name, value := range parseLogfmtFields(line) {
+		if _, taken := collisions[name]; taken {
+			continue
+		}
+		if !plan.acceptExtractedLabel(name, value) {
+			continue
+		}
+		labels[name] = value
+		extracted[name] = true
+	}
+}
+
 func orderedJSONLineFilter(stage *logqlpkg.LineFilterStage) (func(string) bool, error) {
 	if stage.IP {
 		return nil, fmt.Errorf("IP filter requires the native pipeline path")
@@ -932,6 +967,10 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 				collisions := cloneStringMap(streamLabels)
 				for name := range metadata {
 					collisions[name] = labels[name]
+				}
+				if stage.logfmt {
+					plan.parseLogfmt(line, collisions, labels, extracted)
+					continue
 				}
 				if err := plan.parseJSON(line, collisions, labels, extracted); err != nil {
 					if errors.Is(err, errOrderedJSONFilterRejected) {
@@ -1128,6 +1167,12 @@ func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[str
 		if included != plan.grouping.Without && name != "__name__" && value != "" {
 			group[name] = value
 		}
+	}
+	// detected_level is structured metadata Loki sets at ingest, so no parser
+	// yields it; derive it from the level this row carries, normalised the way
+	// Loki normalises it, exactly as the stats pushdown does.
+	if group["detected_level"] == "" && containsString(plan.grouping.Labels, "detected_level") != plan.grouping.Without {
+		group["detected_level"] = lokiNormalizedLevel(labels["level"])
 	}
 	return group
 }

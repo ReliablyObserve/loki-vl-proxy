@@ -266,28 +266,29 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 		})
 	}
 
-	// Loki's logfmt decoder splits on the tab, VictoriaLogs does not: the
-	// stats buckets stay out and the query takes the other routes.
+	// Loki's logfmt decoder ends a token at any whitespace, VictoriaLogs'
+	// unpack_logfmt does not, so the stats pushdown must stay out and the
+	// pipeline has to be evaluated over the rows. The proof is the values:
+	// they must equal Loki's.
 	t.Run("logfmt parse risk", func(t *testing.T) {
 		query := `sum by (level, detected_level) (count_over_time({app="` + logfmtRisk + `"} | logfmt | drop __error__[1m]))`
+		loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
+		if len(loki) == 0 {
+			t.Fatal("Loki sanity: expected the tab-separated fixture to produce a series")
+		}
 		recorder.reset()
-		slidingRangeSeries(t, route, query, start, end, time.Minute, nil)
-		guards, raw := 0, 0
+		assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, nil))
+		guards, rows := 0, 0
 		for _, call := range recorder.reset() {
 			switch {
 			case strings.HasSuffix(call, " | limit 1"):
 				guards++
 			case strings.HasPrefix(call, "/select/logsql/query "):
-				raw++
+				rows++
 			}
 		}
-		// A cancelled bucket query may be recorded; what matters is that the
-		// answer came from the raw evaluator, which the value check below proves.
-		if raw != 1 {
-			t.Fatalf("risky logfmt line did not use the raw evaluator: raw=%d", raw)
-		}
-		if guards != 1 {
-			t.Fatalf("expected one logfmt risk check, got %d", guards)
+		if guards != 1 || rows != 1 {
+			t.Fatalf("expected one risk check and one row fetch: guards=%d rows=%d", guards, rows)
 		}
 	})
 }

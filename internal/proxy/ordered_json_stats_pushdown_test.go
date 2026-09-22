@@ -669,3 +669,30 @@ func TestCachedStatsPushdownRiskChecksOnlyUncoveredWindow(t *testing.T) {
 		}
 	}
 }
+
+// VictoriaLogs' unpack_logfmt does not end a token at a tab, Loki's decoder
+// does. The pushdown must decline such a line and the pipeline must be
+// evaluated over the rows, which is the only way to return Loki's value.
+func TestLogfmtParseRiskUsesRowEvaluator(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	lines := []jsonVolumeLine{
+		{s0.Add(10 * time.Second), "", "n=1\tlevel=warn"},
+		{s0.Add(20 * time.Second), "", "n=2 level=warn"},
+	}
+	srv, fake := newJSONVolumeFakeVL(t, lines)
+	p := newSlidingTestProxy(t, srv.URL)
+	query := `sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`
+	got := runJSONVolumeQueryRange(t, p, query, s0.Add(time.Minute), s0.Add(time.Minute), time.Minute)
+	at := s0.Add(time.Minute).Unix()
+	want := map[string]map[int64]string{
+		canonicalLabelsKey(map[string]string{"level": "warn", "detected_level": "warn"}): {at: "2"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tab-separated logfmt line lost\n got: %v\nwant: %v", got, want)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.rawCalls != 1 {
+		t.Fatalf("expected the row evaluator to answer: raw=%d stats=%d guard=%d", fake.rawCalls, len(fake.statsCalls), len(fake.guardCalls))
+	}
+}

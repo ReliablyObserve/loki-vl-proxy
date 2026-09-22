@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside it is not missed. Regexp filter values are quoted with Go string rules,
   which VictoriaLogs uses when it unquotes them, so a Loki regexp carrying
   `\d`, `\w` or `\.` reaches the backend intact.
+- **`| logfmt` metrics read a tab-separated line as Loki does.** Loki's logfmt
+  decoder ends a token at any whitespace, so `n=1\tlevel=warn` yields both
+  pairs; the proxy split on spaces alone and VictoriaLogs' `unpack_logfmt` does
+  not split on a tab either, so `sum by (level, detected_level)
+  (count_over_time({...} | logfmt | drop __error__ [1m]))` returned no series at
+  all where Loki returns `{level="warn", detected_level="warn"}`. The line
+  parser now ends a token at any whitespace, and a `| logfmt` volume whose lines
+  the two parsers read differently is evaluated over the rows instead of falling
+  through to the stored-field routes, which cannot see a parsed level. Rows
+  evaluated that way derive `detected_level` from the level they carry, with
+  Loki's normalisation, as the stats pushdown already did.
 
 ### Changed
 
