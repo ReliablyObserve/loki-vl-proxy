@@ -459,10 +459,10 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// expression. Handle them before the without/binary/metric path so the inner
 	// expression is translated correctly and the marker is appended last.
 	if result, ok := tryTranslateLabelReplace(logql, labelFn); ok {
-		return applyServiceNameGrouping(result, caps), nil
+		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 	if result, ok := tryTranslateLabelJoin(logql, labelFn); ok {
-		return applyServiceNameGrouping(result, caps), nil
+		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 
 	// Extract without() labels before translation.
@@ -483,12 +483,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
 	if binResult, ok := tryTranslateBinaryMetricExpr(logql, labelFn); ok {
-		return appendWithoutMarker(applyServiceNameGrouping(binResult, caps), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(binResult, caps, streamFields), withoutLabels), nil
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
 	if metricResult, ok := tryTranslateMetricQuery(logql, labelFn); ok {
-		return appendWithoutMarker(applyServiceNameGrouping(metricResult, caps), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
 		return "", &UnsupportedError{Msg: unwrapFunc + " requires `| unwrap <field>` for range aggregation", Func: unwrapFunc}
@@ -584,38 +584,24 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		streamContent := remaining[1:end]
 		remaining = strings.TrimSpace(remaining[end+1:])
 
-		var logfmtPipelineFilters []string
 		matchers := splitStreamMatchers(streamContent)
 		for _, m := range matchers {
-			if sf != nil && canUseStreamSelector(m, sf, labelFn) {
-				streamParts = append(streamParts, m)
-			} else {
-				ff := streamMatcherToFieldFilter(m, labelFn)
-				if ff != "" {
-					// detected_level with a concrete value must use a logfmt pipeline
-					// stage in VL. The push-time _stream.level may differ from the
-					// logfmt-parsed level in _msg; Loki's detected_level semantically
-					// means "level as detected from message body", so we must unpack
-					// and filter on the parsed field. The empty-value sentinel
-					// (-level:*) stays in the base query because it signals
-					// "no level field present at all" and works without parsing.
-					if strings.HasPrefix(m, "detected_level") && ff != "-level:*" {
-						logfmtPipelineFilters = append(logfmtPipelineFilters, ff)
-					} else {
-						parts = append(parts, ff)
+			if !sf[detectedLevelLabel] {
+				filter, ok, err := detectedLevelSelectorFilter(m)
+				if err != nil {
+					return "", err
+				}
+				if ok {
+					if filter != "" {
+						parts = append(parts, filter)
 					}
+					continue
 				}
 			}
-		}
-		// Inject a logfmt unpack stage for detected_level matchers that need it.
-		// If there are no other base filters yet, add * so the query is valid LogsQL.
-		if len(logfmtPipelineFilters) > 0 {
-			if len(parts) == 0 && len(streamParts) == 0 {
-				parts = append(parts, "*")
-			}
-			parts = append(parts, "| unpack_logfmt")
-			for _, ff := range logfmtPipelineFilters {
-				parts = append(parts, "| filter "+ff)
+			if sf != nil && canUseStreamSelector(m, sf, labelFn) {
+				streamParts = append(streamParts, m)
+			} else if ff := streamMatcherToFieldFilter(m, labelFn); ff != "" {
+				parts = append(parts, ff)
 			}
 		}
 	}
@@ -2446,9 +2432,9 @@ func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
 		if part == "" {
 			continue
 		}
-		// service_name is derived per row (applyServiceNameGrouping), never a
-		// translated source field.
-		if labelFn != nil && part != "service_name" {
+		// service_name and detected_level are derived per row
+		// (applyDerivedGroupings), never translated source fields.
+		if labelFn != nil && part != "service_name" && part != detectedLevelLabelName {
 			part = strings.TrimSpace(labelFn(part))
 		}
 		if part == "" {
@@ -2475,16 +2461,61 @@ func applyServiceNameGrouping(query string, caps logsql.Capabilities) string {
 	if !strings.Contains(query, "service_name") {
 		return query
 	}
+	return applyDerivedGrouping(query, "service_name", func(q string) string {
+		return WithDerivedServiceName(q, caps)
+	})
+}
+
+// applyDerivedGroupings computes the labels Loki assigns at ingest —
+// service_name and detected_level — for every metric subquery that groups by
+// one of them.
+func applyDerivedGroupings(query string, caps logsql.Capabilities, streamFields map[string]bool) string {
+	query = applyServiceNameGrouping(query, caps)
+	return applyDetectedLevelGrouping(query, detectedLevelKnownFields(streamFields))
+}
+
+// detectedLevelKnownFields lists the level-deciding fields the chain treats as
+// stored. Every name Loki reads is included: a field VictoriaLogs does not
+// hold costs nothing to test.
+func detectedLevelKnownFields(map[string]bool) []string {
+	return DetectedLevelFieldNames
+}
+
+// applyDerivedGrouping inserts the pipes that compute a derived label into
+// every metric subquery whose stats pipe groups by it.
+func applyDerivedGrouping(query, label string, insert func(string) string) string {
 	segments := strings.Split(query, binaryMetricSeparator)
 	for i, segment := range segments {
-		segments[i] = applyServiceNameGroupingSegment(segment, caps)
+		segments[i] = applyDerivedGroupingSegment(segment, label, insert)
 	}
 	return strings.Join(segments, binaryMetricSeparator)
 }
 
+// applyDetectedLevelGrouping makes `by (detected_level)` group by the value
+// Loki attaches at ingest. VictoriaLogs stores whatever was pushed, so the
+// chain reads the stored level fields in Loki's priority order, normalises the
+// spellings it knows, maps severity_number, and for a row with no stored level
+// reads the line as JSON, as logfmt and then as text, with unknown as the
+// fallback — the same rule the log responses derive per row.
+func applyDetectedLevelGrouping(query string, existingFields []string) string {
+	if !strings.Contains(query, detectedLevelLabelName) {
+		return query
+	}
+	chain := BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping)
+	return applyDerivedGrouping(query, detectedLevelLabelName, func(q string) string {
+		pipeAt := firstTopLevelPipe(q)
+		if pipeAt < 0 {
+			return strings.TrimSpace(q) + " " + chain
+		}
+		return q[:pipeAt] + chain + " " + q[pipeAt:]
+	})
+}
+
+const detectedLevelLabelName = "detected_level"
+
 const binaryMetricSeparator = "|||"
 
-func applyServiceNameGroupingSegment(segment string, caps logsql.Capabilities) string {
+func applyDerivedGroupingSegment(segment, label string, insert func(string) string) string {
 	start := 0
 	for strings.HasPrefix(segment[start:], BinaryMetricPrefix) {
 		colon := strings.Index(segment[start+len(BinaryMetricPrefix):], ":")
@@ -2493,10 +2524,10 @@ func applyServiceNameGroupingSegment(segment string, caps logsql.Capabilities) s
 		}
 		start += len(BinaryMetricPrefix) + colon + 1
 	}
-	if !statsGroupsByServiceName(segment[start:]) {
+	if !statsGroupsByLabel(segment[start:], label) {
 		return segment
 	}
-	return segment[:start] + WithDerivedServiceName(segment[start:], caps)
+	return segment[:start] + insert(segment[start:])
 }
 
 // WithDerivedServiceName returns query with the pipes that set the
@@ -2511,9 +2542,8 @@ func WithDerivedServiceName(query string, caps logsql.Capabilities) string {
 	return query[:pipeAt] + serviceNameGroupingPipes(caps) + " " + query[pipeAt:]
 }
 
-// statsGroupsByServiceName reports whether a stats pipe of query groups by
-// service_name.
-func statsGroupsByServiceName(query string) bool {
+// statsGroupsByLabel reports whether a stats pipe of query groups by label.
+func statsGroupsByLabel(query, label string) bool {
 	const marker = "| stats by ("
 	for rest := query; ; {
 		idx := strings.Index(rest, marker)
@@ -2526,7 +2556,7 @@ func statsGroupsByServiceName(query string) bool {
 			return false
 		}
 		for _, item := range strings.Split(rest[:end], ",") {
-			if strings.TrimSpace(item) == "service_name" {
+			if strings.TrimSpace(item) == label {
 				return true
 			}
 		}
@@ -2888,12 +2918,6 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			if origLabel == "service_name" {
 				return serviceNameMatcherFilter(value, op.negate, op.isRe)
 			}
-			// detected_level is a synthetic Loki label synthesized by the proxy.
-			// VL stores the field as "level"; translate unconditionally before
-			// applying any user-supplied labelFn.
-			if origLabel == "detected_level" {
-				label = "level"
-			}
 			if labelFn != nil {
 				label = sanitizeFieldIdentifier(labelFn(label))
 				if label == "" {
@@ -2910,9 +2934,9 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			value = streamMatcherValue(value, op.isRe)
 
 			if value == "" && !op.isRe {
-				// detected_level="" in the stream selector means "no level detected":
-				// match entries where level is absent or empty. -level:* covers both
-				// cases; level:="" would only match explicit empty strings.
+				// level="" matches entries where level is absent or empty.
+				// -level:* covers both cases; level:="" would only match
+				// explicit empty strings.
 				if label == "level" && !op.negate {
 					return `-level:*`
 				}
@@ -2927,6 +2951,45 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 		}
 	}
 	return ""
+}
+
+const (
+	detectedLevelLabel = "detected_level"
+	// matchNoRows is a LogsQL filter no row passes: an empty in() list.
+	matchNoRows = `_stream_id:in()`
+)
+
+// detectedLevelSelectorFilter handles a detected_level matcher in a stream
+// selector when detected_level is not a configured stream field. Loki keeps
+// detected_level in structured metadata, not in the index, so the matcher
+// sees an absent label: a matcher that accepts the empty value selects every
+// stream and needs no filter, any other selects no stream (matchNoRows).
+// ok is false for matchers on other labels.
+func detectedLevelSelectorFilter(matcher string) (filter string, ok bool, err error) {
+	matcher = strings.TrimSpace(matcher)
+	for _, op := range streamMatcherOps {
+		idx := strings.Index(matcher, op.logql)
+		if idx <= 0 {
+			continue
+		}
+		if sanitizeFieldIdentifier(matcher[:idx]) != detectedLevelLabel {
+			return "", false, nil
+		}
+		value := streamMatcherValue(matcher[idx+len(op.logql):], false)
+		matchesEmpty := value == ""
+		if op.isRe {
+			re, reErr := regexp.Compile("^(?:" + value + ")$")
+			if reErr != nil {
+				return "", false, &ParseError{Msg: fmt.Sprintf("invalid regexp in stream matcher %s: %v", matcher, reErr), Pos: -1}
+			}
+			matchesEmpty = re.MatchString("")
+		}
+		if matchesEmpty != op.negate {
+			return "", true, nil
+		}
+		return matchNoRows, true, nil
+	}
+	return "", false, nil
 }
 
 // canUseStreamSelector returns true if a stream matcher can be converted to a VL native

@@ -1,0 +1,2830 @@
+[
+ {
+  "name": "entry/use severity number from otlp logs",
+  "stream": {},
+  "fields": {
+   "severity_number": "7"
+  },
+  "msg": "error",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/invalid severity number should not cause any issues",
+  "stream": {},
+  "fields": {
+   "severity_number": "foo"
+  },
+  "msg": "",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/non otlp without any of the log level keywords in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "foo",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "entry/non otlp with log level keywords in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a warning log",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/non otlp with debug keyword in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a debug message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with DEBUG keyword in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a DEBUG message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with debug: prefix in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "debug: something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with DEBUG: prefix in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "DEBUG: something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with critical keyword in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a critical message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with CRITICAL keyword in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a CRITICAL message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with critical: prefix in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "critical: something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with CRITICAL: prefix in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "CRITICAL: something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with [debug] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[debug] this is a debug message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with [DEBUG] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[DEBUG] this is a debug message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "entry/non otlp with [critical] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[critical] this is a critical message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with [CRITICAL] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[CRITICAL] this is a critical message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/non otlp with [info] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[info] this is an info message",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/non otlp with [INFO] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[INFO] this is an info message",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/non otlp with [warn] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[warn] this is a warning message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/non otlp with [WARNING] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[WARNING] this is a warning message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/non otlp with [error] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[error] this is an error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "entry/non otlp with [ERROR] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[ERROR] this is an error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "entry/non otlp with [err] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[err] this is an error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "entry/non otlp with [ERR] bracket pattern in log line",
+  "stream": {},
+  "fields": {},
+  "msg": "[ERR] this is an error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "entry/json log line with an error",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\":\"bar\",\"msg\":\"message with keyword error but it should not get picked up\",\"level\":\"critical\"}",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/json log line with an error #2",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"FOO\":\"bar\",\"MSG\":\"message with keyword error but it should not get picked up\",\"LEVEL\":\"Critical\"}",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/json log line with an warning",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\":\"bar\",\"msg\":\"message with keyword warn but it should not get picked up\",\"level\":\"warn\"}",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/json log line with an warning #2",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\":\"bar\",\"msg\":\"message with keyword warn but it should not get picked up\",\"SEVERITY\":\"FATAL\"}",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "entry/json log line with an error in block case",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\":\"bar\",\"msg\":\"message with keyword warn but it should not get picked up\",\"level\":\"ERR\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "entry/json log line with an INFO in block case",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\":\"bar\",\"msg\":\"message with keyword INFO get picked up\"}",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/logfmt log line with an INFO and not level returns info log level",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with info and not level should get picked up\"",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/logfmt log line with a warn",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword error but it should not get picked up\" level=warn",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/logfmt log line with a warn with camel case",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword error but it should not get picked up\" level=Warn",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "entry/logfmt log line with a trace",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword error but it should not get picked up\" level=Trace",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "entry/logfmt log line with some other level returns unknown log level",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword but it should not get picked up\" level=NA",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "entry/logfmt log line with label Severity is allowed for level detection",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword but it should not get picked up\" severity=critical",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/logfmt log line with label Severity with camelcase is allowed for level detection",
+  "stream": {},
+  "fields": {},
+  "msg": "Foo=bar MSG=\"Message with keyword but it should not get picked up\" Severity=critical",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "entry/logfmt log line with a info with non standard case",
+  "stream": {},
+  "fields": {},
+  "msg": "foo=bar msg=\"message with keyword error but it should not get picked up\" level=inFO",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/logfmt log line with a info with non block case for level",
+  "stream": {},
+  "fields": {},
+  "msg": "FOO=bar MSG=\"message with keyword error but it should not get picked up\" LEVEL=inFO",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/logfmt log line with a info with short level",
+  "stream": {},
+  "fields": {},
+  "msg": "FOO=bar MSG=\"message that should qualify to unknown when there is no level defined\" LEVEL=Inf",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "entry/logfmt log line with a info with full level",
+  "stream": {},
+  "fields": {},
+  "msg": "FOO=bar MSG=\"message that should qualify to unknown when there is no level defined\" LEVEL=Information",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "json-parser/simple top level field",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\": \"error\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "json-parser/nested field one level deep",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\": {\"level\": \"info\"}}",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "json-parser/deeply nested field",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\": {\"b\": {\"c\": {\"level\": \"warn\"}}}}",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "json-parser/multiple allowed fields picks first",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"severity\": \"error\", \"level\": \"info\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "json-parser/multiple nested fields picks first",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\": {\"level\": \"error\"}, \"b\": {\"level\": \"info\"}}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "json-parser/array values are ignored",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"arr\": [{\"level\": \"debug\"}], \"level\": \"info\"}",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "json-parser/non-string values are ignored",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\": 123, \"severity\": \"warn\"}",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "json-parser/empty when no match",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\": \"bar\"}",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "json-parser/empty for invalid json",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"foo\": \"bar\"",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "json-parser/custom field names",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"custom_level\": \"error\", \"log_severity\": \"warn\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "json-parser/depth limited - only top level",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\": {\"level\": \"debug\"}, \"level\": \"info\"}",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "json-parser/depth limited - no match",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\": {\"level\": \"debug\"}}",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/trace level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a trace message",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/TRACE level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a TRACE message",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace at start",
+  "stream": {},
+  "fields": {},
+  "msg": "trace occurred",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an trace",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an trace message",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace colon",
+  "stream": {},
+  "fields": {},
+  "msg": "trace: something happened",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "trace, something happened",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace special",
+  "stream": {},
+  "fields": {},
+  "msg": "trace! something happened",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(trace) something happened",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/trace brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[trace] something happened",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/nginx like trace",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z trace: connection failed",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/bracket [trace]",
+  "stream": {},
+  "fields": {},
+  "msg": "[trace] connection failed",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/bracket upper [TRACE]",
+  "stream": {},
+  "fields": {},
+  "msg": "[TRACE] connection failed",
+  "source": "loki-test",
+  "want": "trace"
+ },
+ {
+  "name": "keyword/debug level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a debug message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/DEBUG level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a DEBUG message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug at start",
+  "stream": {},
+  "fields": {},
+  "msg": "debug occurred",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an debug",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an debug message",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug colon",
+  "stream": {},
+  "fields": {},
+  "msg": "debug: something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "debug, something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug special",
+  "stream": {},
+  "fields": {},
+  "msg": "debug! something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(debug) something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/debug brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[debug] something happened",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/nginx like debug",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z debug: connection failed",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/bracket [debug]",
+  "stream": {},
+  "fields": {},
+  "msg": "[debug] connection failed",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/bracket upper [DEBUG]",
+  "stream": {},
+  "fields": {},
+  "msg": "[DEBUG] connection failed",
+  "source": "loki-test",
+  "want": "debug"
+ },
+ {
+  "name": "keyword/info level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a info message",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/INFO level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a INFO message",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info at start",
+  "stream": {},
+  "fields": {},
+  "msg": "info occurred",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an info",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an info message",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info colon",
+  "stream": {},
+  "fields": {},
+  "msg": "info: something happened",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "info, something happened",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info special",
+  "stream": {},
+  "fields": {},
+  "msg": "info! something happened",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(info) something happened",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/info brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[info] something happened",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/nginx like info",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z info: connection failed",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/bracket [info]",
+  "stream": {},
+  "fields": {},
+  "msg": "[info] connection failed",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/bracket upper [INFO]",
+  "stream": {},
+  "fields": {},
+  "msg": "[INFO] connection failed",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "keyword/warn level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a warn message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/WARN level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a WARN message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn at start",
+  "stream": {},
+  "fields": {},
+  "msg": "warn occurred",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an warn",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an warn message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn colon",
+  "stream": {},
+  "fields": {},
+  "msg": "warn: something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "warn, something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn special",
+  "stream": {},
+  "fields": {},
+  "msg": "warn! something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(warn) something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warn brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[warn] something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/nginx like warn",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z warn: connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/bracket [warn]",
+  "stream": {},
+  "fields": {},
+  "msg": "[warn] connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/bracket upper [WARN]",
+  "stream": {},
+  "fields": {},
+  "msg": "[WARN] connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a warning message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/WARNING level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a WARNING message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning at start",
+  "stream": {},
+  "fields": {},
+  "msg": "warning occurred",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an warning",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an warning message",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning colon",
+  "stream": {},
+  "fields": {},
+  "msg": "warning: something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "warning, something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning special",
+  "stream": {},
+  "fields": {},
+  "msg": "warning! something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(warning) something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/warning brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[warning] something happened",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/nginx like warning",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z warning: connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/bracket [warning]",
+  "stream": {},
+  "fields": {},
+  "msg": "[warning] connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/bracket upper [WARNING]",
+  "stream": {},
+  "fields": {},
+  "msg": "[WARNING] connection failed",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "keyword/error level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/ERROR level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a ERROR message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error at start",
+  "stream": {},
+  "fields": {},
+  "msg": "error occurred",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an error",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an error message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error colon",
+  "stream": {},
+  "fields": {},
+  "msg": "error: something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "error, something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error special",
+  "stream": {},
+  "fields": {},
+  "msg": "error! something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(error) something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[error] something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/nginx like error",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z error: connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket [error]",
+  "stream": {},
+  "fields": {},
+  "msg": "[error] connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket upper [ERROR]",
+  "stream": {},
+  "fields": {},
+  "msg": "[ERROR] connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a err message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/ERR level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a ERR message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err at start",
+  "stream": {},
+  "fields": {},
+  "msg": "err occurred",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an err",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an err message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err colon",
+  "stream": {},
+  "fields": {},
+  "msg": "err: something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "err, something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err special",
+  "stream": {},
+  "fields": {},
+  "msg": "err! something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(err) something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/err brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[err] something happened",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/nginx like err",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z err: connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket [err]",
+  "stream": {},
+  "fields": {},
+  "msg": "[err] connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket upper [ERR]",
+  "stream": {},
+  "fields": {},
+  "msg": "[ERR] connection failed",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/fatal level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a fatal message",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/FATAL level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a FATAL message",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal at start",
+  "stream": {},
+  "fields": {},
+  "msg": "fatal occurred",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an fatal",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an fatal message",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal colon",
+  "stream": {},
+  "fields": {},
+  "msg": "fatal: something happened",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "fatal, something happened",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal special",
+  "stream": {},
+  "fields": {},
+  "msg": "fatal! something happened",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(fatal) something happened",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/fatal brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[fatal] something happened",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/nginx like fatal",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z fatal: connection failed",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/bracket [fatal]",
+  "stream": {},
+  "fields": {},
+  "msg": "[fatal] connection failed",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/bracket upper [FATAL]",
+  "stream": {},
+  "fields": {},
+  "msg": "[FATAL] connection failed",
+  "source": "loki-test",
+  "want": "fatal"
+ },
+ {
+  "name": "keyword/critical level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a critical message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/CRITICAL level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a CRITICAL message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical at start",
+  "stream": {},
+  "fields": {},
+  "msg": "critical occurred",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an critical",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an critical message",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical colon",
+  "stream": {},
+  "fields": {},
+  "msg": "critical: something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "critical, something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical special",
+  "stream": {},
+  "fields": {},
+  "msg": "critical! something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(critical) something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/critical brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[critical] something happened",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/nginx like critical",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z critical: connection failed",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/bracket [critical]",
+  "stream": {},
+  "fields": {},
+  "msg": "[critical] connection failed",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/bracket upper [CRITICAL]",
+  "stream": {},
+  "fields": {},
+  "msg": "[CRITICAL] connection failed",
+  "source": "loki-test",
+  "want": "critical"
+ },
+ {
+  "name": "keyword/unknown level",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a unknown message",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/UNKNOWN level uppercase",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a UNKNOWN message",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown at start",
+  "stream": {},
+  "fields": {},
+  "msg": "unknown occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown at end",
+  "stream": {},
+  "fields": {},
+  "msg": "an unknown",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown space before",
+  "stream": {},
+  "fields": {},
+  "msg": "this is an unknown message",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown colon",
+  "stream": {},
+  "fields": {},
+  "msg": "unknown: something happened",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown punctuation",
+  "stream": {},
+  "fields": {},
+  "msg": "unknown, something happened",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown special",
+  "stream": {},
+  "fields": {},
+  "msg": "unknown! something happened",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown parentheses",
+  "stream": {},
+  "fields": {},
+  "msg": "(unknown) something happened",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/unknown brackets",
+  "stream": {},
+  "fields": {},
+  "msg": "[unknown] something happened",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/nginx like unknown",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z unknown: connection failed",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket [unknown]",
+  "stream": {},
+  "fields": {},
+  "msg": "[unknown] connection failed",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket upper [UNKNOWN]",
+  "stream": {},
+  "fields": {},
+  "msg": "[UNKNOWN] connection failed",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/terror should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a terror attack",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/errors should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "there were multiple errors",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/error123 should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "error123 occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/123error should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "123error occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/errorCode should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "errorCode is invalid",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/myError should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "myError occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/debugging should not match debug",
+  "stream": {},
+  "fields": {},
+  "msg": "debugging the issue",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/debugger should not match debug",
+  "stream": {},
+  "fields": {},
+  "msg": "debugger attached",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/information should not match info",
+  "stream": {},
+  "fields": {},
+  "msg": "information is available",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/informative should not match info",
+  "stream": {},
+  "fields": {},
+  "msg": "informative message",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/warnings should not match warn",
+  "stream": {},
+  "fields": {},
+  "msg": "warnings issued",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/criticality should not match critical",
+  "stream": {},
+  "fields": {},
+  "msg": "criticality assessment",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/fatalism should not match fatal",
+  "stream": {},
+  "fields": {},
+  "msg": "fatalism philosophy",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/tracer should not match trace",
+  "stream": {},
+  "fields": {},
+  "msg": "tracer bullet",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/traced should not match trace",
+  "stream": {},
+  "fields": {},
+  "msg": "traced the issue",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/empty string",
+  "stream": {},
+  "fields": {},
+  "msg": "",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/no level word",
+  "stream": {},
+  "fields": {},
+  "msg": "this is a regular log message",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/JSON string with error",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"message\": \"error occurred\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/JSON string with error in key",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"error\": \"something\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/JSON string with errorCode should not match",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"errorCode\": 123}",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/logfmt with error",
+  "stream": {},
+  "fields": {},
+  "msg": "msg=\"error occurred\"",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/logfmt with errorCode should not match",
+  "stream": {},
+  "fields": {},
+  "msg": "errorCode=123",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/error with equals sign",
+  "stream": {},
+  "fields": {},
+  "msg": "error=something",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/logfmt level",
+  "stream": {},
+  "fields": {},
+  "msg": "level=error",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket pattern [terror] should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "[terror] attack occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket pattern [errors] should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "[errors] occurred",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket pattern [errorCode] should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "[errorCode] is invalid",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket pattern [debugging] should not match debug",
+  "stream": {},
+  "fields": {},
+  "msg": "[debugging] the issue",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket pattern [information] should not match info",
+  "stream": {},
+  "fields": {},
+  "msg": "[information] is available",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/bracket pattern in JSON string",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"message\": \"[error] occurred\"}",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/bracket pattern in logfmt string",
+  "stream": {},
+  "fields": {},
+  "msg": "msg=\"[error] occurred\"",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "keyword/error_code should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "error_code is 500",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/log_error should not match error",
+  "stream": {},
+  "fields": {},
+  "msg": "log_error function called",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/trace_id should not match trace",
+  "stream": {},
+  "fields": {},
+  "msg": "trace_id is abc123",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/stack_trace should not match trace",
+  "stream": {},
+  "fields": {},
+  "msg": "stack_trace printed",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "keyword/error surrounded by underscores should not match",
+  "stream": {},
+  "fields": {},
+  "msg": "some_error_code is invalid",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "earliest/info before warning and error in arguments picks info",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00Z info request failed -l warning --log-level misc:error",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "earliest/warning appears before info positionally wins despite lower pattern priority",
+  "stream": {},
+  "fields": {},
+  "msg": "warning: degraded, info follows",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "earliest/error appears before info positionally wins",
+  "stream": {},
+  "fields": {},
+  "msg": "[error] something went wrong, info available",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/key:value colon prefix does not match, later bounded keyword wins",
+  "stream": {},
+  "fields": {},
+  "msg": "component=misc:error [info] processed",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "earliest/first occurrence of keyword is unbounded, second is bounded",
+  "stream": {},
+  "fields": {},
+  "msg": "fooerror [error] message",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/all occurrences unbounded returns unknown",
+  "stream": {},
+  "fields": {},
+  "msg": "fooerror errorbar misc:error error_code",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "earliest/nginx error log with [error] bracket",
+  "stream": {},
+  "fields": {},
+  "msg": "2024/01/01 10:00:00 [error] 1234#1234: *1 connect() failed (111: Connection refused) while connecting to upstream",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/nginx warn log with [warn] bracket",
+  "stream": {},
+  "fields": {},
+  "msg": "2024/01/01 10:00:00 [warn] 1234#1234: upstream server temporarily disabled while reading response header from upstream",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "earliest/nginx access log with error in url path returns unknown",
+  "stream": {},
+  "fields": {},
+  "msg": "192.168.1.1 - - [01/Jan/2024:10:00:00 +0000] \"GET /api/error-handler HTTP/1.1\" 500 1234 \"-\" \"curl/7.68.0\"",
+  "source": "loki-test",
+  "want": "unknown"
+ },
+ {
+  "name": "earliest/apache httpd error log",
+  "stream": {},
+  "fields": {},
+  "msg": "[Mon Jan 01 10:00:00.000000 2024] [error] [pid 1234] File does not exist: /var/www/html/favicon.ico",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/apache httpd warn log",
+  "stream": {},
+  "fields": {},
+  "msg": "[Mon Jan 01 10:00:00.000000 2024] [warn] [pid 1234] RSA server certificate CommonName does not match",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "earliest/spring boot INFO log",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01 10:00:00.000  INFO 1234 --- [main] com.example.App : Starting application on host",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "earliest/spring boot ERROR where message also contains error",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01 10:00:00.000 ERROR 1234 --- [main] com.example.App : Application startup failed due to connection error",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/spring boot INFO where class name contains error but is not a standalone keyword",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01 10:00:00.000  INFO 1234 --- [main] com.example.ErrorController : Handling request for /api/error-resource",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "earliest/log4j WARN log",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01 10:00:00,000 WARN  com.example.service.UserService - Failed to load user preferences, using defaults",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "earliest/log4j ERROR where logger name and message both contain error",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01 10:00:00,000 ERROR com.example.service.DatabaseService - Connection failed after error: timeout",
+  "source": "loki-test",
+  "want": "error"
+ },
+ {
+  "name": "earliest/istio warn log with error_rate metric in message",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00.000000Z\twarn\tads\tcluster update: warning threshold exceeded, error_rate=0.05",
+  "source": "loki-test",
+  "want": "warn"
+ },
+ {
+  "name": "earliest/envoy info log with warning and misc:error flags in command args",
+  "stream": {},
+  "fields": {},
+  "msg": "2024-01-01T10:00:00.000000Z    info    Envoy command: [-c /etc/envoy.json -l warning --component-log-level misc:error --concurrency 2]",
+  "source": "loki-test",
+  "want": "info"
+ },
+ {
+  "name": "live/plain-nolevel",
+  "stream": {},
+  "fields": {},
+  "msg": "hello world",
+  "source": "loki-live",
+  "want": "unknown"
+ },
+ {
+  "name": "live/plain-kw",
+  "stream": {},
+  "fields": {},
+  "msg": "request failed with error code 500",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/plain-kw-tie",
+  "stream": {},
+  "fields": {},
+  "msg": "warn: error happened",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/plain-colon",
+  "stream": {},
+  "fields": {},
+  "msg": "misc:error something",
+  "source": "loki-live",
+  "want": "unknown"
+ },
+ {
+  "name": "live/json-level",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"WARN\",\"msg\":\"x\"}",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/json-nested",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\":{\"lvl\":\"dbg\"},\"level\":\"info\"}",
+  "source": "loki-live",
+  "want": "debug"
+ },
+ {
+  "name": "live/json-deep",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"a\":{\"b\":{\"level\":\"error\"}},\"msg\":\"ok\"}",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/json-num",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":30,\"msg\":\"pino\"}",
+  "source": "loki-live",
+  "want": "unknown"
+ },
+ {
+  "name": "live/json-errorkey",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"method\":\"GET\",\"error\":null,\"status\":200}",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/json-weird",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"notice\",\"msg\":\"error later\"}",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/json-severitytext",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"SeverityText\":\"Critical\",\"msg\":\"x\"}",
+  "source": "loki-live",
+  "want": "critical"
+ },
+ {
+  "name": "live/logfmt-level",
+  "stream": {},
+  "fields": {},
+  "msg": "ts=1 level=Information msg=\"hi\"",
+  "source": "loki-live",
+  "want": "info"
+ },
+ {
+  "name": "live/logfmt-caseins",
+  "stream": {},
+  "fields": {},
+  "msg": "LEVEL=err msg=x",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/logfmt-sev-then-level",
+  "stream": {},
+  "fields": {},
+  "msg": "severity=info level=warn",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/logfmt-broken",
+  "stream": {},
+  "fields": {},
+  "msg": "a=b=c level=warn",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/logfmt-empty",
+  "stream": {},
+  "fields": {},
+  "msg": "level= msg=\"fatal thing\"",
+  "source": "loki-live",
+  "want": "fatal"
+ },
+ {
+  "name": "live/logfmt-quoted",
+  "stream": {},
+  "fields": {},
+  "msg": "level=\"trc\" msg=x",
+  "source": "loki-live",
+  "want": "trace"
+ },
+ {
+  "name": "live/logfmt-notkv",
+  "stream": {},
+  "fields": {},
+  "msg": "v=3 msg=a",
+  "source": "loki-live",
+  "want": "unknown"
+ },
+ {
+  "name": "live/multiline",
+  "stream": {},
+  "fields": {},
+  "msg": "first line\nlevel=error second",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/long",
+  "stream": {},
+  "fields": {},
+  "msg": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx error",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/sm-level",
+  "stream": {},
+  "fields": {
+   "level": "Warning"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/sm-severity",
+  "stream": {},
+  "fields": {
+   "severity": "ERR"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/sm-severitytext",
+  "stream": {},
+  "fields": {
+   "severity_text": "INFO"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "info"
+ },
+ {
+  "name": "live/sm-detected",
+  "stream": {},
+  "fields": {
+   "detected_level": "Weird"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "Weird"
+ },
+ {
+  "name": "live/sm-detected-norm",
+  "stream": {},
+  "fields": {
+   "detected_level": "WARNING"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/sm-sevnum",
+  "stream": {},
+  "fields": {
+   "severity_number": "13"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "warn"
+ },
+ {
+  "name": "live/sm-sevnum-bad",
+  "stream": {},
+  "fields": {
+   "severity_number": "abc"
+  },
+  "msg": "hello",
+  "source": "loki-live",
+  "want": "info"
+ },
+ {
+  "name": "live/sm-level-unknownword",
+  "stream": {},
+  "fields": {
+   "level": "notice"
+  },
+  "msg": "hello error",
+  "source": "loki-live",
+  "want": "notice"
+ },
+ {
+  "name": "live/sm-level-empty",
+  "stream": {},
+  "fields": {
+   "level": ""
+  },
+  "msg": "error here",
+  "source": "loki-live",
+  "want": "error"
+ },
+ {
+  "name": "live/lbl-level",
+  "stream": {
+   "level": "Debug"
+  },
+  "fields": {},
+  "msg": "error text",
+  "source": "loki-live",
+  "want": "debug"
+ },
+ {
+  "name": "live/lbl-lvl",
+  "stream": {
+   "lvl": "x"
+  },
+  "fields": {},
+  "msg": "error text",
+  "source": "loki-live",
+  "want": "x"
+ },
+ {
+  "name": "edge/dotted-i-upper",
+  "stream": {},
+  "fields": {},
+  "msg": "İnfo request",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "edge/logfmt-escaped-word",
+  "stream": {},
+  "fields": {},
+  "msg": "level=\"\\u0065rror\" msg=x",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/logfmt-escaped-invalid",
+  "stream": {},
+  "fields": {},
+  "msg": "level=\"a\\qb\" error",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/logfmt-quote-in-key",
+  "stream": {},
+  "fields": {},
+  "msg": "a\"b level=warn",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/logfmt-lower-priority-empty",
+  "stream": {},
+  "fields": {},
+  "msg": "severity=warn level=",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/logfmt-bare-key",
+  "stream": {},
+  "fields": {},
+  "msg": "level msg=x warn",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/logfmt-unterminated",
+  "stream": {},
+  "fields": {},
+  "msg": "msg=\"unterminated level=warn",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/logfmt-severity-text-before-lvl",
+  "stream": {},
+  "fields": {},
+  "msg": "lvl=debug SeverityText=error",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/logfmt-unknown-then-keyword",
+  "stream": {},
+  "fields": {},
+  "msg": "level=notice fatal happened",
+  "source": "loki-oracle",
+  "want": "fatal"
+ },
+ {
+  "name": "edge/json-leading-unicode-space",
+  "stream": {},
+  "fields": {},
+  "msg": " {\"level\":\"warn\"}",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/json-trailing-nbsp",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"warn\"} ",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/json-invalid-after-key",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"warn\", oops}",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/json-nonstring-then-string",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":1,\"severity\":\"fatal\"}",
+  "source": "loki-oracle",
+  "want": "fatal"
+ },
+ {
+  "name": "edge/json-array-skip",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"arr\":[{\"level\":\"debug\"}],\"level\":\"info\"}",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "edge/json-escaped-key",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"lev\\u0065l\":\"error\"}",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/json-escaped-value",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"\\u0065rror\",\"x\":\"warn\"}",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/json-empty-string",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"level\":\"\",\"msg\":\"debug\"}",
+  "source": "loki-oracle",
+  "want": "debug"
+ },
+ {
+  "name": "edge/json-log-dot-level",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"log.level\":\"trace\"}",
+  "source": "loki-oracle",
+  "want": "trace"
+ },
+ {
+  "name": "edge/json-nested-log-level",
+  "stream": {},
+  "fields": {},
+  "msg": "{\"log\":{\"level\":\"warn\"}}",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/keyword-tab-boundary",
+  "stream": {},
+  "fields": {},
+  "msg": "x\terr\ty",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/keyword-equals-both",
+  "stream": {},
+  "fields": {},
+  "msg": "status=error=x",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/keyword-quote-right",
+  "stream": {},
+  "fields": {},
+  "msg": "\"fatal\"",
+  "source": "loki-oracle",
+  "want": "fatal"
+ },
+ {
+  "name": "edge/keyword-colon-left",
+  "stream": {},
+  "fields": {},
+  "msg": "x:warn y",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/keyword-underscore",
+  "stream": {},
+  "fields": {},
+  "msg": "err_x warn_y info",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "edge/keyword-crlf",
+  "stream": {},
+  "fields": {},
+  "msg": "error\r\n",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/keyword-upper-mixed",
+  "stream": {},
+  "fields": {},
+  "msg": "WaRnInG detected",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/empty-line",
+  "stream": {},
+  "fields": {},
+  "msg": "",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/sm-sevnum-plus",
+  "stream": {},
+  "fields": {
+   "severity_number": "+13"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/sm-sevnum-negative",
+  "stream": {},
+  "fields": {
+   "severity_number": "-1"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "trace"
+ },
+ {
+  "name": "edge/sm-sevnum-zero",
+  "stream": {},
+  "fields": {
+   "severity_number": "0"
+  },
+  "msg": "error",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/sm-sevnum-25",
+  "stream": {},
+  "fields": {
+   "severity_number": "25"
+  },
+  "msg": "error",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/sm-sevnum-24",
+  "stream": {},
+  "fields": {
+   "severity_number": "24"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "fatal"
+ },
+ {
+  "name": "edge/sm-sevnum-space",
+  "stream": {},
+  "fields": {
+   "severity_number": " 9"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "edge/sm-sevnum-int64-max",
+  "stream": {},
+  "fields": {
+   "severity_number": "9223372036854775807"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "unknown"
+ },
+ {
+  "name": "edge/sm-sevnum-int64-overflow",
+  "stream": {},
+  "fields": {
+   "severity_number": "9223372036854775808"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "edge/sm-sevnum-int64-min",
+  "stream": {},
+  "fields": {
+   "severity_number": "-9223372036854775808"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "trace"
+ },
+ {
+  "name": "edge/sm-priority-order",
+  "stream": {},
+  "fields": {
+   "lvl": "debug",
+   "severity": "error"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/sm-log-dot-level",
+  "stream": {},
+  "fields": {
+   "log.level": "WRN"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "warn"
+ },
+ {
+  "name": "edge/sm-severity-text-over-number",
+  "stream": {},
+  "fields": {
+   "severity_text": "Info2",
+   "severity_number": "17"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "Info2"
+ },
+ {
+  "name": "edge/sm-detected-over-stream",
+  "stream": {
+   "level": "error"
+  },
+  "fields": {
+   "detected_level": "debug"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "debug"
+ },
+ {
+  "name": "edge/stream-over-sm",
+  "stream": {
+   "level": "error"
+  },
+  "fields": {
+   "level": "debug"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "error"
+ },
+ {
+  "name": "edge/stream-priority-order",
+  "stream": {
+   "lvl": "debug",
+   "Severity": "fatal"
+  },
+  "fields": {},
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "fatal"
+ },
+ {
+  "name": "edge/sm-level-information",
+  "stream": {},
+  "fields": {
+   "Level": "information"
+  },
+  "msg": "hello",
+  "source": "loki-oracle",
+  "want": "info"
+ },
+ {
+  "name": "vl/json-unpacked-level",
+  "stream": {},
+  "fields": {
+   "level": "WARN",
+   "msg": "x"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "warn",
+  "note": "Loki line {\"level\":\"WARN\",\"msg\":\"x\"}"
+ },
+ {
+  "name": "vl/json-unpacked-nested",
+  "stream": {},
+  "fields": {
+   "a.lvl": "dbg",
+   "level": "info"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "info",
+  "note": "Loki line {\"a\":{\"lvl\":\"dbg\"},\"level\":\"info\"} gives debug; VictoriaLogs sorts fields, so document order is lost and depth-0 keys are read first"
+ },
+ {
+  "name": "vl/json-unpacked-nested-only",
+  "stream": {},
+  "fields": {
+   "a.lvl": "dbg",
+   "msg": "x"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "debug",
+  "note": "Loki line {\"a\":{\"lvl\":\"dbg\"},\"msg\":\"x\"}"
+ },
+ {
+  "name": "vl/json-unpacked-deep",
+  "stream": {},
+  "fields": {
+   "a.b.level": "error",
+   "msg": "ok"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "error",
+  "note": "Loki line {\"a\":{\"b\":{\"level\":\"error\"}},\"msg\":\"ok\"}; keyword scan of the reconstructed line"
+ },
+ {
+  "name": "vl/json-unpacked-number",
+  "stream": {},
+  "fields": {
+   "level": "30",
+   "msg": "pino"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "Loki line {\"level\":30,\"msg\":\"pino\"}"
+ },
+ {
+  "name": "vl/json-unpacked-unknown-word",
+  "stream": {},
+  "fields": {
+   "level": "notice",
+   "msg": "error later"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "error",
+  "note": "Loki line {\"level\":\"notice\",\"msg\":\"error later\"}"
+ },
+ {
+  "name": "vl/json-unpacked-null-dropped",
+  "stream": {},
+  "fields": {
+   "method": "GET",
+   "status": "200"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "Loki line {\"method\":\"GET\",\"error\":null,\"status\":200} gives error; VictoriaLogs drops null values"
+ },
+ {
+  "name": "vl/json-unpacked-severitytext",
+  "stream": {},
+  "fields": {
+   "SeverityText": "Critical",
+   "msg": "x"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "critical",
+  "note": "Loki line {\"SeverityText\":\"Critical\",\"msg\":\"x\"}"
+ },
+ {
+  "name": "vl/json-unpacked-stream-level",
+  "stream": {
+   "level": "debug"
+  },
+  "fields": {
+   "msg": "error"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "debug",
+  "note": "stream label wins over the body"
+ },
+ {
+  "name": "vl/json-unpacked-no-level",
+  "stream": {},
+  "fields": {
+   "msg": "hello"
+  },
+  "msg": "missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",
+  "jsonUnpacked": true,
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "Loki line {\"msg\":\"hello\"}"
+ },
+ {
+  "name": "vl/otel-number-only",
+  "stream": {},
+  "fields": {
+   "severity_number": "13",
+   "severity_text": "Warn"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "warn",
+  "note": "exporter sent number 13 without text"
+ },
+ {
+  "name": "vl/otel-number-only-info2",
+  "stream": {},
+  "fields": {
+   "severity_number": "10",
+   "severity_text": "Info2"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "info",
+  "note": "exporter sent number 10 without text; Loki maps the number"
+ },
+ {
+  "name": "vl/otel-unspecified",
+  "stream": {},
+  "fields": {
+   "severity_number": "0",
+   "severity_text": "Unspecified"
+  },
+  "msg": "request error",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "exporter sent neither; Loki scans the body"
+ },
+ {
+  "name": "vl/otel-unspecified-plain",
+  "stream": {},
+  "fields": {
+   "severity_number": "0",
+   "severity_text": "Unspecified"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "exporter sent neither"
+ },
+ {
+  "name": "vl/otel-out-of-range",
+  "stream": {},
+  "fields": {
+   "severity_number": "30",
+   "severity_text": "Unspecified"
+  },
+  "msg": "error",
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "number above 24"
+ },
+ {
+  "name": "vl/otel-real-text",
+  "stream": {},
+  "fields": {
+   "severity_number": "9",
+   "severity_text": "notice"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "notice",
+  "note": "exporter text differs from the number form"
+ },
+ {
+  "name": "vl/otel-synthesized-then-later-name",
+  "stream": {},
+  "fields": {
+   "severity_number": "13",
+   "severity_text": "Warn",
+   "SEVERITY_TEXT": "fatal"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "fatal",
+  "note": "a synthesised severity_text was never stored by Loki, so a later level field name counts"
+ },
+ {
+  "name": "vl/otel-real-text-canonical",
+  "stream": {},
+  "fields": {
+   "severity_number": "17",
+   "severity_text": "ERROR"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "exporter text"
+ },
+ {
+  "name": "vl/stream-detected-level",
+  "stream": {
+   "detected_level": "WARNING"
+  },
+  "fields": {
+   "level": "error"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "a detected_level stream field is an index label for Loki; the entry value is derived and exposed as detected_level_extracted"
+ },
+ {
+  "name": "vl/stream-detected-level-body",
+  "stream": {
+   "detected_level": "info"
+  },
+  "fields": {},
+  "msg": "request error",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "live Loki 3.7.1: stream label detected_level=info, detected_level_extracted=error"
+ },
+ {
+  "name": "vl/stream-detected-level-nolevel",
+  "stream": {
+   "detected_level": "Warning"
+  },
+  "fields": {},
+  "msg": "hello label",
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "live Loki 3.7.1: stream label detected_level=Warning, detected_level_extracted=unknown"
+ },
+ {
+  "name": "vl/field-detected-over-stream-level",
+  "stream": {
+   "level": "error"
+  },
+  "fields": {
+   "detected_level": "Weird"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "Weird",
+  "note": "stored detected_level wins"
+ }
+]

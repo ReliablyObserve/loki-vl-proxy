@@ -29,14 +29,15 @@ func TestPostprocessHelperBranchesCoverage(t *testing.T) {
 		{Ts: "only-timestamp"},
 		{Ts: "bad-time", Msg: "GET /health 200 1ms"},
 		{Ts: "1712311200000000000", Msg: ""},
-		{Stream: map[string]string{"level": "error"}, Ts: "1712311200000000000", Msg: "POST /api/orders 500 10ms"},
+		// Categorize-labels entries carry detected_level in structured metadata.
+		{Stream: map[string]string{"level": "Error"}, SM: map[string]string{"detected_level": "ERROR"}, Ts: "1712311200000000000", Msg: "POST /api/orders 500 10ms"},
 	}
 	patterns := extractLogPatternsFromWindowEntries(entries, "10s", 10)
 	if len(patterns) != 1 {
 		t.Fatalf("expected one pattern from valid window entry, got %#v", patterns)
 	}
 	if patterns[0]["level"] != "error" {
-		t.Fatalf("expected fallback level label, got %#v", patterns[0])
+		t.Fatalf("expected lowercased detected_level as the pattern level, got %#v", patterns[0])
 	}
 
 	if got := parsePatternStepSeconds(""); got != 60 {

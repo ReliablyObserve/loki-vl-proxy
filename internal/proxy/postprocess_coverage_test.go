@@ -42,7 +42,7 @@ func TestCollectPatternObservationsFromJSON_MixedShapes(t *testing.T) {
 		},
 	}
 
-	collectPatternObservationsFromJSON(miner, decoded, 60, "", &observed)
+	collectPatternObservationsFromJSON(miner, decoded, 60, "", &observed, nil)
 
 	if observed != 4 {
 		t.Fatalf("expected 4 observed patterns, got %d", observed)
@@ -110,7 +110,7 @@ func TestExtractLogPatterns_KeepsStablePrefixPatternsSeparate(t *testing.T) {
 		}
 	}
 
-	patterns := extractLogPatterns([]byte(strings.Join(lines, "\n")+"\n"), "30s", 10)
+	patterns := extractLogPatterns([]byte(strings.Join(lines, "\n")+"\n"), "30s", 10, defaultLogRowLevels())
 	if len(patterns) != 4 {
 		t.Fatalf("expected 4 distinct stable patterns, got %d: %#v", len(patterns), patterns)
 	}

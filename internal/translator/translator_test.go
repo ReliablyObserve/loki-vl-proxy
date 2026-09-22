@@ -371,9 +371,10 @@ func TestMetricQueryTranslation_DedupesByLabelsAfterTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `foo:="bar" | stats by (level) count()`
-	if got != want {
-		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	// Both labels survive, and the derivation chain computes detected_level.
+	want := `foo:="bar" | stats by (level, detected_level) count()`
+	if !strings.HasPrefix(got, `foo:="bar" | format if (detected_level:*)`) || !strings.HasSuffix(got, `| stats by (level, detected_level) count()`) {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want the derivation chain and %q", got, want)
 	}
 }
 
@@ -395,9 +396,11 @@ func TestMetricQueryTranslation_MalformedDottedDrilldownStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\." | stats by (level) count()`
-	if got != want {
-		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	// detected_level is derived by the chain, so the stats pipe groups by both
+	// labels and the filters stay as they were.
+	want := `| stats by (level, detected_level) count()`
+	if !strings.HasPrefix(got, `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\." | format if (detected_level:*)`) || !strings.HasSuffix(got, want) {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want a query ending in %q", got, want)
 	}
 }
 
@@ -533,19 +536,16 @@ func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
 			want:  `level:="warn"`,
 		},
 		{
-			// detected_level="" in the stream selector means "no level detected".
-			// The translator maps detected_level→level, so empty value must produce
-			// -level:* (absent OR empty) rather than level:="" (explicit empty only).
+			// detected_level is not an index label in Loki: the matcher sees
+			// an absent label, so an empty-accepting matcher adds no filter.
 			name:  "detected_level empty braced",
 			logql: `{detected_level=""}`,
-			want:  `-level:*`,
+			want:  `*`,
 		},
 		{
-			// detected_level!="" in the stream selector: use logfmt pipeline
-			// to check message-body level rather than _stream.level.
 			name:  "detected_level empty negated braced",
 			logql: `{detected_level!=""}`,
-			want:  `* | unpack_logfmt | filter level:!""`,
+			want:  `_stream_id:in()`,
 		},
 	}
 	for _, tc := range cases {
@@ -594,25 +594,46 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 			want:  `app:="nginx" | unpack_logfmt | filter -level:*`,
 		},
 		{
+			// Loki keeps detected_level out of the index, so a stream selector
+			// matcher on it sees an absent label.
 			name:  "detected_level empty in stream selector",
 			logql: `{detected_level=""}`,
-			want:  `-level:*`,
+			want:  `*`,
 		},
 		{
 			name:  "detected_level empty with other labels",
 			logql: `{app="nginx", detected_level=""}`,
-			want:  `app:="nginx" -level:*`,
+			want:  `app:="nginx"`,
 		},
 		{
-			// detected_level="warn" uses logfmt pipeline to check message-body level.
-			name:  "detected_level non-empty uses logfmt pipeline",
+			name:  "detected_level non-empty selects no stream",
 			logql: `{detected_level="warn"}`,
-			want:  `* | unpack_logfmt | filter level:="warn"`,
+			want:  `_stream_id:in()`,
 		},
 		{
-			name:  "detected_level non-empty with other labels uses logfmt pipeline",
+			name:  "detected_level non-empty with other labels selects no stream",
 			logql: `{app="nginx", detected_level="error"}`,
-			want:  `app:="nginx" | unpack_logfmt | filter level:="error"`,
+			want:  `app:="nginx" _stream_id:in()`,
+		},
+		{
+			name:  "detected_level negated non-empty keeps every stream",
+			logql: `{app="nginx", detected_level!="error"}`,
+			want:  `app:="nginx"`,
+		},
+		{
+			name:  "detected_level regexp accepting empty keeps every stream",
+			logql: `{app="nginx", detected_level=~"error|"}`,
+			want:  `app:="nginx"`,
+		},
+		{
+			name:  "detected_level regexp rejecting empty selects no stream",
+			logql: `{app="nginx", detected_level=~"err.*"}`,
+			want:  `app:="nginx" _stream_id:in()`,
+		},
+		{
+			name:  "detected_level negated regexp rejecting empty keeps every stream",
+			logql: `{app="nginx", detected_level!~".+"}`,
+			want:  `app:="nginx"`,
 		},
 	}
 	for _, tc := range cases {
@@ -1102,5 +1123,28 @@ func TestFieldFilterMigration(t *testing.T) {
 				t.Errorf("TranslateLogQL(%q)\n  got  = %q\n  want = %q", tc.logql, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestDetectedLevelConfiguredStreamField: a detected_level stream field is an
+// index label, as a pushed detected_level stream label is in Loki, so its
+// matchers filter on the stored field.
+func TestDetectedLevelConfiguredStreamField(t *testing.T) {
+	sf := map[string]bool{"app": true, "detected_level": true}
+	cases := []struct{ logql, want string }{
+		{`{app="nginx", detected_level="error"}`, `{app="nginx", detected_level="error"}`},
+		{`{app="nginx", detected_level=~"err.*"}`, `{app="nginx"} detected_level:~"err.*"`},
+	}
+	for _, tc := range cases {
+		got, err := TranslateLogQLWithStreamFields(tc.logql, nil, sf)
+		if err != nil {
+			t.Fatalf("TranslateLogQLWithStreamFields(%q): %v", tc.logql, err)
+		}
+		if got != tc.want {
+			t.Fatalf("TranslateLogQLWithStreamFields(%q)\n  got:  %q\n  want: %q", tc.logql, got, tc.want)
+		}
+	}
+	if _, err := TranslateLogQL(`{app="nginx", detected_level=~"("}`); err == nil {
+		t.Fatal("invalid detected_level regexp: want a parse error")
 	}
 }

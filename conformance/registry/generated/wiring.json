@@ -97,6 +97,20 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "severity-detected-level-derivation": [
+      "internal/proxy/detected_level_test.go",
+      "internal/translator/detected_level_logsql_test.go",
+      "test/e2e-compat/detected_level_corpus_test.go",
+      "test/e2e-compat/detected_level_test.go"
+    ],
+    "severity-exposure-surfaces": [
+      "internal/proxy/detected_level_response_test.go",
+      "internal/translator/detected_level_logsql_test.go",
+      "test/e2e-compat/detected_level_test.go"
+    ],
+    "severity/normalisation-table": [
+      "test/e2e-compat/detected_level_corpus_test.go"
+    ],
     "status-400": [
       "internal/proxy/volume_test.go"
     ],
@@ -104,7 +118,7 @@
       "internal/proxy/sliding_window_stats_test.go"
     ]
   },
-  "registry_items": 158,
+  "registry_items": 159,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -132,6 +146,12 @@
       "semantics/client-cancellation-propagates",
       "series-limits-and-partial-results"
     ],
+    "internal/proxy/detected_level_response_test.go": [
+      "severity-exposure-surfaces"
+    ],
+    "internal/proxy/detected_level_test.go": [
+      "severity-detected-level-derivation"
+    ],
     "internal/proxy/label_surface_test.go": [
       "limits/label-values-not-truncated-by-default",
       "loki_api_v1_label_name_values",
@@ -156,8 +176,20 @@
       "loki_api_v1_index_volume",
       "status-400"
     ],
+    "internal/translator/detected_level_logsql_test.go": [
+      "severity-detected-level-derivation",
+      "severity-exposure-surfaces"
+    ],
     "internal/translator/regexp_escaping_test.go": [
       "loki_api_v1_query_range"
+    ],
+    "test/e2e-compat/detected_level_corpus_test.go": [
+      "severity-detected-level-derivation",
+      "severity/normalisation-table"
+    ],
+    "test/e2e-compat/detected_level_test.go": [
+      "severity-detected-level-derivation",
+      "severity-exposure-surfaces"
     ],
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
@@ -174,7 +206,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 10,
+  "tests_with_markers": 15,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -213,9 +245,7 @@
     "parser-error-and-label-collision",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
-    "service-name-derivation",
-    "severity-detected-level-derivation",
-    "severity-exposure-surfaces"
+    "service-name-derivation"
   ],
-  "wired_items": 28
+  "wired_items": 31
 }

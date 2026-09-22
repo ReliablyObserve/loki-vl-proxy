@@ -22,6 +22,12 @@ proxy: |
   is a visible difference in Explore's level colouring and in Drilldown's level
   breakdown.
 
+implementation:
+  - "internal/proxy/label_handlers.go handleDetectedLevelLabelValues"
+  - "internal/proxy/postprocess.go extractLogPatternsStreamWithStats, patternLevelFromFJ"
+  - "internal/proxy/tail.go vlLineToTailFrame"
+  - "internal/translator/translator.go applyDerivedGroupings, applyDetectedLevelGrouping"
+
 cases:
   - severity/group-by-level
   - severity/group-by-detected-level
@@ -29,3 +35,4 @@ cases:
   - severity/categorize-labels-split
   - severity/detected-fields-contains-level
   - severity/label-values-detected-level
+  - severity/label-filter-reads-stored-field    # open gap, see state

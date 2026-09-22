@@ -1043,6 +1043,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	seriesByKey := make(map[string]*bareParserMetricSeries, 16)
+	rowLevels := p.newLogRowLevels()
 	streamLabelCache := make(map[string]map[string]string, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
@@ -1103,6 +1104,15 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
 		metric := cloneStringMap(desc.translatedLabels)
+		// Loki names these series with the structured metadata of the entry,
+		// detected_level included; derive it from the row as log responses do.
+		// A stream that already carries the label keeps its own value, which is
+		// what Loki's ingester wrote there.
+		if metric[detectedLevelLabel] == "" {
+			msg, _ := entry["_msg"].(string)
+			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
+			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
+		}
 		if includeParsedInMetric {
 			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
 			for key, value := range parsedFields {

@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Metric series of the raw-sample path (`count_over_time({...} | logfmt [5m])`
+  and the other queries evaluated from rows) are named with the derived
+  `detected_level`, as Loki names them with the entry's structured metadata,
+  and carry a stored `level` field as an ordinary label.
+- `level` is ordinary structured metadata on log responses and no longer
+  feeds `detected_level` directly: a `level=Warning` field yields
+  `detected_level="warn"`, and with `categorize-labels` `level` moves from the
+  stream labels to the entry metadata. Pattern levels are the lowercased
+  derived value, `unknown` for lines without a level. Metric grouping
+  `by (detected_level)` uses the same derivation, computed inside
+  VictoriaLogs (below); `| detected_level=…` label filters and volume by
+  `detected_level` still read the stored `detected_level` or `level` field.
+  Cached log, pattern and
+  `detected_fields` responses from earlier versions are not reused.
+- A row VictoriaLogs stored without a message (an empty `_msg`, its built-in
+  missing-message value, or `-backend-default-msg-value`) has its fields read
+  as the keys of the JSON body they came from, matching the line the proxy
+  rebuilds and returns for that row.
+
+- Log responses now carry Loki's `detected_level`, derived from what
+  VictoriaLogs stores for each row. Loki attaches `detected_level` at ingest;
+  the proxy has no ingest path, so `query_range` log responses, `/tail`,
+  `/patterns` and `/detected_fields` compute the same value per returned row.
+  The rules follow Loki 3.7: a stored `detected_level` field, then the first
+  stored field of Loki's `log_level_fields` list (`level`, `LEVEL`, `Level`,
+  `log.level`, `severity`, …, `severity_text`), stream fields before other
+  fields, then `severity_number` by OTel ranges, then the line: JSON objects to
+  depth 1, logfmt with case-insensitive keys, and a bounded keyword scan, with
+  `unknown` when nothing matches. Known spellings are normalised (`WARNING` →
+  `warn`, `ERR` → `error`, `Information` → `info`); other values are kept as
+  they are. Before, `detected_level` was missing for lines without a `level`
+  field, kept unnormalised values (`Warning`, `30`), and ignored `severity`,
+  `lvl`, `severity_number` and keywords in the line. Rows whose JSON line
+  VictoriaLogs unpacked into fields (`_msg` holds VictoriaLogs' missing-message
+  value or `-backend-default-msg-value`) read those fields as JSON keys and
+  scan the line returned for the row, rebuilt from the fields. OTLP rows
+  without a severity text, which VictoriaLogs fills from the number, map by the
+  number, and rows with neither read the line.
+  The derivation reuses the row already parsed for the response and allocates
+  nothing for canonical values. New flag `-detected-level-body-scan` (default
+  `true`) limits it to stored fields with an `unknown` fallback.
+  Proved against live Loki with a generated corpus of 552 lines: every
+  level-like key Loki reads crossed with the values its normalisation covers,
+  in JSON and logfmt form, plus nested, array, null, repeated, padded,
+  escaped, truncated, whitespace-prefixed, trailing-byte, tab-separated,
+  unicode, control-character, empty and 2 KB shapes. Each line is pushed to
+  both backends with message parsing disabled, so VictoriaLogs stores the
+  bytes Loki ingested and the derivation is the only variable; the corpus
+  records no expected values, it compares against whatever Loki answers. All
+  552 agree, in the default and `categorize-labels` encodings.
+- `categorize-labels` log responses and tail frames put `detected_level` and a
+  stored non-stream `level` field in the entry's `structuredMetadata`, with
+  only stream fields in `stream`, as Loki does. Default-encoding responses keep
+  both in the stream labels, so entries of one stream with different levels
+  are returned as separate streams. Tail now honours
+  `X-Loki-Response-Encoding-Flags: categorize-labels`; default tail frames carry
+  only the stream fields, like Loki's. The entries a tail replays from its
+  `start` before the first live poll are derived like live ones, so a tail
+  opened over a past window is not a mixture of derived and stored values.
+- Metric queries grouped `by (detected_level)` group by Loki's derived value
+  instead of the stored `detected_level` or `level` field, so
+  `sum by (detected_level) (count_over_time({app="x"}[5m]))` returns Loki's
+  series (`error`, `warn`, `info`, `unknown`, …) for rows that carry no level
+  field at all. The derivation runs in VictoriaLogs as a pipe chain over the
+  same stats query, so metric queries still read aggregated rows and never
+  raw lines. `by (level, detected_level)` now returns both labels, as Loki
+  does: `level` the stored field, `detected_level` the derived value. The
+  chain reads the line but is not a parser stage the client asked for, so
+  route selection ignores it; queries carrying it are not served from
+  VictoriaLogs' `/hits` endpoint.
+- A `detected_level` stream field is an index label, as a pushed
+  `detected_level` stream label is in Loki: `/labels`, `/series`,
+  `/detected_labels` and `/label/detected_level/values` list it, and log
+  responses expose the derived value of such a stream as
+  `detected_level_extracted`, keeping the stream label under its own name.
+  Tail frames follow Loki's tail encoder instead, which differs from its
+  query encoder: there the derived value keeps the `detected_level` name in
+  the entry metadata and the stream label is not repeated in the frame.
+  `/label/detected_level/values` returns its values sorted, as Loki returns
+  every label's values, and is served from the label-values read cache; an
+  empty answer is not cached, so a `detected_level` stream that has just been
+  written shows up on the next request.
+  Otherwise `/label/detected_level/values` answers `{"status":"success"}`
+  without data, as Loki does, instead of the values of the `level` field.
+- A `detected_level` matcher in a stream selector now treats the label as
+  absent, as Loki does for structured metadata: `{app="x", detected_level="error"}`
+  returns no streams and `{app="x", detected_level!="error"}` every stream of
+  `app="x"`, unless `-stream-fields` lists `detected_level`, in which case the
+  matcher filters on that stored stream field. Before, the matcher was
+  rewritten into a `level` filter on the logfmt-parsed line.
+- `/detected_fields` lists `detected_level` with `parsers: null` and the
+  distinct derived values of the sampled lines, and lists `level` as its own
+  field. `/detected_field/detected_level/values` returns the derived values
+  rather than the stored `detected_level` or `level` columns.
+
+## [1.85.0] - 2026-09-22
+
 ### Fixed
 
 - **`/label/{name}/values` returns every value again, as Loki does.** A request

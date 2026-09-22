@@ -1,6 +1,30 @@
 id: severity-detected-level-derivation
-state: gap
+state: partial
 reason: |
-  Seeded from behaviour we have hit in production use; cases are named but not yet written or wired.
-owner_decision: null
-waiver: null
+  detected_level is derived per returned row from what VictoriaLogs stored:
+  a stored detected_level field, then the first non-empty field of Loki's
+  log_level_fields list (stream fields before ordinary fields), then
+  severity_number by OTel ranges, then the line (JSON objects to depth 1,
+  logfmt with case-insensitive keys, a bounded keyword scan), else unknown,
+  with Loki's normalisation of known spellings. Proven against live Loki
+  3.7.1 with a generated corpus that records no expected values: 552 lines,
+  552 agree, 0 differ, in the default and the categorize-labels encoding
+  (severity/normalisation-table). On live generator data 913 returned rows
+  across seven selectors matched Loki with 0 mismatches. The derivation
+  allocates nothing per row for canonical values
+  (BenchmarkDeriveDetectedLevel, 0 allocs/op in all eight shapes).
+owner_decision: |
+  Accepted deviation (2026-09-22): -detected-level-body-scan=false stops the
+  derivation at stored fields with an unknown fallback, for very large
+  plain-text tenants that do not want the bounded line scan. The default is
+  true, which is Loki's behaviour; the flag only narrows it.
+waiver:
+  id: detected-level-body-scan-opt-out
+  rationale: |
+    The line scan is bounded and allocation-free, but it is the only part of
+    the derivation whose cost scales with line length rather than with the
+    stored columns, so an operator can turn it off.
+  expiry: 2027-03-31
+  revisit: |
+    Drop the flag if the measured cost of the scan stays inside the response
+    encoding noise on a large plain-text tenant.

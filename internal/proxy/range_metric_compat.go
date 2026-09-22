@@ -1598,7 +1598,37 @@ func addGroupByParsedLabelsFJ(metricLabels map[string]string, v *fj.Value, group
 	}
 }
 
+// derivedLevelChainStart and derivedLevelChainEnd delimit the pipes the
+// translator adds to compute detected_level for a grouping query. They read
+// the row and write one field; no routing decision may read them as a parser
+// stage the user asked for.
+const (
+	derivedLevelChainStart = `| format if (detected_level:*) "<detected_level>" as __dl_s`
+	derivedLevelChainEnd   = "| delete __dl, __dl_*, __j_*, __l_*"
+)
+
+// hasDerivedLevelChain reports whether query carries the detected_level
+// derivation.
+func hasDerivedLevelChain(query string) bool {
+	return strings.Contains(query, derivedLevelChainStart)
+}
+
+// withoutDerivedLevelChain returns query without those pipes, for the
+// heuristics that classify the shape of the query the client sent.
+func withoutDerivedLevelChain(query string) string {
+	start := strings.Index(query, derivedLevelChainStart)
+	if start < 0 {
+		return query
+	}
+	stop := strings.Index(query[start:], derivedLevelChainEnd)
+	if stop < 0 {
+		return query
+	}
+	return strings.TrimSpace(query[:start] + query[start+stop+len(derivedLevelChainEnd):])
+}
+
 func queryUsesParserStages(baseQuery string) bool {
+	baseQuery = withoutDerivedLevelChain(baseQuery)
 	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
 	// log line — VL's stats_query_range handles it natively in tens of ms.
 	// Excluding it from the "parser stages" check lets queries with a

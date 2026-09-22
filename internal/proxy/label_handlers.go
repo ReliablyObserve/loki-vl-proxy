@@ -65,8 +65,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	filtered := make([]string, 0, len(labels))
 	for _, v := range labels {
-		// Filter VL internal fields only (before translation)
-		if isVLInternalField(v) || v == "detected_level" {
+		// Filter VL internal fields only (before translation). A detected_level
+		// stream field is an index label, as in Loki.
+		if isVLInternalField(v) {
 			continue
 		}
 		filtered = append(filtered, v)
@@ -113,6 +114,10 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.handleMultiTenantFanout(w, r, "label_values") {
+		return
+	}
+	if labelName == detectedLevelLabel {
+		p.handleDetectedLevelLabelValues(w, r, start)
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -222,6 +227,66 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	p.setMetadataListCache("label_values", cacheKey, result, len(values), labelValuesTTL)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
+	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+}
+
+// handleDetectedLevelLabelValues answers /label/detected_level/values like
+// Loki: the per-entry detected_level is not indexed, so only a detected_level
+// stream label (a VictoriaLogs stream field) has values, and without one Loki
+// answers success with no data. The level column is never consulted.
+func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Request, start time.Time) {
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := p.canonicalReadCacheKey("label_values", orgID, r, detectedLevelLabel)
+	if cached, _, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+		p.metrics.RecordCacheHit()
+		return
+	}
+	p.metrics.RecordCacheMiss()
+	r = p.withRequestScope(r)
+	var values []string
+	if p.supportsStreamMetadataEndpoints() {
+		for _, candidate := range metadataQueryCandidates(r.FormValue("query")) {
+			params, err := p.metadataQueryParams(r.Context(), candidate, r.FormValue("start"), r.FormValue("end"), r.FormValue("limit"), "")
+			if err != nil {
+				p.writeError(w, http.StatusBadRequest, err.Error())
+				p.metrics.RecordRequest("label_values", http.StatusBadRequest, time.Since(start))
+				return
+			}
+			params.Set("field", detectedLevelLabel)
+			candidateValues, err := p.fetchVLFieldValues(r.Context(), "/select/logsql/stream_field_values", params)
+			if err != nil {
+				status := statusFromUpstreamErr(err)
+				p.writeError(w, status, err.Error())
+				p.metrics.RecordRequest("label_values", status, time.Since(start))
+				return
+			}
+			// Like fetchScopedLabelValues: the first candidate that answers
+			// wins, so a relaxed candidate never replaces a narrower answer.
+			if len(candidateValues) > 0 {
+				values = candidateValues
+				break
+			}
+		}
+	}
+	// Loki returns label values sorted, as fetchPreferredLabelValues does for
+	// every other label.
+	sort.Strings(values)
+	w.Header().Set("Content-Type", "application/json")
+	if len(values) == 0 {
+		// Loki's answer for a label it does not index. It costs one
+		// stream_field_values call, and caching it would hide a
+		// detected_level stream that has just been written, so the empty
+		// answer is not cached even for the negative TTL.
+		_, _ = w.Write([]byte(`{"status":"success"}`))
+	} else {
+		body := lokiLabelsResponse(values)
+		p.setMetadataListCache("label_values", cacheKey, body, len(values),
+			metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues))
+		_, _ = w.Write(body)
+	}
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 }
 

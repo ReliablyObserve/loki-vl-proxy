@@ -88,9 +88,13 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(time.Second)
 	defer pingTicker.Stop()
 
+	// Loki encodes tail frames like query responses, including the
+	// categorize-labels flag.
+	levelAsMetadata := p.shouldEmitStructuredMetadata(r)
+
 	if p.tailMode == TailModeSynthetic {
 		p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", false, "fallback", "forced synthetic tail mode")
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, lineFields, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, lineFields, r.FormValue("start"), levelAsMetadata)
 		return
 	}
 
@@ -101,7 +105,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason))
 			return
 		}
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, lineFields, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, lineFields, r.FormValue("start"), levelAsMetadata)
 		return
 	}
 	defer resp.Body.Close()
@@ -149,7 +153,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Convert to Loki tail frame
-			frame := p.vlLineToTailFrame(vlLine, lineFields)
+			frame := p.vlLineToTailFrame(vlLine, lineFields, levelAsMetadata)
 			frameJSON, err := json.Marshal(frame)
 			if err != nil {
 				continue
@@ -246,7 +250,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
 }
 
-func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery string, lineFields map[string]bool, startHint string) {
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery string, lineFields map[string]bool, startHint string, levelAsMetadata bool) {
 	lastSeen := newSyntheticTailSeen(maxSyntheticTailSeenEntries)
 	windowStart := time.Now().Add(-5 * time.Second)
 	if parsed, ok := parseEntryTime(startHint); ok {
@@ -257,7 +261,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	defer ticker.Stop()
 
 	for {
-		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, lineFields, &windowStart, lastSeen); err != nil {
+		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, lineFields, &windowStart, lastSeen, levelAsMetadata); err != nil {
 			p.log.Debug("synthetic tail batch failed", "error", err)
 		}
 
@@ -269,7 +273,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	}
 }
 
-func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, lineFields map[string]bool, windowStart *time.Time, lastSeen *syntheticTailSeen) error {
+func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, lineFields map[string]bool, windowStart *time.Time, lastSeen *syntheticTailSeen, levelAsMetadata bool) error {
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time)")
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
@@ -312,7 +316,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 			newest = entryTime
 		}
 
-		frameJSON, err := json.Marshal(p.vlLineToTailFrame(vlLine, lineFields))
+		frameJSON, err := json.Marshal(p.vlLineToTailFrame(vlLine, lineFields, levelAsMetadata))
 		if err != nil {
 			continue
 		}
@@ -375,9 +379,14 @@ func (p *Proxy) writeTailControl(conn tailConn, messageType int, data []byte) er
 	return conn.WriteControl(messageType, data, deadline)
 }
 
-// vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail WebSocket frame.
-// lineFields are the fields the tail query's pipeline writes (logQueryLineFields).
-func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}, lineFields map[string]bool) map[string]interface{} {
+// vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail
+// WebSocket frame. lineFields are the fields the tail query's pipeline writes
+// (logQueryLineFields). Loki's tail frames carry the index labels as the
+// stream; with levelAsMetadata (categorize-labels) each entry also carries its
+// structured metadata, including detected_level, and a stream label of the
+// same name is left out of the stream. Without the flag Loki's tail sends no
+// metadata, so the frame holds the stored stream fields only.
+func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}, lineFields map[string]bool, levelAsMetadata bool) map[string]interface{} {
 	ts := ""
 	msg := ""
 
@@ -399,22 +408,66 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}, lineFields map[
 	if ts == "" {
 		ts = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	msg = storedLogLineFromEntry(msg, vlLine, parseStreamLabels(asString(vlLine["_stream"])), lineFields, p.defaultMsgValue())
-
-	labels := buildEntryLabels(vlLine)
-	translatedLabels := labels
-	if !p.labelTranslator.IsPassthrough() {
-		translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
+	stream := parseStreamLabels(asString(vlLine["_stream"]))
+	storedMsg := msg
+	msg = storedLogLineFromEntry(msg, vlLine, stream, lineFields, p.defaultMsgValue())
+	translate := func(labels map[string]string) map[string]string {
+		if p.labelTranslator.IsPassthrough() {
+			return labels
+		}
+		return p.labelTranslator.TranslateLabelsMap(labels)
 	}
-	ensureDetectedLevel(translatedLabels)
-	ensureSyntheticServiceName(translatedLabels)
+	streamLabels := make(map[string]string, len(stream))
+	for k, v := range stream {
+		streamLabels[k] = v
+	}
+	translatedStream := translate(streamLabels)
+	ensureSyntheticServiceName(translatedStream)
 
+	if !levelAsMetadata {
+		return map[string]interface{}{
+			"streams": []map[string]interface{}{
+				{
+					"stream": translatedStream,
+					"values": [][]string{{ts, msg}},
+				},
+			},
+		}
+	}
+
+	metadata := make(map[string]string, 4)
+	for key, value := range vlLine {
+		if isVLInternalField(key) || key == "_stream_id" {
+			continue
+		}
+		if _, isStream := stream[key]; isStream {
+			continue
+		}
+		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
+			metadata[key] = s
+		}
+	}
+	metadata = translate(metadata)
+	rows := logRowLevels{bodyScan: p.detectedLevelBodyScan, defaultMsg: p.defaultMsgValue()}
+	// Loki's tail encoder differs from its query encoder here (verified
+	// against Loki 3.7.1 on a stream pushed with a detected_level label): the
+	// derived value keeps the detected_level name in the entry metadata and
+	// the stream label is not repeated in the frame, where a query response
+	// keeps the label and renames the derived value to detected_level_extracted.
+	metadata[detectedLevelLabel] = rows.mapRow(vlLine, storedMsg, logRowStream{labels: stream, levels: levelFieldsFromLabels(stream)}).String()
+	if _, ok := stream[detectedLevelLabel]; ok {
+		translatedStream = cloneStringMap(translatedStream)
+		delete(translatedStream, detectedLevelLabel)
+	}
 	return map[string]interface{}{
 		"streams": []map[string]interface{}{
 			{
-				"stream": translatedLabels,
-				"values": [][]string{{ts, msg}},
+				"stream": translatedStream,
+				"values": []interface{}{
+					[]interface{}{ts, msg, map[string]interface{}{"structuredMetadata": metadata}},
+				},
 			},
 		},
+		"encodingFlags": []string{"categorize-labels"},
 	}
 }

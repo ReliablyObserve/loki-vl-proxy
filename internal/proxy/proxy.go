@@ -179,6 +179,11 @@ type Config struct {
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
+	// DisableDetectedLevelBodyScan limits detected_level to stored level fields
+	// (stream fields, level-like fields, severity_number) with an "unknown"
+	// fallback, skipping the per-row scan of the line body. Zero value keeps
+	// Loki's full derivation.
+	DisableDetectedLevelBodyScan bool
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -487,6 +492,7 @@ type Proxy struct {
 	streamResponse                        bool
 	emitStructuredMetadata                bool
 	backendDefaultMsgValue                string
+	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	patternsAutodetectFromQueries         bool
 	patternsCustom                        []string
@@ -1122,6 +1128,7 @@ func New(cfg Config) (*Proxy, error) {
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
+		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		patternsEnabled:                       patternsEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCustom:                        patternsCustom,
@@ -1265,6 +1272,7 @@ func New(cfg Config) (*Proxy, error) {
 			derivedFields:                         p.derivedFields,
 			streamResponse:                        p.streamResponse,
 			emitStructuredMetadata:                p.emitStructuredMetadata,
+			detectedLevelBodyScan:                 p.detectedLevelBodyScan,
 			patternsEnabled:                       p.patternsEnabled,
 			patternsAutodetectFromQueries:         p.patternsAutodetectFromQueries,
 			patternsCustom:                        p.patternsCustom,
@@ -2331,11 +2339,22 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	return key.String()
 }
 
-// responseProfileCacheKey covers negotiated tuple shape and the Grafana profile
-// used by query dispatch. Content compression varies independently.
+// responseProfileCacheKey covers negotiated tuple shape, the detected_level
+// derivation and the Grafana profile used by query dispatch. Content
+// compression varies independently.
 func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
 	profile := detectGrafanaClientProfile(r, "", r.URL.Path)
-	return strings.Join([]string{p.tupleModeCacheKey(r), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+	return strings.Join([]string{p.tupleModeCacheKey(r), p.detectedLevelCacheKey(), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
+}
+
+// detectedLevelCacheKey versions cached log responses by the detected_level
+// derivation, so entries written before it, or with the other body-scan
+// setting, are never served.
+func (p *Proxy) detectedLevelCacheKey() string {
+	if p.detectedLevelBodyScan {
+		return "dl1"
+	}
+	return "dl1-stored"
 }
 
 // handleQuery translates Loki instant queries.
