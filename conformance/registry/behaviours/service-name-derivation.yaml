@@ -1,0 +1,36 @@
+id: service-name-derivation
+kind: identity
+title: service_name follows Loki's discovery order
+
+loki: |
+  When a stream has no service_name label, Loki derives it at ingest from the
+  first non-empty of discover_service_name and falls back to "unknown_service".
+  The default list has 13 entries, read from the live Loki's /config: service,
+  app, application, app_name, name, app_kubernetes_io_name, container,
+  container_name, k8s_container_name, component, workload, job, k8s_job_name. OTel resource
+  attribute service.name becomes the service_name label. The derived value is a
+  normal stream label: selectors match it, grouping returns it, and
+  /label/service_name/values lists it.
+
+victorialogs: |
+  VictoriaLogs stores whatever was pushed: `service_name`, OTel-dotted
+  `service.name`, or only the source label (`app`, `container`...). It has no
+  derivation. `coalesce` (v1.51+) can pick the first non-empty field.
+
+proxy: |
+  Selector matching and grouping must both use the derived value. Expanding
+  {service_name="x"} into an OR over candidate fields matches rows whose Loki
+  service_name is something else; grouping by the stored field alone leaves
+  Loki-push streams under an empty value.
+
+cases:
+  - service-name/otel-dotted   # modelled only: nothing pushes a real OTLP
+                               # payload into Loki and compares
+  - service-name/loki-push-label
+  - service-name/derived-from-app
+  - service-name/derived-from-container
+  - service-name/priority-order
+  - service-name/unknown-service-fallback
+  - service-name/selector-exact-match
+  - service-name/group-by-service-name
+  - service-name/label-values-list

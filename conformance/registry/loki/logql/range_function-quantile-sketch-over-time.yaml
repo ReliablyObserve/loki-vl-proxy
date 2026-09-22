@@ -1,0 +1,19 @@
+id: range_function-quantile-sketch-over-time
+kind: range_function
+logql: "__quantile_sketch_over_time__"
+loki_constant: OpRangeTypeQuantileSketch
+generated:
+  supported_by_proxy: false
+  seen_in:
+    []
+
+semantics: |
+  TODO: Loki's exact semantics, including how it treats missing labels,
+  parse errors, ordering and empty input.
+victorialogs: |
+  TODO: the native LogsQL construct used, or the proxy-side
+  transformation and the VictoriaLogs limitation that forces it.
+consumers: []   # explore, drilldown, datasource, api
+cases: []       # case ids proving the semantics match
+victorialogs_candidates:
+  []  # no VictoriaLogs equivalent: the proxy must compute it

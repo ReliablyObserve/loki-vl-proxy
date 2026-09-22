@@ -1,0 +1,159 @@
+{
+  "endpoints_used": {
+    "/select/logsql/delete": [
+      "internal/proxy/patterns.go:1536",
+      "internal/proxy/telemetry.go:75"
+    ],
+    "/select/logsql/field_names": [
+      "internal/proxy/backend.go:502",
+      "internal/proxy/drilldown.go:2066",
+      "internal/proxy/drilldown.go:639",
+      "internal/proxy/label_metadata.go:400",
+      "internal/proxy/label_metadata.go:429",
+      "internal/proxy/telemetry.go:71"
+    ],
+    "/select/logsql/field_values": [
+      "internal/proxy/drilldown.go:2146",
+      "internal/proxy/drilldown.go:2203",
+      "internal/proxy/drilldown.go:2250",
+      "internal/proxy/drilldown.go:2392",
+      "internal/proxy/drilldown.go:600",
+      "internal/proxy/drilldown.go:665",
+      "internal/proxy/label_metadata.go:519",
+      "internal/proxy/label_metadata.go:537",
+      "internal/proxy/metric_binary.go:1932",
+      "internal/proxy/telemetry.go:73"
+    ],
+    "/select/logsql/hits": [
+      "internal/proxy/label_handlers.go:458",
+      "internal/proxy/metric_binary.go:1545",
+      "internal/proxy/query_range_windowing.go:637",
+      "internal/proxy/query_translation.go:1193",
+      "internal/proxy/telemetry.go:70"
+    ],
+    "/select/logsql/query": [
+      "internal/proxy/cold_dispatch.go:159",
+      "internal/proxy/cold_dispatch.go:226",
+      "internal/proxy/cold_dispatch.go:268",
+      "internal/proxy/cold_dispatch.go:301",
+      "internal/proxy/drilldown.go:1264",
+      "internal/proxy/drilldown.go:2501",
+      "internal/proxy/ordered_json_metric.go:607",
+      "internal/proxy/ordered_json_metric.go:992",
+      "internal/proxy/patterns.go:244",
+      "internal/proxy/patterns.go:286",
+      "internal/proxy/patterns.go:421",
+      "internal/proxy/query_range_windowing.go:492",
+      "internal/proxy/query_translation.go:1034",
+      "internal/proxy/query_translation.go:641",
+      "internal/proxy/range_metric_compat.go:1302",
+      "internal/proxy/stream_processing.go:99",
+      "internal/proxy/tail.go:181",
+      "internal/proxy/tail.go:279",
+      "internal/proxy/telemetry.go:66"
+    ],
+    "/select/logsql/stats_query": [
+      "internal/proxy/metric_binary.go:3457",
+      "internal/proxy/query_translation.go:1628",
+      "internal/proxy/range_metric_compat.go:920",
+      "internal/proxy/telemetry.go:67",
+      "internal/proxy/volume.go:449"
+    ],
+    "/select/logsql/stats_query_range": [
+      "internal/proxy/drilldown_burst_coalescer.go:397",
+      "internal/proxy/drilldown_field_batcher.go:224",
+      "internal/proxy/metric_binary.go:1271",
+      "internal/proxy/metric_binary.go:1410",
+      "internal/proxy/metric_binary.go:194",
+      "internal/proxy/metric_binary.go:2022",
+      "internal/proxy/metric_binary.go:2243",
+      "internal/proxy/metric_binary.go:2285",
+      "internal/proxy/metric_binary.go:2327",
+      "internal/proxy/metric_binary.go:2357",
+      "internal/proxy/query_translation.go:1269",
+      "internal/proxy/range_metric_compat.go:1127",
+      "internal/proxy/telemetry.go:68",
+      "internal/proxy/volume.go:452"
+    ],
+    "/select/logsql/stream_field_names": [
+      "internal/proxy/backend.go:496",
+      "internal/proxy/label_metadata.go:308",
+      "internal/proxy/telemetry.go:72"
+    ],
+    "/select/logsql/stream_field_values": [
+      "internal/proxy/drilldown.go:598",
+      "internal/proxy/label_metadata.go:521",
+      "internal/proxy/label_metadata.go:536",
+      "internal/proxy/telemetry.go:74"
+    ],
+    "/select/logsql/streams": [
+      "internal/proxy/drilldown.go:2436",
+      "internal/proxy/drilldown.go:486",
+      "internal/proxy/label_handlers.go:318",
+      "internal/proxy/telemetry.go:69"
+    ],
+    "/select/logsql/tail": [
+      "internal/proxy/telemetry.go:76"
+    ]
+  },
+  "pipes_used": {
+    "coalesce": 2,
+    "drop": 36,
+    "extract": 13,
+    "field_names": 2,
+    "field_values": 2,
+    "filter": 49,
+    "format": 8,
+    "json_array_len": 2,
+    "keep": 21,
+    "len": 95,
+    "limit": 28,
+    "math": 6,
+    "pack_json": 1,
+    "replace": 2,
+    "running": 1,
+    "sort": 19,
+    "stats by": 19,
+    "top": 2,
+    "uniq": 3,
+    "unpack_json": 19,
+    "unpack_logfmt": 23,
+    "unroll": 2
+  },
+  "stats_functions_used": {
+    "avg": 1,
+    "count()": 45,
+    "count_uniq": 1,
+    "histogram": 3,
+    "max": 18,
+    "min": 19,
+    "quantile": 3,
+    "rate": 31,
+    "rate_sum": 2,
+    "row_any": 1,
+    "sum": 24,
+    "sum_len": 11,
+    "uniq_values": 1,
+    "values": 6
+  },
+  "version_gated": {
+    "DensePatternWindowing": {
+      "since": "v1.50",
+      "used_in": []
+    },
+    "FieldIPv4Range": {
+      "since": "v1.45",
+      "used_in": [
+        "internal/logsql/builder.go"
+      ]
+    },
+    "MetadataSubstring": {
+      "since": "v1.49",
+      "used_in": []
+    },
+    "StatsRateSum": {
+      "since": "v1.44",
+      "used_in": []
+    }
+  }
+}

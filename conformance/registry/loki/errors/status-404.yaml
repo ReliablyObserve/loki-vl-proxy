@@ -1,0 +1,16 @@
+id: status-404
+status: 404
+error_type: not_found
+generated:
+  proxy_call_sites: 1
+  dynamic_sites: 0
+  literal_messages:
+    - "no rule groups found"
+
+loki_behaviour: |
+  TODO: when Loki returns this status, with its own message text
+  and errorType, and which errors take precedence over it.
+precedence: []   # failure classes Loki evaluates before this one
+consumers: |
+  TODO: how Grafana Explore and Logs Drilldown render it.
+cases: []        # case ids that assert status, errorType, message and headers together

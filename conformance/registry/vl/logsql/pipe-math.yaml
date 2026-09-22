@@ -1,0 +1,19 @@
+id: pipe-math
+kind: vl_pipe
+name: math
+since: v1.40.0
+generated:
+  used_by_proxy: true
+  used_in:
+    - internal/proxy/query_translation.go
+    - internal/proxy/range_metric_compat.go
+
+what_it_does: |
+  TODO: what the construct computes in VictoriaLogs.
+serves_logql: []   # LogQL construct ids this can serve natively
+proxy_usage: |
+  TODO: native use, the transformation used instead, or why it is
+  not applicable to Loki semantics.
+fallback: |
+  TODO: what the proxy does on a backend older than `since`.
+cases: []

@@ -1,0 +1,31 @@
+id: severity-exposure-surfaces
+kind: severity
+title: Where detected_level and level must appear
+
+loki: |
+  Loki exposes detected_level as structured metadata on log entries, in
+  /detected_fields, in /detected_labels, as a grouping label in metric queries,
+  and (with categorize-labels) in a separate structuredMetadata map. The raw
+  `level` stream label, when it exists, stays a normal label and is returned
+  alongside detected_level. `sum by (level)` returns level; `sum by
+  (detected_level)` returns detected_level; `sum by (level, detected_level)`
+  returns both.
+
+victorialogs: |
+  VictoriaLogs returns the stored fields as they are; it has no concept of
+  structured metadata, and `stats by (level)` answers with whatever `level`
+  holds.
+
+proxy: |
+  The response must carry exactly the labels the query asked for and Loki's
+  categorisation. Aliasing level to detected_level, or dropping one of the two,
+  is a visible difference in Explore's level colouring and in Drilldown's level
+  breakdown.
+
+cases:
+  - severity/group-by-level
+  - severity/group-by-detected-level
+  - severity/group-by-both
+  - severity/categorize-labels-split
+  - severity/detected-fields-contains-level
+  - severity/label-values-detected-level

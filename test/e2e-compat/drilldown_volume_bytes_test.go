@@ -54,6 +54,7 @@ type volumeBytesSample struct {
 // proxy must report the fixture's exact line bytes, and Loki must agree within
 // what Loki adds on top of line bytes (structured metadata such as
 // detected_level, chunk-level size estimates and KB rounding of flushed chunks).
+// conformance: loki_api_v1_index_volume
 func TestDrilldown_IndexVolumeBytesMatchLoki(t *testing.T) {
 	tag := strconv.FormatInt(time.Now().UnixNano(), 36)
 	app := func(suffix string) string { return "volbytes-" + tag + "-" + suffix }

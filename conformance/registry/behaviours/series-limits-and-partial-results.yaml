@@ -1,0 +1,24 @@
+id: series-limits-and-partial-results
+kind: limits
+title: Series limits: error, or partial result with a warning
+
+loki: |
+  Above max_query_series (default 500) Loki fails the query with "maximum number
+  of series (N) reached for a single query". Logs Drilldown requests get a
+  partial result plus a warning instead. Above the resolution limit Loki returns
+  400 before parsing.
+
+victorialogs: |
+  VictoriaLogs truncates or returns everything depending on the pipe; it has no
+  equivalent error and no warning channel.
+
+proxy: |
+  Truncating silently where Loki errors is a correctness bug: a chart quietly
+  loses series. The limit must be operator-configurable and the error must name
+  the flag.
+
+cases:
+  - limits/series-limit-error
+  - limits/drilldown-partial-with-warning
+  - limits/resolution-limit-precedence
+  - limits/top-n-ranking-not-silent

@@ -1,0 +1,66 @@
+id: drilldown-service-landing
+title: Logs Drilldown ranks services on the landing page
+covers:
+  endpoints: [loki_api_v1_index_volume]
+  behaviours: [service-name-derivation, data-density-and-chart-quality, numeric-and-response-formatting]
+  logql: []
+consumers: [drilldown]
+
+loki_layer: |
+  Drilldown calls `/index/volume` with `{service_name=~".+"}`,
+  `targetLabels=service_name`, `limit=5000`, `aggregateBy=series`. Loki answers
+  with ingested bytes per service, as a vector when every series has one sample,
+  with only the target labels in the metric map.
+
+victorialogs_layer: |
+  VictoriaLogs has no volume endpoint and no ingested-byte accounting; it can sum
+  the stored `_msg` length per group, and it stores service_name only when the
+  producer sent it.
+
+execution: proxy_side
+native_reuse: |
+  `stats_query` with `sum_len(_msg)` grouped by the target labels.
+
+deltas:
+  - id: byte-accounting
+    difference: |
+      Loki counts the bytes it ingested; VictoriaLogs reports stored `_msg` length.
+    impact: |
+      Service ranking and the reported totals differ from Loki.
+    proxy_layer: |
+      Accounts for the same bytes Loki would have counted.
+    where: internal/proxy/volume.go
+    cost: |
+      none
+    cases: [drilldown/index_volume/limit-not-truncating]
+    state: partial
+  - id: vector-vs-matrix
+    difference: |
+      Loki returns a vector when each series has a single sample; VictoriaLogs always returns its own shape.
+    impact: |
+      The landing page renders empty.
+    proxy_layer: |
+      Chooses the result type from the sample count, as Loki does.
+    where: internal/proxy/volume.go
+    cost: |
+      none
+    cases: [drilldown/index_volume/single-sample-returns-vector]
+    state: proven
+  - id: service-name-derivation
+    difference: |
+      Loki derives service_name at ingest; VictoriaLogs stores only what was pushed.
+    impact: |
+      Services stored with only `app` or `container` vanish from the landing page, or group under an empty name.
+    proxy_layer: |
+      Derives the value in Loki's priority order for both the selector and the grouping.
+    where: internal/proxy/labels.go
+    cost: |
+      extra fields per query, or a coalesce pipe on v1.51+
+    cases: [service-name/derived-from-app, service-name/priority-order, service-name/selector-exact-match]
+    state: gap
+
+performance:
+  verdict: needs_work
+  evidence: |
+    Landing volume answers within Loki's latency, but the derivation work is not
+    in place yet and a 6h grouped query still drops Loki-push services.

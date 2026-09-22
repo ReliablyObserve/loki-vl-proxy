@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Conformance registry: the inventory of what compatibility means.** A new
+  `conformance/registry/` holds one small file per item: every Loki HTTP
+  endpoint of the pinned release, every VictoriaLogs capability the proxy uses,
+  and the state of each (proven, partial, gap). Each endpoint file records
+  which clients call it and how their parameter combinations differ (Grafana
+  Explore and Logs Drilldown differ), where the proxy implements it, whether
+  VictoriaLogs answers it natively or the proxy computes it, and which tests
+  compare it against Loki today. `scripts/conformance/*.py` regenerate the
+  extracted facts from the Loki source and this repository; curated prose and
+  owner state are kept across regeneration.
+- **Registry wiring and the conformance gate.** Tests declare what they prove
+  (`// conformance: <ids>` in Go, `@cov:<id>` in Playwright titles) and
+  `scripts/conformance/wire.py` builds the two-way map between registry items,
+  the tests that prove them and the code that implements them. The proxy's
+  client-facing error surface (117 `writeError` call sites across 16 statuses)
+  is extracted into `loki/errors/`. `scripts/ci/check_conformance.py` fails on a
+  test claiming an unknown id, a proxy route with no registry item, a registry
+  item pointing at code that no longer exists, or a stale generated coverage map.
+- **LogQL and behaviour tracks in the registry.** Every LogQL construct Loki
+  defines (72 at v3.7.7: operators, range functions, parsers, filters,
+  conversions) is a registry item recording whether the proxy references it and
+  where; 8 are referenced nowhere. Nine behaviour items record the semantics the
+  proxy must reproduce with the edge cases that prove them: detected_level
+  derivation and where it must appear, service_name discovery order, window
+  bounds and step alignment, parser errors and `_extracted` collisions, series
+  limits versus partial results, chart density and zero-fill, the probes the
+  proxy runs, and Loki's numeric and empty-result formatting.
+- **VictoriaLogs LogsQL surface, per release, linked to LogQL.** Every
+  VictoriaLogs pipe and stats function (83 at v1.52.0) is a registry item
+  recording the release it appeared in and whether the proxy emits it; 53 are
+  emitted today. Each LogQL construct now carries the VictoriaLogs constructs
+  that can serve it and from which version, so reuse is verifiable rather than
+  assumed. The gap report lists 12 reuse opportunities where VictoriaLogs
+  already provides the function and the proxy computes the result itself, and
+  the 23 LogQL constructs with no VictoriaLogs equivalent.
+- **Translation map: what the proxy adds between Loki and VictoriaLogs.** A new
+  `conformance/registry/translations/` records each feature end to end: the Loki
+  contract clients rely on, what VictoriaLogs can give, and every concrete
+  difference between the two, with what a user would see if the proxy did
+  nothing, the layer the proxy inserts, the code that does it, what it costs and
+  the cases that prove it, plus a performance verdict on how much is served
+  natively. `conformance/reports/translation-map.md` renders it.
+- **Per-change registry report.** `conformance/scripts/pr_report.py` lists the
+  registry items behind the files a change touches: endpoint, behaviour and
+  translation items with their state, how each is served, and how many tests
+  declare them, so a pull request can show which compatibility contracts it
+  stands on and what is still unproven.
+- **Published coverage map.** `conformance/reports/coverage-map.md` is generated from
+  the registry: every Loki endpoint with its state, whether VictoriaLogs answers
+  it natively or the proxy computes it, which clients depend on it, what proxy-side
+  work it needs, and how many tests compare it against Loki, alongside
+  `conformance/reports/gaps.md` which ranks what is still missing. Everything
+  lives under one `conformance/` tree: `registry/`, `scripts/`, `reports/`.
+
 ## [1.82.0] - 2026-09-22
 
 ### Fixed

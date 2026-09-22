@@ -1,0 +1,6 @@
+id: loki_api_v1_status_buildinfo
+state: gap
+reason: |
+  Seeded from the repository: no proxy route, 4 test files compare it against Loki.
+owner_decision: null
+waiver: null

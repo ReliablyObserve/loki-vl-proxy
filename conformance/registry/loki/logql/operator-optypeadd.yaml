@@ -1,0 +1,22 @@
+id: operator-optypeadd
+kind: operator
+logql: "+"
+loki_constant: OpTypeAdd
+generated:
+  supported_by_proxy: true
+  seen_in:
+    - internal/logql/scanner.go
+    - internal/proxy/binary_matching.go
+    - internal/proxy/metric_agg.go
+    - internal/proxy/metric_binary.go
+    - internal/proxy/stream_processing.go
+    - internal/proxy/vector_matching.go
+
+semantics: |
+  TODO: Loki's exact semantics, including how it treats missing labels,
+  parse errors, ordering and empty input.
+victorialogs: |
+  TODO: the native LogsQL construct used, or the proxy-side
+  transformation and the VictoriaLogs limitation that forces it.
+consumers: []   # explore, drilldown, datasource, api
+cases: []       # case ids proving the semantics match

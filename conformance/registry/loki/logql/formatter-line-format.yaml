@@ -1,0 +1,22 @@
+id: formatter-line-format
+kind: formatter
+logql: "line_format"
+loki_constant: OpFmtLine
+generated:
+  supported_by_proxy: true
+  seen_in:
+    - internal/logql/parser.go
+    - internal/proxy/postprocess.go
+
+semantics: |
+  TODO: Loki's exact semantics, including how it treats missing labels,
+  parse errors, ordering and empty input.
+victorialogs: |
+  TODO: the native LogsQL construct used, or the proxy-side
+  transformation and the VictoriaLogs limitation that forces it.
+consumers: []   # explore, drilldown, datasource, api
+cases: []       # case ids proving the semantics match
+victorialogs_candidates:
+  - id: pipe-format
+    since: v1.40.0
+    emitted_by_proxy: true

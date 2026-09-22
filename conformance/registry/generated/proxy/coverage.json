@@ -1,0 +1,1602 @@
+{
+  "endpoints": [
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_label",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/label",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_label_name_values",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/label/{name}/values",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_push",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/prom/push",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_query",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/query",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_rules",
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/prom/rules",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/alerting.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/ruler_fuzz_test.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_rules_namespace",
+      "methods": [
+        "DELETE",
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/rules/{namespace}",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/proxy.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_rules_namespace_groupname",
+      "methods": [
+        "DELETE",
+        "GET"
+      ],
+      "path": "/api/prom/rules/{namespace}/{groupName}",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_series",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/series",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "api_prom_tail",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/api/prom/tail",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_cache_generation_numbers",
+      "methods": [
+        "GET"
+      ],
+      "path": "/loki/api/v1/cache/generation_numbers",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_delete",
+      "methods": [
+        "DELETE",
+        "GET",
+        "POST",
+        "PUT"
+      ],
+      "path": "/loki/api/v1/delete",
+      "proxy_route": {
+        "handler": "handleDelete",
+        "pattern": "/loki/api/v1/delete",
+        "route": "delete"
+      },
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/patterns.go",
+          "internal/proxy/proxy.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_detected_field_name_values",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/detected_field/{name}/values",
+      "proxy_route": {
+        "handler": "handleDetectedFieldValues",
+        "pattern": "/loki/api/v1/detected_field/",
+        "route": "detected_field_values"
+      },
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": []
+      },
+      "id": "loki_api_v1_detected_fields",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/detected_fields",
+      "proxy_route": {
+        "handler": "handleDetectedFields",
+        "pattern": "/loki/api/v1/detected_fields",
+        "route": "detected_fields"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-pipeline/pipeline_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_helpers_test.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": []
+      },
+      "id": "loki_api_v1_detected_labels",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/detected_labels",
+      "proxy_route": {
+        "handler": "handleDetectedLabels",
+        "pattern": "/loki/api/v1/detected_labels",
+        "route": "detected_labels"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/grafana_surface_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_drilldown_limits",
+      "methods": [
+        "GET"
+      ],
+      "path": "/loki/api/v1/drilldown-limits",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/grafana_surface_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-limits-gate.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/patterns.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_format_query",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/format_query",
+      "proxy_route": {
+        "handler": "handleFormatQuery",
+        "pattern": "/loki/api/v1/format_query",
+        "route": "format_query"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/proxy.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_index_shards",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/index/shards",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_index_stats",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/index/stats",
+      "proxy_route": {
+        "handler": "handleIndexStats",
+        "pattern": "/loki/api/v1/index/stats",
+        "route": "index_stats"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/drilldown_longrange_regression_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/track_scores_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_handlers.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_index_volume",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/index/volume",
+      "proxy_route": {
+        "handler": "handleVolume",
+        "pattern": "/loki/api/v1/index/volume",
+        "route": "volume"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/track_scores_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_surface_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/volume.go",
+          "internal/proxy/volume_bench_test.go",
+          "internal/proxy/volume_cache_test.go",
+          "internal/proxy/volume_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_index_volume_range",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/index/volume_range",
+      "proxy_route": {
+        "handler": "handleVolumeRange",
+        "pattern": "/loki/api/v1/index/volume_range",
+        "route": "volume_range"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/track_scores_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_surface_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/volume.go",
+          "internal/proxy/volume_bench_test.go",
+          "internal/proxy/volume_cache_test.go",
+          "internal/proxy/volume_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_label",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/label",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/label_cache_e2e_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/track_scores_test.go",
+          "test/e2e-fleet/fleet_test.go",
+          "test/integration/boot_test.go",
+          "test/integration/harness_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/logs-drilldown.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/metrics/metrics_test.go",
+          "internal/metrics/otlp_test.go",
+          "internal/middleware/compress.go",
+          "internal/middleware/compress_coverage_test.go",
+          "internal/middleware/compress_test.go",
+          "internal/middleware/middleware_test.go",
+          "internal/proxy/cache_locality_test.go",
+          "internal/proxy/circuit_breaker_internal_cancel_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/datasource_compat_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/execution_budget_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/hardening_test.go",
+          "internal/proxy/label_cache_behavior_test.go",
+          "internal/proxy/label_cache_upgrade_test.go",
+          "internal/proxy/label_full_range_test.go",
+          "internal/proxy/label_handlers.go",
+          "internal/proxy/label_metadata.go",
+          "internal/proxy/label_negative_cache_test.go",
+          "internal/proxy/label_surface_test.go",
+          "internal/proxy/labels_fields_scale_bench_test.go",
+          "internal/proxy/labels_perf_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/policy_helpers_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_helpers_test.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/reliability_e2e_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/security_policy_regression_test.go",
+          "internal/proxy/tenant_scope_regression_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/upstream_error_mapping_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_label_name_values",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/label/{name}/values",
+      "proxy_route": {
+        "handler": "handleLabelValues",
+        "pattern": "/loki/api/v1/label/",
+        "route": "label_values"
+      },
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_labels",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/labels",
+      "proxy_route": {
+        "handler": "handleLabels",
+        "pattern": "/loki/api/v1/labels",
+        "route": "labels"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/label_cache_e2e_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/track_scores_test.go",
+          "test/e2e-fleet/fleet_test.go",
+          "test/integration/boot_test.go",
+          "test/integration/harness_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/metrics/metrics_test.go",
+          "internal/metrics/otlp_test.go",
+          "internal/middleware/compress.go",
+          "internal/middleware/compress_coverage_test.go",
+          "internal/middleware/compress_test.go",
+          "internal/middleware/middleware_test.go",
+          "internal/proxy/cache_locality_test.go",
+          "internal/proxy/circuit_breaker_internal_cancel_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/datasource_compat_test.go",
+          "internal/proxy/execution_budget_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/hardening_test.go",
+          "internal/proxy/label_cache_behavior_test.go",
+          "internal/proxy/label_cache_upgrade_test.go",
+          "internal/proxy/label_full_range_test.go",
+          "internal/proxy/label_handlers.go",
+          "internal/proxy/label_metadata.go",
+          "internal/proxy/label_negative_cache_test.go",
+          "internal/proxy/label_surface_test.go",
+          "internal/proxy/labels_fields_scale_bench_test.go",
+          "internal/proxy/labels_perf_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/policy_helpers_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_helpers_test.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/reliability_e2e_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/security_policy_regression_test.go",
+          "internal/proxy/tenant_scope_regression_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/upstream_error_mapping_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_patterns",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/patterns",
+      "proxy_route": {
+        "handler": "handlePatterns",
+        "pattern": "/loki/api/v1/patterns",
+        "route": "patterns"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-pipeline/pipeline_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/middleware/compress.go",
+          "internal/proxy/compat_cache_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/patterns_persistence_test.go",
+          "internal/proxy/patterns_scale_bench_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/binary_extraction_aliases_test.go",
+          "test/e2e-compat/binary_literal_roundtrip_test.go",
+          "test/e2e-compat/binary_matching_values_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/json_logs_volume_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/patterns_native_ab_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/raw_metric_limits_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/sum_range_grouping_test.go",
+          "test/e2e-compat/testdata.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/security-hardening-visibility.spec.ts"
+        ],
+        "unit": []
+      },
+      "id": "loki_api_v1_push",
+      "methods": [
+        "POST"
+      ],
+      "path": "/loki/api/v1/push",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/binary_extraction_aliases_test.go",
+          "test/e2e-compat/binary_literal_roundtrip_test.go",
+          "test/e2e-compat/binary_matching_values_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/drilldown_volume_bytes_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/json_logs_volume_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/patterns_native_ab_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/raw_metric_limits_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/sum_range_grouping_test.go",
+          "test/e2e-compat/testdata.go",
+          "test/e2e-pipeline/testdata_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/security-hardening-visibility.spec.ts"
+        ],
+        "unit": [
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/proxy.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/grouped_tumbling_rate_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/logql_exhaustive_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/operations_matrix_compat_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/pipeline_parity_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/query_semantics_matrix_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/raw_metric_limits_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": []
+      },
+      "id": "loki_api_v1_query",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/query",
+      "proxy_route": {
+        "handler": "handleQuery",
+        "pattern": "/loki/api/v1/query",
+        "route": "query"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/cold_budget_live_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/drilldown_longrange_regression_test.go",
+          "test/e2e-compat/drilldown_quality_report_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/grouped_tumbling_rate_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/logql_exhaustive_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/operations_matrix_compat_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/pipeline_parity_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/proxy_heap_bounded_test.go",
+          "test/e2e-compat/query_semantics_matrix_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/raw_metric_limits_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/track_scores_test.go",
+          "test/e2e-fleet/fleet_test.go",
+          "test/e2e-pipeline/pipeline_test.go",
+          "test/integration/boot_test.go",
+          "test/integration/harness_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts",
+          "test/e2e-ui/tests/explore-parity.spec.ts",
+          "test/e2e-ui/tests/explore-regression.spec.ts",
+          "test/e2e-ui/tests/logs-drilldown.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/bench_test.go",
+          "internal/metrics/metric_name_guard_test.go",
+          "internal/metrics/metrics.go",
+          "internal/metrics/metrics_test.go",
+          "internal/metrics/otlp_test.go",
+          "internal/middleware/compress.go",
+          "internal/middleware/compress_coverage_test.go",
+          "internal/middleware/compress_pool_stress_test.go",
+          "internal/middleware/compress_test.go",
+          "internal/middleware/middleware_test.go",
+          "internal/proxy/binary_matching_test.go",
+          "internal/proxy/binary_step_alignment_test.go",
+          "internal/proxy/cache_locality_test.go",
+          "internal/proxy/circuit_breaker_internal_cancel_test.go",
+          "internal/proxy/cold_dispatch_test.go",
+          "internal/proxy/collect_range_metric_bench_test.go",
+          "internal/proxy/compat_cache_freshness_test.go",
+          "internal/proxy/compat_cache_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/derived_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/drilldown_regression_lock_test.go",
+          "internal/proxy/drilldown_strip_test.go",
+          "internal/proxy/drop_keep_validation_test.go",
+          "internal/proxy/empty_window_aggregation_test.go",
+          "internal/proxy/empty_without_metric_test.go",
+          "internal/proxy/format_tuple_regression_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/grouped_rate_count_paths_test.go",
+          "internal/proxy/hardening_test.go",
+          "internal/proxy/limits_enforcement_test.go",
+          "internal/proxy/log_line_body_test.go",
+          "internal/proxy/loki_errors_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/metric_binary.go",
+          "internal/proxy/metric_binary_test.go",
+          "internal/proxy/metric_eval_limits_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
+          "internal/proxy/offset_integration_test.go",
+          "internal/proxy/opt6_hits_sliding_window_test.go",
+          "internal/proxy/optimization_test.go",
+          "internal/proxy/ordered_json_drilldown_test.go",
+          "internal/proxy/ordered_json_logs_volume_bench_test.go",
+          "internal/proxy/ordered_json_metric_test.go",
+          "internal/proxy/ordered_json_stats_pushdown_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/perf_regression_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/policy_helpers_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/quantile_grouping_test.go",
+          "internal/proxy/query_range_windowing_coverage_test.go",
+          "internal/proxy/query_range_windowing_parsed_streams_test.go",
+          "internal/proxy/query_range_windowing_prefilter_bench_test.go",
+          "internal/proxy/query_range_windowing_test.go",
+          "internal/proxy/query_semantics_compat_handlers_test.go",
+          "internal/proxy/range_metric_compat_test.go",
+          "internal/proxy/recent_tail_bypass_clamp_test.go",
+          "internal/proxy/regexp_capture_fields_test.go",
+          "internal/proxy/reliability_e2e_test.go",
+          "internal/proxy/request_helpers_coverage_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/response_cache_contract_test.go",
+          "internal/proxy/review_findings_test.go",
+          "internal/proxy/sliding_window_parity_test.go",
+          "internal/proxy/stream_metadata_test.go",
+          "internal/proxy/stream_opt_test.go",
+          "internal/proxy/sum_range_grouping_test.go",
+          "internal/proxy/tenant_scope_regression_test.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/topk_step_regression_test.go",
+          "internal/proxy/tumbling_axis_parity_test.go",
+          "internal/proxy/tuple_contract_test.go",
+          "internal/proxy/unwrap_labels_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/utility_coverage_test.go",
+          "internal/proxy/without_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/logql_exhaustive_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/pipeline_parity_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/query_semantics_matrix_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
+        ],
+        "unit": []
+      },
+      "id": "loki_api_v1_query_range",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/query_range",
+      "proxy_route": {
+        "handler": "handleQueryRange",
+        "pattern": "/loki/api/v1/query_range",
+        "route": "query_range"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/cold_budget_live_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
+          "test/e2e-compat/drilldown_compat_test.go",
+          "test/e2e-compat/drilldown_loki_compare_test.go",
+          "test/e2e-compat/drilldown_longrange_regression_test.go",
+          "test/e2e-compat/drilldown_quality_report_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/logql_exhaustive_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metric_query_perf_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_error_parity_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/pipeline_parity_test.go",
+          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/proxy_heap_bounded_test.go",
+          "test/e2e-compat/query_semantics_matrix_test.go",
+          "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_sliding_parity_test.go",
+          "test/e2e-compat/range_metric_tumbling_short_window_test.go",
+          "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/track_scores_test.go",
+          "test/e2e-fleet/fleet_test.go",
+          "test/e2e-pipeline/pipeline_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts",
+          "test/e2e-ui/tests/explore-parity.spec.ts",
+          "test/e2e-ui/tests/explore-regression.spec.ts",
+          "test/e2e-ui/tests/logs-drilldown.spec.ts"
+        ],
+        "unit": [
+          "internal/metrics/bench_test.go",
+          "internal/metrics/metric_name_guard_test.go",
+          "internal/metrics/metrics.go",
+          "internal/metrics/metrics_test.go",
+          "internal/metrics/otlp_test.go",
+          "internal/middleware/compress.go",
+          "internal/middleware/compress_coverage_test.go",
+          "internal/middleware/compress_pool_stress_test.go",
+          "internal/middleware/compress_test.go",
+          "internal/middleware/middleware_test.go",
+          "internal/proxy/binary_matching_test.go",
+          "internal/proxy/binary_step_alignment_test.go",
+          "internal/proxy/cache_locality_test.go",
+          "internal/proxy/circuit_breaker_internal_cancel_test.go",
+          "internal/proxy/cold_dispatch_test.go",
+          "internal/proxy/collect_range_metric_bench_test.go",
+          "internal/proxy/compat_cache_freshness_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/critical_fixes_test.go",
+          "internal/proxy/derived_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/drilldown_regression_lock_test.go",
+          "internal/proxy/drilldown_strip_test.go",
+          "internal/proxy/drop_keep_validation_test.go",
+          "internal/proxy/format_tuple_regression_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/grouped_rate_count_paths_test.go",
+          "internal/proxy/hardening_test.go",
+          "internal/proxy/limits_enforcement_test.go",
+          "internal/proxy/log_line_body_test.go",
+          "internal/proxy/loki_errors_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/metric_binary.go",
+          "internal/proxy/metric_binary_test.go",
+          "internal/proxy/metric_eval_limits_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
+          "internal/proxy/offset_integration_test.go",
+          "internal/proxy/opt6_hits_sliding_window_test.go",
+          "internal/proxy/optimization_test.go",
+          "internal/proxy/ordered_json_drilldown_test.go",
+          "internal/proxy/ordered_json_logs_volume_bench_test.go",
+          "internal/proxy/ordered_json_metric_test.go",
+          "internal/proxy/ordered_json_stats_pushdown_test.go",
+          "internal/proxy/perf_regression_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/policy_helpers_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/quantile_grouping_test.go",
+          "internal/proxy/query_range_windowing_coverage_test.go",
+          "internal/proxy/query_range_windowing_parsed_streams_test.go",
+          "internal/proxy/query_range_windowing_prefilter_bench_test.go",
+          "internal/proxy/query_range_windowing_test.go",
+          "internal/proxy/query_semantics_compat_handlers_test.go",
+          "internal/proxy/range_metric_compat_test.go",
+          "internal/proxy/recent_tail_bypass_clamp_test.go",
+          "internal/proxy/regexp_capture_fields_test.go",
+          "internal/proxy/reliability_e2e_test.go",
+          "internal/proxy/request_helpers_coverage_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/response_cache_contract_test.go",
+          "internal/proxy/review_findings_test.go",
+          "internal/proxy/sliding_window_parity_test.go",
+          "internal/proxy/stream_metadata_test.go",
+          "internal/proxy/stream_opt_test.go",
+          "internal/proxy/sum_range_grouping_test.go",
+          "internal/proxy/tenant_scope_regression_test.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/topk_step_regression_test.go",
+          "internal/proxy/tumbling_axis_parity_test.go",
+          "internal/proxy/tuple_contract_test.go",
+          "internal/proxy/unwrap_labels_test.go",
+          "internal/proxy/upstream_bad_request_test.go",
+          "internal/proxy/utility_coverage_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_rules",
+      "methods": [
+        "GET"
+      ],
+      "path": "/loki/api/v1/rules",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go",
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/alerting.go",
+          "internal/proxy/backend_compression_test.go",
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/ruler_fuzz_test.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_rules_namespace",
+      "methods": [
+        "DELETE",
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/rules/{namespace}",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/proxy.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_rules_namespace_groupname",
+      "methods": [
+        "DELETE",
+        "GET"
+      ],
+      "path": "/loki/api/v1/rules/{namespace}/{groupName}",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_series",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/series",
+      "proxy_route": {
+        "handler": "handleSeries",
+        "pattern": "/loki/api/v1/series",
+        "route": "series"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/track_scores_test.go",
+          "test/e2e-pipeline/pipeline_test.go",
+          "test/integration/boot_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/helpers.ts"
+        ],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/middleware/compress.go",
+          "internal/proxy/compat_cache_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_handlers.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/middleware.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/pooled_parser_race_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_scope_regression_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/perf_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_status_buildinfo",
+      "methods": [
+        "GET"
+      ],
+      "path": "/loki/api/v1/status/buildinfo",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/perf_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/middleware/compress.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "loki_api_v1_tail",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/loki/api/v1/tail",
+      "proxy_route": {
+        "handler": "handleTail",
+        "pattern": "/loki/api/v1/tail",
+        "route": "tail"
+      },
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/log_line_body_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/compat_cache_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/policy_helpers_test.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tail.go",
+          "internal/proxy/tenant_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [],
+        "ui": [],
+        "unit": []
+      },
+      "id": "prometheus_api_v1_alerts",
+      "methods": [
+        "GET"
+      ],
+      "path": "/prometheus/api/v1/alerts",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
+      }
+    },
+    {
+      "differential_tests": {
+        "e2e": [
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": []
+      },
+      "id": "prometheus_api_v1_rules",
+      "methods": [
+        "GET"
+      ],
+      "path": "/prometheus/api/v1/rules",
+      "proxy_route": null,
+      "tests": {
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go",
+          "test/e2e-compat/loki_functions_test.go"
+        ],
+        "ui": [],
+        "unit": [
+          "internal/metrics/metrics.go",
+          "internal/proxy/proxy.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
+      }
+    }
+  ],
+  "loki_version": "v3.7.7"
+}

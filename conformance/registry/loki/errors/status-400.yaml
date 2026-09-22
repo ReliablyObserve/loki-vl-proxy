@@ -1,0 +1,35 @@
+id: status-400
+status: 400
+error_type: bad_data
+generated:
+  proxy_call_sites: 64
+  dynamic_sites: 34
+  literal_messages:
+    - "absent_over_time: missing range window"
+    - "end must be after start"
+    - "failed to translate query: "
+    - "invalid aggregation %s without unwrap"
+    - "invalid end timestamp"
+    - "invalid end timestamp: "
+    - "invalid label values URL"
+    - "invalid range metric query"
+    - "invalid range selector"
+    - "invalid start timestamp"
+    - "invalid start timestamp: "
+    - "invalid step"
+    - "missing field name in URL"
+    - "multi-tenant fanout exceeds limit of %d tenants"
+    - "parse error : invalid regex in label_replace: %v"
+    - "query parameter required"
+    - "query parameter required for delete"
+    - "unexpected literal for logical/set binary operation"
+    - "unsupported instant aggregation target"
+    - "unsupported metric query: range aggregations require compatible unwrap or translator support"
+
+loki_behaviour: |
+  TODO: when Loki returns this status, with its own message text
+  and errorType, and which errors take precedence over it.
+precedence: []   # failure classes Loki evaluates before this one
+consumers: |
+  TODO: how Grafana Explore and Logs Drilldown render it.
+cases: []        # case ids that assert status, errorType, message and headers together

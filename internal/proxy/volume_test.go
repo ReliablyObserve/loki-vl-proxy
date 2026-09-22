@@ -158,6 +158,7 @@ func TestVolume_RangeStampsBucketEndsLikeLoki(t *testing.T) {
 	}
 }
 
+// conformance: loki_api_v1_index_volume, drilldown/index_volume/single-sample-returns-vector
 func TestVolume_RangeWithOneSamplePerSeriesIsVector(t *testing.T) {
 	vl := newVolumeVL(t, func(string, string) (int, string) {
 		return http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[` +
@@ -195,6 +196,7 @@ func TestVolume_SeriesNamedBySelectorLabels(t *testing.T) {
 	}
 }
 
+// conformance: loki_api_v1_index_volume, status-400
 func TestVolume_TargetLabelsAreRequired(t *testing.T) {
 	vl := newVolumeVL(t, func(string, string) (int, string) {
 		return http.StatusOK, `{"status":"success","data":{"resultType":"vector","result":[` +
