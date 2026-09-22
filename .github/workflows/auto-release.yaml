@@ -9,9 +9,15 @@ on:
       - "README.md"
   workflow_dispatch:
 
+# Releases queue; they never cancel each other. Merging a second pull request
+# while a release is still running used to cancel that run, so a tag could be
+# cut with no metadata pull request behind it, or a merge could get no release
+# at all, and CHANGELOG sections then drifted from what each tag contained.
+# Runs now stack in merge order and each cuts its own version from the
+# [Unreleased] section as it stood at its own commit.
 concurrency:
   group: auto-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -31,6 +37,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
+          ref: main
+
+      - name: Re-read main and its tags
+        run: |
+          set -euo pipefail
+          # This run may have waited behind an earlier release. Take main and
+          # the tags as they are now, so the version is computed after any
+          # metadata pull request that landed while this run was queued.
+          git fetch --force --tags origin main
+          git checkout --detach origin/main
+          echo "releasing from $(git rev-parse --short HEAD)"
 
       - name: Determine version bump
         id: check
@@ -185,6 +202,16 @@ jobs:
             minor) MIN=$((MIN+1)); PAT=0 ;;
             patch) PAT=$((PAT+1)) ;;
           esac
+
+          # Releases queue rather than cancel, so an earlier run may already have
+          # cut this version while this one waited. Re-reading the tags above
+          # normally moves LATEST_TAG past it; this is the belt-and-braces check
+          # that two runs can never publish the same tag.
+          if git rev-parse -q --verify "refs/tags/v${MAJ}.${MIN}.${PAT}" >/dev/null; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "v${MAJ}.${MIN}.${PAT} already exists; an earlier queued run cut it. Skipping."
+            exit 0
+          fi
 
           echo "should_release=true" >> "$GITHUB_OUTPUT"
           echo "next_version=${MAJ}.${MIN}.${PAT}" >> "$GITHUB_OUTPUT"
