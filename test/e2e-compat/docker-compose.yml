@@ -256,6 +256,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -324,6 +325,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -384,6 +386,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -444,6 +447,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -488,6 +492,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -532,6 +537,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -575,6 +581,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -613,6 +620,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -651,6 +659,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -689,6 +698,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"
@@ -726,6 +736,7 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-align-queries-with-step=true"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"

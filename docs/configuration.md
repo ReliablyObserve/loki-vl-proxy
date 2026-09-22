@@ -458,6 +458,7 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-align-queries-with-step` | — | `false` | Truncate a metric range query's `start` and `end` down to multiples of `step` before evaluation, the way Loki's step-align middleware does under `query_range.align_queries_with_step`. Off matches Loki's binary default; the Loki Helm chart turns the option on, so set this to `true` to match a chart-deployed Loki. Log queries are never moved |
 | `-drilldown-scan-timeout` | — | `5s` | Per-request timeout for the `detected_fields` / `detected_field/{name}/values` log-scan path. `0` disables the cap |
 | `-max-stats-query-series` | — | `0` (uses `500`) | Maximum series returned by stats metric queries (`count_over_time`, `rate`, `bytes_rate`, ...). `0` uses the built-in default of `500`, matching the Drilldown series cap. VictoriaLogs-native stats results keep the busiest series; proxy-evaluated (manual) metric paths reject the query instead of truncating (see [Fixed Execution Limits](#fixed-execution-limits)) |
 | `-stats-query-range-concurrency` | — | `0` (uses `4`) | Maximum concurrent `stats_query_range` calls to VictoriaLogs. `0` uses the built-in default of `4` |

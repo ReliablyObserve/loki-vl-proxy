@@ -204,6 +204,13 @@ Some important compatibility behavior is still tested, but it is not part of the
 
 Those cases live in the proxy contract suite because Loki itself is not the source of truth for them.
 
+Documented deviations from Loki's step alignment (`-align-queries-with-step`):
+
+- A metric range request without `step` is not aligned. Loki derives `max(floor(range/250), 1s)` at decode time and aligns to it; the proxy's range evaluator falls back to `1m`, so aligning to Loki's derived step would move the bounds off the grid the response is built on.
+- `/loki/api/v1/patterns` is not aligned. Loki runs it through the same middleware, but its default step is `range/250` against the proxy's `range/120`.
+- A binary expression joining two vector operands is aligned to the step grid whether or not the flag is set. Operands served from tumbling VictoriaLogs buckets sit on the epoch-aligned grid, so without alignment a join with an unaligned `start` has no common timestamps; against a default (unaligned) Loki the join's grid is shifted by less than one step.
+- A bare integer `step` too large to be seconds is read as nanoseconds, a proxy extension for the value Grafana sometimes sends; Loki reads every bare integer as seconds. The alignment, the 11,000-point check and the evaluators all read it the same way.
+
 ## Parity Rule
 
 Valid Loki behavior is not an allowed exclusion category.

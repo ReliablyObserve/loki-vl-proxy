@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (208), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (209), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -71,6 +71,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
+| `-align-queries-with-step` | bool | `false` | `extraArgs.align-queries-with-step` | Truncate a metric range query's start and end down to multiples of the step before evaluation, the way Loki's step-align middleware does under query_range.align_queries_with_step. Applies to /loki/api/v1/query_range with an explicit step. Off by default, matching Loki's binary default; the Loki Helm chart turns it on, so set this to true to match a chart-deployed Loki. |
 | `-backend-allow-unsupported-version` | bool | `false` | `extraArgs.backend-allow-unsupported-version` | Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true. |
 | `-backend-min-version` | string | `"v1.30.0"` | `extraArgs.backend-min-version` | Minimum VictoriaLogs version considered fully supported at startup |
 | `-backend-version-strict` | bool | `false` | `extraArgs.backend-version-strict` | When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set. |
