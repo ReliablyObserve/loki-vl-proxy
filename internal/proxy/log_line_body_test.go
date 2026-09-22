@@ -280,7 +280,7 @@ func TestLogLineBody_TailPathsMatchLoki(t *testing.T) {
 			if err := json.Unmarshal([]byte(body), &entry); err != nil {
 				t.Fatalf("decode row: %v", err)
 			}
-			frame := p.vlLineToTailFrame(entry, nil)
+			frame := p.vlLineToTailFrame(entry, nil, false)
 			streams := frame["streams"].([]map[string]interface{})
 			if got := streams[0]["values"].([][]string)[0][1]; got != wantLine {
 				t.Fatalf("tail frame line\n got: %s\nwant: %s", got, wantLine)
@@ -375,7 +375,7 @@ func TestLogLineBody_PipelineFieldsStayOutOfRebuiltLines(t *testing.T) {
 			if err := json.Unmarshal([]byte(row), &entry); err != nil {
 				t.Fatal(err)
 			}
-			frame := p.vlLineToTailFrame(entry, logQueryLineFields(tc.query))
+			frame := p.vlLineToTailFrame(entry, logQueryLineFields(tc.query), false)
 			if got := frame["streams"].([]map[string]interface{})[0]["values"].([][]string)[0][1]; got != tc.want {
 				t.Fatalf("tail line\n got: %s\nwant: %s", got, tc.want)
 			}

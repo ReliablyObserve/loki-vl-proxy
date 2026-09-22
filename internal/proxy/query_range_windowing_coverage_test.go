@@ -118,8 +118,13 @@ func TestVLLogsToLokiWindowEntries_SkipsInvalidAndDerivesFields(t *testing.T) {
 	if entries[0].Stream["service_name"] != "api" {
 		t.Fatalf("expected synthetic service name to be derived, got %#v", entries[0].Stream)
 	}
-	if entries[0].Stream["detected_level"] != "warn" {
-		t.Fatalf("expected detected level to be preserved, got %#v", entries[0].Stream)
+	// categorize-labels metadata: detected_level is structured metadata, the
+	// stored level stream field stays a stream label.
+	if entries[0].SM["detected_level"] != "warn" || entries[0].Stream["level"] != "warn" {
+		t.Fatalf("expected detected_level metadata and level stream label, got stream %#v metadata %#v", entries[0].Stream, entries[0].SM)
+	}
+	if _, ok := entries[0].Stream["detected_level"]; ok {
+		t.Fatalf("detected_level must not be a stream label with categorize-labels, got %#v", entries[0].Stream)
 	}
 	if got := entries[0].Ts; got != strconv.FormatInt(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano(), 10) {
 		t.Fatalf("unexpected translated timestamp %v", got)

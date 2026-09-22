@@ -166,6 +166,9 @@ func appendSyntheticLabels(labels []string) []string {
 	return out
 }
 
+// ensureDetectedLevel mirrors a level label into detected_level. Only the
+// metric and volume grouping paths use it; log responses, tail, patterns and
+// detected_fields derive detected_level from the stored row.
 func ensureDetectedLevel(labels map[string]string) {
 	if labels == nil {
 		return
@@ -178,127 +181,24 @@ func ensureDetectedLevel(labels map[string]string) {
 	}
 }
 
-// extractLevelFromMsg attempts to detect a log level from a raw log line,
-// matching Loki's ingest-time automatic level detection behavior.
-// Handles JSON ({"level":"error"}) and logfmt (level=error key=val).
-// Returns ("", false) when no level can be detected.
-func extractLevelFromMsg(s string) (string, bool) {
-	s = strings.TrimSpace(s)
-	if len(s) == 0 {
-		return "", false
-	}
-	if s[0] == '{' {
-		return extractLevelFromJSONMsg(s)
-	}
-	return extractLevelFromLogfmtMsg(s)
-}
-
-// levelJSONKeys is the ordered list of JSON keys the proxy checks for level,
-// matching Loki's automatic level detection priority.
-var levelJSONKeys = []string{"level", "severity", "lvl", "loglevel", "LEVEL", "SEVERITY"}
-
-// levelLogfmtKeys is the ordered list of logfmt key prefixes checked for level.
-var levelLogfmtKeys = []string{"level=", "severity=", "lvl=", "loglevel="}
-
-func extractLevelFromJSONMsg(s string) (string, bool) {
-	var parsed map[string]stdjson.RawMessage
-	if stdjson.Unmarshal([]byte(s), &parsed) != nil {
-		return "", false
-	}
-	for _, key := range levelJSONKeys {
-		raw, ok := parsed[key]
-		if !ok {
-			continue
-		}
-		var level string
-		if stdjson.Unmarshal(raw, &level) != nil {
-			continue
-		}
-		level = strings.TrimSpace(level)
-		if level != "" {
-			return level, true
-		}
-	}
-	return "", false
-}
-
-// extractLevelFromLogfmtMsg scans a logfmt line for level=<value> (and
-// aliases). Only reads the first matching key — does not allocate a full map.
-func extractLevelFromLogfmtMsg(s string) (string, bool) {
-	for _, key := range levelLogfmtKeys {
-		idx := strings.Index(s, key)
-		if idx < 0 {
-			continue
-		}
-		// Require word boundary: start-of-line or preceded by whitespace.
-		if idx > 0 && s[idx-1] != ' ' && s[idx-1] != '\t' {
-			continue
-		}
-		val := s[idx+len(key):]
-		if len(val) == 0 {
-			continue
-		}
-		var level string
-		if val[0] == '"' {
-			end := strings.IndexByte(val[1:], '"')
-			if end < 0 {
-				continue
-			}
-			level = strings.TrimSpace(val[1 : end+1])
-		} else {
-			end := strings.IndexAny(val, " \t")
-			if end < 0 {
-				end = len(val)
-			}
-			level = strings.TrimSpace(val[:end])
-		}
-		if level != "" {
-			return level, true
-		}
-	}
-	return "", false
-}
-
+// buildEntryLabels returns the Loki stream labels of a decoded VL row with
+// Loki's default encoding: stream fields, every other stored string field and
+// the derived detected_level.
 func buildEntryLabels(entry map[string]interface{}) map[string]string {
-	// parseStreamLabels returns a cached read-only map — copy into a fresh map
-	// before adding entry fields so the cache is not mutated.
-	stream := parseStreamLabels(asString(entry["_stream"]))
-	labels := make(map[string]string, len(stream))
-	for k, v := range stream {
-		labels[k] = v
-	}
-	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" {
-			continue
-		}
-		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
-			labels[key] = s
-		}
-	}
-	// VL may surface detected_level="info" from _msg even when the logfmt key
-	// level=warn was also parsed. Explicit level= always wins.
-	if labels["level"] != "" {
-		delete(labels, "detected_level")
-	}
-	// Loki detects level at ingest and adds detected_level as a stream label
-	// even without a parser (JSON, logfmt). Replicate on the read path: if
-	// level is not yet known from VL fields or OTel, try to extract it from
-	// the raw _msg string so detected_level is populated identically to Loki.
-	if labels["level"] == "" && labels["detected_level"] == "" {
-		if msgStr, ok := entry["_msg"].(string); ok {
-			if lvl, ok := extractLevelFromMsg(msgStr); ok {
-				labels["level"] = lvl
-			}
-		}
-	}
-	ensureDetectedLevel(labels)
-	ensureSyntheticServiceName(labels)
-	return labels
+	// parseStreamLabels returns a cached read-only map; the labels are a copy.
+	return buildEntryLabelsWithStream(entry, parseStreamLabels(asString(entry["_stream"])))
 }
 
 // buildEntryLabelsWithStream is like buildEntryLabels but accepts an already-parsed
 // stream map to avoid a redundant parseStreamLabels call in hot paths.
 func buildEntryLabelsWithStream(entry map[string]interface{}, stream map[string]string) map[string]string {
+	msg, _ := entry["_msg"].(string)
+	rows := logRowLevels{bodyScan: true}
+	detected := rows.mapRow(entry, msg, logRowStream{labels: stream, levels: levelFieldsFromLabels(stream)})
+	return entryLabelsWithDetectedLevel(entry, stream, detected)
+}
+
+func entryLabelsWithDetectedLevel(entry map[string]interface{}, stream map[string]string, detected detectedLevel) map[string]string {
 	labels := make(map[string]string, len(stream))
 	for k, v := range stream {
 		labels[k] = v
@@ -311,17 +211,7 @@ func buildEntryLabelsWithStream(entry map[string]interface{}, stream map[string]
 			labels[key] = s
 		}
 	}
-	if labels["level"] != "" {
-		delete(labels, "detected_level")
-	}
-	if labels["level"] == "" && labels["detected_level"] == "" {
-		if msgStr, ok := entry["_msg"].(string); ok {
-			if lvl, ok := extractLevelFromMsg(msgStr); ok {
-				labels["level"] = lvl
-			}
-		}
-	}
-	ensureDetectedLevel(labels)
+	labels[detectedLevelName(stream)] = detected.String()
 	ensureSyntheticServiceName(labels)
 	return labels
 }
@@ -335,7 +225,8 @@ var detectedLabelsBufPool = sync.Pool{
 }
 
 func shouldExposeStructuredField(key string, streamLabels map[string]string, lt *LabelTranslator) bool {
-	if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+	// A stored detected_level is replaced by the derived value.
+	if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 		return false
 	}
 	if _, ok := streamLabels[key]; !ok {
@@ -1357,7 +1248,6 @@ func fillDetectedLabelsFJWithStream(fjVal *fj.Value, stream map[string]string, b
 			buf["level"] = s
 		}
 	}
-	ensureDetectedLevel(buf)
 	ensureSyntheticServiceName(buf)
 }
 
@@ -1453,14 +1343,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	streamLabelSet := make(map[string]string)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	anyOTelWithServiceName := false
-
-	streamLabelBuf := detectedLabelsBufPool.Get().(map[string]string)
-	defer func() {
-		for k := range streamLabelBuf {
-			delete(streamLabelBuf, k)
-		}
-		detectedLabelsBufPool.Put(streamLabelBuf)
-	}()
+	rowLevels := p.newLogRowLevels()
 
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -1476,13 +1359,14 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			continue
 		}
 
-		rawStream := string(fjVal.GetStringBytes("_stream"))
-		rawStreamLabels := parseStreamLabels(rawStream)
+		rowStream := rowLevels.stream(fjVal.GetStringBytes("_stream"))
+		rawStreamLabels := rowStream.labels
 		msgBytes := fjVal.GetStringBytes("_msg")
 
-		fillDetectedLabelsFJWithStream(fjVal, rawStreamLabels, streamLabelBuf)
-		if detectedLevel := strings.TrimSpace(streamLabelBuf["detected_level"]); detectedLevel != "" {
-			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
+		// Loki lists detected_level as a string field without parsers, with the
+		// distinct derived values of the sampled lines.
+		if rowObj, rowErr := fjVal.Object(); rowErr == nil {
+			addDetectedField(fields, detectedLevelName(rawStreamLabels), "", "string", nil, rowLevels.fjRow(fjVal, rowObj, rowStream).String())
 		}
 
 		if isOTelLabels(rawStreamLabels, msgBytes) {
@@ -1579,10 +1463,6 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 
 		for key, value := range parseLogfmtFields(msg) {
-			if key == "level" {
-				addDetectedField(fields, "detected_level", "", "string", nil, value)
-				continue
-			}
 			if shouldSuppressDetectedField(key) {
 				continue
 			}
@@ -1648,7 +1528,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	}
 
 	for _, summary := range fields {
-		if len(summary.parsers) == 0 && !strings.ContainsAny(summary.label, ".") {
+		// detected_level is not parsed from the line: Loki lists it with
+		// parsers null.
+		if len(summary.parsers) == 0 && !strings.ContainsAny(summary.label, ".") && summary.label != detectedLevelLabel && summary.label != detectedLevelExtractedLabel {
 			if _, isStreamLabel := labelNames[summary.label]; !isStreamLabel {
 				if summary.parsers == nil {
 					summary.parsers = map[string]struct{}{}
@@ -1732,7 +1614,6 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 
 		fillDetectedLabelsFJ(fjVal, labelBuf)
 		vlFJParserPool.Put(fjParser)
-		delete(labelBuf, "detected_level")
 
 		for key, value := range labelBuf {
 			lokiLabel := lt.ToLoki(key)
@@ -2186,9 +2067,6 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 		labels := parseStreamLabels(item.Value)
 		ensureSyntheticServiceName(labels)
 		for key, value := range labels {
-			if key == "detected_level" {
-				continue
-			}
 			lokiLabel := p.labelTranslator.ToLoki(key)
 			if lokiLabel == "" {
 				continue

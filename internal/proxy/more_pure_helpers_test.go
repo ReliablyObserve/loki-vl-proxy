@@ -111,18 +111,26 @@ func TestPatternLevelFromEntry(t *testing.T) {
 	}{
 		{"detected_level_wins", map[string]interface{}{"detected_level": "error", "level": "info"}, "error"},
 		{"level_when_no_detected", map[string]interface{}{"level": "warn"}, "warn"},
-		{"empty_detected_falls_through", map[string]interface{}{"detected_level": "   ", "level": "info"}, "info"},
-		{"trims_whitespace", map[string]interface{}{"level": "  error  "}, "error"},
+		// Loki keeps a non-empty stored value that is not a known level word
+		// unchanged, whitespace included, and lowercases it for patterns.
+		{"blank_detected_level_kept", map[string]interface{}{"detected_level": "   ", "level": "info"}, "   "},
+		// A row without a stored message is read as an unpacked JSON body: an
+		// unknown word falls through to the keyword scan of the rebuilt line.
+		{"untrimmed_level_scanned", map[string]interface{}{"level": "  ERROR  "}, "error"},
+		{"normalised_level", map[string]interface{}{"level": "Warning"}, "warn"},
 		{"from_logfmt_msg",
 			map[string]interface{}{"_msg": "ts=2024-01-01 level=error msg=oops"},
 			"error"},
 		{"from_json_msg",
 			map[string]interface{}{"_msg": `{"level":"warn","msg":"oops"}`},
 			"warn"},
-		{"empty_entry", map[string]interface{}{}, ""},
+		{"empty_entry", map[string]interface{}{}, "unknown"},
 		{"only_msg_no_level",
 			map[string]interface{}{"_msg": "request handled in 4ms"},
-			""},
+			"unknown"},
+		{"keyword_in_msg",
+			map[string]interface{}{"_msg": "request failed with error"},
+			"error"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,29 +163,24 @@ func TestParsePatternStepSeconds(t *testing.T) {
 	}
 }
 
-func TestExtractLevelFromMsg(t *testing.T) {
+func TestDetectedLevelFromBodyEdgeCases(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
-		ok   bool
 	}{
-		{"empty", "", "", false},
-		{"whitespace_only", "   ", "", false},
-		{"json_level", `{"level":"error","msg":"oops"}`, "error", true},
-		{"json_severity", `{"severity":"warn","msg":"x"}`, "warn", true},
-		{"logfmt_level", `ts=2024 level=error msg=oops`, "error", true},
-		{"logfmt_lvl", `lvl=warn other=stuff`, "warn", true},
-		{"plain_no_level", `just a free text message`, "", false},
+		{"empty", "", "unknown"},
+		{"whitespace_only", "   ", "unknown"},
+		{"json_level", `{"level":"error","msg":"oops"}`, "error"},
+		{"json_severity", `{"severity":"warn","msg":"x"}`, "warn"},
+		{"logfmt_level", `ts=2024 level=error msg=oops`, "error"},
+		{"logfmt_lvl", `lvl=warn other=stuff`, "warn"},
+		{"plain_no_level", `just a free text message`, "unknown"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := extractLevelFromMsg(tc.in)
-			if ok != tc.ok {
-				t.Errorf("extractLevelFromMsg(%q): ok=%v want %v", tc.in, ok, tc.ok)
-			}
-			if ok && got != tc.want {
-				t.Errorf("extractLevelFromMsg(%q): got %q want %q", tc.in, got, tc.want)
+			if got := levelFromBody([]byte(tc.in)); got != tc.want {
+				t.Errorf("levelFromBody(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}

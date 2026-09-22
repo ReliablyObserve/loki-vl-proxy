@@ -1755,60 +1755,36 @@ func contains(values []string, want string) bool {
 // Drilldown show detected_level even when level is not a VL stream field.
 // =============================================================================
 
-func TestExtractLevelFromMsg_JSON(t *testing.T) {
+// TestDetectedLevelFromLineBody covers the line-body rules for rows without a
+// stored level. Expected values are Loki 3.7's detected_level for each line.
+func TestDetectedLevelFromLineBody(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
 		want  string
-		ok    bool
 	}{
-		{"json_level_error", `{"level":"error","message":"failed"}`, "error", true},
-		{"json_level_warn", `{"level":"warn","msg":"slow"}`, "warn", true},
-		{"json_severity_key", `{"severity":"INFO","msg":"ok"}`, "INFO", true},
-		{"json_lvl_key", `{"lvl":"debug","msg":"trace"}`, "debug", true},
-		{"json_no_level", `{"message":"no level here"}`, "", false},
-		{"plain_text_no_level", `something happened at the server`, "", false},
-		{"empty", ``, "", false},
-		{"json_empty_level", `{"level":""}`, "", false},
+		{"json_level_error", `{"level":"error","message":"failed"}`, "error"},
+		{"json_level_warn", `{"level":"warn","msg":"slow"}`, "warn"},
+		{"json_severity_key", `{"severity":"INFO","msg":"ok"}`, "info"},
+		{"json_lvl_key", `{"lvl":"debug","msg":"trace"}`, "debug"},
+		{"json_no_level", `{"message":"no level here"}`, "unknown"},
+		{"plain_text_no_level", `something happened at the server`, "unknown"},
+		{"empty", ``, "unknown"},
+		{"json_empty_level", `{"level":""}`, "unknown"},
+		{"logfmt_level", `level=error ts=2024-01-01 msg="bad"`, "error"},
+		{"logfmt_level_quoted", `level="warn" msg="slow"`, "warn"},
+		{"logfmt_severity", `severity=info msg=ok`, "info"},
+		{"logfmt_lvl", `lvl=debug caller=main.go`, "debug"},
+		{"logfmt_no_level", `msg=ok caller=main.go`, "unknown"},
+		{"logfmt_level_in_middle", `ts=2024 level=fatal msg=crash`, "fatal"},
+		// notlevel is not a level key, but "error" after '=' is a bounded keyword.
+		{"logfmt_partial_key", `notlevel=error msg=ok`, "error"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := extractLevelFromMsg(tc.input)
-			if ok != tc.ok {
-				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
-			}
-			if ok && got != tc.want {
-				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestExtractLevelFromMsg_Logfmt(t *testing.T) {
-	cases := []struct {
-		name  string
-		input string
-		want  string
-		ok    bool
-	}{
-		{"logfmt_level", `level=error ts=2024-01-01 msg="bad"`, "error", true},
-		{"logfmt_level_quoted", `level="warn" msg="slow"`, "warn", true},
-		{"logfmt_severity", `severity=info msg=ok`, "info", true},
-		{"logfmt_lvl", `lvl=debug caller=main.go`, "debug", true},
-		{"logfmt_no_level", `msg=ok caller=main.go`, "", false},
-		{"logfmt_level_in_middle", `ts=2024 level=fatal msg=crash`, "fatal", true},
-		{"logfmt_partial_key", `notlevel=error msg=ok`, "", false},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := extractLevelFromMsg(tc.input)
-			if ok != tc.ok {
-				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
-			}
-			if ok && got != tc.want {
-				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
+			got := deriveDetectedLevel(detectedLevelInput{body: []byte(tc.input), bodyScan: true}).String()
+			if got != tc.want {
+				t.Errorf("detected_level(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
@@ -1816,7 +1792,8 @@ func TestExtractLevelFromMsg_Logfmt(t *testing.T) {
 
 // TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg verifies that
 // buildEntryLabels populates detected_level from a JSON _msg field even when
-// VL has not extracted level as a top-level NDJSON field.
+// VL has not extracted level as a top-level NDJSON field. Loki adds only
+// detected_level; the line's level key is not a label.
 func TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg(t *testing.T) {
 	entry := map[string]interface{}{
 		"_time":   "2024-01-01T00:00:00Z",
@@ -1827,8 +1804,8 @@ func TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg(t *testing.T) {
 	if labels["detected_level"] != "error" {
 		t.Errorf("expected detected_level=error from JSON _msg, got %q", labels["detected_level"])
 	}
-	if labels["level"] != "error" {
-		t.Errorf("expected level=error synthesized, got %q", labels["level"])
+	if _, ok := labels["level"]; ok {
+		t.Errorf("level must not be synthesized from the line body, got %q", labels["level"])
 	}
 }
 

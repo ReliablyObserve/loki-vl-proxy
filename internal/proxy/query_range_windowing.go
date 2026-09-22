@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	fj "github.com/valyala/fastjson"
-
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 
@@ -125,9 +123,9 @@ func logQueryShapeFingerprint(pipeline string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// snapshotEntriesForPatterns returns a shallow copy of entries with a 2-key
-// Stream map containing only the fields the pattern autodetect goroutine
-// reads (detected_level, level). This breaks the alias between the goroutine
+// snapshotEntriesForPatterns returns a shallow copy of entries with a 1-key
+// Stream map containing only the field the pattern autodetect goroutine
+// reads (detected_level). This breaks the alias between the goroutine
 // and the main thread's applyDerivedFields writer, eliminating the
 // "concurrent map read and map write" race seen in production
 // (postprocess.go:390 vs stream_processing.go:319). Cheap: two map lookups
@@ -140,13 +138,10 @@ func snapshotEntriesForPatterns(entries []queryRangeWindowEntry) []queryRangeWin
 	out := make([]queryRangeWindowEntry, len(entries))
 	for i, e := range entries {
 		// extractLogPatternsFromWindowEntriesWithStats only reads detected_level
-		// and falls back to level — see postprocess.go.
-		stream := make(map[string]string, 2)
-		if v := e.Stream["detected_level"]; v != "" {
-			stream["detected_level"] = v
-		}
-		if v := e.Stream["level"]; v != "" {
-			stream["level"] = v
+		// — see postprocess.go.
+		stream := make(map[string]string, 1)
+		if v := windowEntryDetectedLevel(e); v != "" {
+			stream[detectedLevelLabel] = v
 		}
 		out[i] = queryRangeWindowEntry{
 			Stream: stream,
@@ -811,6 +806,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 		// Fragments store resolved stream labels, which depend on the whole
 		// LogQL pipeline and not only on the translated LogsQL.
 		"shape=" + shape.fingerprint,
+		p.detectedLevelCacheKey(),
 	}
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		parts = append(parts, "auth:"+fp)
@@ -835,7 +831,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	entries := make([]queryRangeWindowEntry, 0, 64)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
-	streamLabelCache := make(map[string]map[string]string, 16)
+	rowLevels := p.newLogRowLevels()
 	smBuf := metadataMapPool.Get().(map[string]string)
 	pfBuf := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -859,6 +855,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	needsClassification := keepEntryMetadata || mergeParsed
 	dropConditions, keepConditions := shape.dropConditions, shape.keepConditions
 	bareDropFields, bareKeepFields := shape.bareDropFields, shape.bareKeepFields
+	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
 
 	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
@@ -898,26 +895,23 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		desc := p.logQueryStreamDescriptorBytes(
-			fjVal.GetStringBytes("_stream"),
-			fjVal.GetStringBytes("level"),
-			streamLabelCache, streamDescriptorCache,
-		)
-		msg := storedLogLineFromFJ(fjVal, desc.streamLabels, shape.lineFields, p.defaultMsgValue())
-
-		var fjObj *fj.Object
-		if needsClassification {
-			obj, fjErr := fjVal.Object()
-			if fjErr != nil {
-				vlFJParserPool.Put(fjParser)
-				continue
-			}
-			fjObj = obj
+		fjObj, fjErr := fjVal.Object()
+		if fjErr != nil {
+			vlFJParserPool.Put(fjParser)
+			continue
 		}
+		rawStream := fjVal.GetStringBytes("_stream")
+		rowStream := rowLevels.stream(rawStream)
+		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
+		msg := storedLogLineFromFJ(fjVal, rowStream.labels, shape.lineFields, p.defaultMsgValue())
+		desc := p.logRowStreamDescriptor(rawStream, rowStream, fjVal.GetStringBytes("level"), detected, emitTupleMetadata, levelStages, streamDescriptorCache)
 
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			if emitTupleMetadata {
+				structuredMetadata = setDetectedLevelMetadata(structuredMetadata, smBuf, rowStream.labels, detected, levelStages)
+			}
 			parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
@@ -947,6 +941,22 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		vlFJParserPool.Put(fjParser)
 	}
 	return entries
+}
+
+// windowEntryDetectedLevel returns an entry's derived detected_level, carried
+// in the stream labels or, for categorize-labels metadata, in structured
+// metadata; under detected_level_extracted when the stream has a
+// detected_level label.
+func windowEntryDetectedLevel(e queryRangeWindowEntry) string {
+	for _, source := range [...]map[string]string{e.SM, e.Stream} {
+		if v := source[detectedLevelExtractedLabel]; v != "" {
+			return v
+		}
+	}
+	if v := e.SM[detectedLevelLabel]; v != "" {
+		return v
+	}
+	return e.Stream[detectedLevelLabel]
 }
 
 func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string, emitSM, categorizedLabels bool) []map[string]interface{} {

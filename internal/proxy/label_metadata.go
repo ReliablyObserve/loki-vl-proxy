@@ -430,7 +430,15 @@ func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values)
 	if fallbackErr != nil {
 		return nil, fallbackErr
 	}
-	return appendDeclaredLabelFieldsIfData(fallback, p.snapshotDeclaredLabelFields()), nil
+	// field_names also lists non-stream fields; a stored detected_level there
+	// is structured metadata for Loki, not a label.
+	filtered := fallback[:0:0]
+	for _, name := range fallback {
+		if name != detectedLevelLabel {
+			filtered = append(filtered, name)
+		}
+	}
+	return appendDeclaredLabelFieldsIfData(filtered, p.snapshotDeclaredLabelFields()), nil
 }
 
 // appendDeclaredLabelFieldsIfData adds operator-declared label fields to a label
@@ -661,7 +669,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 
 			filtered := make([]string, 0, len(labels))
 			for _, v := range labels {
-				if isVLInternalField(v) || v == "detected_level" {
+				if isVLInternalField(v) {
 					continue
 				}
 				filtered = append(filtered, v)
@@ -988,7 +996,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 		filtered := make([]string, 0, len(labels))
 		for _, v := range labels {
-			if isVLInternalField(v) || v == "detected_level" {
+			if isVLInternalField(v) {
 				continue
 			}
 			filtered = append(filtered, v)

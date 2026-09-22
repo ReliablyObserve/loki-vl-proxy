@@ -65,8 +65,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	filtered := make([]string, 0, len(labels))
 	for _, v := range labels {
-		// Filter VL internal fields only (before translation)
-		if isVLInternalField(v) || v == "detected_level" {
+		// Filter VL internal fields only (before translation). A detected_level
+		// stream field is an index label, as in Loki.
+		if isVLInternalField(v) {
 			continue
 		}
 		filtered = append(filtered, v)
@@ -113,6 +114,10 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.handleMultiTenantFanout(w, r, "label_values") {
+		return
+	}
+	if labelName == detectedLevelLabel {
+		p.handleDetectedLevelLabelValues(w, r, start)
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -222,6 +227,40 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	p.setMetadataListCache("label_values", cacheKey, result, len(values), labelValuesTTL)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
+	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+}
+
+// handleDetectedLevelLabelValues answers /label/detected_level/values like
+// Loki: the per-entry detected_level is not indexed, so only a detected_level
+// stream label (a VictoriaLogs stream field) has values, and without one Loki
+// answers success with no data. The level column is never consulted.
+func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Request, start time.Time) {
+	r = p.withRequestScope(r)
+	var values []string
+	if p.supportsStreamMetadataEndpoints() {
+		for _, candidate := range metadataQueryCandidates(r.FormValue("query")) {
+			params, err := p.metadataQueryParams(r.Context(), candidate, r.FormValue("start"), r.FormValue("end"), r.FormValue("limit"), "")
+			if err != nil {
+				p.writeError(w, http.StatusBadRequest, err.Error())
+				p.metrics.RecordRequest("label_values", http.StatusBadRequest, time.Since(start))
+				return
+			}
+			params.Set("field", detectedLevelLabel)
+			values, err = p.fetchVLFieldValues(r.Context(), "/select/logsql/stream_field_values", params)
+			if err != nil {
+				status := statusFromUpstreamErr(err)
+				p.writeError(w, status, err.Error())
+				p.metrics.RecordRequest("label_values", status, time.Since(start))
+				return
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if len(values) == 0 {
+		_, _ = w.Write([]byte(`{"status":"success"}`))
+	} else {
+		_, _ = w.Write(lokiLabelsResponse(values))
+	}
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 }
 

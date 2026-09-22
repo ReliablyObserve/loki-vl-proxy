@@ -71,7 +71,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 7 | 0 | gap |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 4 | 0 | gap |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 0 | gap |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 1 | gap |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 0 | gap |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 0 | gap |
 

@@ -1046,7 +1046,8 @@ func (p *Proxy) patternsAutodetectCacheKey(orgID, authFP, query, start, end, ste
 	if trimmed := strings.TrimSpace(normalizedStep); trimmed != "" {
 		params.Set("step", trimmed)
 	}
-	key := "patterns:" + orgID + ":" + params.Encode()
+	// Pattern levels are derived detected_level values.
+	key := "patterns:" + orgID + ":" + params.Encode() + ":" + p.detectedLevelCacheKey()
 	if authFP != "" {
 		key += ":auth:" + authFP
 	}

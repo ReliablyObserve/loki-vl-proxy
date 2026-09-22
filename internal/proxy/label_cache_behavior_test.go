@@ -325,7 +325,9 @@ func TestHandleLabels_ResponseShape(t *testing.T) {
 }
 
 func TestHandleLabels_VLInternalFieldsFiltered(t *testing.T) {
-	// VL internal fields (_stream, _msg, _time, detected_level) must not leak.
+	// VL internal fields (_stream, _msg, _time) must not leak. A detected_level
+	// stream field is an index label, as a pushed detected_level stream label
+	// is in Loki, and stays listed.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
@@ -339,10 +341,15 @@ func TestHandleLabels_VLInternalFieldsFiltered(t *testing.T) {
 	_, mux := newBehaviorProxy(t, srv.URL, 0)
 
 	labels := getLabels(t, mux, time.Hour)
+	listed := false
 	for _, l := range labels {
-		if l == "_stream" || l == "_msg" || l == "_time" || l == "detected_level" {
+		if l == "_stream" || l == "_msg" || l == "_time" {
 			t.Errorf("VL internal field %q leaked into labels response", l)
 		}
+		listed = listed || l == "detected_level"
+	}
+	if !listed {
+		t.Errorf("detected_level stream field missing from labels response: %v", labels)
 	}
 }
 

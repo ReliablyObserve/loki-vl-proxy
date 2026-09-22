@@ -374,7 +374,7 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r)
 		}
 		if endpoint == "query" || endpoint == "query_range" {
-			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r))
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r), p.detectedLevelCacheKey())
 		}
 		return key, true
 	}
