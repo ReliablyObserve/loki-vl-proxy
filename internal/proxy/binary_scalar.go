@@ -45,7 +45,7 @@ func binaryConstantVectorResponse(r *http.Request, value float64, resultType str
 		return nil, err
 	}
 	points := [][]any{{float64(ts) / 1e9, strconv.FormatFloat(value, 'f', -1, 64)}}
-	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "vector", maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 func binaryConstantResponse(r *http.Request, value float64, resultType string) ([]byte, error) {
@@ -81,5 +81,5 @@ func binaryConstantResponse(r *http.Request, value float64, resultType string) (
 		}
 		ts += int64(step)
 	}
-	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "matrix", maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "matrix", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 const lokiEmptyCompatibleMsg = `parse error : queries require at least one regexp or equality matcher that does not have an empty-compatible value. For instance, app=~".*" does not meet this requirement, but app=~".+" will`
@@ -133,7 +137,7 @@ func TestMetadataQueryValidation_AcceptsLikeLoki(t *testing.T) {
 		t.Run(tc.endpoint+"?"+tc.params.Encode(), func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/?"+tc.params.Encode(), nil)
 			rule := lokiQueryParamRules[tc.endpoint]
-			if msg := lokiQueryParamError(rule, r); msg != "" {
+			if msg := lokiQueryParamError(rule, r, DefaultMaxQueryLengthBytes); msg != "" {
 				t.Fatalf("rejected: %s", msg)
 			}
 		})
@@ -152,21 +156,21 @@ func TestMetadataQueryValidation_OversizedInputs(t *testing.T) {
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
 
+	// Loki parses anything below syntax.maxInputSize (128 KiB), so the proxy
+	// rejects only what Loki rejects. -max-query-length-bytes can lower that;
+	// TestQueryLength_ConfiguredLimitRejectsWhatLokiWouldParse covers it.
 	huge := `{app="` + strings.Repeat("x", 131072) + `"}`
-	large := `{app="` + strings.Repeat("x", 70000) + `"}`
 	hugeMsg := "parse error : input size too long (131080 > 131072)"
-	largeMsg := "query exceeds max length (70008 > 65536)"
 	cases := []struct{ path, param, value, want string }{
 		{"/loki/api/v1/labels", "query", huge, hugeMsg},
-		{"/loki/api/v1/labels", "query", large, largeMsg},
-		{"/loki/api/v1/label/app/values", "query", large, largeMsg},
+		{"/loki/api/v1/label/app/values", "query", huge, hugeMsg},
 		{"/loki/api/v1/series", "match[]", huge, hugeMsg},
-		{"/loki/api/v1/series", "match", large, largeMsg},
-		{"/loki/api/v1/index/volume", "query", large, largeMsg},
+		{"/loki/api/v1/series", "match", huge, hugeMsg},
+		{"/loki/api/v1/index/volume", "query", huge, hugeMsg},
 		{"/loki/api/v1/detected_fields", "query", huge, hugeMsg},
-		{"/loki/api/v1/tail", "query", large, largeMsg},
+		{"/loki/api/v1/tail", "query", huge, hugeMsg},
 		{"/loki/api/v1/query_range", "query", huge, hugeMsg},
-		{"/loki/api/v1/query", "query", large, largeMsg},
+		{"/loki/api/v1/query", "query", huge, hugeMsg},
 	}
 	before := validationCacheSize.Load()
 	for _, tc := range cases {
@@ -232,5 +236,42 @@ func TestMetadataQueryValidation_TruncatesEchoedQuery(t *testing.T) {
 	}
 	if len(got.Error) > maxEchoedErrorBytes+len("... (truncated)") || !strings.HasSuffix(got.Error, "... (truncated)") {
 		t.Fatalf("error not truncated: %d bytes", len(got.Error))
+	}
+}
+
+// The proxy accepts every query Loki parses; an operator who wants a tighter
+// bound sets -max-query-length-bytes, and the error names the flag.
+func TestQueryLength_ConfiguredLimitRejectsWhatLokiWouldParse(t *testing.T) {
+	var calls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	defer backend.Close()
+
+	large := `{app="` + strings.Repeat("x", 70000) + `"}`
+	defaults, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Millisecond, 10), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = defaults.Shutdown(context.Background()) })
+	if msg := queryLengthError(large, defaults.limits().QueryLengthBytes); msg != "" {
+		t.Fatalf("default limit rejected a query Loki parses: %s", msg)
+	}
+
+	limited, err := New(Config{
+		BackendURL:      backend.URL,
+		Cache:           cache.New(time.Millisecond, 10),
+		LogLevel:        "error",
+		ExecutionLimits: ExecutionLimitsConfig{MaxQueryLengthBytes: 65536},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = limited.Shutdown(context.Background()) })
+	msg := queryLengthError(large, limited.limits().QueryLengthBytes)
+	if !strings.Contains(msg, "query exceeds max length (70008 > 65536)") || !strings.Contains(msg, "-max-query-length-bytes") {
+		t.Fatalf("configured limit error = %q", msg)
 	}
 }

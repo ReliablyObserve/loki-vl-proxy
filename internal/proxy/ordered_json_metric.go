@@ -597,7 +597,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		}
 		merged[key] = target
 	}
-	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window)
+	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
 	return body, err == nil, false, err
 }
 

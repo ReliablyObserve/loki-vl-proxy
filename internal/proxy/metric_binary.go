@@ -526,8 +526,8 @@ const drilldownStatsCacheTTL = 5 * time.Minute
 // (500 series), the worst-case stats matrix is 120 × 500 = 60k cells ≈ 3 MB on the wire,
 // well within maxDrilldownResponseBytes (32 MB).
 const (
-	maxDrilldownStatsBuckets      = 120
-	maxDrilldownStatsBucketsShort = 120
+	maxDrilldownStatsBuckets      = DefaultDrilldownMaxStatsBuckets
+	maxDrilldownStatsBucketsShort = DefaultDrilldownMaxStatsBuckets
 )
 
 // drilldownLowCardThreshold is the cardinality (distinct grouped-field values)
@@ -560,7 +560,9 @@ const drilldownHighCardStatsBuckets = 30
 // Set to 12h so that 6h ranges (which Grafana's sliding "now-6h" window occasionally
 // exceeds by ~30s due to time rounding) stay on the full-range non-hybrid path and
 // show complete coverage rather than the ~1h adaptive histogram window.
-const drilldownHybridThreshold = 12 * time.Hour
+// drilldownHybridThreshold is kept as the documented boundary between short and
+// long Drilldown ranges; -drilldown-max-stats-buckets now bounds both.
+var _ = 12 * time.Hour
 
 // drilldownFVEntry is a field value returned by the VL field_values endpoint,
 // with its hit count for use in single-point matrix synthesis.
@@ -963,7 +965,7 @@ func relaxStepForLowCardinality(originalStepRaw string, cardinality int, rangeNs
 // buckets (or maxDrilldownStatsBucketsShort for ranges ≤6h). The result is
 // snapped up to the next "nice" step so VL timestamps are round numbers.
 // If the requested step already satisfies the budget, it is returned unchanged.
-func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Duration {
+func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration, maxBuckets int) time.Duration {
 	if step <= 0 {
 		return step
 	}
@@ -973,10 +975,7 @@ func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Dura
 		return step
 	}
 	rangeNs := endNs - startNs
-	cap := int64(maxDrilldownStatsBuckets)
-	if rangeNs <= int64(drilldownHybridThreshold) {
-		cap = int64(maxDrilldownStatsBucketsShort)
-	}
+	cap := int64(maxBuckets)
 	minStep := time.Duration(rangeNs) / time.Duration(cap)
 	if minStep <= step {
 		return step
@@ -1005,7 +1004,7 @@ func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
 	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
 	effectiveStep := time.Duration(0)
 	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		effectiveStep = coarsenDrilldownStep(startRaw, endRaw, d)
+		effectiveStep = coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets)
 	}
 	bucket := 5 * time.Minute
 	if effectiveStep > bucket {
@@ -1190,7 +1189,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
 	effectiveStepRaw := stepRaw
 	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
+		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets); coarsened != d {
 			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
 		}
 	}
@@ -1353,7 +1352,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
 	effectiveStepRaw := stepRaw
 	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
+		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets); coarsened != d {
 			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
 		}
 	}
@@ -3725,7 +3724,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 				return
 			}
 			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+			leftBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 		}()
 		go func() {
 			defer wg.Done()
@@ -3735,7 +3734,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 				return
 			}
 			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+			rightBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 		}()
 		wg.Wait()
 	} else {
@@ -3748,7 +3747,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 				return
 			}
 			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+			leftBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 		}
 
 		if rightIsScalar {
@@ -3760,7 +3759,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 				return
 			}
 			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+			rightBody, _ = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 		}
 	}
 
@@ -3799,7 +3798,7 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType 
 		return nil, false, e
 	}
 	defer resp.Body.Close()
-	body, err = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err = readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if err != nil {
 		return nil, false, err
 	}

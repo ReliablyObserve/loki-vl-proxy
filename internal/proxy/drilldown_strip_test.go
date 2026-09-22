@@ -775,7 +775,7 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := coarsenDrilldownStep(tt.start, tt.end, tt.step)
+			got := coarsenDrilldownStep(tt.start, tt.end, tt.step, DefaultDrilldownMaxStatsBuckets)
 			if got != tt.wantStep {
 				t.Errorf("coarsenDrilldownStep(%q, %q, %v) = %v, want %v",
 					tt.start, tt.end, tt.step, got, tt.wantStep)

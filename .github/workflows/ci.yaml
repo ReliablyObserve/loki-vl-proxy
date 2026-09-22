@@ -32,6 +32,9 @@ jobs:
           go-version: "1.27.1"
           cache: true
 
+      - name: Verify generated configuration and limits reference
+        run: go run ./cmd/configdoc -check
+
       - name: Build
         run: go build ./...
 

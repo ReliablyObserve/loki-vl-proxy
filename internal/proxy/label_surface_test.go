@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	gzip "github.com/klauspost/compress/gzip"
 	"net/http"
 	"net/http/httptest"
@@ -111,6 +112,9 @@ func TestLabelSurface_LabelValuesResolveCustomAliasFromConfiguredExtras(t *testi
 	}
 }
 
+// A plain /label/{name}/values request returns every value, as Loki does; the
+// indexed browse cache and -label-values-hot-limit only serve requests that ask
+// for a window (limit, offset or search).
 func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendRefetch(t *testing.T) {
 	fieldValuesCalls := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -154,8 +158,8 @@ func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendR
 	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
 		t.Fatalf("decode first label values response: %v", err)
 	}
-	if len(resp1.Data) != 2 || resp1.Data[0] != "alpha" || resp1.Data[1] != "beta" {
-		t.Fatalf("expected hotset-first values [alpha beta], got %v", resp1.Data)
+	if len(resp1.Data) != 4 || resp1.Data[0] != "alpha" || resp1.Data[3] != "gamma" {
+		t.Fatalf("expected every value [alpha beta delta gamma] without a client limit, got %v", resp1.Data)
 	}
 
 	w2 := httptest.NewRecorder()
@@ -653,11 +657,11 @@ func TestLabelSurface_LabelValueWindowHelpersCoverLimitBranches(t *testing.T) {
 		t.Fatalf("expected explicit positive limit to pass through, got %d", got)
 	}
 
-	window := selectLabelValuesWindow([]string{"alpha", "beta", "delta", "gamma"}, "ta", 0, 10000)
+	window := selectLabelValuesWindow([]string{"alpha", "beta", "delta", "gamma"}, "ta", 0, 10000, DefaultMaxEntriesLimitPerQuery)
 	if len(window) != 2 || window[0] != "beta" || window[1] != "delta" {
 		t.Fatalf("unexpected search window result: %v", window)
 	}
-	window = selectLabelValuesWindow([]string{"alpha", "beta", "delta", "gamma"}, "", -1, 0)
+	window = selectLabelValuesWindow([]string{"alpha", "beta", "delta", "gamma"}, "", -1, 0, DefaultMaxEntriesLimitPerQuery)
 	if len(window) != 4 {
 		t.Fatalf("expected full window with normalized offset/limit, got %v", window)
 	}
@@ -1137,4 +1141,72 @@ func waitForCachedKey(t *testing.T, c *cache.Cache, key string) []byte {
 	}
 	t.Fatalf("timed out waiting for cache key %q", key)
 	return nil
+}
+
+// A plain /label/{name}/values request returns every value Loki would return,
+// whatever -label-values-hot-limit is; only a client-requested window truncates.
+func TestLabelSurface_LabelValuesWithoutLimitReturnsEveryValue(t *testing.T) {
+	const total = 500
+	var payload strings.Builder
+	payload.WriteString(`{"values":[`)
+	for i := 0; i < total; i++ {
+		if i > 0 {
+			payload.WriteByte(',')
+		}
+		fmt.Fprintf(&payload, `{"value":%q,"hits":%d}`, fmt.Sprintf("service-%03d", i), total-i)
+	}
+	payload.WriteString(`]}`)
+	body := payload.String()
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
+		case "/select/logsql/stream_field_values", "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		}
+	}))
+	defer vlBackend.Close()
+
+	for _, indexed := range []bool{false, true} {
+		p, err := New(Config{
+			BackendURL:                 vlBackend.URL,
+			Cache:                      cache.New(time.Millisecond, 10),
+			LogLevel:                   "error",
+			LabelValuesIndexedCache:    indexed,
+			LabelValuesHotLimit:        200,
+			LabelValuesIndexMaxEntries: 1000,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+
+		w := httptest.NewRecorder()
+		p.handleLabelValues(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/label/app/values", nil))
+		var resp struct {
+			Data []string `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("indexed=%v decode: %v", indexed, err)
+		}
+		if len(resp.Data) != total {
+			t.Fatalf("indexed=%v: /label/app/values returned %d values, want every one of %d (the hot limit must not truncate)", indexed, len(resp.Data), total)
+		}
+
+		w = httptest.NewRecorder()
+		p.handleLabelValues(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/label/app/values?limit=10", nil))
+		resp.Data = nil
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("indexed=%v decode window: %v", indexed, err)
+		}
+		if len(resp.Data) != 10 {
+			t.Fatalf("indexed=%v: client limit=10 returned %d values", indexed, len(resp.Data))
+		}
+	}
 }

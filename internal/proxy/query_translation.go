@@ -41,6 +41,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
 		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
+		ctx = withExecutionLimits(ctx, p.execLimits)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		next.ServeHTTP(sc, reqWithTelemetry)
@@ -641,7 +642,7 @@ func (p *Proxy) probePreferredParser(ctx context.Context, baseQuery, start, end 
 	}
 	defer resp.Body.Close()
 
-	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if err != nil || len(body) == 0 {
 		return ""
 	}
@@ -1038,7 +1039,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 
-	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
+	limited := &io.LimitedReader{R: resp.Body, N: int64(p.limits().BufferedBackendBodyBytes) + 1}
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	seriesByKey := make(map[string]*bareParserMetricSeries, 16)
@@ -1197,7 +1198,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 		return nil, true, p.redactedBackendStatusError("hits: status", resp.StatusCode, body)
 	}
 
-	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if err != nil {
 		return nil, true, err
 	}
@@ -1632,7 +1633,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	}
 	defer resp.Body.Close()
 
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, _ := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if resp.StatusCode >= http.StatusBadRequest {
 		code := p.writeBackendError(w, resp.StatusCode, body)
 		p.metrics.RecordRequest("query", code, time.Since(start))

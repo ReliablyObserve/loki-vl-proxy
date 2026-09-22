@@ -16,6 +16,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declare which of them they prove. `limits/top-n-ranking-not-silent`, which
   `series-limits-and-partial-results` had named but not written, is one of
   them: topk and bottomk rank every series per step, as Loki does.
+- **Every execution limit is an operator flag with a Helm value.** The caps that
+  were compiled in are now `-backend-max-buffered-response-bytes` (64 MiB),
+  `-binary-metric-max-operand-bytes` (256 MiB), `-binary-metric-max-arrays`
+  (2,000,000), `-multi-tenant-max-fanout` (64),
+  `-multi-tenant-max-merged-response-bytes` (32 MiB),
+  `-max-entries-limit-per-query` (10,000), `-detected-fields-max-scan-lines`
+  (2,000), `-patterns-max-backend-rows` (20,000),
+  `-patterns-second-pass-max-rows` (8,000),
+  `-patterns-second-pass-max-windows` (8), `-drilldown-max-stats-buckets`
+  (120), `-max-zero-fill-buckets` (32,768) and `-max-query-length-bytes`
+  (131,072). `0` selects the built-in default, any positive value is accepted
+  so a limit can be raised as well as lowered, and startup rejects negative
+  values. Errors name the flag that rejected the request. Loki-parity limits
+  keep Loki's own defaults (`max_query_series` 500, `syntax.maxInputSize`
+  131,072, the 11,000-point resolution limit).
+- **Generated configuration and limits reference.** `go run ./cmd/configdoc`
+  renders `docs/reference/configuration-reference.md` (every flag with type,
+  default, Helm value and description, by category),
+  `docs/reference/limits-registry.md` (what each limit bounds, the error it
+  returns, its metric and alert, per-tenant override, Loki parity, sizing
+  guidance and worked small and large deployments) and
+  `docs/reference/errors-and-alerts.md` (from an error or alert back to its
+  limit). The flags stay declared once in `cmd/proxy/main.go`; the registry in
+  `internal/config` adds the operator metadata, and CI fails when the committed
+  documents, the chart values or the alert names drift.
+
+### Fixed
+
+- **`/label/{name}/values` returns every value again, as Loki does.** A request
+  without a `limit` was truncated to `-label-values-hot-limit` (200) even with
+  the indexed browse cache disabled: on the e2e stack Loki returned 713 service
+  names and the proxy 200. The hot limit now sizes the indexed browse cache
+  only; the browse window (`limit`, `offset`, `search`, a proxy extension) is
+  applied when a client asks for one, and a plain request is bounded only by
+  `-max-entries-limit-per-query`.
+- **Queries Loki parses are no longer rejected as too long.** The query-string
+  limit was a fixed 64 KiB while Loki parses up to its own 128 KiB
+  `syntax.maxInputSize`. The default is now Loki's limit, and
+  `-max-query-length-bytes` lowers it; the error names the flag.
 
 ## [1.83.0] - 2026-09-22
 
@@ -93,7 +132,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lives under one `conformance/` tree: `registry/`, `scripts/`, `reports/`.
 
 ### Fixed
-
 - **Long-range metric queries no longer exhaust VictoriaLogs memory.** On the
   e2e stack VictoriaLogs (5 GiB) restarted repeatedly while Grafana range
   checks ran over 24h and 7d. Sliding-window `count_over_time`, `rate`,

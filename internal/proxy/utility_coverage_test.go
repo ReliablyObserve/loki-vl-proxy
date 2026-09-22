@@ -775,12 +775,12 @@ func TestHandleReady_WarmingAndOpenBreakerBackendError(t *testing.T) {
 
 func TestLabelValuesWindowAndDefaultLimit(t *testing.T) {
 	values := []string{"Alpha", "beta", "gamma", "alphabet"}
-	out := selectLabelValuesWindow(values, "  AL  ", -5, 0)
+	out := selectLabelValuesWindow(values, "  AL  ", -5, 0, DefaultMaxEntriesLimitPerQuery)
 	if len(out) != 2 || out[0] != "Alpha" || out[1] != "alphabet" {
 		t.Fatalf("unexpected search+offset+limit default window: %#v", out)
 	}
 
-	out = selectLabelValuesWindow(values, "", 1, 2)
+	out = selectLabelValuesWindow(values, "", 1, 2, DefaultMaxEntriesLimitPerQuery)
 	if len(out) != 2 || out[0] != "beta" || out[1] != "gamma" {
 		t.Fatalf("unexpected paged window: %#v", out)
 	}

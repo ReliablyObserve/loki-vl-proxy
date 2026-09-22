@@ -199,9 +199,9 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	}
 	var body []byte
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
-		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, topK, start, step)
+		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
-		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(), start, step)
+		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(), start, step, p.limits().BufferedBackendBodyBytes)
 	}
 	if err != nil {
 		status := http.StatusServiceUnavailable
@@ -421,7 +421,7 @@ func slidingWindowValue(withBytes bool, count, bytes float64) float64 {
 
 // encodeBusiest keeps the maxSeries series with the largest totals, matching
 // the stats fast path, and encodes their windows.
-func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale float64, steps, maxSeries int, start time.Time, step time.Duration) ([]byte, error) {
+func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale float64, steps, maxSeries int, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	offsets := s.bySeries()
 	selected := make([]int32, 0, len(s.keys))
 	for series := range s.keys {
@@ -450,7 +450,7 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 		})
 		out = append(out, entry)
 	}
-	return encodeSlidingWindowMatrix(out, start, step)
+	return encodeSlidingWindowMatrix(out, start, step, maxBytes)
 }
 
 type topKCandidate struct {
@@ -489,7 +489,7 @@ func (h *topKHeap) better(a, b topKCandidate) bool {
 
 // encodeTopK keeps, per step, the k series Loki's topk or bottomk selects
 // among every series, with one bounded heap per step.
-func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps int, topK rangeTopK, start time.Time, step time.Duration) ([]byte, error) {
+func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps int, topK rangeTopK, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	offsets := s.bySeries()
 	heaps := make([]*topKHeap, steps+1)
 	for series := range s.keys {
@@ -528,7 +528,7 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 	for series, segments := range points {
 		out = append(out, slidingOutputSeries{metric: s.metric(series), segments: segments})
 	}
-	return encodeSlidingWindowMatrix(out, start, step)
+	return encodeSlidingWindowMatrix(out, start, step, maxBytes)
 }
 
 type slidingOutputSeries struct {
@@ -536,7 +536,7 @@ type slidingOutputSeries struct {
 	segments []slidingSegment
 }
 
-func encodeSlidingWindowMatrix(series []slidingOutputSeries, start time.Time, step time.Duration) ([]byte, error) {
+func encodeSlidingWindowMatrix(series []slidingOutputSeries, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	keys := make([]string, len(series))
 	order := make([]int, len(series))
 	for i := range series {
@@ -560,8 +560,8 @@ func encodeSlidingWindowMatrix(series []slidingOutputSeries, start time.Time, st
 		for _, seg := range entry.segments {
 			formatted := strconv.FormatFloat(seg.value, 'f', -1, 64)
 			for k := seg.from; k < seg.to; k++ {
-				if encodedBytes += len(formatted) + 26; encodedBytes > maxBufferedBackendBodyBytes {
-					return nil, fmt.Errorf("manual metric response exceeds %d bytes", maxBufferedBackendBodyBytes)
+				if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
+					return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
 				}
 				t := start.Add(time.Duration(k) * step)
 				points = append(points, []interface{}{float64(t.UnixNano()) / float64(time.Second), formatted})

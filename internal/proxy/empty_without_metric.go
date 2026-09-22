@@ -69,5 +69,5 @@ func sumWithoutMetricName(ctx context.Context, body []byte) ([]byte, error) {
 			}
 		}
 	}
-	return encodeBinarySeriesContext(ctx, result, "vector", maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, result, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
