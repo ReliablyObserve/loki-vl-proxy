@@ -37,12 +37,14 @@ func TestQuotePattern(t *testing.T) {
 		{"empty", "", `""`},
 		{"simple", "simple", `"simple"`},
 		// Backslash preserved (regex escape semantics), only " is escaped.
-		{"regex_backslash", `\d+`, `"\d+"`},
-		{"regex_word", `\w+\s*`, `"\w+\s*"`},
+		{"regex_backslash", `\d+`, `"\\d+"`},
+		{"regex_word", `\w+\s*`, `"\\w+\\s*"`},
 		// Quotes are still escaped.
 		{"has_quote", `say "hi"`, `"say \"hi\""`},
-		// Backslash NOT doubled — pattern semantics.
-		{"backslash_not_doubled", `a\b`, `"a\b"`},
+		// VictoriaLogs unquotes with Go's rules, so a pattern's backslashes must
+		// survive as escapes: it rejects "a\b" and accepts "a\\b" (verified on
+		// v1.52.0).
+		{"backslash_escaped_for_go_unquoting", `a\b`, `"a\\b"`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

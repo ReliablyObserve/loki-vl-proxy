@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside it is not missed. Regexp filter values are quoted with Go string rules,
   which VictoriaLogs uses when it unquotes them, so a Loki regexp carrying
   `\d`, `\w` or `\.` reaches the backend intact.
+- **Regexp matchers written with backticks no longer fail.** A LogQL regexp
+  reaches VictoriaLogs as a quoted string, and VictoriaLogs unquotes it with
+  Go's rules, so `{app=~`api-\d+`}`, `| level=~`wa\w+`` and `| level!~`inf\w+``
+  were rejected with `cannot parse query arg` (HTTP 400) where Loki returns
+  data: the pattern's own backslashes were emitted raw. Regexp literals are now
+  quoted the way VictoriaLogs unquotes them, and a matcher value is unquoted
+  first, so the backtick and the double-quoted spelling of the same pattern
+  translate identically. The same applies to the IPv4-range fallback on
+  backends older than v1.45 and to every field regexp filter, whose emitted
+  form VictoriaLogs v1.52.0 rejected.
+- **A matcher whose value contains an operator is no longer split on it.**
+  `{app="plain!~val"}` was read as a negated regexp on a field named
+  `app=plain`, and `{app=~`!~`}` produced an empty pattern. Operators are now
+  found outside quoted and backquoted segments, so a value, or a backquoted
+  field name, may contain `=`, `!=`, `=~` or `!~`.
 - **`| logfmt` metrics read a tab-separated line as Loki does.** Loki's logfmt
   decoder ends a token at any whitespace, so `n=1\tlevel=warn` yields both
   pairs; the proxy split on spaces alone and VictoriaLogs' `unpack_logfmt` does

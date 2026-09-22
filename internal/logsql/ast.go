@@ -4,6 +4,7 @@ package logsql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -15,12 +16,14 @@ func quoteLogsQL(s string) string {
 	return `"` + s + `"`
 }
 
-// quoteLogsQLPattern is like quoteLogsQL but for regexp/pattern strings that
-// carry their own backslash escape semantics. Only double-quotes are escaped;
-// backslashes pass through verbatim so regex escapes (\d, \w, etc.) are preserved.
+// quoteLogsQLPattern renders a regexp as a LogsQL string literal. VictoriaLogs
+// unquotes double-quoted strings with Go's rules, so every backslash the
+// pattern carries has to survive as an escape: `\d` must reach the backend as
+// `\\d`, or the query is rejected with "compound token cannot start with". A
+// pattern is therefore quoted exactly as Go would quote it, and control
+// characters are escaped rather than sent raw.
 func quoteLogsQLPattern(s string) string {
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+	return strconv.Quote(s)
 }
 
 // QuoteValue wraps s in double-quotes and escapes embedded backslashes and
