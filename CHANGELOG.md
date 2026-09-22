@@ -7,73 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Pinned Loki 3.7.7, Grafana 13.2.1, Logs Drilldown 2.5.2 and VictoriaLogs
-  datasource 0.32.0** in the e2e-compat stack, the root compose file and the
-  compatibility workflows (were Loki 3.7.1 and 3.4.2, Grafana 13.0.1 and
-  12.4.2, Drilldown 2.0.4, datasource 0.26.3), so every compatibility score
-  runs against the latest stable releases. `compatibility-matrix.json` pins
-  the same versions; the Loki matrix gains 3.6.11–3.6.16 and 3.7.2–3.7.7, the
-  Grafana previous-family smoke profile moves to 12.4.10, and the Drilldown
-  contract matrix gains 2.1.0–2.5.2 with the current family widened to `2.x`.
-  Loki 3.7.2–3.7.7 change no LogQL parsing, query_range, volume, patterns or
-  limit code; the only query-path change is that merged `detected_labels`
-  results keep their HyperLogLog sketch (grafana/loki#16315), so Loki's
-  response carries a `sketch` field and multi-tenant `detected_labels` no
-  longer fails with `too short binary`. The Drilldown source-contract check
-  now finds the mixed-parser expression in `MIXED_FORMAT_EXPR` (moved there in
-  2.2.0) and matches the `Add label tab` label; it scores 9/9 on every 1.0.x
-  and 2.x version in the matrix. The Drilldown patterns-tab initialization
-  issue documented for 2.0.4 is unchanged through 2.5.2. The root compose Loki
-  health probe execs the binary: Loki 3.7 images have no `wget`.
-- Queries whose heavy VictoriaLogs calls cannot get an admission slot within
-  `-backend-heavy-query-queue-wait` now return HTTP 429 instead of running.
-  Size `-backend-max-concurrent-heavy-queries` for the fleet: the limit is per
-  replica.
-- Sliding-window metrics answered by the window stats path return fractional
-  sample timestamps for fractional steps (for example `...86.4`), as Loki does.
-
-### Fixed
-
-- **Long-range metric queries no longer exhaust VictoriaLogs memory.** On the
-  e2e stack VictoriaLogs (5 GiB) restarted repeatedly while Grafana range
-  checks ran over 24h and 7d. Sliding-window `count_over_time`, `rate`,
-  `bytes_over_time` and `bytes_rate` asked VictoriaLogs for buckets of
-  `gcd(step, range)`: Grafana's 24h step of 86.4s with a `[5m]` window gives
-  2.4s buckets, 36,000 per series over 24h and 252,000 over 7d, and
-  VictoriaLogs assembled every point in memory before answering. When that
-  response exceeded 64 MiB, the proxy silently retried with a raw fetch of up
-  to one million log lines, so one query paid for two heavy scans. `topk` and
-  `bottomk` over these metrics hit the same paths and failed with
-  `manual metric response exceeds 67108864 bytes` or
-  `maximum metric series exceeded (500)`. When the bucket grid would need more
-  than 11,000 buckets, and for every grouped `topk`/`bottomk` input, the proxy
-  now reads one window-sized seed bucket and two step-sized bucket grids from a
-  VictoriaLogs stats pipe (`/select/logsql/query ... | stats by (_time:step
-  offset ...)`) and derives every window exactly from
-  `W(k+1) = W(k) + A(k) - C(k)`; tumbling windows (range == step) need one grid.
-  VictoriaLogs streams at most one row per step and series, and the proxy keeps
-  one compact record per row. Backend errors on this path are returned instead
-  of retried on a raw fetch. Shapes that path does not cover — per-stream
-  groupings, parser pipelines, and backends whose version could not be probed —
-  no longer request a grid finer than Loki's 11,000 points either: the raw
-  evaluator answers them under `-manual-range-metric-row-limit`.
-- **Grouped `topk`/`bottomk` over range metrics rank every series.** The inner
-  metric was truncated to the 500 busiest series (`-max-stats-query-series`)
-  before ranking, so a series that led a few steps but had a small total over
-  the range was never selected. Ranking now keeps a bounded per-step heap over
-  all series, as Loki ranks per step. Aggregate-all and per-stream inners keep
-  their previous routes.
-- **VictoriaLogs stops work the proxy has given up on.** Every
-  `/select/logsql/*` request now carries VictoriaLogs' `timeout` argument set
-  to the remaining request budget (`-backend-timeout`, or an earlier request
-  deadline); VictoriaLogs caps it at `-search.maxQueryDuration`.
-- **Long raw metric scans that cannot fit are rejected before they start.**
-  For pipe-free selectors spanning at least `-backend-heavy-query-min-range`,
-  a one-row `| stats count()` runs before the raw fetch and rejects the query
-  with `manual range metric row limit exceeded ... increase
-  -manual-range-metric-row-limit` when more lines match than the limit.
+## [1.83.0] - 2026-09-22
 
 ### Added
 
@@ -147,6 +81,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work it needs, and how many tests compare it against Loki, alongside
   `conformance/reports/gaps.md` which ranks what is still missing. Everything
   lives under one `conformance/` tree: `registry/`, `scripts/`, `reports/`.
+
+### Fixed
+
+- **Long-range metric queries no longer exhaust VictoriaLogs memory.** On the
+  e2e stack VictoriaLogs (5 GiB) restarted repeatedly while Grafana range
+  checks ran over 24h and 7d. Sliding-window `count_over_time`, `rate`,
+  `bytes_over_time` and `bytes_rate` asked VictoriaLogs for buckets of
+  `gcd(step, range)`: Grafana's 24h step of 86.4s with a `[5m]` window gives
+  2.4s buckets, 36,000 per series over 24h and 252,000 over 7d, and
+  VictoriaLogs assembled every point in memory before answering. When that
+  response exceeded 64 MiB, the proxy silently retried with a raw fetch of up
+  to one million log lines, so one query paid for two heavy scans. `topk` and
+  `bottomk` over these metrics hit the same paths and failed with
+  `manual metric response exceeds 67108864 bytes` or
+  `maximum metric series exceeded (500)`. When the bucket grid would need more
+  than 11,000 buckets, and for every grouped `topk`/`bottomk` input, the proxy
+  now reads one window-sized seed bucket and two step-sized bucket grids from a
+  VictoriaLogs stats pipe (`/select/logsql/query ... | stats by (_time:step
+  offset ...)`) and derives every window exactly from
+  `W(k+1) = W(k) + A(k) - C(k)`; tumbling windows (range == step) need one grid.
+  VictoriaLogs streams at most one row per step and series, and the proxy keeps
+  one compact record per row. Backend errors on this path are returned instead
+  of retried on a raw fetch. Shapes that path does not cover — per-stream
+  groupings, parser pipelines, and backends whose version could not be probed —
+  no longer request a grid finer than Loki's 11,000 points either: the raw
+  evaluator answers them under `-manual-range-metric-row-limit`.
+- **Grouped `topk`/`bottomk` over range metrics rank every series.** The inner
+  metric was truncated to the 500 busiest series (`-max-stats-query-series`)
+  before ranking, so a series that led a few steps but had a small total over
+  the range was never selected. Ranking now keeps a bounded per-step heap over
+  all series, as Loki ranks per step. Aggregate-all and per-stream inners keep
+  their previous routes.
+- **VictoriaLogs stops work the proxy has given up on.** Every
+  `/select/logsql/*` request now carries VictoriaLogs' `timeout` argument set
+  to the remaining request budget (`-backend-timeout`, or an earlier request
+  deadline); VictoriaLogs caps it at `-search.maxQueryDuration`.
+- **Long raw metric scans that cannot fit are rejected before they start.**
+  For pipe-free selectors spanning at least `-backend-heavy-query-min-range`,
+  a one-row `| stats count()` runs before the raw fetch and rejects the query
+  with `manual range metric row limit exceeded ... increase
+  -manual-range-metric-row-limit` when more lines match than the limit.
 
 ## [1.82.0] - 2026-09-22
 
