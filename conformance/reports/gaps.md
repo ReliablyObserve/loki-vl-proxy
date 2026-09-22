@@ -7,8 +7,7 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
-| 12 | `/loki/api/v1/label/{name}/values` | explore, drilldown, datasource, api | native_vl | 0 | 0 | no test compares it against Loki; no test wired to the registry |
-| 9 | `/loki/api/v1/labels` | explore, drilldown, datasource, api | native_vl | 57 | 9 | no test wired to the registry |
+| 12 | `/loki/api/v1/label/{name}/values` | explore, drilldown, datasource, api | native_vl | 0 | 0 | no test compares it against Loki |
 | 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 29 | 9 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 7 | `/loki/api/v1/query` | explore, drilldown, api | hybrid | 131 | 34 | no test wired to the registry |
 | 7 | `/loki/api/v1/detected_field/{name}/values` | drilldown, api | native_vl | 0 | 0 | no test compares it against Loki; no test wired to the registry |
@@ -65,15 +64,19 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
+| limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 10 | 2 | proven |
+| resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 4 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 4 | 0 | gap |
+| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 9 | 3 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
+| limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 11 | 4 | proven |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 7 | 0 | gap |
-| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 4 | 0 | gap |
+| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 7 | 3 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 1 | gap |
-| severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 0 | gap |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 0 | gap |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 4 | partial |
+| severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 3 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 1 | gap |
 
 ## LogQL surface (v3.7.7)
 

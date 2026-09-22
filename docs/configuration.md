@@ -855,7 +855,7 @@ The limit applies per proxy replica: with three replicas and the default, up to 
 
 ## Fixed Execution Limits
 
-These protective limits are built in (not configurable unless a flag is named). Rejections are errors, not empty results; see [Security hardening migration](security-hardening-migration.md#execution-and-storage-limits) for rollout notes.
+These protective limits bound what one request may do. Rejections are errors, not empty results; see [Security hardening migration](security-hardening-migration.md#execution-and-storage-limits) for rollout notes. Every limit that an operator may need to move is a flag — the table below names them — and each error names the flag that bounded it, so a rejection tells you what to raise.
 
 | Area | Limit | When exceeded |
 |---|---|---|
@@ -867,8 +867,28 @@ These protective limits are built in (not configurable unless a flag is named). 
 | Manual range-metric series | `-max-stats-query-series` (default 500) | `502` when hit while collecting raw samples (`maximum metric series exceeded`); `503` when hit while building the result (`manual metric series limit exceeded`) |
 | Request coalescer | 256 MiB per shared response body | error instead of silent truncation |
 | Hot/cold merge | 64 MiB buffered per hot or cold response | error |
-| Multi-tenant reads | 64 tenants per request; 32 MiB merged response | `400` / `413` |
+| Multi-tenant reads | `-multi-tenant-max-fanout` (default 64) tenants per request; `-multi-tenant-max-merged-response-bytes` (default 32 MiB) merged response | `400` / `413`, each naming its flag |
 | `/tail` client messages | 4 KiB per client message | WebSocket close `1009` |
+
+### Flags for these limits
+
+Each takes `0` to mean "use the built-in default", so a configuration that sets them all to `0` behaves exactly like one that sets none of them.
+
+| Flag | Default | What it bounds |
+|---|---|---|
+| `-max-entries-limit-per-query` | `0` (uses `10000`) | Log lines or label values one request may ask for. A larger client `limit` is capped to this value; Loki's `max_entries_limit_per_query` rejects the request instead of capping |
+| `-max-query-length-bytes` | `0` (uses `131072`) | LogQL query string length. The default is Loki's `syntax.maxInputSize`, so the proxy rejects only what Loki rejects; lower it to reject long queries earlier |
+| `-backend-max-buffered-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response the proxy has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns `502` naming the flag rather than a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response |
+| `-binary-metric-max-operand-bytes` | `0` (uses `256 MiB`) | Operand-response bytes one binary metric expression may capture |
+| `-binary-metric-max-arrays` | `0` (uses `2000000`) | JSON arrays one binary metric expression may allocate while joining operands |
+| `-max-zero-fill-buckets` | `0` (uses `32768`) | Buckets the proxy zero-fills in a metric response |
+| `-drilldown-max-stats-buckets` | `0` (uses `120`) | Time buckets a Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit |
+| `-detected-fields-max-scan-lines` | `0` (uses `2000`) | Log lines the `/detected_fields` and detected-field-values scan reads per request |
+| `-patterns-max-backend-rows` | `0` (uses `20000`) | Log lines `/patterns` reads from VictoriaLogs for one request |
+| `-patterns-second-pass-max-rows` | `0` (uses `8000`) | Log lines the `/patterns` second pass reads when the first pass mined too few patterns |
+| `-patterns-second-pass-max-windows` | `0` (uses `8`) | Windows the `/patterns` second pass re-reads |
+| `-multi-tenant-max-fanout` | `0` (uses `64`) | Tenants one multi-tenant request may fan out to; more returns `400` naming the flag |
+| `-multi-tenant-max-merged-response-bytes` | `0` (uses `32 MiB`) | Bytes of a merged multi-tenant response; more returns `413` naming the flag |
 
 ## Observability and Admin Surfaces
 
