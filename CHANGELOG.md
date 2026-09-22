@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Releases queue instead of cancelling each other.** The release workflow ran
+  with `cancel-in-progress: true`, so merging a second pull request while a
+  release was still running cancelled that run: a tag could be cut with no
+  metadata pull request behind it, a merge could get no release at all, and the
+  CHANGELOG then drifted from what each tag actually contained — which happened
+  four times in one day, including a release whose notes re-listed entries from
+  two earlier releases. Release runs now stack in merge order, each re-reads
+  `main` and the tags after any wait, so it cuts its version from the
+  `[Unreleased]` section as it stands at its own commit, and a run whose version
+  was already cut by an earlier queued run skips instead of publishing a
+  duplicate tag.
+
 ## [1.84.0] - 2026-09-22
 
 ### Fixed
