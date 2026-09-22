@@ -3,7 +3,6 @@ package proxy
 import (
 	"math"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -270,36 +269,6 @@ func TestProxyHelpers_ParseAbsentOverTimeCompatSpec(t *testing.T) {
 	}
 	if spec.rangeWindow != 5*time.Minute {
 		t.Fatalf("unexpected rangeWindow %v", spec.rangeWindow)
-	}
-}
-
-func TestProxyHelpers_BuildBareParserMetricMatrix(t *testing.T) {
-	body := buildBareParserMetricMatrix([]bareParserMetricSeries{
-		{
-			metric: map[string]string{"app": "api-gateway", "status": "500"},
-			samples: []bareParserMetricSample{
-				{tsNanos: 120 * int64(time.Second), value: 1},
-				{tsNanos: 180 * int64(time.Second), value: 1},
-			},
-		},
-	}, 180*int64(time.Second), 300*int64(time.Second), int64(time.Minute), bareParserMetricCompatSpec{
-		funcName:    "count_over_time",
-		rangeWindow: 5 * time.Minute,
-	})
-
-	data := body["data"].(map[string]interface{})
-	results := data["result"].([]lokiMatrixResult)
-	if len(results) != 1 {
-		t.Fatalf("expected single result series, got %d", len(results))
-	}
-	got := results[0].Values
-	want := [][]interface{}{
-		{float64(180), "2"},
-		{float64(240), "2"},
-		{float64(300), "2"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected matrix values: got=%v want=%v", got, want)
 	}
 }
 

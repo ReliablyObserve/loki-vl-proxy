@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A LogQL range vector is `(start, end]` for every function, not only the
+  log-line ones.** `aggregateManualWindow` kept a sample sitting exactly on
+  `windowStart` for unwrapped ranges (`sum_over_time`, `avg_over_time`,
+  `min_over_time`, `max_over_time`, `first_over_time`, `quantile_over_time`,
+  `stddev_over_time`, `stdvar_over_time`), so those read one sample high
+  against Loki. The upper bound is now inclusive for every function too: the
+  1 ns extension of the VictoriaLogs fetch, which is exclusive at its end where
+  Loki is inclusive, applied only to `quantile` and the log-range functions, so
+  correcting the lower bound alone would have left the rest open at both ends
+  and one sample short. `rate_counter` takes the same window but stays
+  non-Loki: Loki evaluates it through Prometheus' `extrapolatedRate`, which
+  needs the sample timestamps this evaluator discards, so its value is still
+  `(last - first) / range` over the samples in the window.
+
+### Changed
+
+- **Unwrapped `*_over_time` results move by one sample at window edges.** A
+  sample landing exactly on `windowStart` is no longer counted, and one landing
+  exactly on the evaluation timestamp now is. It shows up where timestamps are
+  second-precision and the step is second-aligned; `min_over_time`,
+  `max_over_time` and `first_over_time` can move by the whole value of that
+  boundary sample rather than by a percent. Alert thresholds tuned against the
+  old numbers are worth re-checking.
+
 ## [1.86.0] - 2026-09-22
 
 ### Changed
