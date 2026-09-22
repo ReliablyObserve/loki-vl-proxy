@@ -175,17 +175,17 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "regex label in stream selector",
 			logql: `{app=~"api-.*",namespace="prod"}`,
-			want:  `app:~"api-.*" namespace:="prod"`,
+			want:  `app:~"^(?s:api-.*)$" namespace:="prod"`,
 		},
 		{
 			name:  "negative regex in stream selector",
 			logql: `{namespace!~"kube-.*"}`,
-			want:  `-namespace:~"kube-.*"`,
+			want:  `-namespace:~"^(?s:kube-.*)$"`,
 		},
 		{
 			name:  "regex with alternation",
 			logql: `{namespace=~"prod|staging"}`,
-			want:  `namespace:~"prod|staging"`,
+			want:  `namespace:~"^(?s:prod|staging)$"`,
 		},
 		// Substring semantics test — critical correctness
 		{
@@ -1082,7 +1082,7 @@ func TestFieldFilterMigration(t *testing.T) {
 		{
 			name:  "negated regex pipeline label filter",
 			logql: `{app="api"} | status !~ "5.."`,
-			want:  `app:="api" -status:~"5.."`,
+			want:  `app:="api" -status:~"^(?s:5..)$"`,
 		},
 		{
 			name:  "empty value — non-level field in stream selector",
@@ -1133,7 +1133,7 @@ func TestDetectedLevelConfiguredStreamField(t *testing.T) {
 	sf := map[string]bool{"app": true, "detected_level": true}
 	cases := []struct{ logql, want string }{
 		{`{app="nginx", detected_level="error"}`, `{app="nginx", detected_level="error"}`},
-		{`{app="nginx", detected_level=~"err.*"}`, `{app="nginx"} detected_level:~"err.*"`},
+		{`{app="nginx", detected_level=~"err.*"}`, `{app="nginx"} detected_level:~"^(?s:err.*)$"`},
 	}
 	for _, tc := range cases {
 		got, err := TranslateLogQLWithStreamFields(tc.logql, nil, sf)
