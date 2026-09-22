@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,22 +51,22 @@ func TestTopK_RangeWinnersChangeAtEachStep(t *testing.T) {
 
 func TestTopK_BytesRankingKeepsRealZeroAndUsesStats(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/stats_query_range" {
-			http.NotFound(w, r)
-			return
-		}
+		_ = r.ParseForm()
 		if !strings.Contains(r.FormValue("query"), "count() as __sample_count") {
 			t.Error("byte ranking did not request presence counts")
 		}
-		w.Header().Set("Content-Type", "application/json")
-		// Presence may arrive before the byte metric; zero-filled buckets are
-		// not evidence of input, while an actual empty line must remain eligible.
-		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[
-{"metric":{"__name__":"__sample_count","app":"empty"},"values":[[1700000000,"0"],[1700000300,"1"],[1700000600,"0"]]},
-{"metric":{"__name__":"c","app":"empty"},"values":[[1700000000,"0"],[1700000300,"0"],[1700000600,"0"]]},
-{"metric":{"__name__":"c","app":"full"},"values":[[1700000000,"0"],[1700000300,"6000"],[1700000600,"0"]]},
-{"metric":{"__name__":"__sample_count","app":"full"},"values":[[1700000000,"0"],[1700000300,"1"],[1700000600,"0"]]}
-]}}`)
+		// An actual empty line keeps its series eligible with a zero byte sum.
+		lines := map[string]string{"empty": "", "full": strings.Repeat("x", 6000)}
+		body, _, ok := emulateVLStatsPipe(r.FormValue("query"), parseFakeVLTime(t, r.FormValue("start")), parseFakeVLTime(t, r.FormValue("end")), func(yield func(int64, map[string]string, string)) {
+			for app, msg := range lines {
+				yield(1700000500*int64(time.Second), map[string]string{"app": app}, msg)
+			}
+		})
+		if r.URL.Path != "/select/logsql/query" || !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(body)
 	}))
 	defer backend.Close()
 	p := newGapTestProxy(t, backend.URL)

@@ -287,6 +287,7 @@ All traffic guard controls are tunable via CLI flags (or `extraArgs` in the Helm
 | `-cb-fail-threshold` | `5` | Failures within window to open circuit breaker |
 | `-cb-open-duration` | `10s` | How long circuit breaker stays open |
 | `-cb-window-duration` | `30s` | Failure counting window |
+| `-backend-max-concurrent-heavy-queries` | `2` | Heavy VictoriaLogs calls running at once per replica (raw-row metric fetches, stats and hits over `-backend-heavy-query-min-range`); excess waits `-backend-heavy-query-queue-wait` (`20s`), then gets `429` |
 
 If defaults are too strict or too loose for your workload, tune at the proxy first, then complement with:
 
@@ -383,6 +384,7 @@ Not every `502` or `503` means VictoriaLogs is down. Built-in execution limits r
 - `502` with `manual range metric row limit exceeded` — raise `-manual-range-metric-row-limit` or narrow the query
 - `502` with `maximum metric series exceeded` or `503` with `manual metric series limit exceeded` — narrow the query or raise `-max-stats-query-series`
 - `503` with `too many concurrent queries` — the `-max-concurrent` admission cap was reached
+- `429` with `too many outstanding requests: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=N` — heavy long-range VictoriaLogs calls waited longer than `-backend-heavy-query-queue-wait` for a slot. Retry, narrow the time range, or raise `-backend-max-concurrent-heavy-queries` together with VictoriaLogs memory (see [Heavy VictoriaLogs Query Admission](configuration.md#heavy-victorialogs-query-admission))
 
 `line_format` and binary-expression evaluation limits return `400`. See [Fixed Execution Limits](configuration.md#fixed-execution-limits).
 

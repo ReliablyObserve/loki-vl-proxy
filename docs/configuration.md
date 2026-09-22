@@ -753,9 +753,9 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-max-lines` | — | `1000` | Default max lines per query |
-| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.). Exceeding it rejects the query with HTTP `502` (`manual range metric row limit exceeded`) instead of returning truncated results. `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` normally avoid raw rows by summing `stats_query_range` buckets of `gcd(step, range)`; they fall back to raw rows only when that bucket is below 1 ms, the stats response exceeds 64 MiB, or the evaluation grid is not epoch-aligned and VictoriaLogs is older than v1.45 or its version could not be detected. The 64 MiB response limit is the binding bound on that bucket path: there is no bucket-count budget, the encoded range-metric response is capped at the same 64 MiB (HTTP `503` above it), and Loki's 11,000-points-per-series limit bounds the evaluation steps |
+| `-manual-range-metric-row-limit` | — | `1000000` | Maximum rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.): raw log rows, or stats rows (one per non-empty step bucket and series) on the window stats path. Exceeding it rejects the query with HTTP `502` (`manual range metric row limit exceeded ... increase -manual-range-metric-row-limit`) instead of returning truncated results. On the window stats path the limit bounds each bucket grid separately (at most one row per step and series), not their sum. For pipe-free selectors over at least `-backend-heavy-query-min-range`, a one-row count runs first and rejects the query before any log line is fetched. `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` normally avoid raw rows by summing `stats_query_range` buckets of `gcd(step, range)` (one bucket per step when the range is shorter than the step). When that grid would need more than 11,000 buckets, and for every `topk`/`bottomk` input, they instead read one window-sized seed bucket and two step-sized bucket grids from a streamed VictoriaLogs stats pipe and derive each window exactly; `topk`/`bottomk` then rank every series at each step. Raw rows remain the fallback only when the bucket is below 1 ms or the evaluation grid is not epoch-aligned and VictoriaLogs is older than v1.45 or its version could not be detected. The encoded range-metric response is capped at 64 MiB (HTTP `503` above it), and Loki's 11,000-points-per-series limit bounds the evaluation steps. Proxy memory on the window stats path is about 100 bytes per stats row, so the default bounds one evaluation to roughly 100 MiB |
 | `-ordered-json-metric-max-bytes` | — | `1073741824` | Safety cap, not the fix for slow queries: the most bytes the proxy-side ordered JSON metric evaluator reads from the VictoriaLogs raw rows response, and the largest response it builds. `0` uses the 1 GiB default; there is no upper bound. Exceeding it rejects the query with HTTP `502` (`ordered JSON metric response exceeds N bytes; narrow the query or increase -ordered-json-metric-max-bytes`) instead of returning partial results. The default admits about one million rows of 1 KiB, the `-manual-range-metric-row-limit` default; on the e2e generator (about 290k lines and 300 MiB of rows per hour) that is roughly 3.5 hours. Rows are streamed, not buffered, so raising it costs VictoriaLogs scan work and network transfer; proxy memory grows with the retained rows, which `-manual-range-metric-row-limit` bounds. Lower it to protect VictoriaLogs from long raw scans. Helm: `extraArgs.ordered-json-metric-max-bytes`. The evaluator answers only `| json` range metrics that need Loki's per-line semantics (label filters, surviving parser errors, grouping by labels with underscores). Summed `count_over_time`, `rate`, `bytes_over_time` and `bytes_rate` that drop parser errors and group by `detected_level` or underscore-free labels, including Grafana's logs volume queries for plain, `| json` and `| logfmt` selectors, are computed from VictoriaLogs `stats_query_range` buckets and do not read raw rows. When a line in the range has a body that VictoriaLogs and Loki parse differently (for example JSON with a syntax error after the key, or logfmt with tabs), the query keeps the previous route: this evaluator for `| json`, the native stats route for plain and `| logfmt`. Grafana Logs Drilldown requests without a JSON parser keep their dedicated routes. |
-| `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests |
+| `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests. The remaining request budget (this timeout or an earlier request deadline) is passed to VictoriaLogs as its `timeout` query argument, so VictoriaLogs stops executing a query the proxy has given up on; VictoriaLogs caps it at its own `-search.maxQueryDuration`. A client disconnect cancels the in-flight VictoriaLogs request |
 | `-backend-min-version` | — | `v1.30.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate |
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
 | `-backend-version-check-timeout` | — | `5s` | Timeout for startup backend version compatibility check (`/health`) |
@@ -808,10 +808,37 @@ All protection controls are tunable via CLI flags:
 | `-cb-open-duration` | — | `10s` | How long the circuit breaker stays open before entering half-open state |
 | `-cb-window-duration` | — | `30s` | Sliding window duration for failure counting; sporadic failures outside the window do not accumulate |
 | `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead |
+| `-backend-max-concurrent-heavy-queries` | — | `2` | Maximum concurrent heavy VictoriaLogs calls per replica (see [Heavy VictoriaLogs Query Admission](#heavy-victorialogs-query-admission)). `0` disables the limiter |
+| `-backend-heavy-query-queue-wait` | — | `20s` | How long a heavy call waits for a slot before the request fails with `429` `too many outstanding requests`. `0` rejects immediately when all slots are busy |
+| `-backend-heavy-query-min-range` | — | `6h` | Time range from which `stats_query_range`, `stats_query`, `hits` and unbounded raw `query` calls count as heavy. Must be `> 0` |
 
 Per-client rate limits identify clients by connection source IP and return `429` (`Retry-After: 1`). `-rate-limit-per-second=0` disables them; a burst of `0` with a positive rate rejects every request.
 
 Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer for additional control beyond these flags.
+
+### Heavy VictoriaLogs Query Admission
+
+VictoriaLogs lets each `stats`, `sort` or `uniq` pipe of a single query use up to 40% of its allowed memory (`-memory.allowedPercent`) and does not account for other queries running at the same time. A few long-range stats or raw-row calls running together can therefore exhaust VictoriaLogs memory, however each one is bounded. The proxy admits a bounded number of heavy VictoriaLogs calls per replica and queues the rest.
+
+A VictoriaLogs call is heavy when it is:
+
+- a raw `/select/logsql/query` fetch whose row bound (the `limit` argument or a trailing `| limit N` pipe) exceeds 10,000 rows, as proxy-side metric evaluation uses. Log queries, bounded by Loki's `max_entries_limit_per_query` sizes, are not heavy;
+- an unbounded `/select/logsql/query` call spanning at least `-backend-heavy-query-min-range`;
+- a `stats_query_range`, `stats_query` or `hits` call spanning at least `-backend-heavy-query-min-range`, with a bucket grid finer than 11,000 buckets (Loki's resolution limit), or without a resolvable time range at all (VictoriaLogs then scans every stream it stored).
+
+Metadata lookups (`field_names`, `field_values`, `streams`) and tail requests are never heavy, so label browsing keeps working while heavy queries queue.
+
+At most `-backend-max-concurrent-heavy-queries` heavy calls run at once. A heavy call that finds every slot busy waits up to `-backend-heavy-query-queue-wait`, a budget shared by every heavy call of the same request; a released slot goes to the waiting tenant that holds the fewest slots. A rejection is proxy backpressure, not a backend failure: it never counts towards the circuit breaker, and Grafana-sourced requests receive the same 429 rather than an empty partial result. When the wait expires the request fails like Loki's query scheduler with a full queue: HTTP `429`, body `too many outstanding requests: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=N per replica and this query waited -backend-heavy-query-queue-wait=D; ...`. The rejection is remembered for the request, so a fallback path does not queue a second time. Waits and rejections are exported as the internal operation `backend_heavy_query_admission` with outcome `admitted`, `rejected` or `canceled`.
+
+Sizing:
+
+| Deployment | `-backend-max-concurrent-heavy-queries` | Notes |
+|---|---|---|
+| Default, one VictoriaLogs node with 4-8 GiB | `2` | Two concurrent heavy stats states stay within 80% of VictoriaLogs allowed memory |
+| Small (one VictoriaLogs with 1-2 GiB, a few Grafana users) | `1`, queue wait `25s` | Serializes heavy work; dashboards with many 24h panels load panel by panel |
+| Large (VictoriaLogs with 32 GiB or more, or a cluster) | `4`-`8`, queue wait `20s` | Raise with VictoriaLogs memory; the fleet-wide total is replicas × this value |
+
+The limit applies per proxy replica: with three replicas and the default, up to six heavy calls reach VictoriaLogs at once. Size VictoriaLogs memory for the fleet-wide total, or lower the value as replicas grow. Keep `-backend-heavy-query-queue-wait` below the Grafana data source timeout (30s by default) so queued panels fail with the documented `429` instead of a client timeout. The 20s default lets a Grafana Logs Drilldown service page over 7d, about 30 parallel heavy calls, finish with the default two slots.
 
 ## Fixed Execution Limits
 
@@ -821,7 +848,8 @@ These protective limits are built in (not configurable unless a flag is named). 
 |---|---|---|
 | `line_format` | 64 KiB output per line; 16 MiB per response; 1 MiB template input per line; bounded template execution work | `400` |
 | Binary metric expressions | nesting depth 64; 1,024 child evaluations per request; 256 MiB of captured operand bytes; 64 MiB per operand response and encoded result; 1,000,000 output samples | `400` for evaluation and operand limits; `500` for errors raised while joining operands (including implicit many-to-one matches) |
-| Manual range-metric rows | `-manual-range-metric-row-limit` (default 1,000,000 rows); 64 MiB backend response | `502` |
+| Manual range-metric rows | `-manual-range-metric-row-limit` (default 1,000,000 raw or stats rows); 64 MiB raw backend response; stats rows of at most 64 KiB each | `502` |
+| Heavy VictoriaLogs calls | `-backend-max-concurrent-heavy-queries` (default 2) running, queued for `-backend-heavy-query-queue-wait` (default 20s) | `429` (`too many outstanding requests`) |
 | Ordered JSON metric evaluator | `-ordered-json-metric-max-bytes` (default 1 GiB) on the raw rows response and on the built response; `-manual-range-metric-row-limit` rows | `502` |
 | Manual range-metric series | `-max-stats-query-series` (default 500) | `502` when hit while collecting raw samples (`maximum metric series exceeded`); `503` when hit while building the result (`manual metric series limit exceeded`) |
 | Request coalescer | 256 MiB per shared response body | error instead of silent truncation |

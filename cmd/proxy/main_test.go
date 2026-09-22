@@ -1455,11 +1455,27 @@ func TestBuildProxyConfig_InvalidInputs(t *testing.T) {
 		{labelStyle: "bad", metadataFieldMode: "hybrid"},
 		{labelStyle: "passthrough", metadataFieldMode: "bad"},
 		{labelStyle: "passthrough", metadataFieldMode: "hybrid", tailMode: "bad"},
+		{labelStyle: "passthrough", metadataFieldMode: "hybrid", backendMaxConcurrentHeavyQueries: -1},
+		{labelStyle: "passthrough", metadataFieldMode: "hybrid", backendMaxConcurrentHeavyQueries: 2, backendHeavyQueryQueueWait: -time.Second, backendHeavyQueryMinRange: time.Hour},
+		{labelStyle: "passthrough", metadataFieldMode: "hybrid", backendMaxConcurrentHeavyQueries: 2, backendHeavyQueryMinRange: 0},
 	}
 	for _, tc := range cases {
 		if _, err := buildProxyConfig(tc); err == nil {
 			t.Fatalf("expected buildProxyConfig to reject %+v", tc)
 		}
+	}
+}
+
+func TestBuildProxyConfig_HeavyQueryLimits(t *testing.T) {
+	cfg, err := buildProxyConfig(proxyRuntimeConfig{labelStyle: "passthrough", metadataFieldMode: "hybrid", backendMaxConcurrentHeavyQueries: 8, backendHeavyQueryQueueWait: 30 * time.Second, backendHeavyQueryMinRange: 12 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BackendMaxConcurrentHeavyQueries != 8 || cfg.BackendHeavyQueryQueueWait != 30*time.Second || cfg.BackendHeavyQueryMinRange != 12*time.Hour {
+		t.Fatalf("heavy query limits not propagated: %+v", cfg)
+	}
+	if _, err := buildProxyConfig(proxyRuntimeConfig{labelStyle: "passthrough", metadataFieldMode: "hybrid"}); err != nil {
+		t.Fatalf("disabled limiter must be accepted: %v", err)
 	}
 }
 

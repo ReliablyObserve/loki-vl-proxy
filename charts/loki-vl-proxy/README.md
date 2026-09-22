@@ -20,6 +20,9 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.label-style` | _(binary default: underscores)_ | Label translation mode: `passthrough` or `underscores` |
 | `extraArgs.metadata-field-mode` | _(binary default: translated)_ | Structured metadata exposure: `native`, `translated`, or `hybrid` |
 | `extraArgs.max-concurrent` | `64` | Per-replica in-flight request cap (excess gets `503`); also bounds concurrent backend operations. `0` = unlimited |
+| `extraArgs.backend-max-concurrent-heavy-queries` | `2` | Heavy VictoriaLogs queries (ranges at or above the threshold below) running at once, per replica. Excess requests wait, then get Loki's `429`. `0` = unlimited |
+| `extraArgs.backend-heavy-query-queue-wait` | `20s` | How long a heavy query waits for a slot before the `429` |
+| `extraArgs.backend-heavy-query-min-range` | `6h` | Query range from which a request counts as heavy |
 | `extraArgs.rate-limit-per-second` / `extraArgs.rate-limit-burst` | `50` / `100` | Per-client (source IP) token bucket; `rate-limit-per-second=0` disables it |
 | `extraArgs.server.register-instrumentation` | `true` | Serve `/metrics` (the binary default is `false`) |
 | `extraArgs.metrics-listen` | `:9091` | Dedicated `/metrics` listener, exposed as the `metrics` Service port |

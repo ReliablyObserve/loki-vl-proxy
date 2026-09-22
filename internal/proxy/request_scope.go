@@ -162,5 +162,17 @@ func (p *Proxy) scopedIndexOrg(r *http.Request, orgID string) string {
 func (p *Proxy) coldPost(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	routing := p.routingForContext(ctx)
 	ctx = context.WithValue(ctx, requestRoutingKey{}, routing)
-	return p.coldRouter.coldRequest(ctx, http.MethodPost, path, p.scopedTenantParams(ctx, params), func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRequest)
+	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
+	// Cold-tier fetches read the same shapes from another VictoriaLogs node and
+	// go through the same heavy-query admission.
+	release, err := p.admitBackendRequest(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.coldRouter.coldRequest(ctx, http.MethodPost, path, params, func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRequest)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return attachRelease(resp, release), nil
 }
