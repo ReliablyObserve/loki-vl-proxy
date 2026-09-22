@@ -1,0 +1,27 @@
+id: limits/metadata-not-queued
+title: Label and metadata lookups are served while heavy queries are queued
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  In Grafana, the label pickers and the query editor call /labels and
+  /label/<name>/values constantly. If admission queued those behind long-range
+  charts, backpressure on one panel would make the whole Explore UI look broken,
+  and an operator probing the proxy during an incident would get no answer.
+  These lookups are cheap and bounded in VictoriaLogs, so they are never queued.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    Every admission slot is held and heavy queries are being refused with 429.
+compare:
+  mode: exact
+  fields: [status]
+  expect:
+    status: 200

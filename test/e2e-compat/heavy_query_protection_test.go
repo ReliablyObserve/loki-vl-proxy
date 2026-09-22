@@ -24,6 +24,8 @@ import (
 //   - many of them at once keep VictoriaLogs up while a concurrent /labels
 //     request keeps succeeding; every response is 200 or a documented limit
 //     error.
+//
+// conformance: backend-admission-and-heavy-query-queueing, heavy-metric-fetch-bounds, series-limits-and-partial-results, limits/heavy-query-queue-429, limits/metadata-not-queued, limits/drilldown-stats-rejection-keeps-429, limits/top-n-ranking-not-silent, semantics/sliding-window-recurrence-exact, loki_api_v1_query_range
 func TestCompat_HeavyQueryProtection(t *testing.T) {
 	id := time.Now().UnixNano()
 	now := time.Now()

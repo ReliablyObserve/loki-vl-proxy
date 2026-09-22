@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Registry items for backend protection.** The conformance registry gains
+  three behaviours - backend admission and heavy-query queueing, backend
+  deadlines and cancellation, and heavy metric fetch bounds - with twelve cases
+  carrying the real requests and comparison contracts, and nineteen tests now
+  declare which of them they prove. `limits/top-n-ranking-not-silent`, which
+  `series-limits-and-partial-results` had named but not written, is one of
+  them: topk and bottomk rank every series per step, as Loki does.
+
 ## [1.83.0] - 2026-09-22
 
 ### Added

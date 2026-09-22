@@ -1,0 +1,22 @@
+id: limits/stats-row-limit-per-grid
+title: The stats row limit bounds each bucket grid, not their sum
+proves:
+  - heavy-metric-fetch-bounds
+consumer: any
+why: |
+  A sliding window reads a seed bucket and two step-sized grids. Counting rows
+  across all three against one limit silently divides the operator's budget by
+  three: 1000 steps x 500 series is 500k rows per grid but 1,000,500 in total,
+  so a query that fits the configured limit would still be refused. Each grid is
+  bounded on its own, and the error says which grid and names the flag.
+request:
+  scope: internal
+  entry: fetchSlidingStatsGrid
+  setup: |
+    -manual-range-metric-row-limit set below the rows of one grid.
+compare:
+  mode: exact
+  expect:
+    body_contains:
+      - stats rows in one bucket grid
+      - -manual-range-metric-row-limit
