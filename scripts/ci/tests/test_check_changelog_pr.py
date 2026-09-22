@@ -5,6 +5,8 @@ from scripts.ci.check_changelog_pr import (
     has_genuinely_new_unreleased_entries,
     has_meaningful_changelog_content,
     has_new_version_sections,
+    extract_released_sections,
+    is_changelog_history_fix,
     is_dependency_only_pr,
     is_release_metadata_sync,
     should_require_changelog,
@@ -107,6 +109,31 @@ class CheckChangelogPRTests(unittest.TestCase):
                 ["go.mod", "go.sum"],
             )
         )
+
+    def test_extract_released_sections_starts_at_first_version(self):
+        text = """# Changelog
+
+## [Unreleased]
+
+### Fixed
+
+- something new
+
+## [1.2.0] - 2026-01-01
+
+- released entry
+"""
+        released = extract_released_sections(text)
+        self.assertTrue(released.startswith("## [1.2.0]"))
+        self.assertNotIn("something new", released)
+
+    def test_extract_released_sections_empty_when_nothing_released(self):
+        self.assertEqual(extract_released_sections("# Changelog\n\n## [Unreleased]\n"), "")
+
+    def test_changelog_history_fix_detects_docs_changelog_commits(self):
+        self.assertTrue(is_changelog_history_fix(["docs(changelog): move entry back to Unreleased"]))
+        self.assertFalse(is_changelog_history_fix(["fix: something"]))
+        self.assertFalse(is_changelog_history_fix([]))
 
     def test_dependency_only_pr_survives_a_branch_update(self):
         """Bringing a dependency branch up to date must not make it releasable."""
