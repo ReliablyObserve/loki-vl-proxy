@@ -35,7 +35,7 @@ func FuzzExtractLogPatterns(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, body string, step string, limit int) {
-		patterns := extractLogPatterns([]byte(body), step, limit)
+		patterns := extractLogPatterns([]byte(body), step, limit, defaultLogRowLevels())
 		if limit > 0 && len(patterns) > limit {
 			t.Fatalf("expected patterns to respect limit=%d, got %d", limit, len(patterns))
 		}

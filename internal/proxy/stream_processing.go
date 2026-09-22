@@ -833,16 +833,19 @@ func (p *Proxy) newLogRowLevels() logRowLevels {
 }
 
 // streamLabels returns the cached level-field view of already-parsed stream
-// labels, so a per-row caller pays levelFieldsFromLabels once per stream.
-func (l *logRowLevels) streamLabels(rawStream string, labels map[string]string) logRowStream {
+// labels, so a per-row caller pays levelFieldsFromLabels once per distinct
+// label set. The key must identify the labels, not only the stream: a row's
+// stored level joins them, and two rows of one stream can carry different
+// ones.
+func (l *logRowLevels) streamLabels(key string, labels map[string]string) logRowStream {
 	if l.streams == nil {
 		l.streams = make(map[string]logRowStream, 16)
 	}
-	if s, ok := l.streams[rawStream]; ok {
+	if s, ok := l.streams[key]; ok {
 		return s
 	}
 	s := logRowStream{labels: labels, levels: levelFieldsFromLabels(labels)}
-	l.streams[rawStream] = s
+	l.streams[key] = s
 	return s
 }
 

@@ -144,23 +144,31 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 	}
 }
 
+// conformance: severity-detected-level-derivation
 func TestBuildDetectedLevelChain(t *testing.T) {
 	chain := BuildDetectedLevelChain(nil, DetectedLevelChainGroup)
 	pipes := strings.Split(strings.TrimPrefix(chain, "| "), " | ")
-	// 2 unpack + 28 picks + 7 normalisers + 1 keyword regexp + 4 finals + delete.
-	if len(pipes) != 43 {
-		t.Fatalf("chain has %d pipes, want 43:\n%s", len(pipes), chain)
+	// 16 stored picks + 1 stored copy + 2 unpack + 28 body picks + 7
+	// normalisers + 1 keyword regexp + 3 keyword finals + 1 stored word +
+	// 7 severity numbers + 1 severity fallback + unknown + delete.
+	if len(pipes) != 68 {
+		t.Fatalf("chain has %d pipes, want 68:\n%s", len(pipes), chain)
 	}
 	for i, want := range map[int]string{
-		0:  `unpack_json from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__j_"`,
-		1:  `unpack_logfmt from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__l_"`,
-		2:  `format if (__j_level:*) "<__j_level>" as __dl_v keep_original_fields`,
-		29: `format if (__l_SEVERITY_TEXT:*) "<__l_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
-		30: "format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields",
-		36: "format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields",
-		37: "extract_regexp if (__dl:\"\") `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
-		41: `format "unknown" as __dl keep_original_fields`,
-		42: `delete __dl_*, __j_*, __l_*`,
+		0:  `format if (detected_level:*) "<detected_level>" as __dl_s keep_original_fields`,
+		1:  `format if (level:*) "<level>" as __dl_s keep_original_fields`,
+		14: `format if (SEVERITY_TEXT:*) "<SEVERITY_TEXT>" as __dl_s keep_original_fields`,
+		15: `format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`,
+		16: `unpack_json from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__j_"`,
+		17: `unpack_logfmt from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__l_"`,
+		18: `format if (__j_level:*) "<__j_level>" as __dl_v keep_original_fields`,
+		45: `format if (__l_SEVERITY_TEXT:*) "<__l_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
+		46: "format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields",
+		52: "format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields",
+		53: "extract_regexp if (__dl:\"\") `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
+		57: `format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`,
+		66: `format "unknown" as __dl keep_original_fields`,
+		67: `delete __dl_*, __j_*, __l_*`,
 	} {
 		if pipes[i] != want {
 			t.Fatalf("pipe %d = %q, want %q", i, pipes[i], want)
@@ -182,5 +190,32 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		if !strings.Contains(stored, want) {
 			t.Fatalf("chain with stored level lacks %q", want)
 		}
+	}
+}
+
+// Loki groups metric queries by the detected_level it derived at ingest, not
+// by a stored level field, so the translation carries the derivation chain and
+// groups by the value it writes.
+//
+// conformance: severity-exposure-surfaces, severity-detected-level-derivation
+func TestMetricGroupingDerivesDetectedLevel(t *testing.T) {
+	got, err := TranslateLogQLWithLabels(`sum by (detected_level) (count_over_time({app="x"}[5m]))`, nil)
+	if err != nil {
+		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
+	}
+	if !strings.HasPrefix(got, `app:="x" | format if (detected_level:*) "<detected_level>" as __dl_s keep_original_fields`) {
+		t.Fatalf("grouping query does not start with the derivation chain: %q", got)
+	}
+	if !strings.HasSuffix(got, `| format "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_* | stats by (detected_level) count()`) {
+		t.Fatalf("grouping query does not group by the derived value: %q", got)
+	}
+
+	// A query that does not group by detected_level keeps its cost: no chain.
+	plain, err := TranslateLogQLWithLabels(`sum by (app) (count_over_time({app="x"}[5m]))`, nil)
+	if err != nil {
+		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
+	}
+	if plain != `app:="x" | stats by (app) count()` {
+		t.Fatalf("unrelated grouping changed: %q", plain)
 	}
 }

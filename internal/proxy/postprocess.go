@@ -269,16 +269,22 @@ func extractLineFormatTemplate(query string) string {
 // extractLogPatterns implements Loki-style Drain-inspired pattern extraction.
 // It tokenizes lines with punctuation-aware splitting, clusters by similarity,
 // and returns Grafana Logs Drilldown compatible pattern buckets.
-func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]interface{} {
-	patterns, _ := extractLogPatternsWithStats(vlBody, step, limit)
+func extractLogPatterns(vlBody []byte, step string, limit int, levels logRowLevels) []map[string]interface{} {
+	patterns, _ := extractLogPatternsWithStats(vlBody, step, limit, levels)
 	return patterns
 }
 
-func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
+// defaultLogRowLevels is the level derivation used where no proxy
+// configuration is in scope: Loki's defaults with the bounded body scan on.
+func defaultLogRowLevels() logRowLevels {
+	return (*Proxy)(nil).newLogRowLevels()
+}
+
+func extractLogPatternsWithStats(vlBody []byte, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats) {
 	if len(vlBody) == 0 {
 		return nil, patternExtractionStats{}
 	}
-	patterns, stats := extractLogPatternsStreamWithStats(bytes.NewReader(vlBody), step, limit)
+	patterns, stats := extractLogPatternsStreamWithStats(bytes.NewReader(vlBody), step, limit, levels)
 	if stats.observedLines > 0 {
 		return patterns, stats
 	}
@@ -293,7 +299,7 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 	if err != nil {
 		return nil, stats
 	}
-	collectPatternObservationsFromFJ(miner, fjVal, stepSeconds, "", &stats.observedLines)
+	collectPatternObservationsFromFJ(miner, fjVal, stepSeconds, "", &stats.observedLines, &levels)
 	if stats.observedLines == 0 {
 		return nil, stats
 	}
@@ -305,11 +311,14 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 // extractLogPatternsStreamWithStats scans VL NDJSON from r, extracts the
 // message, timestamp, and level from each line, and feeds them to the pattern
 // miner. Uses fastjson to avoid map[string]interface{} allocation per line.
-func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
+func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
 	stats := patternExtractionStats{}
-	rows := logRowLevels{bodyScan: true, streams: make(map[string]logRowStream, 16)}
+	rows := levels
+	if rows.streams == nil {
+		rows.streams = make(map[string]logRowStream, 16)
+	}
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -388,8 +397,12 @@ func patternLevelFromFJ(v *fj.Value, rows *logRowLevels) string {
 	if err != nil {
 		return levelUnknown
 	}
-	if rows == nil || rows.streams == nil {
-		rows = &logRowLevels{bodyScan: true, streams: make(map[string]logRowStream, 1)}
+	if rows == nil {
+		levels := defaultLogRowLevels()
+		rows = &levels
+	}
+	if rows.streams == nil {
+		rows.streams = make(map[string]logRowStream, 1)
 	}
 	return patternLevel(rows.fjRow(v, obj, rows.stream(v.GetStringBytes("_stream"))))
 }
@@ -413,10 +426,14 @@ func parsePatternUnixSecondsStr(timeStr string) (int64, bool) {
 }
 
 // patternLevelFromEntry is patternLevelFromFJ for a decoded VL row.
-func patternLevelFromEntry(entry map[string]interface{}) string {
+func patternLevelFromEntry(entry map[string]interface{}, levels *logRowLevels) string {
 	stream := parseStreamLabels(asString(entry["_stream"]))
 	msg, _ := entry["_msg"].(string)
-	rows := logRowLevels{bodyScan: true}
+	rows := levels
+	if rows == nil {
+		defaults := defaultLogRowLevels()
+		rows = &defaults
+	}
 	return patternLevel(rows.mapRow(entry, msg, logRowStream{labels: stream, levels: levelFieldsFromLabels(stream)}))
 }
 
@@ -514,14 +531,14 @@ func patternUnixSecondsFromEntry(entry map[string]interface{}) (int64, bool) {
 	return 0, false
 }
 
-func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}, stepSeconds int64, inheritedLevel string, observed *int) {
+func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}, stepSeconds int64, inheritedLevel string, observed *int, levels *logRowLevels) {
 	switch value := decoded.(type) {
 	case map[string]interface{}:
 		if msg, ok := patternMessageFromEntry(value); ok {
 			if unixSeconds, ok := patternUnixSecondsFromEntry(value); ok {
 				level := inheritedLevel
 				if level == "" {
-					level = patternLevelFromEntry(value)
+					level = patternLevelFromEntry(value, levels)
 				}
 				bucket := unixSeconds
 				if stepSeconds > 0 {
@@ -533,12 +550,12 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 		}
 		if rows, ok := value["results"].([]interface{}); ok {
 			for _, row := range rows {
-				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed)
+				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed, levels)
 			}
 		}
 		if rows, ok := value["values"].([]interface{}); ok {
 			for _, row := range rows {
-				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed)
+				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed, levels)
 			}
 		}
 		if dataMap, ok := value["data"].(map[string]interface{}); ok {
@@ -586,7 +603,7 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 		}
 	case []interface{}:
 		for _, item := range value {
-			collectPatternObservationsFromJSON(miner, item, stepSeconds, inheritedLevel, observed)
+			collectPatternObservationsFromJSON(miner, item, stepSeconds, inheritedLevel, observed, levels)
 		}
 	}
 }
@@ -597,7 +614,7 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 // memory; the caller owns parser lifecycle.
 //
 //nolint:gocyclo // recursive fastjson walker with per-type switch (object/array/leaf) and timestamp/level extraction; branching is inherent to the JSON shape.
-func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeconds int64, inheritedLevel string, observed *int) {
+func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeconds int64, inheritedLevel string, observed *int, levels *logRowLevels) {
 	if v == nil {
 		return
 	}
@@ -616,7 +633,7 @@ func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeco
 				if unixSeconds, ok := parsePatternUnixSecondsStr(timeStr); ok {
 					level := inheritedLevel
 					if level == "" {
-						level = patternLevelFromFJ(v, nil)
+						level = patternLevelFromFJ(v, levels)
 					}
 					bucket := unixSeconds
 					if stepSeconds > 0 {
@@ -630,13 +647,13 @@ func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeco
 		// Recurse into "results" array.
 		if rows := v.GetArray("results"); rows != nil {
 			for _, row := range rows {
-				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed)
+				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed, levels)
 			}
 		}
 		// Recurse into "values" array.
 		if rows := v.GetArray("values"); rows != nil {
 			for _, row := range rows {
-				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed)
+				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed, levels)
 			}
 		}
 		// Handle Loki-style {"data": {"result": [{stream:{}, values:[[ts,msg],...]}]}}.
@@ -692,7 +709,7 @@ func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeco
 	case fj.TypeArray:
 		items, _ := v.Array()
 		for _, item := range items {
-			collectPatternObservationsFromFJ(miner, item, stepSeconds, inheritedLevel, observed)
+			collectPatternObservationsFromFJ(miner, item, stepSeconds, inheritedLevel, observed, levels)
 		}
 	}
 }

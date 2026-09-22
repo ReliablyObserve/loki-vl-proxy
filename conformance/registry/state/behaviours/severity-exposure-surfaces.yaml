@@ -1,6 +1,22 @@
 id: severity-exposure-surfaces
-state: gap
+state: partial
 reason: |
-  Seeded from behaviour we have hit in production use; cases are named but not yet written or wired.
-owner_decision: null
+  Log responses, /tail, /patterns and /detected_fields carry the derived
+  detected_level; categorize-labels puts it and a stored non-stream level in
+  structuredMetadata with only stream fields in stream, as Loki does; a
+  detected_level stream field stays an index label and log responses expose
+  the derived value beside it as detected_level_extracted, while tail frames
+  follow Loki's tail encoder (the derived value keeps the detected_level name
+  and the stream label is not repeated). A detected_level matcher in a stream
+  selector matches nothing, as Loki's non-indexed label does.
+  /label/detected_level/values answers from the stream field only, sorted,
+  through the label-values read cache. Metric queries grouped
+  by (detected_level) group by the derived value, computed by a LogsQL pipe
+  chain on the same stats query, so by (level, detected_level) returns both
+  labels as Loki does.
+owner_decision: |
+  Recorded gap (2026-09-22): `| detected_level="error"` label filters and
+  index/volume by detected_level still read the stored detected_level or
+  level field rather than the derived value. Metric grouping was in the same
+  gap and is closed by this change.
 waiver: null

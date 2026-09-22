@@ -431,6 +431,7 @@ func dlDefaultEncodingLabels(labels map[string]string, c dlCase) map[string]stri
 	return out
 }
 
+// conformance: severity-detected-level-derivation, severity-exposure-surfaces
 func TestCompat_DetectedLevelQueryRange(t *testing.T) {
 	f := ensureDetectedLevelFixture(t)
 	for _, categorized := range []bool{false, true} {
@@ -668,6 +669,7 @@ func dlTailFrames(t *testing.T, frames <-chan []byte, want int) map[string]dlEnt
 	return out
 }
 
+// conformance: severity-exposure-surfaces
 func TestCompat_DetectedLevelTail(t *testing.T) {
 	for _, categorized := range []bool{false, true} {
 		name := "default"
@@ -772,6 +774,7 @@ func dlRawSelector(f dlFixture) string {
 	return fmt.Sprintf(`{app=%q, route="raw", case!="label-level"}`, f.app)
 }
 
+// conformance: severity-exposure-surfaces
 func TestCompat_DetectedLevelDetectedFields(t *testing.T) {
 	f := ensureDetectedLevelFixture(t)
 	params := dlRangeParams(f, dlRawSelector(f))
@@ -823,6 +826,7 @@ func TestCompat_DetectedLevelDetectedFields(t *testing.T) {
 // TestCompat_DetectedLevelIndexEndpoints checks the endpoints backed by the
 // index: the derived detected_level never appears there, while a pushed
 // detected_level stream label does, exactly as in Loki.
+// conformance: severity-exposure-surfaces
 func TestCompat_DetectedLevelIndexEndpoints(t *testing.T) {
 	f := ensureDetectedLevelFixture(t)
 	for _, tc := range []struct {

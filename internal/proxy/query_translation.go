@@ -1110,7 +1110,8 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		// what Loki's ingester wrote there.
 		if metric[detectedLevelLabel] == "" {
 			msg, _ := entry["_msg"].(string)
-			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(asString(entry["_stream"]), desc.rawLabels)).String()
+			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
+			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
 		if includeParsedInMetric {
 			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)

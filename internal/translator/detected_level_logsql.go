@@ -105,6 +105,9 @@ const (
 	// DetectedLevelChainLogs writes the result to detected_level for rows
 	// without a stored level and deletes every scratch field.
 	DetectedLevelChainLogs
+	// DetectedLevelChainGrouping writes Loki's value of every row into
+	// detected_level, so a stats pipe can group by the Loki label itself.
+	DetectedLevelChainGrouping
 )
 
 // BuildDetectedLevelChain returns the body chain (starting with "| "). When
@@ -135,7 +138,26 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 	fieldList := strings.Join(quoted, ", ")
 
 	var b strings.Builder
-	fmt.Fprintf(&b, `| unpack_json%s from _msg fields (%s) result_prefix "__j_"`, withCond(""), fieldList)
+	// Stored fields first, in Loki's priority order: the first non-empty one
+	// decides, and keep_original_fields keeps that first write.
+	first := true
+	writeStored := func(field string) {
+		quotedField := logsqlFieldName(field)
+		if first {
+			fmt.Fprintf(&b, `| format if (%s:*) "<%s>" as __dl_s keep_original_fields`, quotedField, field)
+			first = false
+			return
+		}
+		fmt.Fprintf(&b, ` | format if (%s:*) "<%s>" as __dl_s keep_original_fields`, quotedField, field)
+	}
+	for _, field := range DetectedLevelFieldNames {
+		if field == "severity_number" {
+			continue
+		}
+		writeStored(field)
+	}
+	fmt.Fprintf(&b, ` | format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`)
+	fmt.Fprintf(&b, ` | unpack_json%s from _msg fields (%s) result_prefix "__j_"`, withCond(""), fieldList)
 	fmt.Fprintf(&b, ` | unpack_logfmt%s from _msg fields (%s) result_prefix "__l_"`, withCond(""), fieldList)
 	for _, prefix := range []string{"__j_", "__l_"} {
 		for _, n := range names {
@@ -154,8 +176,24 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 	b.WriteString(` | format if (__dl:"" __dl_e:~"(?i)^(error|err)$") "error" as __dl keep_original_fields`)
 	b.WriteString(` | format if (__dl:"" __dl_e:~"(?i)^(warning|warn)$") "warn" as __dl keep_original_fields`)
 	b.WriteString(` | format if (__dl:"" __dl_e:*) "<lc:__dl_e>" as __dl keep_original_fields`)
+	// A stored word Loki does not know stays as it is (a level field holding
+	// "notice" is "notice"), unlike a word read from the line.
+	b.WriteString(` | format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`)
+	// severity_number decides only when no level field did, as in Loki.
+	for _, level := range detectedLevelCanonical {
+		pattern, ok := detectedLevelSeverityNumberRegexp[level]
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(&b, ` | format if (__dl:"" -__dl_s:* severity_number:~%s) %q as __dl keep_original_fields`,
+			quoteLevelRegexp(pattern), level)
+	}
+	b.WriteString(` | format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`)
 	b.WriteString(` | format "unknown" as __dl keep_original_fields`)
 	switch mode {
+	case DetectedLevelChainGrouping:
+		b.WriteString(` | format "<__dl>" as detected_level`)
+		b.WriteString(" | delete __dl, __dl_*, __j_*, __l_*")
 	case DetectedLevelChainLogs:
 		if cond == "" {
 			b.WriteString(" | rename __dl as detected_level")

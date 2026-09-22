@@ -459,10 +459,10 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// expression. Handle them before the without/binary/metric path so the inner
 	// expression is translated correctly and the marker is appended last.
 	if result, ok := tryTranslateLabelReplace(logql, labelFn); ok {
-		return applyServiceNameGrouping(result, caps), nil
+		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 	if result, ok := tryTranslateLabelJoin(logql, labelFn); ok {
-		return applyServiceNameGrouping(result, caps), nil
+		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 
 	// Extract without() labels before translation.
@@ -483,12 +483,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
 	if binResult, ok := tryTranslateBinaryMetricExpr(logql, labelFn); ok {
-		return appendWithoutMarker(applyServiceNameGrouping(binResult, caps), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(binResult, caps, streamFields), withoutLabels), nil
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
 	if metricResult, ok := tryTranslateMetricQuery(logql, labelFn); ok {
-		return appendWithoutMarker(applyServiceNameGrouping(metricResult, caps), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
 		return "", &UnsupportedError{Msg: unwrapFunc + " requires `| unwrap <field>` for range aggregation", Func: unwrapFunc}
@@ -2432,9 +2432,9 @@ func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
 		if part == "" {
 			continue
 		}
-		// service_name is derived per row (applyServiceNameGrouping), never a
-		// translated source field.
-		if labelFn != nil && part != "service_name" {
+		// service_name and detected_level are derived per row
+		// (applyDerivedGroupings), never translated source fields.
+		if labelFn != nil && part != "service_name" && part != detectedLevelLabelName {
 			part = strings.TrimSpace(labelFn(part))
 		}
 		if part == "" {
@@ -2461,16 +2461,61 @@ func applyServiceNameGrouping(query string, caps logsql.Capabilities) string {
 	if !strings.Contains(query, "service_name") {
 		return query
 	}
+	return applyDerivedGrouping(query, "service_name", func(q string) string {
+		return WithDerivedServiceName(q, caps)
+	})
+}
+
+// applyDerivedGroupings computes the labels Loki assigns at ingest —
+// service_name and detected_level — for every metric subquery that groups by
+// one of them.
+func applyDerivedGroupings(query string, caps logsql.Capabilities, streamFields map[string]bool) string {
+	query = applyServiceNameGrouping(query, caps)
+	return applyDetectedLevelGrouping(query, detectedLevelKnownFields(streamFields))
+}
+
+// detectedLevelKnownFields lists the level-deciding fields the chain treats as
+// stored. Every name Loki reads is included: a field VictoriaLogs does not
+// hold costs nothing to test.
+func detectedLevelKnownFields(map[string]bool) []string {
+	return DetectedLevelFieldNames
+}
+
+// applyDerivedGrouping inserts the pipes that compute a derived label into
+// every metric subquery whose stats pipe groups by it.
+func applyDerivedGrouping(query, label string, insert func(string) string) string {
 	segments := strings.Split(query, binaryMetricSeparator)
 	for i, segment := range segments {
-		segments[i] = applyServiceNameGroupingSegment(segment, caps)
+		segments[i] = applyDerivedGroupingSegment(segment, label, insert)
 	}
 	return strings.Join(segments, binaryMetricSeparator)
 }
 
+// applyDetectedLevelGrouping makes `by (detected_level)` group by the value
+// Loki attaches at ingest. VictoriaLogs stores whatever was pushed, so the
+// chain reads the stored level fields in Loki's priority order, normalises the
+// spellings it knows, maps severity_number, and for a row with no stored level
+// reads the line as JSON, as logfmt and then as text, with unknown as the
+// fallback — the same rule the log responses derive per row.
+func applyDetectedLevelGrouping(query string, existingFields []string) string {
+	if !strings.Contains(query, detectedLevelLabelName) {
+		return query
+	}
+	chain := BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping)
+	return applyDerivedGrouping(query, detectedLevelLabelName, func(q string) string {
+		pipeAt := firstTopLevelPipe(q)
+		if pipeAt < 0 {
+			return strings.TrimSpace(q) + " " + chain
+		}
+		return q[:pipeAt] + chain + " " + q[pipeAt:]
+	})
+}
+
+const detectedLevelLabelName = "detected_level"
+
 const binaryMetricSeparator = "|||"
 
-func applyServiceNameGroupingSegment(segment string, caps logsql.Capabilities) string {
+func applyDerivedGroupingSegment(segment, label string, insert func(string) string) string {
 	start := 0
 	for strings.HasPrefix(segment[start:], BinaryMetricPrefix) {
 		colon := strings.Index(segment[start+len(BinaryMetricPrefix):], ":")
@@ -2479,10 +2524,10 @@ func applyServiceNameGroupingSegment(segment string, caps logsql.Capabilities) s
 		}
 		start += len(BinaryMetricPrefix) + colon + 1
 	}
-	if !statsGroupsByServiceName(segment[start:]) {
+	if !statsGroupsByLabel(segment[start:], label) {
 		return segment
 	}
-	return segment[:start] + WithDerivedServiceName(segment[start:], caps)
+	return segment[:start] + insert(segment[start:])
 }
 
 // WithDerivedServiceName returns query with the pipes that set the
@@ -2497,9 +2542,8 @@ func WithDerivedServiceName(query string, caps logsql.Capabilities) string {
 	return query[:pipeAt] + serviceNameGroupingPipes(caps) + " " + query[pipeAt:]
 }
 
-// statsGroupsByServiceName reports whether a stats pipe of query groups by
-// service_name.
-func statsGroupsByServiceName(query string) bool {
+// statsGroupsByLabel reports whether a stats pipe of query groups by label.
+func statsGroupsByLabel(query, label string) bool {
 	const marker = "| stats by ("
 	for rest := query; ; {
 		idx := strings.Index(rest, marker)
@@ -2512,7 +2556,7 @@ func statsGroupsByServiceName(query string) bool {
 			return false
 		}
 		for _, item := range strings.Split(rest[:end], ",") {
-			if strings.TrimSpace(item) == "service_name" {
+			if strings.TrimSpace(item) == label {
 				return true
 			}
 		}

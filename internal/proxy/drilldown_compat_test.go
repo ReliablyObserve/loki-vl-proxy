@@ -1551,10 +1551,13 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	if effectiveMetricQuery == "" {
 		t.Fatalf("expected either stats query or manual metric query to be issued")
 	}
-	if strings.Contains(effectiveMetricQuery, "unpack_logfmt") {
+	// The detected_level derivation reads the line with both parsers; only the
+	// user's own parser stages are compared here.
+	userStages := withoutDetectedLevelChain(effectiveMetricQuery)
+	if strings.Contains(userStages, "unpack_logfmt") {
 		t.Fatalf("expected metric query to keep only the working parser, got %q", effectiveMetricQuery)
 	}
-	if !strings.Contains(effectiveMetricQuery, "unpack_json") {
+	if !strings.Contains(userStages, "unpack_json") {
 		t.Fatalf("expected metric query to keep json parser, got %q", effectiveMetricQuery)
 	}
 }
@@ -2534,4 +2537,19 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_SparseBucketsLikeLok
 	if fmt.Sprint(values) != fmt.Sprint(want) {
 		t.Fatalf("got %v, want %v", values, want)
 	}
+}
+
+// withoutDetectedLevelChain removes the pipes that derive detected_level, so a
+// test can look at the stages the query itself asked for.
+func withoutDetectedLevelChain(query string) string {
+	start := strings.Index(query, `| format if (detected_level:*)`)
+	if start < 0 {
+		return query
+	}
+	const end = "| delete __dl, __dl_*, __j_*, __l_*"
+	stop := strings.Index(query[start:], end)
+	if stop < 0 {
+		return query
+	}
+	return query[:start] + query[start+stop+len(end):]
 }

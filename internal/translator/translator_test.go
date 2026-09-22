@@ -371,9 +371,10 @@ func TestMetricQueryTranslation_DedupesByLabelsAfterTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `foo:="bar" | stats by (level) count()`
-	if got != want {
-		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	// Both labels survive, and the derivation chain computes detected_level.
+	want := `foo:="bar" | stats by (level, detected_level) count()`
+	if !strings.HasPrefix(got, `foo:="bar" | format if (detected_level:*)`) || !strings.HasSuffix(got, `| stats by (level, detected_level) count()`) {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want the derivation chain and %q", got, want)
 	}
 }
 
@@ -395,9 +396,11 @@ func TestMetricQueryTranslation_MalformedDottedDrilldownStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\." | stats by (level) count()`
-	if got != want {
-		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	// detected_level is derived by the chain, so the stats pipe groups by both
+	// labels and the filters stay as they were.
+	want := `| stats by (level, detected_level) count()`
+	if !strings.HasPrefix(got, `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\." | format if (detected_level:*)`) || !strings.HasSuffix(got, want) {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want a query ending in %q", got, want)
 	}
 }
 

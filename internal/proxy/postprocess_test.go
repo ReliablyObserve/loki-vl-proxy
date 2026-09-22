@@ -260,7 +260,7 @@ func TestExtractLogPatterns(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:03Z","_msg":"GET /api/users 404 3ms","app":"web"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "15s", 50)
+	patterns := extractLogPatterns(vlBody, "15s", 50, defaultLogRowLevels())
 	if len(patterns) == 0 {
 		t.Fatal("expected at least 1 pattern")
 	}
@@ -285,7 +285,7 @@ func TestExtractLogPatterns_RespectsTopNLimit(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:05Z","_msg":"DELETE /api/users/42 204 5ms"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "1m", 2)
+	patterns := extractLogPatterns(vlBody, "1m", 2, defaultLogRowLevels())
 	if len(patterns) != 2 {
 		t.Fatalf("expected top 2 patterns, got %d", len(patterns))
 	}
@@ -301,7 +301,7 @@ func TestExtractLogPatternsRespectsLimit(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:02Z","_msg":"DELETE /api/orders/123 403 3ms","level":"error"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "15s", 1)
+	patterns := extractLogPatterns(vlBody, "15s", 1, defaultLogRowLevels())
 	if len(patterns) != 1 {
 		t.Fatalf("expected a single pattern with limit=1, got %d", len(patterns))
 	}
@@ -314,12 +314,12 @@ func TestExtractLogPatterns_DefaultAndMaxLimitPaths(t *testing.T) {
 	}
 	vlBody := []byte(strings.Join(lines, "\n"))
 
-	defaultLimited := extractLogPatterns(vlBody, "1m", 0)
+	defaultLimited := extractLogPatterns(vlBody, "1m", 0, defaultLogRowLevels())
 	if len(defaultLimited) != 50 {
 		t.Fatalf("expected default limit of 50, got %d", len(defaultLimited))
 	}
 
-	capped := extractLogPatterns(vlBody, "1m", maxPatternResponseLimit+500)
+	capped := extractLogPatterns(vlBody, "1m", maxPatternResponseLimit+500, defaultLogRowLevels())
 	if len(capped) != maxPatternResponseLimit {
 		t.Fatalf("expected capped limit of %d, got %d", maxPatternResponseLimit, len(capped))
 	}
@@ -332,7 +332,7 @@ func TestExtractLogPatterns_GroupsByBucketAndDetectedLevel(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:12Z","_msg":"GET /api/users 200 17ms","level":"info"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "10s", 10)
+	patterns := extractLogPatterns(vlBody, "10s", 10, defaultLogRowLevels())
 	if len(patterns) != 2 {
 		t.Fatalf("expected two grouped patterns, got %d", len(patterns))
 	}
@@ -357,7 +357,7 @@ func TestExtractLogPatterns_DrainLikeTemplateMerging(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:03Z","_msg":"level=info msg=request id=3 user=carol"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "1m", 10)
+	patterns := extractLogPatterns(vlBody, "1m", 10, defaultLogRowLevels())
 	if len(patterns) != 1 {
 		t.Fatalf("expected one merged drain-like pattern, got %d", len(patterns))
 	}
@@ -373,7 +373,7 @@ func TestExtractLogPatterns_SkipsTooShortMessagesLikeLokiDrain(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:02Z","_msg":"still ok"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "1m", 10)
+	patterns := extractLogPatterns(vlBody, "1m", 10, defaultLogRowLevels())
 	if len(patterns) != 0 {
 		t.Fatalf("expected no patterns for messages below minimum token length, got %d", len(patterns))
 	}
@@ -462,7 +462,7 @@ func TestExtractLogPatterns_AlternateMessageAndTimestampFields(t *testing.T) {
 		`{"time":"1775296802","line":"POST /v1/orders 201 88ms","level":"info"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "1m", 10)
+	patterns := extractLogPatterns(vlBody, "1m", 10, defaultLogRowLevels())
 	if len(patterns) == 0 {
 		t.Fatalf("expected patterns for alternate message/timestamp field names, got %#v", patterns)
 	}
@@ -470,7 +470,7 @@ func TestExtractLogPatterns_AlternateMessageAndTimestampFields(t *testing.T) {
 
 func TestExtractLogPatterns_WrappedJSONResults(t *testing.T) {
 	vlBody := []byte(`{"results":[{"timestamp":"2026-04-04T10:00:00Z","message":"GET /v1/users 200 15ms","level":"info"},{"timestamp":"2026-04-04T10:00:01Z","message":"GET /v1/users 200 19ms","level":"info"}]}`)
-	patterns := extractLogPatterns(vlBody, "1m", 10)
+	patterns := extractLogPatterns(vlBody, "1m", 10, defaultLogRowLevels())
 	if len(patterns) == 0 {
 		t.Fatalf("expected patterns from wrapped results payload, got %#v", patterns)
 	}

@@ -134,7 +134,7 @@ func TestPatternLevelFromEntry(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := patternLevelFromEntry(tc.entry)
+			got := patternLevelFromEntry(tc.entry, nil)
 			if got != tc.want {
 				t.Errorf("patternLevelFromEntry(%v) = %q, want %q", tc.entry, got, tc.want)
 			}

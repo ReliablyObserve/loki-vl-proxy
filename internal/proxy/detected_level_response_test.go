@@ -303,7 +303,7 @@ func TestDetectedLevelPatternLevels(t *testing.T) {
 {"_time":"2026-01-01T00:00:03Z","_msg":"cache miss for key orders","_stream":"{app=\"api\"}","app":"api","level":"Warning"}
 {"_time":"2026-01-01T00:00:04Z","_msg":"reindex started by operator","_stream":"{app=\"api\"}","app":"api","level":"NOTICE"}
 `
-	patterns := extractLogPatterns([]byte(rows), "60s", 50)
+	patterns := extractLogPatterns([]byte(rows), "60s", 50, defaultLogRowLevels())
 	levels := map[string]bool{}
 	for _, pattern := range patterns {
 		level, _ := pattern["level"].(string)
@@ -370,6 +370,30 @@ func TestDetectedLevelLabelValuesAnswersLikeLoki(t *testing.T) {
 				t.Fatalf("queried fields %v, want only the detected_level stream field (never level)", fields)
 			}
 		})
+	}
+}
+
+// conformance: severity-exposure-surfaces
+func TestDetectedLevelLabelValuesSortsAndCaches(t *testing.T) {
+	var calls int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		calls++
+		// VictoriaLogs orders field values by hits, Loki by value.
+		_, _ = w.Write([]byte(`{"values":[{"value":"warn","hits":9},{"value":"error","hits":3},{"value":"debug","hits":1}]}`))
+	}))
+	defer backend.Close()
+	p := newTestProxy(t, backend.URL)
+	const want = `{"data":["debug","error","warn"],"status":"success"}`
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		p.handleLabelValues(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/label/detected_level/values?query=%7Bapp%3D%22api%22%7D&start=1&end=2", nil))
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != want {
+			t.Fatalf("request %d: label values = %d %s, want %s", i, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("backend calls = %d, want 1: the second request must be served from the read cache", calls)
 	}
 }
 

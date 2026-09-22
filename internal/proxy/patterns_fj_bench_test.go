@@ -22,7 +22,7 @@ func BenchmarkExtractLogPatternsStream_100(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50)
+		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50, defaultLogRowLevels())
 	}
 }
 
@@ -31,7 +31,7 @@ func BenchmarkExtractLogPatternsStream_1000(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50)
+		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50, defaultLogRowLevels())
 	}
 }
 
@@ -40,6 +40,6 @@ func BenchmarkExtractLogPatternsStream_5000(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50)
+		_, _ = extractLogPatternsStreamWithStats(bytes.NewReader(data), "1m", 50, defaultLogRowLevels())
 	}
 }

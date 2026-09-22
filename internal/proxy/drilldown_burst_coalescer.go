@@ -131,6 +131,9 @@ func fieldHasExistenceFilter(baseQuery, field string) bool {
 // Returns ("", "", false) when the query does not match the Drilldown single-field
 // count pattern.
 func detectDrilldownSingleFieldWithParser(effectiveQuery string) (cleanBase, field string, ok bool) {
+	if hasDerivedLevelChain(effectiveQuery) {
+		return "", "", false
+	}
 	spec, specOK := parseSingleFieldCountSpec(effectiveQuery)
 	if !specOK {
 		return "", "", false
@@ -159,6 +162,11 @@ func detectDrilldownSingleFieldWithParser(effectiveQuery string) (cleanBase, fie
 // Used to identify queries that are safe to fall back to count() if (field:*)
 // when stats by (field) count() exceeds the per-request 16 MB response cap.
 func detectDrilldownSingleField(effectiveQuery string) (cleanBase, field string, ok bool) {
+	// /hits reads a stored column; a query that derives detected_level needs
+	// the pipes that compute it, which /hits would drop.
+	if hasDerivedLevelChain(effectiveQuery) {
+		return "", "", false
+	}
 	spec, specOK := parseSingleFieldCountSpec(effectiveQuery)
 	if !specOK {
 		return "", "", false

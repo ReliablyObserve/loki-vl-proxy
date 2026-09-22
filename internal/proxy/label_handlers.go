@@ -235,6 +235,16 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 // stream label (a VictoriaLogs stream field) has values, and without one Loki
 // answers success with no data. The level column is never consulted.
 func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Request, start time.Time) {
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := p.canonicalReadCacheKey("label_values", orgID, r, detectedLevelLabel)
+	if cached, _, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+		p.metrics.RecordCacheHit()
+		return
+	}
+	p.metrics.RecordCacheMiss()
 	r = p.withRequestScope(r)
 	var values []string
 	if p.supportsStreamMetadataEndpoints() {
@@ -246,20 +256,36 @@ func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Re
 				return
 			}
 			params.Set("field", detectedLevelLabel)
-			values, err = p.fetchVLFieldValues(r.Context(), "/select/logsql/stream_field_values", params)
+			candidateValues, err := p.fetchVLFieldValues(r.Context(), "/select/logsql/stream_field_values", params)
 			if err != nil {
 				status := statusFromUpstreamErr(err)
 				p.writeError(w, status, err.Error())
 				p.metrics.RecordRequest("label_values", status, time.Since(start))
 				return
 			}
+			// Like fetchScopedLabelValues: the first candidate that answers
+			// wins, so a relaxed candidate never replaces a narrower answer.
+			if len(candidateValues) > 0 {
+				values = candidateValues
+				break
+			}
 		}
 	}
+	// Loki returns label values sorted, as fetchPreferredLabelValues does for
+	// every other label.
+	sort.Strings(values)
 	w.Header().Set("Content-Type", "application/json")
 	if len(values) == 0 {
+		// Loki's answer for a label it does not index. It costs one
+		// stream_field_values call, and caching it would hide a
+		// detected_level stream that has just been written, so the empty
+		// answer is not cached even for the negative TTL.
 		_, _ = w.Write([]byte(`{"status":"success"}`))
 	} else {
-		_, _ = w.Write(lokiLabelsResponse(values))
+		body := lokiLabelsResponse(values)
+		p.setMetadataListCache("label_values", cacheKey, body, len(values),
+			metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues))
+		_, _ = w.Write(body)
 	}
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 }

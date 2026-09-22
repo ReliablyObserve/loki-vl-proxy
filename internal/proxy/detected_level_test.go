@@ -63,6 +63,7 @@ func goldenReconstructedLine(msg string, fields map[string]string) string {
 	return storedLogLineFromEntry(msg, entry, nil, nil, "")
 }
 
+// conformance: severity-detected-level-derivation
 func TestDetectedLevelGoldenTable(t *testing.T) {
 	sources := map[string]int{}
 	for _, tc := range loadDetectedLevelGolden(t) {
@@ -98,6 +99,7 @@ func truncateForLog(s string) string {
 	return s
 }
 
+// conformance: severity-detected-level-derivation
 func TestDetectedLevelWithoutBodyScan(t *testing.T) {
 	cases := []struct {
 		name   string

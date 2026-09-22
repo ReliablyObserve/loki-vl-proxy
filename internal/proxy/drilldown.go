@@ -193,7 +193,7 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 // stream map to avoid a redundant parseStreamLabels call in hot paths.
 func buildEntryLabelsWithStream(entry map[string]interface{}, stream map[string]string) map[string]string {
 	msg, _ := entry["_msg"].(string)
-	rows := logRowLevels{bodyScan: true}
+	rows := defaultLogRowLevels()
 	detected := rows.mapRow(entry, msg, logRowStream{labels: stream, levels: levelFieldsFromLabels(stream)})
 	return entryLabelsWithDetectedLevel(entry, stream, detected)
 }

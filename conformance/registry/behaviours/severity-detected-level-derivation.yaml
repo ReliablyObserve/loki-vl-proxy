@@ -28,6 +28,11 @@ proxy: |
   path; a per-line scan is only acceptable for rows VictoriaLogs provably has no
   level field for.
 
+implementation:
+  - "internal/proxy/detected_level.go deriveRowLevel, detectedLevelName"
+  - "internal/proxy/stream_processing.go newLogRowLevels, logRowLevels.mapRow"
+  - "internal/translator/detected_level_logsql.go BuildDetectedLevelChain"
+
 cases:
   - severity/json-body-level
   - severity/logfmt-body-level
