@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.85.0] - 2026-09-22
+
 ### Fixed
 
 - **`/label/{name}/values` returns every value again, as Loki does.** A request
