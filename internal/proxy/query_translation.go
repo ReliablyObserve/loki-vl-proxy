@@ -1463,64 +1463,6 @@ func bareParserMetricWindowValue(funcName string, window []bareParserMetricSampl
 	}
 }
 
-func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, endNanos, stepNanos int64, spec bareParserMetricCompatSpec) map[string]interface{} {
-	result := make([]lokiMatrixResult, 0, len(series))
-	windowNanos := int64(spec.rangeWindow)
-	for _, seriesItem := range series {
-		values := make([][]interface{}, 0, int(((endNanos-startNanos)/stepNanos)+1))
-		samples := seriesItem.samples
-		left := 0
-		right := 0
-		for eval := startNanos; eval <= endNanos; eval += stepNanos {
-			lower := eval - windowNanos
-			for right < len(samples) && samples[right].tsNanos <= eval {
-				right++
-			}
-			for left < right && samples[left].tsNanos < lower {
-				left++
-			}
-			window := samples[left:right]
-			if len(window) == 0 {
-				continue // no samples in window — match Loki's absent-point behaviour
-			}
-			values = append(values, []interface{}{float64(eval) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
-		}
-		result = append(result, lokiMatrixResult{Metric: seriesItem.metric, Values: values})
-	}
-	return map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"resultType": "matrix",
-			"result":     result,
-		},
-	}
-}
-
-func buildBareParserMetricVector(series []bareParserMetricSeries, evalNanos int64, spec bareParserMetricCompatSpec) map[string]interface{} {
-	result := make([]lokiVectorResult, 0, len(series))
-	windowNanos := int64(spec.rangeWindow)
-	for _, seriesItem := range series {
-		lower := evalNanos - windowNanos
-		window := make([]bareParserMetricSample, 0, len(seriesItem.samples))
-		for _, sample := range seriesItem.samples {
-			if sample.tsNanos >= lower && sample.tsNanos <= evalNanos {
-				window = append(window, sample)
-			}
-		}
-		result = append(result, lokiVectorResult{
-			Metric: seriesItem.metric,
-			Value:  []interface{}{float64(evalNanos) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))},
-		})
-	}
-	return map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"resultType": "vector",
-			"result":     result,
-		},
-	}
-}
-
 type absentOverTimeCompatSpec struct {
 	baseQuery      string
 	rangeWindow    time.Duration

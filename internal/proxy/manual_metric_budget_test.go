@@ -59,29 +59,35 @@ func TestRawManualMetricLimitsFailClosedAndRecover(t *testing.T) {
 	}
 }
 
+// The window is Loki's (t-range, t]: a sample exactly on the lower edge is
+// out, one exactly on the evaluation timestamp is in. Samples sit on both
+// edges so an inclusive lower bound or an exclusive upper bound changes the
+// answer.
 func TestBoundedBareParserMetricOutput(t *testing.T) {
 	stamp := int64(time.Second)
 	series := []bareParserMetricSeries{{metric: map[string]string{"app": "api"}, samples: []bareParserMetricSample{{tsNanos: stamp, value: 2}, {tsNanos: stamp * 2, value: 4}}}}
-	spec := bareParserMetricCompatSpec{funcName: "avg_over_time", rangeWindow: time.Minute}
-	for _, matrix := range []bool{false, true} {
-		start := stamp
-		if !matrix {
-			start = stamp * 2
-		}
-		body, err := buildBoundedBareParserMetric(t.Context(), series, start, stamp*2, stamp, spec, matrix)
+	spec := bareParserMetricCompatSpec{funcName: "avg_over_time", rangeWindow: time.Second}
+	for _, tc := range []struct {
+		matrix bool
+		start  int64
+		want   string
+	}{
+		// eval 2s, window (1s, 2s]: the 1s sample is on the open edge.
+		{matrix: false, start: stamp * 2, want: `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"api"},"value":[2,"4"]}]}}`},
+		// eval 1s, window (0, 1s] holds 2; eval 2s, window (1s, 2s] holds 4.
+		{matrix: true, start: stamp, want: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1,"2"],[2,"4"]]}]}}`},
+	} {
+		body, err := buildBoundedBareParserMetric(t.Context(), series, tc.start, stamp*2, stamp, spec, tc.matrix)
 		if err != nil {
 			t.Fatal(err)
 		}
-		old := buildBareParserMetricVector(series, stamp*2, spec)
-		if matrix {
-			old = buildBareParserMetricMatrix(series, start, stamp*2, stamp, spec)
-		}
-		oldBytes, _ := json.Marshal(old)
 		var got, want any
-		_ = json.Unmarshal(body, &got)
-		_ = json.Unmarshal(oldBytes, &want)
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("response is not JSON: %v: %s", err, body)
+		}
+		_ = json.Unmarshal([]byte(tc.want), &want)
 		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("successful response changed: got=%s want=%s", body, oldBytes)
+			t.Fatalf("matrix=%v: got=%s want=%s", tc.matrix, body, tc.want)
 		}
 	}
 	for _, budget := range []string{"samples", "bytes"} {
