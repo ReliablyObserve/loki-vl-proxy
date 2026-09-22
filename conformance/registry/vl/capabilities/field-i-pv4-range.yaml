@@ -1,0 +1,13 @@
+id: field-i-pv4-range
+kind: version_gated_capability
+since: v1.45
+generated:
+  used_in: 1
+
+description: |
+  TODO: what the capability does in VictoriaLogs.
+proxy_usage: |
+  TODO: native use, or the transformation used instead and why.
+fallback: |
+  TODO: what happens on a backend older than `since`.
+proves: []  # case ids that exercise it

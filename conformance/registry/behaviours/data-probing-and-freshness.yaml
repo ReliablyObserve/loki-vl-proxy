@@ -1,0 +1,23 @@
+id: data-probing-and-freshness
+kind: data_quality
+title: Probes the proxy runs, and their cost and staleness
+
+loki: |
+  Loki needs no probes: one query answers one request.
+
+victorialogs: |
+  The proxy probes VictoriaLogs for the backend version (capability gating), for
+  lines the two parsers read differently before a stats pushdown, and warms
+  three separate label caches.
+
+proxy: |
+  Each probe is extra backend work and a staleness risk: a cached probe result
+  must never make a later answer wrong, an unknown version must not silently
+  pick a slower or unsafe path, and a probe must not double the cost of a first
+  request.
+
+cases:
+  - quality/version-probe-unknown
+  - quality/parse-risk-probe-scope
+  - quality/parse-risk-cache-window
+  - quality/label-cache-warm

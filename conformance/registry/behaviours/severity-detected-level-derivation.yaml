@@ -1,0 +1,39 @@
+id: severity-detected-level-derivation
+kind: severity
+title: detected_level is derived on the read path
+
+loki: |
+  Loki sets detected_level at ingest (pkg/distributor/field_detection.go) when
+  discover_log_levels is on: it takes the level from structured metadata
+  (level, LEVEL, Level, severity, SEVERITY, Severity, levelname, severity_text),
+  then from the log line (JSON key or logfmt key, first match), then from
+  keyword scanning, and normalises it (err/error -> error, warn/warning -> warn,
+  inf/info -> info, dbg/debug -> debug, trace/trc, critical, fatal). A line with
+  no signal gets detected_level="unknown". The value is structured metadata, so
+  it appears on every stream response, in detected_fields, and as a grouping
+  dimension.
+
+victorialogs: |
+  VictoriaLogs has no ingest-time discovery. Depending on the ingestion route it
+  stores: a `level` stream field (Loki push with a level label), a `level` or
+  `severity` field inside the JSON body, OTel `severity_text` / `severity_number`
+  fields, or nothing at all. `unpack_json`/`unpack_logfmt` can extract a body key
+  at query time, and `coalesce` (v1.51+) can pick the first non-empty of several
+  fields in one pass.
+
+proxy: |
+  The proxy must compute Loki's value from whatever VictoriaLogs stored, on the
+  read path, for every surface: log responses, filters, grouping, metadata
+  endpoints and volume. Pushing the derivation into LogsQL keeps it off the raw
+  path; a per-line scan is only acceptable for rows VictoriaLogs provably has no
+  level field for.
+
+cases:
+  - severity/json-body-level
+  - severity/logfmt-body-level
+  - severity/otel-severity-text
+  - severity/otel-severity-number
+  - severity/stream-label-level-wins
+  - severity/no-signal-is-unknown
+  - severity/normalisation-table
+  - severity/keyword-scan-fallback

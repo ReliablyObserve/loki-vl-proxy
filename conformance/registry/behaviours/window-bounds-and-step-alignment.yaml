@@ -1,0 +1,28 @@
+id: window-bounds-and-step-alignment
+kind: semantics
+title: Range windows, bucket edges and step alignment
+
+loki: |
+  A Loki range vector sample at T covers (T-range, T]: the lower bound is
+  exclusive for every range function. The query frontend aligns start down and
+  end up to the step before splitting, and rejects (end-start)/step above 11,000
+  points before parsing the query.
+
+victorialogs: |
+  VictoriaLogs stats_query_range buckets are [T, T+step), epoch-aligned, with an
+  `offset` parameter (v1.45+) to move the grid. /select/logsql/query applies an
+  inclusive-end adjustment of its own.
+
+proxy: |
+  Every metric route must land samples on Loki's grid and bounds, including
+  tumbling (range == step), sliding (range > step), range < step, offset
+  modifiers and the Grafana 24h split chunks.
+
+cases:
+  - semantics/lower-bound-exclusive
+  - semantics/step-alignment
+  - semantics/tumbling-relabel
+  - semantics/range-smaller-than-step
+  - semantics/offset-sample-timestamps
+  - semantics/grafana-24h-split
+  - semantics/resolution-limit-11000

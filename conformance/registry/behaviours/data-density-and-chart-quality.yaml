@@ -1,0 +1,28 @@
+id: data-density-and-chart-quality
+kind: data_quality
+title: Chart density, zero-fill and high-cardinality behaviour
+
+loki: |
+  Loki returns only the buckets it has data for; Grafana renders gaps. Grafana's
+  $__auto step varies from 5s at 1h to 3600s at 30d, and the Loki datasource
+  splits metric ranges at 24h and merges the frames. High-cardinality fields
+  (trace_id, span_id, *_id) produce one sample per series, so their charts look
+  empty in Loki too.
+
+victorialogs: |
+  VictoriaLogs returns dense buckets for the grid it is given, and its hits
+  endpoint zero-fills; the shapes differ from Loki's sparse matrix.
+
+proxy: |
+  Zero-filling must align to step boundaries or it overwrites real data; the
+  axis must be trimmed to each Grafana chunk or values collapse onto the right
+  edge. Drilldown breakdowns must keep the busiest series rather than an
+  arbitrary subset, and the "show all N" badge is the response series count.
+
+cases:
+  - quality/zero-fill-alignment
+  - quality/chunk-axis-trim
+  - quality/auto-step-matrix
+  - quality/high-cardinality-sparse
+  - quality/busiest-series-selection
+  - quality/empty-window-shape

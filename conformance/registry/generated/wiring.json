@@ -1,0 +1,80 @@
+{
+  "implementation_sites_missing": [],
+  "item_to_tests": {
+    "drilldown/index_volume/single-sample-returns-vector": [
+      "internal/proxy/volume_test.go"
+    ],
+    "loki_api_v1_index_volume": [
+      "internal/proxy/volume_test.go",
+      "test/e2e-compat/drilldown_volume_bytes_test.go"
+    ],
+    "loki_api_v1_query_range": [
+      "internal/translator/regexp_escaping_test.go"
+    ],
+    "status-400": [
+      "internal/proxy/volume_test.go"
+    ]
+  },
+  "registry_items": 137,
+  "routes_without_registry_item": [],
+  "test_to_items": {
+    "internal/proxy/volume_test.go": [
+      "drilldown/index_volume/single-sample-returns-vector",
+      "loki_api_v1_index_volume",
+      "status-400"
+    ],
+    "internal/translator/regexp_escaping_test.go": [
+      "loki_api_v1_query_range"
+    ],
+    "test/e2e-compat/drilldown_volume_bytes_test.go": [
+      "loki_api_v1_index_volume"
+    ]
+  },
+  "tests_with_markers": 3,
+  "unknown_ids": {},
+  "unwired_items": [
+    "api_prom_label",
+    "api_prom_label_name_values",
+    "api_prom_push",
+    "api_prom_query",
+    "api_prom_rules",
+    "api_prom_rules_namespace",
+    "api_prom_rules_namespace_groupname",
+    "api_prom_series",
+    "api_prom_tail",
+    "data-density-and-chart-quality",
+    "data-probing-and-freshness",
+    "loki_api_v1_cache_generation_numbers",
+    "loki_api_v1_delete",
+    "loki_api_v1_detected_field_name_values",
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_detected_labels",
+    "loki_api_v1_drilldown_limits",
+    "loki_api_v1_format_query",
+    "loki_api_v1_index_shards",
+    "loki_api_v1_index_stats",
+    "loki_api_v1_index_volume_range",
+    "loki_api_v1_label",
+    "loki_api_v1_label_name_values",
+    "loki_api_v1_labels",
+    "loki_api_v1_patterns",
+    "loki_api_v1_push",
+    "loki_api_v1_query",
+    "loki_api_v1_rules",
+    "loki_api_v1_rules_namespace",
+    "loki_api_v1_rules_namespace_groupname",
+    "loki_api_v1_series",
+    "loki_api_v1_status_buildinfo",
+    "loki_api_v1_tail",
+    "numeric-and-response-formatting",
+    "parser-error-and-label-collision",
+    "prometheus_api_v1_alerts",
+    "prometheus_api_v1_rules",
+    "series-limits-and-partial-results",
+    "service-name-derivation",
+    "severity-detected-level-derivation",
+    "severity-exposure-surfaces",
+    "window-bounds-and-step-alignment"
+  ],
+  "wired_items": 4
+}

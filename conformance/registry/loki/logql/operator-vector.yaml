@@ -1,0 +1,24 @@
+id: operator-vector
+kind: operator
+logql: "vector"
+loki_constant: OpTypeVector
+generated:
+  supported_by_proxy: true
+  seen_in:
+    - internal/logql/parser.go
+    - internal/proxy/binary_scalar.go
+    - internal/proxy/empty_without_metric.go
+    - internal/proxy/manual_metric_budget.go
+    - internal/proxy/metric_agg.go
+    - internal/proxy/metric_binary.go
+
+semantics: |
+  TODO: Loki's exact semantics, including how it treats missing labels,
+  parse errors, ordering and empty input.
+victorialogs: |
+  TODO: the native LogsQL construct used, or the proxy-side
+  transformation and the VictoriaLogs limitation that forces it.
+consumers: []   # explore, drilldown, datasource, api
+cases: []       # case ids proving the semantics match
+victorialogs_candidates:
+  []  # no VictoriaLogs equivalent: the proxy must compute it

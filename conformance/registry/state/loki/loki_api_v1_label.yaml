@@ -1,0 +1,6 @@
+id: loki_api_v1_label
+state: gap
+reason: |
+  Seeded from the repository: no proxy route, 11 test files compare it against Loki.
+owner_decision: null
+waiver: null

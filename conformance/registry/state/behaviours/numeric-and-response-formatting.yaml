@@ -1,0 +1,6 @@
+id: numeric-and-response-formatting
+state: gap
+reason: |
+  Seeded from behaviour we have hit in production use; cases are named but not yet written or wired.
+owner_decision: null
+waiver: null

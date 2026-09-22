@@ -1,0 +1,25 @@
+id: service-name-derivation
+state: partial
+reason: |
+  The derivation matches Loki's 13-entry discover_service_name order and is used
+  by selectors, label filters, grouping, label values, /series, /detected_labels
+  and index/volume. Eight of the nine cases are proven end to end against a real
+  Loki; service-name/otel-dotted is modelled only, because nothing pushes a real
+  OTLP payload into Loki and compares.
+owner_decision: |
+  Accepted deviation (2026-09-22): a stream whose source label lives outside
+  VictoriaLogs' _stream, such as a field unpacked at ingest, can match
+  {service_name="x"} while the stream the proxy returns is labelled
+  unknown_service. The LogsQL side reads every stored field, the response side
+  reads _stream labels only. Loki never answers with that contradiction. The
+  _stream-only alternative was measured at 0.06-8.7 s per distinct value and
+  rejected on cost.
+waiver:
+  id: service-name-stream-only-labels
+  rationale: |
+    Correctness would cost a per-value _stream scan on every query; the
+    deviation is visible only for rows whose source label is not a stream field.
+  expiry: 2027-03-31
+  revisit: |
+    Recheck when VictoriaLogs can project a computed field into _stream, or when
+    coalesce applies to the stream labels themselves.

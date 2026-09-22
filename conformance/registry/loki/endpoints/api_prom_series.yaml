@@ -1,0 +1,47 @@
+# Loki API surface item. Curated prose below the generated block is kept
+# by scripts/conformance/seed_registry.py; only `generated` is refreshed.
+id: api_prom_series
+path: "/api/prom/series"
+methods: [GET, POST]
+generated:
+  loki_version: v3.7.7
+  proxy_route: null
+  proxy_handler: null
+  tests:
+    unit: 0
+    unit_vs_loki: 0
+    e2e: 0
+    e2e_vs_loki: 0
+    ui: 0
+    ui_vs_loki: 0
+  implementation:
+    implemented: false
+    where: null
+    execution: not_implemented
+    vl_endpoints: []
+    vl_pipes: []
+    proxy_side_work:
+      []
+
+description: |
+  TODO: what this endpoint returns and the Loki behaviour a client depends on.
+context:
+  consumers:
+    - api
+  notes: |
+    TODO: how each consumer calls it, and how their parameter combinations differ.
+examples:
+  - consumer: api
+    request: |
+      TODO: a real request, with the exact parameters a client sends.
+    expectation: |
+      TODO: Loki's response shape and the values that must match.
+victorialogs:
+  # Confirmed by the differential runner at runtime; the generated block above
+  # is a static approximation. Say what VictoriaLogs answers natively, what the
+  # proxy has to compute, and why VictoriaLogs cannot do that part.
+  native: []
+  transformed: []
+  vl_cannot: |
+    TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
+edge_cases: []    # case ids under conformance/registry/cases/

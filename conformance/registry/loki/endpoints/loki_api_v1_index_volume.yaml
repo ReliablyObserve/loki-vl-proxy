@@ -1,0 +1,82 @@
+# Loki API surface item. Curated prose below the generated block is kept
+# by scripts/conformance/seed_registry.py; only `generated` is refreshed.
+id: loki_api_v1_index_volume
+path: "/loki/api/v1/index/volume"
+methods: [GET, POST]
+generated:
+  loki_version: v3.7.7
+  proxy_route: "volume"
+  proxy_handler: "handleVolume"
+  tests:
+    unit: 18
+    unit_vs_loki: 0
+    e2e: 8
+    e2e_vs_loki: 7
+    ui: 0
+    ui_vs_loki: 0
+  implementation:
+    implemented: true
+    where: "internal/proxy/volume.go:190 handleVolume"
+    execution: proxy_side
+    vl_endpoints: []
+    vl_pipes: [len]
+    proxy_side_work:
+      []
+
+description: |
+  Bytes ingested per series over a window, used to rank what to look at first.
+  Loki answers with a Prometheus-style vector or matrix whose `metric` carries
+  only the `targetLabels` asked for, and whose values are BYTES as a string.
+  With one sample per series over the window Loki returns `resultType: vector`,
+  not `matrix`; that distinction drives the Drilldown landing page.
+context:
+  consumers:
+    - drilldown
+    - api
+  notes: |
+    Logs Drilldown calls it on the landing page with `query={service_name=~".+"}`,
+    `targetLabels=service_name`, `limit=5000` and `aggregateBy=series`, then sorts
+    the services by value. It repeats the call with the user's label filters as the
+    selector when a service is selected. Grafana Explore never calls it.
+    The API consumer also uses `aggregateBy=labels` and several `targetLabels`,
+    which Drilldown does not.
+examples:
+  - consumer: drilldown
+    request: |
+      GET /loki/api/v1/index/volume
+        ?query=%7Bservice_name%3D~%22.%2B%22%7D
+        &start=<ns>&end=<ns>&limit=5000&targetLabels=service_name&aggregateBy=series
+      X-Scope-OrgID: 0
+      User-Agent: Grafana/13.2.1
+      X-Query-Tags: Source=grafana-lokiexplore-app
+    expectation: |
+      status 200; data.resultType == "vector" when every series has a single
+      sample, otherwise "matrix"; each result metric contains only service_name;
+      values are byte counts as decimal strings; series are not truncated below
+      `limit`; an empty window returns an empty result array, never null.
+  - consumer: api
+    request: |
+      GET /loki/api/v1/index/volume?query=%7Benv%3D%22production%22%7D
+        &start=<ns>&end=<ns>&targetLabels=namespace,service_name&aggregateBy=labels
+    expectation: |
+      one series per distinct label combination; metric carries both labels;
+      Loki drops series whose labels are all empty.
+victorialogs:
+  native:
+    - stats_query with sum_len(_msg) grouped by the target labels
+  transformed:
+    - vector-vs-matrix decision, which Loki makes from the sample count
+    - byte accounting: Loki counts the raw line bytes it ingested, VictoriaLogs
+      reports the stored `_msg` length, so the proxy must account for the same
+      bytes Loki would have counted
+    - target-label selection and empty-label dropping
+  vl_cannot: |
+    VictoriaLogs has no volume endpoint and no notion of Loki's ingested-bytes
+    accounting; it can only sum stored field lengths. The shape (vector vs
+    matrix), the target-label projection and Loki's empty-series rules have no
+    VictoriaLogs equivalent and are computed in the proxy.
+edge_cases:
+  - drilldown/index_volume/single-sample-returns-vector
+  - drilldown/index_volume/limit-not-truncating
+  - api/index_volume/aggregate-by-labels
+  - api/index_volume/empty-window-returns-empty-array

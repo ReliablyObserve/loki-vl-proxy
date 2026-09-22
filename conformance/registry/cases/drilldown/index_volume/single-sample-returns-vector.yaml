@@ -1,0 +1,37 @@
+id: drilldown/index_volume/single-sample-returns-vector
+title: One sample per series makes index/volume answer with a vector, not a matrix
+proves:
+  - loki_api_v1_index_volume
+  - vl-stats-query
+consumer: drilldown
+why: |
+  Logs Drilldown's landing page reads `resultType` to decide how to render. Loki
+  returns `vector` when every series has exactly one sample in the window, and
+  `matrix` otherwise. Answering with a matrix leaves the landing page empty.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{service_name=~".+"}'
+    targetLabels: service_name
+    aggregateBy: series
+    limit: "5000"
+    window: 1h
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: Grafana/13.2.1
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: structural
+  fields: [status, data.resultType, data.result[].metric]
+  values:
+    mode: numeric
+    field: data.result[].value[1]
+    tolerance: 0.02
+    reason: |
+      Live ingestion continues between the two calls, so byte totals drift. The
+      shape and the series set must match exactly; only the byte value tolerates
+      drift, and the fixture run uses a closed window where it must match exactly.
+applies_to:
+  loki: ">=3.6.0"
+  victorialogs: ">=v1.44.0"

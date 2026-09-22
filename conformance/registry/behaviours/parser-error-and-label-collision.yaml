@@ -1,0 +1,30 @@
+id: parser-error-and-label-collision
+kind: semantics
+title: Parser errors, __error__ and _extracted collisions
+
+loki: |
+  A failed parser stage sets __error__ (JSONParserErr, LogfmtParserErr) and keeps
+  keys parsed before the failure. Metric queries exclude lines carrying
+  __error__ unless the pipeline drops it. A parsed key colliding with a stream
+  label or structured metadata is renamed with the _extracted suffix, so the
+  stored label keeps its value. Querying __error__ without dropping it is a 400
+  on some shapes.
+
+victorialogs: |
+  unpack_json adds no field for a line it cannot parse and has no error marker;
+  with keep_original_fields a stored field wins over a parsed key, which
+  reproduces the _extracted rule for value purposes but not for the label name.
+
+proxy: |
+  Counting, grouping and filtering must match Loki line for line, including the
+  lines the two parsers read differently (leading whitespace, trailing bytes,
+  truncated JSON, repeated keys, arrays, escaped keys, U+FFFD).
+
+cases:
+  - semantics/json-parse-error-excluded
+  - semantics/drop-error-includes-line
+  - semantics/extracted-suffix-collision
+  - semantics/partial-parse-before-error
+  - semantics/logfmt-tab-separator
+  - semantics/repeated-key
+  - semantics/array-value

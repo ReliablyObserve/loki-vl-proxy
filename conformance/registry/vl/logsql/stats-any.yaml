@@ -1,0 +1,18 @@
+id: stats-any
+kind: vl_stats
+name: any
+since: v1.49.0
+generated:
+  used_by_proxy: false
+  used_in:
+    []
+
+what_it_does: |
+  TODO: what the construct computes in VictoriaLogs.
+serves_logql: []   # LogQL construct ids this can serve natively
+proxy_usage: |
+  TODO: native use, the transformation used instead, or why it is
+  not applicable to Loki semantics.
+fallback: |
+  TODO: what the proxy does on a backend older than `since`.
+cases: []

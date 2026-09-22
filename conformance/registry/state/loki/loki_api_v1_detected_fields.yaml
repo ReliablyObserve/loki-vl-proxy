@@ -1,0 +1,6 @@
+id: loki_api_v1_detected_fields
+state: proven
+reason: |
+  Seeded from the repository: the proxy routes it, 9 test files compare it against Loki.
+owner_decision: null
+waiver: null

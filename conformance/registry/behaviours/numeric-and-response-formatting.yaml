@@ -1,0 +1,23 @@
+id: numeric-and-response-formatting
+kind: semantics
+title: Timestamps, number formatting and empty shapes
+
+loki: |
+  Loki encodes metric timestamps as seconds (scalars too) and values with
+  FormatFloat(v, 'f', -1, 64). Empty results are an empty array, never null. A
+  volume range where every series has one sample is a vector, not a matrix.
+  Empty label values are omitted from the metric map.
+
+victorialogs: |
+  VictoriaLogs uses its own timestamp and number encoding and always returns the
+  grouped fields it was asked for, including empty values.
+
+proxy: |
+  Client parsers and Drilldown's rendering depend on these details.
+
+cases:
+  - semantics/second-timestamps
+  - semantics/float-formatting
+  - semantics/empty-array-not-null
+  - semantics/vector-vs-matrix
+  - semantics/empty-label-omitted

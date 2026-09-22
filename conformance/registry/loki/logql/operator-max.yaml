@@ -1,0 +1,26 @@
+id: operator-max
+kind: operator
+logql: "max"
+loki_constant: OpTypeMax
+generated:
+  supported_by_proxy: true
+  seen_in:
+    - internal/logql/ast.go
+    - internal/logql/parser.go
+    - internal/logql/stage_validate.go
+    - internal/proxy/query_translation.go
+    - internal/proxy/range_metric_compat.go
+    - internal/translator/translator.go
+
+semantics: |
+  TODO: Loki's exact semantics, including how it treats missing labels,
+  parse errors, ordering and empty input.
+victorialogs: |
+  TODO: the native LogsQL construct used, or the proxy-side
+  transformation and the VictoriaLogs limitation that forces it.
+consumers: []   # explore, drilldown, datasource, api
+cases: []       # case ids proving the semantics match
+victorialogs_candidates:
+  - id: stats-max
+    since: v1.40.0
+    emitted_by_proxy: true

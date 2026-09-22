@@ -1,0 +1,6 @@
+id: api_prom_rules
+state: gap
+reason: |
+  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
+owner_decision: null
+waiver: null

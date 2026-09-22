@@ -1,0 +1,1027 @@
+{
+  "constructs": [
+    {
+      "constant": "OpConvBytes",
+      "kind": "conversion",
+      "literal": "bytes",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/cold_dispatch.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/drilldown_quality.go",
+        "internal/proxy/http_utils.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/label_index.go",
+        "internal/proxy/log_line.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/patterns_persistence.go",
+        "internal/proxy/postprocess.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/safety.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/tail.go",
+        "internal/proxy/unwrap_convert.go",
+        "internal/proxy/volume.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpConvDuration",
+      "kind": "conversion",
+      "literal": "duration",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/alerting.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/unwrap_convert.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpConvDurationSeconds",
+      "kind": "conversion",
+      "literal": "duration_seconds",
+      "proxy_mentions": [
+        "internal/logql/stage_validate.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpDecolorize",
+      "kind": "operator",
+      "literal": "decolorize",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/proxy/cold_dispatch.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/stream_processing.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpDrop",
+      "kind": "operator",
+      "literal": "drop",
+      "proxy_mentions": [
+        "internal/logql/parser.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpFilterIP",
+      "kind": "filter",
+      "literal": "ip",
+      "proxy_mentions": [
+        "internal/logql/ip_filter.go",
+        "internal/logql/parser.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpFmtLabel",
+      "kind": "formatter",
+      "literal": "label_format",
+      "proxy_mentions": [
+        "internal/logql/parser.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpFmtLine",
+      "kind": "formatter",
+      "literal": "line_format",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/proxy/postprocess.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpGroupLeft",
+      "kind": "operator",
+      "literal": "group_left",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/logql_adapter.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpGroupRight",
+      "kind": "operator",
+      "literal": "group_right",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/logql_adapter.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpIgnoring",
+      "kind": "operator",
+      "literal": "ignoring",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/logql_adapter.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpKeep",
+      "kind": "operator",
+      "literal": "keep",
+      "proxy_mentions": [
+        "internal/logql/parser.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpKeepEmpty",
+      "kind": "operator",
+      "literal": "--keep-empty",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpLabelReplace",
+      "kind": "label_op",
+      "literal": "label_replace",
+      "proxy_mentions": [
+        "internal/logql/parser.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpOffset",
+      "kind": "operator",
+      "literal": "offset",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/tail.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpOn",
+      "kind": "operator",
+      "literal": "on",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/logql_adapter.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpParserTypeJSON",
+      "kind": "parser",
+      "literal": "json",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpParserTypeLogfmt",
+      "kind": "parser",
+      "literal": "logfmt",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpParserTypePattern",
+      "kind": "parser",
+      "literal": "pattern",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/logql/translate.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/patterns.go",
+        "internal/proxy/postprocess.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpParserTypeRegexp",
+      "kind": "parser",
+      "literal": "regexp",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/logql/semantic.go",
+        "internal/logql/stage_validate.go",
+        "internal/logql/translate.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/drilldown_burst_coalescer.go",
+        "internal/proxy/http_utils.go",
+        "internal/proxy/log_line.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/postprocess.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/redact.go",
+        "internal/proxy/regexp_capture_fields.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/time_utils.go",
+        "internal/proxy/unwrap_convert.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/normalize.go",
+        "internal/translator/pipeline_capture_labels.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpParserTypeUnpack",
+      "kind": "parser",
+      "literal": "unpack",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpPipe",
+      "kind": "pipeline_stage",
+      "literal": "|",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/logql/validate.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/drilldown_burst_coalescer.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/label_index.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/middleware.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/patterns.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeAbsent",
+      "kind": "range_function",
+      "literal": "absent_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeAvg",
+      "kind": "range_function",
+      "literal": "avg_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeBytes",
+      "kind": "range_function",
+      "literal": "bytes_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeBytesRate",
+      "kind": "range_function",
+      "literal": "bytes_rate",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeCount",
+      "kind": "range_function",
+      "literal": "count_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeFirst",
+      "kind": "range_function",
+      "literal": "first_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeFirstWithTimestamp",
+      "kind": "range_function",
+      "literal": "__first_over_time_ts__",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpRangeTypeLast",
+      "kind": "range_function",
+      "literal": "last_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeLastWithTimestamp",
+      "kind": "range_function",
+      "literal": "__last_over_time_ts__",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpRangeTypeMax",
+      "kind": "range_function",
+      "literal": "max_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeMin",
+      "kind": "range_function",
+      "literal": "min_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeQuantile",
+      "kind": "range_function",
+      "literal": "quantile_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeQuantileSketch",
+      "kind": "range_function",
+      "literal": "__quantile_sketch_over_time__",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpRangeTypeRate",
+      "kind": "range_function",
+      "literal": "rate",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeRateCounter",
+      "kind": "range_function",
+      "literal": "rate_counter",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeStddev",
+      "kind": "range_function",
+      "literal": "stddev_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeStdvar",
+      "kind": "range_function",
+      "literal": "stdvar_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpRangeTypeSum",
+      "kind": "range_function",
+      "literal": "sum_over_time",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpStrict",
+      "kind": "operator",
+      "literal": "--strict",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpTypeAdd",
+      "kind": "operator",
+      "literal": "+",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/vector_matching.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeAnd",
+      "kind": "operator",
+      "literal": "and",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/binary_scalar.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeApproxTopK",
+      "kind": "operator",
+      "literal": "approx_topk",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpTypeAvg",
+      "kind": "operator",
+      "literal": "avg",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeBottomK",
+      "kind": "operator",
+      "literal": "bottomk",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeCmpEQ",
+      "kind": "operator",
+      "literal": "==",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeCount",
+      "kind": "operator",
+      "literal": "count",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeCountMinSketch",
+      "kind": "operator",
+      "literal": "__count_min_sketch__",
+      "proxy_mentions": [],
+      "supported": false
+    },
+    {
+      "constant": "OpTypeDiv",
+      "kind": "operator",
+      "literal": "/",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/alerting.go",
+        "internal/proxy/backend.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/postprocess.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/vector_matching.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeGT",
+      "kind": "operator",
+      "literal": ">",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeGTE",
+      "kind": "operator",
+      "literal": ">=",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeLT",
+      "kind": "operator",
+      "literal": "<",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/log_line.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeLTE",
+      "kind": "operator",
+      "literal": "<=",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeMax",
+      "kind": "operator",
+      "literal": "max",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeMin",
+      "kind": "operator",
+      "literal": "min",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/logql/stage_validate.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeMod",
+      "kind": "operator",
+      "literal": "%",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/vector_matching.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeMul",
+      "kind": "operator",
+      "literal": "*",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/ip_filter.go",
+        "internal/logql/parser.go",
+        "internal/logql/scanner.go",
+        "internal/logql/semantic.go",
+        "internal/logql/stage_validate.go",
+        "internal/logql/translate.go",
+        "internal/logql/validate.go",
+        "internal/proxy/alerting.go",
+        "internal/proxy/backend.go",
+        "internal/proxy/backend_budget.go",
+        "internal/proxy/binary_budget.go",
+        "internal/proxy/binary_encoding.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/binary_scalar.go",
+        "internal/proxy/cache_keys.go",
+        "internal/proxy/cold_dispatch.go",
+        "internal/proxy/cold_routing.go",
+        "internal/proxy/config.go",
+        "internal/proxy/debuglog.go",
+        "internal/proxy/deps.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/drilldown_burst_coalescer.go",
+        "internal/proxy/drilldown_field_batcher.go",
+        "internal/proxy/drilldown_quality.go",
+        "internal/proxy/empty_without_metric.go",
+        "internal/proxy/http_utils.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/label_index.go",
+        "internal/proxy/label_metadata.go",
+        "internal/proxy/labels.go",
+        "internal/proxy/limits_enforcement.go",
+        "internal/proxy/log_line.go",
+        "internal/proxy/logql_adapter.go",
+        "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/metric_eval_limits.go",
+        "internal/proxy/middleware.go",
+        "internal/proxy/middleware_security.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/patterns.go",
+        "internal/proxy/patterns_persistence.go",
+        "internal/proxy/postprocess.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/query_extract.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/redact.go",
+        "internal/proxy/regexp_capture_fields.go",
+        "internal/proxy/request_scope.go",
+        "internal/proxy/safety.go",
+        "internal/proxy/state.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/tail.go",
+        "internal/proxy/telemetry.go",
+        "internal/proxy/template_budget.go",
+        "internal/proxy/time_utils.go",
+        "internal/proxy/unwrap_convert.go",
+        "internal/proxy/vector_matching.go",
+        "internal/proxy/volume.go",
+        "internal/translator/errors.go",
+        "internal/translator/normalize.go",
+        "internal/translator/pipeline_capture_labels.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeNEQ",
+      "kind": "operator",
+      "literal": "!=",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeOr",
+      "kind": "operator",
+      "literal": "or",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/binary_scalar.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypePow",
+      "kind": "operator",
+      "literal": "^",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_binary.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeSort",
+      "kind": "operator",
+      "literal": "sort",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/logql/validate.go",
+        "internal/proxy/binary_encoding.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/drilldown_field_batcher.go",
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/label_index.go",
+        "internal/proxy/label_metadata.go",
+        "internal/proxy/labels.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/patterns.go",
+        "internal/proxy/patterns_persistence.go",
+        "internal/proxy/postprocess.go",
+        "internal/proxy/proxy.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/vector_matching.go",
+        "internal/proxy/volume.go",
+        "internal/translator/normalize.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeSortDesc",
+      "kind": "operator",
+      "literal": "sort_desc",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeStddev",
+      "kind": "operator",
+      "literal": "stddev",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeStdvar",
+      "kind": "operator",
+      "literal": "stdvar",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeSub",
+      "kind": "operator",
+      "literal": "-",
+      "proxy_mentions": [
+        "internal/logql/ip_filter.go",
+        "internal/logql/scanner.go",
+        "internal/logql/translate.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/vector_matching.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeSum",
+      "kind": "operator",
+      "literal": "sum",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeTopK",
+      "kind": "operator",
+      "literal": "topk",
+      "proxy_mentions": [
+        "internal/logql/ast.go",
+        "internal/logql/parser.go",
+        "internal/proxy/metric_agg.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeUnless",
+      "kind": "operator",
+      "literal": "unless",
+      "proxy_mentions": [
+        "internal/logql/scanner.go",
+        "internal/proxy/binary_logql.go",
+        "internal/proxy/binary_matching.go",
+        "internal/proxy/binary_scalar.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpTypeVector",
+      "kind": "operator",
+      "literal": "vector",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/proxy/binary_scalar.go",
+        "internal/proxy/empty_without_metric.go",
+        "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/metric_binary.go",
+        "internal/proxy/multitenant.go",
+        "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/vector_matching.go",
+        "internal/proxy/volume.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpUnwrap",
+      "kind": "operator",
+      "literal": "unwrap",
+      "proxy_mentions": [
+        "internal/logql/parser.go",
+        "internal/proxy/drilldown.go",
+        "internal/translator/translator.go"
+      ],
+      "supported": true
+    },
+    {
+      "constant": "OpVariants",
+      "kind": "operator",
+      "literal": "variants",
+      "proxy_mentions": [],
+      "supported": false
+    }
+  ],
+  "version": "v3.7.7"
+}
