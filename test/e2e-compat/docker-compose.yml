@@ -92,9 +92,15 @@ services:
       # Intern short strings (labels, field names) for up to 15 min to reduce GC
       # pressure during high-concurrency scans (default 5 min).
       - "-internStringCacheExpireDuration=15m"
-      # Allow VL to use up to 80% of host RAM for its in-process caches before
-      # evicting. Higher than the default 60% is safe given the 5 g mem_limit cap.
-      - "-memory.allowedPercent=80"
+      # Cache budget. -memory.allowedPercent is read against the container's
+      # 5 g cap, so 80% left VictoriaLogs holding ~4 g of caches and about 1 g
+      # for the working memory of up to -search.maxConcurrentRequests=100
+      # concurrent scans. Under long-range queries the process then exits (exit
+      # code 0, not an OOM kill) and Docker restarts it: the shared e2e stack
+      # restarted VictoriaLogs 21 times in a day, including while idle. 50%
+      # keeps roughly 2.5 g for queries, measured at 2872 MiB peak under the
+      # concurrent long-range load test with the restart count unchanged.
+      - "-memory.allowedPercent=50"
       # NOTE: the benchmark-only reader/fs tuning (-defaultParallelReaders,
       # -fs.maxConcurrency) lives in docker-compose.bench.yml. Those flags do not
       # exist on VictoriaLogs < v1.34 / < v1.37 respectively, and an unknown flag
