@@ -13,8 +13,10 @@ For label/field exposure mode behavior (`label-style`, `metadata-field-mode`, `e
 |---|---|---|
 | `{app="nginx"}` | `app:=nginx` | Field filter (not stream filter) |
 | `{app!="debug"}` | `-app:=debug` | Negative equality |
-| `{app=~"ng.*"}` | `app:~"ng.*"` | Regex match |
-| `{app!~"test.*"}` | `-app:~"test.*"` | Negative regex |
+| `{app=~"ng.*"}` | `app:~"^(?s:ng.*)$"` | Regex match, anchored to the whole value as Prometheus compiles it |
+| `{app!~"test.*"}` | `-app:~"^(?s:test.*)$"` | Negative regex, anchored |
+
+Label-matcher regexps (`=~`, `!~`, in a selector or a label filter stage) are wrapped in `^(?s:…)$`, the form Prometheus' `labels.NewMatcher` compiles, because VictoriaLogs' `field:~"re"` is a substring match. Line filters (`|~`, `!~`) are substring regexps in Loki and are passed through unchanged.
 
 All stream matchers are converted to field filters (not VL `{...}` stream selectors) because VL stream filters only match declared `_stream_fields`.
 
@@ -44,8 +46,8 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 |---|---|
 | `\| label == "val"` | `label:=val` |
 | `\| label != "val"` | `-label:=val` |
-| `\| label =~ "5.."` | `label:~"5.."` |
-| `\| label !~ "GET\|HEAD"` | `-label:~"GET\|HEAD"` |
+| `\| label =~ "5.."` | `label:~"^(?s:5..)$"` |
+| `\| label !~ "GET\|HEAD"` | `-label:~"^(?s:GET\|HEAD)$"` |
 | `\| label > 500` | `label:>500` |
 | `\| label >= 500` | `label:>=500` |
 | `\| label < 200` | `label:<200` |

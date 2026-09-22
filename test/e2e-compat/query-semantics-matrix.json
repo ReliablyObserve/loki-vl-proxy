@@ -40,6 +40,16 @@
       "require_non_empty": true
     },
     {
+      "id": "selector_regex_prefix_is_not_substring",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=~\"api\",namespace=\"prod\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": false
+    },
+    {
       "id": "line_filters_chained",
       "family": "line_filter",
       "endpoint": "query_range",

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string) bool {
@@ -661,7 +662,10 @@ func applyTenantMatch(tenantIDs []string, op, raw string) ([]string, bool, error
 			}
 		}
 	case "=~":
-		re, err := regexp.Compile(raw)
+		// __tenant_id__ is a Loki LABEL matcher, so its regexp is anchored the
+		// same way every other one is: without this `=~"prod"` also selects
+		// `prod-eu` and `nonprod`, and it decides which tenants get queried.
+		re, err := regexp.Compile(logsql.AnchorLabelMatcherRegex(raw))
 		if err != nil {
 			return nil, true, fmt.Errorf("invalid __tenant_id__ regex: %w", err)
 		}
@@ -671,7 +675,10 @@ func applyTenantMatch(tenantIDs []string, op, raw string) ([]string, bool, error
 			}
 		}
 	case "!~":
-		re, err := regexp.Compile(raw)
+		// __tenant_id__ is a Loki LABEL matcher, so its regexp is anchored the
+		// same way every other one is: without this `=~"prod"` also selects
+		// `prod-eu` and `nonprod`, and it decides which tenants get queried.
+		re, err := regexp.Compile(logsql.AnchorLabelMatcherRegex(raw))
 		if err != nil {
 			return nil, true, fmt.Errorf("invalid __tenant_id__ regex: %w", err)
 		}
