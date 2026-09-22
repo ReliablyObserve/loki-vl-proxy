@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
@@ -138,18 +139,30 @@ func TestApplyTopKToVector(t *testing.T) {
 	}
 }
 
-func TestQueryRange_TopKFiltersToKSeries(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/select/logsql/stats_query_range" {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
-				`{"metric":{"app":"high"},"values":[[1700000300,"10.0"],[1700000600,"12.0"]]},`+
-				`{"metric":{"app":"mid"},"values":[[1700000300,"5.0"],[1700000600,"6.0"]]},`+
-				`{"metric":{"app":"low"},"values":[[1700000300,"1.0"],[1700000600,"2.0"]]}]}}`)
+// statsPipeBackend serves VictoriaLogs stats pipes over lines at ts carrying app.
+func statsPipeBackend(t *testing.T, lines map[string]int, ts int64) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		start := parseFakeVLTime(t, r.Form.Get("start"))
+		end := parseFakeVLTime(t, r.Form.Get("end"))
+		body, _, ok := emulateVLStatsPipe(r.Form.Get("query"), start, end, func(yield func(int64, map[string]string, string)) {
+			for app, n := range lines {
+				for i := 0; i < n; i++ {
+					yield(ts, map[string]string{"app": app}, "x")
+				}
+			}
+		})
+		if r.URL.Path != "/select/logsql/query" || !ok {
+			http.NotFound(w, r)
 			return
 		}
-		http.NotFound(w, r)
+		_, _ = w.Write(body)
 	}))
+}
+
+func TestQueryRange_TopKFiltersToKSeries(t *testing.T) {
+	vlBackend := statsPipeBackend(t, map[string]int{"high": 12, "mid": 6, "low": 2}, 1700000500*int64(time.Second))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
@@ -191,16 +204,7 @@ func TestQueryRange_TopKFiltersToKSeries(t *testing.T) {
 }
 
 func TestQueryRange_BottomKFiltersToKSeries(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/select/logsql/stats_query_range" {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
-				`{"metric":{"app":"high"},"values":[[1700000300,"10.0"]]},`+
-				`{"metric":{"app":"low"},"values":[[1700000300,"1.0"]]}]}}`)
-			return
-		}
-		http.NotFound(w, r)
-	}))
+	vlBackend := statsPipeBackend(t, map[string]int{"high": 10, "low": 1}, 1700000500*int64(time.Second))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)

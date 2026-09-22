@@ -283,11 +283,25 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"hits": hits})
 		case "/select/logsql/query":
+			start := parseFakeVLTime(t, r.Form.Get("start"))
+			end := parseFakeVLTime(t, r.Form.Get("end"))
+			if body, _, ok := emulateVLStatsPipe(r.Form.Get("query"), start, end, func(yield func(int64, map[string]string, string)) {
+				for _, line := range fake.lines {
+					yield(line.ts, map[string]string{"app": line.app}, line.msg)
+				}
+			}); ok {
+				m := vlStatsPipeRE.FindStringSubmatch(r.Form.Get("query"))
+				size, _ := strconv.ParseInt(m[1], 10, 64)
+				fake.mu.Lock()
+				fake.statsCalls = append(fake.statsCalls, slidingStatsCall{query: r.Form.Get("query"), start: r.Form.Get("start"), end: r.Form.Get("end"), step: time.Duration(size).String(), offset: m[2]})
+				fake.mu.Unlock()
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				_, _ = w.Write(body)
+				return
+			}
 			fake.mu.Lock()
 			fake.rawCalls++
 			fake.mu.Unlock()
-			start := parseFakeVLTime(t, r.Form.Get("start"))
-			end := parseFakeVLTime(t, r.Form.Get("end"))
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			for _, line := range fake.lines {
 				if line.ts < start || line.ts >= end || !fakeWindowPhaseKeep(t, r.Form.Get("query"), line.ts) {
@@ -578,21 +592,21 @@ func TestSlidingRangeMetric_WindowsAreExactBucketUnions(t *testing.T) {
 	})
 }
 
-// Fine gcd buckets stay on one stats_query_range call. VictoriaLogs returns only
-// non-empty buckets, so tens of thousands of buckets cost less than scanning the
-// same lines raw, which could exceed -manual-range-metric-row-limit.
+// Windows whose gcd bucket grid would be finer than Loki's resolution limit, and
+// topk inputs, stay on stats_query_range without the fine grid: one window-sized
+// seed bucket plus two step-sized grids answer every window exactly. A single
+// 24h query on a seconds-wide grid has exhausted VictoriaLogs memory.
 func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 	s0 := time.Unix(1699920000, 0).UTC() // day-aligned
 	for _, tc := range []struct {
-		name, query, fn, wantStep string
-		byApp                     bool
-		span, step, window, every time.Duration
+		name, query, fn, wantSeedStep, wantStep string
+		byApp                                   bool
+		span, step, window, every               time.Duration
 	}{
-		// A 7m range at a 1h step: one window-phase-filtered bucket per step
-		// (gcd buckets would need 43207 over 30 days).
-		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantStep: "3600s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
-		// gcd(17s, 5m) = 1s: 86700 buckets over 24 hours.
-		{name: "count 5m over 24h at 17s step", query: `sum(count_over_time({app="fine-app"}[5m]))`, fn: "count_over_time", wantStep: "1s", span: 24 * time.Hour, step: 17 * time.Second, window: 5 * time.Minute, every: 40 * time.Second},
+		// gcd(7m, 1h) = 60s would need 43207 buckets over 30 days.
+		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantSeedStep: "7m0s", wantStep: "1h0m0s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
+		// gcd(17s, 5m) = 1s would need 86700 buckets over 24 hours.
+		{name: "count 5m over 24h at 17s step", query: `sum(count_over_time({app="fine-app"}[5m]))`, fn: "count_over_time", wantSeedStep: "5m0s", wantStep: "17s", span: 24 * time.Hour, step: 17 * time.Second, window: 5 * time.Minute, every: 40 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var lines []slidingFixtureLine
@@ -605,8 +619,13 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 			got := runSlidingQueryRange(t, p, tc.query, start, end, tc.step, nil)
 			assertSlidingSeriesEqual(t, tc.query, lokiSlidingReference(lines, tc.fn, tc.byApp, 0, start, end, tc.step, tc.window), got)
 			calls, raw := fake.snapshot()
-			if raw != 0 || len(calls) != 1 || calls[0].step != tc.wantStep || calls[0].offset == "" {
-				t.Fatalf("expected one anchored stats call with %s buckets, got %+v and %d raw scans", tc.wantStep, calls, raw)
+			if raw != 0 || len(calls) != 3 || calls[0].step != tc.wantSeedStep || calls[1].step != tc.wantStep || calls[2].step != tc.wantStep {
+				t.Fatalf("expected a %s seed bucket and two anchored %s grids, got %+v and %d raw scans", tc.wantSeedStep, tc.wantStep, calls, raw)
+			}
+			for _, call := range calls {
+				if !strings.Contains(call.query, "| stats by (_time:") {
+					t.Fatalf("stats call without a time-bucket grid: %+v", call)
+				}
 			}
 		})
 	}

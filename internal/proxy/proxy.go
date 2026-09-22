@@ -337,6 +337,17 @@ type Config struct {
 	// page load fires ~30 such calls simultaneously; without a cap they all
 	// hit VL at once, causing a CPU storm. 0 means use the built-in default (4).
 	StatsQueryRangeConcurrency int
+	// BackendMaxConcurrentHeavyQueries bounds concurrent heavy VictoriaLogs
+	// calls (raw-row metric fetches, long-range or fine-grained stats and hits)
+	// per replica. 0 disables the limiter.
+	BackendMaxConcurrentHeavyQueries int
+	// BackendHeavyQueryQueueWait is how long a heavy call waits for a slot
+	// before the request fails with 429 "too many outstanding requests".
+	// 0 rejects immediately when all slots are busy.
+	BackendHeavyQueryQueueWait time.Duration
+	// BackendHeavyQueryMinRange is the time range from which stats, hits and
+	// unbounded raw calls count as heavy. 0 uses the built-in default (6h).
+	BackendHeavyQueryMinRange time.Duration
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
 	// are coalesced into a single fused VL conditional-stats call.
@@ -498,6 +509,8 @@ type Proxy struct {
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
+	heavyQueryLimiter                     *heavyQueryLimiter
+	backendHeavyQueryMinRange             time.Duration
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
 	drilldownFieldBatcher                 *drilldownFieldBatcher
@@ -1089,6 +1102,8 @@ func New(cfg Config) (*Proxy, error) {
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
+		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
+		backendHeavyQueryMinRange:             resolveHeavyQueryMinRange(cfg.BackendHeavyQueryMinRange),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
 		drilldownCardCache:                    newDrilldownCardinalityCache(),

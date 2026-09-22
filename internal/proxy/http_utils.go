@@ -238,6 +238,11 @@ func (p *Proxy) writeDrilldownPartialFromUpstream(w http.ResponseWriter, vlStatu
 }
 
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
+	// Call sites that map backend failures to a fixed 5xx still surface the
+	// heavy-query queue rejection with Loki's queue-full status.
+	if code != http.StatusTooManyRequests && strings.HasPrefix(msg, lokiTooManyOutstandingRequests+": heavy VictoriaLogs queries") {
+		code = http.StatusTooManyRequests
+	}
 	level := slog.LevelInfo
 	switch {
 	case code >= http.StatusInternalServerError:
@@ -260,6 +265,9 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 func statusFromUpstreamErr(err error) int {
 	if isUpstreamQueryRejected(err) {
 		return http.StatusBadRequest
+	}
+	if isHeavyQueryQueueFull(err) {
+		return http.StatusTooManyRequests
 	}
 	var matchingErr vectorMatchError
 	if errors.As(err, &matchingErr) {
@@ -541,6 +549,13 @@ func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Loki's Drilldown partial-result carve-out covers max_query_series only; a
+	// full query queue stays a 429 for Grafana clients too, so panels show the
+	// rejection instead of an empty chart.
+	if isHeavyQueryQueueFull(err) {
+		p.writeError(w, http.StatusTooManyRequests, err.Error())
+		return
+	}
 	status := statusFromUpstreamErr(err)
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
@@ -554,6 +569,9 @@ func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
 func badRequestStatusOr(err error, fallback int) int {
 	if isUpstreamQueryRejected(err) {
 		return http.StatusBadRequest
+	}
+	if isHeavyQueryQueueFull(err) {
+		return http.StatusTooManyRequests
 	}
 	return fallback
 }
@@ -573,6 +591,12 @@ func shouldRecordBreakerFailure(ctx context.Context, err error) bool {
 		return false
 	}
 	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	// A rejected heavy-query admission never reached the backend, so it says
+	// nothing about backend health. Loki's own queue-full 429 likewise leaves
+	// other queries untouched.
+	if isHeavyQueryQueueFull(err) {
 		return false
 	}
 	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.

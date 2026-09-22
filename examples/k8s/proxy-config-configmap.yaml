@@ -140,6 +140,15 @@ spec:
             # Opt-in — disable if you don't use the Drilldown patterns tab.
             # - -patterns-autodetect-from-queries=true
 
+            # ── Backend protection ───────────────────────────────────────────
+            # Long-range metric queries are the ones that can exhaust
+            # VictoriaLogs. At most this many run at once per replica; the rest
+            # wait up to the queue timeout and then get Loki's 429. Defaults
+            # shown; raise the concurrency for a larger backend.
+            # - -backend-max-concurrent-heavy-queries=2
+            # - -backend-heavy-query-queue-wait=20s
+            # - -backend-heavy-query-min-range=6h
+
             # ── Tenant map hot-reload ────────────────────────────────────────
             # Only needed when TENANT_MAP_FILE is set.
             # - -tenant-map-reload-interval=30s

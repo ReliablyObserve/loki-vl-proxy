@@ -1678,7 +1678,8 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 					"result": []map[string]interface{}{
 						{
 							"metric": map[string]string{"service.name": "argocd"},
-							"values": [][]interface{}{{float64(1712538000), "42"}},
+							// Bucket (17:14:55, 17:15:00]: the [5s] window of the 17:15 step.
+							"values": [][]interface{}{{float64(1775322895), "42"}},
 						},
 					},
 				},
