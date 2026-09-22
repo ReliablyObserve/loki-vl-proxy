@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The e2e VictoriaLogs restarts were OOM kills, and it now has the memory it
+  needs.** The earlier diagnosis was wrong: `docker inspect` reports the state
+  of the container that is already running again, which showed `exit 0` and
+  `OOMKilled=false`, so the kills looked like clean exits and tuning
+  `-memory.allowedPercent` did not stop them. A live `docker events` capture
+  caught the real sequence -- an `oom` event followed by `die exit=137` -- and
+  the process was restarting every few minutes, 24 times in one session. The
+  percentage flag also measured only the caches (`vm_allowed_memory_bytes` was
+  2.5 g under `=50`); the rest of the footprint is the working set of each
+  in-flight scan, and a single 7d `| json` group-by holds several gigabytes on
+  its own, so capping `-search.maxConcurrentRequests` at 32 and then 16 did not
+  help either. VictoriaLogs now gets 8 g, as against the 12 g Loki has on the
+  same stack, with an absolute `-memory.allowedBytes=3GiB` cache budget that
+  does not move with the host and a concurrency cap of 64. Verified with the
+  concurrent long-range load test: 155,438 successful responses, no `502`, no
+  `503`, `/labels` answering throughout, peak 6447 MiB -- above the old 5 g cap
+  -- and the restart count unchanged.
 - **Updating a dependency branch no longer fails the changelog gate.** The gate
   exempts a pull request whose every commit is a `build(deps)` bump, but
   bringing such a branch up to date with `main` adds a `Merge branch 'main'
