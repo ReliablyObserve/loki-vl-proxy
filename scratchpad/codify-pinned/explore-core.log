@@ -1,0 +1,81 @@
+
+Running 3 tests using 1 worker
+
+[1A[2K[1/3] [chromium] › tests/explore-parity.spec.ts:34:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core
+[1A[2K[2/3] (retries) [chromium] › tests/explore-parity.spec.ts:34:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core (retry #1)
+[1A[2K  1) [chromium] › tests/explore-parity.spec.ts:34:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core 
+
+    Error: series label set
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 1[39m
+    [31m+ Received  + 5[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   "error",[39m
+    [31m+   "info",[39m
+    [31m+   "warn",[39m
+    [31m+ ][39m
+
+      52 |     const levels = (r: MatrixResponse) =>
+      53 |       r.data.result.map((s) => s.metric.level ?? "").sort();
+    > 54 |     expect(levels(proxy.body), "series label set").toEqual(levels(loki.body));
+         |                                                    ^
+      55 |     expect(levels(proxy.body).length, "at least one level series").toBeGreaterThan(0);
+      56 |
+      57 |     for (const series of proxy.body.data.result) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-parity.spec.ts:54:52
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: series label set
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 1[39m
+    [31m+ Received  + 5[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   "error",[39m
+    [31m+   "info",[39m
+    [31m+   "warn",[39m
+    [31m+ ][39m
+
+      52 |     const levels = (r: MatrixResponse) =>
+      53 |       r.data.result.map((s) => s.metric.level ?? "").sort();
+    > 54 |     expect(levels(proxy.body), "series label set").toEqual(levels(loki.body));
+         |                                                    ^
+      55 |     expect(levels(proxy.body).length, "at least one level series").toBeGreaterThan(0);
+      56 |
+      57 |     for (const series of proxy.body.data.result) {
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/explore-parity.spec.ts:54:52
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/explore-parity-Explore-—-p-0d86d-th-datasources-explore-core-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[3/3] [chromium] › tests/explore.spec.ts:17:7 › Grafana Explore — Proxy Datasource › basic log query returns results without errors @explore-core
+[1A[2K[4/3] [chromium] › tests/url-state.spec.ts:10:5 › buildExploreUrl encodes the datasource pane state @explore-core
+[1A[2K  1 failed
+    [chromium] › tests/explore-parity.spec.ts:34:7 › Explore — proxy vs Loki metric parity › sum by (level) rate returns the same series set on both datasources @explore-core 
+  2 passed (3.8s)

@@ -1,0 +1,7 @@
+start 19:38:00 loki_started=2026-09-12T17:37:22.754456049Z
+19:39:04 final2 explore-core: 3 passed 0 failed 0 skipped  
+19:39:09 final2 regression: 40 passed 1 failed 10 skipped  passed (4.8s)
+19:39:55 final2 drilldown-core: 11 passed 0 failed 0 skipped 1 flaky passed (45.6s)
+19:40:06 final2 drilldown-mt: 7 passed 0 failed 0 skipped  passed (10.4s)
+19:40:41 final2 comprehensive-ui: 15 passed 0 failed 0 skipped  passed (34.8s)
+FINAL2_DONE

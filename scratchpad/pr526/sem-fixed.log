@@ -1,0 +1,581 @@
+=== RUN   TestLogQL_Exhaustive_QueryParity
+    compat_extended_test.go:31: Rich test data ingested successfully
+=== RUN   TestLogQL_Exhaustive_QueryParity/exact_match
+=== RUN   TestLogQL_Exhaustive_QueryParity/regex_match
+=== RUN   TestLogQL_Exhaustive_QueryParity/not_equal
+=== RUN   TestLogQL_Exhaustive_QueryParity/regex_not_match
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_contains
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_not_contains
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_not_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/unpack_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/decolorize
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_eq
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_ne
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_not_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_gt
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_lt
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_field_eq
+=== RUN   TestLogQL_Exhaustive_QueryParity/detected_level_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format_with_newline
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_format_multiple
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_single
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_multiple
+=== RUN   TestLogQL_Exhaustive_QueryParity/keep_single
+=== RUN   TestLogQL_Exhaustive_QueryParity/keep_multiple
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_error
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_eq_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_regex_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_ne_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_multi_mixed
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_filter_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_drop_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/chained_line_filters
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_keep_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_filter_then_json
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_two_field_filters
+=== RUN   TestLogQL_Exhaustive_QueryParity/decolorize_then_json
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_over_time
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_over_time
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_with_line_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_with_json_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_with_logfmt
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_rate_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/max_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/min_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_agg
+=== RUN   TestLogQL_Exhaustive_QueryParity/topk
+=== RUN   TestLogQL_Exhaustive_QueryParity/bottomk
+=== RUN   TestLogQL_Exhaustive_QueryParity/sort_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/sort_desc_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/max_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/min_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/first_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/last_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/stddev_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/stdvar_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/quantile_over_time_unwrap
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_gt_zero
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_lt
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_eq
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_ne
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_bool_gt
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_scalar_mul
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_scalar_div
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_scalar_add
+=== RUN   TestLogQL_Exhaustive_QueryParity/vector_or
+=== RUN   TestLogQL_Exhaustive_QueryParity/vector_and
+=== RUN   TestLogQL_Exhaustive_QueryParity/vector_unless
+=== RUN   TestLogQL_Exhaustive_QueryParity/vector_div
+=== RUN   TestLogQL_Exhaustive_QueryParity/on_grouping
+=== RUN   TestLogQL_Exhaustive_QueryParity/without_grouping
+=== RUN   TestLogQL_Exhaustive_QueryParity/absent_over_time
+=== RUN   TestLogQL_Exhaustive_QueryParity/impossible_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/nonexistent_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/simple_selector_only
+=== RUN   TestLogQL_Exhaustive_QueryParity/wildcard_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/multiple_not_equal
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_replace_basic
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_replace_rewrite
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_replace_no_match
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_replace_multi_result
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_without_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_by_level_agg
+=== RUN   TestLogQL_Exhaustive_QueryParity/group_outer_agg
+=== RUN   TestLogQL_Exhaustive_QueryParity/group_without
+=== RUN   TestLogQL_Exhaustive_QueryParity/subquery_rate_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/subquery_sum_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_offset_5m
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_offset_10m
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_rate_offset
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate_offset
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_duration_conv
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_bytes_conv
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_duration_avg
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_duration_max
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_by_label
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_max_by_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_quantile_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_two_fields_only
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_three_fields
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_then_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_fields_specific
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_single
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_multi
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_app_regex_alt
+=== RUN   TestLogQL_Exhaustive_QueryParity/nested_wildcard
+=== RUN   TestLogQL_Exhaustive_QueryParity/not_match_multi
+=== RUN   TestLogQL_Exhaustive_QueryParity/env_regex_alternation
+=== RUN   TestLogQL_Exhaustive_QueryParity/combined_match_types
+=== RUN   TestLogQL_Exhaustive_QueryParity/absent_existing_stream
+=== RUN   TestLogQL_Exhaustive_QueryParity/absent_nonexistent_stream
+=== RUN   TestLogQL_Exhaustive_QueryParity/absent_with_impossible_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/error_filter_json_chain
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_path_status_drop
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_filter_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/chained_line_filter_complex
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_regex_numeric_range
+=== RUN   TestLogQL_Exhaustive_QueryParity/keep_then_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_then_keep
+=== RUN   TestLogQL_Exhaustive_QueryParity/decolorize_json_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_sum_plus_sum
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_rate_ratio_pct
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_three_services
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_bytes_vs_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_bool_chain
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_without_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/max_without_env
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_without_multi
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_without_cluster
+=== RUN   TestLogQL_Exhaustive_QueryParity/on_match_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/ignoring_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/group_left_fanout
+=== RUN   TestLogQL_Exhaustive_QueryParity/group_right_fanout
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_service_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_service_rate_sum
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_service_topk
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_service_count_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_service_bytes
+=== RUN   TestLogQL_Exhaustive_QueryParity/unpack_field_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/unpack_keep_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_extract_two
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_filter_after
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_json_status_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_logfmt_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_rate_json_method
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate_filtered
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_unwrap_filtered
+=== RUN   TestLogQL_Exhaustive_QueryParity/stddev_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/stdvar_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/stddev_by_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/max_by_app_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/min_by_level_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_without_two_labels
+=== RUN   TestLogQL_Exhaustive_QueryParity/decolorize_in_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/decolorize_in_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/unpack_in_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate_json_range
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_drop_in_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_method_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_keep_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_format_sum_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_over_time_line_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_app_regex_json
+=== RUN   TestLogQL_Exhaustive_QueryParity/pipeline_5stages
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format_timestamp
+=== RUN   TestLogQL_Exhaustive_QueryParity/quantile_by_label_95
+=== RUN   TestLogQL_Exhaustive_QueryParity/quantile_by_label_50
+=== RUN   TestLogQL_Exhaustive_QueryParity/subquery_sum_by_outer
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_filter_line_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_rate_binary_div
+=== RUN   TestLogQL_Exhaustive_QueryParity/double_logfmt_parser
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_missing_field
+=== RUN   TestLogQL_Exhaustive_QueryParity/error_label_nonempty
+=== RUN   TestLogQL_Exhaustive_QueryParity/error_label_empty_matches_valid
+=== RUN   TestLogQL_Exhaustive_QueryParity/error_label_in_keep_stage
+=== RUN   TestLogQL_Exhaustive_QueryParity/error_label_count_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_error_rate_ratio
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_error_count_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_volume_bytes_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_top_error_services
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_p99_latency_by_svc
+=== RUN   TestLogQL_Exhaustive_QueryParity/drilldown_error_pct_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format_line_builtin
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format_stream_label_access
+=== RUN   TestLogQL_Exhaustive_QueryParity/line_format_multi_extracted_fields
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_alias_multi
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_three_captures_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_wildcard_then_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_keep_fields
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_filter_then_keep
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_regex_on_extracted_field
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_over_time_sum_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_over_time_max_total
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate_sum_total
+=== RUN   TestLogQL_Exhaustive_QueryParity/absent_over_time_regex_selector
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_filter_only
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_by_multi_labels
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_without_multi_labels
+=== RUN   TestLogQL_Exhaustive_QueryParity/bottomk_bytes_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/topk_avg_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/dual_bound_2xx
+=== RUN   TestLogQL_Exhaustive_QueryParity/filter_slow_requests_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/chained_ne_filters
+=== RUN   TestLogQL_Exhaustive_QueryParity/metric_from_5xx_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/three_exact_label_selector
+=== RUN   TestLogQL_Exhaustive_QueryParity/regex_and_ne_label_combo
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_chained_line_filters
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_json_4xx_range
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_window_diff_5m_1m
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_window_ratio_15m_5m
+=== RUN   TestLogQL_Exhaustive_QueryParity/sum_over_time_unwrap_by_level
+=== RUN   TestLogQL_Exhaustive_QueryParity/avg_over_time_unwrap_by_app
+=== RUN   TestLogQL_Exhaustive_QueryParity/bytes_rate_json_status_filtered
+=== RUN   TestLogQL_Exhaustive_QueryParity/mixed_text_regex_field
+=== RUN   TestLogQL_Exhaustive_QueryParity/mixed_numeric_and_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_format_multi_rename
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_complex_chain
+=== RUN   TestLogQL_Exhaustive_QueryParity/count_logfmt_drop_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_then_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_app_field_filter_regex
+=== RUN   TestLogQL_Exhaustive_QueryParity/multi_app_bytes_rate
+=== RUN   TestLogQL_Exhaustive_QueryParity/stddev_outer_aggregation
+=== RUN   TestLogQL_Exhaustive_QueryParity/stdvar_outer_aggregation
+=== RUN   TestLogQL_Exhaustive_QueryParity/quantile_over_time_gt_one
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_eq_matcher#01
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_regex_matcher#01
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_with_ne_matcher#01
+=== RUN   TestLogQL_Exhaustive_QueryParity/drop_multi_mixed#01
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv4
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_cidr
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_negative
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_range
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_loopback
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_cidr
+=== RUN   TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_mapped
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_replace_chained
+=== RUN   TestLogQL_Exhaustive_QueryParity/json_field_alias_then_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/deep_pipeline_drop_keep
+=== RUN   TestLogQL_Exhaustive_QueryParity/deep_pipeline_logfmt_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_group_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/regexp_named_group_filter
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_format_in_sum
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_asymmetric_windows
+=== RUN   TestLogQL_Exhaustive_QueryParity/unwrap_logfmt_sum
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/keep_then_format#01
+=== RUN   TestLogQL_Exhaustive_QueryParity/chained_drop_stages
+=== RUN   TestLogQL_Exhaustive_QueryParity/logfmt_drop_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/nested_filters_then_json
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_times_scalar
+=== RUN   TestLogQL_Exhaustive_QueryParity/rate_minus_scalar
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_exact_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_regex_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_ne_matcher
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_log_pipeline
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_line_format
+=== RUN   TestLogQL_Exhaustive_QueryParity/backtick_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/subquery_quantile_count
+=== RUN   TestLogQL_Exhaustive_QueryParity/subquery_vec_avg
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_precedence_mul_add
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_precedence_cmp_and
+=== RUN   TestLogQL_Exhaustive_QueryParity/binary_precedence_div_mul
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_line_filter_pos
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_line_filter_neg
+=== RUN   TestLogQL_Exhaustive_QueryParity/pattern_line_filter_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_filter_and
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_filter_or
+=== RUN   TestLogQL_Exhaustive_QueryParity/label_filter_and_metric
+=== RUN   TestLogQL_Exhaustive_QueryParity/offset_inside_sum_by
+=== RUN   TestLogQL_Exhaustive_QueryParity/offset_inside_topk
+=== RUN   TestLogQL_Exhaustive_QueryParity/offset_both_sides_binary
+=== NAME  TestLogQL_Exhaustive_QueryParity
+    logql_exhaustive_test.go:801: 
+        ╔═══════════════════════════════════════════╗
+    logql_exhaustive_test.go:801: ║  LogQL Exhaustive Parity Score            ║
+    logql_exhaustive_test.go:801: ╠═══════════════════════════════════════════╣
+    logql_exhaustive_test.go:801: ║  Passed: 284 / 284 (100%)                 ║
+    logql_exhaustive_test.go:801: ║  Failed:   0                              ║
+    logql_exhaustive_test.go:801: ╚═══════════════════════════════════════════╝
+--- PASS: TestLogQL_Exhaustive_QueryParity (7.50s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/exact_match (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regex_match (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/not_equal (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regex_not_match (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_contains (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_not_contains (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_not_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unpack_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/decolorize (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_eq (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_ne (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_not_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_gt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_lt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_field_eq (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/detected_level_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format_with_newline (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_format_multiple (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_single (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_multiple (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/keep_single (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/keep_multiple (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_error (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_eq_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_regex_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_ne_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_multi_mixed (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_filter_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_drop_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/chained_line_filters (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_keep_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_filter_then_json (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_two_field_filters (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/decolorize_then_json (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_over_time (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_over_time (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_with_line_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_with_json_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_with_logfmt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_rate_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/max_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/min_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_agg (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/topk (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bottomk (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sort_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sort_desc_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/max_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/min_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/first_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/last_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stddev_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stdvar_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/quantile_over_time_unwrap (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_gt_zero (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_lt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_eq (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_ne (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_bool_gt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_scalar_mul (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_scalar_div (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_scalar_add (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/vector_or (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/vector_and (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/vector_unless (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/vector_div (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/on_grouping (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/without_grouping (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/absent_over_time (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/impossible_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/nonexistent_app (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/simple_selector_only (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/wildcard_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multiple_not_equal (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_replace_basic (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_replace_rewrite (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_replace_no_match (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_replace_multi_result (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_without_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_by_level_agg (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/group_outer_agg (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/group_without (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/subquery_rate_count (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/subquery_sum_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_offset_5m (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_offset_10m (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_rate_offset (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate_offset (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_duration_conv (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_bytes_conv (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_duration_avg (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_duration_max (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_by_label (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_max_by_level (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_quantile_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_two_fields_only (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_three_fields (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_then_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_fields_specific (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_single (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_multi (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_app_regex_alt (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/nested_wildcard (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/not_match_multi (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/env_regex_alternation (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/combined_match_types (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/absent_existing_stream (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/absent_nonexistent_stream (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/absent_with_impossible_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/error_filter_json_chain (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_path_status_drop (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_filter_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/chained_line_filter_complex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_regex_numeric_range (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/keep_then_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_then_keep (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/decolorize_json_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_sum_plus_sum (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_rate_ratio_pct (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_three_services (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_bytes_vs_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_bool_chain (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_without_level (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/max_without_env (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_without_multi (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_without_cluster (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/on_match_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ignoring_level (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/group_left_fanout (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/group_right_fanout (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_service_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_service_rate_sum (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_service_topk (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_service_count_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_service_bytes (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unpack_field_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unpack_keep_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_extract_two (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_filter_after (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_json_status_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_logfmt_level (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_rate_json_method (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate_filtered (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_unwrap_filtered (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stddev_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stdvar_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stddev_by_level (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/max_by_app_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/min_by_level_count (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_without_two_labels (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/decolorize_in_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/decolorize_in_count (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unpack_in_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate_json_range (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_drop_in_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_method_count (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_keep_count (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_format_sum_by (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_over_time_line_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_app_regex_json (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pipeline_5stages (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format_timestamp (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/quantile_by_label_95 (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/quantile_by_label_50 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/subquery_sum_by_outer (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_filter_line_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_rate_binary_div (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/double_logfmt_parser (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_missing_field (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/error_label_nonempty (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/error_label_empty_matches_valid (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/error_label_in_keep_stage (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/error_label_count_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_error_rate_ratio (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_error_count_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_volume_bytes_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_top_error_services (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_p99_latency_by_svc (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drilldown_error_pct_by_app (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format_line_builtin (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format_stream_label_access (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/line_format_multi_extracted_fields (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_alias_multi (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_three_captures_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_wildcard_then_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_keep_fields (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_filter_then_keep (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_regex_on_extracted_field (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_over_time_sum_by_app (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_over_time_max_total (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate_sum_total (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/absent_over_time_regex_selector (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_filter_only (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_by_multi_labels (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_without_multi_labels (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bottomk_bytes_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/topk_avg_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/dual_bound_2xx (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/filter_slow_requests_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/chained_ne_filters (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/metric_from_5xx_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/three_exact_label_selector (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regex_and_ne_label_combo (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_chained_line_filters (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_json_4xx_range (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_window_diff_5m_1m (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_window_ratio_15m_5m (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/sum_over_time_unwrap_by_level (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/avg_over_time_unwrap_by_app (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/bytes_rate_json_status_filtered (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/mixed_text_regex_field (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/mixed_numeric_and_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_format_multi_rename (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_complex_chain (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/count_logfmt_drop_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_then_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_app_field_filter_regex (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/multi_app_bytes_rate (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stddev_outer_aggregation (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/stdvar_outer_aggregation (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/quantile_over_time_gt_one (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_eq_matcher#01 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_regex_matcher#01 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_with_ne_matcher#01 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/drop_multi_mixed#01 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv4 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_cidr (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_negative (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_range (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_loopback (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_cidr (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/ip_line_filter_ipv6_mapped (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_replace_chained (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/json_field_alias_then_filter (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/deep_pipeline_drop_keep (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/deep_pipeline_logfmt_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_group_metric (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/regexp_named_group_filter (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_format_in_sum (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_asymmetric_windows (0.03s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/unwrap_logfmt_sum (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/keep_then_format#01 (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/chained_drop_stages (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/logfmt_drop_matcher (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/nested_filters_then_json (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_times_scalar (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/rate_minus_scalar (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_exact_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_regex_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_ne_matcher (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_log_pipeline (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_line_format (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/backtick_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/subquery_quantile_count (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/subquery_vec_avg (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_precedence_mul_add (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_precedence_cmp_and (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/binary_precedence_div_mul (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_line_filter_pos (0.00s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_line_filter_neg (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/pattern_line_filter_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_filter_and (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_filter_or (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/label_filter_and_metric (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/offset_inside_sum_by (0.02s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/offset_inside_topk (0.01s)
+    --- PASS: TestLogQL_Exhaustive_QueryParity/offset_both_sides_binary (0.01s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	7.837s

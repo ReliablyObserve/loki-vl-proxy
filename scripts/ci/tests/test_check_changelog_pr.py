@@ -108,6 +108,26 @@ class CheckChangelogPRTests(unittest.TestCase):
             )
         )
 
+    def test_dependency_only_pr_survives_a_branch_update(self):
+        """Bringing a dependency branch up to date must not make it releasable."""
+        self.assertTrue(
+            is_dependency_only_pr(
+                [
+                    "build(deps): bump the actions-minor group with 5 updates",
+                    "Merge branch 'main' into dependabot/github_actions/actions-minor",
+                ],
+                [".github/workflows/ci.yaml", ".github/workflows/release.yaml"],
+            )
+        )
+
+    def test_dependency_only_pr_rejects_merge_commits_alone(self):
+        self.assertFalse(
+            is_dependency_only_pr(
+                ["Merge branch 'main' into some-branch"],
+                [".github/workflows/ci.yaml"],
+            )
+        )
+
     def test_dependency_only_pr_github_actions(self):
         self.assertTrue(
             is_dependency_only_pr(

@@ -1,0 +1,8 @@
+grafana/grafana:13.0.1
+grafana/loki:3.7.1
+loki-vl-proxy:e2e-local
+nginx:1.27-alpine
+victoriametrics/victoria-logs:v1.50.0
+victoriametrics/victoria-metrics:v1.119.0
+victoriametrics/vmalert:v1.138.0
+victoriametrics/vmauth:v1.138.0

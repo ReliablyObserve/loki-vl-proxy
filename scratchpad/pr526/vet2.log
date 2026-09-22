@@ -1,0 +1,37 @@
+scratchpad/loki377/evaluator.go:20:2: no required module provides package github.com/grafana/loki/v3/pkg/iter; to add it:
+	go get github.com/grafana/loki/v3/pkg/iter
+scratchpad/loki377/query.go:17:2: no required module provides package github.com/grafana/loki/v3/pkg/loghttp; to add it:
+	go get github.com/grafana/loki/v3/pkg/loghttp
+scratchpad/loki377/query.go:18:2: no required module provides package github.com/grafana/loki/v3/pkg/loghttp/legacy; to add it:
+	go get github.com/grafana/loki/v3/pkg/loghttp/legacy
+scratchpad/loki377/evaluator.go:21:2: no required module provides package github.com/grafana/loki/v3/pkg/logproto; to add it:
+	go get github.com/grafana/loki/v3/pkg/logproto
+scratchpad/loki377/evaluator.go:22:2: no required module provides package github.com/grafana/loki/v3/pkg/logql/syntax; to add it:
+	go get github.com/grafana/loki/v3/pkg/logql/syntax
+scratchpad/loki377/evaluator.go:23:2: no required module provides package github.com/grafana/loki/v3/pkg/logqlmodel; to add it:
+	go get github.com/grafana/loki/v3/pkg/logqlmodel
+scratchpad/loki377/query.go:21:2: no required module provides package github.com/grafana/loki/v3/pkg/logqlmodel/stats; to add it:
+	go get github.com/grafana/loki/v3/pkg/logqlmodel/stats
+scratchpad/loki377/evaluator.go:24:2: no required module provides package github.com/grafana/loki/v3/pkg/querier/plan; to add it:
+	go get github.com/grafana/loki/v3/pkg/querier/plan
+scratchpad/loki377/evaluator.go:25:2: no required module provides package github.com/grafana/loki/v3/pkg/storage/chunk/cache/resultscache; to add it:
+	go get github.com/grafana/loki/v3/pkg/storage/chunk/cache/resultscache
+scratchpad/loki377/evaluator.go:26:2: no required module provides package github.com/grafana/loki/v3/pkg/util; to add it:
+	go get github.com/grafana/loki/v3/pkg/util
+scratchpad/loki377/evaluator.go:27:2: no required module provides package github.com/grafana/loki/v3/pkg/util/constants; to add it:
+	go get github.com/grafana/loki/v3/pkg/util/constants
+scratchpad/loki377/query.go:22:2: no required module provides package github.com/grafana/loki/v3/pkg/util/httpreq; to add it:
+	go get github.com/grafana/loki/v3/pkg/util/httpreq
+scratchpad/loki377/query.go:10:2: no required module provides package github.com/json-iterator/go; to add it:
+	go get github.com/json-iterator/go
+scratchpad/loki377/evaluator.go:12:2: no required module provides package github.com/pkg/errors; to add it:
+	go get github.com/pkg/errors
+scratchpad/loki377/evaluator.go:13:2: no required module provides package github.com/prometheus/common/model; to add it:
+	go get github.com/prometheus/common/model
+scratchpad/loki377/evaluator.go:14:2: no required module provides package github.com/prometheus/prometheus/model/labels; to add it:
+	go get github.com/prometheus/prometheus/model/labels
+scratchpad/loki377/evaluator.go:15:2: no required module provides package github.com/prometheus/prometheus/promql; to add it:
+	go get github.com/prometheus/prometheus/promql
+scratchpad/loki377/evaluator.go:18:2: no required module provides package github.com/prometheus/prometheus/promql/parser; to add it:
+	go get github.com/prometheus/prometheus/promql/parser
+found packages logql (evaluator.go) and marshal (query.go) in /Users/slawomirskowron/claude_projects/loki-vl-proxy/scratchpad/loki377

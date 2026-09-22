@@ -1,0 +1,5 @@
+victoriametrics/victoria-logs:v1.36.0 health=healthy
+--- PASS: TestVLTrackScore (5.06s)
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	5.547s
+pinned stack restored
+MATRIX136_DONE

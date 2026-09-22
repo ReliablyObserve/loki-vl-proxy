@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Updating a dependency branch no longer fails the changelog gate.** The gate
+  exempts a pull request whose every commit is a `build(deps)` bump, but
+  bringing such a branch up to date with `main` adds a `Merge branch 'main'
+  into ...` commit, which is not a dependency bump — so the exemption stopped
+  applying and the gate demanded a CHANGELOG entry for a pull request that only
+  bumps action versions. Merge commits, which carry no intent of their own, are
+  now ignored when the gate decides whether a pull request is dependency-only.
+
 ## [1.86.0] - 2026-09-22
 
 ### Changed

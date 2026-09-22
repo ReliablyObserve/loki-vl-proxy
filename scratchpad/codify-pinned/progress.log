@@ -1,0 +1,19 @@
+== phase A: pinned UI stack ==
+notready: e2e-grafana Up 20 seconds
+notready: e2e-log-generator Up 32 seconds
+notready: e2e-loki Up 37 seconds
+pinned drilldown-core: 11 passed 0 failed 0 skipped
+pinned drilldown-mt: 7 passed 0 failed 0 skipped
+pinned explore-core: 2 passed 1 failed 0 skipped
+pinned regression: 31 passed 10 failed 10 skipped
+pinned comprehensive-ui: 15 passed 0 failed 0 skipped
+== phase B: VL matrix ==
+notready v1.52.0: e2e-grafana Up 32 seconds
+notready v1.52.0: e2e-loki Up 49 seconds
+matrix v1.52.0: --- PASS: TestVLTrackScore (5.08s) ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	5.316s 
+notready v1.36.0: e2e-grafana Up 32 seconds
+notready v1.36.0: e2e-loki Up 49 seconds
+matrix v1.36.0: --- PASS: TestVLTrackScore (5.08s) ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	(cached) 
+== phase C: restore pinned UI stack ==
+pinned stack restored
+ALL_PHASES_DONE

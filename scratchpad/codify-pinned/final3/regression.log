@@ -1,0 +1,57 @@
+
+Running 51 tests using 1 worker
+
+  ✓   1 [chromium] › tests/explore-regression.spec.ts:178:7 › @regression Stream selectors — exact Loki parity › exact label match @regression (119ms)
+  ✓   2 [chromium] › tests/explore-regression.spec.ts:181:7 › @regression Stream selectors — exact Loki parity › multi-label exact match @regression (86ms)
+  ✓   3 [chromium] › tests/explore-regression.spec.ts:188:7 › @regression Stream selectors — exact Loki parity › regex label match @regression (76ms)
+  ✓   4 [chromium] › tests/explore-regression.spec.ts:195:7 › @regression Stream selectors — exact Loki parity › negative label match @regression (150ms)
+  ✓   5 [chromium] › tests/explore-regression.spec.ts:202:7 › @regression Stream selectors — exact Loki parity › negative regex label match @regression (81ms)
+  ✓   6 [chromium] › tests/explore-regression.spec.ts:215:7 › @regression Line filters — exact Loki parity › contains filter |= @regression (87ms)
+  ✓   7 [chromium] › tests/explore-regression.spec.ts:218:7 › @regression Line filters — exact Loki parity › not-contains filter != @regression (73ms)
+  ✓   8 [chromium] › tests/explore-regression.spec.ts:225:7 › @regression Line filters — exact Loki parity › regex filter |~ simple @regression (85ms)
+  ✓   9 [chromium] › tests/explore-regression.spec.ts:232:7 › @regression Line filters — exact Loki parity › contains then not-contains chain @regression (71ms)
+  ✓  10 [chromium] › tests/explore-regression.spec.ts:239:7 › @regression Line filters — exact Loki parity › not-contains then not-contains chain @regression (80ms)
+  ✓  11 [chromium] › tests/explore-regression.spec.ts:252:7 › @regression Parsers — exact Loki parity › json parser @regression (77ms)
+  ✓  12 [chromium] › tests/explore-regression.spec.ts:255:7 › @regression Parsers — exact Loki parity › logfmt parser @regression (155ms)
+  ✓  13 [chromium] › tests/explore-regression.spec.ts:258:7 › @regression Parsers — exact Loki parity › json + field equality filter @regression (83ms)
+  ✓  14 [chromium] › tests/explore-regression.spec.ts:265:7 › @regression Parsers — exact Loki parity › json + field not-equal filter @regression (85ms)
+  ✓  15 [chromium] › tests/explore-regression.spec.ts:272:7 › @regression Parsers — exact Loki parity › json + numeric filter status >= 400 @regression (87ms)
+  ✓  16 [chromium] › tests/explore-regression.spec.ts:279:7 › @regression Parsers — exact Loki parity › json + numeric filter status >= 500 @regression (77ms)
+  ✓  17 [chromium] › tests/explore-regression.spec.ts:286:7 › @regression Parsers — exact Loki parity › json + regex field filter @regression (74ms)
+  ✓  18 [chromium] › tests/explore-regression.spec.ts:293:7 › @regression Parsers — exact Loki parity › json + two field filters @regression (88ms)
+  ✓  19 [chromium] › tests/explore-regression.spec.ts:300:7 › @regression Parsers — exact Loki parity › logfmt + level filter @regression (68ms)
+  ✓  20 [chromium] › tests/explore-regression.spec.ts:313:7 › @regression Pipeline stages — exact Loki parity › json + line_format @regression (71ms)
+  ✓  21 [chromium] › tests/explore-regression.spec.ts:320:7 › @regression Pipeline stages — exact Loki parity › json + keep @regression (64ms)
+  ✓  22 [chromium] › tests/explore-regression.spec.ts:327:7 › @regression Pipeline stages — exact Loki parity › json + drop @regression (72ms)
+  ✓  23 [chromium] › tests/explore-regression.spec.ts:334:7 › @regression Pipeline stages — exact Loki parity › json + label_format @regression (71ms)
+  ✓  24 [chromium] › tests/explore-regression.spec.ts:341:7 › @regression Pipeline stages — exact Loki parity › multi-label + json + two filters @regression (90ms)
+  ✓  25 [chromium] › tests/explore-regression.spec.ts:362:7 › @regression Metric queries — exact Loki parity › rate @regression (74ms)
+  ✓  26 [chromium] › tests/explore-regression.spec.ts:369:7 › @regression Metric queries — exact Loki parity › count_over_time @regression (77ms)
+  ✓  27 [chromium] › tests/explore-regression.spec.ts:376:7 › @regression Metric queries — exact Loki parity › raw per-stream series honour the documented proxy cap @regression (81ms)
+  ✓  28 [chromium] › tests/explore-regression.spec.ts:406:7 › @regression Metric queries — exact Loki parity › sum by level count_over_time @regression (73ms)
+  ✓  29 [chromium] › tests/explore-regression.spec.ts:413:7 › @regression Metric queries — exact Loki parity › sum by level across apps @regression (73ms)
+  ✓  30 [chromium] › tests/explore-regression.spec.ts:420:7 › @regression Metric queries — exact Loki parity › rate with line filter |= @regression (85ms)
+  ✓  31 [chromium] › tests/explore-regression.spec.ts:427:7 › @regression Metric queries — exact Loki parity › topk within single app @regression (73ms)
+  ✓  32 [chromium] › tests/explore-regression.spec.ts:434:7 › @regression Metric queries — exact Loki parity › avg_over_time unwrap duration_ms @regression (92ms)
+  ✓  33 [chromium] › tests/explore-regression.spec.ts:441:7 › @regression Metric queries — exact Loki parity › sum_over_time unwrap status @regression (68ms)
+  ✓  34 [chromium] › tests/explore-regression.spec.ts:448:7 › @regression Metric queries — exact Loki parity › sum by level for payment-service @regression (69ms)
+  ✓  35 [chromium] › tests/explore-regression.spec.ts:462:7 › @regression Content verification › json parser exposes method field in log lines (46ms)
+  ✓  36 [chromium] › tests/explore-regression.spec.ts:485:7 › @regression Content verification › json + method=GET filter returns only GET lines (93ms)
+  ✓  37 [chromium] › tests/explore-regression.spec.ts:516:7 › @regression Content verification › status >= 400 returns only error status lines (68ms)
+  ✓  38 [chromium] › tests/explore-regression.spec.ts:543:7 › @regression Content verification › negative filter removes matched content from results (116ms)
+  ✓  39 [chromium] › tests/explore-regression.spec.ts:579:7 › @regression Content verification › line_format produces formatted output matching template (64ms)
+  ✓  40 [chromium] › tests/explore-regression.spec.ts:608:7 › @regression Content verification › chained filters narrow results step by step (67ms)
+  ✓  41 [chromium] › tests/explore-regression.spec.ts:629:7 › @regression Content verification › empty query returns 200 with zero results (137ms)
+  -  42 [chromium] › tests/explore-regression.spec.ts:649:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › |~ regex with alternation |~ 'POST|PUT|DELETE'
+  -  43 [chromium] › tests/explore-regression.spec.ts:661:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › !~ regex with alternation !~ 'health|ready|metrics'
+  -  44 [chromium] › tests/explore-regression.spec.ts:673:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › line filter after json parser: json |= 'error'
+  -  45 [chromium] › tests/explore-regression.spec.ts:685:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › binary metric expression: rate * 100
+  -  46 [chromium] › tests/explore-regression.spec.ts:694:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › error rate ratio: sum(...) / sum(...)
+  -  47 [chromium] › tests/explore-regression.spec.ts:706:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › count_over_time with json filter in range vector
+  -  48 [chromium] › tests/explore-regression.spec.ts:718:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › label_format then line_format chain
+  -  49 [chromium] › tests/explore-regression.spec.ts:730:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › keep then line_format chain
+  -  50 [chromium] › tests/explore-regression.spec.ts:742:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › sum by app across namespace: proxy returns extra series
+  -  51 [chromium] › tests/explore-regression.spec.ts:753:8 › @regression Known proxy gaps (fixme — failing until proxy is fixed) › topk across namespace: proxy/Loki series count differs
+
+  10 skipped
+  41 passed (4.0s)

@@ -1,0 +1,46 @@
+
+Running 12 tests using 1 worker
+
+  ✓   1 [chromium] › tests/drilldown-limits-gate.spec.ts:50:7 › Logs Drilldown — patterns tab follows drilldown-limits › proxy drilldown-limits payload is a superset of Loki's @drilldown-core (91ms)
+  ✓   2 [chromium] › tests/drilldown-limits-gate.spec.ts:66:7 › Logs Drilldown — patterns tab follows drilldown-limits › Patterns tab is hidden when the proxy reports pattern_ingester_enabled=false @drilldown-core (1.3s)
+  ✓   3 [chromium] › tests/drilldown-limits-gate.spec.ts:84:9 › Logs Drilldown — patterns tab follows drilldown-limits › Patterns tab is shown when pattern_ingester_enabled=true (Loki (via VL proxy patterns autodetect)) @drilldown-core (1.3s)
+  ✓   4 [chromium] › tests/drilldown-limits-gate.spec.ts:84:9 › Logs Drilldown — patterns tab follows drilldown-limits › Patterns tab is shown when pattern_ingester_enabled=true (Loki (direct)) @drilldown-core (1.3s)
+  ✓   5 [chromium] › tests/drilldown.spec.ts:11:7 › Grafana Drilldown & Label Navigation › clicking a log row expands details without error @drilldown-core (2.5s)
+  ✓   6 [chromium] › tests/drilldown.spec.ts:31:7 › Grafana Drilldown & Label Navigation › label filter drill-down for app label @drilldown-core (2.5s)
+  ✓   7 [chromium] › tests/logs-drilldown.spec.ts:306:7 › Grafana Logs Drilldown › proxy shows service buckets on landing page @drilldown-core (1.3s)
+  ✓   8 [chromium] › tests/logs-drilldown.spec.ts:341:7 › Grafana Logs Drilldown › service drilldown field filter survives reload from URL state @drilldown-core (2.1s)
+  ✘   9 [chromium] › tests/logs-drilldown.spec.ts:487:7 › Grafana Logs Drilldown › patterns are visible in drilldown for autodetected datasource @drilldown-core (30.7s)
+  ✓  10 [chromium] › tests/logs-drilldown.spec.ts:487:7 › Grafana Logs Drilldown › patterns are visible in drilldown for autodetected datasource @drilldown-core (retry #1) (1.7s)
+  ✓  11 [chromium] › tests/url-state.spec.ts:20:5 › buildLogsDrilldownUrl encodes the datasource and default drilldown state @drilldown-core (1ms)
+  ✓  12 [chromium] › tests/url-state.spec.ts:30:5 › buildServiceDrilldownUrl preserves service filter state across reloadable URLs @drilldown-core (1ms)
+  ✓  13 [chromium] › tests/url-state.spec.ts:44:5 › buildServiceDrilldownUrl keeps dotted field triplet for event-details filters @drilldown-core (1ms)
+
+
+  1) [chromium] › tests/logs-drilldown.spec.ts:487:7 › Grafana Logs Drilldown › patterns are visible in drilldown for autodetected datasource @drilldown-core 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoMatch[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected pattern: [32m/^Patterns[1-9]\d*$/[39m
+    Received string:  [31m"Patterns0"[39m
+
+    Call Log:
+    - Timeout 30000ms exceeded while waiting on the predicate
+
+      504 |     await patternsTab.click();
+      505 |
+    > 506 |     await expect
+          |     ^
+      507 |       .poll(async () => (await patternsTab.textContent())?.trim() ?? "", { timeout: 30_000 })
+      508 |       .toMatch(/^Patterns[1-9]\d*$/);
+      509 |
+        at /Users/slawomirskowron/claude_projects/loki-vl-proxy/test/e2e-ui/tests/logs-drilldown.spec.ts:506:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/logs-drilldown-Grafana-Log-78fbd-d-datasource-drilldown-core-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/logs-drilldown-Grafana-Log-78fbd-d-datasource-drilldown-core-chromium/error-context.md
+
+  1 flaky
+    [chromium] › tests/logs-drilldown.spec.ts:487:7 › Grafana Logs Drilldown › patterns are visible in drilldown for autodetected datasource @drilldown-core 
+  11 passed (45.8s)
