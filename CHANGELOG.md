@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The e2e VictoriaLogs no longer restarts under long-range load.**
+  `-memory.allowedPercent` is read against the container's 5 g cap, so the
+  previous 80% left VictoriaLogs about 1 g of working memory for up to 100
+  concurrent scans. Long-range queries exhausted it and the process exited
+  (exit code 0, not an OOM kill) and Docker restarted it: the shared stack
+  restarted VictoriaLogs 21 times in a day, including while idle, which showed
+  up as `circuit breaker open` in load runs and `connection reset by peer`
+  during fixture ingest. The e2e stack now budgets 50%, leaving about 2.5 g for
+  queries, measured at 2872 MiB peak with the restart count unchanged. The
+  benchmark compose file keeps 80%, where VictoriaLogs runs alone.
 - **Long-range metric queries no longer exhaust VictoriaLogs memory.** On the
   e2e stack VictoriaLogs (5 GiB) restarted repeatedly while Grafana range
   checks ran over 24h and 7d. Sliding-window `count_over_time`, `rate`,
