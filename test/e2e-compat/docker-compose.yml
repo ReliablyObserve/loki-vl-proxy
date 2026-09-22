@@ -267,6 +267,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -335,6 +340,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -395,6 +405,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -455,6 +470,12 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Left at the built-in default (500, Loki's own default
+      # max_query_series) so the series-limit behaviour — Loki's error for a
+      # plain client, a partial result with a warning for Logs Drilldown — is
+      # exercised by the e2e suite. Every other proxy here matches this
+      # stack's Loki (max_query_series: 1000000) so parity tests compare
+      # answers rather than two different limits.
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -543,6 +564,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -586,6 +612,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -624,6 +655,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -662,6 +698,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
@@ -700,6 +741,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"
@@ -737,6 +783,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Match this stack's Loki (max_query_series: 1000000 in
+      # loki-local-config.yaml): a query over the limit fails on both
+      # sides at the same cardinality, so parity tests compare answers
+      # rather than two different limits.
+      - "-max-stats-query-series=1000000"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"

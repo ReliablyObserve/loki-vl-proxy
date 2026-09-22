@@ -1,0 +1,39 @@
+id: limits/drilldown-partial-with-warning
+title: Logs Drilldown gets a partial result and Loki's warning, not an error
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  Loki keeps Logs Drilldown rendering when a query exceeds the series limit: it
+  returns the series it has with the warning "maximum number of series (N)
+  reached for a single query; returning partial results" in the response body,
+  where the plugin surfaces it. A partial result with no warning is the failure
+  this case guards against — the panel then looks complete.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="wide"}[1m]))'
+    start: "<start>"
+    end: "<start+30m>"
+    step: "300"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: structural
+  fields: [status, warnings, data.resultType, data.result[].metric]
+  values:
+    mode: exact
+    field: data.result[].values[][1]
+    reason: |
+      Every returned series must equal Loki's for the same labels: the result is
+      partial in how many series it holds, never in what each one says. The proxy
+      keeps the busiest series by total count where Loki keeps the first series it
+      encounters, so the set may differ; each kept series is compared against
+      Loki's answer for the same label set.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

@@ -16,6 +16,10 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "limits/drilldown-partial-with-warning": [
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
+    ],
     "limits/drilldown-stats-rejection-keeps-429": [
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
@@ -50,6 +54,10 @@
     "limits/raw-metric-row-precheck": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "limits/series-limit-error": [
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
+    ],
     "limits/stats-row-limit-per-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -67,11 +75,17 @@
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "loki_api_v1_query": [
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
+    ],
     "loki_api_v1_query_range": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_query_validation_test.go",
+      "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
-      "test/e2e-compat/heavy_query_protection_test.go"
+      "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
@@ -85,6 +99,10 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/offset-sample-timestamps": [
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
+    ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
@@ -95,7 +113,9 @@
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/sliding_window_stats_test.go",
-      "test/e2e-compat/heavy_query_protection_test.go"
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_test.go",
@@ -115,10 +135,12 @@
       "internal/proxy/volume_test.go"
     ],
     "window-bounds-and-step-alignment": [
-      "internal/proxy/sliding_window_stats_test.go"
+      "internal/proxy/sliding_window_stats_test.go",
+      "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 159,
+  "registry_items": 162,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -171,6 +193,15 @@
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/tumbling_axis_parity_test.go": [
+      "limits/drilldown-partial-with-warning",
+      "limits/series-limit-error",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/offset-sample-timestamps",
+      "series-limits-and-partial-results",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/volume_test.go": [
       "drilldown/index_volume/single-sample-returns-vector",
       "loki_api_v1_index_volume",
@@ -204,9 +235,18 @@
       "loki_api_v1_query_range",
       "semantics/sliding-window-recurrence-exact",
       "series-limits-and-partial-results"
+    ],
+    "test/e2e-compat/range_metric_offset_series_limit_test.go": [
+      "limits/drilldown-partial-with-warning",
+      "limits/series-limit-error",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/offset-sample-timestamps",
+      "series-limits-and-partial-results",
+      "window-bounds-and-step-alignment"
     ]
   },
-  "tests_with_markers": 15,
+  "tests_with_markers": 17,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -234,7 +274,6 @@
     "loki_api_v1_label",
     "loki_api_v1_patterns",
     "loki_api_v1_push",
-    "loki_api_v1_query",
     "loki_api_v1_rules",
     "loki_api_v1_rules_namespace",
     "loki_api_v1_rules_namespace_groupname",
@@ -247,5 +286,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 31
+  "wired_items": 35
 }

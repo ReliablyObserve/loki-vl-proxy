@@ -214,11 +214,13 @@ func (batch *fieldBatch) fire() {
 			}
 			defer func() { b.sem <- struct{}{} }()
 
+			// One over the limit, so the caller can tell a truncated answer from
+			// one that happens to end exactly on the limit.
 			perFieldQuery := batch.cleanBase +
 				" | " + quoteLogsQLIdent(e.primaryVLField) + ":*" +
 				" | stats by (" + quoteLogsQLIdent(e.primaryVLField) + ") count() as _c" +
 				" | sort by (_c desc)" +
-				" | limit " + strconv.Itoa(maxDrilldownSeries)
+				" | limit " + strconv.Itoa(b.proxy.drilldownSeriesLimit()+1)
 
 			params := buildStatsQueryRangeParams(perFieldQuery, batch.startRaw, batch.endRaw, batch.stepRaw)
 			resp, err := b.proxy.vlPost(ctx30s, "/select/logsql/stats_query_range", params)
@@ -240,7 +242,8 @@ func (batch *fieldBatch) fire() {
 			if e.primaryVLField != e.lokiField {
 				rawBody = renameStatsBodyMetricKey(rawBody, e.primaryVLField, e.lokiField)
 			}
-			rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+			// The cut itself happens per request (capSeriesToLimit), so each
+			// caller's response carries its own partial-result warning.
 			if doZerofill {
 				rawBody = zerofillStatsMatrix(rawBody, batchStartSec, batchEndSec, batchStepSec)
 			}

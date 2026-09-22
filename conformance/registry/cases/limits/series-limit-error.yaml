@@ -1,0 +1,40 @@
+id: limits/series-limit-error
+title: A metric query above the series limit fails with Loki's message, not a silent cut
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Above `max_query_series` Loki rejects the query rather than answering with part
+  of the data: a chart or an alert that reads a truncated answer as the whole one
+  is wrong in a way nothing on screen reveals. The proxy's limit is
+  `-max-stats-query-series` (default 500, Loki's own default), and the message
+  stays Loki's word for word because Grafana renders it; the flag that set the
+  limit is named in the proxy's log line instead.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="wide"}[1m]))'
+    start: "<start>"
+    end: "<start+30m>"
+    step: "300"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: structural
+  fields: [status, errorType, error]
+  values:
+    mode: exact
+    reason: |
+      Loki's text is the contract: "maximum number of series (N) reached for a
+      single query; consider reducing query cardinality by adding more specific
+      stream selectors, reducing the time range, or aggregating results with
+      functions like sum(), count() or topk()", HTTP 400, errorType bad_data. The
+      comparison runs with both sides configured to the same limit; the e2e case
+      reads the proxy's limit out of its own answer and compares against a Loki
+      configured above the fixture's cardinality.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

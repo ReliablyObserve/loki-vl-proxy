@@ -567,9 +567,10 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	if err != nil {
 		return nil, false, false, err
 	}
-	if maxSeries := p.resolvedMaxStatsQuerySeries(); len(series) >= maxSeries {
-		// The bucket collector keeps the busiest series; Loki fails instead.
-		return nil, false, false, fmt.Errorf("maximum metric series exceeded (%d)", maxSeries)
+	if maxSeries := p.resolvedMaxStatsQuerySeries(); len(series) > maxSeries {
+		// The bucket collector keeps the busiest series; Loki fails instead, and
+		// only above the limit — a query with exactly maxSeries series passes.
+		return nil, false, false, &seriesLimitError{limit: maxSeries}
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
 	for _, entry := range series {
@@ -1259,7 +1260,7 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 		entry, exists := series[key]
 		if !exists {
 			if len(series) >= p.resolvedMaxStatsQuerySeries() {
-				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+				return nil, &seriesLimitError{limit: p.resolvedMaxStatsQuerySeries()}
 			}
 			entry.Metric = labels
 		}

@@ -9,7 +9,6 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 |---:|---|---|---|---:|---:|---|
 | 12 | `/loki/api/v1/label/{name}/values` | explore, drilldown, datasource, api | native_vl | 0 | 0 | no test compares it against Loki |
 | 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 29 | 9 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 7 | `/loki/api/v1/query` | explore, drilldown, api | hybrid | 131 | 34 | no test wired to the registry |
 | 7 | `/loki/api/v1/detected_field/{name}/values` | drilldown, api | native_vl | 0 | 0 | no test compares it against Loki; no test wired to the registry |
 | 6 | `/loki/api/v1/series` | explore, datasource, api | hybrid | 29 | 8 | no test wired to the registry |
 | 6 | `/loki/api/v1/index/volume_range` | drilldown, api | proxy_side | 22 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
@@ -72,11 +71,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 11 | 4 | proven |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 7 | 0 | gap |
-| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 7 | 3 | partial |
+| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 7 | 5 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 4 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 3 | partial |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 1 | gap |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 3 | partial |
 
 ## LogQL surface (v3.7.7)
 

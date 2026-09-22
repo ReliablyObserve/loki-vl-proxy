@@ -338,16 +338,29 @@ func lokiTumblingReferenceParsed(lines []tumblingLine, fn string, by []string, s
 // the key.
 func runTumblingQuery(t *testing.T, p *Proxy, path string, params url.Values) map[string]map[int64]string {
 	t.Helper()
+	rec := serveTumblingQuery(p, path, params, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: expected 200, got %d: %s", params.Get("query"), rec.Code, rec.Body.String())
+	}
+	return decodeTumblingSeries(t, params.Get("query"), rec.Body.Bytes())
+}
+
+func serveTumblingQuery(p *Proxy, path string, params url.Values, header http.Header) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path+"?"+params.Encode(), nil)
+	for k, v := range header {
+		req.Header[k] = v
+	}
 	rec := httptest.NewRecorder()
 	if strings.HasSuffix(path, "query_range") {
 		p.handleQueryRange(rec, req)
 	} else {
 		p.handleQuery(rec, req)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("%s: expected 200, got %d: %s", params.Get("query"), rec.Code, rec.Body.String())
-	}
+	return rec
+}
+
+func decodeTumblingSeries(t *testing.T, query string, body []byte) map[string]map[int64]string {
+	t.Helper()
 	var resp struct {
 		Data struct {
 			Result []struct {
@@ -357,8 +370,8 @@ func runTumblingQuery(t *testing.T, p *Proxy, path string, params url.Values) ma
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("%s: decode: %v: %s", params.Get("query"), err, rec.Body.String())
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("%s: decode: %v: %s", query, err, string(body))
 	}
 	got := map[string]map[int64]string{}
 	for _, series := range resp.Data.Result {
@@ -366,7 +379,7 @@ func runTumblingQuery(t *testing.T, p *Proxy, path string, params url.Values) ma
 		delete(series.Metric, "detected_level")
 		key := canonicalLabelsKey(series.Metric)
 		if got[key] != nil {
-			t.Errorf("%s: duplicate series %s: %s", params.Get("query"), key, rec.Body.String())
+			t.Errorf("%s: duplicate series %s: %s", query, key, string(body))
 		} else {
 			got[key] = map[int64]string{}
 		}
@@ -489,11 +502,10 @@ func TestTumblingRangeMetric_BucketsLabelledAtLokiEvaluationTime(t *testing.T) {
 	}
 }
 
-// From two hours on a grouped count is answered in two phases (a global top-N,
-// then per-step counts for those values). The relabelled path keeps Loki's
-// windows there too: anchored Phase 2 buckets, and the lines without the
-// grouped label as the unlabelled series.
-func TestTumblingRangeMetric_LongRangeTwoPhaseKeepsLokiWindows(t *testing.T) {
+// A grouped count over hours is one anchored bucket scan: no ranking query
+// ahead of it, Loki's windows, and the lines without the grouped label as the
+// unlabelled series.
+func TestTumblingRangeMetric_LongRangeSingleScanKeepsLokiWindows(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	lines := tumblingFixture(base)
 	start, end, step := base, base.Add(3*time.Hour), 5*time.Minute
@@ -504,16 +516,19 @@ func TestTumblingRangeMetric_LongRangeTwoPhaseKeepsLokiWindows(t *testing.T) {
 	assertTumblingEqual(t, query, lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, 5*time.Minute), got)
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.statsCalls) != 2 || !strings.Contains(fake.statsCalls[1].query, `or pod:"")`) || fake.statsCalls[1].offset == "" {
-		t.Fatalf("expected a top-N phase and an anchored phase 2 keeping unlabelled lines, got %+v", fake.statsCalls)
+	if len(fake.statsCalls) != 1 || fake.statsCalls[0].offset == "" || fake.rawCalls != 0 {
+		t.Fatalf("expected one anchored bucket scan, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
 	}
 }
 
-// A grouped count over a field with more values than one bucket response can
-// hold keeps the busiest values: a stats_query ranks them, and the bucket query
-// restricted to them returns exact series. From two hours on the ranking runs
-// first; below, only after the bucket response overflows its byte bound.
-func TestShortRangeMetric_TooManySeriesKeepsBusiestValues(t *testing.T) {
+// conformance: series-limits-and-partial-results, limits/series-limit-error, limits/drilldown-partial-with-warning
+// conformance: loki_api_v1_query_range, loki_api_v1_query
+// A grouped count with more series than -max-stats-query-series fails like
+// Loki's max_query_series limit, naming the proxy flag. Logs Drilldown gets
+// Loki's partial result instead: the busiest series, exact, and a warning. When
+// the bucket response overflows its byte bound, a stats_query ranks the values
+// and the bucket query restricted to them returns those series.
+func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	var lines []tumblingLine
 	for i := 0; i < 400; i++ {
@@ -531,14 +546,58 @@ func TestShortRangeMetric_TooManySeriesKeepsBusiestValues(t *testing.T) {
 		}
 		return sum
 	}
+	t.Run("instant query", func(t *testing.T) {
+		srv, fake := newTumblingFakeVL(t, lines)
+		p := newSlidingTestProxy(t, srv.URL)
+		p.maxStatsQuerySeries = 150
+		query := `sum by (pod) (count_over_time({app="top"}[5m]))`
+		params := url.Values{"query": {query}, "time": {strconv.FormatInt(base.Add(10*time.Minute).Unix(), 10)}}
+
+		rec := serveTumblingQuery(p, "/loki/api/v1/query", params, nil)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (150) reached for a single query") {
+			t.Fatalf("expected Loki's series limit error, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		rec = serveTumblingQuery(p, "/loki/api/v1/query", params, http.Header{"X-Query-Tags": {"Source=grafana-lokiexplore-app"}})
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"warnings":["maximum number of series (150) reached for a single query; returning partial results"]`) {
+			t.Fatalf("Drilldown: expected a partial vector with Loki's warning, got %d: %s", rec.Code, rec.Body.String())
+		}
+		got := decodeTumblingSeries(t, query, rec.Body.Bytes())
+		if len(got) != 150 {
+			t.Fatalf("Drilldown: expected 150 series, got %d", len(got))
+		}
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		if fake.rawCalls != 0 {
+			t.Fatalf("the series limit must not fall back to raw scans, got %d", fake.rawCalls)
+		}
+	})
+
+	t.Run("range equals step", func(t *testing.T) {
+		srv, fake := newTumblingFakeVL(t, lines)
+		p := newSlidingTestProxy(t, srv.URL)
+		p.maxStatsQuerySeries = 150
+		query := `sum by (pod) (count_over_time({app="top"}[5m]))`
+		rec := serveTumblingQuery(p, "/loki/api/v1/query_range", tumblingRangeParams(query, base.Add(5*time.Minute), base.Add(15*time.Minute), 5*time.Minute), nil)
+		// Loki's message, word for word: no proxy-internal text reaches Grafana.
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (150) reached for a single query; consider reducing query cardinality") || strings.Contains(rec.Body.String(), "-max-stats-query-series") {
+			t.Fatalf("expected Loki's series limit error, got %d: %s", rec.Code, rec.Body.String())
+		}
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		if fake.rawCalls != 0 {
+			t.Fatalf("the series limit must not fall back to raw scans, got %d", fake.rawCalls)
+		}
+	})
 	for _, tc := range []struct {
 		name      string
 		span      time.Duration
 		limit     int64
 		wantCalls int
+		wantIn    bool
 	}{
-		{"overflow below two hours", 15 * time.Minute, 40 << 10, 2},
-		{"ranked first over hours", 3 * time.Hour, 64 << 20, 1},
+		{"response overflow ranks values", 15 * time.Minute, 40 << 10, 2, true},
+		{"series over the limit over hours", 3 * time.Hour, 64 << 20, 1, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			old := maxStatsBucketResponseBytes
@@ -550,7 +609,25 @@ func TestShortRangeMetric_TooManySeriesKeepsBusiestValues(t *testing.T) {
 			srv, fake := newTumblingFakeVL(t, lines)
 			p := newSlidingTestProxy(t, srv.URL)
 			p.maxStatsQuerySeries = 150 // -max-stats-query-series
-			got := runTumblingQuery(t, p, "/loki/api/v1/query_range", tumblingRangeParams(query, start, end, step))
+			params := tumblingRangeParams(query, start, end, step)
+
+			rec := serveTumblingQuery(p, "/loki/api/v1/query_range", params, nil)
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (150) reached for a single query; consider reducing query cardinality") || strings.Contains(rec.Body.String(), "-max-stats-query-series") {
+				t.Fatalf("expected Loki's series limit error, got %d: %s", rec.Code, rec.Body.String())
+			}
+			fake.mu.Lock()
+			rawBefore := fake.rawCalls
+			fake.statsCalls = nil
+			fake.mu.Unlock()
+			if rawBefore != 0 {
+				t.Fatalf("the series limit must not fall back to raw scans, got %d", rawBefore)
+			}
+
+			rec = serveTumblingQuery(p, "/loki/api/v1/query_range", params, http.Header{"X-Query-Tags": {"Source=grafana-lokiexplore-app"}})
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"warnings":["maximum number of series (150) reached for a single query; returning partial results"]`) {
+				t.Fatalf("Drilldown: expected a partial result with Loki's warning, got %d: %s", rec.Code, rec.Body.String())
+			}
+			got := decodeTumblingSeries(t, query, rec.Body.Bytes())
 			want := lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, time.Minute)
 			if want := p.resolvedMaxStatsQuerySeries(); len(got) != want {
 				t.Fatalf("expected the %d busiest series (-max-stats-query-series), got %d", want, len(got))
@@ -573,19 +650,18 @@ func TestShortRangeMetric_TooManySeriesKeepsBusiestValues(t *testing.T) {
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
 			last := fake.statsCalls[len(fake.statsCalls)-1]
-			if fake.rawCalls != 0 || len(fake.statsCalls) != tc.wantCalls || !strings.Contains(last.query, "pod:in(") {
+			if fake.rawCalls != 0 || len(fake.statsCalls) != tc.wantCalls || strings.Contains(last.query, "pod:in(") != tc.wantIn {
 				t.Fatalf("expected %d bucket calls ending with the top-value one and no raw scans, got %d raw scans and %d calls", tc.wantCalls, fake.rawCalls, len(fake.statsCalls))
 			}
 		})
 	}
 }
 
-// A backend without the stats_query_range offset arg (or with an unknown
-// version, as while the startup probe is pending) has only epoch-aligned
-// buckets. They serve the tumbling relabel when the start is aligned to the
-// range; any other start would count lines of the wrong windows, so the exact
-// evaluator answers. Lines sit off window edges, as epoch buckets are
-// [T, T+range) while Loki's windows are (T-range, T].
+// A backend known to be without the stats_query_range offset arg has only
+// epoch-aligned buckets. They serve the tumbling relabel when the start is
+// aligned to the range; any other start would count lines of the wrong windows,
+// so the window evaluator answers. Lines sit off window edges, as epoch buckets
+// are [T, T+range) while Loki's windows are (T-range, T].
 func TestTumblingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	lines := tumblingFixture(base.Add(2500 * time.Millisecond))
@@ -596,6 +672,7 @@ func TestTumblingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 			start, end := base.Add(5*time.Minute+offset), base.Add(15*time.Minute+offset)
 			srv, fake := newTumblingFakeVL(t, lines)
 			p := newGapTestProxy(t, srv.URL)
+			p.storeBackendVersion("v1.44.0", "v1.44.0")
 			got := runTumblingQuery(t, p, "/loki/api/v1/query_range", tumblingRangeParams(query, start, end, step))
 			assertTumblingEqual(t, query, lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, 5*time.Minute), got)
 			fake.mu.Lock()
@@ -607,7 +684,7 @@ func TestTumblingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 				return
 			}
 			if len(fake.statsCalls) != 0 || fake.rawCalls != 1 {
-				t.Fatalf("unaligned start: expected the exact evaluator, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
+				t.Fatalf("unaligned start: expected the window evaluator, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
 			}
 		})
 	}
@@ -778,4 +855,30 @@ func TestStatsMetricLabels_EmptyGroupValuesAreOmitted(t *testing.T) {
 		}
 		assertTumblingEqual(t, query, want, got)
 	})
+}
+
+// conformance: window-bounds-and-step-alignment, semantics/offset-sample-timestamps
+// conformance: loki_api_v1_query_range, loki_api_v1_query
+// Loki evaluates `[5m] offset 5m` at T over (T-10m, T-5m] and stamps the sample
+// at T, on range and instant queries alike.
+func TestTumblingRangeMetric_OffsetStampsEvaluationTime(t *testing.T) {
+	base := time.Unix(1700000400, 0).UTC()
+	lines := tumblingFixture(base)
+	offset := 5 * time.Minute
+	shifted := make([]tumblingLine, len(lines)) // offset windows as plain windows
+	for i, line := range lines {
+		shifted[i] = line
+		shifted[i].ts += int64(offset)
+	}
+	query := `sum by (pod) (count_over_time({app="tumble"}[5m] offset 5m))`
+	start, end, step := base.Add(10*time.Minute), base.Add(25*time.Minute), 5*time.Minute
+
+	srv, _ := newTumblingFakeVL(t, lines)
+	p := newSlidingTestProxy(t, srv.URL)
+	got := runTumblingQuery(t, p, "/loki/api/v1/query_range", tumblingRangeParams(query, start, end, step))
+	assertTumblingEqual(t, query, lokiTumblingReference(shifted, "count_over_time", []string{"pod"}, start, end, step, 5*time.Minute), got)
+
+	at := base.Add(17 * time.Minute)
+	got = runTumblingQuery(t, p, "/loki/api/v1/query", url.Values{"query": {query}, "time": {strconv.FormatInt(at.Unix(), 10)}})
+	assertTumblingEqual(t, query+"@instant", lokiTumblingReference(shifted, "count_over_time", []string{"pod"}, at, at, time.Minute, 5*time.Minute), got)
 }

@@ -1,6 +1,11 @@
 id: series-limits-and-partial-results
 state: partial
 reason: |
+  limits/series-limit-error and limits/drilldown-partial-with-warning are written
+  and wired: a metric query above -max-stats-query-series fails with Loki's
+  message and status on every metric path, range and instant, and a Logs
+  Drilldown request gets a partial result with Loki's partial-result warning,
+  compared against live Loki by unit tests and an e2e case.
   limits/top-n-ranking-not-silent is written and wired: topk and bottomk over
   grouped counts now rank every series per step with bounded per-step heaps
   instead of the -max-stats-query-series busiest, proven by unit tests against a
@@ -8,7 +13,9 @@ reason: |
   test/e2e-compat/heavy_query_protection_test.go.
   limits/drilldown-stats-rejection-keeps-429 pins the boundary of the Drilldown
   partial-result carve-out: it covers the series limit, not backpressure.
-  limits/series-limit-error, limits/drilldown-partial-with-warning and
-  limits/resolution-limit-precedence are still named but not written.
+  Still open: limits/resolution-limit-precedence (the 11,000-point rejection
+  ahead of parsing) is named but not written, and the Drilldown partial keeps the
+  busiest series where Loki keeps the first it encounters, so the kept set can
+  differ from Loki's for equal-volume series.
 owner_decision: null
 waiver: null

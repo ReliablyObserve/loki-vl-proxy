@@ -36,6 +36,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fail a metric query over the series limit the way Loki does, instead of
+  returning part of the data as if it were all of it. A grouped range metric
+  whose grouping has more values than `-max-stats-query-series` (500 by
+  default) was answered with a silent cut — the busiest 200 values on the
+  short-range path, the busiest 200 on the two-phase path used from two hours
+  on — so a chart or an alert read a subset as the whole answer. Loki answers
+  `maximum number of series (N) reached for a single query` with HTTP 400 for
+  such a query and only gives Grafana Logs Drilldown a partial result. The
+  proxy now does the same: the error names the limit and the
+  `-max-stats-query-series` flag that sets it, and Drilldown requests
+  (`X-Query-Tags: Source=grafana-lokiexplore-app`) get the busiest series plus
+  Loki's `returning partial results` warning in the response. The limit is
+  applied while the VictoriaLogs response is read, so an oversized answer is
+  no longer buffered in full, and it is never turned into a raw log scan. The
+  message stays Loki's word for word, since Grafana renders it; the proxy's log
+  line for the rejected request names the flag instead. Instant queries
+  (`/loki/api/v1/query`) follow the same rule, as they do in Loki. The Grafana
+  Logs Drilldown paths no longer carry a hardcoded 500: they read the flag, ask
+  VictoriaLogs for one series over it so a truncated answer is distinguishable
+  from an exact fit, and report the cut as the warning instead of dropping
+  series silently. Where Loki keeps the first series it encounters, the proxy
+  keeps the busiest by total count — the ones a Drilldown panel renders. The
+  e2e compose proxies now run with the series limit their Loki is configured
+  with, so a parity test compares two answers rather than two limits; one
+  variant keeps the default so the limit itself stays under test.
+- Stamp `offset` samples at the evaluation time. `count_over_time({app="x"}[5m]
+  offset 5m)` evaluates the window `(T-10m, T-5m]` but Loki reports it at `T`;
+  the proxy reported it at `T-5m`, shifting the whole series left by the
+  offset on range and instant queries alike (and caching it that way).
+- Keep evaluating range metrics on VictoriaLogs buckets while the backend
+  version is unknown. A failed or pending startup version probe made the proxy
+  assume the `stats_query_range` `offset` arg (VictoriaLogs v1.45+) is
+  unavailable, so any range whose start was not aligned to the window fell back
+  to fetching raw log rows — the amount of data read then scaled with the logs
+  stored, not with the query. The arg is now sent while the version is unknown
+  (a backend that does not know it ignores it, leaving the epoch-aligned
+  buckets it would have had anyway) and the version probe keeps retrying in the
+  background. A release known to be older than v1.45 still uses epoch-aligned
+  buckets only where they match the query's windows.
+- Count Logs Drilldown's short ranges over Loki's window. A Drilldown panel
+  with a range shorter than the step (`[1m]` at step 300) was answered from the
+  whole step bucket, so a panel showed 30 where Loki answers 6. Drilldown now
+  uses the same window evaluator as every other client for those panels.
+- Return exact series for high-cardinality groupings outside Drilldown. A
+  Grafana dashboard or Explore panel grouping by a high-cardinality field
+  (`sum by (trace_id) (...)`) was rewritten to the window-sampled `/hits` path,
+  which returns a bounded sample of the values rather than the series Loki
+  returns. That rewrite is now limited to Logs Drilldown, whose panels are
+  built for it.
+- Fit the top-value `in()` filter to VictoriaLogs' query length. The bounded
+  top-N paths cut the value list at a fixed count, which could still exceed
+  VictoriaLogs' default 16 KiB query limit (long pod or trace values) and be
+  rejected, or — after filtering — leave an empty `in()` that matches nothing.
+  The list is now budgeted against the actual query text and keeps at least the
+  busiest value.
+- Read a low-cardinality grouping once. Single-field groupings over two hours
+  ran a ranking query and then a full bucket query over the same range, so an
+  ordinary `sum by (namespace) (count_over_time(...))` scanned the range twice.
+  The bucket query now runs alone, and values are ranked only when the result
+  exceeds the series limit.
 - **Release metadata pull requests pass the changelog gate again.** The gate
   listed a pull request's files with a two-dot diff against the current base,
   so a branch cut before the base moved appeared to change every file merged

@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// backendSeconds reads a start/end param the proxy sent to VictoriaLogs in any
+// of the spellings it accepts (Unix seconds or RFC3339).
+func backendSeconds(raw string) int64 {
+	ns, _ := parseLokiTimeToUnixNano(raw)
+	return ns / int64(time.Second)
+}
+
 func TestQueryRange_OffsetShiftsTimeWindow(t *testing.T) {
 	// rate({app="nginx"}[60s] offset 1h) with start=T end=T+30m step=60
 	// range==step (tumbling window) → routes to stats_query_range.
@@ -58,13 +65,13 @@ func TestQueryRange_OffsetShiftsTimeWindow(t *testing.T) {
 	// The proxy applies a start-shift of -1×step for tumbling rate windows
 	// (statsRateRangeEqualsStepShift) to correct VL's first-bucket drift.
 	// Account for that: allow start to be [wantStart-step, wantStart].
-	gotStartNs, _ := strconv.ParseInt(gotStart, 10, 64)
+	gotStartNs := backendSeconds(gotStart)
 	wantStartNs, _ := strconv.ParseInt(wantStart, 10, 64)
 	if gotStartNs < wantStartNs-60 || gotStartNs > wantStartNs {
 		t.Errorf("start: got %s want in [%d, %d]", gotStart, wantStartNs-60, wantStartNs)
 	}
 	// VL extends end by one step; allow up to +step tolerance.
-	gotEndNs, _ := strconv.ParseInt(gotEnd, 10, 64)
+	gotEndNs := backendSeconds(gotEnd)
 	wantEndNs, _ := strconv.ParseInt(wantEnd, 10, 64)
 	if gotEndNs < wantEndNs || gotEndNs > wantEndNs+60 {
 		t.Errorf("end: got %s want ~%s", gotEnd, wantEnd)
@@ -102,7 +109,7 @@ func TestQueryRange_NoOffsetUnchanged(t *testing.T) {
 	// The proxy applies a start-shift of -1×step for tumbling rate windows
 	// (statsRateRangeEqualsStepShift). Allow [wantStart-step, wantStart].
 	wantStart := strconv.FormatInt(base.Unix(), 10)
-	gotStartNs, _ := strconv.ParseInt(gotStart, 10, 64)
+	gotStartNs := backendSeconds(gotStart)
 	wantStartNs, _ := strconv.ParseInt(wantStart, 10, 64)
 	if gotStartNs < wantStartNs-60 || gotStartNs > wantStartNs {
 		t.Errorf("start should be ~unmodified: got %s want in [%d, %d]", gotStart, wantStartNs-60, wantStartNs)

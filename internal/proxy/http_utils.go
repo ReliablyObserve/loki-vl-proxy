@@ -252,7 +252,13 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 		level = slog.LevelWarn
 	}
 	if p.log != nil && p.log.Enabled(context.Background(), level) {
-		p.log.Log(context.Background(), level, "request error", "code", code, "error", msg)
+		attrs := []any{"code", code, "error", msg}
+		if strings.HasPrefix(msg, seriesLimitMessagePrefix) {
+			// Loki's message carries no operator hint; the log says which flag
+			// sets the limit that rejected this query.
+			attrs = append(attrs, "limit_flag", "-max-stats-query-series")
+		}
+		p.log.Log(context.Background(), level, "request error", attrs...)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -510,6 +516,9 @@ func (e *upstreamStatusError) StatusCode() int { return e.status }
 // rejections and keep the backend-failure handling (fallbacks, stale reads,
 // partial results, per-tenant skipping, 5xx mapping).
 func isUpstreamQueryRejected(err error) bool {
+	if isSeriesLimitError(err) {
+		return true
+	}
 	var statusErr *upstreamStatusError
 	if errors.As(err, &statusErr) {
 		return statusErr.class == vlErrorQueryRejected

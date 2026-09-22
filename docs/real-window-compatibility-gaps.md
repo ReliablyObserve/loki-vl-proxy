@@ -64,8 +64,7 @@ Raw metric collectors request one extra row and reject overflow rather than retu
 | Guard | Setting | Client-visible result |
 | --- | --- | --- |
 | Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 502, `errorType` `unavailable`, `manual range metric row limit exceeded` |
-| Raw metric series during collection | `-max-stats-query-series` (default 500) | HTTP 502, `maximum metric series exceeded` |
-| Manual result matrix series | `-max-stats-query-series` | HTTP 503, `manual metric series limit exceeded` |
+| Metric query series | `-max-stats-query-series` (default 500) | HTTP 400, Loki's `maximum number of series (N) reached for a single query`; Logs Drilldown gets a partial result with the `... returning partial results` warning |
 | Native `stats_query_range` series | `-max-stats-query-series` | Busiest series kept; remaining series dropped without an error |
 
 Raw and ordered-parser metric paths therefore fail at the series limit, while native stats paths return at most that many series.

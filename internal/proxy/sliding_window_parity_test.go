@@ -633,10 +633,12 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 
 // VictoriaLogs before v1.45 ignores the stats_query_range offset arg and aligns
 // buckets to the epoch, and a failed version probe leaves the release unknown.
-// Both keep buckets only for epoch-aligned grids (a line exactly on a window
-// edge then counts in the neighbouring window, a documented limit, so these
-// fixtures keep lines off the edges); other grids use the raw evaluator instead
-// of silently misaligned buckets. This includes the range == step topk path.
+// A release known to be older keeps buckets only for epoch-aligned grids (a line
+// exactly on a window edge then counts in the neighbouring window, a documented
+// limit, so these fixtures keep lines off the edges); other grids use the raw
+// evaluator instead of silently misaligned buckets. An unknown version stays on
+// buckets: the arg is ignored at worst, while raw rows scale with the stored
+// data. This includes the range == step topk path.
 func TestSlidingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	var lines []slidingFixtureLine
@@ -651,12 +653,13 @@ func TestSlidingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 			byApp       bool
 			window      time.Duration
 			start       time.Time
-			wantRaw     bool
+			unaligned   bool
+			ranked      bool // topk: one stats call with in-query _time buckets
 		}{
 			{name: "sliding epoch-aligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5 * time.Minute)},
-			{name: "sliding unaligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), wantRaw: true},
-			{name: "topk range equals step epoch-aligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5 * time.Minute)},
-			{name: "topk range equals step unaligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), wantRaw: true},
+			{name: "sliding unaligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), unaligned: true},
+			{name: "topk range equals step epoch-aligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5 * time.Minute), ranked: true},
+			{name: "topk range equals step unaligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), unaligned: true, ranked: true},
 		} {
 			t.Run(fmt.Sprintf("version=%q/%s", version, tc.name), func(t *testing.T) {
 				srv, fake := newSlidingFakeVL(t, lines)
@@ -668,14 +671,34 @@ func TestSlidingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 				got := runSlidingQueryRange(t, p, tc.query, tc.start, end, time.Minute, nil)
 				assertSlidingSeriesEqual(t, tc.query, lokiSlidingReference(lines, "count_over_time", tc.byApp, 0, tc.start, end, time.Minute, tc.window), got)
 				calls, raw := fake.snapshot()
-				if tc.wantRaw {
+				if tc.unaligned && version != "" {
 					if len(calls) != 0 || raw == 0 {
-						t.Fatalf("expected raw evaluator, got %+v stats calls and %d raw scans", calls, raw)
+						t.Fatalf("known old release, unaligned grid: expected the raw evaluator, got %+v stats calls and %d raw scans", calls, raw)
 					}
 					return
 				}
-				if raw != 0 || len(calls) != 1 || calls[0].step != "60s" || calls[0].offset != "" {
-					t.Fatalf("expected one offset-free stats call with 60s buckets, got %+v and %d raw scans", calls, raw)
+				// The topk path buckets inside the query (stats by (_time:...)), so
+				// its anchor is the positive complement of the request offset.
+				wantStep, wantOffset := "60s", ""
+				if tc.ranked && version == "" {
+					// In-query _time buckets only where the anchor is honoured;
+					// a known-old release gets plain epoch buckets.
+					wantStep = "1m0s"
+				}
+				if version == "" { // unknown version: anchored buckets, arg ignored at worst
+					switch {
+					case tc.ranked && tc.unaligned:
+						wantOffset = "29999999999"
+					case tc.ranked:
+						wantOffset = "59999999999"
+					case tc.unaligned:
+						wantOffset = "-30000000001ns"
+					default:
+						wantOffset = "-1ns"
+					}
+				}
+				if raw != 0 || len(calls) != 1 || calls[0].step != wantStep || calls[0].offset != wantOffset {
+					t.Fatalf("expected one stats call with %s buckets and offset %q, got %+v and %d raw scans", wantStep, wantOffset, calls, raw)
 				}
 			})
 		}
@@ -689,9 +712,9 @@ func newSlidingTestProxy(t *testing.T, backendURL string) *Proxy {
 	return p
 }
 
-// A failed startup version probe must not pin the raw evaluator: while the
-// version is unknown the proxy retries the metrics probe in the background, and
-// once it succeeds unaligned grids use anchored buckets.
+// A failed startup version probe keeps anchored buckets (never a raw scan) and
+// the proxy retries the metrics probe in the background until the version is
+// known.
 func TestSlidingRangeMetric_VersionReprobeEnablesAnchoredBuckets(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	var lines []slidingFixtureLine
@@ -727,10 +750,11 @@ func TestSlidingRangeMetric_VersionReprobeEnablesAnchoredBuckets(t *testing.T) {
 		}
 	}
 
-	// Unknown version within the probe interval: raw evaluator, no probe yet.
+	// Unknown version within the probe interval: anchored buckets, no raw scan
+	// and no probe yet.
 	check(10)
-	if calls, raw := fake.snapshot(); len(calls) != 0 || raw != 1 {
-		t.Fatalf("unknown version must use the raw evaluator, got %+v stats calls and %d raw scans", calls, raw)
+	if calls, raw := fake.snapshot(); len(calls) != 1 || raw != 0 || calls[0].offset != "-30000000001ns" {
+		t.Fatalf("unknown version must use anchored buckets, got %+v stats calls and %d raw scans", calls, raw)
 	}
 	waitMetricsCalls(0)
 
@@ -764,7 +788,7 @@ func TestSlidingRangeMetric_VersionReprobeEnablesAnchoredBuckets(t *testing.T) {
 	check(12)
 	waitMetricsCalls(2)
 	calls, _ := fake.snapshot()
-	if len(calls) != 1 || calls[0].offset != "-30000000001ns" {
+	if len(calls) == 0 || calls[len(calls)-1].offset != "-30000000001ns" {
 		t.Fatalf("expected one anchored stats call once the version is known, got %+v", calls)
 	}
 }
