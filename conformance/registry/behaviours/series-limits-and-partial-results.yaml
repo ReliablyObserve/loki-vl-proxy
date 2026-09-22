@@ -17,6 +17,11 @@ proxy: |
   loses series. The limit must be operator-configurable and the error must name
   the flag.
 
+implementation:
+  - internal/proxy/metric_agg.go
+  - internal/proxy/sliding_window_stats.go
+  - internal/proxy/http_utils.go
+
 cases:
   - limits/series-limit-error
   - limits/drilldown-partial-with-warning

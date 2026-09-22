@@ -1,0 +1,36 @@
+id: semantics/sliding-window-recurrence-exact
+title: Sliding windows are derived from two step-sized grids and stay exact
+proves:
+  - heavy-metric-fetch-bounds
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A Grafana range with a [5m] window and an 86.4s step used to ask VictoriaLogs
+  for gcd(step, range) = 2.4s buckets: 36,000 buckets per series over 24h and
+  252,000 over 7d, all assembled in memory before answering. The same windows
+  follow exactly from step-sized buckets: with A(k) the lines arriving in
+  (T(k), T(k+1)] and C(k) the lines leaving in (T(k)-range, T(k+1)-range],
+  W(k+1) = W(k) + A(k) - C(k), seeded by one window-sized bucket. The identity
+  is exact for integer counts and for byte sums, so the result must equal the
+  brute-force window, not approximate it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({service_name="api-gateway"}[5m]))'
+    start: now-24h
+    end: now
+    step: "86.4"
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: Grafana/13.2.1
+compare:
+  mode: exact
+  fields: [status, data.resultType, data.result[].metric, data.result[].values]
+  expect: |
+    Every sample equals the window computed by brute force over the same rows.
+    The leaving-lines grid is fetched before the arriving-lines grid, so
+    ingestion between the two fetches can only over-count a window, never drive
+    the running count negative. Bucket indexes are snapped to the nearest edge,
+    so a backend that rounds a bucket timestamp cannot shift every row by one.

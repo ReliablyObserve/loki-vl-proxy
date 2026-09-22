@@ -1,0 +1,26 @@
+id: semantics/tumbling-window-single-grid
+title: A tumbling window (range == step) reads one bucket grid, not three
+proves:
+  - heavy-metric-fetch-bounds
+  - window-bounds-and-step-alignment
+consumer: any
+why: |
+  When the range equals the step, the bucket ending at T(k) is the window: there
+  is nothing to add and nothing to subtract. Reading a seed bucket and two grids
+  for that shape would triple the backend work for the most common Grafana
+  shape, and would risk a drift between grids where none can exist.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(3, sum by (pod) (count_over_time({service_name="api-gateway"}[60s])))'
+    start: now-6h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  expect: |
+    Exactly one `| stats by (_time:60s offset ...)` call reaches VictoriaLogs,
+    and the samples equal Loki's for the same query.

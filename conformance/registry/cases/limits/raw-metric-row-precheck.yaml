@@ -1,0 +1,34 @@
+id: limits/raw-metric-row-precheck
+title: A raw metric scan that cannot fit is refused before any row is fetched
+proves:
+  - heavy-metric-fetch-bounds
+consumer: any
+why: |
+  The old failure mode was two heavy scans per query: the bucket grid blew up,
+  and the proxy silently retried with a raw fetch of up to a million lines. A
+  cheap one-row `| stats count()` answers "how many lines match" for the price
+  of an aggregate, so the refusal costs one bounded query instead of a scan the
+  proxy cannot hold. Refusing must name -manual-range-metric-row-limit, since
+  that is what an operator raises when the query is legitimate.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({env="production"}[5m])'
+    start: now-7d
+    end: now
+    step: "604.8"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The selector matches more rows than -manual-range-metric-row-limit over a
+    range of at least -backend-heavy-query-min-range, with no pipeline stage.
+compare:
+  mode: exact
+  fields: [status]
+  expect:
+    body_contains:
+      - manual range metric row limit exceeded
+      - -manual-range-metric-row-limit
+    backend_calls: |
+      One `| stats count() as rows` call; no raw row fetch.

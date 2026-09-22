@@ -5,11 +5,6 @@ import (
 	"fmt"
 )
 
-const (
-	maxBinaryExecutionBytes  = 256 << 20
-	maxBinaryExecutionArrays = 2000000
-)
-
 // Children execute sequentially and share these aggregate work limits.
 type binaryExecutionBudget struct {
 	bytes         int
@@ -25,7 +20,8 @@ func binaryEvaluationContext(ctx context.Context) context.Context {
 		state.remaining = &remaining
 	}
 	if state.budget == nil {
-		state.budget = &binaryExecutionBudget{bytes: maxBinaryExecutionBytes, arrays: maxBinaryExecutionArrays, outputLabels: maxBufferedBackendBodyBytes, outputSamples: 1000000}
+		limits := executionLimitsFrom(ctx)
+		state.budget = &binaryExecutionBudget{bytes: limits.BinaryOperandBytes, arrays: limits.BinaryArrays, outputLabels: limits.BufferedBackendBodyBytes, outputSamples: 1000000}
 	}
 	return context.WithValue(ctx, binaryEvaluationKey{}, state)
 }
@@ -50,13 +46,13 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(body) > maxBufferedBackendBodyBytes {
+	if len(body) > executionLimitsFrom(ctx).BufferedBackendBodyBytes {
 		return fmt.Errorf("binary operand exceeds response byte limit")
 	}
 	state, _ := ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState)
 	budget := state.budget
 	if budget == nil {
-		budget = &binaryExecutionBudget{arrays: maxBinaryExecutionArrays}
+		budget = &binaryExecutionBudget{arrays: executionLimitsFrom(ctx).BinaryArrays}
 	}
 	quoted, escaped := false, false
 	for i, c := range body {

@@ -455,8 +455,8 @@ func (p *Proxy) labelValuesBrowseMode(rawQuery string) bool {
 func (p *Proxy) defaultLabelValuesLimit(limitRaw string) int {
 	if strings.TrimSpace(limitRaw) != "" {
 		limit := parsePositiveInt(limitRaw, p.labelValuesHotLimit)
-		if limit > maxLimitValue {
-			limit = maxLimitValue
+		if limit > p.limits().EntriesPerQuery {
+			limit = p.limits().EntriesPerQuery
 		}
 		return limit
 	}
@@ -464,8 +464,8 @@ func (p *Proxy) defaultLabelValuesLimit(limitRaw string) int {
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > maxLimitValue {
-		limit = maxLimitValue
+	if limit > p.limits().EntriesPerQuery {
+		limit = p.limits().EntriesPerQuery
 	}
 	return limit
 }
@@ -601,8 +601,8 @@ func (p *Proxy) selectLabelValuesFromIndex(orgID, labelName, search string, offs
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > maxLimitValue {
-		limit = maxLimitValue
+	if limit > p.limits().EntriesPerQuery {
+		limit = p.limits().EntriesPerQuery
 	}
 	if offset < 0 {
 		offset = 0
@@ -642,12 +642,9 @@ func (p *Proxy) selectLabelValuesFromIndex(orgID, labelName, search string, offs
 	return values, true
 }
 
-func selectLabelValuesWindow(values []string, search string, offset, limit int) []string {
-	if limit <= 0 {
-		limit = maxLimitValue
-	}
-	if limit > maxLimitValue {
-		limit = maxLimitValue
+func selectLabelValuesWindow(values []string, search string, offset, limit, maxLimit int) []string {
+	if limit <= 0 || limit > maxLimit {
+		limit = maxLimit
 	}
 	if offset < 0 {
 		offset = 0

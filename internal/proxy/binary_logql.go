@@ -101,7 +101,7 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 }
 
 func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, resultType string) *binaryOperandResponse {
-	w := &binaryOperandResponse{header: make(http.Header), limit: maxBufferedBackendBodyBytes}
+	w := &binaryOperandResponse{header: make(http.Header), limit: p.limits().BufferedBackendBodyBytes}
 	child, err := nextBinaryEvaluation(r)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -219,7 +219,7 @@ func restoreBinaryOperandGrouping(ctx context.Context, body []byte, expr logqlpk
 		}
 		series[fmt.Sprintf("%09d", index)] = &binaryMatchedSeries{labels: labels, points: points}
 	}
-	encoded, err := encodeBinarySeriesContext(ctx, series, resultType, maxBufferedBackendBodyBytes)
+	encoded, err := encodeBinarySeriesContext(ctx, series, resultType, executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 	return encoded, true, err
 }
 

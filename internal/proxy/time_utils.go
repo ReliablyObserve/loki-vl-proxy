@@ -358,7 +358,7 @@ func parseStepSeconds(step string) (int64, bool) {
 	return int64(d / time.Second), true
 }
 
-func parseRequestedBucketRange(start, end, step string) (requestedBucketRange, bool) {
+func parseRequestedBucketRange(start, end, step string, maxBuckets int) (requestedBucketRange, bool) {
 	startSeconds, ok := parseFlexibleUnixSeconds(start)
 	if !ok {
 		return requestedBucketRange{}, false
@@ -372,7 +372,7 @@ func parseRequestedBucketRange(start, end, step string) (requestedBucketRange, b
 		return requestedBucketRange{}, false
 	}
 	count := int(((endSeconds - startSeconds) / stepSeconds) + 1)
-	if count <= 0 || count > maxZeroFillBuckets {
+	if count <= 0 || count > maxBuckets {
 		return requestedBucketRange{}, false
 	}
 	return requestedBucketRange{
@@ -391,7 +391,7 @@ func (br requestedBucketRange) bucketFor(ts int64) (int64, bool) {
 	return br.start + ((offset / br.step) * br.step), true
 }
 
-func patternBackendQueryLimit(start, end, step string, patternLimit int) int {
+func patternBackendQueryLimit(start, end, step string, patternLimit, maxRows, maxBuckets int) int {
 	if patternLimit <= 0 {
 		patternLimit = 50
 	}
@@ -399,7 +399,7 @@ func patternBackendQueryLimit(start, end, step string, patternLimit int) int {
 		patternLimit = maxPatternResponseLimit
 	}
 	factor := 20
-	if bucketRange, ok := parseRequestedBucketRange(start, end, step); ok {
+	if bucketRange, ok := parseRequestedBucketRange(start, end, step, maxBuckets); ok {
 		factor = bucketRange.count
 		if factor < 20 {
 			factor = 20
@@ -412,8 +412,8 @@ func patternBackendQueryLimit(start, end, step string, patternLimit int) int {
 	if limit < 1000 {
 		limit = 1000
 	}
-	if limit > maxPatternBackendQueryLimit {
-		limit = maxPatternBackendQueryLimit
+	if limit > maxRows {
+		limit = maxRows
 	}
 	return limit
 }

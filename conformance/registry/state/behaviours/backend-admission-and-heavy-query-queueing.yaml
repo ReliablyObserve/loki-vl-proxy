@@ -1,0 +1,15 @@
+id: backend-admission-and-heavy-query-queueing
+state: proven
+reason: |
+  Every case is wired to a test: limiter saturation, fairness, the shared
+  per-request queue budget, metadata staying unqueued, the breaker exclusion and
+  the Grafana 429 are unit tests in internal/proxy/backend_heavy_test.go, and
+  TestCompat_HeavyQueryProtection runs concurrent long-range metric queries
+  against the real stack, asserting the VictoriaLogs restart count is unchanged,
+  /labels keeps answering and every response is a 200 or a documented limit
+  error.
+owner_decision: |
+  Defaults are measured on the compose stack (about 290k lines/hour on
+  env=production) with a documented 10x extrapolation; every limit can be raised
+  as well as lowered and is validated at startup.
+waiver: null

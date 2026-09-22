@@ -477,7 +477,7 @@ func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQu
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if err != nil {
 		return nil, err
 	}

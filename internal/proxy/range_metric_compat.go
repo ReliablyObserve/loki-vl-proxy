@@ -790,7 +790,7 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 
 // writeHitsRangeMetricMatrix writes the bucket matrix and returns the HTTP status.
 func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) int {
-	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window)
+	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window, p.limits().BufferedBackendBodyBytes)
 	if err != nil {
 		p.writeError(w, http.StatusServiceUnavailable, err.Error())
 		return http.StatusServiceUnavailable
@@ -1334,7 +1334,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 	// Stream the response line by line — avoids io.ReadAll + bytes.Split which
 	// would buffer the entire configured row budget plus overflow probe in memory.
-	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
+	limited := &io.LimitedReader{R: resp.Body, N: int64(p.limits().BufferedBackendBodyBytes) + 1}
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
@@ -1880,7 +1880,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	}
 	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
-		return encodeBinarySeriesContext(ctx, nil, "matrix", maxBufferedBackendBodyBytes)
+		return encodeBinarySeriesContext(ctx, nil, "matrix", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 	}
 	if step <= 0 || end.Sub(start)/step >= 1000000 {
 		return nil, fmt.Errorf("invalid or excessive manual metric evaluation points")
@@ -1936,7 +1936,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 		}
 	}
 
-	return encodeBinarySeriesContext(ctx, perSeries, "matrix", maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, perSeries, "matrix", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 // buildHitsRangeMetricMatrix builds a Prometheus matrix response from pre-bucketed
@@ -1952,7 +1952,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 //
 // The encoded response is bounded by maxBufferedBackendBodyBytes, like the raw
 // evaluator's output; an estimate above it returns an error instead.
-func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) ([]byte, error) {
+func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int) ([]byte, error) {
 	if end.Before(start) || step <= 0 {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
 	}
@@ -2013,8 +2013,8 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			}
 			formatted := strconv.FormatFloat(value, 'f', -1, 64)
 			// `[1700000000,"<value>"],`: a timestamp of at most 20 bytes plus punctuation.
-			if encodedBytes += len(formatted) + 26; encodedBytes > maxBufferedBackendBodyBytes {
-				return nil, fmt.Errorf("manual metric response exceeds %d bytes", maxBufferedBackendBodyBytes)
+			if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
+				return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
 			}
 			points = append(points, []interface{}{float64(t.Unix()), formatted})
 		}
@@ -2069,7 +2069,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)}}}
 	}
 
-	return encodeBinarySeriesContext(ctx, results, "vector", maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, results, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 func marshalManualMetricResponse(resultType string, result []map[string]interface{}) []byte {

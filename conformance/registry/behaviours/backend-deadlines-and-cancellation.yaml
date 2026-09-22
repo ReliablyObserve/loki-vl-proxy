@@ -1,0 +1,31 @@
+id: backend-deadlines-and-cancellation
+kind: resource_control
+title: Work the client has given up on stops in the backend too
+
+loki: |
+  Loki carries the request deadline into every subrequest and cancels the whole
+  query when the HTTP client disconnects; a cancelled query stops consuming
+  querier and ingester capacity. Exceeding the deadline is a query timeout, not
+  a backend outage.
+
+victorialogs: |
+  VictoriaLogs accepts a per-request `timeout` query argument on
+  /select/logsql/*, capped by -search.maxQueryDuration, and aborts a query when
+  the client closes the connection - but only if the connection is actually
+  closed. A request sent without a timeout runs to completion even when nobody
+  is waiting for the answer any more.
+
+proxy: |
+  Every /select/logsql/* call carries `timeout` set to the remaining request
+  budget (the earlier of the request deadline and -backend-timeout), and the
+  client's cancellation is propagated to the backend call, including the cold
+  POST path. Neither a client disconnect nor an expired admission wait may be
+  recorded as a backend failure or open the circuit breaker.
+
+implementation:
+  - internal/proxy/backend.go
+  - internal/proxy/backend_heavy.go
+
+cases:
+  - semantics/backend-timeout-argument
+  - semantics/client-cancellation-propagates

@@ -1,0 +1,33 @@
+id: limits/drilldown-stats-rejection-keeps-429
+title: A Grafana-sourced stats query keeps the 429 instead of an empty partial result
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - series-limits-and-partial-results
+consumer: drilldown
+why: |
+  Logs Drilldown gets a partial result plus a warning where Loki would error on
+  the series limit, and the proxy honours that carve-out. Admission rejection is
+  not that case: converting it into an empty 200 hides backpressure from the
+  user, from Grafana's retry logic and from alerting, and makes a stressed
+  backend look like a datasource with no data. The carve-out must be applied
+  after the rejection is mapped to 429.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (count_over_time({service_name=~".+"}[5m]))'
+    start: now-24h
+    end: now
+    step: "86.4"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+    User-Agent: Grafana/13.2.1
+  precondition: |
+    Every admission slot is held beyond the queue wait.
+compare:
+  mode: exact
+  fields: [status]
+  expect:
+    status: 429
+    body_contains: [too many outstanding requests]

@@ -1,0 +1,23 @@
+id: semantics/backend-timeout-argument
+title: Every select call carries VictoriaLogs' timeout argument for the remaining budget
+proves:
+  - backend-deadlines-and-cancellation
+consumer: any
+why: |
+  Without a timeout, a VictoriaLogs query keeps scanning long after the proxy
+  has answered the client with a deadline error, so a burst of timed-out queries
+  still costs the backend its full memory and CPU. The value must be what is
+  left of the request budget, not a constant: a request with 3s left must not
+  authorise 30s of backend work. VictoriaLogs caps it at
+  -search.maxQueryDuration, so the argument can only ever shorten the work.
+request:
+  scope: internal
+  entry: (*Proxy).withBackendTimeoutArg
+  setup: |
+    A request with a deadline earlier than -backend-timeout, and one without.
+compare:
+  mode: exact
+  expect: |
+    Every /select/logsql/* call carries `timeout` set to the remaining budget
+    (the earlier of the request deadline and -backend-timeout), including the
+    cold POST path.

@@ -1,0 +1,22 @@
+id: limits/queue-rejection-not-a-backend-failure
+title: An admission rejection is proxy backpressure, not evidence about VictoriaLogs
+proves:
+  - backend-admission-and-heavy-query-queueing
+consumer: any
+why: |
+  The circuit breaker exists to stop hammering a backend that is failing. A full
+  admission queue says the opposite: the backend is busy doing exactly the work
+  the proxy asked for. Counting rejections as backend failures opens the breaker
+  and turns a queue into a proxy-wide outage, and recording them as VictoriaLogs
+  responses puts 429s the backend never sent on the operator's dashboards.
+request:
+  scope: internal
+  entry: shouldRecordBreakerFailure, (*requestTelemetry).heavyAdmissionRejected
+  setup: |
+    Hold the only slot and take several rejections with a zero queue wait.
+compare:
+  mode: exact
+  expect: |
+    The circuit breaker still allows requests afterwards, and no upstream
+    observation is recorded for the rejected calls; only the internal
+    backend_heavy_query_admission operation counts them.

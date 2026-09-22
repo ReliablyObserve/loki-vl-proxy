@@ -1073,8 +1073,8 @@ type detectNativeResult struct {
 //
 //nolint:gocyclo // Scans + aggregates parsed-field samples across multiple
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
-	if lineLimit > maxDetectedScanLines {
-		lineLimit = maxDetectedScanLines
+	if lineLimit > p.limits().DetectedScanLines {
+		lineLimit = p.limits().DetectedScanLines
 	}
 	if cachedFields, cachedValues, ok := p.getCachedDetectedFields(ctx, query, start, end, lineLimit); ok {
 		return cachedFields, cachedValues, nil
@@ -1754,8 +1754,8 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 }
 
 func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, error) {
-	if lineLimit > maxDetectedScanLines {
-		lineLimit = maxDetectedScanLines
+	if lineLimit > p.limits().DetectedScanLines {
+		lineLimit = p.limits().DetectedScanLines
 	}
 	if cachedLabels, cachedSummaries, ok := p.getCachedDetectedLabels(ctx, query, start, end, lineLimit); ok {
 		return cachedLabels, cachedSummaries, nil

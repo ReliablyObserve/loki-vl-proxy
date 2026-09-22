@@ -1,0 +1,12 @@
+id: backend-deadlines-and-cancellation
+state: proven
+reason: |
+  The timeout argument and the cancellation propagation are covered by
+  TestBackendRequests_PassRemainingBudgetAsVLTimeout and
+  TestBackendRequests_ClientCancellationCancelsVLRequest, the latter against a
+  backend that reads the request body so Go's server reports the disconnect.
+owner_decision: null
+waiver: |
+  VictoriaLogs caps the argument at -search.maxQueryDuration, so a proxy budget
+  longer than the backend's cap is silently shortened by the backend. That is
+  the backend's contract, not a proxy gap.

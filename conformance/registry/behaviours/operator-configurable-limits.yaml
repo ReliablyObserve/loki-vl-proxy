@@ -1,0 +1,48 @@
+id: operator-configurable-limits
+kind: limits
+title: Every bound on work is an operator flag, documented from one source
+
+loki: |
+  Every Loki limit is a configuration key with a documented default, settable
+  globally and per tenant, raisable as well as lowerable, and documented in one
+  generated reference. Hitting one returns an error that names the limit, so an
+  operator knows what to change. Loki never truncates a result silently where it
+  would otherwise error.
+
+victorialogs: |
+  VictoriaLogs has its own flags (-search.maxConcurrentRequests,
+  -search.maxQueryDuration, -memory.allowedPercent) but nothing that expresses
+  Loki's per-query limits, and no per-tenant layer for them.
+
+proxy: |
+  No cap on work may be compiled in. Each one is a flag with a Helm value, a
+  documented default, an error naming the flag, a metric, an alert where one
+  exists, and sizing guidance that says what raising it costs (proxy memory,
+  VictoriaLogs memory, concurrency). `0` selects the built-in default; a
+  positive value is accepted so a limit can be raised, not only lowered; a
+  negative value is rejected at startup. Caps that mirror Loki keep Loki's own
+  default. A default must never break an ordinary hours-or-days query, and a
+  default must never truncate where Loki would answer in full: without an
+  explicit client `limit`, label values are returned the way Loki returns them.
+  The inventory is generated: `go run ./cmd/configdoc` renders the reference
+  documents and conformance/registry/generated/proxy/limits.json from the flags
+  in cmd/proxy/main.go plus the registry in internal/config, and CI fails when
+  the committed files drift. The conformance registry reads that export rather
+  than keeping a second list.
+
+implementation:
+  - internal/config/registry.go
+  - internal/config/limits.go
+  - internal/config/render.go
+  - internal/config/limits_json.go
+  - internal/proxy/execution_limits.go
+  - internal/proxy/label_handlers.go
+  - cmd/proxy/main.go
+
+generated: conformance/registry/generated/proxy/limits.json
+
+cases:
+  - limits/every-cap-is-a-flag
+  - limits/label-values-not-truncated-by-default
+  - limits/query-length-limit-is-configurable
+  - limits/series-cap-and-byte-budget-interact

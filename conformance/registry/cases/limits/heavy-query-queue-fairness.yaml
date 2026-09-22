@@ -1,0 +1,21 @@
+id: limits/heavy-query-queue-fairness
+title: A released admission slot goes to the tenant holding the fewest
+proves:
+  - backend-admission-and-heavy-query-queueing
+consumer: any
+why: |
+  With a shared queue, one tenant running many long-range dashboards would take
+  every released slot and starve the others, so a small tenant's chart would
+  never load while the big tenant's still did. Loki's scheduler is per-tenant
+  fair; the proxy's admission has to be too, or the limit converts a backend
+  outage into a per-tenant outage.
+request:
+  scope: internal
+  entry: (*heavyQueryLimiter).acquireUntil
+  setup: |
+    One slot; tenant A holds it and has two waiters queued, tenant B has one.
+    Release the slot once.
+compare:
+  mode: exact
+  expect: |
+    The waiter of tenant B is granted before either waiter of tenant A.

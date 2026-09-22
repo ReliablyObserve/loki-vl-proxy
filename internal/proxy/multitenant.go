@@ -22,8 +22,8 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	if len(tenantIDs) < 2 {
 		return false
 	}
-	if len(tenantIDs) > maxMultiTenantFanout {
-		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("multi-tenant fanout exceeds limit of %d tenants", maxMultiTenantFanout))
+	if len(tenantIDs) > p.limits().MultiTenantFanout {
+		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants", p.limits().MultiTenantFanout))
 		return true
 	}
 	filteredReq, filteredTenants, err := p.applyTenantSelectorFilter(r, tenantIDs)
@@ -121,8 +121,8 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 		return true
 	}
-	if len(body) > maxMultiTenantMergedResponseBytes {
-		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit")
+	if len(body) > p.limits().MultiTenantMergedBytes {
+		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants")
 		return true
 	}
 	p.writeMultiTenantMerged(w, filteredReq, endpoint, body, contentType, stale)

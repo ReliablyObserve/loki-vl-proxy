@@ -66,7 +66,7 @@ func checkManualMetricRead(ctx context.Context, limited *io.LimitedReader) error
 		return err
 	}
 	if limited.N <= 0 {
-		return fmt.Errorf("manual metric response exceeds %d bytes", maxBufferedBackendBodyBytes)
+		return fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func buildBoundedBareParserMetric(ctx context.Context, series []bareParserMetric
 	if isRange {
 		resultType = "matrix"
 	}
-	return encodeBinarySeriesContext(ctx, result, resultType, maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, result, resultType, executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 func (p *Proxy) writeBoundedBareParserMetric(w http.ResponseWriter, r *http.Request, requestStart time.Time, query string, series []bareParserMetricSeries, start, end, step int64, spec bareParserMetricCompatSpec, isRange bool) {

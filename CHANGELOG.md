@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/label/{name}/values` returns every value again, as Loki does.** A request
+  without a `limit` was truncated to `-label-values-hot-limit` (200) even with
+  the indexed browse cache disabled: on the e2e stack Loki returned 713 service
+  names and the proxy 200. The hot limit now sizes the indexed browse cache
+  only; the browse window (`limit`, `offset`, `search`, a proxy extension) is
+  applied when a client asks for one, and a plain request is bounded only by
+  `-max-entries-limit-per-query`.
+- **Queries Loki parses are no longer rejected as too long.** The query-string
+  limit was a fixed 64 KiB while Loki parses up to its own 128 KiB
+  `syntax.maxInputSize`. The default is now Loki's limit, and
+  `-max-query-length-bytes` lowers it; the error names the flag.
+
+- **Releases queue instead of cancelling each other.** The release workflow ran
+  with `cancel-in-progress: true`, so merging a second pull request while a
+  release was still running cancelled that run: a tag could be cut with no
+  metadata pull request behind it, a merge could get no release at all, and the
+  CHANGELOG then drifted from what each tag actually contained — which happened
+  four times in one day, including a release whose notes re-listed entries from
+  two earlier releases. Release runs now stack in merge order, each re-reads
+  `main` and the tags after any wait, so it cuts its version from the
+  `[Unreleased]` section as it stands at its own commit, and a run whose version
+  was already cut by an earlier queued run skips instead of publishing a
+  duplicate tag.
+
+### Added
+
+- **Registry items for backend protection.** The conformance registry gains
+  three behaviours - backend admission and heavy-query queueing, backend
+  deadlines and cancellation, and heavy metric fetch bounds - with twelve cases
+  carrying the real requests and comparison contracts, and nineteen tests now
+  declare which of them they prove. `limits/top-n-ranking-not-silent`, which
+  `series-limits-and-partial-results` had named but not written, is one of
+  them: topk and bottomk rank every series per step, as Loki does.
+- **Every execution limit is an operator flag with a Helm value.** The caps that
+  were compiled in are now `-backend-max-buffered-response-bytes` (64 MiB),
+  `-binary-metric-max-operand-bytes` (256 MiB), `-binary-metric-max-arrays`
+  (2,000,000), `-multi-tenant-max-fanout` (64),
+  `-multi-tenant-max-merged-response-bytes` (32 MiB),
+  `-max-entries-limit-per-query` (10,000), `-detected-fields-max-scan-lines`
+  (2,000), `-patterns-max-backend-rows` (20,000),
+  `-patterns-second-pass-max-rows` (8,000),
+  `-patterns-second-pass-max-windows` (8), `-drilldown-max-stats-buckets`
+  (120), `-max-zero-fill-buckets` (32,768) and `-max-query-length-bytes`
+  (131,072). `0` selects the built-in default, any positive value is accepted
+  so a limit can be raised as well as lowered, and startup rejects negative
+  values. Errors name the flag that rejected the request. Loki-parity limits
+  keep Loki's own defaults (`max_query_series` 500, `syntax.maxInputSize`
+  131,072, the 11,000-point resolution limit).
+- **Generated configuration and limits reference.** `go run ./cmd/configdoc`
+  renders `docs/reference/configuration-reference.md` (every flag with type,
+  default, Helm value and description, by category),
+  `docs/reference/limits-registry.md` (what each limit bounds, the error it
+  returns, its metric and alert, per-tenant override, Loki parity, sizing
+  guidance and worked small and large deployments) and
+  `docs/reference/errors-and-alerts.md` (from an error or alert back to its
+  limit). The flags stay declared once in `cmd/proxy/main.go`; the registry in
+  `internal/config` adds the operator metadata, and CI fails when the committed
+  documents, the chart values or the alert names drift. The same run writes
+  `conformance/registry/generated/proxy/limits.json`, so the conformance
+  registry inventories limits from the flags instead of keeping a second list.
+  `-max-stats-query-series` and `-backend-max-buffered-response-bytes` now
+  document how they interact: raising the series cap alone turns Loki's
+  series-limit error into `manual metric response exceeds N bytes`, and both
+  sizing entries carry the series x steps x 40 bytes estimate.
+
 ## [1.84.1] - 2026-09-22
 
 ### Fixed

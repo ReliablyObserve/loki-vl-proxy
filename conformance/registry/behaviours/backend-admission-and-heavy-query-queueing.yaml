@@ -1,0 +1,46 @@
+id: backend-admission-and-heavy-query-queueing
+kind: limits
+title: Heavy backend work is admitted, queued, then refused like Loki's scheduler
+
+loki: |
+  Loki bounds the work in flight per component rather than per query. A querier
+  admits max_concurrent queries; beyond that the query scheduler enqueues, and
+  when the queue is full or the wait expires the request fails with HTTP 429 and
+  the body "too many outstanding requests" (pkg/queue/queue.go
+  ErrTooManyRequests). The limit is per replica and operator-configurable. A
+  queued request is never counted as a backend failure, and a Logs Drilldown
+  request does not turn it into an empty partial result.
+
+victorialogs: |
+  VictoriaLogs has -search.maxConcurrentRequests and -search.maxQueueDuration,
+  but each stats, sort or uniq pipe may take up to 40% of -memory.allowedPercent
+  and nothing accounts for that across concurrent queries. A handful of parallel
+  long-range metric queries can take the whole process down, and the proxy sees
+  only a dropped connection.
+
+proxy: |
+  The proxy admits at most -backend-max-concurrent-heavy-queries heavy
+  VictoriaLogs calls per replica, queues the rest for at most
+  -backend-heavy-query-queue-wait shared across all heavy calls of one request,
+  and then answers with Loki's 429 and message, naming both flags. A released
+  slot goes to the waiting tenant holding the fewest slots. Metadata lookups
+  (labels, label values, series, detected fields) are never queued, so a chart
+  under backpressure does not take the label pickers with it. A rejection is
+  proxy backpressure, not evidence about the backend: it must not open the
+  circuit breaker, must not be recorded as a VictoriaLogs response, and must
+  keep its 429 even for Grafana-sourced stats queries that otherwise carry the
+  Drilldown partial-result carve-out.
+
+implementation:
+  - internal/proxy/backend_heavy.go
+  - internal/proxy/backend.go
+  - internal/proxy/http_utils.go
+  - internal/proxy/telemetry.go
+
+cases:
+  - limits/heavy-query-queue-429
+  - limits/heavy-query-queue-fairness
+  - limits/heavy-query-queue-wait-per-request
+  - limits/metadata-not-queued
+  - limits/queue-rejection-not-a-backend-failure
+  - limits/drilldown-stats-rejection-keeps-429

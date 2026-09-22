@@ -158,6 +158,23 @@ extraArgs:
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
   # cb-open-duration: "10s"                 # circuit breaker open duration before probe
   # cb-window-duration: "30s"               # circuit breaker sliding window for failure counting
+  # --- Execution limits (every cap is a flag; 0 selects the built-in default) ---
+  # Errors name the flag that rejected the request; see
+  # docs/reference/limits-registry.md for sizing guidance and the tradeoffs
+  # (proxy memory, VictoriaLogs memory and concurrency) of raising each one.
+  # backend-max-buffered-response-bytes: "67108864"     # 64 MiB read from one VictoriaLogs response the proxy evaluates itself; HTTP 502 above it
+  # binary-metric-max-operand-bytes: "268435456"        # 256 MiB of operand bytes per binary metric expression; HTTP 400 above it
+  # binary-metric-max-arrays: "2000000"                 # JSON arrays one binary metric expression may allocate; HTTP 400 above it
+  # multi-tenant-max-fanout: "64"                       # tenants per multi-tenant request; HTTP 400 above it
+  # multi-tenant-max-merged-response-bytes: "33554432"  # 32 MiB merged multi-tenant response; HTTP 413 above it
+  # max-entries-limit-per-query: "10000"                # log lines or label values per request; larger client limits are capped
+  # detected-fields-max-scan-lines: "2000"              # lines the detected_fields scan reads per request
+  # patterns-max-backend-rows: "20000"                  # lines /patterns reads per request
+  # patterns-second-pass-max-rows: "8000"               # lines the /patterns second pass reads
+  # patterns-second-pass-max-windows: "8"               # windows the /patterns second pass re-reads
+  # drilldown-max-stats-buckets: "120"                  # time buckets per Drilldown stats call; finer steps are coarsened
+  # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
+  # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 502 (no truncated results)
 

@@ -125,9 +125,14 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		search = r.FormValue("q")
 	}
 	offset := parseNonNegativeInt(rawOffset, 0)
-	limit := p.defaultLabelValuesLimit(rawLimit)
-	if rawLimit == "" && !p.labelValuesBrowseMode(rawQuery) {
-		limit = maxLimitValue
+	// Loki answers /label/{name}/values with every value it knows. The browse
+	// window (limit, offset, search) is a proxy extension, so only a request
+	// that asks for one gets one: -label-values-hot-limit sizes the indexed
+	// browse cache, it never truncates a plain Loki request.
+	browseWindow := strings.TrimSpace(rawLimit) != "" || strings.TrimSpace(search) != "" || offset > 0
+	limit := p.limits().EntriesPerQuery
+	if browseWindow {
+		limit = p.defaultLabelValuesLimit(rawLimit)
 	}
 
 	labelValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues)
@@ -154,7 +159,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordCacheMiss()
 	r = p.withRequestScope(r)
 
-	if p.labelValuesBrowseMode(rawQuery) {
+	if browseWindow && p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
 			p.setMetadataListCache("label_values", cacheKey, result, len(indexedValues), labelValuesTTL)
@@ -177,11 +182,11 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
-		if p.labelValuesBrowseMode(rawQuery) {
+		if browseWindow && p.labelValuesBrowseMode(rawQuery) {
 			if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
 				values = indexedValues
 			} else {
-				values = selectLabelValuesWindow(values, search, offset, limit)
+				values = selectLabelValuesWindow(values, search, offset, limit, p.limits().EntriesPerQuery)
 			}
 		}
 		result := lokiLabelsResponse(values)
@@ -205,14 +210,12 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
-	if p.labelValuesBrowseMode(rawQuery) {
-		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
+	if browseWindow {
+		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); p.labelValuesBrowseMode(rawQuery) && ok {
 			values = indexedValues
 		} else {
-			values = selectLabelValuesWindow(values, search, offset, limit)
+			values = selectLabelValuesWindow(values, search, offset, limit, p.limits().EntriesPerQuery)
 		}
-	} else if search != "" || offset > 0 || rawLimit != "" {
-		values = selectLabelValuesWindow(values, search, offset, limit)
 	}
 
 	result := lokiLabelsResponse(values)
@@ -460,7 +463,7 @@ func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end s
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, _ := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
@@ -809,12 +812,12 @@ func cachedSelectorValidation(kind, query string, validate func(string) string) 
 // queryLengthError rejects an oversized query before it is parsed or cached:
 // Loki's "input size too long" at or above syntax.maxInputSize, the proxy's
 // maxQueryLength message for anything longer than that limit.
-func queryLengthError(query string) string {
+func queryLengthError(query string, maxBytes int) string {
 	if msg := logqlpkg.InputSizeError(query); msg != "" {
 		return msg
 	}
-	if len(query) > maxQueryLength {
-		return fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength)
+	if maxBytes > 0 && len(query) > maxBytes {
+		return fmt.Sprintf("query exceeds max length (%d > %d); raise -max-query-length-bytes", len(query), maxBytes)
 	}
 	return ""
 }
@@ -838,19 +841,19 @@ func truncateQueryError(msg string) string {
 
 // lokiQueryParamError returns Loki's 400 message for an invalid selector
 // parameter on endpoint, or "" when Loki would accept the request.
-func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request) string {
+func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes int) string {
 	query := r.FormValue("query")
 	if rule == lokiSeriesMatchers {
 		// Loki reads both match and match[] (loghttp.ParseSeriesQuery).
 		groups := append(append([]string(nil), r.Form["match"]...), r.Form["match[]"]...)
 		for _, group := range groups {
-			if msg := queryLengthError(group); msg != "" {
+			if msg := queryLengthError(group, maxQueryBytes); msg != "" {
 				return msg
 			}
 		}
 		return logqlpkg.ValidateSeriesMatchers(groups)
 	}
-	if msg := queryLengthError(query); msg != "" {
+	if msg := queryLengthError(query, maxQueryBytes); msg != "" {
 		return msg
 	}
 	switch rule {
@@ -886,7 +889,7 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if msg := lokiQueryParamError(rule, r); msg != "" {
+		if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes); msg != "" {
 			p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
 			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 			return
