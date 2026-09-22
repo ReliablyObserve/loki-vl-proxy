@@ -1,0 +1,44 @@
+id: heavy-metric-fetch-bounds
+kind: limits
+title: Metric evaluation reads bounded work from VictoriaLogs, or refuses early
+
+loki: |
+  Loki never streams raw lines to compute a range metric: the chunk layer
+  aggregates, and a query that would exceed max_query_series or the 11,000-point
+  resolution limit is rejected before it runs, with an error naming the limit.
+  A user query over hours or days must still answer.
+
+victorialogs: |
+  VictoriaLogs can aggregate with `| stats by (_time:<step> offset <o>, fields)`
+  and streams one row per bucket and series from /select/logsql/query, but
+  stats_query_range assembles every point in memory before answering. Asking for
+  gcd(step, range) buckets - 2.4s buckets for Grafana's 24h step with a [5m]
+  window, 36,000 buckets per series over 24h and 252,000 over 7d - is what took
+  the backend down. VictoriaLogs has no row budget of its own and will happily
+  return a million raw lines.
+
+proxy: |
+  No metric path may request a grid finer than Loki's 11,000 points: shapes that
+  would need one fall back to the bounded evaluator instead. Sliding windows
+  over grouped counts read one window-sized seed bucket plus two step-sized
+  grids and derive every window from W(k+1) = W(k) + A(k) - C(k); a tumbling
+  window (range == step) reads one grid. Each grid is bounded independently by
+  -manual-range-metric-row-limit, so the bound does not shrink because three
+  grids are read. Before a long pipe-free raw fetch the proxy runs a one-row
+  `| stats count()` pre-check and refuses with an error naming
+  -manual-range-metric-row-limit rather than buffering rows it cannot hold.
+  Every one of these bounds is an operator flag that can be raised as well as
+  lowered.
+
+implementation:
+  - internal/proxy/sliding_window_stats.go
+  - internal/proxy/manual_metric_budget.go
+  - internal/proxy/range_metric_compat.go
+  - internal/proxy/metric_agg.go
+
+cases:
+  - limits/raw-metric-row-precheck
+  - limits/stats-row-limit-per-grid
+  - limits/top-n-ranking-not-silent
+  - semantics/sliding-window-recurrence-exact
+  - semantics/tumbling-window-single-grid

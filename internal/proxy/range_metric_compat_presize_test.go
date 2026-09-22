@@ -146,7 +146,7 @@ func TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist(t *testing.T) {
 
 func mustBuildHitsRangeMetricMatrix(t testing.TB, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
 	t.Helper()
-	body, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window)
+	body, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window, DefaultBackendMaxBufferedResponseBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestBuildHitsRangeMetricMatrix_ResponseByteLimit(t *testing.T) {
 		key := strconv.Itoa(i)
 		series[key] = manualSeriesSamples{Metric: map[string]string{"pod": key}, Samples: samples}
 	}
-	if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, time.Second); err == nil || !strings.Contains(err.Error(), "manual metric response exceeds") {
+	if _, err := buildHitsRangeMetricMatrix("count_over_time", series, start, end, step, time.Second, DefaultBackendMaxBufferedResponseBytes); err == nil || !strings.Contains(err.Error(), "manual metric response exceeds") {
 		t.Fatalf("expected the response byte limit error, got %v", err)
 	}
 }

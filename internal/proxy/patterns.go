@@ -66,7 +66,7 @@ func (d patternFetchDiagnostics) likelyLowCoverage() bool {
 	return false
 }
 
-func patternSecondPassLimit(baseLimit, sourceLimit int) int {
+func patternSecondPassLimit(baseLimit, sourceLimit, maxRows int) int {
 	if baseLimit <= 0 {
 		return 0
 	}
@@ -74,8 +74,8 @@ func patternSecondPassLimit(baseLimit, sourceLimit int) int {
 	if sourceLimit > 0 && sourceLimit > baseLimit && boosted > sourceLimit {
 		boosted = sourceLimit
 	}
-	if boosted > maxPatternSecondPassLineLimit {
-		boosted = maxPatternSecondPassLineLimit
+	if boosted > maxRows {
+		boosted = maxRows
 	}
 	if boosted <= baseLimit {
 		return 0
@@ -280,7 +280,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		}
 		return entries, true
 	}
-	params.Set("limit", strconv.Itoa(patternBackendQueryLimit(startParam, endParam, stepParam, patternLimit)))
+	params.Set("limit", strconv.Itoa(patternBackendQueryLimit(startParam, endParam, stepParam, patternLimit, p.limits().PatternsBackendRows, p.limits().ZeroFillBuckets)))
 
 	// Use /query with stratified windowing to preserve full selected-range buckets.
 	entries, _ := fetchPatterns("/select/logsql/query")
@@ -372,7 +372,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 		perWindowLimit = 1
 	}
 	if maxSecondPassWindows <= 0 {
-		maxSecondPassWindows = maxPatternSecondPassWindows
+		maxSecondPassWindows = DefaultPatternsSecondPassMaxWindows
 	}
 	effectiveLimit := perWindowLimit
 	if sourceLimit > 0 && sourceLimit < effectiveLimit {
@@ -491,7 +491,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 			cappedResults = append(cappedResults, result)
 		}
 	}
-	if boostedLimit := patternSecondPassLimit(effectiveLimit, sourceLimit); boostedLimit > 0 && len(cappedResults) > 0 {
+	if boostedLimit := patternSecondPassLimit(effectiveLimit, sourceLimit, p.limits().PatternsSecondPassRows); boostedLimit > 0 && len(cappedResults) > 0 {
 		rerunCount := min(len(cappedResults), maxSecondPassWindows)
 		diag.secondPassWindows += rerunCount
 		for i := 0; i < rerunCount; i++ {
@@ -660,7 +660,7 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 	minWindowSourceLimit := 200
 	maxWindowSourceLimit := 1_000
 	maxPatternWindowSamples := 96
-	secondPassCap := maxPatternSecondPassWindows
+	secondPassCap := DefaultPatternsSecondPassMaxWindows
 	shortDenseSpanThreshold := 6 * time.Hour
 	// The aligned splitter adds an extra boundary window, so keep the internal
 	// cap at 20 to hold the effective backend fanout to about 21 windows while

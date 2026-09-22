@@ -1,0 +1,22 @@
+id: semantics/client-cancellation-propagates
+title: A client disconnect cancels the VictoriaLogs request it started
+proves:
+  - backend-deadlines-and-cancellation
+consumer: any
+why: |
+  Grafana cancels in-flight queries whenever a user changes the time range or
+  leaves the panel, which is exactly what happens while someone is hunting
+  through hours and days of logs. If those queries keep running in the backend,
+  the user's own next query queues behind work nobody is waiting for. Cancelling
+  must also not be recorded as a backend failure or open the circuit breaker.
+request:
+  scope: internal
+  entry: vlGetInner, coldPost
+  setup: |
+    Start a query against a backend that reads the request body and blocks, then
+    close the client connection.
+compare:
+  mode: exact
+  expect: |
+    The backend's request context is cancelled, no upstream failure is recorded
+    for it, and the circuit breaker still allows requests afterwards.

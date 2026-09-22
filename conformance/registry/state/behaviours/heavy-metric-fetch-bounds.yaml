@@ -1,0 +1,16 @@
+id: heavy-metric-fetch-bounds
+state: partial
+reason: |
+  Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling
+  single grid, the per-grid row limit and the raw-row pre-check are unit tested
+  against a VictoriaLogs stats-pipe emulator and compared with brute-force
+  windows, and the exact per-step topk is compared with Loki in
+  test/e2e-compat/heavy_query_protection_test.go.
+  Still partial: ungrouped metrics and metrics grouped by _stream (for example
+  rate({app="x"}[5m])) are not covered by the recurrence. They take the bounded
+  raw evaluator or a grid no finer than Loki's 11,000 points, which is safe but
+  not the cheap path.
+owner_decision: |
+  Never request a grid finer than Loki's resolution limit; uncovered shapes fall
+  back to the bounded evaluator rather than to a finer grid.
+waiver: null

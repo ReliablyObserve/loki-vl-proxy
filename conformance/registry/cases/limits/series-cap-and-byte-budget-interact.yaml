@@ -1,0 +1,34 @@
+id: limits/series-cap-and-byte-budget-interact
+title: Raising the series cap alone moves the failure to the byte budget
+proves:
+  - operator-configurable-limits
+  - series-limits-and-partial-results
+consumer: operator
+why: |
+  -max-stats-query-series decides how many series a result may carry;
+  -backend-max-buffered-response-bytes decides whether the encoded result fits.
+  An operator who raises only the first one turns Loki's series-limit error into
+  `manual metric response exceeds N bytes`, which is a worse error for the same
+  cause, so the sizing guidance has to state the pair and the arithmetic, and
+  the byte error has to name its own flag.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (rate({service_name="api-gateway"}[5m]))'
+    start: now-7d
+    end: now
+    step: "604"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    -max-stats-query-series=1000000 against data with about 240,000 distinct pods in
+    the window.
+compare:
+  mode: exact
+  fields: [status]
+  expect: |
+    The error names -backend-max-buffered-response-bytes, and the limits
+    registry's sizing entries for both flags state the interaction and the
+    series x steps x 40 bytes estimate. At the 500 default the same query
+    answers 491 series.

@@ -1,0 +1,29 @@
+id: limits/label-values-not-truncated-by-default
+title: Without a client limit, label values come back in full, as Loki returns them
+proves:
+  - operator-configurable-limits
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Loki returns every value of a label for the window; it has no hidden cap. The
+  proxy applied its hot-set limit of 200 even when the client sent no `limit`,
+  so a label with more than 200 values silently lost the rest: the Grafana label
+  picker showed a truncated list and an ad-hoc query for a missing value looked
+  like missing data. A default may bound what a client asked for, never what
+  Loki would have returned unasked.
+request:
+  method: GET
+  path: /loki/api/v1/label/service_name/values
+  params:
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: Grafana/13.2.1
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    Every value Loki returns for the same window, in the same order. The
+    hot-set window applies only when the client sends `limit`, `query` search
+    text or an offset - the browse paths it was written for.

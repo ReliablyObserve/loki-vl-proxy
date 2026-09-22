@@ -399,7 +399,7 @@ func TestCompatHelpers_TimeParsingAndDurationFormatting(t *testing.T) {
 		t.Fatalf("expected Grafana token replacement, got %q", got)
 	}
 
-	if bucketRange, ok := parseRequestedBucketRange("1700000000", "1700000060", "30s"); !ok {
+	if bucketRange, ok := parseRequestedBucketRange("1700000000", "1700000060", "30s", DefaultMaxZeroFillBuckets); !ok {
 		t.Fatal("expected requested bucket range to parse")
 	} else {
 		if bucketRange.count != 3 {

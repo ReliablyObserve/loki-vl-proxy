@@ -30,7 +30,13 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Configuration',
       collapsed: true,
-      items: ['configuration', 'tuning'],
+      items: [
+        'configuration',
+        'tuning',
+        'reference/configuration-reference',
+        'reference/limits-registry',
+        'reference/errors-and-alerts',
+      ],
     },
 
     // ── Cost & Comparison ─────────────────────────────────────────────

@@ -206,6 +206,19 @@ type proxyRuntimeConfig struct {
 	maxStatsQuerySeries                 int
 	statsQueryRangeConcurrency          int
 	backendMaxConcurrentHeavyQueries    int
+	backendMaxBufferedResponseBytes     int
+	binaryMetricMaxOperandBytes         int
+	binaryMetricMaxArrays               int
+	multiTenantMaxFanout                int
+	multiTenantMaxMergedResponseBytes   int
+	maxEntriesLimitPerQuery             int
+	detectedFieldsMaxScanLines          int
+	patternsMaxBackendRows              int
+	patternsSecondPassMaxRows           int
+	patternsSecondPassMaxWindows        int
+	drilldownMaxStatsBuckets            int
+	maxZeroFillBuckets                  int
+	maxQueryLengthBytes                 int
 	backendHeavyQueryQueueWait          time.Duration
 	backendHeavyQueryMinRange           time.Duration
 	drilldownBurstWindowMs              int
@@ -488,6 +501,19 @@ func run(
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend. The remaining budget is also passed to VictoriaLogs as its per-query timeout argument, so VictoriaLogs stops work the proxy has given up on")
 	backendMaxConcurrentHeavyQueries := fs.Int("backend-max-concurrent-heavy-queries", proxy.DefaultBackendMaxConcurrentHeavyQueries, "Maximum concurrent heavy VictoriaLogs calls per replica: raw-row metric fetches (any /select/logsql/query bound above 10000 rows, which includes a log query whose limit is higher), and stats or hits calls spanning at least -backend-heavy-query-min-range or finer than 11000 buckets. Further heavy calls queue for -backend-heavy-query-queue-wait, then fail with 429 \"too many outstanding requests\". VictoriaLogs lets each stats pipe use up to 40% of its allowed memory, so the default of 2 keeps concurrent stats state within its memory budget. 0 disables the limiter")
 	backendHeavyQueryQueueWait := fs.Duration("backend-heavy-query-queue-wait", proxy.DefaultBackendHeavyQueryQueueWait, "How long a heavy VictoriaLogs call waits for a -backend-max-concurrent-heavy-queries slot before the request fails with 429. 0 rejects immediately when all slots are busy")
+	backendMaxBufferedResponseBytes := fs.Int("backend-max-buffered-response-bytes", proxy.DefaultBackendMaxBufferedResponseBytes, "Maximum bytes the proxy reads from one VictoriaLogs response it has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns HTTP 502 naming this flag instead of a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response. 0 uses the built-in default of 64 MiB")
+	binaryMetricMaxOperandBytes := fs.Int("binary-metric-max-operand-bytes", proxy.DefaultBinaryMetricMaxOperandBytes, "Maximum bytes of operand responses one binary metric expression may capture. 0 uses the built-in default of 256 MiB")
+	binaryMetricMaxArrays := fs.Int("binary-metric-max-arrays", proxy.DefaultBinaryMetricMaxArrays, "Maximum JSON arrays one binary metric expression may allocate while joining operands. 0 uses the built-in default of 2000000")
+	multiTenantMaxFanout := fs.Int("multi-tenant-max-fanout", proxy.DefaultMultiTenantMaxFanout, "Maximum tenants one multi-tenant request may fan out to; more returns HTTP 400 naming this flag. 0 uses the built-in default of 64")
+	multiTenantMaxMergedResponseBytes := fs.Int("multi-tenant-max-merged-response-bytes", proxy.DefaultMultiTenantMaxMergedResponseBytes, "Maximum bytes of a merged multi-tenant response; more returns HTTP 413 naming this flag. 0 uses the built-in default of 32 MiB")
+	maxEntriesLimitPerQuery := fs.Int("max-entries-limit-per-query", proxy.DefaultMaxEntriesLimitPerQuery, "Maximum log lines or label values one request may ask for; a larger client limit is capped to this value (Loki's max_entries_limit_per_query, which Loki rejects instead of capping). 0 uses the built-in default of 10000")
+	detectedFieldsMaxScanLines := fs.Int("detected-fields-max-scan-lines", proxy.DefaultDetectedFieldsMaxScanLines, "Maximum log lines the detected_fields / detected_field values scan reads per request. 0 uses the built-in default of 2000")
+	patternsMaxBackendRows := fs.Int("patterns-max-backend-rows", proxy.DefaultPatternsMaxBackendRows, "Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000")
+	patternsSecondPassMaxRows := fs.Int("patterns-second-pass-max-rows", proxy.DefaultPatternsSecondPassMaxRows, "Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000")
+	patternsSecondPassMaxWindows := fs.Int("patterns-second-pass-max-windows", proxy.DefaultPatternsSecondPassMaxWindows, "Maximum windows the /patterns second pass re-reads. 0 uses the built-in default of 8")
+	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Maximum time buckets a Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit. 0 uses the built-in default of 120")
+	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
+	maxQueryLengthBytes := fs.Int("max-query-length-bytes", proxy.DefaultMaxQueryLengthBytes, "Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
@@ -890,6 +916,19 @@ func run(
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
 			backendMaxConcurrentHeavyQueries:    *backendMaxConcurrentHeavyQueries,
+			backendMaxBufferedResponseBytes:     *backendMaxBufferedResponseBytes,
+			binaryMetricMaxOperandBytes:         *binaryMetricMaxOperandBytes,
+			binaryMetricMaxArrays:               *binaryMetricMaxArrays,
+			multiTenantMaxFanout:                *multiTenantMaxFanout,
+			multiTenantMaxMergedResponseBytes:   *multiTenantMaxMergedResponseBytes,
+			maxEntriesLimitPerQuery:             *maxEntriesLimitPerQuery,
+			detectedFieldsMaxScanLines:          *detectedFieldsMaxScanLines,
+			patternsMaxBackendRows:              *patternsMaxBackendRows,
+			patternsSecondPassMaxRows:           *patternsSecondPassMaxRows,
+			patternsSecondPassMaxWindows:        *patternsSecondPassMaxWindows,
+			drilldownMaxStatsBuckets:            *drilldownMaxStatsBuckets,
+			maxZeroFillBuckets:                  *maxZeroFillBuckets,
+			maxQueryLengthBytes:                 *maxQueryLengthBytes,
 			backendHeavyQueryQueueWait:          *backendHeavyQueryQueueWait,
 			backendHeavyQueryMinRange:           *backendHeavyQueryMinRange,
 			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
@@ -1902,6 +1941,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err := validateHeavyQueryLimits(cfg); err != nil {
 		return proxy.Config{}, err
 	}
+	if err := validateExecutionLimits(cfg); err != nil {
+		return proxy.Config{}, err
+	}
 
 	var peerCache *cache.PeerCache
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
@@ -2051,6 +2093,21 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
 		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
 		BackendMaxConcurrentHeavyQueries: cfg.backendMaxConcurrentHeavyQueries,
+		ExecutionLimits: proxy.ExecutionLimitsConfig{
+			BackendMaxBufferedResponseBytes:   cfg.backendMaxBufferedResponseBytes,
+			BinaryMetricMaxOperandBytes:       cfg.binaryMetricMaxOperandBytes,
+			BinaryMetricMaxArrays:             cfg.binaryMetricMaxArrays,
+			MultiTenantMaxFanout:              cfg.multiTenantMaxFanout,
+			MultiTenantMaxMergedResponseBytes: cfg.multiTenantMaxMergedResponseBytes,
+			MaxEntriesLimitPerQuery:           cfg.maxEntriesLimitPerQuery,
+			DetectedFieldsMaxScanLines:        cfg.detectedFieldsMaxScanLines,
+			PatternsMaxBackendRows:            cfg.patternsMaxBackendRows,
+			PatternsSecondPassMaxRows:         cfg.patternsSecondPassMaxRows,
+			PatternsSecondPassMaxWindows:      cfg.patternsSecondPassMaxWindows,
+			DrilldownMaxStatsBuckets:          cfg.drilldownMaxStatsBuckets,
+			MaxZeroFillBuckets:                cfg.maxZeroFillBuckets,
+			MaxQueryLengthBytes:               cfg.maxQueryLengthBytes,
+		},
 		BackendHeavyQueryQueueWait:       cfg.backendHeavyQueryQueueWait,
 		BackendHeavyQueryMinRange:        cfg.backendHeavyQueryMinRange,
 		DrilldownBurstWindowMs:           cfg.drilldownBurstWindowMs,
@@ -2062,6 +2119,35 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
 		DrilldownScanTimeout:             cfg.drilldownScanTimeout,
 	}, nil
+}
+
+// validateExecutionLimits rejects negative limits; 0 selects the built-in
+// default of each flag, and any positive value is accepted so operators can
+// raise a limit as well as lower it.
+func validateExecutionLimits(cfg proxyRuntimeConfig) error {
+	for _, limit := range []struct {
+		flag  string
+		value int
+	}{
+		{"-backend-max-buffered-response-bytes", cfg.backendMaxBufferedResponseBytes},
+		{"-binary-metric-max-operand-bytes", cfg.binaryMetricMaxOperandBytes},
+		{"-binary-metric-max-arrays", cfg.binaryMetricMaxArrays},
+		{"-multi-tenant-max-fanout", cfg.multiTenantMaxFanout},
+		{"-multi-tenant-max-merged-response-bytes", cfg.multiTenantMaxMergedResponseBytes},
+		{"-max-entries-limit-per-query", cfg.maxEntriesLimitPerQuery},
+		{"-detected-fields-max-scan-lines", cfg.detectedFieldsMaxScanLines},
+		{"-patterns-max-backend-rows", cfg.patternsMaxBackendRows},
+		{"-patterns-second-pass-max-rows", cfg.patternsSecondPassMaxRows},
+		{"-patterns-second-pass-max-windows", cfg.patternsSecondPassMaxWindows},
+		{"-drilldown-max-stats-buckets", cfg.drilldownMaxStatsBuckets},
+		{"-max-zero-fill-buckets", cfg.maxZeroFillBuckets},
+		{"-max-query-length-bytes", cfg.maxQueryLengthBytes},
+	} {
+		if limit.value < 0 {
+			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
+		}
+	}
+	return nil
 }
 
 func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {

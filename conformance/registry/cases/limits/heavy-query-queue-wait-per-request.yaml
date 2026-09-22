@@ -1,0 +1,21 @@
+id: limits/heavy-query-queue-wait-per-request
+title: One request waits -backend-heavy-query-queue-wait in total, not per backend call
+proves:
+  - backend-admission-and-heavy-query-queueing
+consumer: any
+why: |
+  A single metric query makes several heavy VictoriaLogs calls (a seed bucket
+  and two bucket grids, or a split range). If each call could wait the full
+  queue budget, a 20s setting would hold a client for a minute and the timeout
+  an operator configured would not be the timeout they get.
+request:
+  scope: internal
+  entry: (*Proxy).admitBackendRequest
+  setup: |
+    All slots held. One request performs three heavy calls in sequence with
+    -backend-heavy-query-queue-wait=200ms.
+compare:
+  mode: numeric
+  expect: |
+    Total time spent waiting across the three calls stays within one queue-wait
+    budget, and the request fails once with the 429 rather than three times.

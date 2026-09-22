@@ -1,0 +1,40 @@
+id: limits/top-n-ranking-not-silent
+title: topk and bottomk rank every series per step, not the 500 busiest overall
+proves:
+  - series-limits-and-partial-results
+  - heavy-metric-fetch-bounds
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates topk per step: at each timestamp it selects the k largest
+  samples of the full series set. Truncating the inner metric to
+  -max-stats-query-series busiest series before ranking drops a series that led
+  a few steps but had a small total over the range, and the user never learns
+  that the answer is wrong - the chart simply shows the wrong pods. Ranking has
+  to happen over every series, which means it cannot be done by buffering every
+  series' full time line either.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(5, sum by (pod) (count_over_time({service_name="api-gateway"}[5m])))'
+    start: now-24h
+    end: now
+    step: "86.4"
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: Grafana/13.2.1
+  precondition: |
+    More distinct pods than -max-stats-query-series, with a pod that peaks in a
+    few steps only.
+compare:
+  mode: exact
+  fields: [status, data.resultType, data.result[].metric]
+  expect: |
+    The series set equals Loki's for the same query, including the series that
+    only leads in a few steps, and memory stays bounded: one compact record per
+    returned stats row and a per-step heap of size k, never a dense array per
+    series.
+loki_parity: |
+  Loki's vector aggregation evaluates topk/bottomk at every step over the full
+  inner vector.

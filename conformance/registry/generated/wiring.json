@@ -1,23 +1,156 @@
 {
   "implementation_sites_missing": [],
   "item_to_tests": {
+    "backend-admission-and-heavy-query-queueing": [
+      "internal/proxy/backend_heavy_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "backend-deadlines-and-cancellation": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
     "drilldown/index_volume/single-sample-returns-vector": [
       "internal/proxy/volume_test.go"
+    ],
+    "heavy-metric-fetch-bounds": [
+      "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/sliding_window_stats_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "limits/drilldown-stats-rejection-keeps-429": [
+      "internal/proxy/backend_heavy_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "limits/every-cap-is-a-flag": [
+      "cmd/proxy/main_test.go",
+      "internal/config/registry_test.go"
+    ],
+    "limits/heavy-query-queue-429": [
+      "internal/proxy/backend_heavy_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "limits/heavy-query-queue-fairness": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "limits/heavy-query-queue-wait-per-request": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "limits/label-values-not-truncated-by-default": [
+      "internal/proxy/label_surface_test.go"
+    ],
+    "limits/metadata-not-queued": [
+      "internal/proxy/backend_heavy_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "limits/query-length-limit-is-configurable": [
+      "internal/proxy/metadata_query_validation_test.go"
+    ],
+    "limits/queue-rejection-not-a-backend-failure": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "limits/raw-metric-row-precheck": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "limits/stats-row-limit-per-grid": [
+      "internal/proxy/sliding_window_stats_test.go"
+    ],
+    "limits/top-n-ranking-not-silent": [
+      "internal/proxy/sliding_window_stats_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "loki_api_v1_index_volume": [
       "internal/proxy/volume_test.go",
       "test/e2e-compat/drilldown_volume_bytes_test.go"
     ],
+    "loki_api_v1_label_name_values": [
+      "internal/proxy/label_surface_test.go"
+    ],
+    "loki_api_v1_labels": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
     "loki_api_v1_query_range": [
-      "internal/translator/regexp_escaping_test.go"
+      "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/metadata_query_validation_test.go",
+      "internal/translator/regexp_escaping_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "operator-configurable-limits": [
+      "cmd/proxy/main_test.go",
+      "internal/config/registry_test.go",
+      "internal/proxy/label_surface_test.go",
+      "internal/proxy/metadata_query_validation_test.go"
+    ],
+    "semantics/backend-timeout-argument": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "semantics/client-cancellation-propagates": [
+      "internal/proxy/backend_heavy_test.go"
+    ],
+    "semantics/sliding-window-recurrence-exact": [
+      "internal/proxy/sliding_window_stats_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
+    ],
+    "semantics/tumbling-window-single-grid": [
+      "internal/proxy/sliding_window_stats_test.go"
+    ],
+    "series-limits-and-partial-results": [
+      "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/sliding_window_stats_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "status-400": [
       "internal/proxy/volume_test.go"
+    ],
+    "window-bounds-and-step-alignment": [
+      "internal/proxy/sliding_window_stats_test.go"
     ]
   },
-  "registry_items": 137,
+  "registry_items": 158,
   "routes_without_registry_item": [],
   "test_to_items": {
+    "cmd/proxy/main_test.go": [
+      "limits/every-cap-is-a-flag",
+      "operator-configurable-limits"
+    ],
+    "internal/config/registry_test.go": [
+      "limits/every-cap-is-a-flag",
+      "operator-configurable-limits"
+    ],
+    "internal/proxy/backend_heavy_test.go": [
+      "backend-admission-and-heavy-query-queueing",
+      "backend-deadlines-and-cancellation",
+      "heavy-metric-fetch-bounds",
+      "limits/drilldown-stats-rejection-keeps-429",
+      "limits/heavy-query-queue-429",
+      "limits/heavy-query-queue-fairness",
+      "limits/heavy-query-queue-wait-per-request",
+      "limits/metadata-not-queued",
+      "limits/queue-rejection-not-a-backend-failure",
+      "limits/raw-metric-row-precheck",
+      "loki_api_v1_labels",
+      "loki_api_v1_query_range",
+      "semantics/backend-timeout-argument",
+      "semantics/client-cancellation-propagates",
+      "series-limits-and-partial-results"
+    ],
+    "internal/proxy/label_surface_test.go": [
+      "limits/label-values-not-truncated-by-default",
+      "loki_api_v1_label_name_values",
+      "operator-configurable-limits"
+    ],
+    "internal/proxy/metadata_query_validation_test.go": [
+      "limits/query-length-limit-is-configurable",
+      "loki_api_v1_query_range",
+      "operator-configurable-limits"
+    ],
+    "internal/proxy/sliding_window_stats_test.go": [
+      "heavy-metric-fetch-bounds",
+      "limits/stats-row-limit-per-grid",
+      "limits/top-n-ranking-not-silent",
+      "semantics/sliding-window-recurrence-exact",
+      "semantics/tumbling-window-single-grid",
+      "series-limits-and-partial-results",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/volume_test.go": [
       "drilldown/index_volume/single-sample-returns-vector",
       "loki_api_v1_index_volume",
@@ -28,9 +161,20 @@
     ],
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
+    ],
+    "test/e2e-compat/heavy_query_protection_test.go": [
+      "backend-admission-and-heavy-query-queueing",
+      "heavy-metric-fetch-bounds",
+      "limits/drilldown-stats-rejection-keeps-429",
+      "limits/heavy-query-queue-429",
+      "limits/metadata-not-queued",
+      "limits/top-n-ranking-not-silent",
+      "loki_api_v1_query_range",
+      "semantics/sliding-window-recurrence-exact",
+      "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 3,
+  "tests_with_markers": 10,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -44,6 +188,7 @@
     "api_prom_tail",
     "data-density-and-chart-quality",
     "data-probing-and-freshness",
+    "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_delete",
     "loki_api_v1_detected_field_name_values",
@@ -55,8 +200,6 @@
     "loki_api_v1_index_stats",
     "loki_api_v1_index_volume_range",
     "loki_api_v1_label",
-    "loki_api_v1_label_name_values",
-    "loki_api_v1_labels",
     "loki_api_v1_patterns",
     "loki_api_v1_push",
     "loki_api_v1_query",
@@ -70,11 +213,9 @@
     "parser-error-and-label-collision",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
-    "series-limits-and-partial-results",
     "service-name-derivation",
     "severity-detected-level-derivation",
-    "severity-exposure-surfaces",
-    "window-bounds-and-step-alignment"
+    "severity-exposure-surfaces"
   ],
-  "wired_items": 4
+  "wired_items": 28
 }

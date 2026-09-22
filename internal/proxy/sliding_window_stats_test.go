@@ -240,6 +240,7 @@ func decodeMatrix(t *testing.T, body []byte) map[string][][2]string {
 	return out
 }
 
+// conformance: heavy-metric-fetch-bounds, window-bounds-and-step-alignment, semantics/sliding-window-recurrence-exact
 func TestSlidingWindowStats_LongRangeIsExactWithStepSizedBuckets(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	cases := []struct {
@@ -302,6 +303,7 @@ func TestSlidingWindowStats_LongRangeIsExactWithStepSizedBuckets(t *testing.T) {
 	}
 }
 
+// conformance: heavy-metric-fetch-bounds, series-limits-and-partial-results, limits/top-n-ranking-not-silent
 func TestSlidingWindowStats_TopKRanksExactWindowsWithoutRawFetch(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	for _, rng := range []time.Duration{24 * time.Hour, 7 * 24 * time.Hour} {
@@ -355,6 +357,7 @@ func head(points [][2]string) [][2]string {
 
 // topk ranks every series per step: a series whose total is too small to
 // survive -max-stats-query-series still wins the step where it spikes.
+// conformance: series-limits-and-partial-results, limits/top-n-ranking-not-silent
 func TestSlidingWindowStats_TopKRanksBeyondSeriesCap(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	rng := 24 * time.Hour
@@ -430,6 +433,7 @@ func TestSlidingWindowStats_TopKRanksBeyondSeriesCap(t *testing.T) {
 
 // A high-cardinality grouping stops at -manual-range-metric-row-limit stats
 // rows with an error naming the flag, before the proxy keeps more rows.
+// conformance: heavy-metric-fetch-bounds, limits/stats-row-limit-per-grid
 func TestSlidingWindowStats_RowLimitNamesFlag(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	rng := 24 * time.Hour
@@ -462,6 +466,7 @@ func TestSlidingWindowStats_RowLimitNamesFlag(t *testing.T) {
 
 // Tumbling windows (range == step) need a single grid: its bucket already is
 // the window, so ranking them costs one stats call, not three.
+// conformance: heavy-metric-fetch-bounds, window-bounds-and-step-alignment, semantics/tumbling-window-single-grid
 func TestSlidingWindowStats_TumblingTopKUsesOneGrid(t *testing.T) {
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	rng := 20 * time.Hour // 72s steps: the range window is the step exactly

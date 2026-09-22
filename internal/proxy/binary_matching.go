@@ -222,7 +222,7 @@ func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op
 			return nil, err
 		}
 	}
-	return encodeBinarySeriesContext(ctx, series, resultType, maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, series, resultType, executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 func matchBinaryScalarContext(ctx context.Context, body []byte, scalar float64, scalarLeft bool, op, resultType string, returnBool bool) ([]byte, error) {
@@ -274,7 +274,7 @@ func matchBinaryScalarContext(ctx context.Context, body []byte, scalar float64, 
 			s.points = append(s.points, []any{ts, strconv.FormatFloat(value, 'f', -1, 64)})
 		}
 	}
-	return encodeBinarySeriesContext(ctx, series, resultType, maxBufferedBackendBodyBytes)
+	return encodeBinarySeriesContext(ctx, series, resultType, executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
 func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op string, vm *translator.VectorMatchInfo, returnBool bool, emit func(binarySample) error) error {

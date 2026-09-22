@@ -60,7 +60,7 @@ func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Val
 	if limit == "" {
 		limit = "1000"
 	}
-	params.Set("limit", sanitizeLimit(limit))
+	params.Set("limit", sanitizeLimit(limit, p.limits().EntriesPerQuery))
 	return params
 }
 
@@ -90,7 +90,7 @@ func (p *Proxy) buildColdQueryParams(r *http.Request, logsqlQuery string) url.Va
 	if limit == "" {
 		limit = "1000"
 	}
-	params.Set("limit", sanitizeLimit(limit))
+	params.Set("limit", sanitizeLimit(limit, p.limits().EntriesPerQuery))
 	return params
 }
 
@@ -147,8 +147,8 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		if chunkLimit <= 0 {
 			break
 		}
-		if chunkLimit > maxLimitValue {
-			chunkLimit = maxLimitValue
+		if chunkLimit > p.limits().EntriesPerQuery {
+			chunkLimit = p.limits().EntriesPerQuery
 		}
 
 		chunkParams := cloneURLValues(baseParams)
@@ -267,7 +267,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		defer wg.Done()
 		hotResp, hotErr = p.vlPost(r.Context(), "/select/logsql/query", hotParams)
 		if hotErr == nil {
-			hotErr = bufferMergeResponse(hotResp, maxBufferedBackendBodyBytes)
+			hotErr = bufferMergeResponse(hotResp, int64(p.limits().BufferedBackendBodyBytes))
 		}
 	}()
 	go func() {
@@ -301,7 +301,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		coldResp, coldErr = p.coldPost(r.Context(), "/select/logsql/query",
 			p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs))
 		if coldErr == nil {
-			coldErr = bufferMergeResponse(coldResp, maxBufferedBackendBodyBytes)
+			coldErr = bufferMergeResponse(coldResp, int64(p.limits().BufferedBackendBodyBytes))
 		}
 	}()
 	wg.Wait()

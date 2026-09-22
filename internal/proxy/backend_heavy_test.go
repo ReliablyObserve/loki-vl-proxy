@@ -18,6 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
+// conformance: backend-admission-and-heavy-query-queueing, limits/heavy-query-queue-429
 func TestHeavyQueryLimiter_SaturatedQueueRejectsWithLokiMessage(t *testing.T) {
 	l := newHeavyQueryLimiter(1, 50*time.Millisecond)
 	release, err := l.acquire(context.Background(), "t")
@@ -50,6 +51,7 @@ func TestHeavyQueryLimiter_SaturatedQueueRejectsWithLokiMessage(t *testing.T) {
 	}
 }
 
+// conformance: backend-admission-and-heavy-query-queueing, limits/heavy-query-queue-429
 func TestHeavyQueryLimiter_ZeroWaitRejectsImmediately(t *testing.T) {
 	l := newHeavyQueryLimiter(1, 0)
 	if _, err := l.acquire(context.Background(), "t"); err != nil {
@@ -60,6 +62,7 @@ func TestHeavyQueryLimiter_ZeroWaitRejectsImmediately(t *testing.T) {
 	}
 }
 
+// conformance: backend-admission-and-heavy-query-queueing
 func TestHeavyQueryLimiter_QueuedCallGetsReleasedSlot(t *testing.T) {
 	l := newHeavyQueryLimiter(1, 5*time.Second)
 	release, _ := l.acquire(context.Background(), "t")
@@ -83,6 +86,7 @@ func TestHeavyQueryLimiter_QueuedCallGetsReleasedSlot(t *testing.T) {
 	}
 }
 
+// conformance: backend-admission-and-heavy-query-queueing, limits/heavy-query-queue-fairness
 func TestHeavyQueryLimiter_ReleasedSlotGoesToLeastServedTenant(t *testing.T) {
 	l := newHeavyQueryLimiter(2, 5*time.Second)
 	a1, _ := l.acquire(context.Background(), "a")
@@ -117,6 +121,7 @@ func TestHeavyQueryLimiter_ReleasedSlotGoesToLeastServedTenant(t *testing.T) {
 	}
 }
 
+// conformance: backend-admission-and-heavy-query-queueing, semantics/client-cancellation-propagates
 func TestHeavyQueryLimiter_CanceledWaiterLeavesQueue(t *testing.T) {
 	l := newHeavyQueryLimiter(1, 5*time.Second)
 	release, _ := l.acquire(context.Background(), "t")
@@ -149,6 +154,7 @@ func waitForQueued(t *testing.T, l *heavyQueryLimiter, n int) {
 	t.Fatalf("expected %d queued waiters", n)
 }
 
+// conformance: backend-admission-and-heavy-query-queueing, limits/metadata-not-queued
 func TestIsHeavyBackendRequest(t *testing.T) {
 	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 	ns := func(d time.Duration) string { return strconv.FormatInt(now.Add(-d).UnixNano(), 10) }
@@ -185,6 +191,7 @@ func TestIsHeavyBackendRequest(t *testing.T) {
 // A heavy call that finds every slot busy past the queue wait answers the
 // client with Loki's queue-full status and message, while metadata requests
 // keep flowing.
+// conformance: backend-admission-and-heavy-query-queueing, limits/heavy-query-queue-429, limits/metadata-not-queued, loki_api_v1_query_range, loki_api_v1_labels
 func TestHeavyQueryAdmission_SaturatedReturns429AndLabelsStillServe(t *testing.T) {
 	unblock := make(chan struct{})
 	var statsCalls atomic.Int32
@@ -274,6 +281,7 @@ func TestHeavyQueryAdmission_SaturatedReturns429AndLabelsStillServe(t *testing.T
 	wg.Wait()
 }
 
+// conformance: backend-deadlines-and-cancellation, semantics/backend-timeout-argument
 func TestBackendRequests_PassRemainingBudgetAsVLTimeout(t *testing.T) {
 	var got atomic.Value
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +319,7 @@ func TestBackendRequests_PassRemainingBudgetAsVLTimeout(t *testing.T) {
 	}
 }
 
+// conformance: backend-deadlines-and-cancellation, semantics/client-cancellation-propagates
 func TestBackendRequests_ClientCancellationCancelsVLRequest(t *testing.T) {
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
@@ -365,6 +374,7 @@ func TestBackendRequests_ClientCancellationCancelsVLRequest(t *testing.T) {
 // A long-range raw metric fetch whose selector already matches more lines than
 // -manual-range-metric-row-limit is rejected from a one-row count, before any
 // log line leaves VictoriaLogs.
+// conformance: heavy-metric-fetch-bounds, limits/raw-metric-row-precheck
 func TestRawMetricRowPrecheck_RejectsBeforeFetchingRows(t *testing.T) {
 	var rawFetches, counts atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -407,6 +417,7 @@ func TestRawMetricRowPrecheck_RejectsBeforeFetchingRows(t *testing.T) {
 // A full admission queue is proxy backpressure: it must not open the circuit
 // breaker, because that would answer every later request, labels included, with
 // 503 while VictoriaLogs is healthy.
+// conformance: backend-admission-and-heavy-query-queueing, limits/queue-rejection-not-a-backend-failure
 func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
 	err := &heavyQueryQueueFullError{maxConcurrent: 2, queueWait: time.Second}
 	if shouldRecordBreakerFailure(context.Background(), err) {
@@ -472,6 +483,7 @@ func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
 
 // Grafana-sourced stats queries must surface the queue rejection; Loki's
 // partial-result carve-out covers the series limit only.
+// conformance: backend-admission-and-heavy-query-queueing, series-limits-and-partial-results, limits/drilldown-stats-rejection-keeps-429
 func TestHeavyQueryAdmission_GrafanaStatsFailureKeeps429(t *testing.T) {
 	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Millisecond, 10), LogLevel: "error"})
 	if err != nil {
@@ -490,6 +502,7 @@ func TestHeavyQueryAdmission_GrafanaStatsFailureKeeps429(t *testing.T) {
 
 // Every heavy call of one request shares a single queue-wait budget, so a
 // request that makes three of them cannot wait three times the configured wait.
+// conformance: backend-admission-and-heavy-query-queueing, limits/heavy-query-queue-wait-per-request
 func TestHeavyQueryAdmission_QueueWaitIsPerRequest(t *testing.T) {
 	p, err := New(Config{
 		BackendURL:                       "http://unused",

@@ -38,7 +38,7 @@ func TestHardening_SanitizeLimit(t *testing.T) {
 		{"10000", "10000"},
 	}
 	for _, tc := range tests {
-		got := sanitizeLimit(tc.input)
+		got := sanitizeLimit(tc.input, DefaultMaxEntriesLimitPerQuery)
 		if got != tc.expected {
 			t.Errorf("sanitizeLimit(%q) = %q, want %q", tc.input, got, tc.expected)
 		}

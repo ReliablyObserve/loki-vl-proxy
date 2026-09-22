@@ -2459,3 +2459,54 @@ func TestBuildRuntime_AuxListenerTopology(t *testing.T) {
 		})
 	}
 }
+
+// conformance: operator-configurable-limits, limits/every-cap-is-a-flag
+func TestValidateExecutionLimits_RejectsNegativeAndRaisesFreely(t *testing.T) {
+	if err := validateExecutionLimits(proxyRuntimeConfig{}); err != nil {
+		t.Fatalf("zero must select the built-in defaults: %v", err)
+	}
+	raised := proxyRuntimeConfig{
+		backendMaxBufferedResponseBytes:   1 << 30,
+		binaryMetricMaxOperandBytes:       1 << 31,
+		binaryMetricMaxArrays:             50_000_000,
+		multiTenantMaxFanout:              4096,
+		multiTenantMaxMergedResponseBytes: 1 << 30,
+		maxEntriesLimitPerQuery:           1_000_000,
+		detectedFieldsMaxScanLines:        500_000,
+		patternsMaxBackendRows:            5_000_000,
+		patternsSecondPassMaxRows:         1_000_000,
+		patternsSecondPassMaxWindows:      512,
+		drilldownMaxStatsBuckets:          11_000,
+		maxZeroFillBuckets:                1 << 20,
+		maxQueryLengthBytes:               1 << 20,
+	}
+	if err := validateExecutionLimits(raised); err != nil {
+		t.Fatalf("operators must be able to raise every limit, not only lower it: %v", err)
+	}
+	for _, tc := range []struct {
+		flag string
+		cfg  proxyRuntimeConfig
+	}{
+		{"-backend-max-buffered-response-bytes", proxyRuntimeConfig{backendMaxBufferedResponseBytes: -1}},
+		{"-binary-metric-max-operand-bytes", proxyRuntimeConfig{binaryMetricMaxOperandBytes: -1}},
+		{"-binary-metric-max-arrays", proxyRuntimeConfig{binaryMetricMaxArrays: -1}},
+		{"-multi-tenant-max-fanout", proxyRuntimeConfig{multiTenantMaxFanout: -1}},
+		{"-multi-tenant-max-merged-response-bytes", proxyRuntimeConfig{multiTenantMaxMergedResponseBytes: -1}},
+		{"-max-entries-limit-per-query", proxyRuntimeConfig{maxEntriesLimitPerQuery: -1}},
+		{"-detected-fields-max-scan-lines", proxyRuntimeConfig{detectedFieldsMaxScanLines: -1}},
+		{"-patterns-max-backend-rows", proxyRuntimeConfig{patternsMaxBackendRows: -1}},
+		{"-patterns-second-pass-max-rows", proxyRuntimeConfig{patternsSecondPassMaxRows: -1}},
+		{"-patterns-second-pass-max-windows", proxyRuntimeConfig{patternsSecondPassMaxWindows: -1}},
+		{"-drilldown-max-stats-buckets", proxyRuntimeConfig{drilldownMaxStatsBuckets: -1}},
+		{"-max-zero-fill-buckets", proxyRuntimeConfig{maxZeroFillBuckets: -1}},
+		{"-max-query-length-bytes", proxyRuntimeConfig{maxQueryLengthBytes: -1}},
+	} {
+		err := validateExecutionLimits(tc.cfg)
+		if err == nil {
+			t.Fatalf("%s: a negative value must be rejected at startup", tc.flag)
+		}
+		if !strings.Contains(err.Error(), tc.flag) {
+			t.Fatalf("%s: the error must name the flag, got %q", tc.flag, err)
+		}
+	}
+}

@@ -67,7 +67,7 @@ var (
 // validateQuery checks query string length and returns a sanitized version.
 // It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
-	if msg := queryLengthError(query); msg != "" {
+	if msg := queryLengthError(query, p.limits().QueryLengthBytes); msg != "" {
 		p.writeError(w, http.StatusBadRequest, msg)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
@@ -147,8 +147,9 @@ func rewriteQuantilePhiGT1(query string) string {
 	})
 }
 
-// sanitizeLimit caps and validates the limit parameter.
-func sanitizeLimit(limitStr string) string {
+// sanitizeLimit caps and validates the limit parameter against
+// -max-entries-limit-per-query.
+func sanitizeLimit(limitStr string, maxLimit int) string {
 	if limitStr == "" {
 		return "1000"
 	}
@@ -156,8 +157,8 @@ func sanitizeLimit(limitStr string) string {
 	if err != nil || n <= 0 {
 		return "1000"
 	}
-	if n > maxLimitValue {
-		return strconv.Itoa(maxLimitValue)
+	if n > maxLimit {
+		return strconv.Itoa(maxLimit)
 	}
 	return limitStr
 }

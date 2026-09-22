@@ -332,6 +332,9 @@ type Config struct {
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
 	// max_query_series behaviour. 0 means use the built-in default (500).
 	MaxStatsQuerySeries int
+	// ExecutionLimits bounds per-request work and the bytes a request may pull
+	// out of VictoriaLogs. Zero values select the built-in defaults.
+	ExecutionLimits ExecutionLimitsConfig
 	// StatsQueryRangeConcurrency limits the number of concurrent
 	// stats_query_range calls the proxy makes to VL. Each Drilldown Fields
 	// page load fires ~30 such calls simultaneously; without a cap they all
@@ -400,26 +403,21 @@ type DerivedField struct {
 }
 
 const (
-	// maxQueryLength limits the LogQL query string length to prevent abuse.
-	maxQueryLength = 65536 // 64KB
-	// maxLimitValue caps the number of results per query.
-	maxLimitValue                     = 10000
-	maxZeroFillBuckets                = 32768
-	maxPatternBackendQueryLimit       = 20000
-	maxPatternSecondPassLineLimit     = 8000
-	maxPatternSecondPassWindows       = 8
-	maxUserDrivenSlicePrealloc        = 512
-	tailWriteTimeout                  = 2 * time.Second
-	maxMultiTenantFanout              = 64
-	maxMultiTenantMergedResponseBytes = 32 << 20
-	maxDetectedScanLines              = 2000
-	maxSyntheticTailSeenEntries       = 4096
-	maxBufferedBackendBodyBytes       = 64 << 20
-	maxPatternsPeerSnapshotBytes      = 8 << 20
-	maxLabelValuesPeerSnapshotBytes   = 8 << 20
-	maxUpstreamErrorBodyBytes         = 4 << 10
-	labelValuesIndexSnapshotCacheKey  = "__label_values_index_snapshot:v1"
-	patternsSnapshotCacheKey          = "__patterns_snapshot:v1"
+	// These are the built-in defaults of the execution-limit flags; see
+	// execution_limits.go and docs/reference/limits-registry.md. Tests that
+	// exercise a limit use the resolved value on the proxy instead.
+	maxQueryLength                   = DefaultMaxQueryLengthBytes
+	maxLimitValue                    = DefaultMaxEntriesLimitPerQuery
+	maxPatternSecondPassWindows      = DefaultPatternsSecondPassMaxWindows
+	maxMultiTenantFanout             = DefaultMultiTenantMaxFanout
+	maxUserDrivenSlicePrealloc       = 512
+	tailWriteTimeout                 = 2 * time.Second
+	maxSyntheticTailSeenEntries      = 4096
+	maxPatternsPeerSnapshotBytes     = 8 << 20
+	maxLabelValuesPeerSnapshotBytes  = 8 << 20
+	maxUpstreamErrorBodyBytes        = 4 << 10
+	labelValuesIndexSnapshotCacheKey = "__label_values_index_snapshot:v1"
+	patternsSnapshotCacheKey         = "__patterns_snapshot:v1"
 	// Keep pattern cache entries effectively permanent; updates replace by cache key.
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
@@ -510,6 +508,7 @@ type Proxy struct {
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
+	execLimits                            executionLimits
 	backendHeavyQueryMinRange             time.Duration
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
@@ -1103,6 +1102,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
+		execLimits:                            resolveExecutionLimits(cfg.ExecutionLimits),
 		backendHeavyQueryMinRange:             resolveHeavyQueryMinRange(cfg.BackendHeavyQueryMinRange),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
