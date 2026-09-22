@@ -370,11 +370,16 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 					break
 				}
 			}
-		case "patterns", "series":
+		case "patterns":
+			// Pattern levels are derived, and the merged entry is kept for
+			// patternsCacheRetention, so the key carries the derivation's
+			// version and setting like the per-tenant one.
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.detectedLevelCacheKey())
+		case "series":
 			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r)
 		}
 		if endpoint == "query" || endpoint == "query_range" {
-			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r))
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r), p.detectedLevelCacheKey())
 		}
 		return key, true
 	}

@@ -27,7 +27,9 @@ func TestSnapshotEntriesForPatterns_BreaksAliasing(t *testing.T) {
 			Msg:    "boom",
 		},
 		{
+			// categorize-labels entry: detected_level in structured metadata.
 			Stream: map[string]string{"level": "info", "app": "api"},
+			SM:     map[string]string{"detected_level": "info"},
 			Ts:     "1700000060000000000",
 			Msg:    "ok",
 		},
@@ -48,8 +50,9 @@ func TestSnapshotEntriesForPatterns_BreaksAliasing(t *testing.T) {
 	if got := snap[0].Stream["detected_level"]; got != "error" {
 		t.Errorf("snapshot[0].Stream[detected_level]: want %q (pre-mutation), got %q", "error", got)
 	}
-	if got := snap[1].Stream["level"]; got != "info" {
-		t.Errorf("snapshot[1].Stream[level]: want %q (pre-mutation), got %q", "info", got)
+	original[1].SM["detected_level"] = "MUTATED"
+	if got := snap[1].Stream["detected_level"]; got != "info" {
+		t.Errorf("snapshot[1].Stream[detected_level]: want %q from metadata (pre-mutation), got %q", "info", got)
 	}
 	if _, exists := snap[0].Stream["new_key"]; exists {
 		t.Error("snapshot[0].Stream must not see post-snapshot inserts")
@@ -67,7 +70,7 @@ func TestSnapshotEntriesForPatterns_BreaksAliasing(t *testing.T) {
 	// reason this helper exists instead of cloning the full map.
 	for i, e := range snap {
 		for k := range e.Stream {
-			if k != "detected_level" && k != "level" {
+			if k != "detected_level" {
 				t.Errorf("snap[%d].Stream contains unexpected key %q", i, k)
 			}
 		}

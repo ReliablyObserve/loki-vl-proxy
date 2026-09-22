@@ -254,6 +254,7 @@ extraArgs:
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/compatibility-matrix.md
   # metadata-field-mode: "translated"        # field exposure: native | translated | hybrid (default translated; set via flag, METADATA_FIELD_MODE env does not override it)
   # emit-structured-metadata: "true"         # include 3-tuple stream values [timestamp, line, metadata]
+  # detected-level-body-scan: "true"         # derive detected_level from the log line when no level field is stored (false: stored fields only, unknown otherwise)
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # default; convert VL dotted fields (service.name) to Loki underscores (service_name); set via flag, LABEL_STYLE env does not override it
   # translate-otel-attributes: "true"  # rewrite known OTel labels to dotted form in upstream queries (set "false" for underscore storage)

@@ -176,8 +176,10 @@ func TestCoverage_AddByClause_DeduplicatesTranslatedLabels(t *testing.T) {
 		}
 	}
 
+	// Loki answers `by (level, detected_level)` with both labels: the raw
+	// stored level and the value it derived, so neither is folded away.
 	got := addByClause(`service.name:="otel-app" | stats count()`, "level, detected_level", labelFn)
-	want := `service.name:="otel-app" | stats by (level) count()`
+	want := `service.name:="otel-app" | stats by (level, detected_level) count()`
 	if got != want {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}

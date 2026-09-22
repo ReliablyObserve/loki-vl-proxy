@@ -204,10 +204,10 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 
 	captureFields := regexpCaptureFields(originalQuery)
 	lineFields := logQueryLineFields(originalQuery)
-	mergeParsed := mergesParsedStreamLabels(
-		hasLabelParserStage(originalQuery),
-		categorizedLabels, emitStructuredMetadata,
-	)
+	classifyAsParsed := hasLabelParserStage(originalQuery)
+	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
+	levelAsMetadata := categorizedLabels && emitStructuredMetadata
+	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -233,7 +233,14 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			continue
 		}
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFieldsWithFlags(entry, streamLabels, classifyAsParsed, exposureCache, smBuf2, pfBuf2)
+		if levelAsMetadata {
+			labels, structuredMetadata, parsedFields = moveLevelsToMetadata(labels, streamLabels, structuredMetadata, parsedFields, smBuf2, pfBuf2, classifyAsParsed)
+		}
+		if name := detectedLevelName(streamLabels); !levelStages.keeps(name) {
+			delete(labels, name)
+			delete(structuredMetadata, name)
+		}
 		parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 		if len(dropConditions) > 0 {
 			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
@@ -245,7 +252,6 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
 		}
-		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
 		// Apply drop conditions to stream labels: Loki | drop field=value removes the
 		// field from the label set when the value matches, even for stream labels.
@@ -546,7 +552,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	streamMap := make(map[string]*streamEntry, 32)
 	streamOrder := make([]string, 0, 32)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
-	streamLabelCache := make(map[string]map[string]string, 16)
+	rowLevels := p.newLogRowLevels()
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
@@ -556,6 +562,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0
 	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
+	// Loki returns detected_level with the stream labels, or as structured
+	// metadata when the categorize-labels metadata is emitted.
+	levelAsMetadata := categorizedLabels && emitStructuredMetadata
+	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
 
 	var (
 		miner        *patternMiner
@@ -610,25 +620,21 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		// Pass raw bytes to avoid string allocation on descriptor cache hits.
-		// logQueryStreamDescriptorBytes uses m[string([]byte)] (zero-alloc lookup)
-		// and only promotes to heap strings on cache miss (once per unique stream).
-		desc := p.logQueryStreamDescriptorBytes(
-			fjVal.GetStringBytes("_stream"),
-			fjVal.GetStringBytes("level"),
-			streamLabelCache, streamDescriptorCache,
-		)
-		msg := storedLogLineFromFJ(fjVal, desc.streamLabels, lineFields, p.defaultMsgValue())
-
-		var fjObj *fj.Object
-		if needsClassification {
-			obj, fjErr := fjVal.Object()
-			if fjErr != nil {
-				vlFJParserPool.Put(fjParser)
-				continue
-			}
-			fjObj = obj
+		fjObj, fjErr := fjVal.Object()
+		if fjErr != nil {
+			vlFJParserPool.Put(fjParser)
+			continue
 		}
+		rawStream := fjVal.GetStringBytes("_stream")
+		rowStream := rowLevels.stream(rawStream)
+		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
+		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
+
+		// Pass raw bytes to avoid string allocation on descriptor cache hits.
+		// logRowStreamDescriptor uses m[string([]byte)] (zero-alloc lookup)
+		// and only promotes to heap strings on cache miss (once per unique
+		// stream and level pair).
+		desc := p.logRowStreamDescriptor(rawStream, rowStream, fjVal.GetStringBytes("level"), detected, levelAsMetadata, levelStages, streamDescriptorCache)
 
 		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
 		// buildStreamValue → metadataFieldMap copies them before the next iteration
@@ -638,6 +644,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			if levelAsMetadata {
+				structuredMetadata = setDetectedLevelMetadata(structuredMetadata, smBuf, rowStream.labels, detected, levelStages)
+			}
 			parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
@@ -666,10 +675,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
 
 		if miner != nil {
-			levelValue := strings.TrimSpace(desc.rawLabels["detected_level"])
-			if levelValue == "" {
-				levelValue = strings.TrimSpace(desc.rawLabels["level"])
-			}
+			levelValue := patternLevel(detected)
 			if unixSeconds, ok := parseFlexibleUnixSeconds(timeStr); ok {
 				bucket := unixSeconds
 				if stepSeconds > 0 {
@@ -804,37 +810,223 @@ func mergeExtractedStreamLabels(labels, parsedFields map[string]string, mergePar
 	return labels, false
 }
 
-// logQueryStreamDescriptorBytes is like logQueryStreamDescriptor but accepts
-// raw []byte slices from fastjson. It uses the Go compiler's m[string(b)] map
-// optimisation (no allocation for cache hits) and only promotes to heap strings
-// when a cache miss requires storage.
-func (p *Proxy) logQueryStreamDescriptorBytes(rawStreamBytes, levelBytes []byte, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
-	// Build descriptor cache key in a stack buffer: "<stream>\x00<level>".
-	// m[string(stackSlice)] is a zero-alloc lookup — the compiler hashes the
-	// bytes directly without materialising a heap string.
-	var keyBuf [512]byte
-	n := copy(keyBuf[:], rawStreamBytes)
-	if n < len(keyBuf) {
-		keyBuf[n] = '\x00'
-		n++
-	}
-	trimmedLevel := bytes.TrimSpace(levelBytes)
-	if room := len(keyBuf) - n; len(trimmedLevel) <= room {
-		n += copy(keyBuf[n:], trimmedLevel)
-	}
-	if desc, ok := descriptorCache[string(keyBuf[:n])]; ok {
-		return desc // zero alloc: compiler optimises m[string([]byte)]
-	}
-	// Cache miss — promote to heap strings for storage.
-	rawStream := string(rawStreamBytes)
-	level := strings.TrimSpace(string(levelBytes))
-	return p.logQueryStreamDescriptorMiss(rawStream, level, string(keyBuf[:n]), streamLabelCache, descriptorCache)
+// logRowLevels derives detected_level for the rows of one response and caches
+// the parsed stream labels, with their level-like fields, per raw _stream.
+type logRowLevels struct {
+	bodyScan bool
+	// defaultMsg is VictoriaLogs' customised -defaultMsgValue (see isVLMissingMsg).
+	defaultMsg string
+	streams    map[string]logRowStream
 }
 
-// logQueryStreamDescriptorMiss is the slow path: called only once per unique
-// (rawStream, level) pair, with already-allocated strings.
+type logRowStream struct {
+	labels map[string]string
+	levels *levelFields
+}
+
+func (p *Proxy) newLogRowLevels() logRowLevels {
+	return logRowLevels{
+		bodyScan:   p == nil || p.detectedLevelBodyScan,
+		defaultMsg: p.defaultMsgValue(),
+		streams:    make(map[string]logRowStream, 16),
+	}
+}
+
+// streamLabels returns the cached level-field view of already-parsed stream
+// labels, so a per-row caller pays levelFieldsFromLabels once per distinct
+// label set. The key must identify the labels, not only the stream: a row's
+// stored level joins them, and two rows of one stream can carry different
+// ones.
+func (l *logRowLevels) streamLabels(key string, labels map[string]string) logRowStream {
+	if l.streams == nil {
+		l.streams = make(map[string]logRowStream, 16)
+	}
+	if s, ok := l.streams[key]; ok {
+		return s
+	}
+	s := logRowStream{labels: labels, levels: levelFieldsFromLabels(labels)}
+	l.streams[key] = s
+	return s
+}
+
+// stream returns the parsed stream labels for a raw _stream value.
+func (l *logRowLevels) stream(rawStream []byte) logRowStream {
+	if s, ok := l.streams[string(rawStream)]; ok {
+		return s
+	}
+	key := string(rawStream)
+	s := logRowStream{labels: parseStreamLabels(key)}
+	s.levels = levelFieldsFromLabels(s.labels)
+	l.streams[key] = s
+	return s
+}
+
+// levelFieldsFromLabels collects the level-like labels of a label set.
+func levelFieldsFromLabels(labels map[string]string) *levelFields {
+	f := &levelFields{}
+	for k, v := range labels {
+		if v == "" || !mayBeLevelField([]byte(k)) {
+			continue
+		}
+		f.observe([]byte(k), []byte(v))
+	}
+	return f
+}
+
+// fjRow derives detected_level for one VictoriaLogs row; obj is row's object.
+func (l *logRowLevels) fjRow(row *fj.Value, obj *fj.Object, s logRowStream) detectedLevel {
+	var fields levelFields
+	obj.Visit(func(k []byte, v *fj.Value) {
+		if !mayBeLevelField(k) {
+			return
+		}
+		if _, isStream := s.labels[string(k)]; isStream {
+			return
+		}
+		fields.observe(k, v.GetStringBytes())
+	})
+	msg := row.GetStringBytes("_msg")
+	if !isVLMissingMsgBytes(msg, l.defaultMsg) {
+		return deriveRowLevel(s.levels, &fields, msg, false, l.bodyScan)
+	}
+	return l.unpackedRow(s, &fields, func() string { return storedLogLineFromFJ(row, s.labels, nil, l.defaultMsg) })
+}
+
+// mapRow is fjRow for a decoded row; msg is its stored _msg.
+func (l *logRowLevels) mapRow(entry map[string]interface{}, msg string, s logRowStream) detectedLevel {
+	var fields levelFields
+	for k, v := range entry {
+		value, ok := v.(string)
+		if !ok || value == "" || !mayBeLevelField([]byte(k)) {
+			continue
+		}
+		if _, isStream := s.labels[k]; isStream {
+			continue
+		}
+		fields.observe([]byte(k), []byte(value))
+	}
+	if !isVLMissingMsg(msg, l.defaultMsg) {
+		return deriveRowLevel(s.levels, &fields, []byte(msg), false, l.bodyScan)
+	}
+	return l.unpackedRow(s, &fields, func() string { return storedLogLineFromEntry(msg, entry, s.labels, nil, l.defaultMsg) })
+}
+
+// unpackedRow derives detected_level for a row whose _msg is VictoriaLogs'
+// missing-message value (built-in, -backend-default-msg-value, or empty): its
+// fields came from a JSON body. The keyword scan reads the
+// line rebuilt from those fields, as returned for the row; it is rebuilt only
+// when no level field decides the value.
+func (l *logRowLevels) unpackedRow(s logRowStream, fields *levelFields, line func() string) detectedLevel {
+	d := deriveRowLevel(s.levels, fields, nil, true, false)
+	if !l.bodyScan || d.canonical != levelUnknown {
+		return d
+	}
+	return deriveRowLevel(s.levels, fields, []byte(line()), true, true)
+}
+
+// patternLevel is the /patterns level of an entry: Loki lowercases the
+// entry's detected_level.
+func patternLevel(d detectedLevel) string {
+	if d.canonical != "" {
+		return d.canonical
+	}
+	return strings.ToLower(string(d.raw))
+}
+
+// levelDropKeep records the bare | drop / | keep stages of a query for the
+// derived detected_level label, which VictoriaLogs never stores.
+type levelDropKeep struct {
+	dropFields, keepFields []string
+}
+
+func newLevelDropKeep(bareDropFields, bareKeepFields []string) levelDropKeep {
+	return levelDropKeep{dropFields: bareDropFields, keepFields: bareKeepFields}
+}
+
+// keeps reports whether the stages leave a label named name in place.
+func (k levelDropKeep) keeps(name string) bool {
+	for _, f := range k.dropFields {
+		if f == name {
+			return false
+		}
+	}
+	if len(k.keepFields) == 0 {
+		return true
+	}
+	for _, f := range k.keepFields {
+		if f == name {
+			return true
+		}
+	}
+	return false
+}
+
+// setDetectedLevelMetadata adds the derived detected_level to an entry's
+// structured metadata, using smBuf when the entry has none yet, unless a bare
+// | drop / | keep stage removes it.
+func setDetectedLevelMetadata(structuredMetadata, smBuf, streamLabels map[string]string, d detectedLevel, stages levelDropKeep) map[string]string {
+	name := detectedLevelName(streamLabels)
+	if !stages.keeps(name) {
+		return structuredMetadata
+	}
+	if structuredMetadata == nil {
+		structuredMetadata = smBuf
+	}
+	structuredMetadata[name] = d.String()
+	return structuredMetadata
+}
+
+// logRowStreamDescriptor returns the stream descriptor of a log row. With
+// levelAsMetadata the stream labels are the stored stream fields only.
+// Otherwise the raw level field and the derived detected_level join the
+// stream labels, and entries with different values form separate streams.
+func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBytes []byte, d detectedLevel, levelAsMetadata bool, stages levelDropKeep, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
+	// Build the key "<stream>\x00<level>\x00<detected_level>" in a stack
+	// buffer; m[string(key)] is a zero-alloc lookup, and append moves longer
+	// keys to the heap instead of truncating them.
+	var keyBuf [512]byte
+	key := append(keyBuf[:0], rawStream...)
+	trimmedLevel := bytes.TrimSpace(levelBytes)
+	if !levelAsMetadata {
+		key = append(key, 0)
+		key = append(key, trimmedLevel...)
+		key = append(key, 0)
+		key = d.appendTo(key)
+	}
+	if desc, ok := descriptorCache[string(key)]; ok {
+		return desc
+	}
+
+	rawLabels := cloneStringMap(s.labels)
+	if !levelAsMetadata {
+		if len(trimmedLevel) > 0 {
+			rawLabels["level"] = string(trimmedLevel)
+		}
+		if name := detectedLevelName(s.labels); stages.keeps(name) {
+			rawLabels[name] = d.String()
+		}
+	}
+	ensureSyntheticServiceName(rawLabels)
+
+	translatedLabels := rawLabels
+	if p != nil && p.labelTranslator != nil && !p.labelTranslator.IsPassthrough() {
+		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
+		ensureSyntheticServiceName(translatedLabels)
+	}
+	desc := cachedLogQueryStreamDescriptor{
+		key:              canonicalLabelsKey(translatedLabels),
+		streamLabels:     s.labels,
+		rawLabels:        rawLabels,
+		translatedLabels: translatedLabels,
+	}
+	descriptorCache[string(key)] = desc
+	return desc
+}
+
+// logQueryStreamDescriptorMiss is the slow path of logQueryStreamDescriptor,
+// used by the metric paths that group raw rows by stream and level: detected_level
+// there still mirrors the level label until metric grouping derives it.
 func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
-	// streamLabelCache lookup: also zero-alloc when rawStream is already a string.
 	baseLabels, ok := streamLabelCache[rawStream]
 	if !ok {
 		baseLabels = parseStreamLabels(rawStream)
@@ -887,7 +1079,7 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 	}
 
 	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}
 		if _, exists := streamLabels[key]; exists {
@@ -948,7 +1140,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 			msgRaw = val.GetStringBytes()
 			return
 		}
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			return
 		}
 		if _, exists := streamLabels[key]; exists {
@@ -1304,12 +1496,45 @@ func buildStreamValues(ts, msg string, structuredMetadata map[string]string, par
 
 var emptyCategorizedMetadata = map[string]interface{}{}
 
+// Most categorize-labels entries carry only their derived detected_level.
+// Their metadata objects are shared read-only values, like
+// emptyCategorizedMetadata, so those entries allocate no maps.
+var (
+	detectedLevelOnlyFields   = map[string]map[string]string{}
+	detectedLevelOnlyMetadata = map[string]map[string]interface{}{}
+)
+
+func init() {
+	for _, level := range []string{levelTrace, levelDebug, levelInfo, levelWarn, levelError, levelCritical, levelFatal, levelUnknown} {
+		fields := map[string]string{detectedLevelLabel: level}
+		detectedLevelOnlyFields[level] = fields
+		detectedLevelOnlyMetadata[level] = map[string]interface{}{"structuredMetadata": fields}
+	}
+}
+
+// detectedLevelOnlyValue returns the canonical level when fields hold nothing
+// but a canonical detected_level.
+func detectedLevelOnlyValue(fields map[string]string) (string, bool) {
+	if len(fields) != 1 {
+		return "", false
+	}
+	v, ok := fields[detectedLevelLabel]
+	if !ok {
+		return "", false
+	}
+	_, canonical := detectedLevelOnlyFields[v]
+	return v, canonical
+}
+
 func buildStreamValue(ts, msg string, structuredMetadata map[string]string, parsedFields map[string]string, emitStructuredMetadata bool, categorizedLabels bool) interface{} {
 	if !categorizedLabels {
 		return []interface{}{ts, msg}
 	}
 
 	if emitStructuredMetadata {
+		if level, ok := detectedLevelOnlyValue(structuredMetadata); ok && len(parsedFields) == 0 {
+			return []interface{}{ts, msg, detectedLevelOnlyMetadata[level]}
+		}
 		metadata := make(map[string]interface{}, 2)
 		if len(structuredMetadata) > 0 {
 			metadata["structuredMetadata"] = metadataFieldMap(structuredMetadata)
@@ -1324,15 +1549,51 @@ func buildStreamValue(ts, msg string, structuredMetadata map[string]string, pars
 	return []interface{}{ts, msg, emptyCategorizedMetadata}
 }
 
+// metadataFieldMap copies fields. The copy of a lone canonical detected_level
+// is a shared read-only map.
 func metadataFieldMap(fields map[string]string) map[string]string {
 	if len(fields) == 0 {
 		return nil
+	}
+	if level, ok := detectedLevelOnlyValue(fields); ok {
+		return detectedLevelOnlyFields[level]
 	}
 	pairs := make(map[string]string, len(fields))
 	for key, value := range fields {
 		pairs[key] = value
 	}
 	return pairs
+}
+
+// moveLevelsToMetadata moves the derived detected_level, and a level that is
+// not a stored stream field, from an entry's labels into its categorize-labels
+// metadata.
+func moveLevelsToMetadata(labels, streamLabels, structuredMetadata, parsedFields, smBuf, pfBuf map[string]string, classifyAsParsed bool) (map[string]string, map[string]string, map[string]string) {
+	name := detectedLevelName(streamLabels)
+	if v, ok := labels[name]; ok {
+		delete(labels, name)
+		if structuredMetadata == nil {
+			structuredMetadata = smBuf
+		}
+		structuredMetadata[name] = v
+	}
+	if v, ok := labels["level"]; ok {
+		if _, stored := streamLabels["level"]; !stored {
+			delete(labels, "level")
+			if classifyAsParsed {
+				if parsedFields == nil {
+					parsedFields = pfBuf
+				}
+				parsedFields["level"] = v
+			} else {
+				if structuredMetadata == nil {
+					structuredMetadata = smBuf
+				}
+				structuredMetadata["level"] = v
+			}
+		}
+	}
+	return labels, structuredMetadata, parsedFields
 }
 
 // classifyEntryFields classifies log entry fields into stream labels, structured
@@ -1358,22 +1619,12 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
-		// Explicit level field always wins over VL's auto-detected level.
-		// VL may set detected_level="info" from _msg when the message body has no
-		// level keyword, even if the logfmt key level=warn was parsed separately.
-		delete(labels, "detected_level")
 	}
-	// Mirror Loki's ingest-time level detection: if VL did not surface level as
-	// a top-level field (native field or OTel severity), try to extract it from
-	// the raw _msg string (JSON or logfmt) so detected_level matches Loki.
-	if labels["level"] == "" && labels["detected_level"] == "" {
-		if msgStr, ok := entry["_msg"].(string); ok {
-			if lvl, ok := extractLevelFromMsg(msgStr); ok {
-				labels["level"] = lvl
-			}
-		}
-	}
-	ensureDetectedLevel(labels)
+	// Loki's detected_level for the stored row joins the stream labels.
+	msg, _ := stringifyEntryValue(entry["_msg"])
+	rows := logRowLevels{bodyScan: p.detectedLevelBodyScan, defaultMsg: p.defaultMsgValue()}
+	row := logRowStream{labels: streamLabels, levels: levelFieldsFromLabels(streamLabels)}
+	labels[detectedLevelName(streamLabels)] = rows.mapRow(entry, msg, row).String()
 	ensureSyntheticServiceName(labels)
 
 	for k := range smBuf {
@@ -1384,7 +1635,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	}
 
 	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}
 		if _, exists := labels[key]; exists {

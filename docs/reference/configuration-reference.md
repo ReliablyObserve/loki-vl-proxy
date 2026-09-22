@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (207), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (208), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -75,6 +75,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-backend-min-version` | string | `"v1.30.0"` | `extraArgs.backend-min-version` | Minimum VictoriaLogs version considered fully supported at startup |
 | `-backend-version-strict` | bool | `false` | `extraArgs.backend-version-strict` | When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set. |
 | `-derived-fields` | string | (empty) | `extraArgs.derived-fields` | name |
+| `-detected-level-body-scan` | bool | `true` | `extraArgs.detected-level-body-scan` | Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback |
 | `-drilldown-burst-max-fields` | int | `30` | `extraArgs.drilldown-burst-max-fields` | maximum fields per coalesced VL burst call; fields beyond this cap form a second call |
 | `-drilldown-burst-window-ms` | int | `50` | `extraArgs.drilldown-burst-window-ms` | time window in ms for coalescing concurrent Drilldown Fields per-field count queries into a single fused VL conditional-stats call (0 disables the coalescer) |
 | `-drilldown-field-batch-max-fields` | int | `6` | `extraArgs.drilldown-field-batch-max-fields` | maximum fields per batched VL call; excess fields form additional batches or fall back to individual calls |

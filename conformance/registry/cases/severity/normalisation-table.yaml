@@ -1,0 +1,50 @@
+id: severity/normalisation-table
+title: detected_level matches Loki for every level spelling, value and line shape
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki reads a fixed set of level-like keys, normalises a fixed set of words and
+  leaves everything else as it found it. Getting one spelling wrong colours a
+  line differently from Loki in Explore, and shifts a bucket in the Drilldown
+  level breakdown. A hand-written table cannot reach the combinations, so this
+  case is proved by a generated corpus compared against live Loki.
+corpus:
+  generator: test/e2e-compat/detected_level_corpus_test.go
+  size: 552
+  dimensions:
+    keys: [level, LEVEL, Level, severity, SEVERITY, levelname, severity_text, lvl, loglevel]
+    values: >
+      error/ERROR/Error/err/ERR, warn/WARN/warning/Warning/wrn,
+      info/INFO/inf/information, debug/dbg, trace/trc, critical, fatal,
+      notice, alert, emerg, the numeric 30, empty, space-padded,
+      tab-suffixed, non-ASCII, and an unknown word
+    encodings: [json, logfmt]
+    structural: >
+      nested objects, array and null values, repeated keys, leading whitespace,
+      trailing bytes, truncated JSON, escaped and padded keys, depth-2 levels,
+      tab-separated logfmt, quoted and backticked values, a bare key, a trailing
+      equals, level words inside a URL and inside another word, two levels in
+      one line, a 2 KB line, a leading newline, whitespace-only, empty, and a
+      control character
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="<corpus>"}'
+    window: 5m
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [detected_level]
+  note: |
+    Every line is pushed to both backends through the Loki push API with
+    disable_message_parsing=1, so VictoriaLogs stores the bytes Loki ingested
+    and the derivation is the only variable. The case records no expected
+    values: it asserts the proxy equals whatever live Loki answers, in the
+    default encoding and with categorize-labels.
+applies_to:
+  loki: ">=3.6.0"
+  victorialogs: ">=v1.40.0"

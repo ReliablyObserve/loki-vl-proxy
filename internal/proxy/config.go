@@ -29,6 +29,7 @@ type HandlerConfig struct {
 	derivedFields                         []DerivedField
 	streamResponse                        bool
 	emitStructuredMetadata                bool
+	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	patternsAutodetectFromQueries         bool
 	patternsCustom                        []string

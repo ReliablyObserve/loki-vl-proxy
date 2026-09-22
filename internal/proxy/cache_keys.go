@@ -32,6 +32,12 @@ const volumeCacheKeyVersion = "@bytes-v1"
 // VictoriaLogs' missing-message placeholder as the line.
 const logLineCacheKeyVersion = "line-v3"
 
+// detectedMetadataCacheKeyVersion versions the cache keys of /detected_fields,
+// /detected_field/{name}/values and /detected_labels. "@detected-level-v1":
+// older binaries listed detected_level with parsers and the stored level
+// values, and hid a detected_level stream label.
+const detectedMetadataCacheKeyVersion = "@detected-level-v1"
+
 // readCacheKeyVersion returns the key version segment for endpoint, if any.
 func readCacheKeyVersion(endpoint string) string {
 	switch endpoint {
@@ -39,6 +45,8 @@ func readCacheKeyVersion(endpoint string) string {
 		return labelMetadataCacheKeyVersion
 	case "volume", "volume_range":
 		return volumeCacheKeyVersion
+	case "detected_fields", "detected_field_values", "detected_labels":
+		return detectedMetadataCacheKeyVersion
 	default:
 		return ""
 	}
@@ -484,7 +492,15 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 		values  []string
 		errVals error
 	)
-	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName); resolveErr == nil && ok {
+	// detected_level is derived per sampled line; no stored column holds it.
+	derivedLevel := fieldName == detectedLevelLabel
+	nativeField, nativeOK := "", false
+	if !derivedLevel {
+		var resolveErr error
+		nativeField, nativeOK, resolveErr = p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName)
+		nativeOK = nativeOK && resolveErr == nil
+	}
+	if nativeOK {
 		values, errVals = p.fetchNativeFieldValues(scanCtx, query, start, end, nativeField, lineLimit)
 		if errVals == nil && len(values) == 0 {
 			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
@@ -505,11 +521,8 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 			return nil, detectErr
 		}
 		values = fieldValues[fieldName]
-		if values == nil && fieldName == "level" {
-			values = fieldValues["detected_level"]
-		}
 	}
-	if len(values) == 0 && scanCtx.Err() == nil {
+	if !derivedLevel && len(values) == 0 && scanCtx.Err() == nil {
 		values = p.detectedLabelValuesForField(scanCtx, fieldName, query, start, end, lineLimit)
 	}
 	if errVals != nil {
