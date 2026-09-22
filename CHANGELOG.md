@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.84.0] - 2026-09-22
+
 ### Fixed
 
 - **Long-range metric queries no longer exhaust VictoriaLogs memory.** On the
@@ -47,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a one-row `| stats count()` runs before the raw fetch and rejects the query
   with `manual range metric row limit exceeded ... increase
   -manual-range-metric-row-limit` when more lines match than the limit.
-
 
 ## [1.83.0] - 2026-09-22
 
