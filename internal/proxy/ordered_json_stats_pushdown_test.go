@@ -437,6 +437,8 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum by (level) (count_over_time({env="production"} |= "x" | level="info" | json | drop __error__ [1m]))`, []string{"level"}},
 		// After a drop the filter no longer reads the stored label: it stays a stage of the raw evaluator.
 		{`sum by (level) (count_over_time({env="production"} | drop level | level="" | json | drop __error__ [1m]))`, nil},
+		// A filter on __error__ before the parser compares the empty value; the raw evaluator keeps it.
+		{`sum by (level) (count_over_time({env="production"} | __error__="" | json | drop __error__ [1m]))`, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | trace_id="x" | drop __error__ [1m]))`, []string{"level"}},
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__, level [1m]))`, nil},
 		{`count_over_time({env="production"} | json | drop __error__ [1m])`, nil},

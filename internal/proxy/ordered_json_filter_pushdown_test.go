@@ -244,8 +244,16 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		f.pos++
 		return value != f.quoted()
 	default:
+		// A word or phrase, or with a trailing * a word prefix. VictoriaLogs'
+		// tokenizer takes every Unicode letter and digit and the underscore
+		// as word runes (isTokenRune).
 		word := f.quoted()
-		return regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(word) + `([^A-Za-z0-9_]|$)`).MatchString(value)
+		boundary := `[\p{L}\p{Nd}_]`
+		if strings.HasPrefix(f.src[f.pos:], "*") {
+			f.pos++
+			return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])` + regexp.QuoteMeta(word)).MatchString(value)
+		}
+		return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])`+regexp.QuoteMeta(word)+`([^\p{L}\p{Nd}_]|$)`).MatchString(value) && boundary != ""
 	}
 }
 
@@ -664,6 +672,10 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 		{"nested key", volume, `{"service":{"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
 		{"dotted key", volume, `{"service.version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
 		{"hyphenated key", volume, `{"service-version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
+		// A non-ASCII rune Loki sanitizes is a word rune for VictoriaLogs' tokenizer: one word, serviceéversion.
+		{"key joined by a non-ASCII letter", volume, `{"serviceéversion":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"key joined by an invalid byte", volume, "{\"service\xffversion\":\"0.96.0\",\"pipeline\":\"logs/loki\"}", nil, nil, 2, false},
+		{"nested parent joined by a non-ASCII letter", `sum by (level, detected_level) (count_over_time({app="api"} | json | k8s_pod_name="p" | pipeline="logs/loki" | drop __error__ [1m]))`, `{"k8sépod":{"name":"p"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
 		{"spaced nested parent", volume, `{" service ":{"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
 		{"blank key in the nesting", volume, `{"service":{"":{"version":"0.96.0"}},"pipeline":"logs/loki"}`, nil, nil, 2, false},
 		{"sibling nested five deep", volume, `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}},"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
@@ -817,9 +829,9 @@ func TestOrderedJSONKeySpellingProbeParts(t *testing.T) {
 		labels []string
 		want   string
 	}{
-		{[]string{"level", "service_version"}, `(_msg:"service_version" or (_msg:"service" _msg:"version"))`},
-		{[]string{"_1st"}, `((_msg:"_1st" or _msg:"1st") or _msg:"1st")`},
-		{[]string{"a__b"}, `(_msg:"a__b" or (_msg:"a" _msg:"_b") or (_msg:"a_" _msg:"b") or (_msg:"a" _msg:"b"))`},
+		{[]string{"level", "service_version"}, `_msg:"service"*`},
+		{[]string{"_1st"}, `(_msg:"1st"* or _msg:~` + strconv.Quote(`"[\s\v\x{85}\p{Z}]*[^\x00-\x7F]`) + `)`},
+		{[]string{"a__b", "k8s_pod_name"}, `(_msg:"a"* or _msg:"k8s"*)`},
 		{[]string{"level"}, ""},
 	} {
 		if got := orderedJSONSpellingPrefilter(tc.labels); got != tc.want {
@@ -1091,6 +1103,16 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 	// Loki's left-open window, so the query succeeds.
 	if code, msg := run(query, s0.Add(90*time.Second)); code != http.StatusOK {
 		t.Fatalf("a line at the window's left edge must not fail the query: %d %s", code, msg)
+	}
+	// An end off the step grid: Loki evaluates at start and start+step only
+	// (s0-60s and s0), so the plain line at s0+30s is in no window.
+	{
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(s0.Add(-time.Minute).UnixNano(), 10)}, "end": {strconv.FormatInt(s0.Add(40*time.Second).UnixNano(), 10)}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("a line after the last evaluation must not fail the query: %d %s", rec.Code, rec.Body)
+		}
 	}
 	// A filter an unparsed line fails excludes it, so the pushdown answers
 	// without the lookup.

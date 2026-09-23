@@ -32,8 +32,10 @@ why: |
   Loki's text and that line's series; the evaluator's own check keeps the
   same text for a malformed object it meets while scanning. Only lines Loki
   evaluates count: the lookup starts one nanosecond after `start - range`
-  (Loki's window is left-open) and runs only when the step is not wider
-  than the range, so no line falls in a gap. The proxy keeps its JSON error
+  (Loki's window is left-open), ends at the last evaluation `start + k*step
+  <= end` (a line after it is in no window) and runs only when the step is
+  not wider than the range, so no line falls between two windows. The proxy
+  keeps its JSON error
   envelope (`{"status":"error","errorType":"bad_data","error":...}`); Loki
   writes the text as `text/plain`. Which failing line Loki names first is
   not deterministic across its shards, so the series is compared by shape.

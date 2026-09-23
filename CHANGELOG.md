@@ -37,18 +37,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lacked the label as a stored field. A Drilldown or Explore breakdown by
   `service_version` therefore cost 0.7 s at 1 h and Explore's two-filter
   logs volume 1.1-1.4 s, against Loki's 0.3-0.5 s cold; at 24 h the probes
-  took 2-4 s. The probes now require the label, or every piece of one
-  tokenization of it, as a word of the line (`_msg:"service_version" or
-  (_msg:"service" _msg:"version")`), which VictoriaLogs answers from its
-  per-block token index, keep only flat regexps, and verify nesting with
-  `unpack_json` itself after splicing a sentinel key into the object (a
-  line the sentinel is missing from did not parse as a whole and counts as
-  risky). The two regexps for escaped keys and U+FFFD run behind one
-  literal substring filter; an alternation holding a non-ASCII literal cost
-  six times the scan. Same exactness (every risky line still keeps the
-  raw-row evaluator; the new probes are proven a superset by the unit
-  fixtures, including a sibling nested five deep, a brace inside a string,
-  a spaced or blank key and a nested key before a syntax error); measured
+  took 2-4 s. The probes now draw their lines from VictoriaLogs' per-block
+  token index: the partial-parse probe requires the label as a word of the
+  line (`_msg:"service_version"`), the key-spelling probe a word starting
+  with the label's first piece (`_msg:"service"*`, which every key Loki
+  sanitizes or flattens into the label begins with, whatever rune follows).
+  They keep only flat regexps and verify nesting with `unpack_json` itself
+  after splicing a sentinel key into the object (a line the sentinel is
+  missing from did not parse as a whole and counts as risky). The two
+  regexps for backslash-escaped keys run behind one literal substring
+  filter, and U+FFFD is matched on its own: an alternation holding a
+  non-ASCII literal cost six times the scan. Same exactness (every risky
+  line still keeps the raw-row evaluator; the new probes are proven a
+  superset by the unit fixtures, including a sibling nested five deep, a
+  brace inside a string, a spaced or blank key, a key joined by a non-ASCII
+  letter or an invalid byte and a nested key before a syntax error); measured
   on the shared stack: `service_version` breakdowns 0.7 s to 0.14-0.25 s at
   1 h, Explore's two-filter volume 1.1-1.4 s to 0.55 s at 1 h and 12 s to
   1.4 s at 24 h, Grafana's volume of a filtered `| json` query 3.0 s to
@@ -76,8 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that line's series in Loki's format (stream labels, `detected_level`,
   `service_name`, `__error__`, `__error_details__`), when the pipeline
   neither drops `__error__` nor carries a filter an unparsed line fails;
-  the evaluator's own check uses the same text. The JSON error envelope is
-  kept.
+  the evaluator's own check uses the same text. Only lines Loki evaluates
+  count: the lookup ends at the last evaluation step and runs only when the
+  step is not wider than the range. When no such line exists the lookup is
+  one scan of the range for a line not starting with `{`, small beside the
+  raw-row fetch that follows it. The JSON error envelope is kept.
 
 ## [1.92.0] - 2026-09-23
 

@@ -340,10 +340,9 @@ func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (r
 			return "", false, false, false
 		}
 		_, lineFilter := stage.(*logqlpkg.LineFilterStage)
-		preParserFilter := compiled.filter != nil && unmodified
-		if preParserFilter && strings.HasPrefix(compiled.filter.Field, "__") {
-			return "", false, false, false
-		}
+		// A filter on __error__ before the parser compares the empty value;
+		// it stays a stage of the raw evaluator, which sets the label.
+		preParserFilter := compiled.filter != nil && unmodified && !strings.HasPrefix(compiled.filter.Field, "__")
 		if lineFilter || preParserFilter {
 			sb.WriteByte(' ')
 			sb.WriteString(stage.String())
@@ -536,61 +535,45 @@ func logsqlWordPrefilter(words []string) string {
 	return "(" + strings.Join(alts, " or ") + ")"
 }
 
-// orderedJSONSpellingPrefilter renders the word filters every line holding a
-// key Loki reads into one of the labels from another spelling passes. Such a
-// key differs from the label only at underscores (a sanitized rune, a
-// nesting boundary, spaces or a blank key around a piece), so for some choice
-// of the underscores that became separators every piece between them is a
-// whole word of the line: `(_msg:"service_version" or (_msg:"service"
-// _msg:"version"))`. A piece "_<digit>..." may also appear as the bare digit,
-// which Loki prefixes. Empty when no label holds an underscore.
+// orderedJSONSpellingPrefilter renders the filters every line holding a key
+// Loki reads into one of the labels from another spelling passes. Such a key
+// differs from the label only where the label has underscores (a sanitized
+// rune, a nesting boundary, spaces or a blank key around a piece), so the
+// key, or the parent key of a nesting, starts with the label's first piece,
+// and the word VictoriaLogs' tokenizer cuts there starts with it too,
+// whatever follows (an ASCII separator ends the word; an underscore or a
+// non-ASCII letter or digit, which Loki also sanitizes, continues it):
+// `_msg:"service"*`, a prefix filter VictoriaLogs answers from its token
+// index. A label starting with an underscore comes from a key starting with
+// a digit (Loki prefixes it) or a rune it sanitizes; a non-ASCII one leaves
+// no ASCII prefix to index, so such labels also admit a key starting with a
+// non-ASCII rune by regexp. Empty when no label holds an underscore.
 func orderedJSONSpellingPrefilter(labels []string) string {
 	var alternatives []string
 	for _, label := range labels {
-		var separators []int
-		for i := 0; i < len(label); i++ {
-			if label[i] == '_' {
-				separators = append(separators, i)
-			}
-		}
-		if len(separators) == 0 {
+		if !strings.Contains(label, "_") {
 			continue
 		}
-		for mask := 0; mask < 1<<len(separators); mask++ {
-			var words []string
-			last := 0
-			for bit, at := range separators {
-				if mask&(1<<bit) != 0 {
-					words = append(words, label[last:at])
-					last = at + 1
-				}
-			}
-			words = append(words, label[last:])
-			var filters []string
-			for _, word := range words {
-				if word == "" {
-					continue
-				}
-				filter := "_msg:" + strconv.Quote(word)
-				if len(word) > 1 && word[0] == '_' && word[1] >= '0' && word[1] <= '9' {
-					filter = "(" + filter + " or _msg:" + strconv.Quote(word[1:]) + ")"
-				}
-				filters = append(filters, filter)
-			}
-			if len(filters) == 0 {
-				continue
-			}
-			alternative := strings.Join(filters, " ")
-			if len(filters) > 1 {
-				alternative = "(" + alternative + ")"
-			}
-			if !containsString(alternatives, alternative) {
-				alternatives = append(alternatives, alternative)
-			}
+		first := strings.TrimLeft(label, "_")
+		if i := strings.IndexByte(first, '_'); i >= 0 {
+			first = first[:i]
+		}
+		if first == "" {
+			continue
+		}
+		alternative := "_msg:" + strconv.Quote(first) + "*"
+		if label[0] == '_' {
+			alternative = "(" + alternative + " or _msg:~" + strconv.Quote(`"`+jsonKeySpace+`*[^\x00-\x7F]`) + ")"
+		}
+		if !containsString(alternatives, alternative) {
+			alternatives = append(alternatives, alternative)
 		}
 	}
 	if len(alternatives) == 0 {
 		return ""
+	}
+	if len(alternatives) == 1 {
+		return alternatives[0]
 	}
 	return "(" + strings.Join(alternatives, " or ") + ")"
 }
@@ -1143,7 +1126,7 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 // nesting, and a line in which the sentinel is missing did not parse as a
 // whole, so Loki may have read the keys before the syntax error (a superset,
 // which only costs the raw evaluator). Lines are drawn through a word
-// prefilter (orderedJSONLabelSpans) and loose key-order regexps, so the
+// prefilter (orderedJSONSpellingPrefilter) and loose key-order regexps, so the
 // parser runs over few lines and no regexp needs balanced braces.
 func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
 	alias := orderedJSONKeyAliasPattern(fields)
@@ -1192,8 +1175,8 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 			risky bool
 			err   error
 		}
-		probes := []func() (bool, error){
-			func() (bool, error) {
+		probes := []func(context.Context) (bool, error){
+			func(ctx context.Context) (bool, error) {
 				if len(errorFilters) == 0 {
 					return false, nil
 				}
@@ -1203,29 +1186,35 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 		switch parser {
 		case "json":
 			probes = append(probes,
-				func() (bool, error) { return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to) },
-				func() (bool, error) { return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to) })
+				func(ctx context.Context) (bool, error) {
+					return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
+				},
+				func(ctx context.Context) (bool, error) {
+					return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to)
+				})
 		case "logfmt":
-			probes = append(probes, func() (bool, error) { return p.logfmtParseRisk(ctx, base, fields, stored, from, to) })
+			probes = append(probes, func(ctx context.Context) (bool, error) {
+				return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
+			})
 		}
-		results := make([]chan result, len(probes))
-		for i, probe := range probes {
-			results[i] = make(chan result, 1)
+		// The first risky verdict (or error) decides; the other probes are
+		// cancelled rather than waited for.
+		probeCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		results := make(chan result, len(probes))
+		for _, probe := range probes {
 			go func() {
-				risky, err := probe()
-				results[i] <- result{risky, err}
+				risky, err := probe(probeCtx)
+				results <- result{risky, err}
 			}()
 		}
-		var risky bool
-		var err error
-		for _, done := range results {
-			r := <-done
-			if err == nil && r.err != nil {
-				err = r.err
+		for range probes {
+			r := <-results
+			if r.err != nil || r.risky {
+				return r.risky, r.err
 			}
-			risky = risky || r.risky
 		}
-		return risky, err
+		return false, nil
 	}
 	if p.cache == nil {
 		return check(start, end)
@@ -1510,15 +1499,19 @@ func (plan *orderedJSONMetricPlan) failsOnUnparsedLine() bool {
 // unparsedLinePipelineError returns Loki's pipeline error for the first
 // selected line that is not a JSON object, or nil when there is none, so a
 // query Loki fails is answered without reading the rows the raw evaluator
-// would otherwise scan up to the first such line. Only exact when every
-// selected line is evaluated, i.e. the step is not wider than the window.
+// would otherwise scan up to the first such line. Only lines Loki evaluates
+// count: the lookup covers the windows of the evaluations at start,
+// start+step, ... up to end (the last may fall before end), and runs only
+// when the step is not wider than the window, so no line falls between two
+// windows.
 func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSONMetricPlan, query string, start, end time.Time, step time.Duration) (error, error) {
-	if !plan.failsOnUnparsedLine() || step > plan.window {
+	if !plan.failsOnUnparsedLine() || step > plan.window || step <= 0 {
 		return nil, nil
 	}
+	last := start.Add(end.Sub(start) / step * step)
 	// Loki's window is left-open, right-closed; VictoriaLogs' end is exclusive.
 	params := url.Values{"query": {query + ` | filter -_msg:~"^\\s*\\{" | limit 1`},
-		"start": {start.Add(-plan.window).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}, "end": {end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
+		"start": {start.Add(-plan.window).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}, "end": {last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)}}
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
 		return nil, err

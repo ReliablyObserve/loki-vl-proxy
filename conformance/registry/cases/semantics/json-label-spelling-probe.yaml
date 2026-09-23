@@ -18,11 +18,15 @@ why: |
 
   A key-spelling probe (`| limit 1` over the range, beside the partial-parse
   probe) finds such a line. Its lines are drawn through VictoriaLogs' word
-  index: a key that Loki reads into the label differs from it only at
-  underscores, so for some choice of the underscores that became separators
-  every piece between them is a whole word of the line
-  (`(_msg:"service_version" or (_msg:"service" _msg:"version"))`; a piece
-  `_<digit>...` also as the bare digit, which Loki prefixes). Among those
+  index: a key that Loki reads into the label differs from it only where
+  the label has underscores, so the key (or the parent key of a nesting)
+  starts with the label's first piece, and so does the word VictoriaLogs'
+  tokenizer cuts there, whatever follows it (an ASCII separator ends the
+  word; an underscore or a non-ASCII letter or digit, which Loki also
+  sanitizes to an underscore, continues it): `_msg:"service"*`, a prefix
+  filter answered from the token index. A label starting with an
+  underscore (Loki prefixes a leading digit or sanitizes a leading rune)
+  also admits a key starting with a non-ASCII rune by regexp. Among those
   lines a flat regexp matches a key spelled with a rune other than an
   underscore where the label or a piece of it has one (`sanitizeLabelKey`),
   spaces around a key (Loki trims them) or a blank key (Loki skips it), and
