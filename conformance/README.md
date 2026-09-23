@@ -32,6 +32,9 @@ conformance/
   depend on it, and what evidence exists. [reports/translation-map.md](reports/translation-map.md) shows, per feature, what Loki gives,
   what VictoriaLogs gives, and what the proxy adds between them.
   [reports/gaps.md](reports/gaps.md) ranks what is missing.
+  [reports/performance.md](reports/performance.md) joins the saved A/B runs in `bench/ab/results/`
+  with the registry items each measured shape covers, and lists every item the proxy answers
+  slower than Loki on first load.
 - **Gate** — `python3 scripts/ci/check_conformance.py` fails when a test claims an unknown registry
   id, a proxy route has no registry item, an item points at code that no longer exists, or the
   coverage map is stale.
@@ -42,8 +45,10 @@ conformance/
 
 - a test claims a registry id that does not exist, a proxy route has no registry
   item, or an item points at code that no longer exists;
-- a generated report is stale (coverage map, gaps, translation map, roadmap,
-  compatibility matrix);
+- a generated report is stale (performance, coverage map, gaps, translation map,
+  roadmap, compatibility matrix);
+- a `bench/ab/shapes.json` shape covers a registry id that does not exist, covers
+  nothing, or a saved A/B result does not match the shape sets;
 - a flag is missing from the places that list every flag;
 - a score or an item's state regressed against `registry/baseline.json`, or a
   waiver expired;

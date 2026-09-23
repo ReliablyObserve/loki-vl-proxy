@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bench/ab/results/` and `report.py compare` lists only what moved beyond noise
   between two runs, so every release can be checked against the previous one.
   A shared `control` set is the no-degradation proof for performance changes.
+  Each shape names the conformance registry items it measures, and the
+  registry turns the saved runs into performance evidence per item:
+  `conformance/reports/performance.md` and the gaps report list every item the
+  proxy answers slower than Loki on first load, compared on cold timings so
+  results caches on either side do not hide the difference. The conformance
+  gate fails when a shape points at an unknown registry item or the generated
+  report is stale.
 
 ## [1.92.0] - 2026-09-23
 

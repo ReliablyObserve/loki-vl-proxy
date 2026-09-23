@@ -12,6 +12,21 @@ and the saved results, so each run can be compared with the ones before it.
 | `report.py` | `summarize` turns raw rows into a compact table and a summary JSON; `compare` diffs two summaries. |
 | `results/` | Saved summaries, `<date>-<label>.json`. Commit these; keep raw rows out of the repository. |
 
+## Registry
+
+Every shape declares the conformance registry items it measures in `covers`
+(cases, behaviours, translations, LogQL constructs, endpoints).
+`conformance/scripts/perf_evidence.py` joins the latest saved result for each
+shape and range with those items and writes
+`conformance/registry/generated/perf-evidence.json` and
+[`conformance/reports/performance.md`](../../conformance/reports/performance.md),
+which lists every item the proxy answers slower than Loki on first load; the
+same items appear in `conformance/reports/gaps.md`. The conformance gate fails
+when a shape covers an id the registry does not have, a shape covers nothing, a
+saved result names a set or shape `shapes.json` does not define, or the
+generated report is stale. After saving a result, run
+`python3 conformance/scripts/perf_evidence.py` and `python3 conformance/scripts/gaps.py`.
+
 ## Running
 
 On the e2e compose stack, run the baseline build and the candidate build as
