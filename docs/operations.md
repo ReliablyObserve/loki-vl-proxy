@@ -288,6 +288,7 @@ All traffic guard controls are tunable via CLI flags (or `extraArgs` in the Helm
 | `-cb-open-duration` | `10s` | How long circuit breaker stays open |
 | `-cb-window-duration` | `30s` | Failure counting window |
 | `-backend-max-concurrent-heavy-queries` | `2` | Heavy VictoriaLogs calls running at once per replica (raw-row metric fetches, stats and hits over `-backend-heavy-query-min-range`); excess waits `-backend-heavy-query-queue-wait` (`20s`), then gets `429` |
+| `-backend-max-concurrent-metadata-scans` | `2` | Long-range VictoriaLogs metadata listings running at once per replica (`stream_field_names`, `stream_field_values`, `field_names`, `field_values`, `streams` over `-backend-heavy-query-min-range`: the `/labels`, `/label/{name}/values`, `/series` and inventory warm-up scans); excess waits `-backend-heavy-query-queue-wait`, then gets `429`; background warm-ups skip instead of waiting |
 
 If defaults are too strict or too loose for your workload, tune at the proxy first, then complement with:
 
@@ -385,6 +386,7 @@ Not every `502` or `503` means VictoriaLogs is down. Built-in execution limits r
 - `400` with `maximum number of series (N) reached for a single query` — Loki's own answer above `max_query_series`; narrow the query or raise `-max-stats-query-series`. The log line for the rejected request names that flag. Grafana Logs Drilldown requests instead receive a partial result with the warning `... returning partial results`
 - `503` with `too many concurrent queries` — the `-max-concurrent` admission cap was reached
 - `429` with `too many outstanding requests: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=N` — heavy long-range VictoriaLogs calls waited longer than `-backend-heavy-query-queue-wait` for a slot. Retry, narrow the time range, or raise `-backend-max-concurrent-heavy-queries` together with VictoriaLogs memory (see [Heavy VictoriaLogs Query Admission](configuration.md#heavy-victorialogs-query-admission))
+- `429` with `too many outstanding requests: long-range VictoriaLogs metadata scans are limited to -backend-max-concurrent-metadata-scans=N` — a long-range `/labels`, `/label/{name}/values` or `/series` request waited longer than `-backend-heavy-query-queue-wait` for a metadata-scan slot. One 7-day `stream_field_names` scan holds about 0.8 GiB of VictoriaLogs memory; raise the limit only with VictoriaLogs memory, or narrow the range.
 
 `line_format` and binary-expression evaluation limits return `400`. See [Fixed Execution Limits](configuration.md#fixed-execution-limits).
 

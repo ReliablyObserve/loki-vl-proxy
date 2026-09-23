@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (209), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (210), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -104,10 +104,11 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
-| `-backend-heavy-query-min-range` | duration | `6 * time.Hour` | `extraArgs.backend-heavy-query-min-range` | Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries. Must be &gt; 0 |
-| `-backend-heavy-query-queue-wait` | duration | `20 * time.Second` | `extraArgs.backend-heavy-query-queue-wait` | How long a heavy VictoriaLogs call waits for a -backend-max-concurrent-heavy-queries slot before the request fails with 429. 0 rejects immediately when all slots are busy |
+| `-backend-heavy-query-min-range` | duration | `6 * time.Hour` | `extraArgs.backend-heavy-query-min-range` | Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be &gt; 0 |
+| `-backend-heavy-query-queue-wait` | duration | `20 * time.Second` | `extraArgs.backend-heavy-query-queue-wait` | How long a heavy VictoriaLogs call waits for a -backend-max-concurrent-heavy-queries slot, or a long-range metadata listing for a -backend-max-concurrent-metadata-scans slot, before the request fails with 429. 0 rejects immediately when all slots are busy |
 | `-backend-max-buffered-response-bytes` | int | `67108864` | `extraArgs.backend-max-buffered-response-bytes` | Maximum bytes the proxy reads from one VictoriaLogs response it has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns HTTP 502 naming this flag instead of a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response. 0 uses the built-in default of 64 MiB |
 | `-backend-max-concurrent-heavy-queries` | int | `2` | `extraArgs.backend-max-concurrent-heavy-queries` | Maximum concurrent heavy VictoriaLogs calls per replica: raw-row metric fetches (any /select/logsql/query bound above 10000 rows, which includes a log query whose limit is higher), and stats or hits calls spanning at least -backend-heavy-query-min-range or finer than 11000 buckets. Further heavy calls queue for -backend-heavy-query-queue-wait, then fail with 429 "too many outstanding requests". VictoriaLogs lets each stats pipe use up to 40% of its allowed memory, so the default of 2 keeps concurrent stats state within its memory budget. 0 disables the limiter |
+| `-backend-max-concurrent-metadata-scans` | int | `2` | `extraArgs.backend-max-concurrent-metadata-scans` | Maximum concurrent long-range VictoriaLogs metadata listings per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range. Excess calls wait -backend-heavy-query-queue-wait, then the request fails with 429; background inventory refreshes skip instead of waiting. 0 disables the limiter |
 | `-binary-metric-max-arrays` | int | `2000000` | `extraArgs.binary-metric-max-arrays` | Maximum JSON arrays one binary metric expression may allocate while joining operands. 0 uses the built-in default of 2000000 |
 | `-binary-metric-max-operand-bytes` | int | `268435456` | `extraArgs.binary-metric-max-operand-bytes` | Maximum bytes of operand responses one binary metric expression may capture. 0 uses the built-in default of 256 MiB |
 | `-default-max-query-length` | duration | `0` | `extraArgs.default-max-query-length` | Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default) |

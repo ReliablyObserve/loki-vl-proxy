@@ -42,6 +42,6 @@ Held by at least one test that declares it.
 
 | Item | Consumers | Tests | Why |
 |---|---|---:|---|
-| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 2 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
+| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 4 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 1 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 4 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |

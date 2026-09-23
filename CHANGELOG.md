@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Long-range metadata scans are bounded per replica; concurrent inventory
+  refreshes no longer OOM-kill VictoriaLogs.** On 2026-09-23 the e2e
+  VictoriaLogs (v1.52.0, 8 GiB) was OOM-killed three times in seven minutes.
+  Its slow-query log names the cause: before every kill, seven proxy replicas
+  sent `stream_field_names?query=*` over the whole 7-day retention at the same
+  moment (63-96 s each, then queue timeouts). Measured one at a time, a 7-day
+  `stream_field_names` scan holds about 0.8 GiB of VictoriaLogs memory for
+  8.8 s; three at once hold 2 GiB more and take 16 s each; seven at once take
+  the container from 1.7 to 6.4 GiB in 18 s. VictoriaLogs admits any number of
+  them (`-search.maxConcurrentRequests`) and has no per-query memory bound. The
+  replicas coincided because the label keep-warm loop ticked at a fixed
+  interval from a common start, and a 7-day warm-up that timed out under the
+  contention was retried on every tick. The proxy now bounds long-range
+  metadata listings (`stream_field_names`, `stream_field_values`,
+  `field_names`, `field_values`, `streams` spanning at least
+  `-backend-heavy-query-min-range`, or without a time range) with a limiter of
+  their own, `-backend-max-concurrent-metadata-scans` (default 2 per replica,
+  0 disables), separate from the heavy-query limiter so a 7-day label browser
+  never waits behind 7-day charts and short-range label pickers are never
+  queued. A synchronous request waits `-backend-heavy-query-queue-wait` and
+  then fails like Loki's scheduler: HTTP 429 `too many outstanding requests:
+  long-range VictoriaLogs metadata scans are limited to
+  -backend-max-concurrent-metadata-scans=N per replica and this query waited
+  -backend-heavy-query-queue-wait=D`. Background inventory work (startup
+  warm-up, keep-warm, stale-entry refreshes) skips instead of waiting when
+  every slot is busy, a preset window whose warm-up failed backs off (one
+  keep-warm interval, doubling to an hour) instead of retrying every tick, and
+  the keep-warm interval is jittered by up to a quarter so replicas started
+  together drift apart. Label and value lists are unchanged; only when a
+  request is answered changes. Logs Drilldown's detected_fields, which lists
+  field names over its whole range, goes through the same limiter. Admissions are exported as
+  `loki_vl_proxy_internal_operation_total{operation="backend_metadata_scan_admission"}`.
+  The e2e stack now runs its proxies with `-metadata-default-lookback=1h`
+  (Loki's own default window for `/labels` without bounds) instead of the
+  whole retention, and VictoriaLogs with `-search.maxConcurrentRequests=16`.
+
 ## [1.94.0] - 2026-09-24
 
 ### Fixed

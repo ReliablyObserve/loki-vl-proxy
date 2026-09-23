@@ -362,6 +362,12 @@ type Config struct {
 	// BackendHeavyQueryMinRange is the time range from which stats, hits and
 	// unbounded raw calls count as heavy. 0 uses the built-in default (6h).
 	BackendHeavyQueryMinRange time.Duration
+	// BackendMaxConcurrentMetadataScans bounds concurrent long-range metadata
+	// listings (stream field names and values, field names and values, stream
+	// listings spanning at least BackendHeavyQueryMinRange) per replica. They
+	// queue for BackendHeavyQueryQueueWait like heavy calls but on their own
+	// limiter. 0 disables the limiter.
+	BackendMaxConcurrentMetadataScans int
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
 	// are coalesced into a single fused VL conditional-stats call.
@@ -521,6 +527,8 @@ type Proxy struct {
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
+	metadataScanLimiter                   *heavyQueryLimiter
+	labelWarmBackoff                      *labelWarmBackoff // per preset window retry delay after a failed warm
 	execLimits                            executionLimits
 	backendHeavyQueryMinRange             time.Duration
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
@@ -1115,6 +1123,8 @@ func New(cfg Config) (*Proxy, error) {
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
+		metadataScanLimiter:                   newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, cfg.BackendHeavyQueryQueueWait),
+		labelWarmBackoff:                      newLabelWarmBackoff(),
 		execLimits:                            resolveExecutionLimits(cfg.ExecutionLimits),
 		backendHeavyQueryMinRange:             resolveHeavyQueryMinRange(cfg.BackendHeavyQueryMinRange),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
