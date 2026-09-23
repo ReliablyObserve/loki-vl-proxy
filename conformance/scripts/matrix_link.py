@@ -15,12 +15,11 @@ Usage: python3 conformance/scripts/matrix_link.py [--check]
 """
 import argparse
 import os
-import re
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from registry_io import dump_json, load_json, read_text  # noqa: E402
+from registry_io import dump_json, load_json  # noqa: E402
 
 ROOT = "conformance/registry"
 MATRIX = "test/e2e-compat/compatibility-matrix.json"

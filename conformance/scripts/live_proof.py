@@ -124,22 +124,31 @@ def shape(payload):
 
 
 def totals(payload):
+    """Sum every sample value, and count the samples that are not numbers.
+
+    A malformed sample must not vanish from the comparison: skipped silently,
+    one on the Loki side would zero its total and the numeric check below would
+    report the case as holding.
+    """
     data = payload.get("data") or {}
-    out = 0.0
+    out, malformed = 0.0, 0
     for item in data.get("result") or []:
         for sample in item.get("values") or ([item["value"]] if item.get("value") else []):
             try:
                 out += float(sample[1])
             except (TypeError, ValueError, IndexError):
-                pass
-    return out
+                malformed += 1
+    return out, malformed
 
 
 def compare(case, loki, proxy):
     if shape(loki) != shape(proxy):
         return "gap", {"loki": shape(loki), "proxy": shape(proxy)}
     if case["mode"] in ("numeric", "exact"):
-        lhs, rhs = totals(loki), totals(proxy)
+        (lhs, lhs_bad), (rhs, rhs_bad) = totals(loki), totals(proxy)
+        if lhs_bad or rhs_bad:
+            return "gap", {"loki_malformed_samples": lhs_bad,
+                           "proxy_malformed_samples": rhs_bad}
         if lhs and abs(lhs - rhs) / lhs > case["tolerance"]:
             return "gap", {"loki_total": lhs, "proxy_total": rhs,
                            "tolerance": case["tolerance"]}
