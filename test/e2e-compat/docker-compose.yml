@@ -67,15 +67,28 @@ services:
     # With -search.maxQueryDuration=60s + -search.maxQueryTimeRange=72h, long queries
     # are cancelled before full materialization → expected ceiling ~4,000 MB.
     # +30% headroom: 4,000 × 1.3 = 5,200 MB → 5g. Container auto-restarts on OOM.
-    mem_limit: 5g
+    # Loki is given 12 g below; VictoriaLogs ran with 5 g and the kernel
+    # OOM-killed it (docker "oom" event, exit 137) whenever a long-range
+    # "| json" group-by ran, restarting the shared stack mid-verification.
+    mem_limit: 8g
     restart: unless-stopped
     command:
       - "-storageDataPath=/vlogs"
       # Keep enough history for long-range Drilldown regressions (>24h).
       - "-retentionPeriod=7d"
       - "-httpListenAddr=:9428"
-      # Allow high concurrency for benchmark comparisons (default 16 causes 100% errors at c≥50).
-      - "-search.maxConcurrentRequests=100"
+      # Concurrency is what bounds VictoriaLogs' peak memory here: every
+      # in-flight scan holds its own working set on top of the caches. 100 was
+      # set for benchmark comparisons (the default 16 returned errors at
+      # c>=50), but on this 5 g container it let the kernel OOM-kill the
+      # process (docker "oom" event, exit 137) every few minutes -- 24 restarts
+      # in one session -- while ten proxy variants refreshed their label caches
+      # with full-scan stream_field_names queries at the same time. Capping it
+      # (32, then 16) did not stop the kills on the old 5 g limit -- a single
+      # 7d "| json" group-by holds several gigabytes on its own -- so the cap
+      # below was raised instead; 64 keeps headroom for the c=50 benchmark
+      # while halving the worst-case number of concurrent working sets.
+      - "-search.maxConcurrentRequests=64"
       # Increase queue wait time: at c=100 some requests will queue behind the
       # concurrency limit; give them up to 60s before returning 503.
       - "-search.maxQueueDuration=60s"
@@ -92,15 +105,13 @@ services:
       # Intern short strings (labels, field names) for up to 15 min to reduce GC
       # pressure during high-concurrency scans (default 5 min).
       - "-internStringCacheExpireDuration=15m"
-      # Cache budget. -memory.allowedPercent is read against the container's
-      # 5 g cap, so 80% left VictoriaLogs holding ~4 g of caches and about 1 g
-      # for the working memory of up to -search.maxConcurrentRequests=100
-      # concurrent scans. Under long-range queries the process then exits (exit
-      # code 0, not an OOM kill) and Docker restarts it: the shared e2e stack
-      # restarted VictoriaLogs 21 times in a day, including while idle. 50%
-      # keeps roughly 2.5 g for queries, measured at 2872 MiB peak under the
-      # concurrent long-range load test with the restart count unchanged.
-      - "-memory.allowedPercent=50"
+      # Cache budget, stated absolutely rather than as a percentage: measured
+      # on this stack, -memory.allowedPercent=50 resolved to
+      # vm_allowed_memory_bytes=2.5 g (the percentage applies to the 5 g cap
+      # VictoriaLogs detects), which left too little of the cap for the
+      # concurrent scans above. 3 g of caches leaves ~5 g of the 8 g limit for
+      # concurrent scans, and the value does not move with the host.
+      - "-memory.allowedBytes=3GiB"
       # NOTE: the benchmark-only reader/fs tuning (-defaultParallelReaders,
       # -fs.maxConcurrency) lives in docker-compose.bench.yml. Those flags do not
       # exist on VictoriaLogs < v1.34 / < v1.37 respectively, and an unknown flag
