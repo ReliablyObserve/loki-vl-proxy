@@ -105,9 +105,9 @@ func TestRangeMetricCompatibilityOffsetAndSeriesLimit(t *testing.T) {
 	})
 
 	// The series-limit subtests run against the proxy that keeps the built-in
-	// default (500): every other proxy in the stack matches its Loki, whose limit
-	// is far above this fixture.
-	limitProxyURL := envOr("PROXY_SERIES_LIMIT_URL", patternsAutodetectProxyURL)
+	// default (500), the vmauth-fronted one: every other proxy in the stack
+	// matches its Loki, whose limit is far above this fixture.
+	limitProxyURL := envOr("PROXY_SERIES_LIMIT_URL", proxyVmauthURL)
 	start, end := base, base.Add(30*time.Minute)
 	limit := 0 // the proxy's -max-stats-query-series, read from its own answer
 	for _, window := range []string{"5m", "1m"} {

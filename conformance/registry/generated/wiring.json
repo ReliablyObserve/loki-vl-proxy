@@ -17,6 +17,7 @@
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "limits/drilldown-partial-with-warning": [
+      "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
@@ -55,6 +56,7 @@
       "internal/proxy/backend_heavy_test.go"
     ],
     "limits/series-limit-error": [
+      "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
@@ -76,6 +78,7 @@
       "internal/proxy/backend_heavy_test.go"
     ],
     "loki_api_v1_query": [
+      "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -83,6 +86,7 @@
     "loki_api_v1_query_range": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_query_validation_test.go",
+      "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -158,6 +162,7 @@
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -257,6 +262,13 @@
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
     ],
+    "internal/proxy/series_limit_routes_test.go": [
+      "limits/drilldown-partial-with-warning",
+      "limits/series-limit-error",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "series-limits-and-partial-results"
+    ],
     "internal/proxy/sliding_window_stats_test.go": [
       "heavy-metric-fetch-bounds",
       "limits/stats-row-limit-per-grid",
@@ -338,7 +350,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 26,
+  "tests_with_markers": 27,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

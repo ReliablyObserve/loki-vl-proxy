@@ -160,7 +160,6 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// top-K so the merged set spans the whole timeline (dense, time-distributed)
 	// AND suppresses Grafana's 24h residual-chunk right-edge spike. Falls through
 	// to the bounded two-phase, then the direct fetch, when not applicable.
-	// See memory [[drilldown-high-card-fields-known-limit]].
 	if p.tryHighCardCountByWindowedHits(w, r, logsqlQuery) {
 		return true
 	}
@@ -273,7 +272,6 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// 16 MB body cap and floods Grafana with unrenderable scattered spikes.
 	// the series-limit cap ranks by total count so the busiest pods survive,
 	// not VL's alphabetical first-N (the count==1 noise floor).
-	// See memory [[drilldown-high-card-fields-known-limit]].
 	out := wrapAsLokiResponse(body, "matrix")
 	if limit := p.resolvedMaxStatsQuerySeries(); lokiResultSeriesCount(out) > limit {
 		if err := seriesLimitReached(r.Context(), limit); err != nil {

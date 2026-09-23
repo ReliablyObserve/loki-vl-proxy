@@ -104,7 +104,7 @@ The Go tests read their endpoints from environment variables with compose defaul
 | 13106 | loki-vl-proxy-native-metadata | underscores | native | Native metadata field mode |
 | 13107 | loki-vl-proxy-translated-metadata | underscores | translated | Translated-only metadata aliases |
 | 13108 | loki-vl-proxy-no-metadata | underscores | translated | Structured metadata emission disabled |
-| 13109 | loki-vl-proxy-vmauth | underscores | translated | Backend routed through vmauth |
+| 13109 | loki-vl-proxy-vmauth | underscores | translated | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (500), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
 | 13110 | loki-vl-proxy-patterns-autodetect | underscores | hybrid | Patterns autodetect from queries; Grafana default datasource |
 | 13150 | loki-vl-proxy-peer-a | underscores | translated | L3 peer ring member (zone-a) |
 | 13151 | loki-vl-proxy-peer-b | underscores | translated | L3 peer ring member (zone-b) |

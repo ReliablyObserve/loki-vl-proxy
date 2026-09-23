@@ -11,6 +11,18 @@ why: |
   reached for a single query; returning partial results" in the response body,
   where the plugin surfaces it. A partial result with no warning is the failure
   this case guards against — the panel then looks complete.
+  Loki applies the limit once, to the result of the whole expression
+  (pkg/logql/engine.go JoinSampleVector, v3.7.7), whatever evaluates it. The
+  proxy has several metric routes, and each must answer the same way: native
+  stats and stats buckets, the sliding-window evaluator, the raw-row evaluator,
+  the ordered `| json` evaluator and its stats pushdown, the bare parser paths
+  (raw rows, stats buckets, hits buckets, unwrap stats buckets), binary
+  expressions (an operand cut by the limit carries the warning to the combined
+  answer; a union is held to the limit too), multi-tenant merges (limited as
+  one result, a tenant's warning kept), range and instant. A Drilldown
+  labels breakdown such as
+  `sum(count_over_time({env="production"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [60s])) by (pod)`
+  is evaluated from raw rows, not stats, and got the plain client's 400.
 request:
   method: GET
   path: /loki/api/v1/query_range

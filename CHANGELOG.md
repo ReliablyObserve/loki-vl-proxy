@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Logs Drilldown gets Loki's partial result and warning on every metric
+  route when a query goes over `-max-stats-query-series`. Loki answers a
+  Drilldown request (`X-Query-Tags: Source=grafana-lokiexplore-app`) above
+  `max_query_series` with HTTP 200, the series it has and the warning
+  `maximum number of series (N) reached for a single query; returning
+  partial results` (`pkg/logql/engine.go` `JoinSampleVector`, v3.7.7), and
+  every other client with HTTP 400. Several routes did not follow it. The
+  raw-row evaluators (ordered `| json` metrics such as the Drilldown labels
+  breakdown `sum(count_over_time({...} | detected_level="info" | json | drop
+  __error__, __error_details__ | pipeline="logs/loki" [60s])) by (pod)`,
+  `quantile_over_time` and other raw range metrics, bare parser metrics with
+  unwrap) answered Drilldown with the plain client's 400, so the panel failed
+  (Grafana logged `refID=LABEL_BREAKDOWN_VALUES ... status=400`). The bare
+  parser bucket paths (`count_over_time({...} | logfmt [5m])` from stats or
+  hits buckets, `sum_over_time(... | unwrap x [5m])`) and the grouped sliding
+  window evaluator kept the busiest series silently for every client: no
+  error for a plain client, no warning for Drilldown. A binary expression
+  dropped the warning of an operand that Drilldown had cut, and a union
+  (`a or b`) could return more series than the limit. A multi-tenant
+  (`X-Scope-OrgID: a|b`) metric query dropped a tenant's Drilldown warning in
+  the merge and never limited the merged answer, which Loki's engine limits
+  as one result; the merged cache entry was also shared between Drilldown
+  and other clients. Every one of these routes now answers like Loki:
+  Drilldown keeps the busiest series (by total value; Loki keeps the first it
+  encounters) with Loki's warning, every other client gets Loki's 400 error,
+  and a result with exactly the limit's series passes whole. Drilldown
+  breakdowns answered from `/hits` top values (`X-Proxy-Drilldown-Path:
+  hits`, a single field with a `field!=""` filter) keep their bounded top
+  values without the warning, unchanged by this fix.
+- The e2e compose stack's `loki-vl-proxy-patterns-autodetect` variant, which
+  backs Grafana's default datasource and its Logs Drilldown, now runs
+  `-max-stats-query-series=1000000` like the stack's Loki
+  (`max_query_series: 1000000`) and every other variant, so Drilldown there
+  sees the series Loki returns. `loki-vl-proxy-vmauth` is now the one variant
+  kept at the built-in default of 500, for the series-limit e2e case.
+
 ## [1.94.0] - 2026-09-24
 
 ### Fixed

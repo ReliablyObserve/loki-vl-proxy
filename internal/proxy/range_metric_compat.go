@@ -1308,13 +1308,7 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
 	// busiest series (complete, with byte values and presence) and a warning.
-	if len(seriesMap) > limit {
-		if err := seriesLimitReached(ctx, limit); err != nil {
-			return nil, err
-		}
-		seriesMap = capSeriesByTotalCount(seriesMap, limit)
-	}
-	return seriesMap, nil
+	return capSeriesForRequest(ctx, seriesMap, limit)
 }
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
@@ -1479,8 +1473,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
-			if len(seriesMap) >= p.resolvedMaxStatsQuerySeries() {
-				return nil, &seriesLimitError{limit: p.resolvedMaxStatsQuerySeries()}
+			if err := seriesLimitCollecting(ctx, len(seriesMap), p.resolvedMaxStatsQuerySeries()); err != nil {
+				return nil, err
 			}
 			current.Metric = seriesEntry.translated
 		}
@@ -1502,7 +1496,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		seriesMap[key] = series
 	}
 
-	return seriesMap, nil
+	return capSeriesForRequest(ctx, seriesMap, p.resolvedMaxStatsQuerySeries())
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -1869,61 +1863,12 @@ func (p *Proxy) resolvedMaxStatsQuerySeries() int {
 // -max-stats-query-series.
 const defaultStatsQuerySeries = 500
 
-// capStatsResultsByTotalCount keeps only the maxSeries VL stats results with the
-// highest summed bucket value, dropping the long tail. VL's stats_query_range
-// returns results in LABEL (alphabetical) order, so a plain results[:maxSeries]
-// slice keeps the alphabetically-first series — which for high-cardinality
-// fields (churn-heavy pod names, *_id) is the NOISE FLOOR: ~344/500 pods with
-// count==1 and only a handful with a meaningful count. Ranking by total count
-// instead keeps the BUSIEST series, so the Drilldown chart shows the real
-// signal (continuous lines for the top contributors) rather than scattered
-// single-point spikes. For count_over_time the per-bucket values are counts and
-// for bytes_* they are byte sums, so total value is the genuine busy-ness
-// metric; rate ranks identically (rate = count/window is monotonic in count).
-// Returns the input unchanged when it already fits or maxSeries<=0. Ties on
-// total break on the metric JSON (ascending) for determinism.
-// See memory [[drilldown-high-card-fields-known-limit]].
-func capStatsResultsByTotalCount(results []*fj.Value, maxSeries int) []*fj.Value {
-	if maxSeries <= 0 || len(results) <= maxSeries {
-		return results
-	}
-	type scored struct {
-		idx   int
-		total float64
-		key   string
-	}
-	ranked := make([]scored, len(results))
-	for i, res := range results {
-		var total float64
-		for _, pair := range res.GetArray("values") {
-			arr := pair.GetArray()
-			if len(arr) < 2 {
-				continue
-			}
-			if val, err := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64); err == nil {
-				total += val
-			}
-		}
-		ranked[i] = scored{idx: i, total: total, key: res.Get("metric").String()}
-	}
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].total != ranked[j].total {
-			return ranked[i].total > ranked[j].total
-		}
-		return ranked[i].key < ranked[j].key
-	})
-	out := make([]*fj.Value, maxSeries)
-	for i := 0; i < maxSeries; i++ {
-		out[i] = results[ranked[i].idx]
-	}
-	return out
-}
-
-// capSeriesByTotalCount is the map-based analogue of capStatsResultsByTotalCount
-// for paths that have already assembled a manualSeriesSamples map (e.g. the raw
-// log-scan path via collectRangeMetricSamples → buildManualRangeMetricMatrix).
-// Keeps the maxSeries series with the highest total sample value. Returns the
-// input unchanged when it already fits or maxSeries<=0.
+// capSeriesByTotalCount keeps the maxSeries series with the highest total
+// sample value. VictoriaLogs returns stats results in label order, so a plain
+// first-N cut keeps the alphabetically-first series, which for churning pod
+// names and *_id fields is the noise floor (count 1); ranking by total keeps
+// the busiest series, the ones a Drilldown chart shows. Ties break on the key.
+// Returns the input unchanged when it already fits or maxSeries<=0.
 func capSeriesByTotalCount(series map[string]manualSeriesSamples, maxSeries int) map[string]manualSeriesSamples {
 	if maxSeries <= 0 || len(series) <= maxSeries {
 		return series

@@ -121,6 +121,10 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 		return true
 	}
+	if body, err = p.limitMultiTenantMetricSeries(filteredReq, endpoint, recorders, body); err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return true
+	}
 	if len(body) > p.limits().MultiTenantMergedBytes {
 		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants")
 		return true
@@ -379,11 +383,40 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r)
 		}
 		if endpoint == "query" || endpoint == "query_range" {
-			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r), p.detectedLevelCacheKey())
+			// The response profile carries the tuple mode, the detected_level
+			// derivation and the Grafana client profile: a Logs Drilldown
+			// answer over the series limit is partial, every other client's
+			// is an error, so the two never share an entry.
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.responseProfileCacheKey(r))
 		}
 		return key, true
 	}
 	return "", false
+}
+
+// limitMultiTenantMetricSeries applies the series limit to a merged
+// multi-tenant metric answer, as Loki applies it to the one result its engine
+// builds across the tenants: every tenant can be within the limit while their
+// union is not. A plain client gets Loki's error; Logs Drilldown keeps the
+// busiest series and Loki's warning, also when a tenant's own answer was
+// already cut (its warning is otherwise lost in the merge).
+func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, recorders []*httptest.ResponseRecorder, body []byte) ([]byte, error) {
+	if (endpoint != "query" && endpoint != "query_range") || !logQLProducesSamples(r.FormValue("query")) {
+		return body, nil
+	}
+	scoped, scope := withSeriesLimitScope(r)
+	if scope.drilldown {
+		for _, rec := range recorders {
+			if limit := seriesLimitWarningLimit(rec.Body.Bytes()); limit > 0 {
+				_ = seriesLimitReached(scoped.Context(), limit)
+			}
+		}
+	}
+	capped, err := capSeriesToLimit(scoped.Context(), body, p.resolvedMaxStatsQuerySeries())
+	if err != nil {
+		return nil, err
+	}
+	return addSeriesLimitWarning(capped, scope), nil
 }
 
 func (p *Proxy) tupleModeCacheKey(r *http.Request) string {

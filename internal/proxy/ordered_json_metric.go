@@ -887,10 +887,9 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	if err != nil {
 		return nil, false, false, err
 	}
-	if maxSeries := p.resolvedMaxStatsQuerySeries(); len(series) > maxSeries {
-		// The bucket collector keeps the busiest series; Loki fails instead, and
-		// only above the limit — a query with exactly maxSeries series passes.
-		return nil, false, false, &seriesLimitError{limit: maxSeries}
+	// Only above the limit: a query with exactly the limit's series passes.
+	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries()); err != nil {
+		return nil, false, false, err
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
 	var grouped []string
@@ -1886,8 +1885,8 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 		key := canonicalLabelsKey(labels)
 		entry, exists := series[key]
 		if !exists {
-			if len(series) >= p.resolvedMaxStatsQuerySeries() {
-				return nil, &seriesLimitError{limit: p.resolvedMaxStatsQuerySeries()}
+			if err := seriesLimitCollecting(ctx, len(series), p.resolvedMaxStatsQuerySeries()); err != nil {
+				return nil, err
 			}
 			entry.Metric = labels
 		}
@@ -1904,7 +1903,10 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 	if limited.N <= 0 {
 		return nil, orderedJSONResponseLimitError(maxBytes)
 	}
-	return series, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries())
 }
 
 // Raw VL rows have not executed unpack_json: regular fields outside _stream
