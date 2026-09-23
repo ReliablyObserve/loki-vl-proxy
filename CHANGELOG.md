@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A release is validated, tagged and published from the commit its version
+  was computed from.** Since releases queue instead of cancelling each other,
+  the first release job re-reads `main` before computing the next version, but
+  the validation and publishing jobs still checked out the commit that
+  triggered the run. A queued or re-run release could therefore compute its
+  version and notes from current `main` while tagging, building and checking
+  an older commit — and a re-run of the release for #581 failed its
+  `[Unreleased]` check on the original commit even though `main` had the
+  entries. The first job now records the commit it read, and every later job,
+  the tag, the binaries' and the image's recorded revision use that commit.
 - Fail a metric query over the series limit the way Loki does, instead of
   returning part of the data as if it were all of it. A grouped range metric
   whose grouping has more values than `-max-stats-query-series` (500 by

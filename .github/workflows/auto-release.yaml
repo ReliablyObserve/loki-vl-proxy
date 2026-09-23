@@ -33,6 +33,7 @@ jobs:
       should_release: ${{ steps.check.outputs.should_release }}
       next_version: ${{ steps.check.outputs.next_version }}
       latest_tag: ${{ steps.check.outputs.latest_tag }}
+      release_sha: ${{ steps.reread.outputs.release_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -40,6 +41,7 @@ jobs:
           ref: main
 
       - name: Re-read main and its tags
+        id: reread
         run: |
           set -euo pipefail
           # This run may have waited behind an earlier release. Take main and
@@ -48,6 +50,9 @@ jobs:
           git fetch --force --tags origin main
           git checkout --detach origin/main
           echo "releasing from $(git rev-parse --short HEAD)"
+          # Validation, tagging and publishing all use this commit, so the
+          # release is built from the same main its version was computed from.
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Determine version bump
         id: check
@@ -231,6 +236,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
@@ -283,10 +289,12 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
+      RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
           token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
@@ -335,7 +343,7 @@ jobs:
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists"
           else
-            git tag "${TAG}" "${GITHUB_SHA}"
+            git tag "${TAG}" "${RELEASE_SHA}"
             PRIMARY_URL="https://x-access-token:${PRIMARY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
             if ! git push "${PRIMARY_URL}" "${TAG}"; then
               if [ "${PRIMARY_ACTOR}" = "RELEASE_PR_TOKEN" ]; then
@@ -356,7 +364,7 @@ jobs:
             echo "refusing to build release binaries with VERSION='${VERSION}'" >&2
             exit 1
           fi
-          REVISION="${GITHUB_SHA}"
+          REVISION="${RELEASE_SHA}"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p dist
           for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
@@ -427,7 +435,7 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-            REVISION=${{ github.sha }}
+            REVISION=${{ needs.prepare-release.outputs.release_sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
           tags: ${{ steps.image-tags.outputs.tags }}
           labels: |
