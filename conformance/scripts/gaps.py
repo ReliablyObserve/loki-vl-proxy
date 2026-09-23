@@ -106,6 +106,24 @@ def main():
         lines += ["", "LogQL constructs the proxy supports with no VictoriaLogs equivalent "
                   f"({len(links['no_victorialogs_equivalent'])}): " +
                   ", ".join(f"`{x}`" for x in links["no_victorialogs_equivalent"]), ""]
+    perf_path = f"{ROOT}/generated/perf-evidence.json"
+    if os.path.exists(perf_path):
+        slow = {}
+        for item, measured in load_json(perf_path).items():
+            for r in measured:
+                if r["slower_than_loki_cold"] and not item.startswith(("loki_api_v1_", "api_prom_")):
+                    slow.setdefault(item, []).append(r)
+        lines += ["", "## Slower than Loki on first load", "",
+                  "Registry items whose measured shapes the proxy answers slower than Loki on a",
+                  "cold request (bench/ab runs; details in [performance.md](performance.md)).", ""]
+        if slow:
+            lines += ["| registry item | slower shape×range | worst proxy cold | Loki cold there |", "|---|---|---|---|"]
+            for item, slower in sorted(slow.items(), key=lambda kv: -max(r["cold"] - r["loki_cold"] for r in kv[1])):
+                worst = max(slower, key=lambda r: r["cold"] - r["loki_cold"])
+                lines.append(f"| `{item}` | {len(slower)} | {worst['cold']:.2f}s ({worst['shape']}, {worst['range']}) "
+                             f"| {worst['loki_cold']:.2f}s |")
+        else:
+            lines.append("None measured.")
     lines.append("")
     os.makedirs("conformance/reports", exist_ok=True)
     write_text("conformance/reports/gaps.md", "\n".join(lines))

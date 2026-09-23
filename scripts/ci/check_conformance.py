@@ -5,7 +5,9 @@ Fails when:
   * a test claims a registry id that does not exist,
   * a proxy route has no registry item,
   * a registry item points at code that no longer exists,
-  * a generated report is stale (coverage map, gaps, translation map, roadmap,
+  * a bench/ab shape covers an unknown registry id, or a saved A/B result does
+    not match the shape sets (performance evidence);
+  * a generated report is stale (performance, coverage map, gaps, translation map, roadmap,
     compatibility matrix),
   * a flag is missing from the places that list every flag,
   * a score or an item's state regressed against the committed baseline, or a
@@ -26,6 +28,8 @@ import tempfile
 
 SCRIPTS = "conformance/scripts"
 REPORTS = (
+    # perf_evidence.py runs first: gaps.py reads the evidence it writes.
+    ("perf_evidence.py", "conformance/reports/performance.md", None),
     ("coverage_map.py", "conformance/reports/coverage-map.md", "--docs"),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
@@ -49,6 +53,11 @@ def main():
     print(wiring.stdout.strip())
     if wiring.returncode:
         failures.append("registry wiring")
+
+    performance = run("perf_evidence.py", "--check")
+    print(performance.stdout.strip())
+    if performance.returncode:
+        failures.append("performance evidence")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

@@ -114,3 +114,20 @@ chance to move work off the proxy and onto the backend.
 
 LogQL constructs the proxy supports with no VictoriaLogs equivalent (23): `!=`, `%`, `*`, `+`, `-`, `/`, `<`, `<=`, `==`, `>`, `>=`, `^`, `and`, `group_left`, `group_right`, `ignoring`, `offset`, `on`, `or`, `rate_counter`, `unless`, `vector`, `|`
 
+
+## Slower than Loki on first load
+
+Registry items whose measured shapes the proxy answers slower than Loki on a
+cold request (bench/ab runs; details in [performance.md](performance.md)).
+
+| registry item | slower shape×range | worst proxy cold | Loki cold there |
+|---|---|---|---|
+| `explore-logs-volume-json` | 10 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
+| `parser-error-and-label-collision` | 10 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
+| `semantics/json-filter-pushdown-translated-label` | 4 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
+| `semantics/json-filter-pushdown-underscore-label` | 9 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
+| `semantics/json-filter-pushdown-without-error-drop` | 9 | 1.75s (B grouped sum, filter, no drop, 24h) | 0.53s |
+| `parsed-label-series-identity` | 5 | 1.16s (F field breakdown service_version (explore), 3h) | 0.04s |
+| `semantics/json-label-spelling-probe` | 5 | 1.16s (F field breakdown service_version (explore), 3h) | 0.04s |
+| `semantics/json-filter-pushdown-ungrouped-sum` | 2 | 0.46s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
+| `severity-detected-level-derivation` | 1 | 0.26s (json volume no filters, 24h) | 0.17s |
