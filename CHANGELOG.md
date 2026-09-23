@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.89.0] - 2026-09-23
-
 ### Fixed
 
 - `count`, `min`, `max` and `avg` of a range aggregation read one value per
@@ -36,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dynamic-key parser pipeline, Loki counts more series than the proxy does;
   `count(count_over_time({app="worker-service"} | logfmt [1m]))` is 450 on
   Loki and 30 here.
+
+## [1.89.0] - 2026-09-23
+
+### Fixed
+
 - **A release is validated, tagged and published from the commit its version
   was computed from.** Since releases queue instead of cancelling each other,
   the first release job re-reads `main` before computing the next version, but
