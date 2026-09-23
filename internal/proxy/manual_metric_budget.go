@@ -266,13 +266,13 @@ func addSeriesLimitWarning(body []byte, scope *seriesLimitScope) []byte {
 		return body
 	}
 	warning, _ := json.Marshal([]string{fmt.Sprintf("maximum number of series (%d) reached for a single query; returning partial results", limit)})
-	out := make([]byte, 0, len(body)+len(warning)+14)
-	out = append(out, `{"warnings":`...)
-	out = append(out, warning...)
+	separator := []byte{}
 	if len(body) > 2 {
-		out = append(out, ',')
+		separator = []byte{','}
 	}
-	return append(out, body[1:]...)
+	// bytes.Join sizes the result once and checks the sum for overflow, so the
+	// response is not copied twice and no length arithmetic happens here.
+	return bytes.Join([][]byte{[]byte(`{"warnings":`), warning, separator, body[1:]}, nil)
 }
 
 // hasTopLevelWarnings reports whether the response object already carries a

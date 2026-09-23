@@ -136,3 +136,31 @@ func TestBareParserRawSampleWeightAppliesUnwrapConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestAddSeriesLimitWarning(t *testing.T) {
+	const want500 = `{"warnings":["maximum number of series (500) reached for a single query; returning partial results"]`
+	truncated := &seriesLimitScope{drilldown: true}
+	truncated.truncated.Store(500)
+
+	cases := []struct {
+		name  string
+		body  string
+		scope *seriesLimitScope
+		want  string
+	}{
+		{"object with fields", `{"status":"success","data":{}}`, truncated, want500 + `,"status":"success","data":{}}`},
+		{"empty object", `{}`, truncated, want500 + `}`},
+		{"not truncated", `{"status":"success"}`, &seriesLimitScope{drilldown: true}, `{"status":"success"}`},
+		{"no scope", `{"status":"success"}`, nil, `{"status":"success"}`},
+		{"already warned", `{"warnings":["x"],"status":"success"}`, truncated, `{"warnings":["x"],"status":"success"}`},
+		{"not an object", `[1,2]`, truncated, `[1,2]`},
+		{"empty body", ``, truncated, ``},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(addSeriesLimitWarning([]byte(tc.body), tc.scope)); got != tc.want {
+				t.Fatalf("got  %s\nwant %s", got, tc.want)
+			}
+		})
+	}
+}
