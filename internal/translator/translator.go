@@ -487,7 +487,7 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
-	if metricResult, ok := tryTranslateMetricQuery(logql, labelFn); ok {
+	if metricResult, ok := tryTranslateMetricQueryWithout(logql, labelFn, len(withoutLabels) > 0); ok {
 		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
@@ -1621,7 +1621,15 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 }
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
-func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) { //nolint:gocyclo // multi-function metric dispatcher: quantile, rate, unwrap, stdvar, outer-agg, recursive nested — each branch is a distinct translation rule
+func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
+	return tryTranslateMetricQueryWithout(logql, labelFn, false)
+}
+
+// tryTranslateMetricQueryWithout is tryTranslateMetricQuery for a query whose
+// `without (...)` clause the caller stripped: the outer aggregation then keeps
+// the series identity in its grouping, so the proxy can drop the excluded
+// labels and aggregate what remains.
+func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, hasWithout bool) (string, bool) { //nolint:gocyclo // multi-function metric dispatcher: quantile, rate, unwrap, stdvar, outer-agg, recursive nested — each branch is a distinct translation rule
 	// Match patterns like: sum(rate({...}[5m])) by (label)
 	// or: count_over_time({...}[5m])
 	// or: rate({...}[5m])
@@ -1702,7 +1710,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		}
 
 		if funcName == "rate" || funcName == "bytes_rate" {
-			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, logsqlFunc, duration, outerAgg, byLabels, labelFn); ok {
+			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, logsqlFunc, duration, outerAgg, byLabels, labelFn, hasWithout); ok {
 				if isGroup {
 					return rateResult + groupMarker, true
 				}
@@ -1738,7 +1746,11 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, baseStddev), true
 			}
 
-			if outerAgg != "" && byLabels == "" {
+			if seriesAgg, ok := seriesLevelOuterAggregation(outerAgg); ok && byLabels != "" {
+				innerAliased := buildStatsQuery(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query)), "__lvp_inner")
+				result = addByClauseLast(innerAliased+" "+logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String(), byLabels, labelFn)
+				unwrapByLabelsEmbedded = true
+			} else if outerAgg != "" && byLabels == "" {
 				innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
 				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
 					result = outerResult
@@ -1750,6 +1762,27 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				// buildStatsQuery already embedded byLabels via innerBy
 				unwrapByLabelsEmbedded = byLabels != ""
 			}
+		} else if seriesAgg, ok := seriesLevelOuterAggregation(outerAgg); ok {
+			// count/min/max/avg aggregate the VALUES of the inner range
+			// aggregation, one per Loki series, so the inner stats keeps the
+			// series identity and the outer stats aggregates those values.
+			// Loki: count by (pod) (count_over_time(...)) is the number of
+			// series per pod, not the number of lines.
+			innerBy := joinByLabels(normalizeByLabels(byLabels, labelFn), defaultRateInnerGrouping(query))
+			innerAliased := buildStatsQuery(logsqlQuery, logsqlFunc, innerBy, "__lvp_inner")
+			result = innerAliased + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String()
+			switch {
+			case byLabels != "":
+				result = addByClauseLast(result, byLabels, labelFn)
+			case hasWithout:
+				// One row per series: the proxy drops the excluded labels and
+				// aggregates the rows of each remaining label set.
+				result = addByClauseLast(result, innerBy, nil)
+			}
+			if isGroup {
+				return result + groupMarker, true
+			}
+			return result, true
 		} else {
 			result = logsqlQuery + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: logsqlFunc}}}}.String()
 		}
@@ -1795,19 +1828,48 @@ func defaultRateInnerGrouping(query string) string {
 	return "_stream, level"
 }
 
-func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc) (string, bool) {
+func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc, hasWithout bool) (string, bool) {
 	seconds := durationSeconds(duration)
 	if seconds <= 0 {
 		return "", false
 	}
 
 	innerBy := defaultRateInnerGrouping(originalQuery)
-	if byLabels != "" {
+	seriesAgg, seriesLevel := seriesLevelOuterAggregation(outerAgg)
+	switch {
+	case seriesLevel:
+		// count/min/max/avg read one rate value per Loki series, so the inner
+		// stats keeps the series identity next to the requested labels.
+		innerBy = joinByLabels(normalizeByLabels(byLabels, labelFn), innerBy)
+	case byLabels != "":
 		innerBy = normalizeByLabels(byLabels, labelFn)
 	}
 
 	innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+	if seriesLevel && seriesAgg == "count()" {
+		// Counting series does not read the per-second value, so the rate
+		// division is left out.
+		result := innerAliased + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String()
+		switch {
+		case byLabels != "":
+			result = addByClauseLast(result, byLabels, labelFn)
+		case hasWithout:
+			result = addByClauseLast(result, innerBy, nil)
+		}
+		return result, true
+	}
 	withRate := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_rate", Expr: "__lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64)}.String()
+
+	if seriesLevel {
+		result := withRate + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: strings.ReplaceAll(seriesAgg, "__lvp_inner", "__lvp_rate")}}}}.String()
+		switch {
+		case byLabels != "":
+			result = addByClauseLast(result, byLabels, labelFn)
+		case hasWithout:
+			result = addByClauseLast(result, innerBy, nil)
+		}
+		return result, true
+	}
 
 	if outerAgg != "" && byLabels == "" {
 		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
@@ -1869,6 +1931,62 @@ func outerAggregationStatsFn(outerAgg string) (statsFn string, pow2 bool) {
 	default:
 		return "", false
 	}
+}
+
+// seriesLevelOuterAggregation returns the VictoriaLogs stats function for an
+// outer aggregation that reads one value per inner series (count, min, max,
+// avg), and false for sum, which is the same as aggregating the rows directly,
+// and for the aggregations the proxy evaluates on the response.
+func seriesLevelOuterAggregation(outerAgg string) (string, bool) {
+	switch outerAgg {
+	case "count":
+		return "count()", true
+	case "min", "max", "avg":
+		return outerAgg + "(__lvp_inner)", true
+	default:
+		return "", false
+	}
+}
+
+// joinByLabels concatenates two by-label lists, dropping duplicates and empty
+// entries. An explicit empty grouping (by ()) wins over the identity labels.
+func joinByLabels(byLabels, identity string) string {
+	if byLabels == emptyByGrouping {
+		return byLabels
+	}
+	seen := make(map[string]struct{}, 4)
+	out := make([]string, 0, 4)
+	for _, list := range []string{byLabels, identity} {
+		for _, part := range strings.Split(list, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			if _, ok := seen[part]; ok {
+				continue
+			}
+			seen[part] = struct{}{}
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+// addByClauseLast inserts by(labels) into the LAST stats pipe of query. It
+// must run before any marker is appended to the translated query (the
+// without marker, for one), because it locates that pipe by its last
+// occurrence in the string.
+func addByClauseLast(query, labels string, labelFn LabelTranslateFunc) string {
+	labels = normalizeByLabels(labels, labelFn)
+	if labels == "" {
+		return query
+	}
+	idx := strings.LastIndex(query, "| stats ")
+	if idx < 0 {
+		return query + " | stats by (" + labels + ")"
+	}
+	statsStart := idx + len("| stats ")
+	return query[:statsStart] + "by (" + labels + ") " + query[statsStart:]
 }
 
 func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {

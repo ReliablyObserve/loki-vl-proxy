@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -38,7 +40,66 @@ func (w *bufferedResponseWriter) WriteHeader(code int) {
 // This implements proper `without(label1, label2)` semantics:
 // - VL returns results with all labels
 // - We remove the excluded labels and sum values for series that now share the same key
-func applyWithoutGrouping(body []byte, excludeLabels []string) []byte {
+// withoutAggregationOp returns the outer aggregation of a `<op> without (...)`
+// query, which decides how the series that share a label set are combined.
+func withoutAggregationOp(logql string) string {
+	expr, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	if err != nil {
+		return ""
+	}
+	aggregation, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(string(aggregation.Op))
+}
+
+// withoutMerge is how the values of the series that share a label set after
+// the excluded labels are dropped are combined: Loki's outer aggregation.
+type withoutMerge struct {
+	sum, count bool
+	min, max   bool
+	avg        bool
+}
+
+// withoutMergeForOp returns the merge for a `<op> without (...)` aggregation.
+// sum is the default: it is what every caller did before the other operators
+// were translated series by series.
+func withoutMergeForOp(op string) withoutMerge {
+	switch op {
+	case "count":
+		return withoutMerge{count: true}
+	case "min":
+		return withoutMerge{min: true}
+	case "max":
+		return withoutMerge{max: true}
+	case "avg":
+		return withoutMerge{avg: true}
+	default:
+		return withoutMerge{sum: true}
+	}
+}
+
+// combine folds value into the accumulator of a group. n is how many values,
+// including this one, the group has seen.
+func (m withoutMerge) combine(acc, value float64, n int) float64 {
+	switch {
+	case n == 1 && !m.count:
+		return value
+	case m.count:
+		return acc + 1
+	case m.min:
+		return math.Min(acc, value)
+	case m.max:
+		return math.Max(acc, value)
+	case m.avg:
+		return acc + (value-acc)/float64(n)
+	default:
+		return acc + value
+	}
+}
+
+func applyWithoutGrouping(body []byte, excludeLabels []string, op string) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -55,16 +116,17 @@ func applyWithoutGrouping(body []byte, excludeLabels []string) []byte {
 		exclude[strings.TrimSpace(l)] = true
 	}
 
+	merge := withoutMergeForOp(op)
 	if resp.Data.ResultType == "vector" {
-		return applyWithoutVector(body, exclude)
+		return applyWithoutVector(body, exclude, merge)
 	}
 	if resp.Data.ResultType == "matrix" {
-		return applyWithoutMatrix(body, exclude)
+		return applyWithoutMatrix(body, exclude, merge)
 	}
 	return body
 }
 
-func applyWithoutVector(body []byte, exclude map[string]bool) []byte {
+func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -83,6 +145,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool) []byte {
 	type groupEntry struct {
 		metric map[string]interface{}
 		value  float64
+		count  int
 		ts     interface{}
 	}
 	groups := make(map[string]*groupEntry)
@@ -107,14 +170,15 @@ func applyWithoutVector(body []byte, exclude map[string]bool) []byte {
 		}
 
 		if existing, ok := groups[key]; ok {
-			existing.value += val // sum aggregation
+			existing.count++
+			existing.value = merge.combine(existing.value, val, existing.count)
 		} else {
 			// Convert to map[string]interface{} for JSON marshaling
 			m := make(map[string]interface{}, len(filtered))
 			for k, v := range filtered {
 				m[k] = v
 			}
-			groups[key] = &groupEntry{metric: m, value: val, ts: ts}
+			groups[key] = &groupEntry{metric: m, value: merge.combine(0, val, 1), count: 1, ts: ts}
 		}
 	}
 
@@ -137,7 +201,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool) []byte {
 	return out
 }
 
-func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
+func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -155,6 +219,7 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 	type groupedSeries struct {
 		metric map[string]interface{}
 		values map[string]float64
+		counts map[string]int
 		order  map[string]interface{}
 	}
 	groups := make(map[string]*groupedSeries)
@@ -175,6 +240,7 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 			group = &groupedSeries{
 				metric: metric,
 				values: make(map[string]float64, len(series.Values)),
+				counts: make(map[string]int, len(series.Values)),
 				order:  make(map[string]interface{}, len(series.Values)),
 			}
 			groups[key] = group
@@ -185,13 +251,19 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 			}
 			tsKey := fmt.Sprintf("%v", point[0])
 			group.order[tsKey] = point[0]
+			value, ok := 0.0, false
 			switch raw := point[1].(type) {
 			case string:
-				parsed, _ := strconv.ParseFloat(raw, 64)
-				group.values[tsKey] += parsed
+				value, ok = 0, true
+				value, _ = strconv.ParseFloat(raw, 64)
 			case float64:
-				group.values[tsKey] += raw
+				value, ok = raw, true
 			}
+			if !ok {
+				continue
+			}
+			group.counts[tsKey]++
+			group.values[tsKey] = merge.combine(group.values[tsKey], value, group.counts[tsKey])
 		}
 	}
 
