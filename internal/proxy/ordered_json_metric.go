@@ -710,18 +710,11 @@ func lokiNormalizedLevel(level string) string {
 	return level
 }
 
-// orderedJSONStatsBuckets serves an eligible plan (setStatsPushdown) from
-// stats_query_range buckets on the anchored sliding grid instead of raw rows.
-// served is false when the raw evaluator must answer: no bucket grid, a label
-// VictoriaLogs spells differently, a possible series-limit overflow, or lines
-// whose JSON VictoriaLogs rejects while Loki may still extract a grouped label.
-func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, err error) {
-	body, served, _, err = p.orderedJSONStatsBucketsWithReason(ctx, plan, start, end, step)
-	return body, served, err
-}
-
-// orderedJSONStatsBucketsWithReason reports, in addition, whether the pushdown
-// declined because a selected line is read differently by the two parsers.
+// orderedJSONStatsBucketsWithReason serves an eligible plan (setStatsPushdown)
+// from stats_query_range buckets on the anchored sliding grid instead of raw
+// rows. served is false when the raw evaluator must answer: no bucket grid, a
+// possible series-limit overflow, or a line a probe found to be read
+// differently by the two parsers (parseDisagreement).
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
 	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
