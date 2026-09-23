@@ -7,35 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.88.0] - 2026-09-23
-
-### Added
-
-- **Every execution limit is documented where operators look for it.** The
-  thirteen limits that became flags (`-max-entries-limit-per-query`,
-  `-max-query-length-bytes`, `-backend-max-buffered-response-bytes`, the two
-  binary-metric bounds, `-max-zero-fill-buckets`, `-drilldown-max-stats-buckets`,
-  `-detected-fields-max-scan-lines`, the three `/patterns` bounds and the two
-  multi-tenant bounds) are now listed in the configuration reference with their
-  defaults and what each one bounds, and the "Fixed Execution Limits" table no
-  longer describes configurable limits as fixed. The conformance gate enforces
-  that every flag appears there.
-- **The conformance registry now generates the roadmap and the compatibility
-  matrix, and CI enforces it.** `roadmap.py` renders what is proven, partial,
-  waived and still a gap from the registry's own state, ranked by which clients
-  depend on it, so the plan cannot drift from the evidence; `matrix_link.py`
-  joins `compatibility-matrix.json` with the registry so every version row
-  carries the evidence behind it. `evidence.py` maps `go test -json` and
-  Playwright results back to the items each test declares and fails when a state
-  claims more than its evidence supports. `live_proof.py` runs the registry's
-  cases against real Loki and the proxy on the same data and records `holds`,
-  `gap` or `blocked` with both answers. `ratchet.py` holds a committed baseline,
-  so a score or an item's state can rise but never fall, and an expired waiver
-  fails. `flag_docs.py` checks every flag against the places that list flags
-  exhaustively — it found `-peer-srv` and `-peer-http-url` missing from the
-  chart values. All of it runs as the `conformance` CI job, which also posts the
-  registry items a pull request touches into its summary.
-
 ### Fixed
 
 - Fail a metric query over the series limit the way Loki does, instead of
@@ -98,6 +69,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ordinary `sum by (namespace) (count_over_time(...))` scanned the range twice.
   The bucket query now runs alone, and values are ranked only when the result
   exceeds the series limit.
+
+## [1.88.0] - 2026-09-23
+
+### Added
+
+- **Every execution limit is documented where operators look for it.** The
+  thirteen limits that became flags (`-max-entries-limit-per-query`,
+  `-max-query-length-bytes`, `-backend-max-buffered-response-bytes`, the two
+  binary-metric bounds, `-max-zero-fill-buckets`, `-drilldown-max-stats-buckets`,
+  `-detected-fields-max-scan-lines`, the three `/patterns` bounds and the two
+  multi-tenant bounds) are now listed in the configuration reference with their
+  defaults and what each one bounds, and the "Fixed Execution Limits" table no
+  longer describes configurable limits as fixed. The conformance gate enforces
+  that every flag appears there.
+- **The conformance registry now generates the roadmap and the compatibility
+  matrix, and CI enforces it.** `roadmap.py` renders what is proven, partial,
+  waived and still a gap from the registry's own state, ranked by which clients
+  depend on it, so the plan cannot drift from the evidence; `matrix_link.py`
+  joins `compatibility-matrix.json` with the registry so every version row
+  carries the evidence behind it. `evidence.py` maps `go test -json` and
+  Playwright results back to the items each test declares and fails when a state
+  claims more than its evidence supports. `live_proof.py` runs the registry's
+  cases against real Loki and the proxy on the same data and records `holds`,
+  `gap` or `blocked` with both answers. `ratchet.py` holds a committed baseline,
+  so a score or an item's state can rise but never fall, and an expired waiver
+  fails. `flag_docs.py` checks every flag against the places that list flags
+  exhaustively — it found `-peer-srv` and `-peer-http-url` missing from the
+  chart values. All of it runs as the `conformance` CI job, which also posts the
+  registry items a pull request touches into its summary.
+
+### Fixed
+
 - **Release metadata pull requests pass the changelog gate again.** The gate
   listed a pull request's files with a two-dot diff against the current base,
   so a branch cut before the base moved appeared to change every file merged
