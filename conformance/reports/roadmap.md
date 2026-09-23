@@ -25,7 +25,7 @@ Proven in part; the rest is named in the item's cases.
 | Item | Consumers | Tests | Why |
 |---|---|---:|---|
 | `drilldown-service-landing` — Logs Drilldown ranks services on the landing page | — | 0 | 1/3 deltas proven. |
-| `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | — | 0 | 2/5 deltas proven. |
+| `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | — | 0 | 3/6 deltas proven. |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 3 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 2 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 3 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |

@@ -21,8 +21,9 @@ why: |
   `field:* | unpack_json fields (field) | filter field:=""` probe; a line
   whose body also holds the key parses on both sides, so an ingestion route
   that stores the body's keys as fields, like the e2e generator's
-  VictoriaLogs JSON route, keeps the pushdown). A negative filter (`!=` a
-  non-empty value, `!~`) keeps unparsed lines and still requires
+  VictoriaLogs JSON route, keeps the pushdown). A filter the empty value
+  passes (`!=` a non-empty value, `!~` whose regexp cannot match "", `=~`
+  whose regexp matches "", `=""`) keeps unparsed lines and still requires
   `drop __error__`.
 
   Layer: VictoriaLogs native stats with `filter pipeline:="logs/loki"`;

@@ -582,7 +582,7 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 		{"dotted key", volume, `{"service.version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 1, false},
 		{"hyphenated key", volume, `{"service-version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 1, false},
 		{"key before syntax error", `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, `{"pipeline":"logs/loki","msg": truncated`, nil, nil, 2, true},
-		{"stored filter label", `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, `{"n":1}`, map[string]string{"pipeline": "logs/loki"}, map[string]string{"pipeline": "logs/loki"}, 1, false},
+		{"stored filter label", `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, `{"n":1}`, map[string]string{"pipeline": "logs/loki"}, map[string]string{"pipeline": "logs/loki"}, 2, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := []pushdownRow{base(0), base(1), base(2)}
@@ -650,8 +650,10 @@ func TestOrderedJSONFilterPushdownStoredBodyKeyKeepsStats(t *testing.T) {
 	if fake.raw != 0 || len(fake.stats) != 1 || len(fake.guards) != 2 {
 		t.Fatalf("expected two probes and one stats call without raw rows: raw=%d stats=%q guards=%q", fake.raw, fake.stats, fake.guards)
 	}
-	if want := ` | filter pipeline:* | unpack_json fields (pipeline) | filter pipeline:="" | limit 1`; !strings.HasSuffix(fake.guards[0], want) {
-		t.Fatalf("stored-field probe %q does not end with %q", fake.guards[0], want)
+	// The two probes run concurrently, so find the stored-field one by shape.
+	probe := ` | filter pipeline:* | unpack_json fields (pipeline) | filter pipeline:="" | limit 1`
+	if !strings.HasSuffix(fake.guards[0], probe) && !strings.HasSuffix(fake.guards[1], probe) {
+		t.Fatalf("stored-field probe %q does not end with %q", fake.guards, probe)
 	}
 }
 
@@ -679,11 +681,15 @@ func TestOrderedJSONLabelAliasPattern(t *testing.T) {
 		{"service_version", `{"service": {"name": "api-gateway"}, "method": "GET", "level": "info", "version": "v1"}`, false},
 		{"service_version", `{"service":{"name":"api","meta":{"a":{"b":1}}},"version":"v1"}`, false},
 		{"service_version", `{"service":{"msg":"{\"version\":1}"},"version":"v1"}`, false},
-		{"service_version", `{"service":{"a":{"b":{"c":1}},"version":"1"}}`, true}, // sibling three deep
-		{"service_version", `{"service":{"msg":"}","version":"1"}}`, true},         // brace inside a string
-		{"service_version", `{"service":{"":{"version":"1"}}}`, true},              // blank key skipped by Loki
-		{"service_version", `{"x":{"y":{"z":{"w":{"v":1}}}}},"version":2}`, true},  // five deep: matched outright
+		{"service_version", `{"service":{"a":{"b":{"c":1}},"version":"1"}}`, true},              // sibling three deep
+		{"service_version", `{"service":{"msg":"}","version":"1"}}`, true},                      // brace inside a string
+		{"service_version", `{"service":{"":{"version":"1"}}}`, true},                           // blank key skipped by Loki
+		{"service_version", `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}},"version":"1"}}`, true}, // sibling too deep: matched outright
+		{"service_version", `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}}},"version":"1"}`, true}, // same, though version is outside
+		{"service_version", `{"x":{"y":{"z":{"w":{"v":1}}}}},"version":2}`, false},              // deep nesting outside the parent
 		{"service_version", `{"x":{"y":{"z":{"w":1}}}},"service":{"name":1},"version":2}`, false},
+		{"service_version", `{" service ":{"version":"1"}}`, true},                       // Loki trims unicode spaces
+		{"k8s_pod_labels_app", `{"k8s":{"x":1},"pod":{"labels":{"y":2}},"app":3}`, true}, // three underscores: parts in order suffice
 		{"k8s_pod_name", `{"k8s":{"pod":{"name":"p"}}}`, true},
 		{"k8s_pod_name", `{"k8s.pod.name":"p"}`, true},
 		{"k8s_pod_name", `{"k8s_pod":{"name":"p"}}`, true},
@@ -817,23 +823,32 @@ func TestLogfmtFilterPushdownAliasKeepsRawEvaluator(t *testing.T) {
 }
 
 // The evaluator counter distinguishes stats-bucket answers from raw-row
-// evaluations on /metrics.
+// evaluations on /metrics, and says why the raw evaluator answered: a probe
+// found a line the parsers read differently, or the pipeline is not one the
+// pushdown covers.
 // conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-underscore-label
 func TestRangeMetricEvaluatorCounter(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	rows := filterPushdownFixture(s0)
-	srv, _ := newPushdownFakeVL(t, rows, nil)
+	rows = append(rows, pushdownRow{ts: s0.Add(2 * time.Minute), stream: map[string]string{"app": "api"}, msg: `{"service-version":"0.96.0","pipeline":"logs/loki"}`})
+	srv, fake := newPushdownFakeVL(t, rows, nil)
 	p := newFilterPushdownProxy(t, srv.URL)
+	fake.stored = p.labelTranslator.ToVL
 	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, start, end, time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" | drop __error__ [1m]))`, start, end, time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level_extracted) (count_over_time({app="api"} | json | drop __error__ [1m]))`, start, end, time.Minute)
+	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | service_version="0.96.0" | drop __error__ [1m]))`, start, end, time.Minute)
 	rec := httptest.NewRecorder()
 	p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := rec.Body.Bytes()
-	for _, want := range []string{`loki_vl_proxy_range_metric_evaluations_total{evaluator="vl_stats_buckets"} 2`, `loki_vl_proxy_range_metric_evaluations_total{evaluator="raw_rows"} 1`} {
+	for _, want := range []string{
+		`loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="ineligible"} 1`,
+		`loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"} 1`,
+		`loki_vl_proxy_parser_metric_evaluations_total{evaluator="vl_stats_buckets",reason="pushdown"} 2`,
+	} {
 		if !bytes.Contains(body, []byte(want)) {
-			t.Fatalf("/metrics lacks %q", want)
+			t.Fatalf("/metrics lacks %q in:\n%s", want, body)
 		}
 	}
 }

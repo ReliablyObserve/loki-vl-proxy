@@ -21,7 +21,7 @@ proxy: |
   truncated JSON, repeated keys, arrays, escaped keys, U+FFFD, a key Loki
   sanitizes or flattens into the grouped or filtered label). Summed range
   metrics over one parser with string label filters are pushed down to
-  VictoriaLogs stats over unpack_json/unpack_logpfmt and filter pipes; cheap
+  VictoriaLogs stats over unpack_json/unpack_logfmt and filter pipes; cheap
   `| limit 1` probes over the range decline the pushdown for one such line
   and keep the exact raw-row evaluator. A filter that rejects the empty value
   stands in for `drop __error__`, since no unparsed line has the key.

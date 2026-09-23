@@ -44,6 +44,6 @@ compare:
   expect: |
     HTTP 200; the label sets and per-step values equal Loki's; the proxy
     answers from `stats_query_range` (one probe, no raw-row fetch, so
-    `loki_vl_proxy_range_metric_evaluations_total{evaluator="raw_rows"}`
+    `loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"}`
     does not move). Measured on v1.91.0 at 3 h: proxy 502 after 12.7 s,
     Loki 200 in 4.7 s.

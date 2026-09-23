@@ -24,13 +24,20 @@ import (
 	"github.com/grafana/jsonparser"
 )
 
-// Values of the evaluator label of loki_vl_proxy_range_metric_evaluations_total
-// for the parser-dependent metric routes: VictoriaLogs stats buckets, or the
-// raw-row evaluator the parse-risk probes keep for lines the two parsers read
-// differently.
+// Values of the evaluator and reason labels of
+// loki_vl_proxy_parser_metric_evaluations_total for the parser-dependent
+// metric routes: VictoriaLogs stats buckets answered the pushdown, or the
+// raw-row evaluator answered because a probe found a line the two parsers
+// read differently, the pipeline is not one the pushdown covers, the step and
+// range give no bucket grid, or the query is an instant query.
 const (
 	rangeMetricEvaluatorStats   = "vl_stats_buckets"
 	rangeMetricEvaluatorRawRows = "raw_rows"
+	rangeMetricReasonPushdown   = "pushdown"
+	rangeMetricReasonProbe      = "probe"
+	rangeMetricReasonIneligible = "ineligible"
+	rangeMetricReasonGrid       = "grid"
+	rangeMetricReasonInstant    = "instant"
 )
 
 // defaultOrderedJSONMetricMaxBytes admits about one million raw rows (the
@@ -125,14 +132,23 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	start, end, step, err := orderedJSONMetricTimes(r, isRange)
 	var body []byte
 	served := false
+	reason := rangeMetricReasonInstant
 	if err == nil && isRange {
-		body, served, err = p.orderedJSONStatsBuckets(r.Context(), plan, start, end, step)
-		if served {
-			p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorStats)
+		var parseDisagreement bool
+		body, served, parseDisagreement, err = p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
+		switch {
+		case served:
+			p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
+		case parseDisagreement:
+			reason = rangeMetricReasonProbe
+		case !plan.pushdown:
+			reason = rangeMetricReasonIneligible
+		default:
+			reason = rangeMetricReasonGrid
 		}
 	}
 	if err == nil && !served {
-		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorRawRows)
+		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorRawRows, reason)
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
@@ -457,6 +473,22 @@ func lokiKeyAliasPatterns(label, other string) []string {
 	return out
 }
 
+// jsonKeySpace is the class of the runes Loki trims around a JSON key
+// (unicode.IsSpace); RE2's \s covers ASCII only.
+const jsonKeySpace = `[\s\v\x{85}\p{Z}]`
+
+// jsonKeyPattern renders the JSON text of a key matching the pattern of its
+// raw name, with the spaces Loki trims.
+func jsonKeyPattern(name string) string {
+	return `"` + jsonKeySpace + `*(?:` + name + `)` + jsonKeySpace + `*"\s*:`
+}
+
+// maxOrderedJSONBalancedUnderscores bounds the labels whose nested-key
+// alternatives locate the key inside its parent's object exactly; a label with
+// more underscores has too many splits for the balanced text, and matches
+// any text in which the parts appear in order (a superset).
+const maxOrderedJSONBalancedUnderscores = 2
+
 // orderedJSONLabelAliasPattern returns a regexp matching JSON text in which
 // Loki's parser yields one of the labels from a key spelled differently:
 // a top-level key that sanitizes to it, or nested object keys whose sanitized
@@ -467,24 +499,26 @@ func lokiKeyAliasPatterns(label, other string) []string {
 //
 // A nested key must sit directly in its parent's object (through blank-key
 // objects), so the text between the parent's brace and the key is matched
-// with balanced braces, strings included, up to three levels of sibling
-// objects; a line nested five levels deep anywhere is matched outright, which
-// keeps deeper siblings on the exact side at the cost of a fallback.
+// with balanced braces, strings included, for siblings nested up to three
+// levels; a parent object in which the nesting goes deeper is matched
+// outright, so a deeper sibling costs a fallback, never exactness. A quote
+// inside a string value lets the two sides of a string pair with other
+// quotes, which can only add matches.
 func orderedJSONLabelAliasPattern(labels []string) string {
 	// A quote is in the class: an escaped quote inside a key (a\"b) is two
 	// runes Loki sanitizes to two underscores.
-	const other, key, str = `[^A-Za-z0-9]`, `"\s*(?:%s)\s*"\s*:`, `"(?:[^"\\]|\\.)*"`
+	const other, str = `[^A-Za-z0-9]`, `"(?:[^"\\]|\\.)*"`
 	balanced := `(?:[^{}"]|` + str + `)*`
 	for i := 0; i < 3; i++ {
 		balanced = `(?:[^{}"]|` + str + `|\{` + balanced + `\})*`
 	}
-	object := `\s*\{` + balanced + `(?:"\s*"\s*:\s*\{` + balanced + `)*`
-	deep := `(?:\{(?:[^{}"]|` + str + `)*){5}`
+	object := `\s*\{` + balanced + `(?:"` + jsonKeySpace + `*"\s*:\s*\{` + balanced + `)*`
+	deeper := `\s*\{` + strings.Repeat(balanced+`\{`, 4)
+	loose := `\s*\{(?s:.*)`
 	var alternatives []string
-	nested := false
 	for _, label := range labels {
 		if aliases := lokiKeyAliasPatterns(label, other); len(aliases) > 0 {
-			alternatives = append(alternatives, fmt.Sprintf(key, strings.Join(aliases, "|")))
+			alternatives = append(alternatives, jsonKeyPattern(strings.Join(aliases, "|")))
 		}
 		var separators []int
 		for i := 0; i < len(label); i++ {
@@ -492,6 +526,8 @@ func orderedJSONLabelAliasPattern(labels []string) string {
 				separators = append(separators, i)
 			}
 		}
+		exact := len(separators) <= maxOrderedJSONBalancedUnderscores
+		parents := map[string]bool{}
 		for mask := 1; mask < 1<<len(separators); mask++ {
 			var parts []string
 			last := 0
@@ -505,19 +541,24 @@ func orderedJSONLabelAliasPattern(labels []string) string {
 			if slices.Contains(parts, "") {
 				continue // a blank key is skipped, so it cannot be a nested key
 			}
-			pattern := fmt.Sprintf(key, strings.Join(lokiFirstPartPatterns(parts[0], other, -1), "|")) + object
+			between := loose
+			if exact {
+				between = object
+			}
+			parent := jsonKeyPattern(strings.Join(lokiFirstPartPatterns(parts[0], other, -1), "|"))
+			pattern := parent + between
 			for i, part := range parts[1:] {
-				pattern += fmt.Sprintf(key, lokiSanitizedPartPattern(part, other, -1))
+				pattern += jsonKeyPattern(lokiSanitizedPartPattern(part, other, -1))
 				if i < len(parts)-2 {
-					pattern += object
+					pattern += between
 				}
 			}
 			alternatives = append(alternatives, pattern)
-			nested = true
+			if exact && !parents[parts[0]] {
+				parents[parts[0]] = true
+				alternatives = append(alternatives, parent+deeper)
+			}
 		}
-	}
-	if nested {
-		alternatives = append(alternatives, deep)
 	}
 	if len(alternatives) == 0 {
 		return ""
@@ -804,7 +845,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 	}
 	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
 	if served {
-		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorStats)
+		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
 	}
 	if err == nil && !served {
 		if !parseDisagreement || plan.parser == "" {
@@ -813,7 +854,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		// VictoriaLogs reads a selected line differently from Loki's decoder, so
 		// neither the buckets nor the stored-field routes can answer it exactly.
 		// Evaluate the pipeline over the rows instead, as the JSON plans do.
-		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorRawRows)
+		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorRawRows, rangeMetricReasonProbe)
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
@@ -953,13 +994,13 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 		absent[i] = storedFieldsAbsent(field, stored)
 		// A field is at risk only on a line whose body has its own key:
 		// a line with another unpacked key but not this one is parsed alike.
-		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(`"\s*`+names[i]+`\s*"\s*:`) + ")"
+		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(jsonKeyPattern(names[i])) + ")"
 	}
 	// Loki trims spaces around a key before sanitizing it.
-	key := `"\s*(?:` + strings.Join(names, "|") + `)\s*"\s*:`
+	key := jsonKeyPattern(strings.Join(names, "|"))
 	pattern := `^\s*\{(?s:.*)(?:` + key + `|` + escapedKey + `|` + replaced + `)`
 	for _, name := range names {
-		field := `"\s*` + name + `\s*"\s*:`
+		field := jsonKeyPattern(name)
 		// A repeated key: Loki keeps one value, unpack_json adds a column per
 		// copy. An array: Loki skips it, unpack_json stores it as a string.
 		empty = append(empty, "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`))
@@ -991,18 +1032,33 @@ const (
 // A window with a risky line is never cached.
 func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, start, end time.Time) (bool, error) {
 	check := func(from, to time.Time) (bool, error) {
-		if len(errorFilters) > 0 {
-			if risky, err := p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to); err != nil || risky {
-				return risky, err
-			}
+		// The stored-field probe runs beside the parse probe; one round trip.
+		type result struct {
+			risky bool
+			err   error
 		}
+		storedDone := make(chan result, 1)
+		go func() {
+			if len(errorFilters) == 0 {
+				storedDone <- result{}
+				return
+			}
+			risky, err := p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
+			storedDone <- result{risky, err}
+		}()
+		var risky bool
+		var err error
 		switch parser {
 		case "json":
-			return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
+			risky, err = p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
 		case "logfmt":
-			return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
+			risky, err = p.logfmtParseRisk(ctx, base, fields, stored, from, to)
 		}
-		return false, nil
+		storedRisk := <-storedDone
+		if err != nil || risky {
+			return risky, err
+		}
+		return storedRisk.risky, storedRisk.err
 	}
 	if p.cache == nil {
 		return check(start, end)

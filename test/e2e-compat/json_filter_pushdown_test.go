@@ -22,17 +22,17 @@ func rangeParams(query string, start, end time.Time, step time.Duration) url.Val
 	}
 }
 
-// rangeMetricEvaluations reads loki_vl_proxy_range_metric_evaluations_total
-// per evaluator from a proxy's /metrics.
-func rangeMetricEvaluations(t *testing.T, baseURL string) map[string]int {
+// parserMetricEvaluations reads loki_vl_proxy_parser_metric_evaluations_total
+// from a proxy's /metrics, keyed "evaluator/reason".
+func parserMetricEvaluations(t *testing.T, baseURL string) map[string]int {
 	t.Helper()
 	status, body := hardeningRequest(t, http.MethodGet, baseURL+"/metrics", "", nil)
 	if status != http.StatusOK {
 		t.Fatalf("/metrics: %d %s", status, body)
 	}
 	out := map[string]int{}
-	for _, m := range regexp.MustCompile(`(?m)^loki_vl_proxy_range_metric_evaluations_total\{evaluator="([^"]+)"\} (\d+)$`).FindAllStringSubmatch(string(body), -1) {
-		out[m[1]], _ = strconv.Atoi(m[2])
+	for _, m := range regexp.MustCompile(`(?m)^loki_vl_proxy_parser_metric_evaluations_total\{evaluator="([^"]+)",reason="([^"]+)"\} (\d+)$`).FindAllStringSubmatch(string(body), -1) {
+		out[m[1]+"/"+m[2]], _ = strconv.Atoi(m[3])
 	}
 	return out
 }
@@ -127,12 +127,12 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 			}
 			for name, base := range targets {
 				recorder.reset()
-				before := rangeMetricEvaluations(t, route)
+				before := parserMetricEvaluations(t, route)
 				assertSlidingParity(t, tc.query+" ["+name+"]", loki, slidingRangeSeries(t, base, tc.query, start, end, tc.step, nil))
 				if name != "in-process" {
 					continue
 				}
-				after := rangeMetricEvaluations(t, route)
+				after := parserMetricEvaluations(t, route)
 				stats, guards, raw := 0, 0, 0
 				for _, call := range recorder.reset() {
 					switch {
@@ -144,8 +144,8 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 						raw++
 					}
 				}
-				rawDelta := after["raw_rows"] - before["raw_rows"]
-				statsDelta := after["vl_stats_buckets"] - before["vl_stats_buckets"]
+				rawDelta := after["raw_rows/probe"] - before["raw_rows/probe"]
+				statsDelta := after["vl_stats_buckets/pushdown"] - before["vl_stats_buckets/pushdown"]
 				if tc.pushed && (stats != 1 || guards != tc.guards || raw != 0 || rawDelta != 0 || statsDelta != 1) {
 					t.Fatalf("expected %d probes and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d counter raw_rows+%d vl_stats_buckets+%d", tc.guards, stats, guards, raw, rawDelta, statsDelta)
 				}
@@ -182,6 +182,52 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 			status, body, _ := queryRangeGET(t, base, rangeParams(query, start, end, time.Minute), map[string]string{"X-Scope-OrgID": "0"})
 			if status != http.StatusBadRequest || !strings.Contains(body, "pipeline error") {
 				t.Fatalf("%s: expected Loki's 400 pipeline error, got %d %s", name, status, body)
+			}
+		}
+	})
+
+	// A line whose filtered label is structured metadata while its body is
+	// not JSON passes the filter with a parser error in Loki (400); the
+	// stored-field probe finds it on real VictoriaLogs and keeps the raw
+	// evaluator, which answers as Loki does.
+	t.Run("stored filter label on an unparseable line is a pipeline error", func(t *testing.T) {
+		storedApp := fmt.Sprintf("json-filter-stored-%d", now.UnixNano())
+		var lines []jsonVolumeStreamLine
+		for i := 0; i < 30; i++ {
+			ts := s0.Add(time.Duration(i) * 10 * time.Second)
+			lines = append(lines,
+				jsonVolumeStreamLine{ts: ts, level: "info", msg: `{"pipeline":"logs/loki","n":1}`},
+				jsonVolumeStreamLine{ts: ts.Add(5 * time.Second), msg: fmt.Sprintf("plain text %d", i), meta: map[string]string{"pipeline": "logs/loki"}, vlMeta: map[string]string{"pipeline": "logs/loki"}},
+			)
+		}
+		ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{storedApp: lines})
+		query := `sum by (level) (count_over_time({app="` + storedApp + `"} | json | pipeline="logs/loki" [1m]))`
+		lokiStatus, lokiBody, _ := queryRangeGET(t, lokiURL, rangeParams(query, start, end, time.Minute), map[string]string{"X-Scope-OrgID": "0"})
+		if lokiStatus != http.StatusBadRequest || !strings.Contains(lokiBody, "pipeline error") {
+			t.Fatalf("Loki sanity: expected 400 pipeline error, got %d %s", lokiStatus, lokiBody)
+		}
+		for name, base := range targets {
+			recorder.reset()
+			before := parserMetricEvaluations(t, route)
+			status, body, _ := queryRangeGET(t, base, rangeParams(query, start, end, time.Minute), map[string]string{"X-Scope-OrgID": "0"})
+			if status != http.StatusBadRequest || !strings.Contains(body, "pipeline error") {
+				t.Fatalf("%s: expected Loki's 400 pipeline error, got %d %s", name, status, body)
+			}
+			if name != "in-process" {
+				continue
+			}
+			after := parserMetricEvaluations(t, route)
+			guards, raw := 0, 0
+			for _, call := range recorder.reset() {
+				switch {
+				case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
+					guards++
+				case strings.HasPrefix(call, "/select/logsql/query "):
+					raw++
+				}
+			}
+			if guards != 2 || raw != 1 || after["raw_rows/probe"]-before["raw_rows/probe"] != 1 {
+				t.Fatalf("expected the stored-field probe to keep the raw evaluator: guards=%d raw=%d counter raw_rows/probe+%d", guards, raw, after["raw_rows/probe"]-before["raw_rows/probe"])
 			}
 		}
 	})

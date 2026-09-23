@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`service_version` as `service.version`) is read from the stored field
   where the line carries it, as Loki reads structured metadata before a
   parsed key. Lines a probe flags keep the exact raw-row evaluator. New
-  counter `loki_vl_proxy_range_metric_evaluations_total{evaluator}`
-  (`vl_stats_buckets` or `raw_rows`) shows which evaluator answered.
+  counter `loki_vl_proxy_parser_metric_evaluations_total{evaluator,reason}`
+  (`vl_stats_buckets`/`pushdown`, or `raw_rows` with `probe`, `ineligible`,
+  `grid` or `instant`) shows which evaluator answered and why.
 
 ## [1.91.0] - 2026-09-23
 

@@ -21,10 +21,15 @@ why: |
   that sanitizes to it (each underscore position may be any other rune, a
   leading `_<digit>` may be the bare digit) and every split of the label at
   its underscores into nested object keys. One matching line in the range
-  keeps the exact raw-row evaluator, whose parser mirrors Loki's. The pattern
-  is a superset for nesting (`{"service":{"x":1},"version":2}` also matches),
-  which only costs the fallback, never exactness. Labels with more than six
-  underscores are not pushed down (the split enumeration is 2^n).
+  keeps the exact raw-row evaluator, whose parser mirrors Loki's. For labels
+  with up to two underscores the nested key is located inside its parent's
+  object with balanced braces (strings included, siblings nested up to three
+  levels), so `{"service":{"name":"api"},"version":"v1"}` (the e2e
+  generator's api-gateway shape) does not match; a parent object nested
+  deeper, or a label with three to six underscores (parts in order suffice),
+  matches as a superset, which only costs the fallback, never exactness.
+  Labels with more than six underscores are not pushed down (the split
+  enumeration is 2^n).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -43,5 +48,5 @@ compare:
   expect: |
     HTTP 200 with Loki's series and values; the probe matches, the bucket
     query is discarded and the raw-row evaluator answers, so
-    `loki_vl_proxy_range_metric_evaluations_total{evaluator="raw_rows"}`
+    `loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"}`
     rises by one.
