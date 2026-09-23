@@ -1124,7 +1124,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
 		if !ok {
-			if err := seriesLimitCollecting(ctx, len(seriesByKey), p.resolvedMaxStatsQuerySeries()); err != nil {
+			if err := seriesLimitCollecting(ctx, len(seriesByKey), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
 				vlEntryPool.Put(entry)
 				return nil, err
 			}
@@ -1143,7 +1143,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	if err := checkManualMetricRead(ctx, limited); err != nil {
 		return nil, err
 	}
-	if limit := p.resolvedMaxStatsQuerySeries(); len(seriesByKey) > limit {
+	if limit := p.resolvedMaxStatsQuerySeries(ctx); len(seriesByKey) > limit {
 		// Logs Drilldown: the busiest series and Loki's warning.
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			return nil, err
@@ -1265,7 +1265,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 	}
 	// Loki's error above the series limit, or the busiest series with Loki's
 	// warning for Logs Drilldown, as the stats bucket path does.
-	series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries())
+	series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
 	return series, true, err
 }
 
@@ -1343,7 +1343,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	// alphabetical order) and Loki's partial-result warning. Streams that
 	// translate to one label set are one series, so the count is taken on the
 	// merged series.
-	limit := p.resolvedMaxStatsQuerySeries()
+	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, "as __sample_count")
 	seriesMap = make(map[string]manualSeriesSamples, len(results))
 	streamLabelCache := make(map[string]map[string]string, len(results))
@@ -2099,7 +2099,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	endT := time.Unix(0, endNanos)
 	stepD := time.Duration(stepNanos)
 	// fetchBareParserStatsBuckets applied the series limit.
-	result, err := buildManualRangeMetricMatrixContext(r.Context(), aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries())
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return true

@@ -290,7 +290,7 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 	if expr.Op == "or" {
 		// A union is the only operation that can hold more series than either
 		// operand, each of which the series limit already bounded.
-		if result, err = capSeriesToLimit(r.Context(), result, p.resolvedMaxStatsQuerySeries()); err != nil {
+		if result, err = capSeriesToLimit(r.Context(), result, p.resolvedMaxStatsQuerySeries(r.Context())); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

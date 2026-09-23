@@ -38,7 +38,7 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 1 | `/loki/api/v1/rules` | api | not_implemented | 10 | 2 | not implemented; no test wired to the registry |
 | 1 | `/loki/api/v1/push` | api | not_implemented | 33 | 29 | not implemented; no test wired to the registry |
 | 1 | `/loki/api/v1/label` | api | not_implemented | 62 | 11 | not implemented; no test wired to the registry |
-| 1 | `/loki/api/v1/drilldown-limits` | api | not_implemented | 9 | 1 | not implemented; no test wired to the registry |
+| 1 | `/loki/api/v1/drilldown-limits` | api | not_implemented | 9 | 1 | not implemented |
 
 ## Error surface
 
@@ -73,10 +73,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 11 | 4 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 4 | 3 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 14 | 3 | partial |
-| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 8 | 7 | partial |
+| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 8 | 8 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 4 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 3 | partial |
+| limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 2 | proven |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 3 | partial |
 
 ## LogQL surface (v3.7.7)

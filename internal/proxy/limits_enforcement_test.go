@@ -84,7 +84,8 @@ func TestHandleQueryRange_ExceedsMaxQueryLength_Returns400(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d (body: %s)", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "exceeds limit") {
-		t.Errorf("want 'exceeds limit' in body, got: %s", w.Body.String())
+	// Loki's validation.ErrQueryTooLong, word for word.
+	if !strings.Contains(w.Body.String(), `"error":"the query time range exceeds the limit (query length: 3h0m0s, limit: 1h)"`) {
+		t.Errorf("want Loki's max_query_length error, got: %s", w.Body.String())
 	}
 }

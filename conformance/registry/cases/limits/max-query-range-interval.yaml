@@ -1,0 +1,22 @@
+id: limits/max-query-range-interval
+title: A range selector longer than max_query_range fails with Loki's message
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's engine rejects a metric query whose [range] exceeds max_query_range
+  (checkIntervalLimit) with logqlmodel.ErrIntervalLimit, a 400.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    400 "[interval] value exceeds limit: [5m] > [1m]" for any range aggregation
+    of the query, including inside vector aggregations and binary operations.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

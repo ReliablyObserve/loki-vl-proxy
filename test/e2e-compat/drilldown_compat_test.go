@@ -31,7 +31,6 @@ var requiredDrilldownLimitKeys = []string{
 	"pattern_persistence_enabled",
 	"query_timeout",
 	"retention_period",
-	"retention_stream",
 	"volume_enabled",
 	"volume_max_series",
 }
@@ -75,8 +74,12 @@ func assertDrilldownLimitsContract(t *testing.T, resp map[string]interface{}) ma
 	if _, ok := limits["log_level_fields"].([]interface{}); !ok {
 		t.Fatalf("expected limits.log_level_fields array, got %T", limits["log_level_fields"])
 	}
-	if _, ok := limits["retention_stream"].([]interface{}); !ok {
-		t.Fatalf("expected limits.retention_stream array, got %T", limits["retention_stream"])
+	// Loki's JSON omits an empty retention_stream (omitempty); a configured
+	// one is an array.
+	if stream, ok := limits["retention_stream"]; ok {
+		if _, isArray := stream.([]interface{}); !isArray {
+			t.Fatalf("expected limits.retention_stream array, got %T", stream)
+		}
 	}
 	if _, ok := limits["pattern_persistence_enabled"].(bool); !ok {
 		t.Fatalf("expected boolean limits.pattern_persistence_enabled in drilldown-limits: %v", resp)

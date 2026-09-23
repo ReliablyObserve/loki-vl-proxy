@@ -888,7 +888,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		return nil, false, false, err
 	}
 	// Only above the limit: a query with exactly the limit's series passes.
-	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries()); err != nil {
+	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
 		return nil, false, false, err
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
@@ -1885,7 +1885,7 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 		key := canonicalLabelsKey(labels)
 		entry, exists := series[key]
 		if !exists {
-			if err := seriesLimitCollecting(ctx, len(series), p.resolvedMaxStatsQuerySeries()); err != nil {
+			if err := seriesLimitCollecting(ctx, len(series), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
 				return nil, err
 			}
 			entry.Metric = labels
@@ -1906,7 +1906,7 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries())
+	return capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx))
 }
 
 // Raw VL rows have not executed unpack_json: regular fields outside _stream

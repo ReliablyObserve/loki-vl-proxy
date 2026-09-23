@@ -412,7 +412,9 @@ func (p *Proxy) limitMultiTenantMetricSeries(r *http.Request, endpoint string, r
 			}
 		}
 	}
-	capped, err := capSeriesToLimit(scoped.Context(), body, p.resolvedMaxStatsQuerySeries())
+	// Loki limits the one result it builds across tenants with the smallest
+	// max_query_series of them (SmallestPositiveIntPerTenant).
+	capped, err := capSeriesToLimit(scoped.Context(), body, p.queryLimitsFor(r.Header.Get("X-Scope-OrgID")).MaxQuerySeries)
 	if err != nil {
 		return nil, err
 	}

@@ -2689,7 +2689,6 @@ func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
 		"pattern_persistence_enabled",
 		"query_timeout",
 		"retention_period",
-		"retention_stream",
 		"volume_enabled",
 		"volume_max_series",
 	}
@@ -2698,14 +2697,15 @@ func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
 			t.Fatalf("drilldown-limits missing limits.%s in contract: %v", key, limits)
 		}
 	}
+	// Loki's JSON omits an empty retention_stream (omitempty).
+	if _, ok := limits["retention_stream"]; ok {
+		t.Fatalf("an empty retention_stream must be left out, as Loki does: %v", limits["retention_stream"])
+	}
 	if _, ok := limits["discover_service_name"].([]interface{}); !ok {
 		t.Fatalf("expected limits.discover_service_name to be an array, got %T", limits["discover_service_name"])
 	}
 	if _, ok := limits["log_level_fields"].([]interface{}); !ok {
 		t.Fatalf("expected limits.log_level_fields to be an array, got %T", limits["log_level_fields"])
-	}
-	if _, ok := limits["retention_stream"].([]interface{}); !ok {
-		t.Fatalf("expected limits.retention_stream to be an array, got %T", limits["retention_stream"])
 	}
 }
 
@@ -2933,7 +2933,8 @@ func TestContract_DrilldownLimits_UsesRuntimeTenantOverrides(t *testing.T) {
 	defer vlBackend.Close()
 
 	p, err := New(Config{
-		BackendURL: vlBackend.URL,
+		BackendURL:     vlBackend.URL,
+		BackendTimeout: 15 * time.Minute, // a query_timeout override may not exceed it
 		TenantDefaultLimits: map[string]any{
 			"max_query_series": 321.0,
 			"query_timeout":    "9m",
@@ -2981,7 +2982,8 @@ func TestContract_TenantLimitsConfig_UsesTenantSpecificValues(t *testing.T) {
 	defer vlBackend.Close()
 
 	p, err := New(Config{
-		BackendURL: vlBackend.URL,
+		BackendURL:     vlBackend.URL,
+		BackendTimeout: 15 * time.Minute, // a query_timeout override may not exceed it
 		TenantDefaultLimits: map[string]any{
 			"query_timeout": "7m",
 		},
@@ -3022,8 +3024,9 @@ func TestContract_TenantLimitsConfig_RejectsMultiTenantHeader(t *testing.T) {
 	r.Header.Set("X-Scope-OrgID", "team-a|team-b")
 	p.handleTenantLimitsConfig(w, r)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for multi-tenant header, got %d", w.Code)
+	// Loki's tenant.ExtractTenantIDFromHTTPRequest answer, word for word.
+	if w.Code != http.StatusUnauthorized || strings.TrimSpace(w.Body.String()) != "multiple org IDs present" {
+		t.Fatalf("expected Loki's 401 for a multi-tenant header, got %d %q", w.Code, w.Body.String())
 	}
 }
 

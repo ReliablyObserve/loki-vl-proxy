@@ -1,0 +1,27 @@
+id: limits/published-equals-enforced
+title: A tenant reads on the limits endpoints exactly what its queries run under
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Grafana and Logs Drilldown read /loki/api/v1/drilldown-limits to decide
+  what to ask for, and operators read /config/tenant/v1/limits to see a
+  tenant's limits. Before, the proxy published max_query_series: 500 whatever
+  -max-stats-query-series enforced, and -tenant-limits changed only the
+  published payload.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    Every published value equals the enforced one, on both endpoints and for
+    every tenant; a request at the published value passes and one just past it
+    fails with Loki's message. Limits the proxy cannot enforce publish Loki's
+    disabled or default value and cannot be overridden.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

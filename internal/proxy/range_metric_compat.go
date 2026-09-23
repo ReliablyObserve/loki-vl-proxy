@@ -743,7 +743,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries())
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
@@ -856,7 +856,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries())
+	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
@@ -916,7 +916,7 @@ const vlDefaultMaxQueryLen = 16384
 // in when they rank. The series of the kept values are exact.
 func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	field := quoteLogsQLIdent(spec.GroupBy[0])
-	limit := p.resolvedMaxStatsQuerySeries()
+	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	params := url.Values{}
 	params.Set("query", spec.BaseQuery+" | stats by ("+field+") count() as _c | sort by (_c desc) | limit "+strconv.Itoa(limit+1))
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
@@ -1210,7 +1210,7 @@ func (p *Proxy) collectRangeMetricHits(
 		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	limit := p.resolvedMaxStatsQuerySeries()
+	limit := p.resolvedMaxStatsQuerySeries(ctx)
 	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
 	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, withPresence)
 	if err != nil {
@@ -1473,7 +1473,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
-			if err := seriesLimitCollecting(ctx, len(seriesMap), p.resolvedMaxStatsQuerySeries()); err != nil {
+			if err := seriesLimitCollecting(ctx, len(seriesMap), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
 				return nil, err
 			}
 			current.Metric = seriesEntry.translated
@@ -1496,7 +1496,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		seriesMap[key] = series
 	}
 
-	return capSeriesForRequest(ctx, seriesMap, p.resolvedMaxStatsQuerySeries())
+	return capSeriesForRequest(ctx, seriesMap, p.resolvedMaxStatsQuerySeries(ctx))
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -1849,14 +1849,11 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 	}
 }
 
-// resolvedMaxStatsQuerySeries returns the per-request series cap for metric
-// stats queries: the configured -max-stats-query-series, or the built-in
-// default of 500 (matches maxDrilldownSeries and Loki's stock max_query_series).
-func (p *Proxy) resolvedMaxStatsQuerySeries() int {
-	if p != nil && p.maxStatsQuerySeries > 0 {
-		return p.maxStatsQuerySeries
-	}
-	return defaultStatsQuerySeries
+// resolvedMaxStatsQuerySeries returns the request tenant's max_query_series:
+// -tenant-limits, -tenant-default-limits, -max-stats-query-series, or Loki's
+// default of 500 (see queryLimitsFor).
+func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
+	return p.requestQueryLimits(ctx).MaxQuerySeries
 }
 
 // defaultStatsQuerySeries is Loki's stock max_query_series, the default of

@@ -25,6 +25,9 @@
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "limits/effective-limit-resolution": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
     "limits/every-cap-is-a-flag": [
       "cmd/proxy/main_test.go",
       "internal/config/registry_test.go"
@@ -42,12 +45,38 @@
     "limits/label-values-not-truncated-by-default": [
       "internal/proxy/label_surface_test.go"
     ],
+    "limits/max-entries-limit-rejects": [
+      "internal/proxy/tenant_query_limits_test.go",
+      "test/e2e-compat/tenant_limits_published_test.go"
+    ],
+    "limits/max-query-length-error": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
+    "limits/max-query-lookback": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
+    "limits/max-query-range-interval": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
     "limits/metadata-not-queued": [
       "internal/proxy/backend_heavy_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "limits/multi-tenant-limit-combination": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
+    "limits/per-tenant-override": [
+      "internal/proxy/tenant_query_limits_test.go"
+    ],
+    "limits/published-equals-enforced": [
+      "internal/proxy/tenant_query_limits_test.go",
+      "test/e2e-compat/tenant_limits_published_test.go"
+    ],
     "limits/query-length-limit-is-configurable": [
       "internal/proxy/metadata_query_validation_test.go"
+    ],
+    "limits/query-timeout-per-tenant": [
+      "internal/proxy/tenant_query_limits_test.go"
     ],
     "limits/queue-rejection-not-a-backend-failure": [
       "internal/proxy/backend_heavy_test.go"
@@ -67,6 +96,10 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "loki_api_v1_drilldown_limits": [
+      "internal/proxy/tenant_query_limits_test.go",
+      "test/e2e-compat/tenant_limits_published_test.go"
+    ],
     "loki_api_v1_index_volume": [
       "internal/proxy/volume_test.go",
       "test/e2e-compat/drilldown_volume_bytes_test.go"
@@ -79,6 +112,7 @@
     ],
     "loki_api_v1_query": [
       "internal/proxy/series_limit_routes_test.go",
+      "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -87,6 +121,7 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/series_limit_routes_test.go",
+      "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -164,6 +199,7 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sliding_window_stats_test.go",
+      "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -187,13 +223,17 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/volume_test.go"
     ],
+    "tenant-query-limits": [
+      "internal/proxy/tenant_query_limits_test.go",
+      "test/e2e-compat/tenant_limits_published_test.go"
+    ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 174,
+  "registry_items": 184,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -278,6 +318,22 @@
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/tenant_query_limits_test.go": [
+      "limits/effective-limit-resolution",
+      "limits/max-entries-limit-rejects",
+      "limits/max-query-length-error",
+      "limits/max-query-lookback",
+      "limits/max-query-range-interval",
+      "limits/multi-tenant-limit-combination",
+      "limits/per-tenant-override",
+      "limits/published-equals-enforced",
+      "limits/query-timeout-per-tenant",
+      "loki_api_v1_drilldown_limits",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "series-limits-and-partial-results",
+      "tenant-query-limits"
+    ],
     "internal/proxy/tumbling_axis_parity_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -348,9 +404,15 @@
     "test/e2e-compat/series_count_aggregation_test.go": [
       "metric-series-identity",
       "series-limits-and-partial-results"
+    ],
+    "test/e2e-compat/tenant_limits_published_test.go": [
+      "limits/max-entries-limit-rejects",
+      "limits/published-equals-enforced",
+      "loki_api_v1_drilldown_limits",
+      "tenant-query-limits"
     ]
   },
-  "tests_with_markers": 27,
+  "tests_with_markers": 29,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -371,7 +433,6 @@
     "loki_api_v1_detected_field_name_values",
     "loki_api_v1_detected_fields",
     "loki_api_v1_detected_labels",
-    "loki_api_v1_drilldown_limits",
     "loki_api_v1_format_query",
     "loki_api_v1_index_shards",
     "loki_api_v1_index_stats",
@@ -391,5 +452,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 46
+  "wired_items": 57
 }

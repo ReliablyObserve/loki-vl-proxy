@@ -1,0 +1,24 @@
+id: limits/query-timeout-per-tenant
+title: A query_timeout override bounds the tenant's whole request
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki bounds each query by the tenant's query_timeout; a request for several
+  tenants uses the smallest.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    With query_timeout set in -tenant-limits or -tenant-default-limits the
+    request runs under that deadline and the published value is it; without
+    one the published value is -backend-timeout, which bounds each
+    VictoriaLogs call.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

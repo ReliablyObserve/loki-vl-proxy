@@ -201,7 +201,7 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
 		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
-		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(), start, step, p.limits().BufferedBackendBodyBytes)
+		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}
 	if err != nil {
 		status := http.StatusServiceUnavailable

@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Loki's query limits are enforced per tenant, exactly as published.**
+  `-tenant-default-limits` and `-tenant-limits` used to change only the payload
+  of `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits`, and those
+  endpoints published hard-coded values: `max_query_series: 500` whatever
+  `-max-stats-query-series` enforced, `max_query_length: 30d1h` while the proxy
+  enforced no length by default, `query_timeout` in Go's form (`2m0s`). Now one
+  resolver serves both enforcement and publishing, per tenant:
+  `-tenant-limits[tenant]` -> `-tenant-default-limits` -> the proxy flag ->
+  Loki's v3.7.7 default. What changes for an existing deployment:
+  - A `max_query_series`, `max_entries_limit_per_query`, `max_query_length`,
+    `max_query_lookback`, `max_query_range` or `query_timeout` set in
+    `-tenant-default-limits` or `-tenant-limits` is now enforced for that
+    tenant, not only published. `query_timeout` set there becomes a deadline
+    for the whole request on the endpoints Loki bounds by it (`query`,
+    `query_range`, `series`, `labels`, label values, `index/stats`, volume;
+    never a live tail), `504` when it expires; it may not exceed
+    `-backend-timeout`, which still bounds each VictoriaLogs call and is what
+    is published without an override.
+  - A log query (`query_range` or `query`) whose `limit` is above
+    `max_entries_limit_per_query` fails with Loki's `400 max entries limit per
+    query exceeded, limit > max_entries_limit_per_query (L > N)` instead of
+    being answered with the limit lowered. `-max-entries-limit-per-query-cap`
+    restores lowering it. Metric queries carry no entry limit, and label
+    values requests are still capped at the `-max-entries-limit-per-query`
+    flag value (Loki has no entry limit there). Per tenant, `0` is unlimited,
+    as in Loki.
+  - `max_query_length` is enforced, as in Loki's limits middleware, on
+    `series`, `labels`, label values, `detected_labels` and `index/stats` as
+    well as `query_range`, and its error is Loki's text: `the query time range
+    exceeds the limit (query length: 3h0m0s, limit: 1h)` (was `query length
+    3h0m0s exceeds limit 1h0m0s`).
+  - The published limits change to what is enforced: `max_query_length` is
+    `0s` unless a length is configured, `max_query_series` and
+    `max_entries_limit_per_query` follow their flags and overrides, durations
+    use Loki's form (`2m`, `30d1h`), and an empty `retention_stream` is left
+    out, as Loki does.
+  - Startup fails on an override the proxy would not enforce as published:
+    `max_query_series` of `0` or less, a negative `max_entries_limit_per_query`,
+    a duration that is not a Loki duration string, `query_timeout` of `0` or
+    above `-backend-timeout`, or
+    any value for `max_query_bytes_read`, `max_querier_bytes_read` or
+    `volume_max_series` other than Loki's disabled or default one (`0B`, `0B`,
+    `1000`): VictoriaLogs reports no bytes read before a query runs, and the
+    volume endpoints bound their answer by the request `limit`.
+  - `/config/tenant/v1/limits` answers a multi-tenant `X-Scope-OrgID` with
+    Loki's `401 multiple org IDs present` (was `400` with a proxy message).
+
+### Added
+
+- Loki's `max_query_lookback` and `max_query_range`, settable per tenant. A
+  `max_query_lookback` moves a start before now - lookback to it on
+  `query_range`, `query`, `series`, `labels`, label values,
+  `detected_labels` and `index/stats` (an instant query only when it is a
+  metric query, as in Loki's frontend), and answers a request that ends
+  before it with an empty result of the request's shape, without calling
+  VictoriaLogs. A `max_query_range` rejects a metric query whose range
+  selector is longer, inside `label_replace` too, with Loki's `400 [interval]
+  value exceeds limit: [5m] > [1m]`, after the lookback and length checks as
+  in Loki.
+- A multi-tenant request (`X-Scope-OrgID: a|b`) is held to its tenants'
+  limits combined as Loki combines them: the smallest `max_query_series`
+  (`SmallestPositiveIntPerTenant`) and the smallest non-zero value of every
+  other limit. `/loki/api/v1/drilldown-limits` publishes those combined
+  limits for such a header; Loki answers it `401`, which would leave a
+  multi-tenant Logs Drilldown without its bootstrap.
+- The e2e compose stack's proxies mirror the stack Loki's `limits_config`
+  (`-tenant-default-limits` with `max_entries_limit_per_query: 0`,
+  `max_query_length: 721h`, `query_timeout: 5m`, and `-backend-timeout=5m`),
+  so they publish what that Loki publishes; `TestDrilldown_TenantLimitsPublishedAsEnforced` compares
+  them value for value.
+
 ### Fixed
 
 - Logs Drilldown gets Loki's partial result and warning on every metric

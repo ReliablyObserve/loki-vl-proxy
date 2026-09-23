@@ -1,0 +1,26 @@
+id: limits/multi-tenant-limit-combination
+title: A multi-tenant request is held to its tenants combined as Loki combines them
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki evaluates a|b once, with the smallest max_query_series of the tenants
+  and the smallest non-zero value of each other limit (0 is unlimited). A
+  proxy that checked each tenant alone would let a|b return more series than
+  either tenant's limit.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    Limits of a|b: max_query_series = min over tenants; every other limit =
+    smallest non-zero. The merged multi-tenant metric answer is limited as one
+    result. /config/tenant/v1/limits answers a|b with Loki's 401 "multiple org
+    IDs present".
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

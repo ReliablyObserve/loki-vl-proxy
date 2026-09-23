@@ -1,0 +1,22 @@
+id: limits/per-tenant-override
+title: A -tenant-limits value is enforced for that tenant only
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's per-tenant overrides change what a tenant's queries run under, not
+  just what is displayed.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    A tenant with its own value runs under it and publishes it; another tenant
+    keeps -tenant-default-limits or the flag.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

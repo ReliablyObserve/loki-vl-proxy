@@ -94,7 +94,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	if limit == "" {
 		limit = strconv.Itoa(p.maxLines)
 	}
-	params.Set("limit", sanitizeLimit(limit, p.limits().EntriesPerQuery))
+	params.Set("limit", sanitizeLimit(limit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {

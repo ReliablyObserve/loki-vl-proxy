@@ -33,7 +33,7 @@ const seriesLimitLineMsg = `{"pipeline":"logs/loki","latency":"2"}`
 
 var (
 	seriesLimitStatsRE = regexp.MustCompile(`\| stats (?:by \(([^)]*)\) )?(.+?)(?: \| .*)?$`)
-	seriesLimitAggRE   = regexp.MustCompile(`^(count|sum_len|sum|max|min)\(([^)]*)\) as ([A-Za-z_]+)$`)
+	seriesLimitAggRE   = regexp.MustCompile(`^(count|sum_len|sum|max|min)\(([^)]*)\)(?: as ([A-Za-z_]+))?$`)
 )
 
 // seriesLimitFakeVL answers every VictoriaLogs endpoint the metric routes use,
@@ -157,7 +157,11 @@ func (f *seriesLimitFakeVL) statsQueryRange(query string, start, end, step, offs
 			if line.ts < start || line.ts >= end {
 				continue
 			}
-			metric := map[string]string{"__name__": am[3]}
+			name := am[3]
+			if name == "" {
+				name = am[1] + "(" + am[2] + ")"
+			}
+			metric := map[string]string{"__name__": name}
 			for _, field := range by {
 				if field == "_stream" {
 					metric[field] = line.stream()

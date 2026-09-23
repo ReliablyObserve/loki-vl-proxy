@@ -629,7 +629,7 @@ func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 			}
 			got := decodeTumblingSeries(t, query, rec.Body.Bytes())
 			want := lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, time.Minute)
-			if want := p.resolvedMaxStatsQuerySeries(); len(got) != want {
+			if want := p.resolvedMaxStatsQuerySeries(t.Context()); len(got) != want {
 				t.Fatalf("expected the %d busiest series (-max-stats-query-series), got %d", want, len(got))
 			}
 			// Every kept series is exact, and none is quieter than a dropped one

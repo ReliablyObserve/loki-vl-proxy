@@ -1,6 +1,9 @@
 package proxy
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // TestCapSeriesByTotalCount_MapVariant covers the map-based helper used by the
 // raw-scan path via buildManualRangeMetricMatrix.
@@ -35,13 +38,13 @@ func TestCapSeriesByTotalCount_MapVariant(t *testing.T) {
 
 // TestResolvedMaxStatsQuerySeries_Default verifies the 500 default and override.
 func TestResolvedMaxStatsQuerySeries_Default(t *testing.T) {
-	if got := (&Proxy{maxStatsQuerySeries: 0}).resolvedMaxStatsQuerySeries(); got != 500 {
+	if got := (&Proxy{maxStatsQuerySeries: 0}).resolvedMaxStatsQuerySeries(context.Background()); got != 500 {
 		t.Errorf("default: expected 500, got %d", got)
 	}
-	if got := (&Proxy{maxStatsQuerySeries: 1200}).resolvedMaxStatsQuerySeries(); got != 1200 {
+	if got := (&Proxy{maxStatsQuerySeries: 1200}).resolvedMaxStatsQuerySeries(context.Background()); got != 1200 {
 		t.Errorf("override: expected 1200, got %d", got)
 	}
-	if got := (*Proxy)(nil).resolvedMaxStatsQuerySeries(); got != 500 {
+	if got := (*Proxy)(nil).resolvedMaxStatsQuerySeries(context.Background()); got != 500 {
 		t.Errorf("nil receiver: expected 500, got %d", got)
 	}
 }

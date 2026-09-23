@@ -1,0 +1,27 @@
+id: limits/effective-limit-resolution
+title: Each enforced limit resolves tenant override, default override, flag, Loki default
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki reads a tenant's limit from its runtime overrides, then the global
+  limits_config, then the built-in default. The proxy has one more layer, its
+  own flags, which sit where Loki's global limits_config sits. A limit read
+  from anywhere else - a hard-coded value, a flag the published surface does
+  not know about - is a limit the client cannot see.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    For max_query_series, max_entries_limit_per_query, max_query_length,
+    max_query_lookback, max_query_range and query_timeout: the value set for
+    the tenant in -tenant-limits, else in -tenant-default-limits, else the
+    proxy flag, else Loki's default.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"
