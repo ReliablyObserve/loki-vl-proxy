@@ -187,7 +187,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 173,
+  "registry_items": 174,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -348,6 +348,7 @@
     "api_prom_tail",
     "data-density-and-chart-quality",
     "data-probing-and-freshness",
+    "limits/concurrent-full-retention-scans-exhaust-backend",
     "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_delete",
