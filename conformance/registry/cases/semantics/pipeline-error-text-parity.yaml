@@ -21,8 +21,8 @@ why: |
   its own wording (`pipeline error: "JSONParserErr"; filter errors with
   __error__="" or explicitly drop __error__`), and read rows until it met
   the first failing line, which depends on the order VictoriaLogs streams
-  blocks: 3 ms when the first block held a plain line, 1.6-5.8 s p50 when
-  it did not.
+  blocks: 3 ms when the first block held a plain line, 1.6 s p50 in the
+  owner's session when it did not.
 
   Now, for a `| json` metric whose pipeline neither drops `__error__` nor
   carries a label filter an unparsed line fails (and that requires labels,

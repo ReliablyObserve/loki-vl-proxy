@@ -74,7 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   'JSONParserErr' for series: '{...}'.` followed by its three hint lines
   (`logqlmodel.PipelineError`); the raw-row evaluator used its own wording
   and read rows until it met the first failing line, which depends on the
-  order VictoriaLogs streams blocks (3 ms to 5.8 s). One `| limit 1` lookup
+  order VictoriaLogs streams blocks (3 ms on the shared stack, 1.6 s p50 in
+  the owner's session). One `| limit 1` lookup
   of a selected line that is not a JSON object now answers the error with
   that line's series in Loki's format (stream labels, `detected_level`,
   `service_name`, `__error__`, `__error_details__`), when the pipeline
