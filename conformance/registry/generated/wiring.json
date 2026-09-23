@@ -146,7 +146,8 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
     "semantics/pipeline-error-text-parity": [
-      "internal/proxy/ordered_json_filter_pushdown_test.go"
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "internal/proxy/ordered_json_metric_test.go"
     ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
@@ -250,6 +251,9 @@
       "semantics/pipeline-error-text-parity",
       "status-400"
     ],
+    "internal/proxy/ordered_json_metric_test.go": [
+      "semantics/pipeline-error-text-parity"
+    ],
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
     ],
@@ -334,7 +338,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 25,
+  "tests_with_markers": 26,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

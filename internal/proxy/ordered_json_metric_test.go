@@ -427,3 +427,21 @@ func TestOrderedJSONMetricStructuredMetadataAndParserCollisions(t *testing.T) {
 		t.Fatal("metadata mutated cached stream identity")
 	}
 }
+
+// conformance: semantics/pipeline-error-text-parity
+func TestLokiPipelineErrorTypeIsAlwaysALokiConstant(t *testing.T) {
+	for value, want := range map[string]string{
+		"JSONParserErr":   "JSONParserErr",
+		"LogfmtParserErr": "LogfmtParserErr",
+		"x'y\"z":          "JSONParserErr",
+		"":                "JSONParserErr",
+	} {
+		if got := lokiPipelineErrorType(value); got != want {
+			t.Fatalf("lokiPipelineErrorType(%q) = %q, want %q", value, got, want)
+		}
+	}
+	msg := lokiPipelineError(map[string]string{"__error__": "JSONParserErr", "app": "a'b"}).Error()
+	if !strings.HasPrefix(msg, `pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", app="a'b"}'.`) {
+		t.Fatalf("unexpected message: %s", msg)
+	}
+}

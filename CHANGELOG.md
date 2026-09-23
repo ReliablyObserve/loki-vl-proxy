@@ -86,6 +86,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one scan of the range for a line not starting with `{`, small beside the
   raw-row fetch that follows it. The JSON error envelope is kept.
 
+### Security
+
+- CodeQL `go/unsafe-quoting` on the Loki pipeline error text: the error type
+  is now taken from Loki's fixed constants (`JSONParserErr`, …) instead of the
+  `__error__` value, which only the proxy's parser ever sets (a log line's
+  `__error__` key is dropped). The series part is Loki's own
+  `labels.Labels.String()` format and is kept byte-identical to Loki's
+  message, `'` included; the text is only ever written JSON-encoded into the
+  error envelope and logged as a structured field, never into a query
+  language, shell or HTML, so it is dismissed as a false positive.
+
 ## [1.92.0] - 2026-09-23
 
 ### Fixed

@@ -1460,13 +1460,33 @@ func lokiPipelineError(labels map[string]string) *orderedJSONPipelineError {
 			series[name] = value
 		}
 	}
-	errorType := labels["__error__"]
+	errorType := lokiPipelineErrorType(labels["__error__"])
 	return &orderedJSONPipelineError{fmt.Sprintf(
 		"pipeline error: '%s' for series: '%s'.\n"+
 			"Use a label filter to intentionally skip this error. (e.g | __error__!=\"%s\").\n"+
 			"To skip all potential errors you can match empty errors.(e.g __error__=\"\")\n"+
 			"The label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )\n",
 		errorType, lokiSeriesString(series), errorType)}
+}
+
+// lokiPipelineErrorType returns the Loki error type constant for an
+// __error__ value. The label is only ever set by the proxy's own parser — a
+// log line's "__error__" key is dropped, never extracted — so the value is
+// always one of Loki's constants; mapping it through them keeps the error text
+// built from fixed strings rather than from anything read off a log line.
+func lokiPipelineErrorType(value string) string {
+	switch value {
+	case "LogfmtParserErr":
+		return "LogfmtParserErr"
+	case "SampleExtractionErr":
+		return "SampleExtractionErr"
+	case "LabelFilterErr":
+		return "LabelFilterErr"
+	case "TemplateFormatErr":
+		return "TemplateFormatErr"
+	default:
+		return "JSONParserErr"
+	}
 }
 
 // failsOnUnparsedLine reports whether a selected line that is not a JSON
