@@ -61,5 +61,6 @@ Runs: pr611-control (2026-09-23), pr611-json-filter-pushdown (2026-09-23).
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 × 4 ranges | 1 faster, 3 fixed | worst 0.61s / 0.17s (24h) | 0.42s / 0.00s | same; 2 slower than Loki cold |
 | `semantics/json-filter-pushdown-without-error-drop` | 3 × 5 ranges | 2 faster, 3 fixed, 4 same | worst 1.75s / 0.21s (24h) | 0.53s / 0.00s | same; 9 slower than Loki cold |
 | `semantics/json-label-spelling-probe` | 2 × 4 ranges | 2 faster, 6 fixed | worst 1.36s / 0.77s (24h) | 0.28s / 0.01s | same; 5 slower than Loki cold |
+| `semantics/label-filter-before-parser-pushdown` | — | not measured | | | |
 | `service-name-derivation` | 2 × 2 ranges | 1 faster, 3 same | worst 0.08s / 0.08s (24h) | 2.03s / 0.10s | differs |
 | `severity-detected-level-derivation` | 7 × 4 ranges | 1 faster, 15 same | worst 0.26s / 0.18s (24h) | 0.17s / 0.00s | differs; 1 slower than Loki cold |

@@ -333,8 +333,13 @@ func TestOrderedJSONMetricCollectorUpperInclusiveLowerExclusive(t *testing.T) {
 				if end != evaluation.Add(time.Nanosecond) {
 					t.Errorf("VL end=%s want=%s", end, evaluation.Add(time.Nanosecond))
 				}
+				start, err := time.Parse(time.RFC3339Nano, r.FormValue("start"))
+				if err != nil {
+					t.Error(err)
+					return
+				}
 				for _, ts := range []time.Time{evaluation.Add(-5 * time.Minute), evaluation} {
-					if !ts.Before(end) {
+					if !ts.Before(end) || ts.Before(start) {
 						continue
 					}
 					line := `{"value":"ok"}`

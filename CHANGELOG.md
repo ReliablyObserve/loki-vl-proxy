@@ -26,6 +26,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate fails when a shape points at an unknown registry item or the generated
   report is stale.
 
+### Fixed
+
+- Cut the parse-risk probes that guard the `| json` stats pushdown down to
+  the lines VictoriaLogs' word index holds the label in. The key-spelling
+  probe located a nested key (`{"service":{"version":...}}`) with a
+  balanced-brace regexp that VictoriaLogs spent 0.33 s preparing on every
+  query, twice per probe, whatever the range or the data, and the
+  partial-parse probe ran its key regexp over every line of the range that
+  lacked the label as a stored field. A Drilldown or Explore breakdown by
+  `service_version` therefore cost 0.7 s at 1 h and Explore's two-filter
+  logs volume 1.1-1.4 s, against Loki's 0.3-0.5 s cold; at 24 h the probes
+  took 2-4 s. The probes now require the label, or every piece of one
+  tokenization of it, as a word of the line (`_msg:"service_version" or
+  (_msg:"service" _msg:"version")`), which VictoriaLogs answers from its
+  per-block token index, keep only flat regexps, and verify nesting with
+  `unpack_json` itself after splicing a sentinel key into the object (a
+  line the sentinel is missing from did not parse as a whole and counts as
+  risky). The two regexps for escaped keys and U+FFFD run behind one
+  literal substring filter; an alternation holding a non-ASCII literal cost
+  six times the scan. Same exactness (every risky line still keeps the
+  raw-row evaluator; the new probes are proven a superset by the unit
+  fixtures, including a sibling nested five deep, a brace inside a string,
+  a spaced or blank key and a nested key before a syntax error); measured
+  on the shared stack: `service_version` breakdowns 0.7 s to 0.14-0.25 s at
+  1 h, Explore's two-filter volume 1.1-1.4 s to 0.55 s at 1 h and 12 s to
+  1.4 s at 24 h, Grafana's volume of a filtered `| json` query 3.0 s to
+  0.5 s at 24 h.
+- Push a label filter placed before the parser down with the stats query.
+  In Loki `{env="production", namespace="monitoring"} | detected_level="info"
+  | json | ... | export_ms!="" | pipeline="logs/loki"` filters stream labels
+  and structured metadata before parsing, the same filter the log query
+  applies, which the translator already renders in LogsQL. The pushdown
+  refused any plan with a filter before the parser, so Logs Drilldown's
+  fields page with a level filter selected fell to the raw-row evaluator:
+  1.6-2.0 s inside the proxy over the namespace's 24 h with 4 ms of
+  VictoriaLogs time, a quarter of the requests cancelled by Grafana (499),
+  where Loki answers in 0.33 s. Such filters now join the line filters in
+  the query VictoriaLogs evaluates for the stats query, the probes and the
+  raw-row fetch: 0.29 s at 24 h.
+- Answer a `| json` metric Loki fails on an unparsed line with Loki's exact
+  `pipeline error` text and before any row is read. Loki v3.7.7 fails a
+  metric whose sample carries `__error__` with `pipeline error:
+  'JSONParserErr' for series: '{...}'.` followed by its three hint lines
+  (`logqlmodel.PipelineError`); the raw-row evaluator used its own wording
+  and read rows until it met the first failing line, which depends on the
+  order VictoriaLogs streams blocks (3 ms to 5.8 s). One `| limit 1` lookup
+  of a selected line that is not a JSON object now answers the error with
+  that line's series in Loki's format (stream labels, `detected_level`,
+  `service_name`, `__error__`, `__error_details__`), when the pipeline
+  neither drops `__error__` nor carries a filter an unparsed line fails;
+  the evaluator's own check uses the same text. The JSON error envelope is
+  kept.
+
 ## [1.92.0] - 2026-09-23
 
 ### Fixed

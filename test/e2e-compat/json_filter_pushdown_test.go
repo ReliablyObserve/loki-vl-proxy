@@ -106,7 +106,7 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 		minimum     int // Loki series expected for the fixture
 	}{
 		// Grafana Explore's logs volume for the filtered query.
-		{"explore volume with filters", `sum by (level, detected_level) (count_over_time({app="` + app + `"} | json | service_version=` + "`0.96.0`" + ` | pipeline=` + "`logs/loki`" + ` | drop __error__[1m]))`, time.Minute, true, 1, 2},
+		{"explore volume with filters", `sum by (level, detected_level) (count_over_time({app="` + app + `"} | json | service_version=` + "`0.96.0`" + ` | pipeline=` + "`logs/loki`" + ` | drop __error__[1m]))`, time.Minute, true, 2, 2},
 		{"explore volume with filters, 2m window", `sum by (level, detected_level) (count_over_time({app="` + app + `"} | json | pipeline="logs/loki" | drop __error__[2m]))`, 30 * time.Second, true, 1, 3},
 		// A user's metric queries without `drop __error__`.
 		{"grouped sum without error drop", `sum by (level) (count_over_time({app="` + app + `"} | json | pipeline="logs/loki" [1m]))`, time.Minute, true, 2, 3},
@@ -114,11 +114,11 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 		{"ungrouped rate with regexp filter", `sum(rate({app="` + app + `"} | json | pipeline=~"logs/.*" [1m]))`, time.Minute, true, 2, 1},
 		// Logs Drilldown field breakdowns.
 		// 0.96.0 and 0.95.0 only: the body's 9.9.9 is service_version_extracted.
-		{"field breakdown on structured metadata", `sum by (service_version) (count_over_time({app="` + app + `"} | json | drop __error__ | service_version!="" [1m]))`, time.Minute, true, 1, 2},
+		{"field breakdown on structured metadata", `sum by (service_version) (count_over_time({app="` + app + `"} | json | drop __error__ | service_version!="" [1m]))`, time.Minute, true, 2, 2},
 		{"field breakdown without error drop", `sum by (pipeline) (count_over_time({app="` + app + `"} | json | pipeline!="" [1m]))`, time.Minute, true, 2, 2},
-		{"bytes volume with regexp filter", `sum by (level, detected_level) (bytes_over_time({app="` + app + `"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__[1m]))`, time.Minute, true, 1, 3},
+		{"bytes volume with regexp filter", `sum by (level, detected_level) (bytes_over_time({app="` + app + `"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__[1m]))`, time.Minute, true, 2, 3},
 		// The spelling probe: a nested object yields service_version in Loki.
-		{"nested key keeps the raw evaluator", `sum by (level, detected_level) (count_over_time({app="` + nested + `"} | json | service_version=` + "`0.96.0`" + ` | pipeline=` + "`logs/loki`" + ` | drop __error__[1m]))`, time.Minute, false, 1, 2},
+		{"nested key keeps the raw evaluator", `sum by (level, detected_level) (count_over_time({app="` + nested + `"} | json | service_version=` + "`0.96.0`" + ` | pipeline=` + "`logs/loki`" + ` | drop __error__[1m]))`, time.Minute, false, 2, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loki := slidingRangeSeries(t, lokiURL, tc.query, start, end, tc.step, nil)

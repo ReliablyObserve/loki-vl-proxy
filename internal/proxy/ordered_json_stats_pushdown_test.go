@@ -432,7 +432,11 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum without (level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__ | level="info" [1m]))`, []string{"level"}},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | json | status=` + "`200`" + ` | drop __error__ [1m]))`, []string{"level"}},
-		{`sum by (level) (count_over_time({env="production"} | level="info" | json | drop __error__ [1m]))`, nil},
+		// A label filter before the parser reads the stored label; VictoriaLogs applies it.
+		{`sum by (level) (count_over_time({env="production"} | level="info" | json | drop __error__ [1m]))`, []string{"level"}},
+		{`sum by (level) (count_over_time({env="production"} |= "x" | level="info" | json | drop __error__ [1m]))`, []string{"level"}},
+		// After a drop the filter no longer reads the stored label: it stays a stage of the raw evaluator.
+		{`sum by (level) (count_over_time({env="production"} | drop level | level="" | json | drop __error__ [1m]))`, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | trace_id="x" | drop __error__ [1m]))`, []string{"level"}},
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__, level [1m]))`, nil},
 		{`count_over_time({env="production"} | json | drop __error__ [1m])`, nil},
