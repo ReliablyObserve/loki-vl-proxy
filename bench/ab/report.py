@@ -25,6 +25,11 @@ import sys
 SIG_RE = re.compile(r"series=(\d+) points=(\d+) sum=(\S+)")
 
 
+def load(path):
+    with open(path) as f:
+        return json.load(f)
+
+
 def pct(values, p):
     if not values:
         return None
@@ -58,7 +63,7 @@ def timing_verdict(base, cand, noise, min_delta):
 
 
 def summarize(args):
-    raw = json.load(open(args.raw))
+    raw = load(args.raw)
     rows = raw["rows"]
     keys = []
     for r in rows:
@@ -78,8 +83,16 @@ def summarize(args):
             entry["cold"][t] = rs[0]["seconds"]
             entry["p50"][t] = round(pct(warm, 0.5), 3)
             entry["p95"][t] = round(pct(warm, 0.95), 3)
+            if args.cold:
+                entry["p50"][t] = rs[0]["seconds"]
             entry["status"][t] = "/".join(sorted({str(r["status"]) for r in rs}))
             entry["vl_cpu_max"][t] = max((r["vl_cpu_max"] or 0) for r in rs)
+            # Each run moves the window by a minute while logs keep arriving, so a
+            # correct answer changes between runs. Identical answers for different
+            # windows mean a cache or a stale view answered: not a latency reference.
+            ok = [r for r in rs if r["status"] == 200 and r.get("end") is not None]
+            if len({r["end"] for r in ok}) > 1 and len({r["signature"] for r in ok}) == 1:
+                entry.setdefault("stale", []).append(t)
 
         def sig_by_run(t):
             return {r["run"]: r["signature"] for r in by_target.get(t, [])}
@@ -118,14 +131,17 @@ def summarize(args):
                "description": raw.get("description", ""), "baseline": args.baseline, "candidate": args.candidate,
                "reference": args.reference, "runs": raw.get("runs"), "valid": raw.get("valid", True),
                "restart_before": raw.get("restart_before"), "restart_after": raw.get("restart_after"),
-               "noise": args.noise, "verdicts": counts, "result_differs_from_reference": differs,
-               "result_differs_preexisting": preexisting, "rows": out}
+               "noise": args.noise, "timing": "cold" if args.cold else "warm", "verdicts": counts, "result_differs_from_reference": differs,
+               "result_differs_preexisting": preexisting,
+               "stale_answers": {t: sum(1 for e in out if t in e.get("stale", [])) for t in (args.baseline, args.candidate, args.reference)},
+               "rows": out}
     print(markdown(summary))
     if args.save:
         path = args.save
         if os.path.isdir(path):
             path = os.path.join(path, f"{summary['date']}-{args.label}.json")
-        json.dump(summary, open(path, "w"), indent=1)
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=1)
         print(f"\nsaved {path}", file=sys.stderr)
 
 
@@ -133,25 +149,32 @@ def cell(text):
     return str(text).replace("|", "\\|")
 
 
-def fmt(v, status):
+def fmt(v, status, stale=False):
     if status and status != "200":
         return f"**{status}**"
-    return "—" if v is None else f"{v:.2f}s"
+    return "—" if v is None else f"{v:.2f}s" + ("†" if stale else "")
 
 
 def markdown(s):
     b, c, r = s["baseline"], s["candidate"], s["reference"]
-    lines = [f"**{s['set']}** — {s['label']} ({s['date']}, {s['runs']} runs, warm p50; "
+    lines = [f"**{s['set']}** — {s['label']} ({s['date']}, {s['runs']} runs, "
+             f"{'cold (first run)' if s.get('timing') == 'cold' else 'warm p50'}; "
              f"VictoriaLogs restarts {s['restart_before']}→{s['restart_after']}{'' if s['valid'] else ', INVALID'})", "",
              f"| shape | range | {b} | {c} | {r} | change | result vs {r} |", "|---|---|---|---|---|---|---|"]
     for e in s["rows"]:
         change = {"fixed": "fixed", "broken": "**broken**", "slower": "**slower**", "n/a": "n/a"}.get(e["verdict"])
         if change is None:
             change = f"{e['speedup']}×" if e["speedup"] and e["verdict"] == "faster" else "same"
-        lines.append(f"| {cell(e['shape'])} | {e['range']} | {fmt(e['p50'].get(b), e['status'].get(b))} | "
-                     f"{fmt(e['p50'].get(c), e['status'].get(c))} | {fmt(e['p50'].get(r), e['status'].get(r))} | "
-                     f"{change} | {e['parity_vs_reference']} |")
+        st = e.get("stale", [])
+        lines.append(f"| {cell(e['shape'])} | {e['range']} | {fmt(e['p50'].get(b), e['status'].get(b), b in st)} | "
+                     f"{fmt(e['p50'].get(c), e['status'].get(c), c in st)} | "
+                     f"{fmt(e['p50'].get(r), e['status'].get(r), r in st)} | {change} | {e['parity_vs_reference']} |")
+    stale = {t: sum(1 for e in s["rows"] if t in e.get("stale", [])) for t in (b, c, r)}
     v = s["verdicts"]
+    if any(stale.values()):
+        lines += ["", "† identical answers for windows a minute apart: served from a cache or a stale view, so the "
+                  "timing is not a like-for-like reference (" +
+                  ", ".join(f"{t}: {n} of {len(s['rows'])}" for t, n in stale.items() if n) + ")."]
     lines += ["", f"Verdict: {len(s['rows'])} shape×range — " +
               ", ".join(f"{v[k]} {k}" for k in ("fixed", "faster", "same", "slower", "broken") if v.get(k)) +
               f"; results: {s['result_differs_from_reference'] - s.get('result_differs_preexisting', 0)} new "
@@ -160,7 +183,7 @@ def markdown(s):
 
 
 def compare(args):
-    old, new = json.load(open(args.old)), json.load(open(args.new))
+    old, new = load(args.old), load(args.new)
     t = args.target
     index = {(e["shape"], e["range"]): e for e in old["rows"]}
     lines = [f"Comparing {old['label']} ({old['date']}) → {new['label']} ({new['date']}), target '{t}', warm p50", "",
@@ -197,6 +220,8 @@ def main():
     s.add_argument("--label", required=True)
     s.add_argument("--save", default="")
     s.add_argument("--tolerance", type=float, default=0.01, help="relative sum difference still counted as same result")
+    s.add_argument("--cold", action="store_true",
+                   help="compare first-run (cold) timings instead of warm p50; caches on either side hide less")
     c = sub.add_parser("compare")
     c.add_argument("old")
     c.add_argument("new")

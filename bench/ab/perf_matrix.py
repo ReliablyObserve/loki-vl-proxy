@@ -37,6 +37,7 @@ class CPUSampler(threading.Thread):
     def __init__(self, container):
         super().__init__(daemon=True)
         self.container, self.samples, self.stop = container, [], False
+        self.failed = 0
 
     def run(self):
         while not self.stop:
@@ -45,7 +46,9 @@ class CPUSampler(threading.Thread):
                                               text=True, timeout=20).strip()
                 self.samples.append((time.time(), float(out.rstrip("%"))))
             except (subprocess.SubprocessError, ValueError, OSError):
-                pass
+                # A missed sample only narrows the CPU figures; it is counted
+                # and reported with the run instead of failing it.
+                self.failed += 1
             time.sleep(0.5)
 
     def between(self, t0, t1):
@@ -108,7 +111,8 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    spec = json.load(open(args.shapes_file))
+    with open(args.shapes_file) as f:
+        spec = json.load(f)
     shape_set = spec["sets"][args.set]
     range_defs = spec["ranges"]
     ranges = [r for r in (args.ranges.split(",") if args.ranges else shape_set["ranges"]) if r]
@@ -120,14 +124,17 @@ def main():
         return subprocess.check_output(["docker", "inspect", args.container, "--format", "{{.RestartCount}}"], text=True).strip()
 
     def healthy_and_unrestarted(ref):
+        last_error = None
         for _ in range(120):
             try:
                 with urllib.request.urlopen(args.vl_health, timeout=5) as r:
                     if r.status == 200:
                         break
-            except (urllib.error.URLError, OSError):
-                pass
+            except (urllib.error.URLError, OSError) as e:
+                last_error = e  # still starting up; retry until the deadline
             time.sleep(1)
+        else:
+            print(f"VictoriaLogs did not become healthy: {last_error}", flush=True)
         return restarts() == ref
 
     end = (int(time.time()) - 60) // 60 * 60  # step-aligned for every range's step
@@ -155,7 +162,7 @@ def main():
                     status, body, dt, t0 = request(url, shape.get("headers", {}), args.tenant, args.timeout)
                     time.sleep(0.3)
                     cmax, cavg = sampler.between(t0, t0 + dt)
-                    row = {"shape": shape["name"], "range": rname, "run": run, "target": tname, "status": status,
+                    row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False)),
                            "vl_cpu_max": cmax, "vl_cpu_avg": cavg}
                     rows.append(row)
@@ -172,9 +179,11 @@ def main():
             break
     sampler.stop = True
     restart1 = restarts()
-    json.dump({"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
+    result = {"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
                "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
-               "valid": not aborted and restart0 == restart1, "rows": rows}, open(args.out, "w"), indent=1)
+              "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed, "rows": rows}
+    with open(args.out, "w") as f:
+        json.dump(result, f, indent=1)
     print(f"\nwrote {args.out}; VictoriaLogs RestartCount before={restart0} after={restart1}")
 
 

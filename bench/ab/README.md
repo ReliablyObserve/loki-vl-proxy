@@ -69,6 +69,12 @@ It lists only the shapes that changed beyond noise and prints one summary line.
   Near the live edge Loki can answer from its results cache or lag on the
   newest samples, so small sum differences at 1h are expected; the series set
   must match.
+- Warm timings compare cache-assisted answers on both sides: Loki's frontend
+  splits a range into 1h pieces and caches each one, so moving the window by a
+  minute recomputes only the newest piece; the proxy has its own window cache.
+  Use `summarize --cold` for first-run timings, which is what a user opening a
+  new panel sees. A cell marked `†` returned identical answers for windows a
+  minute apart — a cache or a stale view answered, not a like-for-like timing.
 - The VictoriaLogs container's restart count is recorded before and after. A
   run that spans a restart is marked `INVALID` and must be repeated; never
   attribute its errors to either build.

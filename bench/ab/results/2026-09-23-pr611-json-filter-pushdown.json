@@ -18,6 +18,11 @@
  },
  "result_differs_from_reference": 2,
  "result_differs_preexisting": 2,
+ "stale_answers": {
+  "main": 6,
+  "branch": 9,
+  "loki": 7
+ },
  "rows": [
   {
    "shape": "A explore volume, 2 filters, drop",
@@ -455,6 +460,11 @@
     "branch": 267.8,
     "loki": 267.8
    },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.17%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -489,6 +499,11 @@
     "branch": 278.19,
     "loki": 278.19
    },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.04%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -557,6 +572,10 @@
     "branch": 762.01,
     "loki": 762.01
    },
+   "stale": [
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.65%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -591,6 +610,11 @@
     "branch": 794.8,
     "loki": 794.8
    },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.17%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -625,6 +649,11 @@
     "branch": 576.0,
     "loki": 576.0
    },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.04%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -693,6 +722,10 @@
     "branch": 1194.76,
     "loki": 1194.76
    },
+   "stale": [
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.66%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -863,6 +896,10 @@
     "branch": 369.72,
     "loki": 369.72
    },
+   "stale": [
+    "main",
+    "branch"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.28%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -897,6 +934,10 @@
     "branch": 64.89,
     "loki": 64.89
    },
+   "stale": [
+    "main",
+    "branch"
+   ],
    "parity_vs_reference": "same series, sum \u00b10.11%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
@@ -965,6 +1006,10 @@
     "branch": 171.02,
     "loki": 171.02
    },
+   "stale": [
+    "branch",
+    "loki"
+   ],
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
