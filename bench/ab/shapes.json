@@ -1,0 +1,183 @@
+{
+ "ranges": {
+  "1h": [
+   3600,
+   5
+  ],
+  "3h": [
+   10800,
+   5
+  ],
+  "6h": [
+   21600,
+   10
+  ],
+  "24h": [
+   86400,
+   60
+  ],
+  "7d": [
+   604800,
+   600
+  ]
+ },
+ "sets": {
+  "json-filter-pushdown": {
+   "description": "| json / | logfmt range metrics with label filters on parsed fields (PR #611). Grafana Explore log volume and Logs Drilldown field breakdowns over a JSON stream.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "A explore volume, 2 filters, drop",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [1m]))"
+    },
+    {
+     "name": "B grouped sum, filter, no drop",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [1m]))"
+    },
+    {
+     "name": "C ungrouped sum, filter, no drop",
+     "query": "sum(count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [1m]))"
+    },
+    {
+     "name": "D volume, no filters",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [1m]))"
+    },
+    {
+     "name": "E field breakdown pipeline (explore)",
+     "query": "sum by (pipeline) (count_over_time({env=\"production\"} | json | drop __error__ | pipeline!=\"\" [1m]))"
+    },
+    {
+     "name": "F field breakdown service_version (explore)",
+     "query": "sum by (service_version) (count_over_time({env=\"production\"} | json | drop __error__ | service_version!=\"\" [1m]))"
+    },
+    {
+     "name": "G field breakdown pipeline (drilldown)",
+     "query": "sum by (pipeline) (count_over_time({env=\"production\"} | json | drop __error__ | pipeline!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     }
+    },
+    {
+     "name": "H field breakdown service_version (drilldown)",
+     "query": "sum by (service_version) (count_over_time({env=\"production\"} | json | drop __error__ | service_version!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     }
+    },
+    {
+     "name": "I grafana volume of B",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` | drop __error__ [1m]))"
+    }
+   ]
+  },
+  "control": {
+   "description": "Shapes a change must not slow down or alter. Run on every performance-relevant PR.",
+   "ranges": [
+    "1h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "logs plain",
+     "query": "{env=\"production\"}",
+     "logs": true
+    },
+    {
+     "name": "logs | json",
+     "query": "{env=\"production\"} | json",
+     "logs": true
+    },
+    {
+     "name": "logs | logfmt",
+     "query": "{env=\"production\"} | logfmt",
+     "logs": true
+    },
+    {
+     "name": "json volume no filters",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [1m]))"
+    },
+    {
+     "name": "logfmt volume",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | logfmt | drop __error__ [1m]))"
+    },
+    {
+     "name": "plain volume",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | drop __error__ [1m]))"
+    },
+    {
+     "name": "stream-label count by app",
+     "query": "sum by (app) (count_over_time({env=\"production\"}[1m]))"
+    },
+    {
+     "name": "ungrouped rate",
+     "query": "sum(rate({env=\"production\"}[5m]))"
+    },
+    {
+     "name": "bytes_over_time by app",
+     "query": "sum by (app) (bytes_over_time({env=\"production\"}[5m]))"
+    },
+    {
+     "name": "topk rate by app",
+     "query": "topk(5, sum by (app) (rate({env=\"production\"}[5m])))"
+    },
+    {
+     "name": "detected_level volume",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | drop __error__ [1m]))"
+    },
+    {
+     "name": "by service_name",
+     "query": "sum by (service_name) (count_over_time({env=\"production\"}[1m]))"
+    },
+    {
+     "name": "drilldown level volume",
+     "query": "sum by (level) (count_over_time({env=\"production\"}[$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     }
+    },
+    {
+     "name": "drilldown service landing",
+     "query": "sum by (service_name) (count_over_time({env=\"production\"}[$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     }
+    },
+    {
+     "name": "drilldown detected_level",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"}[$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     }
+    },
+    {
+     "name": "json rate by level (no filter, no drop)",
+     "query": "sum by (level) (rate({env=\"production\"} | json [5m]))"
+    },
+    {
+     "name": "logfmt count by level, filter, drop",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt | level=`info` | drop __error__ [1m]))"
+    },
+    {
+     "name": "instant ungrouped rate",
+     "query": "sum(rate({env=\"production\"}[5m]))",
+     "instant": true
+    },
+    {
+     "name": "instant json volume",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [5m]))",
+     "instant": true
+    },
+    {
+     "name": "instant json filtered",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [5m]))",
+     "instant": true
+    }
+   ]
+  }
+ }
+}
