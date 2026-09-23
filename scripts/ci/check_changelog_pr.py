@@ -221,6 +221,29 @@ def is_dependency_only_pr(commits: Iterable[str], files: Iterable[str]) -> bool:
     )
 
 
+def extract_released_sections(text: str) -> str:
+    """Everything from the first released version heading down.
+
+    A rebase across a release routinely drops a feature branch's entries into
+    the version section that was cut while the branch was open, and git does it
+    without a conflict when the section headings match, so nothing warns. The
+    released history is immutable once published: comparing this slice against
+    the base catches that silently.
+    """
+    match = re.search(r"^## \[\d[^\]]*\]", text, re.MULTILINE)
+    if not match:
+        return ""
+    return text[match.start():]
+
+
+def is_changelog_history_fix(commits: Iterable[str]) -> bool:
+    """True when the pull request deliberately edits released history."""
+    subjects = [c for c in commits if c.strip() and not is_merge_commit(c)]
+    if not subjects:
+        return False
+    return all(c.strip().lower().startswith("docs(changelog)") for c in subjects)
+
+
 def is_release_metadata_sync(files: Iterable[str]) -> bool:
     file_list = [f for f in files if f.strip()]
     if not file_list or "CHANGELOG.md" not in file_list:
@@ -263,6 +286,21 @@ def main() -> int:
             return 1
         print("changelog gate: ok (release metadata sync)")
         return 0
+
+    if (
+        "CHANGELOG.md" in files
+        and not is_changelog_history_fix(commits)
+        and extract_released_sections(head_text) != extract_released_sections(base_text)
+    ):
+        print(
+            "changelog gate: released version sections must match the base branch — "
+            "entries belong under [Unreleased]. A rebase across a release moves them "
+            "into the version that was cut while the branch was open, without a "
+            "conflict. Rebuild CHANGELOG.md from the base and re-insert your entries "
+            "under [Unreleased] (a deliberate history fix uses a docs(changelog) commit).",
+            file=sys.stderr,
+        )
+        return 1
 
     if not should_require_changelog(commits, files):
         print("changelog gate: skipped (no releasable changes detected)")

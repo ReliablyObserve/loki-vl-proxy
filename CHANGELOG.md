@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A rebase across a release can no longer move changelog entries into a
+  published version.** When a release is cut while a branch is open, rebasing
+  that branch drops its entries into the version section that was just
+  materialized — and because the `### Fixed` / `### Added` headings match on
+  both sides, git does it without a conflict, so nothing warns and the entries
+  are silently attributed to a release that never contained them. This happened
+  on four branches in a row. The changelog gate now compares everything from
+  the first released version heading down against the base branch and fails if
+  it differs, naming the fix; a deliberate edit of released history uses a
+  `docs(changelog)` commit.
 - **The e2e VictoriaLogs restarts were OOM kills, and it now has the memory it
   needs.** The earlier diagnosis was wrong: `docker inspect` reports the state
   of the container that is already running again, which showed `exit 0` and
