@@ -8,6 +8,7 @@ from scripts.ci.check_changelog_pr import (
     extract_released_sections,
     is_changelog_history_fix,
     is_dependency_only_pr,
+    released_history_changed,
     is_release_metadata_sync,
     should_require_changelog,
 )
@@ -134,6 +135,44 @@ class CheckChangelogPRTests(unittest.TestCase):
         self.assertTrue(is_changelog_history_fix(["docs(changelog): move entry back to Unreleased"]))
         self.assertFalse(is_changelog_history_fix(["fix: something"]))
         self.assertFalse(is_changelog_history_fix([]))
+
+    RELEASED = """# Changelog
+
+## [Unreleased]
+
+### Fixed
+
+- pending entry
+
+## [1.2.0] - 2026-01-02
+
+### Fixed
+
+- second release
+
+## [1.1.0] - 2026-01-01
+
+- first release
+"""
+
+    def test_released_history_unchanged_by_an_unreleased_entry(self):
+        head = self.RELEASED.replace("- pending entry", "- pending entry\n- another")
+        self.assertFalse(released_history_changed(head, self.RELEASED))
+
+    def test_released_history_allows_a_new_version_section(self):
+        head = self.RELEASED.replace(
+            "## [Unreleased]\n\n### Fixed\n\n- pending entry\n",
+            "## [Unreleased]\n\n## [1.3.0] - 2026-01-03\n\n### Fixed\n\n- pending entry\n",
+        )
+        self.assertFalse(released_history_changed(head, self.RELEASED))
+
+    def test_released_history_rejects_an_entry_moved_into_a_release(self):
+        head = self.RELEASED.replace("- second release", "- second release\n- rebased entry")
+        self.assertTrue(released_history_changed(head, self.RELEASED))
+
+    def test_released_history_rejects_a_removed_release(self):
+        head = self.RELEASED.split("## [1.1.0]")[0]
+        self.assertTrue(released_history_changed(head, self.RELEASED))
 
     def test_dependency_only_pr_survives_a_branch_update(self):
         """Bringing a dependency branch up to date must not make it releasable."""

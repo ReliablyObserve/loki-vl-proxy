@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release metadata pull requests pass the changelog gate again.** The gate
+  listed a pull request's files with a two-dot diff against the current base,
+  so a branch cut before the base moved appeared to change every file merged
+  since. The release bot's metadata branch for v1.87.1 was cut before a
+  dependency update merged, so it looked like it touched workflow files, was
+  not recognised as a metadata sync, and the released-section check added in
+  the previous release rejected the version section it was adding. The gate
+  now judges a pull request by its own changes from the point it was cut, and
+  compares released sections against that point too, so a branch that is only
+  behind is not blamed for releases cut after it.
+
 ## [1.87.1] - 2026-09-23
 
 ### Fixed
