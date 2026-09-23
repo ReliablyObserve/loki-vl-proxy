@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.87.0] - 2026-09-22
-
 ### Fixed
 
 - **The e2e VictoriaLogs restarts were OOM kills, and it now has the memory it
@@ -28,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   concurrent long-range load test: 155,438 successful responses, no `502`, no
   `503`, `/labels` answering throughout, peak 6447 MiB -- above the old 5 g cap
   -- and the restart count unchanged.
+
+## [1.87.0] - 2026-09-22
+
+### Fixed
+
 - **Updating a dependency branch no longer fails the changelog gate.** The gate
   exempts a pull request whose every commit is a `build(deps)` bump, but
   bringing such a branch up to date with `main` adds a `Merge branch 'main'
