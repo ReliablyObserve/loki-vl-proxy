@@ -77,6 +77,7 @@
     ],
     "loki_api_v1_query": [
       "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "loki_api_v1_query_range": [
@@ -96,6 +97,11 @@
       "internal/config/registry_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_query_validation_test.go"
+    ],
+    "parsed-label-series-identity": [
+      "internal/logql/parser_captures_test.go",
+      "internal/proxy/parser_capture_identity_test.go",
+      "test/e2e-compat/parser_capture_identity_test.go"
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
@@ -145,7 +151,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 163,
+  "registry_items": 165,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -155,6 +161,9 @@
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits"
+    ],
+    "internal/logql/parser_captures_test.go": [
+      "parsed-label-series-identity"
     ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -188,6 +197,9 @@
       "limits/query-length-limit-is-configurable",
       "loki_api_v1_query_range",
       "operator-configurable-limits"
+    ],
+    "internal/proxy/parser_capture_identity_test.go": [
+      "parsed-label-series-identity"
     ],
     "internal/proxy/sliding_window_stats_test.go": [
       "heavy-metric-fetch-bounds",
@@ -244,6 +256,10 @@
       "semantics/sliding-window-recurrence-exact",
       "series-limits-and-partial-results"
     ],
+    "test/e2e-compat/parser_capture_identity_test.go": [
+      "loki_api_v1_query",
+      "parsed-label-series-identity"
+    ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -258,7 +274,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 19,
+  "tests_with_markers": 22,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -293,10 +309,11 @@
     "loki_api_v1_status_buildinfo",
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
+    "parsed-identity/regexp-partial-match-series-count",
     "parser-error-and-label-collision",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 36
+  "wired_items": 37
 }

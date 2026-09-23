@@ -190,6 +190,12 @@ type Config struct {
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
+
+	// ExactParserSeriesIdentity names the series of a metric over a
+	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
+	// extracted, as Loki does, at the cost of evaluating the query from rows.
+	// Captures of `| regexp` and `| pattern` are always part of the identity.
+	ExactParserSeriesIdentity bool
 	// PatternsCustom is a static list of patterns always prepended to
 	// /loki/api/v1/patterns responses.
 	PatternsCustom []string
@@ -495,6 +501,7 @@ type Proxy struct {
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	patternsAutodetectFromQueries         bool
+	exactParserSeriesIdentity             bool
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
@@ -1131,6 +1138,7 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		patternsEnabled:                       patternsEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
+		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,

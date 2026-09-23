@@ -1,0 +1,39 @@
+id: parsed-label-series-identity
+kind: identity
+title: Labels a parser extracts are part of a metric series
+
+loki: |
+  A metric query over a log pipeline is evaluated per series, and a series is
+  the stream labels plus the structured metadata plus every label the pipeline
+  extracted. count_over_time({app="worker-service"} | regexp
+  "job_id=(?P<jid>\w+)" [1m]) therefore answers with one series per captured
+  job id (450 on the e2e generator), each carrying the jid label, and
+  | logfmt answers with one series per distinct set of parsed values (450; 1050
+  for | json on a busier app).
+
+victorialogs: |
+  A stats pipe groups by named fields. `extract_regexp` and `extract` write
+  their captures into named fields, so they can be grouped by. `unpack_json`
+  and `unpack_logfmt` produce a key set that is known only once a row is read,
+  which no `by (...)` clause can name.
+
+proxy: |
+  The captures of `| regexp` and `| pattern` are named in the query, so they
+  join the stream in the grouping the proxy already asks VictoriaLogs for, and
+  the aggregation stays in the backend: the stats-bucket route groups by them,
+  the row-evaluated route keeps them as labels, and the /hits route, which
+  groups by a single field, is not used for those queries. Collapsing them into
+  the stream loses both the labels and the series (450 -> 30 before this).
+
+implementation:
+  - "internal/logql/parser_captures.go ParserCaptureLabels"
+  - "internal/proxy/metric_agg.go addStatsByStreamClause"
+  - "internal/proxy/query_translation.go fetchBareParserStatsBuckets, fetchBareParserMetricSeries"
+
+cases:
+  - parsed-identity/regexp-capture-series
+  - parsed-identity/pattern-capture-series
+  - parsed-identity/bytes-over-time-captures
+  - parsed-identity/unnamed-group-extracts-nothing
+  - parsed-identity/dynamic-key-parsers   # deviation with an opt-in flag, see state
+  - parsed-identity/regexp-partial-match-series-count   # unresolved pre-existing gap, see state

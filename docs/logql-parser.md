@@ -282,6 +282,12 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 | `| line_format` unclosed template | Rejected at semantic pass: 400 with template parse error |
 | `| pattern` parser stage | Mapped to VL `seq()` word-match filter if caps allow, else regexp |
 
+## Parser Stages and Series Identity
+
+`ParserCaptureLabels` (`internal/logql/parser_captures.go`) reads the capture names of `| regexp` and `| pattern` stages from the parsed pipeline: the named groups of the Go regexp, and the `<name>` placeholders of a pattern (`<_>` skips). Metric routing adds them to the series identity, because Loki names a metric series with the stream labels plus every label the pipeline extracted.
+
+The key set of `| json` and `| logfmt` is known only once a line is read, so it cannot come from the AST and the proxy keeps the stream identity unless `-exact-parser-series-identity` is set. [KNOWN_ISSUES.md](KNOWN_ISSUES.md) records the measured difference.
+
 ## How Routing Uses the AST
 
 `proxy.go` calls `logql.Parse()` on the already-validated query (error cannot occur at this point) and type-switches to dispatch:

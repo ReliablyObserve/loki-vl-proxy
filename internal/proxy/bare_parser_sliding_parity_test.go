@@ -121,8 +121,8 @@ func TestBareParserRangeMetric_StatsBucketsMatchLoki(t *testing.T) {
 		{query: `bytes_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "bytes_over_time", window: 90 * time.Second, start: full, end: fullEnd, route: "stats", wantStep: "30s"},
 		{query: `rate({app=~"bare-.*"} | logfmt [2m])`, fn: "rate", window: 2 * time.Minute, start: full, end: fullEnd, route: "stats", wantStep: "60s", wantOffset: "-1ns"},
 		{query: `rate({app=~"bare-.*"} | logfmt [2m])`, fn: "rate", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: "stats", wantOffset: "-30000000001ns"},
-		{query: `bytes_rate({app=~"bare-.*"} | regexp "(?P<m>.)" [2m])`, fn: "bytes_rate", window: 2 * time.Minute, start: full, end: fullEnd, route: "stats"},
-		{query: `count_over_time({app=~"bare-.*"} | pattern "<m>" [90s])`, fn: "count_over_time", window: 90 * time.Second, start: unaligned, end: unalignedEnd, route: "stats", wantOffset: "-1ns"},
+		{query: `bytes_rate({app=~"bare-.*"} | logfmt [2m])`, fn: "bytes_rate", window: 2 * time.Minute, start: full, end: fullEnd, route: "stats"},
+		{query: `count_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "count_over_time", window: 90 * time.Second, start: unaligned, end: unalignedEnd, route: "stats", wantOffset: "-1ns"},
 		// range == step: Loki's (t-1m, t], not VictoriaLogs' [t, t+1m) buckets.
 		{query: `count_over_time({app=~"bare-.*"} | logfmt [1m])`, fn: "count_over_time", window: time.Minute, start: full, end: fullEnd, route: "stats", wantStep: "60s", wantOffset: "-1ns"},
 		{query: `bytes_over_time({app=~"bare-.*"} | logfmt [1m])`, fn: "bytes_over_time", window: time.Minute, start: unaligned, end: unalignedEnd, route: "stats", wantOffset: "-30000000001ns"},
@@ -142,7 +142,7 @@ func TestBareParserRangeMetric_HitsBucketsMatchLoki(t *testing.T) {
 	runBareParserCases(t, lines, "v1.50.0", []string{"app"}, []bareParserCase{
 		{query: `count_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "count_over_time", window: 90 * time.Second, start: full, end: fullEnd, route: "hits", wantStep: "30s", wantOffset: "-1ns"},
 		{query: `rate({app=~"bare-.*"} | logfmt [2m])`, fn: "rate", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: "hits", wantStep: "60s", wantOffset: "-30000000001ns"},
-		{query: `count_over_time({app=~"bare-.*"} | regexp "(?P<m>.)" [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: full, end: fullEnd, route: "hits"},
+		{query: `count_over_time({app=~"bare-.*"} | logfmt [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: full, end: fullEnd, route: "hits"},
 		// Byte metrics are not served by /hits.
 		{query: `bytes_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "bytes_over_time", window: 90 * time.Second, start: full, end: fullEnd, route: "stats", wantStep: "30s"},
 	})

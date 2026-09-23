@@ -86,6 +86,13 @@ These stages are executed at the proxy level (VL has no native equivalents):
 
 ## Metric Queries
 
+### Series identity
+
+Loki names the series of a metric query with the stream labels plus every label the pipeline extracted, so one stream can answer with many series.
+
+- `| regexp` and `| pattern` name their captures in the query, so the proxy adds them to the grouping VictoriaLogs already computes (`... | stats by (_stream, level, <captures>) count()`) and the aggregation stays in the backend.
+- `| json` and `| logfmt` produce a key set that is known only once a line is read, which VictoriaLogs cannot group by. The proxy keeps the stream identity for them, which returns fewer series than Loki; `-exact-parser-series-identity=true` names those series with the parsed labels instead, at the cost of evaluating the query from rows. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the measured difference.
+
 ### Range Vector Functions
 
 | LogQL | LogsQL |

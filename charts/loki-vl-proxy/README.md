@@ -29,6 +29,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.admin-listen` | `127.0.0.1:3101` | Loopback-only admin/debug listener; never published through the Service |
 | `service.metrics.enabled` | `true` | Add the `metrics` Service port; requires a non-loopback `metrics-listen` and instrumentation enabled |
 | `extraArgs.patterns-enabled` | `true` | Enable Drilldown patterns endpoint |
+| `extraArgs.exact-parser-series-identity` | _(binary default: `false`)_ | Name `\| json` / `\| logfmt` metric series with the labels those parsers extracted, as Loki does; such queries are then evaluated from rows instead of pushed down to VictoriaLogs stats |
 | `extraArgs.log-level` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `persistence.enabled` | `false` | Enable bbolt disk cache via PVC |
 | `persistence.size` | `10Gi` | PVC size for disk cache |

@@ -149,6 +149,11 @@ spec:
             # - -backend-heavy-query-queue-wait=20s
             # - -backend-heavy-query-min-range=6h
 
+            # Name | json / | logfmt metric series with the labels those
+            # parsers extracted, as Loki does. Opt-in: such queries are then
+            # evaluated from rows instead of pushed down to VictoriaLogs.
+            # - -exact-parser-series-identity=true
+
             # ── Tenant map hot-reload ────────────────────────────────────────
             # Only needed when TENANT_MAP_FILE is set.
             # - -tenant-map-reload-interval=30s

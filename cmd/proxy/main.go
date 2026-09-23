@@ -109,6 +109,7 @@ type proxyRuntimeConfig struct {
 	detectedLevelBodyScan               bool
 	patternsEnabled                     bool
 	patternsAutodetectFromQueries       bool
+	exactParserSeriesIdentity           bool
 	patternsCustomRaw                   string
 	patternsCustomFile                  string
 	queryRangeWindowing                 bool
@@ -535,6 +536,7 @@ func run(
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
+	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
 	patternsCustomFile := fs.String("patterns-custom-file", "", "Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup")
@@ -820,6 +822,7 @@ func run(
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
 			patternsEnabled:                     *patternsEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
+			exactParserSeriesIdentity:           *exactParserSeriesIdentity,
 			patternsCustomRaw:                   *patternsCustomRaw,
 			patternsCustomFile:                  *patternsCustomFile,
 			queryRangeWindowing:                 *queryRangeWindowing,
@@ -2018,6 +2021,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
+		ExactParserSeriesIdentity:          cfg.exactParserSeriesIdentity,
 		PatternsCustom:                     customPatterns,
 		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
 		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,

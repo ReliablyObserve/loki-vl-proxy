@@ -278,6 +278,7 @@ extraArgs:
   # patterns-startup-stale-threshold: "60s"
   # patterns-startup-peer-warm-timeout: "5s"
   # patterns-autodetect-from-queries: "false"         # warm /patterns from successful query/query_range responses
+  # exact-parser-series-identity: "false"             # name | json / | logfmt metric series with the parsed labels (Loki parity, evaluated from rows)
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
   # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
   # System metrics scope (the chart auto-injects host-proc-root=/host/proc when

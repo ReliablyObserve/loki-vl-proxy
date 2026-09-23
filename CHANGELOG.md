@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-exact-parser-series-identity` (default `false`, Helm
+  `extraArgs.exact-parser-series-identity`) names the series of a metric over
+  `| json` or `| logfmt` with the labels those parsers extracted, as Loki does.
+  Their key set is known only once a line is read, so the option evaluates
+  every such query from rows (bounded by the manual row budget) instead of
+  pushing it down to VictoriaLogs stats, which costs far more on wide ranges;
+  it is off by default and documented in `docs/KNOWN_ISSUES.md` as the
+  remaining deviation (`| logfmt`: Loki 450 series, proxy 30; `| json`: Loki
+  1050 series).
+
+### Fixed
+
+- Keep the labels a `| regexp` or `| pattern` stage extracts in the series of a
+  metric query, as Loki does. `count_over_time({app="worker-service"} |
+  regexp "job_id=(?P<jid>\\w+)" [1m])` returned one series per stream without
+  `jid` (30 series where Loki returns 450, one per captured value), and the
+  same for `| pattern`. Both parsers name their captures in the query, so the
+  captures now join the stream in the series identity: the stats-bucket route
+  groups by them in VictoriaLogs and the row-evaluated route keeps them as
+  labels, with no extra backend work. Measured live on the e2e stack with a
+  tumbling `| pattern` query (`count_over_time({app="api-gateway"} | pattern
+  "<_> <mth> <_>" [30s])`, 5m at step 30s): Loki answers 748 series and every
+  one carries `mth`; before this change the proxy answered 739 series and none
+  carried it, after it 739 and every one carries it. Series-count parity for a
+  `| regexp` that matches only some lines is not claimed — see the
+  `parsed-label-series-identity` registry item for the measured divergence
+  there, which is unresolved and predates this change.
+
 ## [1.90.0] - 2026-09-23
 
 ### Fixed

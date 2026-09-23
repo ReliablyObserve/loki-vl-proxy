@@ -1067,7 +1067,11 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	// behaviour that bare rate(| json) used before the __error__ slow-path guard
 	// was added. With a post-parser filter, the extracted label values are part
 	// of the series identity (as in Loki).
-	includeParsedInMetric := hasPostParserPipeStage(spec.baseQuery)
+	includeParsedInMetric := hasPostParserPipeStage(spec.baseQuery) || p.exactParserSeriesIdentity
+	// The labels a `| regexp` or `| pattern` stage extracts are named in the
+	// query and are part of Loki's series identity even without a filter after
+	// the parser, so they are kept whatever the pipeline looks like.
+	captureLabels := logqlpkg.ParserCaptureLabels(spec.baseQuery)
 
 	rows := 0
 	for scanner.Scan() {
@@ -1113,14 +1117,9 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
-		if includeParsedInMetric {
+		if includeParsedInMetric || len(captureLabels) > 0 {
 			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
-			for key, value := range parsedFields {
-				if spec.unwrapField != "" && key == spec.unwrapField {
-					continue
-				}
-				metric[key] = value
-			}
+			addParsedSeriesLabels(metric, parsedFields, spec.unwrapField, captureLabels, includeParsedInMetric)
 		}
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
@@ -1268,10 +1267,17 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 		return nil, true, err
 	}
 
-	// The first evaluation window starts one range before evalStart.
+	// The first evaluation window starts one range before evalStart. Labels a
+	// `| regexp` or `| pattern` stage extracts are part of Loki's series
+	// identity, so VictoriaLogs groups by them next to the stream.
 	fetchStart := time.Unix(0, evalStart).Add(-spec.rangeWindow)
+	captureLabels := logqlpkg.ParserCaptureLabels(spec.baseQuery)
+	group := "_stream"
+	for _, label := range captureLabels {
+		group += ", " + quoteLogsQLIdent(label)
+	}
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | stats by (_stream) "+statsAggFunc)
+	params.Set("query", logsqlQuery+" | stats by ("+group+") "+statsAggFunc)
 	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
@@ -1333,6 +1339,11 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 				metric[lt.ToLoki(k)] = lv
 			} else {
 				metric[k] = lv
+			}
+		}
+		for _, label := range captureLabels {
+			if value := string(metricObj.Get(label).GetStringBytes()); value != "" {
+				metric[label] = value
 			}
 		}
 		ensureDetectedLevel(metric)
@@ -1810,6 +1821,30 @@ func lastParserStageEnd(baseQuery string) int {
 	return lastEnd
 }
 
+// addParsedSeriesLabels adds the parsed labels that belong to Loki's series
+// identity: every one of them when the caller asks for the exact identity,
+// otherwise the captures a `| regexp` or `| pattern` stage named. The unwrapped
+// field is a value, not a label.
+func addParsedSeriesLabels(metric, parsedFields map[string]string, unwrapField string, captureLabels []string, includeAll bool) {
+	for key, value := range parsedFields {
+		if unwrapField != "" && key == unwrapField {
+			continue
+		}
+		if !includeAll && !containsString(captureLabels, key) {
+			continue
+		}
+		metric[key] = value
+	}
+}
+
+// hasDynamicKeyParserStage reports whether the query parses with `| json` or
+// `| logfmt`, whose extracted keys are known only once a line is read, so their
+// labels can only join the series identity by evaluating the query from rows.
+func hasDynamicKeyParserStage(baseQuery string) bool {
+	return strings.Contains(baseQuery, "| json") || strings.Contains(baseQuery, "|json") ||
+		strings.Contains(baseQuery, "| logfmt") || strings.Contains(baseQuery, "|logfmt")
+}
+
 // hasPostParserPipeStage reports true when the base query has any pipe stage
 // after the last extracting parser (e.g. "| json | status >= 400"). When false,
 // the parser doesn't filter log lines and can be stripped for native VL stats.
@@ -1893,6 +1928,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	// VL stats alone.
 	rangeNanos := spec.rangeWindow.Nanoseconds()
 	if spec.unwrapField == "" && isLogRangeWindowFunc(spec.funcName) && rangeNanos >= stepNanos &&
+		(!p.exactParserSeriesIdentity || !hasDynamicKeyParserStage(spec.baseQuery)) &&
 		(!hasPostParserPipeStage(spec.baseQuery) || (rangeNanos == stepNanos && hasDropErrorOnlyPostParserStage(spec.baseQuery))) {
 		if p.tryBareParserLogRangeBuckets(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
 			return
@@ -1935,8 +1971,11 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 	p.configMu.RLock()
 	hasDeclaredFields := len(p.declaredLabelFields) > 0
 	p.configMu.RUnlock()
+	// /hits groups by one field, so a pipeline whose captures are part of the
+	// series identity goes to the stats path below.
 	if hasDeclaredFields && (spec.funcName == "rate" || spec.funcName == "count_over_time") &&
-		spec.rangeWindow.Nanoseconds() > stepNanos && !hasPostParserPipeStage(spec.baseQuery) {
+		spec.rangeWindow.Nanoseconds() > stepNanos && !hasPostParserPipeStage(spec.baseQuery) &&
+		len(logqlpkg.ParserCaptureLabels(spec.baseQuery)) == 0 {
 		series, ok, err = p.fetchBareParserMetricSeriesViaHits(r.Context(), spec, startNanos, endNanos, stepNanos)
 		if err != nil {
 			slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to stats",
