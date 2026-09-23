@@ -36,6 +36,38 @@ conformance/
   id, a proxy route has no registry item, an item points at code that no longer exists, or the
   coverage map is stale.
 
+## What the gate enforces
+
+`scripts/ci/check_conformance.py` runs in CI on every pull request and fails when:
+
+- a test claims a registry id that does not exist, a proxy route has no registry
+  item, or an item points at code that no longer exists;
+- a generated report is stale (coverage map, gaps, translation map, roadmap,
+  compatibility matrix);
+- a flag is missing from the places that list every flag;
+- a score or an item's state regressed against `registry/baseline.json`, or a
+  waiver expired;
+- an item's state claims more than the evidence supports: `proven` without a
+  passing test that declares it.
+
+Scores may rise, never fall. `python3 conformance/scripts/ratchet.py --accept`
+records an improvement as the new baseline.
+
+## Proving a case against the real stack
+
+`live_proof.py` sends each case to Loki and to the proxy on the same data and
+compares them under the case's contract:
+
+```bash
+python3 conformance/scripts/live_proof.py \
+  --loki http://127.0.0.1:13101 --proxy http://127.0.0.1:13100
+```
+
+Verdicts are `holds`, `gap` (the answers differ) or `blocked` (one side errored,
+or Loki returned nothing, so nothing is proven). Results land in
+`registry/generated/live-evidence.json`, and the matrix report shows them beside
+the versions under test.
+
 ## Reporting what a change touches
 
 Before opening a pull request that changes client-visible behaviour, run:

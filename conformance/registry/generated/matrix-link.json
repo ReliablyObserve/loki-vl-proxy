@@ -1,0 +1,147 @@
+{
+  "registry": {
+    "live_cases_gap": 0,
+    "live_cases_hold": 0,
+    "live_recorded": "2026-09-22T09:56:52+00:00",
+    "scores": {
+      "coverage": 0.5143,
+      "implementation": 0.4286,
+      "native_share_of_implemented": 0.4
+    }
+  },
+  "tracks": [
+    {
+      "edge_cases": 2,
+      "runtime_matrix": true,
+      "score_test": "TestLokiTrackScore",
+      "track": "loki",
+      "where": "test/e2e-compat/track_scores_test.go",
+      "workflow": "compat-loki.yaml"
+    },
+    {
+      "edge_cases": 3,
+      "runtime_matrix": false,
+      "score_test": "TestDrilldownTrackScore",
+      "track": "drilldown",
+      "where": "test/e2e-compat/track_scores_test.go",
+      "workflow": "compat-drilldown.yaml"
+    },
+    {
+      "edge_cases": 2,
+      "runtime_matrix": true,
+      "score_test": "TestVLTrackScore",
+      "track": "victorialogs",
+      "where": "test/e2e-compat/track_scores_test.go",
+      "workflow": "compat-vl.yaml"
+    }
+  ],
+  "versions": {
+    "grafana": {
+      "matrix": [],
+      "pinned": "13.2.1"
+    },
+    "grafana_client_detection": {
+      "matrix": [],
+      "pinned": null
+    },
+    "grafana_loki_datasource_contract": {
+      "matrix": [
+        "13.2.1",
+        "13.0.1",
+        "12.4.10",
+        "12.4.2",
+        "12.4.1"
+      ],
+      "pinned": null
+    },
+    "logs_drilldown_contract": {
+      "matrix": [
+        "2.5.2",
+        "2.5.1",
+        "2.5.0",
+        "2.4.0",
+        "2.3.0",
+        "2.2.1",
+        "2.2.0",
+        "2.1.5",
+        "2.1.3",
+        "2.1.2",
+        "2.1.1",
+        "2.1.0",
+        "2.0.4",
+        "2.0.3",
+        "2.0.2",
+        "2.0.1",
+        "2.0.0",
+        "1.0.41",
+        "1.0.40",
+        "1.0.39",
+        "1.0.38",
+        "1.0.37",
+        "1.0.36",
+        "1.0.35",
+        "1.0.34"
+      ],
+      "pinned": "2.5.2"
+    },
+    "loki": {
+      "matrix": [
+        "3.6.0",
+        "3.6.1",
+        "3.6.2",
+        "3.6.3",
+        "3.6.4",
+        "3.6.5",
+        "3.6.6",
+        "3.6.7",
+        "3.6.8",
+        "3.6.9",
+        "3.6.10",
+        "3.6.11",
+        "3.6.12",
+        "3.6.13",
+        "3.6.14",
+        "3.6.15",
+        "3.6.16",
+        "3.7.0",
+        "3.7.1",
+        "3.7.2",
+        "3.7.3",
+        "3.7.4",
+        "3.7.5",
+        "3.7.6",
+        "3.7.7"
+      ],
+      "pinned": "3.7.7"
+    },
+    "victorialogs": {
+      "matrix": [
+        "v1.30.0",
+        "v1.31.0",
+        "v1.32.0",
+        "v1.33.0",
+        "v1.34.0",
+        "v1.35.0",
+        "v1.36.0",
+        "v1.37.0",
+        "v1.38.0",
+        "v1.39.0",
+        "v1.40.0",
+        "v1.41.0",
+        "v1.42.0",
+        "v1.43.0",
+        "v1.44.0",
+        "v1.45.0",
+        "v1.46.0",
+        "v1.47.0",
+        "v1.48.0",
+        "v1.49.0",
+        "v1.50.0",
+        "v1.51.0",
+        "v1.51.1",
+        "v1.52.0"
+      ],
+      "pinned": "v1.52.0"
+    }
+  }
+}

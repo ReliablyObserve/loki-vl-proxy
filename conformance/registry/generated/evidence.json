@@ -1,0 +1,62 @@
+{
+  "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+  "items": {
+    "drilldown/index_volume/single-sample-returns-vector": [
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "pass",
+        "package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0,
+        "test": "TestVolume_RangeWithOneSamplePerSeriesIsVector"
+      }
+    ],
+    "loki_api_v1_index_volume": [
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "pass",
+        "package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0,
+        "test": "TestVolume_RangeWithOneSamplePerSeriesIsVector"
+      },
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "pass",
+        "package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0,
+        "test": "TestVolume_TargetLabelsAreRequired"
+      },
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "not-run",
+        "package": "",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0.0,
+        "test": "TestDrilldown_IndexVolumeBytesMatchLoki"
+      }
+    ],
+    "loki_api_v1_query_range": [
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "not-run",
+        "package": "",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0.0,
+        "test": "TestRegexpMatchersReachVictoriaLogsUnescaped"
+      }
+    ],
+    "status-400": [
+      {
+        "commit": "7fb87b2c77f425b6e1cf5edb0603caefc4ff8978",
+        "outcome": "pass",
+        "package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+        "recorded": "2026-09-22T09:56:06+00:00",
+        "seconds": 0,
+        "test": "TestVolume_TargetLabelsAreRequired"
+      }
+    ]
+  },
+  "recorded": "2026-09-22T09:56:06+00:00"
+}
