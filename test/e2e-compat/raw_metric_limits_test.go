@@ -55,7 +55,7 @@ func TestHardeningLive_RawMetricLimits(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			params := url.Values{"query": {`avg_over_time({app="` + app + `"}|json|unwrap value[5m])`}, "time": {evaluation.Format(time.RFC3339Nano)}, "start": {evaluation.Add(-time.Minute).Format(time.RFC3339Nano)}, "end": {evaluation.Format(time.RFC3339Nano)}, "step": {"60"}}
 			status, body := hardeningRequest(t, http.MethodGet, server.URL+"/loki/api/v1/"+mode+"?"+params.Encode(), "", nil)
-			if status < 400 || !strings.Contains(string(body), "maximum metric series exceeded (2)") || strings.Contains(string(body), `"result"`) {
+			if status < 400 || !strings.Contains(string(body), "maximum number of series (2) reached") || strings.Contains(string(body), `"result"`) {
 				t.Fatalf("overflow must be visible without partial data: %d %s", status, body)
 			}
 			params.Set("query", `avg_over_time({app="`+app+`",kind="0"}|json|unwrap value[5m])`)

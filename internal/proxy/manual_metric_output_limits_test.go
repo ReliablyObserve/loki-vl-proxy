@@ -54,7 +54,7 @@ func TestManualMetricOutputSeriesLimitFailsClosed(t *testing.T) {
 			if values["first"] != "2" || values["second"] != "4" {
 				t.Fatalf("samples changed: %s", body)
 			}
-			if partial, err := build(t.Context(), 1); err == nil || !strings.Contains(err.Error(), "series limit exceeded") || partial != nil {
+			if partial, err := build(t.Context(), 1); err == nil || !strings.Contains(err.Error(), "maximum number of series (1) reached") || partial != nil {
 				t.Fatalf("series were silently discarded: %s %v", partial, err)
 			}
 			ctx := binaryEvaluationContext(t.Context())

@@ -108,8 +108,9 @@ by one nanosecond, so a line on a window edge counts where Loki counts it. The
 bucket count has no budget because VictoriaLogs returns only non-empty buckets.
 The raw-sample evaluator answers with the same `(t-range, t]` boundaries when a
 bucket would be below 1 ms, when the stats response exceeds its byte limit, or
-when an unaligned grid meets a backend older than v1.45 or one whose version
-could not be detected. On such older backends an
+when an unaligned grid meets a backend known to be older than v1.45 (an
+undetected version keeps the bucket path: such a backend ignores the `offset`
+argument at worst). On such older backends an
 epoch-aligned grid still uses buckets without the one-nanosecond shift, so a
 line exactly on a window edge counts in the neighbouring window.
 

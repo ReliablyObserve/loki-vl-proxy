@@ -380,15 +380,18 @@ const backendVersionReprobeInterval = 5 * time.Minute
 
 // supportsStatsRangeOffset reports whether stats_query_range honours the offset
 // arg (VictoriaLogs v1.45+). Older releases silently ignore it and align buckets
-// to the epoch, so an unknown version (failed or pending probe) is treated as
-// unsupported: only epoch-aligned grids use buckets, others the raw evaluator.
-// While the version is unknown, the metrics probe is retried in the background.
+// to the epoch. An unknown version (failed or pending probe) is treated as
+// supported: the arg is then ignored rather than rejected, which is no worse
+// than the epoch-aligned buckets such a backend has anyway, while buffering raw
+// log rows instead would scale the query with the stored data. While the version
+// is unknown, the metrics probe is retried in the background.
 func (p *Proxy) supportsStatsRangeOffset() bool {
 	p.backendVersionMu.RLock()
 	known, supported := p.backendVersionSemver != "", p.backendSupportsStatsRangeOffset
 	p.backendVersionMu.RUnlock()
 	if !known {
 		p.maybeReprobeBackendVersion(time.Now())
+		return true
 	}
 	return supported
 }

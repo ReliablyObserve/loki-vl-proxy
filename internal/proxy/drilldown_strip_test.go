@@ -67,8 +67,8 @@ func TestProxyStatsQueryRange_ParserDirectPath(t *testing.T) {
 		t.Errorf("query lost | filter trace_id existence check: %s", receivedQuery)
 	}
 	// Parser-direct path must add VL-side | limit to bound per-bucket cardinality.
-	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-		t.Errorf("parser-direct path must add | limit %d: %s", maxDrilldownSeries, receivedQuery)
+	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", defaultStatsQuerySeries+1)) {
+		t.Errorf("parser-direct path must add | limit %d: %s", defaultStatsQuerySeries+1, receivedQuery)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 
 	t.Run("under limit unchanged", func(t *testing.T) {
 		body := makeSeries(10)
-		got := limitLokiMatrixSeries(body, 100)
+		got := limitLokiResultSeries(body, 100)
 		if string(got) != string(body) {
 			t.Errorf("expected body unchanged, got different result")
 		}
@@ -99,7 +99,7 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 
 	t.Run("at limit unchanged", func(t *testing.T) {
 		body := makeSeries(100)
-		got := limitLokiMatrixSeries(body, 100)
+		got := limitLokiResultSeries(body, 100)
 		if string(got) != string(body) {
 			t.Errorf("expected body unchanged at exact limit")
 		}
@@ -123,7 +123,7 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 		sb.WriteString(`]}}`)
 		body := []byte(sb.String())
 
-		got := limitLokiMatrixSeries(body, 100)
+		got := limitLokiResultSeries(body, 100)
 		// High-count series at index 150 must be in the top-100 output
 		if !strings.Contains(string(got), `"id-150"`) {
 			t.Errorf("high-count series (id-150) should survive top-by-count cut")
@@ -132,7 +132,7 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 
 	t.Run("invalid json returned unchanged", func(t *testing.T) {
 		body := []byte(`not json`)
-		got := limitLokiMatrixSeries(body, 5)
+		got := limitLokiResultSeries(body, 5)
 		if string(got) != string(body) {
 			t.Errorf("invalid JSON should be returned unchanged")
 		}
@@ -175,7 +175,7 @@ func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 			req.Header.Set("X-Query-Tags", header)
 		}
 		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
-		if got := strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)); got != wantDrilldown {
+		if got := strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", defaultStatsQuerySeries+1)); got != wantDrilldown {
 			t.Errorf("Drilldown path used=%v, want %v (header=%q); VL received: %s", got, wantDrilldown, header, receivedQuery)
 		}
 	}
@@ -234,8 +234,8 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	if !strings.Contains(receivedQuery, "stats by (status_code) count()") {
 		t.Errorf("Drilldown path changed the query: %s", receivedQuery)
 	}
-	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-		t.Errorf("Drilldown path must add VL-side | limit %d: %s", maxDrilldownSeries, receivedQuery)
+	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", defaultStatsQuerySeries+1)) {
+		t.Errorf("Drilldown path must add VL-side | limit %d: %s", defaultStatsQuerySeries+1, receivedQuery)
 	}
 	// Must return 3 separate per-value series — NOT a single aggregate
 	seriesCount := strings.Count(body, `"status_code"`)
@@ -641,8 +641,8 @@ func TestDrilldownTwoPhase_BasicFlow(t *testing.T) {
 		t.Errorf("Phase 1 step should be entire range 3600s, got %q", phase1Step)
 	}
 	// Phase 1 must include | limit 500
-	if !strings.Contains(phase1Query, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-		t.Errorf("Phase 1 query must append | limit %d: %q", maxDrilldownSeries, phase1Query)
+	if !strings.Contains(phase1Query, fmt.Sprintf("| limit %d", defaultStatsQuerySeries+1)) {
+		t.Errorf("Phase 1 query must append | limit %d: %q", defaultStatsQuerySeries+1, phase1Query)
 	}
 
 	// Phase 2 must use field:in(...) filter with the values from Phase 1
@@ -917,7 +917,7 @@ func TestRelaxStepForLowCardinality(t *testing.T) {
 		{
 			name:        "cardinality at limit (500) means truncated — does not relax",
 			origStep:    "300s",
-			cardinality: maxDrilldownSeries,
+			cardinality: defaultStatsQuerySeries,
 			rangeSec:    2 * day,
 			wantOK:      false,
 		},
@@ -945,7 +945,7 @@ func TestRelaxStepForLowCardinality(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := relaxStepForLowCardinality(tt.origStep, tt.cardinality, tt.rangeSec*int64(time.Second))
+			got, ok := relaxStepForLowCardinality(tt.origStep, tt.cardinality, tt.rangeSec*int64(time.Second), defaultStatsQuerySeries)
 			if ok != tt.wantOK {
 				t.Fatalf("relaxStepForLowCardinality(%q, %d, %ds) ok = %v, want %v",
 					tt.origStep, tt.cardinality, tt.rangeSec, ok, tt.wantOK)

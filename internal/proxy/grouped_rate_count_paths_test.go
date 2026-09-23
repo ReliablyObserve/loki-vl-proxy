@@ -114,7 +114,7 @@ func TestGroupedRangeMetricSingleFieldLongRangeMatchesLoki(t *testing.T) {
 		grafana   bool
 		field     string
 		want      map[string]float64
-		twoPhase  bool // count control: the bounded two-phase path must still serve it
+		twoPhase  bool // Drilldown count: the bounded two-phase path serves it
 		forbidHit bool
 	}{
 		{name: "rate 5m step 300 over 6h", query: `sum by (app) (rate({namespace="prod"}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, field: "app", want: map[string]float64{"api": 4, "web": 1}},
@@ -122,7 +122,7 @@ func TestGroupedRangeMetricSingleFieldLongRangeMatchesLoki(t *testing.T) {
 		{name: "rate with existence filter over 6h", query: `sum by (app) (rate({namespace="prod", app!=""}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, field: "app", want: map[string]float64{"api": 4, "web": 1}},
 		{name: "bytes_rate 5m step 300 over 6h", query: `sum by (app) (bytes_rate({namespace="prod"}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, field: "app", want: map[string]float64{"api": 4 * groupedRateLineBytes, "web": groupedRateLineBytes}},
 		{name: "grafana high-card rate over 6h", query: `sum by (trace_id) (rate({namespace="prod"}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, grafana: true, field: "trace_id", want: map[string]float64{"api": 4, "web": 1}, forbidHit: true},
-		{name: "count_over_time control over 6h", query: `sum by (app) (count_over_time({namespace="prod"}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, field: "app", want: map[string]float64{"api": 1200, "web": 300}, twoPhase: true},
+		{name: "count_over_time over 6h", query: `sum by (app) (count_over_time({namespace="prod"}[5m]))`, step: 5 * time.Minute, rangeDur: 6 * time.Hour, field: "app", want: map[string]float64{"api": 1200, "web": 300}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

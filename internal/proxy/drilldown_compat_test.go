@@ -1706,12 +1706,13 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	w := httptest.NewRecorder()
 	q := url.Values{}
 	q.Set("query", `sum(count_over_time({service_name="argocd",service_name != ""}[5s])) by (service_name)`)
+	// The range holds the backend bucket (17:14:55): with range < step it is the
+	// step bucket that ends one range after that label, 17:15:00.
 	q.Set("start", "2026-04-04T17:00:00Z")
 	q.Set("end", "2026-04-04T17:30:00Z")
 	q.Set("step", "300")
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
-	// The label card is a Logs Drilldown panel; its range < step keeps the
-	// native Drilldown routing.
+	// The label card is a Logs Drilldown panel.
 	r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 	p.handleQueryRange(w, r)
 
@@ -1722,9 +1723,12 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	// every row the exact matcher already selected, and grouping by
 	// service_name computes the derived value before the stats pipe (with
 	// format pipes: the test backend reports no version with the coalesce pipe).
+	// The range is shorter than the step, so the window evaluator adds its
+	// window-phase filter between the derivation pipes and the stats pipe.
 	if !strings.HasPrefix(statsQuery, `(service_name:="argocd" OR `) ||
 		!strings.Contains(statsQuery, `) * | format "<service.name>" as service_name keep_original_fields`) ||
-		!strings.Contains(statsQuery, `as service_name keep_original_fields | stats by (service_name) count()`) {
+		!strings.Contains(statsQuery, `as service_name keep_original_fields |`) ||
+		!strings.Contains(statsQuery, `| stats by (service_name) count()`) {
 		t.Fatalf("expected derived service_name matchers, got %q", statsQuery)
 	}
 

@@ -276,11 +276,11 @@ func TestCollectRangeMetricSamples_RedactsBackendError(t *testing.T) {
 	}
 }
 
-// TestWindowedHits_GatedToDrilldownOrHighCard covers finding 3 (round 2): the
-// window-sampled /hits rewrite (lossy per-window top-N sampling) must apply ONLY
-// to Drilldown requests OR Grafana-sourced high-cardinality fields. Direct API
-// clients must stay exact even for high-cardinality groupings.
-func TestWindowedHits_GatedToDrilldownOrHighCard(t *testing.T) {
+// TestWindowedHits_GatedToDrilldown: the window-sampled /hits rewrite (lossy
+// per-window top-N sampling) applies ONLY to Logs Drilldown requests. Direct API
+// clients and Grafana dashboards or Explore stay exact, like Loki, even for
+// high-cardinality groupings.
+func TestWindowedHits_GatedToDrilldown(t *testing.T) {
 	p := &Proxy{}
 	// 24h range so the >=2h gate would otherwise pass.
 	mk := func(drilldown bool, grafanaUA bool) *http.Request {
@@ -314,10 +314,11 @@ func TestWindowedHits_GatedToDrilldownOrHighCard(t *testing.T) {
 	rejects("non-grafana high-card", mk(false, false), highCard)
 	// Grafana dashboard/Explore (UA only, NOT Drilldown), low-card → exact.
 	rejects("grafana dashboard low-card", mk(false, true), lowCard)
+	// Grafana dashboard/Explore, high-card → exact series, as Loki returns.
+	rejects("grafana dashboard high-card", mk(false, true), highCard)
 
-	// The gate ITSELF admits Drilldown (any field) and Grafana-sourced high-card
-	// fields. We assert the source/cardinality predicates rather than the full path
-	// (which needs a backend).
+	// The gate ITSELF admits Drilldown. We assert the source predicate rather than
+	// the full path (which needs a backend).
 	if !isGrafanaDrilldownRequest(mk(true, true)) {
 		t.Error("drilldown-tagged request must be recognized as Drilldown")
 	}

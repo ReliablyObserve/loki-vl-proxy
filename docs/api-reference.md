@@ -148,8 +148,9 @@ All error responses from the proxy use the standard Loki JSON error envelope:
 | 406 / 422 | `not_acceptable` / `execution` | Loki status mapping (for example a backend returning that status) |
 | 499 | `canceled` | client canceled the request |
 | 500 | `internal` | proxy evaluation errors, including implicit many-to-one / multiple-match vector joins; a multi-tenant request where a tenant's backend request failed |
-| 502 | `unavailable` | backend request failures, `manual range metric row limit exceeded`, `maximum metric series exceeded` while collecting raw samples |
-| 503 | `timeout` | circuit breaker open, `manual metric series limit exceeded` |
+| 400 | `bad_data` | invalid LogQL, out-of-range parameters, `maximum number of series (N) reached for a single query` (as Loki answers above `max_query_series`) |
+| 502 | `unavailable` | backend request failures, `manual range metric row limit exceeded` |
+| 503 | `timeout` | circuit breaker open |
 | 504 | `timeout` | backend or window timeouts, including a timeout on one tenant of a multi-tenant request |
 
 See [Fixed Execution Limits](configuration.md#fixed-execution-limits) for the limit values.

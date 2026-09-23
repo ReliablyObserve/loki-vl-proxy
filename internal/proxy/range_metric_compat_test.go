@@ -364,7 +364,7 @@ func TestQueryRange_RateParserStageSlidingProducesResult(t *testing.T) {
 }
 
 func TestQueryRange_JSONRatePreservesParsedSeriesAndSlidingBounds(t *testing.T) {
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	var rawCalled, statsCalled bool
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -505,7 +505,7 @@ func TestQueryRange_SummedBytesWithUnusedJSONScalesFromSumLen(t *testing.T) {
 	//
 	// 3 entries × 100 bytes each = 300 bytes total in the [T-120s, T+180s] window
 	// → bytes_rate = 300 / 300s = 1 bytes/sec.
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	statsCalled := false
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -621,7 +621,7 @@ func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 // stats function, so first_over_time over unwrap is evaluated from raw rows and
 // never sent to stats_query_range.
 func TestQueryRange_FirstOverTimeUsesRawEvaluator(t *testing.T) {
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query" {
 			t.Errorf("unexpected backend path %s (expected the raw query path)", r.URL.Path)
@@ -677,7 +677,7 @@ func TestQueryRange_FirstOverTimeUsesRawEvaluator(t *testing.T) {
 // unwrap field routes to stats_query_range (not raw log fetch) and correctly
 // sums per-step bucket values across the sliding window.
 func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	statsCalled := false
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -687,7 +687,7 @@ func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
 			// Three 1-minute buckets with sum(duration) values: 100, 200, 300
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
 				`{"metric":{"_stream":"{app=\"api\"}"},` +
-				`"values":[[1700000000,"100"],[1700000060,"200"],[1700000120,"300"]]}]}}`))
+				`"values":[[1699999980,"100"],[1700000040,"200"],[1700000100,"300"]]}]}}`))
 		default:
 			t.Errorf("unexpected backend path %s — should use stats_query_range not raw log fetch", r.URL.Path)
 			http.NotFound(w, r)
@@ -726,9 +726,10 @@ func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
 	if len(resp.Data.Result) == 0 {
 		t.Fatalf("expected at least one series, got empty result: %s", rec.Body.String())
 	}
-	// The bucket labelled L covers (L, L+60s]: the window (T-60s, T+60s] holds
-	// only the T+0 bucket, and (T, T+120s] the T+0 and T+60s buckets.
-	if got := fmt.Sprint(resp.Data.Result[0].Values); got != "[[1.70000006e+09 100] [1.70000012e+09 300]]" {
+	// The bucket labelled L covers (L, L+60s]: the 2m window ending T+60s holds
+	// the buckets labelled T-60s and T, and the one ending T+120s those labelled
+	// T and T+60s.
+	if got := fmt.Sprint(resp.Data.Result[0].Values); got != "[[1.7000001e+09 300] [1.70000016e+09 500]]" {
 		t.Fatalf("unexpected sliding sums %s: %s", got, rec.Body.String())
 	}
 }
@@ -816,7 +817,7 @@ func TestQueryRange_SumOverTimeRequiresUnwrap(t *testing.T) {
 }
 
 func TestQueryRange_QuantileManualFallback(t *testing.T) {
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
@@ -980,10 +981,11 @@ func TestShouldUseManualRangeMetricCompat_WithoutSlidingWindowNowUsesManualPath(
 
 func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 	// Verify that sum without(level)(rate[10m]) with step=1m (sliding window) goes
-	// through the manual log-fetch path, not native VL tumbling stats.
-	manualPathHit := false
+	// through the manual window evaluator: anchored per-stream buckets, not native
+	// VL tumbling stats and not a raw log fetch.
+	manualPathHit, statsBuckets := false, ""
 
-	base := time.Unix(1700000000, 0).UTC()
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
 			// Manual path: log-fetch endpoint
@@ -997,9 +999,10 @@ func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/select/logsql/stats_query_range" {
-			t.Error("should NOT hit stats_query_range (native tumbling path) for sliding window without()")
+			_ = r.ParseForm()
+			statsBuckets = r.Form.Get("step")
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -1022,8 +1025,8 @@ func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 	p.RegisterRoutes(mux)
 	mux.ServeHTTP(w, r)
 
-	if !manualPathHit {
-		t.Error("expected manual log-fetch path to be used for sliding window without()")
+	if manualPathHit || statsBuckets != "60s" {
+		t.Errorf("expected gcd(step, range) = 60s window buckets without a raw log fetch, got buckets %q raw=%v", statsBuckets, manualPathHit)
 	}
 }
 
@@ -1443,9 +1446,10 @@ func TestQueryRange_RateParserStageTumblingUsesVLNative(t *testing.T) {
 }
 
 func TestQueryRange_RateParserStageSlidingStaysManual(t *testing.T) {
-	// step=60 ≠ range=[5m]=300 → sliding window: slow path preserved.
-	base := time.Unix(1700000000, 0).UTC()
-	var slowCalled bool
+	// step=60 ≠ range=[5m]=300 → sliding window: anchored stats buckets keep the
+	// parser stage and the post-parser filter, with no raw log fetch.
+	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
+	var slowCalled, statsCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1457,8 +1461,9 @@ func TestQueryRange_RateParserStageSlidingStaysManual(t *testing.T) {
 				base.Format(time.RFC3339Nano),
 			)
 		case "/select/logsql/stats_query_range":
-			t.Error("stats_query_range must NOT be called for sliding-window parser-stage rate")
-			w.WriteHeader(http.StatusInternalServerError)
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 		default:
 			if r.URL.Path != "/metrics" {
 				t.Logf("unhandled: %s", r.URL.Path)
@@ -1481,7 +1486,7 @@ func TestQueryRange_RateParserStageSlidingStaysManual(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !slowCalled {
-		t.Error("expected slow /select/logsql/query for sliding-window parser-stage rate")
+	if slowCalled || !statsCalled {
+		t.Errorf("expected window buckets without a raw log fetch, got raw=%v stats=%v", slowCalled, statsCalled)
 	}
 }

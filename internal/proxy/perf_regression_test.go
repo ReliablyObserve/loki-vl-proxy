@@ -49,27 +49,16 @@ func TestCollectRangeMetric_CountOverTime_SingleStream(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	params := url.Values{}
-	// Use non-parser rate with range != step to force manual path (collectRangeMetricSamples).
-	params.Set("query", `rate({app="api",env="prod"}[2m])`)
-	params.Set("start", strconv.FormatInt(base.Unix(), 10))
-	params.Set("end", strconv.FormatInt(base.Add(3*step).Unix(), 10))
-	params.Set("step", "30") // step(30) != range(120) → manual path
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	rec := httptest.NewRecorder()
-	p.handleQueryRange(rec, req)
-
+	// The raw evaluator itself: bucketed stats serve these range metrics on the
+	// query path.
+	series, err := p.collectRangeMetricSamples(t.Context(), `app:="api" env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(3*step))
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
 	if !queryCalled {
 		t.Fatal("expected /select/logsql/query to be called")
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp lokiMatrixResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp.Data.Result) == 0 {
+	if len(series) == 0 {
 		t.Fatalf("expected at least 1 series, got 0")
 	}
 }
@@ -99,24 +88,12 @@ func TestCollectRangeMetric_MultipleStreams_MultipleSeries(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	params := url.Values{}
-	params.Set("query", `rate({env="prod"}[2m])`)
-	params.Set("start", strconv.FormatInt(base.Unix(), 10))
-	params.Set("end", strconv.FormatInt(base.Add(5*time.Minute).Unix(), 10))
-	params.Set("step", "30")
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	rec := httptest.NewRecorder()
-	p.handleQueryRange(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	series, err := p.collectRangeMetricSamples(t.Context(), `env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(5*time.Minute))
+	if err != nil {
+		t.Fatalf("collect: %v", err)
 	}
-	var resp lokiMatrixResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp.Data.Result) != len(streams) {
-		t.Fatalf("expected %d series (one per stream), got %d", len(streams), len(resp.Data.Result))
+	if len(series) != len(streams) {
+		t.Fatalf("expected %d series (one per stream), got %d", len(streams), len(series))
 	}
 }
 

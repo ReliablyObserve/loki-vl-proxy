@@ -1127,7 +1127,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		if !ok {
 			if len(seriesByKey) >= p.resolvedMaxStatsQuerySeries() {
 				vlEntryPool.Put(entry)
-				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+				return nil, &seriesLimitError{limit: p.resolvedMaxStatsQuerySeries()}
 			}
 			series = &bareParserMetricSeries{
 				metric:  metric,

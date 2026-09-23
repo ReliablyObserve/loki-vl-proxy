@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -438,26 +439,17 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 // exactly one Loki window, and the backend can place bucket edges on the
 // request's windows (tumblingBucketsAligned). With range < step a bucket also
 // holds the lines between windows, which Loki never counts, and with range >
-// step the windows overlap; both use the anchored window evaluator.
-//
-// Grafana Logs Drilldown requests keep their earlier routing, where range <=
-// step is native: their hits and hybrid paths build, coarsen and zero-fill a
-// bucket-start axis that every panel of the page shares.
+// step the windows overlap; both use the anchored window evaluator, for Grafana
+// Logs Drilldown requests too.
 func (p *Proxy) statsRangeIsTumbling(r *http.Request, window, step time.Duration) bool {
-	if step <= 0 || window <= 0 || window > step {
-		return false
-	}
-	if isGrafanaDrilldownRequest(r) {
-		return true
-	}
-	return window == step && p.tumblingBucketsAligned(r, window)
+	return step > 0 && window > 0 && window == step && p.tumblingBucketsAligned(r, window)
 }
 
-// tumblingBucketsAligned reports whether stats_query_range buckets of window
-// can cover the request's evaluation windows: always when the backend honours
-// the offset arg (VictoriaLogs v1.45+), otherwise only when the start is
-// epoch-aligned to window, like slidingStatsBucket. An unknown version (probe
-// pending or failed) counts as no offset support.
+// tumblingBucketsAligned reports whether stats_query_range buckets of window can
+// cover the request's evaluation windows: whenever the backend honours the
+// offset arg (VictoriaLogs v1.45+, and an unknown version, which ignores the arg
+// at worst), otherwise only when the start is epoch-aligned to window, like
+// slidingStatsBucket.
 func (p *Proxy) tumblingBucketsAligned(r *http.Request, window time.Duration) bool {
 	if p.supportsStatsRangeOffset() {
 		return true
@@ -718,17 +710,26 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// With parser stages the stats query keeps them: VictoriaLogs groups by the
 	// parsed fields and counts every line, as the raw evaluator does.
 	streamBuckets := origSpec.Window != step
-	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false); ok {
-		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
-		return true
-	}
-	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket); ok {
-		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
-		return true
-	}
-	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true); ok {
-		p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
-		return true
+	for _, collect := range []func() (map[string]manualSeriesSamples, bool, error){
+		func() (map[string]manualSeriesSamples, bool, error) {
+			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false)
+		},
+		func() (map[string]manualSeriesSamples, bool, error) {
+			return p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket)
+		},
+		func() (map[string]manualSeriesSamples, bool, error) {
+			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true)
+		},
+	} {
+		series, ok, err := collect()
+		if err != nil {
+			p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+			return true
+		}
+		if ok {
+			p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
+			return true
+		}
 	}
 
 	fetchEnd := endTS
@@ -744,7 +745,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 
 	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries())
 	if err != nil {
-		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -792,7 +793,7 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) int {
 	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window, p.limits().BufferedBackendBodyBytes)
 	if err != nil {
-		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return http.StatusServiceUnavailable
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -857,7 +858,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 
 	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries())
 	if err != nil {
-		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -871,53 +872,48 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 // in the raw evaluator) instead of queries without them. Per-stream grouping (the
 // _stream sentinel of bare range metrics) is served only without parser stages and
 // when streamBuckets is set.
-// Returns nil, false when the fast path is not applicable or VL returns an error.
-func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration, streamBuckets, withParser bool) (map[string]manualSeriesSamples, bool) {
+// Returns nil, false, nil when the fast path is not applicable or VL fails, so
+// the caller may use the next path. A non-nil error is the request's answer: a
+// series limit error, or a failed Drilldown top-value call.
+func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration, streamBuckets, withParser bool) (map[string]manualSeriesSamples, bool, error) {
 	if statsAggFunc == "" || queryUsesParserStages(spec.BaseQuery) != withParser {
-		return nil, false
+		return nil, false, nil
 	}
 	for _, g := range spec.GroupBy {
 		if g == "_stream" && (!streamBuckets || withParser) {
-			return nil, false
+			return nil, false, nil
 		}
 	}
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit {
-		return nil, false
+		return nil, false, nil
 	}
-	singleField := len(spec.GroupBy) == 1 && spec.GroupBy[0] != "_stream" && !spec.ByExplicit
-	var (
-		series map[string]manualSeriesSamples
-		err    error
-	)
-	if singleField && end.Sub(windowStart) >= 2*time.Hour {
-		// Over hours a field such as pod churns into thousands of values, and the
-		// full bucket response can take seconds only to overflow: rank first.
+	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	if errors.Is(err, errBodyTooLarge) && len(spec.GroupBy) == 1 && spec.GroupBy[0] != "_stream" && !spec.ByExplicit && requestKeepsPartialSeries(ctx) {
+		// Drilldown: a response too large for one read keeps the busiest values.
 		series, err = p.collectTopValueRangeMetricHits(ctx, spec, statsAggFunc, windowStart, end, step)
-	} else {
-		series, err = p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
-		if errors.Is(err, errBodyTooLarge) && singleField {
-			// Too many series for one bucket response: keep the busiest values.
-			series, err = p.collectTopValueRangeMetricHits(ctx, spec, statsAggFunc, windowStart, end, step)
+		if err != nil {
+			return nil, false, err
 		}
 	}
-	if err != nil {
-		return nil, false
+	if isSeriesLimitError(err) {
+		return nil, false, err
 	}
-	return series, true
+	if err != nil {
+		return nil, false, nil
+	}
+	return series, true, nil
 }
 
-// maxTopValueFilterBytes bounds the in() filter of collectTopValueRangeMetricHits,
-// leaving room for the rest of the query under VictoriaLogs' default
-// -search.maxQueryLen of 16384 bytes.
-const maxTopValueFilterBytes = 12 << 10
+// vlDefaultMaxQueryLen is VictoriaLogs' default -search.maxQueryLen.
+const vlDefaultMaxQueryLen = 16384
 
-// collectTopValueRangeMetricHits answers a single-field grouped bucket query in
-// two phases: one stats_query ranks the field values by line count over the
-// whole fetch window, up to the operator's -max-stats-query-series, then the
-// bucket query runs, restricted to those values when the ranking was cut. The
-// in() filter keeps the busiest values that fit maxTopValueFilterBytes. Lines
-// without the field stay in when they rank. The series of the kept values are
-// exact.
+// collectTopValueRangeMetricHits answers a Drilldown single-field grouped bucket
+// query whose response is too large to read, in two phases: one stats_query
+// ranks the field values by line count over the fetch window, then the bucket
+// query runs restricted to the busiest -max-stats-query-series values that fit
+// VictoriaLogs' default query length. When more values exist the result is
+// partial and the request carries Loki's warning. Lines without the field stay
+// in when they rank. The series of the kept values are exact.
 func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	field := quoteLogsQLIdent(spec.GroupBy[0])
 	limit := p.resolvedMaxStatsQuerySeries()
@@ -940,25 +936,70 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		return nil, err
 	}
 	values := drilldownTopValuesFromMatrix(body, spec.GroupBy[0])
+	withEmpty := drilldownTopValuesHaveEmpty(body, spec.GroupBy[0])
 	if len(values) == 0 {
-		// No labelled value in the window: the unfiltered query is small.
-		return p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+		return nil, errBodyTooLarge
 	}
-	if len(values) < limit {
-		// Every value ranked (the empty group may be one of them): no filter.
-		return p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	// The whole bucket query must fit VictoriaLogs' query length.
+	prefix, suffix := spec.BaseQuery+" | filter ", " | stats by ("+field+") "+statsAggFunc
+	if withEmpty {
+		prefix, suffix = prefix+"(", " or "+field+`:"")`+suffix
 	}
-	values = values[:limit]
-	filter := buildVLInFilter(spec.GroupBy[0], values)
-	for len(filter) > maxTopValueFilterBytes && len(values) > 1 {
-		values = values[:len(values)*maxTopValueFilterBytes/len(filter)]
-		filter = buildVLInFilter(spec.GroupBy[0], values)
+	ranked := len(values)
+	if len(values) > limit {
+		values = values[:limit]
 	}
-	if drilldownTopValuesHaveEmpty(body, spec.GroupBy[0]) {
+	filter, values, err := fitTopValueFilter(spec.GroupBy[0], values, prefix, suffix)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) < ranked {
+		if err := seriesLimitReached(ctx, len(values)); err != nil {
+			return nil, err
+		}
+	}
+	if withEmpty {
 		filter = "(" + filter + " or " + field + `:"")`
 	}
 	return p.collectRangeMetricHits(ctx, spec.BaseQuery+" | filter "+filter, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
 }
+
+// requestKeepsPartialSeries reports whether the request answers a series limit
+// with a partial result (Grafana Logs Drilldown) instead of an error.
+func requestKeepsPartialSeries(ctx context.Context) bool {
+	scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope)
+	return scope != nil && scope.drilldown
+}
+
+// seriesCountingReader fails a stats_query_range read once the response holds
+// more than limit result entries, so an over-limit query stops without reading
+// the rest of the response.
+type seriesCountingReader struct {
+	r            io.Reader
+	limit, seen  int
+	tail, window []byte
+}
+
+var statsResultMetricKey = []byte(`"metric":`)
+
+func (c *seriesCountingReader) Read(b []byte) (int, error) {
+	n, err := c.r.Read(b)
+	if n > 0 && c.limit > 0 {
+		c.window = append(append(c.window[:0], c.tail...), b[:n]...)
+		c.seen += bytes.Count(c.window, statsResultMetricKey)
+		keep := len(statsResultMetricKey) - 1
+		if keep > len(c.window) {
+			keep = len(c.window)
+		}
+		c.tail = append(c.tail[:0], c.window[len(c.window)-keep:]...)
+		if c.seen > c.limit {
+			return n, errSeriesCountExceeded
+		}
+	}
+	return n, err
+}
+
+var errSeriesCountExceeded = errors.New("stats response holds more series than the limit")
 
 // collectParserStageStatsFastPathHits handles parser-stage GroupBy count queries
 // (e.g. Drilldown field histograms with | json | delete __error__) by stripping
@@ -966,27 +1007,30 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 // Safe only when all remaining filters after stripping are field-existence checks.
 // Returns nil, false when inapplicable, on error, or when VL returns 0 series
 // (non-indexed JSON fields still need parser stages to evaluate correctly).
-func (p *Proxy) collectParserStageStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
+func (p *Proxy) collectParserStageStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool, error) {
 	if statsAggFunc == "" || !queryUsesParserStages(spec.BaseQuery) || len(spec.GroupBy) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	if !strings.Contains(spec.BaseQuery, "| delete __error__") {
-		return nil, false
+		return nil, false, nil
 	}
 	for _, g := range spec.GroupBy {
 		if g == "_stream" {
-			return nil, false
+			return nil, false, nil
 		}
 	}
 	strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
 	if strippedBase == spec.BaseQuery || !allFiltersAreExistenceChecks(strippedBase) {
-		return nil, false
+		return nil, false, nil
 	}
 	series, err := p.collectRangeMetricHits(ctx, strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
-	if err != nil || len(series) == 0 {
-		return nil, false
+	if isSeriesLimitError(err) {
+		return nil, false, err
 	}
-	return series, true
+	if err != nil || len(series) == 0 {
+		return nil, false, nil
+	}
+	return series, true, nil
 }
 
 func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) (string, float64, error) {
@@ -1085,6 +1129,28 @@ func snapSlidingBucketNanos(ts int64, start time.Time, hitStep time.Duration) in
 	return anchor + k*size
 }
 
+// readStatsBucketBody reads a stats_query_range response, stopping with Loki's
+// series limit error once it holds more result entries than the limit allows
+// (two per series when byte presence counts ride along). A Drilldown request
+// reads it all and keeps the busiest series instead.
+func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit int, withPresence bool) ([]byte, error) {
+	counter := &seriesCountingReader{r: body}
+	if !requestKeepsPartialSeries(ctx) {
+		counter.limit = limit
+		if withPresence {
+			counter.limit = 2 * limit
+		}
+	}
+	out, err := readBodyLimited(counter, maxStatsBucketResponseBytes)
+	if errors.Is(err, errSeriesCountExceeded) {
+		return nil, &seriesLimitError{limit: limit}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
 // returns pre-bucketed samples (ts=bucket left edge ns on the start+k*hitStep
 // grid, value=bucket_value). This avoids reading all raw log entries for
@@ -1144,7 +1210,9 @@ func (p *Proxy) collectRangeMetricHits(
 		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	body, err := readBodyLimited(resp.Body, maxStatsBucketResponseBytes)
+	limit := p.resolvedMaxStatsQuerySeries()
+	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
+	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, withPresence)
 	if err != nil {
 		return nil, err
 	}
@@ -1170,22 +1238,6 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 
 	results := v.GetArray("data", "result")
-	// Cap to maxStatsQuerySeries to bound response size for high-cardinality
-	// by() clauses (e.g. churn-heavy pod names, *_id fields where each value
-	// appears 1-2× in the window). Default 500 matches maxDrilldownSeries
-	// (the cap the Drilldown-specific paths use) and aligns with Loki's
-	// default max_query_series for the same purpose. The previous default
-	// of 5000 returned 10× more sparse series than Drilldown can render
-	// (the plugin's "Show all N" badge is literally the returned series
-	// count) and made charts look like scattered single-point spikes
-	// instead of meaningful top-N curves. See memory
-	// [[drilldown-high-card-fields-known-limit]] for the deep investigation.
-	// Keep the busiest maxSeries by total count (not the alphabetically-first
-	// maxSeries VL returns) so the chart shows signal, not the noise floor.
-	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
-	if !withPresence {
-		results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
-	}
 	// Stream-grouped series carry the labels the raw evaluator derives from
 	// _stream and level.
 	streamGrouped := false
@@ -1254,9 +1306,13 @@ func (p *Proxy) collectRangeMetricHits(
 			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
 		}
 	}
-	if withPresence {
-		// Cap complete logical series, retaining both byte values and presence.
-		seriesMap = capSeriesByTotalCount(seriesMap, p.resolvedMaxStatsQuerySeries())
+	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
+	// busiest series (complete, with byte values and presence) and a warning.
+	if len(seriesMap) > limit {
+		if err := seriesLimitReached(ctx, limit); err != nil {
+			return nil, err
+		}
+		seriesMap = capSeriesByTotalCount(seriesMap, limit)
 	}
 	return seriesMap, nil
 }
@@ -1424,7 +1480,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
 			if len(seriesMap) >= p.resolvedMaxStatsQuerySeries() {
-				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+				return nil, &seriesLimitError{limit: p.resolvedMaxStatsQuerySeries()}
 			}
 			current.Metric = seriesEntry.translated
 		}
@@ -1806,8 +1862,12 @@ func (p *Proxy) resolvedMaxStatsQuerySeries() int {
 	if p != nil && p.maxStatsQuerySeries > 0 {
 		return p.maxStatsQuerySeries
 	}
-	return 500
+	return defaultStatsQuerySeries
 }
+
+// defaultStatsQuerySeries is Loki's stock max_query_series, the default of
+// -max-stats-query-series.
+const defaultStatsQuerySeries = 500
 
 // capStatsResultsByTotalCount keeps only the maxSeries VL stats results with the
 // highest summed bucket value, dropping the long tail. VL's stats_query_range
@@ -1906,7 +1966,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if maxSeries > 0 && len(series) > maxSeries {
-		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries)
+		return nil, &seriesLimitError{limit: maxSeries}
 	}
 	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
@@ -2068,7 +2128,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
-		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries[0])
+		return nil, &seriesLimitError{limit: maxSeries[0]}
 	}
 	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))

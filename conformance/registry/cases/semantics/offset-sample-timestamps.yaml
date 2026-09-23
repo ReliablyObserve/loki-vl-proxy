@@ -1,0 +1,35 @@
+id: semantics/offset-sample-timestamps
+title: An offset modifier moves the window, not the sample timestamps
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `count_over_time({app="x"}[5m] offset 5m)` evaluates the window (T-10m, T-5m]
+  but Loki reports the sample at T. Stamping it at T-5m shifts the whole series
+  left by the offset, which on a dashboard reads as data that moved in time
+  rather than a query that looked further back.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="tick"}[5m] offset 5m))'
+    start: "<start>"
+    end: "<start+30m>"
+    step: "300"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: structural
+  fields: [status, data.resultType, data.result[].metric, data.result[].values[][0]]
+  values:
+    mode: exact
+    field: data.result[].values[][1]
+    reason: |
+      Timestamps and values must both match Loki exactly: the sample at T holds
+      the count of the window one offset earlier. The instant form of the same
+      query is compared the same way.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

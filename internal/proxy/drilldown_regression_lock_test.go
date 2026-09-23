@@ -230,15 +230,16 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 		startSec  int64
 		endSec    int64
 		stepRaw   string
+		window    string
 		expectHit bool
 	}{
-		// step must be >= range vector window (2m) so handleStatsCompatRange
-		// falls through to the Drilldown router instead of the manual path.
-		{"5m", 1700000000, 1700000300, "120", true},
-		{"1h", 1700000000, 1700003600, "120", true},
-		{"6h", 1700000000, 1700021600, "120", true},
-		{"24h", 1700000000, 1700086400, "120", true},
-		{"7d", 1700000000, 1700604800, "600", true},
+		// The range vector window equals the step so handleStatsCompatRange
+		// falls through to the Drilldown router instead of the window evaluator.
+		{"5m", 1700000000, 1700000300, "120", "2m", true},
+		{"1h", 1700000000, 1700003600, "120", "2m", true},
+		{"6h", 1700000000, 1700021600, "120", "2m", true},
+		{"24h", 1700000000, 1700086400, "120", "2m", true},
+		{"7d", 1700000000, 1700604800, "600", "10m", true},
 	}
 	for _, tc := range ranges {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,7 +254,7 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 			defer vl.Close()
 			p := newTestProxy(t, vl.URL)
 			r := drilldownRequest(t,
-				`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
+				`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [`+tc.window+`]))`,
 				tc.startSec, tc.endSec, tc.stepRaw, "drilldown")
 			p.proxyStatsQueryRange(httptest.NewRecorder(), r,
 				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)

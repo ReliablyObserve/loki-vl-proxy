@@ -2142,6 +2142,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// so time-shifting is not applied — results may differ from Loki for offset
 	// values but the proxy returns 200 rather than incorrectly rejecting the query.
 	// Expressions with multiple *different* offsets still return 400 (same as Loki).
+	var rangeOffset time.Duration
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
@@ -2164,13 +2165,26 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				// it does not alias the map captured by withOrgID's origRequestKey reference.
 				_ = r.ParseForm()
 				if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
-					r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+					r.Form.Set("start", strconv.FormatInt(startNs-offsetDur.Nanoseconds(), 10))
 				}
 				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-					r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+					r.Form.Set("end", strconv.FormatInt(endNs-offsetDur.Nanoseconds(), 10))
 				}
+				// Samples are evaluated in the shifted range and stamped at Loki's
+				// evaluation times (metricResponseRewriter); the inner cache would
+				// keep the unshifted body.
+				rangeOffset = offsetDur
+				cacheable, cacheKey = false, ""
 			}
 		}
+	}
+	r, seriesScope := withSeriesLimitScope(r)
+	// Only sample responses are rewritten: buffering a log query here would
+	// defeat -stream-response.
+	if logQLProducesSamples(logqlQuery) && (rangeOffset != 0 || seriesScope.drilldown) {
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: rangeOffset, scope: seriesScope}
+		w = rewriter
+		defer rewriter.finish()
 	}
 
 	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
@@ -2303,12 +2317,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), 5*time.Minute)
+			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), 5*time.Minute)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), 5*time.Minute)
+				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), 5*time.Minute)
 			}
 		}
 		cacheTap.Release()
@@ -2397,6 +2411,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// offset data actually lives. All downstream dispatch paths see the shifted time.
 	//
 	// Mixed-offset binary expressions are treated the same as in query_range above.
+	var instantOffset time.Duration
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
@@ -2421,10 +2436,19 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 					rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
 				}
 				if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
-					r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+					r.Form.Set("time", strconv.FormatInt(timeNs-offsetDur.Nanoseconds(), 10))
+					instantOffset = offsetDur // the sample is stamped at the requested time
 				}
 			}
 		}
+	}
+	// The series limit applies to instant queries too, so Drilldown gets its
+	// partial-result warning and every other client Loki's error.
+	r, instantScope := withSeriesLimitScope(r)
+	if logQLProducesSamples(logqlQuery) && (instantOffset != 0 || instantScope.drilldown) {
+		rewriter := &metricResponseRewriter{ResponseWriter: w, shift: instantOffset, scope: instantScope}
+		w = rewriter
+		defer rewriter.finish()
 	}
 
 	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, false) {

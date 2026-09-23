@@ -596,12 +596,13 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateRelabelsBucketsToLokiTimes
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B60s%5D)&start=1705312200&end=1705312260&step=60")
 	assertLokiSuccess(t, resp)
 
-	if expectedStart := strconv.FormatInt(1705312200-60, 10); receivedStart != expectedStart {
-		t.Fatalf("expected backend start shifted back one window %q, got %q", expectedStart, receivedStart)
+	if got := backendSeconds(receivedStart); got != 1705312200-60 {
+		t.Fatalf("expected backend start shifted back one window %d, got %q", 1705312200-60, receivedStart)
 	}
-	expectedEnd := strconv.FormatInt(1705312260+60, 10)
-	if receivedEnd != expectedEnd {
-		t.Fatalf("expected compensated backend end %q, got %q", expectedEnd, receivedEnd)
+	// The anchored grid fetches up to the request end itself, with the 1ns shift
+	// that makes each bucket right-closed like Loki's window.
+	if got := backendSeconds(receivedEnd); got != 1705312260 {
+		t.Fatalf("expected backend end %d, got %q", 1705312260, receivedEnd)
 	}
 
 	data, ok := resp["data"].(map[string]interface{})

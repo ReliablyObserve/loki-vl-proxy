@@ -230,15 +230,25 @@ func TestBareParserRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 				if streamFields != nil {
 					countRoute = "hits"
 				}
+				// An unknown version (failed or pending probe) keeps anchored
+				// buckets: a backend that ignores the arg has the epoch-aligned
+				// buckets it would have had anyway, while raw rows would scale
+				// the query with the stored data.
+				unalignedRoute, unalignedStep, unalignedOffset := "raw", "", ""
+				alignedOffset, gcdOffset := "none", ""
+				if version == "" {
+					unalignedRoute, unalignedStep, unalignedOffset = "stats", "60s", "-30000000001ns"
+					alignedOffset, gcdOffset = "-1ns", "-10000000001ns"
+				}
 				runBareParserCases(t, lines, version, streamFields, []bareParserCase{
-					{query: `count_over_time({app=~"bare-.*"} | logfmt [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: aligned, end: alignedEnd, route: countRoute, wantStep: "60s", wantOffset: "none"},
-					{query: `count_over_time({app=~"bare-.*"} | logfmt [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: "raw"},
-					{query: `bytes_over_time({app=~"bare-.*"} | logfmt [1m])`, fn: "bytes_over_time", window: time.Minute, start: aligned, end: alignedEnd, route: "stats", wantStep: "60s", wantOffset: "none"},
-					{query: `bytes_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "bytes_over_time", window: 90 * time.Second, start: s0.Add(5*time.Minute + 10*time.Second), end: alignedEnd, route: "raw"},
+					{query: `count_over_time({app=~"bare-.*"} | logfmt [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: aligned, end: alignedEnd, route: countRoute, wantStep: "60s", wantOffset: alignedOffset},
+					{query: `count_over_time({app=~"bare-.*"} | logfmt [2m])`, fn: "count_over_time", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: map[bool]string{true: countRoute, false: "raw"}[version == ""], wantStep: unalignedStep, wantOffset: unalignedOffset},
+					{query: `bytes_over_time({app=~"bare-.*"} | logfmt [1m])`, fn: "bytes_over_time", window: time.Minute, start: aligned, end: alignedEnd, route: "stats", wantStep: "60s", wantOffset: alignedOffset},
+					{query: `bytes_over_time({app=~"bare-.*"} | logfmt [90s])`, fn: "bytes_over_time", window: 90 * time.Second, start: s0.Add(5*time.Minute + 10*time.Second), end: alignedEnd, route: map[bool]string{true: "stats", false: "raw"}[version == ""], wantStep: map[bool]string{true: "30s", false: ""}[version == ""], wantOffset: gcdOffset},
 				})
 				runBareParserCases(t, numberLines(lines), version, streamFields, []bareParserCase{
-					{query: `sum_over_time({app=~"bare-.*"} | logfmt | unwrap n [2m])`, fn: "sum_over_time", window: 2 * time.Minute, start: aligned, end: alignedEnd, route: "stats", wantStep: "60s", wantOffset: "none"},
-					{query: `max_over_time({app=~"bare-.*"} | logfmt | unwrap n [2m])`, fn: "max_over_time", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: "raw"},
+					{query: `sum_over_time({app=~"bare-.*"} | logfmt | unwrap n [2m])`, fn: "sum_over_time", window: 2 * time.Minute, start: aligned, end: alignedEnd, route: "stats", wantStep: "60s", wantOffset: alignedOffset},
+					{query: `max_over_time({app=~"bare-.*"} | logfmt | unwrap n [2m])`, fn: "max_over_time", window: 2 * time.Minute, start: unaligned, end: unalignedEnd, route: unalignedRoute, wantStep: unalignedStep, wantOffset: unalignedOffset},
 				})
 			})
 		}
