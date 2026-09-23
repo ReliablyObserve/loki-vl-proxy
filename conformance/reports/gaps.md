@@ -122,12 +122,15 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there |
 |---|---|---|---|
-| `explore-logs-volume-json` | 10 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
-| `parser-error-and-label-collision` | 10 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
-| `semantics/json-filter-pushdown-translated-label` | 4 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
-| `semantics/json-filter-pushdown-underscore-label` | 9 | 2.96s (A explore volume, 2 filters, drop, 24h) | 0.26s |
-| `semantics/json-filter-pushdown-without-error-drop` | 9 | 1.75s (B grouped sum, filter, no drop, 24h) | 0.53s |
-| `parsed-label-series-identity` | 5 | 1.16s (F field breakdown service_version (explore), 3h) | 0.04s |
-| `semantics/json-label-spelling-probe` | 5 | 1.16s (F field breakdown service_version (explore), 3h) | 0.04s |
-| `semantics/json-filter-pushdown-ungrouped-sum` | 2 | 0.46s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
-| `severity-detected-level-derivation` | 1 | 0.26s (json volume no filters, 24h) | 0.17s |
+| `explore-logs-volume-json` | 9 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
+| `parser-error-and-label-collision` | 5 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
+| `semantics/json-filter-pushdown-translated-label` | 2 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
+| `semantics/json-filter-pushdown-underscore-label` | 6 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
+| `parser-logfmt` | 2 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
+| `severity-detected-level-derivation` | 12 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
+| `semantics/label-filter-before-parser-pushdown` | 7 | 2.80s (DL6 explore volume, level filter before json, 24h) | 0.38s |
+| `parsed-label-series-identity` | 9 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
+| `semantics/json-label-spelling-probe` | 4 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
+| `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
+| `semantics/json-filter-pushdown-without-error-drop` | 4 | 1.43s (B grouped sum, filter, no drop, 24h) | 1.07s |
+| `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
