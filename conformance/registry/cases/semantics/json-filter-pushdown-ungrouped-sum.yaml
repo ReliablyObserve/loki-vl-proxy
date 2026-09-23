@@ -1,0 +1,34 @@
+id: semantics/json-filter-pushdown-ungrouped-sum
+title: An ungrouped `sum(...)` over `| json` with a label filter is answered from stats
+proves:
+  - parser-error-and-label-collision
+consumer: api
+why: |
+  `sum(count_over_time({env="production"} | json | pipeline=`logs/loki`
+  [1m]))` has nothing to group by, but its filter key must still be unpacked.
+  v1.91.0 returned early from `setStatsPushdown` when the query had no `by
+  (...)` grouping and from the bucket collector when there was nothing to
+  unpack, so the query fell to the raw-row evaluator (502 at 3 h, Loki
+  0.1-1.5 s). The pushdown now unpacks the filter keys and emits `| stats
+  count() as c` without `by`, returning Loki's single unlabelled series.
+
+  Layer: VictoriaLogs native stats; the same probes as the grouped shapes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({env="production"} | json | pipeline=`logs/loki` [1m]))'
+    start: now-3h
+    end: now
+    step: "5"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    As semantics/json-filter-pushdown-without-error-drop.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200, one series with an empty label set, values equal to Loki's,
+    answered from `stats_query_range` with no raw-row fetch. Measured on
+    v1.91.0 at 3 h: proxy 502, Loki 200 in 0.1-1.5 s.

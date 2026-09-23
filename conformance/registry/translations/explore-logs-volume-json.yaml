@@ -62,6 +62,18 @@ deltas:
       one extra VictoriaLogs scan on a first request; cached per window for 5 minutes
     cases: [semantics/partial-parse-before-error, quality/parse-risk-probe-scope, quality/parse-risk-cache-window]
     state: partial
+  - id: label-spelling-and-filters
+    difference: |
+      Loki sanitizes JSON keys (service-version, service.version) and joins nested keys with an underscore, so a label such as service_version may come from several spellings; unpack_json keeps keys raw and joins nesting with a dot. Loki also fails a metric whose sample carries __error__, and reads structured metadata before a parsed key of the same name.
+    impact: |
+      v1.91.0 refused the stats pushdown for any grouped or filtered label holding an underscore, any pipeline without `drop __error__` and any ungrouped sum; Explore's filtered logs volume, a user's `sum by (level) (... | json | pipeline="x" [1m])` and Drilldown field breakdowns scanned raw rows and answered 502 (row limit) over 3 h where Loki answers in seconds.
+    proxy_layer: |
+      Reads underscore labels through unpack_json and adds their other spellings (per Loki v3.7.7 sanitizeLabelKey and nested-key rules) to the parse-risk probe; accepts a filter that rejects the empty value in place of `drop __error__`, guarded by the partial-parse probe and a stored-field probe; unpacks only the filter keys of an ungrouped sum; reads a label VictoriaLogs stores under another spelling from the stored field with `format if`.
+    where: internal/proxy/ordered_json_metric.go
+    cost: |
+      the existing probe (one scan, cached per window) carries the extra regexp; one more `field:*` probe when errors are not dropped
+    cases: [semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe]
+    state: proven
   - id: bucket-edges
     difference: |
       VictoriaLogs buckets are [T, T+step); Loki samples cover (T-range, T].

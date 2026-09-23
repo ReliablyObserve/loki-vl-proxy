@@ -18,7 +18,13 @@ victorialogs: |
 proxy: |
   Counting, grouping and filtering must match Loki line for line, including the
   lines the two parsers read differently (leading whitespace, trailing bytes,
-  truncated JSON, repeated keys, arrays, escaped keys, U+FFFD).
+  truncated JSON, repeated keys, arrays, escaped keys, U+FFFD, a key Loki
+  sanitizes or flattens into the grouped or filtered label). Summed range
+  metrics over one parser with string label filters are pushed down to
+  VictoriaLogs stats over unpack_json/unpack_logfmt and filter pipes; cheap
+  `| limit 1` probes over the range decline the pushdown for one such line
+  and keep the exact raw-row evaluator. A filter that rejects the empty value
+  stands in for `drop __error__`, since no unparsed line has the key.
 
 cases:
   - semantics/json-parse-error-excluded
@@ -28,3 +34,8 @@ cases:
   - semantics/logfmt-tab-separator
   - semantics/repeated-key
   - semantics/array-value
+  - semantics/json-filter-pushdown-underscore-label
+  - semantics/json-filter-pushdown-without-error-drop
+  - semantics/json-filter-pushdown-ungrouped-sum
+  - semantics/json-filter-pushdown-translated-label
+  - semantics/json-label-spelling-probe

@@ -53,18 +53,41 @@ func TestOrderedJSONPreservesNativeDrilldownHistogram(t *testing.T) {
 	}
 }
 
+// statsMatrixBody renders a VictoriaLogs stats_query_range matrix with one
+// bucket at ts for each of the given label sets.
+func statsMatrixBody(ts time.Time, metrics []map[string]string) string {
+	var sb strings.Builder
+	sb.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	for i, metric := range metrics {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		labels, _ := json.Marshal(metric)
+		sb.WriteString(`{"metric":` + string(labels) + `,"values":[[` + strconv.FormatInt(ts.Unix(), 10) + `,"1"]]}`)
+	}
+	sb.WriteString(`]}}`)
+	return sb.String()
+}
+
+// An exact (untagged) field histogram is answered from stats buckets, and a
+// series overflow still fails closed with Loki's series-limit error instead of
+// a truncated result.
 func TestOrderedJSONExactHistogramLimitStillFailsClosed(t *testing.T) {
 	evaluation := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	rows := 3
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Errorf("exact metric left bounded raw path: %s", r.URL.Path)
-		}
-		for i := 0; i < rows; i++ {
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"_time":   evaluation.Add(-time.Second).Format(time.RFC3339Nano),
-				"_stream": `{app="api"}`, "_msg": `{"trace_id":"` + strconv.Itoa(i) + `"}`,
-			})
+		_ = r.ParseForm()
+		switch {
+		case r.URL.Path == "/select/logsql/query" && strings.HasSuffix(r.Form.Get("query"), " | limit 1"):
+			// The parse-risk probe finds no line the parsers read differently.
+		case r.URL.Path == "/select/logsql/stats_query_range":
+			var metrics []map[string]string
+			for i := 0; i < rows; i++ {
+				metrics = append(metrics, map[string]string{"__name__": "c", "trace_id": strconv.Itoa(i)})
+			}
+			_, _ = w.Write([]byte(statsMatrixBody(evaluation.Add(-time.Minute), metrics)))
+		default:
+			t.Errorf("exact metric left the stats pushdown: %s %s", r.URL.Path, r.Form.Get("query"))
 		}
 	}))
 	defer backend.Close()
@@ -96,13 +119,24 @@ func TestOrderedJSONExactHistogramLimitStillFailsClosed(t *testing.T) {
 	}
 }
 
+// A Drilldown field histogram over a label VictoriaLogs stores under another
+// spelling (-field-mapping request.method=http_method) is answered from stats
+// buckets that read the stored field wherever the line carries it, as Loki
+// reads structured metadata before a parsed key of the same name.
+// conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-translated-label
 func TestOrderedJSONDrilldownKeepsTranslatedFieldGrouping(t *testing.T) {
 	evaluation := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
+	var stats []string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Errorf("translated field bypassed exact grouping: %s", r.URL.Path)
+		_ = r.ParseForm()
+		switch {
+		case r.URL.Path == "/select/logsql/query" && strings.HasSuffix(r.Form.Get("query"), " | limit 1"):
+		case r.URL.Path == "/select/logsql/stats_query_range":
+			stats = append(stats, r.Form.Get("query"))
+			_, _ = w.Write([]byte(statsMatrixBody(evaluation.Add(-time.Minute), []map[string]string{{"__name__": "c", "http_method": "GET"}})))
+		default:
+			t.Errorf("translated field left the stats pushdown: %s %s", r.URL.Path, r.Form.Get("query"))
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"_time": evaluation.Add(-time.Second).Format(time.RFC3339Nano), "_stream": `{app="api"}`, "_msg": `{}`, "request.method": "GET"})
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
@@ -114,5 +148,9 @@ func TestOrderedJSONDrilldownKeepsTranslatedFieldGrouping(t *testing.T) {
 	w := httptest.NewRecorder()
 	if !p.handleOrderedJSONMetric(w, r, time.Now(), query, true) || w.Code != 200 || !strings.Contains(w.Body.String(), `"http_method":"GET"`) {
 		t.Fatalf("translated grouping lost: %d %s", w.Code, w.Body)
+	}
+	want := " | unpack_json fields (http_method) keep_original_fields | format if (`request.method`:*) \"<request.method>\" as http_method | filter -http_method:=\"\" | stats by (http_method) count() as c"
+	if len(stats) != 1 || !strings.HasSuffix(stats[0], want) {
+		t.Fatalf("stats query %q does not end with %q", stats, want)
 	}
 }

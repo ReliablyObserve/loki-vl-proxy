@@ -1,0 +1,52 @@
+id: semantics/json-filter-pushdown-without-error-drop
+title: A positive label filter after `| json` excludes unparsed lines without `drop __error__`
+proves:
+  - parser-error-and-label-collision
+consumer: api
+why: |
+  A user's `sum by (level) (count_over_time({env="production"} | json |
+  pipeline=`logs/loki` [1m]))` carries no `drop __error__`. Loki's
+  `RangeVectorEvaluator` fails a metric whose sample carries `__error__`, so
+  v1.91.0 required the pipeline to drop parser errors before pushing the
+  query down, and this shape fell to the raw-row evaluator (502 at 3 h, Loki
+  1.2 s). Loki's string label filter compares the label value with no
+  bypass for lines in error (`StringLabelFilter.Process`), and a line whose
+  parser failed has no value for the key, so a filter that rejects the empty
+  value (`=` a non-empty value, `!=""`, `=~` whose regexp cannot match "")
+  drops every unparsed line before it reaches the aggregation. Two ways such
+  a line can still pass are probed: Loki extracted the key before the syntax
+  error (the partial-parse probe, whose match keeps the raw evaluator, which
+  returns Loki's `pipeline error`), or the label is a stored stream label or
+  structured metadata of a line whose body yields no value for it (a
+  `field:* | unpack_json fields (field) | filter field:=""` probe; a line
+  whose body also holds the key parses on both sides, so an ingestion route
+  that stores the body's keys as fields, like the e2e generator's
+  VictoriaLogs JSON route, keeps the pushdown). A filter the empty value
+  passes (`!=` a non-empty value, `!~` whose regexp cannot match "", `=~`
+  whose regexp matches "", `=""`) keeps unparsed lines and still requires
+  `drop __error__`.
+
+  Layer: VictoriaLogs native stats with `filter pipeline:="logs/loki"`;
+  exactness by the two probes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | pipeline=`logs/loki` [1m]))'
+    start: now-3h
+    end: now
+    step: "5"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    `pipeline` is a key of the JSON body, not a stored field; no line holds
+    the key before a syntax error.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values, answered from
+    `stats_query_range` after two `| limit 1` probes and no raw-row fetch.
+    With a line holding `pipeline` before a syntax error both Loki and the
+    proxy answer 400 `pipeline error`. Measured on v1.91.0 at 3 h: proxy 502,
+    Loki 200 in 1.2 s.

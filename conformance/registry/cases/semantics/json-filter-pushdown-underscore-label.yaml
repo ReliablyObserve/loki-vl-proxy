@@ -1,0 +1,49 @@
+id: semantics/json-filter-pushdown-underscore-label
+title: A `| json` volume filtered on underscore-named parsed labels is answered from stats
+proves:
+  - parser-error-and-label-collision
+consumer: explore
+why: |
+  Grafana Explore renders the logs volume of `{env="production"} | json |
+  service_version=`0.96.0` | pipeline=`logs/loki`` as `sum by (level,
+  detected_level) (count_over_time(<query> | drop __error__ [$__interval]))`.
+  On v1.91.0 the stats pushdown refused every grouped or filtered label
+  holding an underscore (`^[A-Za-z][A-Za-z0-9]*$`), because Loki's JSON parser
+  also produces such a label from a nested object (`{"service":{"version":
+  ...}}`) or a sanitized key (`service-version`, `service.version`), which
+  `unpack_json` spells differently. The query fell to the raw-row evaluator,
+  which read the whole 3 h stream (about 1.03 M lines) and answered
+  `manual range metric row limit exceeded (1000000)` (HTTP 502) after 12.7 s
+  of VictoriaLogs CPU, where Loki answers in 4.7 s. Real field names almost
+  all carry underscores, so this covered most filtered volume queries.
+
+  Layer: VictoriaLogs native stats (`stats_query_range` over `unpack_json
+  fields (...) keep_original_fields | filter ...`), with the proxy merging
+  the level/detected_level aliases over the aggregated series. Exactness is
+  guarded by the parse-risk probe (`orderedJSONPartialParseRisk`), which now
+  also matches every other key spelling Loki v3.7.7's `sanitizeLabelKey` and
+  nested-key join map to the label (`orderedJSONLabelAliasPattern`); one such
+  line in the range keeps the raw-row evaluator.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({env="production"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [1m]))'
+    start: now-3h
+    end: now
+    step: "5"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A JSON stream whose lines spell `service_version` and `pipeline` exactly
+    (as keys or as structured metadata); no line spells either label
+    differently.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200; the label sets and per-step values equal Loki's; the proxy
+    answers from `stats_query_range` (one probe, no raw-row fetch, so
+    `loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"}`
+    does not move). Measured on v1.91.0 at 3 h: proxy 502 after 12.7 s,
+    Loki 200 in 4.7 s.

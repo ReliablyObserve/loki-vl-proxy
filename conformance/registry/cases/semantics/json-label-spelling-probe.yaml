@@ -1,0 +1,52 @@
+id: semantics/json-label-spelling-probe
+title: A key Loki spells into the filtered label differently keeps the raw evaluator
+proves:
+  - parser-error-and-label-collision
+consumer: any
+why: |
+  Loki v3.7.7's JSON parser trims the spaces around a key, prepends an
+  underscore to a leading digit, replaces every rune outside `[A-Za-z0-9_]`
+  with an underscore (`sanitizeLabelKey`) and joins the sanitized keys of
+  nested objects with an underscore, skipping blank keys
+  (`buildSanitizedPrefixFromBuffer`). VictoriaLogs `unpack_json` keeps keys
+  raw and joins nesting with a dot. So `{"service-version":"1"}`,
+  `{"service.version":"1"}`, `{"service version":"1"}` and
+  `{"service":{"version":"1"}}` all yield `service_version` in Loki and
+  nothing of that name in VictoriaLogs, and a line holding both spellings
+  makes Loki keep the first one it reads. The logfmt decoder sanitizes keys
+  the same way (`service-version=1`).
+
+  The pushdown's parse-risk probe (`| limit 1` over the range) now carries a
+  regexp built from the label: every raw key other than the label itself
+  that sanitizes to it (each underscore position may be any other rune, a
+  leading `_<digit>` may be the bare digit) and every split of the label at
+  its underscores into nested object keys. One matching line in the range
+  keeps the exact raw-row evaluator, whose parser mirrors Loki's. For labels
+  with up to two underscores the nested key is located inside its parent's
+  object with balanced braces (strings included, siblings nested up to three
+  levels), so `{"service":{"name":"api"},"version":"v1"}` (the e2e
+  generator's api-gateway shape) does not match; a parent object nested
+  deeper, or a label with three to six underscores (parts in order suffice),
+  matches as a superset, which only costs the fallback, never exactness.
+  Labels with more than six underscores are not pushed down (the split
+  enumeration is 2^n).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({app="json-filter-nested"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [1m]))'
+    start: now-9h
+    end: now-8h
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The stream holds a line `{"service":{"version":"0.96.0"},"pipeline":"logs/loki"}`.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values; the probe matches, the bucket
+    query is discarded and the raw-row evaluator answers, so
+    `loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"}`
+    rises by one.
