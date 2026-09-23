@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,15 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/grafana/jsonparser"
+)
+
+// Values of the evaluator label of loki_vl_proxy_range_metric_evaluations_total
+// for the parser-dependent metric routes: VictoriaLogs stats buckets, or the
+// raw-row evaluator the parse-risk probes keep for lines the two parsers read
+// differently.
+const (
+	rangeMetricEvaluatorStats   = "vl_stats_buckets"
+	rangeMetricEvaluatorRawRows = "raw_rows"
 )
 
 // defaultOrderedJSONMetricMaxBytes admits about one million raw rows (the
@@ -62,12 +72,20 @@ type orderedJSONMetricPlan struct {
 	required      map[string]bool
 	earlyFilters  []translator.DropCondition
 	withoutJSON   string
+	// pushdown reports that VictoriaLogs stats buckets can answer the plan
+	// exactly (see setStatsPushdown), subject to the parse-risk probes.
+	pushdown bool
 	// unpackFields lists the keys a VictoriaLogs stats pushdown groups by and
-	// unpacks (see setStatsPushdown); empty when the pushdown is not exact.
+	// unpacks; empty for an ungrouped sum, which unpacks only its filter keys.
 	unpackFields []string
 	// pushdownFilters are the string label filters that follow the parser in
 	// a pushdown plan; VictoriaLogs applies them after unpacking.
 	pushdownFilters []translator.DropCondition
+	// pushdownErrorFilters names the filter keys the pushdown relies on to
+	// exclude lines whose parser failed when the pipeline does not drop
+	// __error__: no unparsed line can pass a filter that rejects the empty
+	// value. Empty when the pipeline drops the error labels.
+	pushdownErrorFilters []string
 	// parser is "json", "logfmt" or "" (no parser). Only JSON plans have a raw
 	// evaluator; the others answer through the stats pushdown or fall through.
 	parser string
@@ -109,8 +127,12 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	served := false
 	if err == nil && isRange {
 		body, served, err = p.orderedJSONStatsBuckets(r.Context(), plan, start, end, step)
+		if served {
+			p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorStats)
+		}
 	}
 	if err == nil && !served {
+		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorRawRows)
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
@@ -365,78 +387,243 @@ func (plan *orderedJSONMetricPlan) errorsDroppedAfterParser() bool {
 	return errorCleared
 }
 
-// orderedJSONUnpackLabelRE matches labels that Loki's JSON parser yields only
-// from a key of the same spelling: nesting and sanitized characters introduce
-// an underscore. Loki also skips empty parent keys; when unpack_json yields no
-// value for such a line, the partial-parse check below finds the quoted key.
-var orderedJSONUnpackLabelRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+// orderedJSONPushdownLabelRE matches the label names the pushdown reads from
+// VictoriaLogs: LogQL identifiers, which Loki's parsers also produce.
+var orderedJSONPushdownLabelRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// orderedJSONPushdownLabelOK reports whether a grouped or filtered label can be
+// read through unpack_json/unpack_logfmt. Loki's parsers sanitize keys (every
+// character outside [A-Za-z0-9_] becomes an underscore, a leading digit gets
+// one) and join nested JSON keys with an underscore, so a label holding an
+// underscore may also come from a key spelled differently; the parse-risk
+// probe (orderedJSONLabelAliasPattern) declines the pushdown for a window
+// holding such a line, and a label with many underscores would need too large
+// a probe. Loki's own labels, the _extracted collision suffix and the labels
+// the proxy derives on the read path are never read from a parsed key.
+func orderedJSONPushdownLabelOK(label string) bool {
+	return orderedJSONPushdownLabelRE.MatchString(label) && !strings.HasPrefix(label, "__") &&
+		!strings.HasSuffix(label, "_extracted") && label != "service_name" && label != "detected_level" &&
+		strings.Count(label, "_") <= maxOrderedJSONAliasUnderscores
+}
+
+// maxOrderedJSONAliasUnderscores bounds the nested-key splits the spelling
+// probe enumerates (2^n - 1 for n underscores).
+const maxOrderedJSONAliasUnderscores = 6
+
+// lokiSanitizedPartPattern renders a piece of a Loki label as the regexp of
+// the raw keys sanitizeLabelKey maps to it: a letter or digit comes only from
+// itself, an underscore from any other rune (class other). differ, when not
+// negative, is the index of one underscore that must come from a rune other
+// than an underscore, which excludes the label's own spelling.
+func lokiSanitizedPartPattern(part, other string, differ int) string {
+	var sb strings.Builder
+	for i := 0; i < len(part); i++ {
+		switch {
+		case part[i] != '_':
+			sb.WriteByte(part[i])
+		case i == differ:
+			sb.WriteString(strings.Replace(other, "[^", "[^_", 1))
+		default:
+			sb.WriteString(other)
+		}
+	}
+	return sb.String()
+}
+
+// lokiFirstPartPatterns is lokiSanitizedPartPattern for the first key of a
+// label: Loki prepends an underscore to a key starting with a digit, so a
+// label starting with "_<digit>" also comes from the key without it.
+func lokiFirstPartPatterns(part, other string, differ int) []string {
+	out := []string{lokiSanitizedPartPattern(part, other, differ)}
+	if len(part) > 1 && part[0] == '_' && part[1] >= '0' && part[1] <= '9' {
+		out = append(out, part[1:2]+lokiSanitizedPartPattern(part[2:], other, -1))
+	}
+	return out
+}
+
+// lokiKeyAliasPatterns returns regexps for every raw key other than label
+// itself that Loki's sanitizeLabelKey turns into label, with other the class
+// of the runes sanitized to an underscore.
+func lokiKeyAliasPatterns(label, other string) []string {
+	var out []string
+	for i := 0; i < len(label); i++ {
+		if label[i] == '_' {
+			out = append(out, lokiSanitizedPartPattern(label, other, i))
+		}
+	}
+	if len(label) > 1 && label[0] == '_' && label[1] >= '0' && label[1] <= '9' {
+		out = append(out, label[1:2]+lokiSanitizedPartPattern(label[2:], other, -1))
+	}
+	return out
+}
+
+// orderedJSONLabelAliasPattern returns a regexp matching JSON text in which
+// Loki's parser yields one of the labels from a key spelled differently:
+// a top-level key that sanitizes to it, or nested object keys whose sanitized
+// names joined with an underscore form it. unpack_json keeps keys raw and
+// joins nesting with a dot, so such a line reads differently on the two
+// sides. Empty when no label can have another spelling. Loki trims the
+// spaces around a key, and skips a blank key without adding a separator.
+//
+// A nested key must sit directly in its parent's object (through blank-key
+// objects), so the text between the parent's brace and the key is matched
+// with balanced braces, strings included, up to three levels of sibling
+// objects; a line nested five levels deep anywhere is matched outright, which
+// keeps deeper siblings on the exact side at the cost of a fallback.
+func orderedJSONLabelAliasPattern(labels []string) string {
+	// A quote is in the class: an escaped quote inside a key (a\"b) is two
+	// runes Loki sanitizes to two underscores.
+	const other, key, str = `[^A-Za-z0-9]`, `"\s*(?:%s)\s*"\s*:`, `"(?:[^"\\]|\\.)*"`
+	balanced := `(?:[^{}"]|` + str + `)*`
+	for i := 0; i < 3; i++ {
+		balanced = `(?:[^{}"]|` + str + `|\{` + balanced + `\})*`
+	}
+	object := `\s*\{` + balanced + `(?:"\s*"\s*:\s*\{` + balanced + `)*`
+	deep := `(?:\{(?:[^{}"]|` + str + `)*){5}`
+	var alternatives []string
+	nested := false
+	for _, label := range labels {
+		if aliases := lokiKeyAliasPatterns(label, other); len(aliases) > 0 {
+			alternatives = append(alternatives, fmt.Sprintf(key, strings.Join(aliases, "|")))
+		}
+		var separators []int
+		for i := 0; i < len(label); i++ {
+			if label[i] == '_' {
+				separators = append(separators, i)
+			}
+		}
+		for mask := 1; mask < 1<<len(separators); mask++ {
+			var parts []string
+			last := 0
+			for bit, at := range separators {
+				if mask&(1<<bit) != 0 {
+					parts = append(parts, label[last:at])
+					last = at + 1
+				}
+			}
+			parts = append(parts, label[last:])
+			if slices.Contains(parts, "") {
+				continue // a blank key is skipped, so it cannot be a nested key
+			}
+			pattern := fmt.Sprintf(key, strings.Join(lokiFirstPartPatterns(parts[0], other, -1), "|")) + object
+			for i, part := range parts[1:] {
+				pattern += fmt.Sprintf(key, lokiSanitizedPartPattern(part, other, -1))
+				if i < len(parts)-2 {
+					pattern += object
+				}
+			}
+			alternatives = append(alternatives, pattern)
+			nested = true
+		}
+	}
+	if nested {
+		alternatives = append(alternatives, deep)
+	}
+	if len(alternatives) == 0 {
+		return ""
+	}
+	return "(?:" + strings.Join(alternatives, "|") + ")"
+}
+
+// logfmtKeyAliasPattern is orderedJSONLabelAliasPattern for logfmt lines,
+// where a key ends at whitespace or an equals sign and nesting does not exist.
+func logfmtKeyAliasPattern(labels []string) string {
+	var aliases []string
+	for _, label := range labels {
+		aliases = append(aliases, lokiKeyAliasPatterns(label, `[^A-Za-z0-9="\s]`)...)
+	}
+	if len(aliases) == 0 {
+		return ""
+	}
+	return `(?:^|\s)(?:` + strings.Join(aliases, "|") + `)=`
+}
 
 // setStatsPushdown enables VictoriaLogs stats buckets for summed log metrics
-// whose parser errors are dropped: every selected line then counts once, and
-// only the grouped labels depend on the JSON body. Loki suffixes a parsed key
-// that collides with a stream label or structured metadata with _extracted,
-// which unpack_json keep_original_fields reproduces by keeping stored values.
-// detected_level is structured metadata Loki sets at ingest, so JSON never
-// yields it; it is derived from level like the other metric paths.
+// in which every selected line counts once and only the grouped and filtered
+// labels depend on the JSON body: the pipeline drops parser errors, or a
+// label filter rejects every line whose parser failed (pushdownLabelFilters).
+// Loki suffixes a parsed key that collides with a stream label or structured
+// metadata with _extracted, which unpack_json keep_original_fields reproduces
+// by keeping stored values. detected_level is structured metadata Loki sets
+// at ingest, so JSON never yields it; it is derived from level like the other
+// metric paths. An ungrouped sum unpacks only its filter keys; without any it
+// is served natively (withoutJSON).
 func (plan *orderedJSONMetricPlan) setStatsPushdown() {
-	if !plan.aggregated || plan.grouping == nil || plan.grouping.Without || len(plan.grouping.Labels) == 0 {
+	if !plan.aggregated || (plan.grouping != nil && plan.grouping.Without) {
 		return
 	}
-	filters, ok := plan.pushdownLabelFilters()
+	filters, errorFilters, ok := plan.pushdownLabelFilters()
 	if !ok {
 		return
 	}
 	var fields []string
-	for _, label := range plan.grouping.Labels {
-		if label == "detected_level" {
-			label = "level"
-		} else if !orderedJSONUnpackLabelRE.MatchString(label) {
-			return
-		}
-		if !containsString(fields, label) {
-			fields = append(fields, label)
+	if plan.grouping != nil {
+		for _, label := range plan.grouping.Labels {
+			if label == "detected_level" {
+				label = "level"
+			} else if !orderedJSONPushdownLabelOK(label) {
+				return
+			}
+			if !containsString(fields, label) {
+				fields = append(fields, label)
+			}
 		}
 	}
+	if len(fields) == 0 && len(filters) == 0 {
+		return
+	}
+	plan.pushdown = true
 	plan.unpackFields = fields
 	plan.pushdownFilters = filters
+	plan.pushdownErrorFilters = errorFilters
 }
 
 // pushdownLabelFilters reports whether the pipeline fits the stats pushdown
-// and returns its label filters. Like errorsDroppedAfterParser, the last
-// parser's errors must be dropped and every other stage must be a line filter
-// or a drop of the error labels; string label filters (=, !=, =~, !~) on plain
-// keys after the parser are also accepted. A filter only removes lines, so
+// and returns its label filters. Every stage other than the single parser
+// must be a line filter, a drop of the error labels or a string label filter
+// (=, !=, =~, !~) on a key after the parser. A filter only removes lines, so
 // every remaining line still counts once, and a label missing from a line
-// compares as the empty string on both sides.
-func (plan *orderedJSONMetricPlan) pushdownLabelFilters() ([]translator.DropCondition, bool) {
-	var filters []translator.DropCondition
+// compares as the empty string on both sides. Loki rejects a metric whose
+// sample carries __error__, so the last parser's errors must be dropped,
+// unless a filter rejects the empty value: a line whose parser failed has no
+// value for the key and never passes it. The keys of such filters are
+// returned as errorFilters, because a line may still pass one when Loki
+// extracted the key before the syntax error (the partial-parse probe) or the
+// key is a stored label of the line (the stored-field probe).
+func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.DropCondition, errorFilters []string, ok bool) {
 	parsed, errorCleared := false, false
 	for _, stage := range plan.stages {
 		switch {
 		case stage.parser:
 			if parsed {
-				return nil, false
+				return nil, nil, false
 			}
 			parsed, errorCleared = true, false
 		case stage.line != nil:
 			continue
 		case stage.filter != nil:
-			if !parsed || !orderedJSONUnpackLabelRE.MatchString(stage.filter.Field) {
-				return nil, false
+			if !parsed || !orderedJSONPushdownLabelOK(stage.filter.Field) {
+				return nil, nil, false
 			}
 			filters = append(filters, *stage.filter)
+			if !stage.filter.Matches("") && !containsString(errorFilters, stage.filter.Field) {
+				errorFilters = append(errorFilters, stage.filter.Field)
+			}
 		case stage.keep || len(stage.match) != 0:
-			return nil, false
+			return nil, nil, false
 		default:
 			for field := range stage.fields {
 				if field != "__error__" && field != "__error_details__" {
-					return nil, false
+					return nil, nil, false
 				}
 			}
 			errorCleared = errorCleared || stage.fields["__error__"]
 		}
 	}
-	return filters, errorCleared
+	if errorCleared {
+		return filters, nil, true
+	}
+	return filters, errorFilters, len(errorFilters) > 0
 }
 
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
@@ -495,7 +682,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 // orderedJSONStatsBucketsWithReason reports, in addition, whether the pushdown
 // declined because a selected line is read differently by the two parsers.
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
-	if len(plan.unpackFields) == 0 || p.labelTranslator == nil {
+	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
 	}
 	unpack := append([]string(nil), plan.unpackFields...)
@@ -504,9 +691,13 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 			unpack = append(unpack, filter.Field)
 		}
 	}
+	// A stream label or structured metadata VictoriaLogs stores under another
+	// spelling (service_version as service.version) is read from that field:
+	// Loki gives such a label precedence over a parsed key of the same name.
+	stored := make(map[string]string)
 	for _, field := range unpack {
-		if p.labelTranslator.ToVL(field) != field {
-			return nil, false, false, nil
+		if vl := p.labelTranslator.ToVL(field); vl != field {
+			stored[field] = vl
 		}
 	}
 	bucket, ok := p.slidingStatsBucket(start, step, plan.window)
@@ -528,23 +719,20 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	riskDone := make(chan riskResult, 1)
 	go func() {
-		risky, err := p.cachedStatsPushdownRisk(riskCtx, plan.parser, base, unpack, windowStart, end)
+		risky, err := p.cachedStatsPushdownRisk(riskCtx, plan.parser, base, unpack, stored, plan.pushdownErrorFilters, windowStart, end)
 		riskDone <- riskResult{risky, err}
 	}()
 	statsCtx, cancelStats := context.WithCancel(ctx)
 	defer cancelStats()
 	groupBy := plan.unpackFields
-	if containsString(plan.grouping.Labels, "detected_level") {
+	if plan.grouping != nil && containsString(plan.grouping.Labels, "detected_level") {
 		groupBy = append(append([]string(nil), groupBy...), "detected_level")
 	}
 	statsAggFunc := "count() as c"
 	if plan.function == "bytes_rate" || plan.function == "bytes_over_time" {
 		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
 	}
-	query := base
-	if plan.parser != "" {
-		query += " | unpack_" + plan.parser + " fields (" + strings.Join(unpack, ", ") + ") keep_original_fields"
-	}
+	query := base + orderedJSONUnpackPipes(plan.parser, unpack, stored)
 	for _, filter := range plan.pushdownFilters {
 		query += logsQLLabelFilter(filter)
 	}
@@ -573,9 +761,13 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		return nil, false, false, &seriesLimitError{limit: maxSeries}
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
+	var grouped []string
+	if plan.grouping != nil {
+		grouped = plan.grouping.Labels
+	}
 	for _, entry := range series {
-		metric := make(map[string]string, len(plan.grouping.Labels))
-		for _, label := range plan.grouping.Labels {
+		metric := make(map[string]string, len(grouped))
+		for _, label := range grouped {
 			value := entry.Metric[label]
 			if label == "detected_level" {
 				if value == "" {
@@ -611,6 +803,9 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		return false
 	}
 	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
+	if served {
+		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorStats)
+	}
 	if err == nil && !served {
 		if !parseDisagreement || plan.parser == "" {
 			return false
@@ -618,6 +813,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		// VictoriaLogs reads a selected line differently from Loki's decoder, so
 		// neither the buckets nor the stored-field routes can answer it exactly.
 		// Evaluate the pipeline over the rows instead, as the JSON plans do.
+		p.metrics.RecordRangeMetricEvaluator(rangeMetricEvaluatorRawRows)
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
@@ -645,14 +841,75 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 // and its value is printable ASCII. Loki also splits on tabs, recovers from
 // malformed tokens and keeps the first duplicate, while VictoriaLogs splits on
 // spaces only and stops after a malformed quoted value.
-func (p *Proxy) logfmtParseRisk(ctx context.Context, base string, fields []string, start, end time.Time) (bool, error) {
-	conditions := make([]string, len(fields))
-	for i, field := range fields {
+func (p *Proxy) logfmtParseRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
+	conditions := make([]string, 0, len(fields)+1)
+	for _, field := range fields {
 		re := newLogfmtRiskPatterns(field)
-		conditions[i] = "(-" + field + ":* _msg:~" + strconv.Quote(re.key) + " (-_msg:~" + strconv.Quote(re.wellFormed) +
-			" or _msg:~" + strconv.Quote(re.repeated) + " or (_msg:~" + strconv.Quote(re.keyAssignment) + " -_msg:~" + strconv.Quote(re.safeValue) + ")))"
+		conditions = append(conditions, "("+storedFieldsAbsent(field, stored)+" _msg:~"+strconv.Quote(re.key)+" (-_msg:~"+strconv.Quote(re.wellFormed)+
+			" or _msg:~"+strconv.Quote(re.repeated)+" or (_msg:~"+strconv.Quote(re.keyAssignment)+" -_msg:~"+strconv.Quote(re.safeValue)+")))")
+	}
+	// Loki sanitizes logfmt keys like JSON keys, so a label holding an
+	// underscore may come from a key unpack_logfmt spells differently.
+	if alias := logfmtKeyAliasPattern(fields); alias != "" {
+		absent := make([]string, len(fields))
+		for i, field := range fields {
+			absent[i] = "(" + storedFieldsAbsent(field, stored) + ")"
+		}
+		conditions = append(conditions, "(("+strings.Join(absent, " or ")+") _msg:~"+strconv.Quote(alias)+")")
 	}
 	return p.statsPushdownRiskExists(ctx, base+" | filter "+strings.Join(conditions, " or ")+" | limit 1", start, end)
+}
+
+// storedFieldsAbsent renders the LogsQL condition that a line carries the
+// label neither under its own name nor under the stored spelling.
+func storedFieldsAbsent(field string, stored map[string]string) string {
+	condition := "-" + quoteLogsQLIdent(field) + ":*"
+	if vl, ok := stored[field]; ok {
+		condition += " -" + quoteLogsQLIdent(vl) + ":*"
+	}
+	return condition
+}
+
+// orderedJSONUnpackPipes renders the pipes that give every unpacked label its
+// Loki value: the parser's unpack with stored fields kept, then, for a label
+// VictoriaLogs stores under another spelling, that stored value wherever the
+// line carries it, since Loki reads a stream label or structured metadata
+// before a parsed key of the same name (which it renames with _extracted).
+func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]string) string {
+	var sb strings.Builder
+	if parser != "" {
+		sb.WriteString(" | unpack_" + parser + " fields (" + strings.Join(unpack, ", ") + ") keep_original_fields")
+	}
+	for _, field := range unpack {
+		if vl, ok := stored[field]; ok {
+			sb.WriteString(" | format if (" + quoteLogsQLIdent(vl) + ":*) \"<" + vl + ">\" as " + field)
+		}
+	}
+	return sb.String()
+}
+
+// statsPushdownStoredFieldRisk reports whether a selected line carries one of
+// the labels the pushdown relies on to exclude unparsed lines as a stored
+// field while its body yields no value for it: such a line passes the filter
+// through the stored value, and Loki fails the query when the body does not
+// parse. A line whose body also holds the key parses on both sides (the
+// stored value wins on both, as Loki's _extracted rule does), so ingestion
+// routes that store the body's keys as fields keep the pushdown. The unpack
+// without keep_original_fields overwrites the stored value with the body's.
+func (p *Proxy) statsPushdownStoredFieldRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
+	var present, empty []string
+	for _, field := range fields {
+		present = append(present, quoteLogsQLIdent(field)+":*")
+		if vl, ok := stored[field]; ok {
+			present = append(present, quoteLogsQLIdent(vl)+":*")
+		}
+		empty = append(empty, quoteLogsQLIdent(field)+`:=""`)
+	}
+	query := base + " | filter " + strings.Join(present, " or ")
+	if parser != "" {
+		query += " | unpack_" + parser + " fields (" + strings.Join(fields, ", ") + ") | filter " + strings.Join(empty, " or ")
+	}
+	return p.statsPushdownRiskExists(ctx, query+" | limit 1", start, end)
 }
 
 // logfmtRiskPatterns holds the regular expressions of logfmtParseRisk for one
@@ -684,7 +941,7 @@ func newLogfmtRiskPatterns(field string) logfmtRiskPatterns {
 // trims spaces around keys, keeps escaped keys raw, skips arrays, keeps the
 // value it extracts first for a repeated key and replaces U+FFFD, where
 // unpack_json does not. One matching line keeps the exact raw evaluator.
-func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fields []string, start, end time.Time) (bool, error) {
+func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
 	// escapedKey: unpack_json unescapes keys, Loki keeps them raw. replaced:
 	// Loki turns U+FFFD in string values into a space.
 	const escapedKey, replaced = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`, `\x{FFFD}|\\u[Ff]{3}[Dd]`
@@ -693,7 +950,7 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 	names := make([]string, len(fields))
 	for i, field := range fields {
 		names[i] = regexp.QuoteMeta(field)
-		absent[i] = "-" + field + ":*"
+		absent[i] = storedFieldsAbsent(field, stored)
 		// A field is at risk only on a line whose body has its own key:
 		// a line with another unpacked key but not this one is parsed alike.
 		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(`"\s*`+names[i]+`\s*"\s*:`) + ")"
@@ -708,7 +965,14 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 		empty = append(empty, "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`))
 	}
 	empty = append(empty, "_msg:~"+strconv.Quote(escapedKey), "_msg:~"+strconv.Quote(replaced))
-	query := base + " | filter (" + strings.Join(absent, " or ") + ") _msg:~" + strconv.Quote(pattern) +
+	// A key spelled differently from the label it yields in Loki is read
+	// differently whatever unpack_json extracts for the label itself.
+	candidate := "_msg:~" + strconv.Quote(pattern)
+	if alias := orderedJSONLabelAliasPattern(fields); alias != "" {
+		candidate = "(" + candidate + " or _msg:~" + strconv.Quote(alias) + ")"
+		empty = append(empty, "_msg:~"+strconv.Quote(alias))
+	}
+	query := base + " | filter (" + strings.Join(absent, " or ") + ") " + candidate +
 		" | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter " + strings.Join(empty, " or ") + " | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
@@ -725,20 +989,32 @@ const (
 // remembering the window already found free of risky lines per tenant, query
 // and field set, so a refresh or a wider range checks only the uncovered part.
 // A window with a risky line is never cached.
-func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, start, end time.Time) (bool, error) {
+func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, start, end time.Time) (bool, error) {
 	check := func(from, to time.Time) (bool, error) {
+		if len(errorFilters) > 0 {
+			if risky, err := p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to); err != nil || risky {
+				return risky, err
+			}
+		}
 		switch parser {
 		case "json":
-			return p.orderedJSONPartialParseRisk(ctx, base, fields, from, to)
+			return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
 		case "logfmt":
-			return p.logfmtParseRisk(ctx, base, fields, from, to)
+			return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
 		}
 		return false, nil
 	}
 	if p.cache == nil {
 		return check(start, end)
 	}
-	key := "stats-pushdown-risk:v1:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(fields, ",") + ":" + base
+	spelled := make([]string, len(fields))
+	for i, field := range fields {
+		spelled[i] = field
+		if vl, ok := stored[field]; ok {
+			spelled[i] += "=" + vl
+		}
+	}
+	key := "stats-pushdown-risk:v2:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + base
 	type window struct{ from, to time.Time }
 	todo := []window{{start, end}}
 	coveredFrom, coveredTo := start, end

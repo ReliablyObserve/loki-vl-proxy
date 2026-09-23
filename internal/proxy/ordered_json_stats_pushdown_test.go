@@ -433,7 +433,7 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__ | level="info" [1m]))`, []string{"level"}},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | json | status=` + "`200`" + ` | drop __error__ [1m]))`, []string{"level"}},
 		{`sum by (level) (count_over_time({env="production"} | level="info" | json | drop __error__ [1m]))`, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | trace_id="x" | drop __error__ [1m]))`, nil},
+		{`sum by (level) (count_over_time({env="production"} | json | trace_id="x" | drop __error__ [1m]))`, []string{"level"}},
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__, level [1m]))`, nil},
 		{`count_over_time({env="production"} | json | drop __error__ [1m])`, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | drop __error__[1m]))`, []string{"level"}},
@@ -661,7 +661,7 @@ func TestCachedStatsPushdownRiskChecksOnlyUncoveredWindow(t *testing.T) {
 		{0, 40 * time.Minute, 2},
 		{-10 * time.Minute, 40 * time.Minute, 3},
 	} {
-		if risky, err := p.cachedStatsPushdownRisk(ctx, "json", `app:="api"`, []string{"level"}, s0.Add(tc.from), s0.Add(tc.to)); err != nil || risky {
+		if risky, err := p.cachedStatsPushdownRisk(ctx, "json", `app:="api"`, []string{"level"}, nil, nil, s0.Add(tc.from), s0.Add(tc.to)); err != nil || risky {
 			t.Fatalf("step %d: risky=%v err=%v", i, risky, err)
 		}
 		if got := calls(); got != tc.calls {

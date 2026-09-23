@@ -1,0 +1,44 @@
+id: semantics/json-filter-pushdown-translated-label
+title: A structured-metadata label stored under another spelling is read from the stored field
+proves:
+  - parser-error-and-label-collision
+consumer: drilldown
+why: |
+  On the e2e generator `service_version` is structured metadata that
+  VictoriaLogs stores as `service.version` (the underscore label style maps
+  the two), while `| json` may also yield a `service_version` key from the
+  body. Loki reads a stream label or structured metadata before a parsed key
+  of the same name and renames the parsed one `service_version_extracted`.
+  v1.91.0 refused the pushdown whenever the label translator spelled a
+  grouped or filtered label differently, since `unpack_json ... keep_original_fields`
+  keeps only a stored field of the same spelling. The pushdown now appends
+  `| format if (`service.version`:*) "<service.version>" as service_version`
+  after the unpack, so the label holds the stored value wherever the line
+  carries one and the parsed value otherwise, and the probes treat a line as
+  at risk only when it carries neither spelling as a stored field. Logs
+  Drilldown's field breakdown `sum by (service_version) (count_over_time({...}
+  | json | drop __error__ | service_version!="" [$__auto]))` and Explore's
+  filtered volume use this path.
+
+  Layer: VictoriaLogs native stats (`unpack_json` + `format if` + `filter`);
+  the proxy's label translator supplies the stored spelling.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_version) (count_over_time({env="production"} | json | drop __error__ | service_version!="" [1m]))'
+    start: now-3h
+    end: now
+    step: "5"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    Proxy label style `underscores`; `service.version` present as a stored
+    field on some lines, `service_version` as a body key on others.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200; series per stored-or-parsed `service_version` value with Loki's
+    counts; the stats query carries the `format if` pipe and no raw-row
+    fetch happens.

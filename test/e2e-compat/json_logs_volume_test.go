@@ -23,11 +23,15 @@ import (
 )
 
 // jsonVolumeStreamLine is one fixture line of a stream; level is the stream
-// label, empty for a stream without one.
+// label, empty for a stream without one. meta is optional structured
+// metadata in its Loki spelling and vlMeta the same values as VictoriaLogs
+// stores them (service_version as service.version).
 type jsonVolumeStreamLine struct {
-	ts    time.Time
-	level string
-	msg   string
+	ts     time.Time
+	level  string
+	msg    string
+	meta   map[string]string
+	vlMeta map[string]string
 }
 
 // vlQueryRecorder forwards to VictoriaLogs and records each request path with
@@ -85,6 +89,7 @@ func newJSONVolumeRouteProxy(t *testing.T) (string, *vlQueryRecorder) {
 	}
 	mux := http.NewServeMux()
 	p.RegisterProxyRoutes(mux)
+	p.RegisterMetricsRoute(mux)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server.URL, rec
@@ -98,16 +103,23 @@ func ingestJSONVolumeFixture(t *testing.T, apps map[string][]jsonVolumeStreamLin
 	var vlRows strings.Builder
 	var streams []any
 	for app, lines := range apps {
-		byLevel := map[string][][]string{}
+		byLevel := map[string][]any{}
 		for _, line := range lines {
 			fields := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "app": app}
 			if line.level != "" {
 				fields["level"] = line.level
 			}
+			for k, v := range line.vlMeta {
+				fields[k] = v
+			}
 			row, _ := json.Marshal(fields)
 			vlRows.Write(row)
 			vlRows.WriteByte('\n')
-			byLevel[line.level] = append(byLevel[line.level], []string{strconv.FormatInt(line.ts.UnixNano(), 10), line.msg})
+			entry := []any{strconv.FormatInt(line.ts.UnixNano(), 10), line.msg}
+			if len(line.meta) > 0 {
+				entry = append(entry, line.meta)
+			}
+			byLevel[line.level] = append(byLevel[line.level], entry)
 		}
 		for level, values := range byLevel {
 			labels := map[string]string{"app": app}
@@ -173,36 +185,36 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 		at := func(k int) time.Time { return tick.Add(time.Duration(k) * time.Second) }
 		fixture[app] = append(fixture[app],
 			// A JSON key colliding with a stream label becomes level_extracted.
-			jsonVolumeStreamLine{at(0), "info", fmt.Sprintf(`{"level":"error","msg":"collision %d"}`, i)},
-			jsonVolumeStreamLine{at(1), "warn", fmt.Sprintf(`{"msg": "truncated %d`, i)},
-			jsonVolumeStreamLine{at(2), "", fmt.Sprintf(`{"level":"debug","n":%d}`, i)},
-			jsonVolumeStreamLine{at(3), "", fmt.Sprintf(`{"counter":%d}`, i)},
-			jsonVolumeStreamLine{at(4), "", fmt.Sprintf("plain text line %d", i)},
-			jsonVolumeStreamLine{at(5), "info", fmt.Sprintf(`{"app":"json-shadow","level":"info","n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf(`{"level":"error","msg":"collision %d"}`, i)},
+			jsonVolumeStreamLine{ts: at(1), level: "warn", msg: fmt.Sprintf(`{"msg": "truncated %d`, i)},
+			jsonVolumeStreamLine{ts: at(2), level: "", msg: fmt.Sprintf(`{"level":"debug","n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(3), level: "", msg: fmt.Sprintf(`{"counter":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(4), level: "", msg: fmt.Sprintf("plain text line %d", i)},
+			jsonVolumeStreamLine{ts: at(5), level: "info", msg: fmt.Sprintf(`{"app":"json-shadow","level":"info","n":%d}`, i)},
 		)
 		fixture[partial] = append(fixture[partial],
-			jsonVolumeStreamLine{at(0), "info", fmt.Sprintf(`{"msg":"ok %d"}`, i)},
-			jsonVolumeStreamLine{at(1), "", fmt.Sprintf(`{"level":"error","msg": truncated %d`, i)},
-			jsonVolumeStreamLine{at(2), "", fmt.Sprintf(` {"level":"warn","n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf(`{"msg":"ok %d"}`, i)},
+			jsonVolumeStreamLine{ts: at(1), level: "", msg: fmt.Sprintf(`{"level":"error","msg": truncated %d`, i)},
+			jsonVolumeStreamLine{ts: at(2), level: "", msg: fmt.Sprintf(` {"level":"warn","n":%d}`, i)},
 			// Loki trims spaces around keys and skips array values.
-			jsonVolumeStreamLine{at(3), "", fmt.Sprintf(`{" level ":"debug","n":%d}`, i)},
-			jsonVolumeStreamLine{at(4), "", fmt.Sprintf(`{"level":["error"],"n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(3), level: "", msg: fmt.Sprintf(`{" level ":"debug","n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(4), level: "", msg: fmt.Sprintf(`{"level":["error"],"n":%d}`, i)},
 		)
 		// Level-less lines carry no level in the body, so Loki's ingest-time
 		// detected_level is unknown for them.
 		fixture[plain] = append(fixture[plain],
-			jsonVolumeStreamLine{at(0), "info", fmt.Sprintf("request served %d", i)},
-			jsonVolumeStreamLine{at(1), "debug", fmt.Sprintf("cache probe %d", i)},
-			jsonVolumeStreamLine{at(2), "", fmt.Sprintf("op=select n=%d", i)},
+			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf("request served %d", i)},
+			jsonVolumeStreamLine{ts: at(1), level: "debug", msg: fmt.Sprintf("cache probe %d", i)},
+			jsonVolumeStreamLine{ts: at(2), level: "", msg: fmt.Sprintf("op=select n=%d", i)},
 		)
 		fixture[logfmt] = append(fixture[logfmt],
-			jsonVolumeStreamLine{at(0), "info", fmt.Sprintf("level=error msg=collision n=%d", i)},
-			jsonVolumeStreamLine{at(1), "", fmt.Sprintf(`level=warn op=update msg="slow query" n=%d`, i)},
-			jsonVolumeStreamLine{at(2), "", fmt.Sprintf("op=select n=%d", i)},
-			jsonVolumeStreamLine{at(3), "", fmt.Sprintf(`{"msg":"json body","n":%d}`, i)},
+			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf("level=error msg=collision n=%d", i)},
+			jsonVolumeStreamLine{ts: at(1), level: "", msg: fmt.Sprintf(`level=warn op=update msg="slow query" n=%d`, i)},
+			jsonVolumeStreamLine{ts: at(2), level: "", msg: fmt.Sprintf("op=select n=%d", i)},
+			jsonVolumeStreamLine{ts: at(3), level: "", msg: fmt.Sprintf(`{"msg":"json body","n":%d}`, i)},
 		)
 		fixture[logfmtRisk] = append(fixture[logfmtRisk],
-			jsonVolumeStreamLine{at(0), "", fmt.Sprintf("n=%d\tlevel=warn", i)},
+			jsonVolumeStreamLine{ts: at(0), level: "", msg: fmt.Sprintf("n=%d\tlevel=warn", i)},
 		)
 	}
 	ingestJSONVolumeFixture(t, fixture)

@@ -127,6 +127,7 @@ type Metrics struct {
 	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
 	connectionTransitions     map[string]*atomic.Int64 // "state" -> transition count
 	connectionRotations       map[string]*atomic.Int64 // "reason" -> rotation count
+	rangeMetricEvaluators     map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
 
 	// Circuit breaker state function (injected)
@@ -386,6 +387,7 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		connectionStates:           make(map[string]*atomic.Int64),
 		connectionTransitions:      make(map[string]*atomic.Int64),
 		connectionRotations:        make(map[string]*atomic.Int64),
+		rangeMetricEvaluators:      make(map[string]*atomic.Int64),
 		windowFetch:                newHistogram(),
 		windowMerge:                newHistogram(),
 		windowCount:                newHistogram(),
@@ -1053,6 +1055,29 @@ func isLiveConnState(state string) bool {
 	}
 }
 
+// RecordRangeMetricEvaluator counts one parser-dependent range metric query
+// (a `| json` or `| logfmt` pipeline under a range function) by the evaluator
+// that answered it: VictoriaLogs stats buckets, or the raw-row evaluator kept
+// for lines the two parsers read differently.
+func (m *Metrics) RecordRangeMetricEvaluator(evaluator string) {
+	evaluator = strings.TrimSpace(evaluator)
+	if evaluator == "" {
+		return
+	}
+	m.mu.RLock()
+	counter, ok := m.rangeMetricEvaluators[evaluator]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		if counter, ok = m.rangeMetricEvaluators[evaluator]; !ok {
+			counter = &atomic.Int64{}
+			m.rangeMetricEvaluators[evaluator] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
 // RecordHTTPConnectionRotation records a downstream connection rotation decision.
 func (m *Metrics) RecordHTTPConnectionRotation(reason string) {
 	reason = strings.TrimSpace(reason)
@@ -1531,6 +1556,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sConnectionStates := snapshotAtomicMap(m.connectionStates)
 	sConnectionTransitions := snapshotAtomicMap(m.connectionTransitions)
 	sConnectionRotations := snapshotAtomicMap(m.connectionRotations)
+	sRangeMetricEvaluators := snapshotAtomicMap(m.rangeMetricEvaluators)
 	sClientErrors := snapshotAtomicMap(m.clientErrors)
 	sEndpointCacheHits := snapshotAtomicMap(m.endpointCacheHits)
 	sEndpointCacheMisses := snapshotAtomicMap(m.endpointCacheMisses)
@@ -1798,6 +1824,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(connRotationReasons)
 	for _, reason := range connRotationReasons {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_range_metric_evaluations_total Parser-dependent range metric queries by the evaluator that answered them: vl_stats_buckets (VictoriaLogs stats over unpacked fields) or raw_rows (the exact row evaluator kept for lines the parsers read differently).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_range_metric_evaluations_total counter\n")
+	rangeMetricEvaluators := make([]string, 0, len(sRangeMetricEvaluators))
+	for evaluator := range sRangeMetricEvaluators {
+		rangeMetricEvaluators = append(rangeMetricEvaluators, evaluator)
+	}
+	sort.Strings(rangeMetricEvaluators)
+	for _, evaluator := range rangeMetricEvaluators {
+		fmt.Fprintf(&sb, "loki_vl_proxy_range_metric_evaluations_total{evaluator=%q} %d\n", evaluator, sRangeMetricEvaluators[evaluator].Load())
 	}
 
 	// Go runtime / GC metrics

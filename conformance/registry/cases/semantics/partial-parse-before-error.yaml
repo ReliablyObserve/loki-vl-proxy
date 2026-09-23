@@ -1,0 +1,37 @@
+id: semantics/partial-parse-before-error
+title: A key parsed before a JSON syntax error is a Loki label VictoriaLogs never yields
+proves:
+  - parser-error-and-label-collision
+consumer: any
+why: |
+  Loki's JSON parser keeps every key it read before the syntax error and
+  marks the line with `__error__=JSONParserErr`; with parser hints it may
+  even stop before the error once the required labels are extracted, and
+  then the line carries no error at all. VictoriaLogs `unpack_json` adds no
+  field for a line that is not one complete JSON object. A volume with
+  `drop __error__` counts such a line under the level Loki extracted; a
+  metric with a positive filter and no `drop __error__` passes it to the
+  aggregation with `__error__`, which Loki answers with 400 `pipeline
+  error`. The pushdown's partial-parse probe (`^\s*\{` ... the quoted key,
+  and `unpack_json` yielding nothing for it) finds one such line and keeps
+  the raw-row evaluator, which reproduces both outcomes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({app="json-volume-partial"} | json | drop __error__ [1m]))'
+    start: now-9h
+    end: now-8h
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The stream holds `{"level":"error","msg": truncated`.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    The `error` series carries the partially parsed lines, as in Loki; the
+    raw-row evaluator answers (one probe, one row fetch). Without `drop
+    __error__` and with `| pipeline="logs/loki"` on a line
+    `{"pipeline":"logs/loki","msg": truncated`, both answer 400 `pipeline error`.

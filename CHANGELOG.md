@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Push `| json` and `| logfmt` range metrics with label filters down to
+  VictoriaLogs stats instead of scanning raw rows. Grafana Explore's logs
+  volume for `{env="production"} | json | service_version=`0.96.0` |
+  pipeline=`logs/loki`` and a user's `sum by (level) (count_over_time({...} |
+  json | pipeline=`logs/loki` [1m]))` or `sum(count_over_time(... | json |
+  pipeline=`logs/loki` [1m]))` fell to the raw-row evaluator, which answered
+  `manual range metric row limit exceeded (1000000)` (HTTP 502) after about
+  12 s of VictoriaLogs CPU over 3 h of a million-line stream where Loki
+  answers in 0.1-4.7 s, and Logs Drilldown field breakdowns on such streams
+  were slow for the same reason. Three rules refused the stats pushdown too
+  broadly: any grouped or filtered label holding an underscore, any pipeline
+  without `drop __error__`, and any ungrouped sum. They are replaced by exact
+  checks: a label with underscores is read through `unpack_json` unless a
+  `| limit 1` probe finds a line in the range whose key Loki would sanitize
+  or flatten to that label from a different spelling (`service-version`,
+  `service.version`, `{"service":{"version":...}}`, per Loki v3.7.7's
+  `sanitizeLabelKey` and nested-key rules); a filter that rejects the empty
+  value (`pipeline="logs/loki"`, `field!=""`) excludes every unparsed line,
+  so errors need not be dropped, guarded by the existing partial-parse probe
+  and a probe for a stored value of that label on a line whose body yields
+  none; an ungrouped sum unpacks only
+  its filter keys. A label VictoriaLogs stores under another spelling
+  (`service_version` as `service.version`) is read from the stored field
+  where the line carries it, as Loki reads structured metadata before a
+  parsed key. Lines a probe flags keep the exact raw-row evaluator. New
+  counter `loki_vl_proxy_range_metric_evaluations_total{evaluator}`
+  (`vl_stats_buckets` or `raw_rows`) shows which evaluator answered.
+
 ## [1.91.0] - 2026-09-23
 
 ### Added

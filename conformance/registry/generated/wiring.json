@@ -103,15 +103,44 @@
       "internal/proxy/parser_capture_identity_test.go",
       "test/e2e-compat/parser_capture_identity_test.go"
     ],
+    "parser-error-and-label-collision": [
+      "internal/proxy/ordered_json_drilldown_test.go",
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/json-filter-pushdown-translated-label": [
+      "internal/proxy/ordered_json_drilldown_test.go",
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "semantics/json-filter-pushdown-underscore-label": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "semantics/json-filter-pushdown-ungrouped-sum": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "semantics/json-filter-pushdown-without-error-drop": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "semantics/json-label-spelling-probe": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
     "semantics/offset-sample-timestamps": [
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
+    ],
+    "semantics/partial-parse-before-error": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
@@ -151,7 +180,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 165,
+  "registry_items": 171,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -197,6 +226,19 @@
       "limits/query-length-limit-is-configurable",
       "loki_api_v1_query_range",
       "operator-configurable-limits"
+    ],
+    "internal/proxy/ordered_json_drilldown_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/json-filter-pushdown-translated-label"
+    ],
+    "internal/proxy/ordered_json_filter_pushdown_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/json-filter-pushdown-translated-label",
+      "semantics/json-filter-pushdown-underscore-label",
+      "semantics/json-filter-pushdown-ungrouped-sum",
+      "semantics/json-filter-pushdown-without-error-drop",
+      "semantics/json-label-spelling-probe",
+      "semantics/partial-parse-before-error"
     ],
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
@@ -256,6 +298,14 @@
       "semantics/sliding-window-recurrence-exact",
       "series-limits-and-partial-results"
     ],
+    "test/e2e-compat/json_filter_pushdown_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/json-filter-pushdown-translated-label",
+      "semantics/json-filter-pushdown-underscore-label",
+      "semantics/json-filter-pushdown-ungrouped-sum",
+      "semantics/json-filter-pushdown-without-error-drop",
+      "semantics/json-label-spelling-probe"
+    ],
     "test/e2e-compat/parser_capture_identity_test.go": [
       "loki_api_v1_query",
       "parsed-label-series-identity"
@@ -274,7 +324,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 22,
+  "tests_with_markers": 25,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -310,10 +360,9 @@
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
     "parsed-identity/regexp-partial-match-series-count",
-    "parser-error-and-label-collision",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 37
+  "wired_items": 44
 }
