@@ -236,6 +236,22 @@ def extract_released_sections(text: str) -> str:
     return text[match.start():]
 
 
+def released_history_changed(head_text: str, fork_text: str) -> bool:
+    """True when a version section that already existed was edited.
+
+    Version sections the pull request adds are allowed: that is how the
+    release bot materializes [Unreleased]. Every section that existed where
+    the branch was cut must come through byte-identical.
+    """
+    def split(text: str) -> dict[str, str]:
+        released = extract_released_sections(text)
+        parts = re.split(r"(?m)^(?=## \[\d)", released)
+        return {p.splitlines()[0]: p for p in parts if p.strip()}
+
+    before, after = split(fork_text), split(head_text)
+    return any(after.get(heading) != body for heading, body in before.items())
+
+
 def is_changelog_history_fix(commits: Iterable[str]) -> bool:
     """True when the pull request deliberately edits released history."""
     subjects = [c for c in commits if c.strip() and not is_merge_commit(c)]
@@ -257,7 +273,11 @@ def main() -> int:
     parser.add_argument("--head", required=True)
     args = parser.parse_args()
 
-    files = run_git("diff", "--name-only", f"{args.base}..{args.head}").splitlines()
+    # Judge the pull request by its own changes. A two-dot diff against the
+    # current base also lists every file the base changed after the branch was
+    # cut, so a branch that is merely behind appears to change them.
+    fork_point = run_git("merge-base", args.base, args.head).strip()
+    files = run_git("diff", "--name-only", f"{fork_point}..{args.head}").splitlines()
     commits = run_git("log", "--pretty=format:%s", f"{args.base}..{args.head}").splitlines()
 
     base_text = run_git("show", f"{args.base}:CHANGELOG.md")
@@ -265,6 +285,7 @@ def main() -> int:
     # the PR head commit. Read changelog directly from --head to avoid false
     # negatives when base moved after the PR was opened.
     head_text = run_git("show", f"{args.head}:CHANGELOG.md")
+    fork_text = run_git("show", f"{fork_point}:CHANGELOG.md")
     base_unreleased = extract_unreleased_section(base_text)
     head_unreleased = extract_unreleased_section(head_text)
 
@@ -290,10 +311,10 @@ def main() -> int:
     if (
         "CHANGELOG.md" in files
         and not is_changelog_history_fix(commits)
-        and extract_released_sections(head_text) != extract_released_sections(base_text)
+        and released_history_changed(head_text, fork_text)
     ):
         print(
-            "changelog gate: released version sections must match the base branch — "
+            "changelog gate: this pull request changes a released version section — "
             "entries belong under [Unreleased]. A rebase across a release moves them "
             "into the version that was cut while the branch was open, without a "
             "conflict. Rebuild CHANGELOG.md from the base and re-insert your entries "
