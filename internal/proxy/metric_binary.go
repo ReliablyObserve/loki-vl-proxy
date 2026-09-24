@@ -81,15 +81,28 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
 		shiftedR.Form.Set("start", strconv.FormatInt(origStartNs-origSpec.Window.Nanoseconds(), 10))
-		_ = p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, effectiveQuery, origSpec.Window)
-		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
-		body := relabelSnappedTumblingStatsQueryRange(buf.body, origStartNs, endNs, origSpec.Window.Nanoseconds())
-		if hasTopK {
-			body = applyTopKToMatrix(body, topK, topKDesc)
+		// Lines after Loki's last evaluation timestamp belong to no sample.
+		if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok && endNs > origStartNs {
+			window := origSpec.Window.Nanoseconds()
+			shiftedR.Form.Set("end", strconv.FormatInt(origStartNs+(endNs-origStartNs)/window*window, 10))
 		}
+		p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, effectiveQuery, origSpec.Window)
 		code := buf.code
 		if code == 0 {
 			code = http.StatusOK
+		}
+		body := buf.body
+		if code == http.StatusOK {
+			endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+			body = relabelSnappedTumblingStatsQueryRange(body, origStartNs, endNs, origSpec.Window.Nanoseconds())
+			if hasTopK {
+				body = applyTopKToMatrix(body, topK, topKDesc)
+			}
+		}
+		// Keep the headers the stats path set, such as the partial-result
+		// Warning and X-Proxy-Upstream-* of a Grafana-sourced backend failure.
+		for k, v := range buf.header {
+			w.Header()[k] = v
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if code != http.StatusOK {
@@ -99,76 +112,40 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// Drilldown-style single-field count queries that are not tumbling log range
-	// metrics (Grafana Logs Drilldown requests always) route through the /hits
-	// fast paths regardless of source tag. Two sub-cases:
-	//  1. No parser stages (column-indexed fields: stream labels, OTel attrs) →
-	//     proxyStatsQueryRangeDrilldown (batcher / two-phase / hybrid).
-	//  2. With parser stages (body-embedded fields: trace_id, span_id, level from
-	//     logfmt) → proxyStatsQueryRangeDrilldownParserDirect (one direct VL call
-	//     with parser preserved and VL-side | limit 500).
-	//
-	// Explore-source clients hit the same path: their `sum by (X) (count_over_time(
-	// {...} | X!="" [w]))` queries previously fell through to
-	// proxyStatsQueryRangeDirect, which exceeds the 16 MB stats_query_range cap at
-	// long ranges on high-card fields (pod, trace_id, *_id) and returns an empty
-	// matrix. The /hits fast paths sample sub-windows and return top-N + distributed
-	// timestamps in one call, avoiding the cap.
-	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok {
-		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
-	} else if cleanBase, field, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
-		p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery, cleanBase, field)
-	} else {
-		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
-	}
+	// Logs Drilldown label and field breakdowns take the same exact path as any
+	// other client, as they do in Loki: every series up to the tenant's
+	// max_query_series from VictoriaLogs buckets on the request grid.
+	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
 	}
 }
 
+// emptyLokiMatrix is an empty Loki matrix response.
+var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+
 // proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
 // bypassing the compat layer and the rate-shift gate. Call this when the caller
 // has already applied any necessary start shift (e.g. the range == step relabel in proxyStatsQueryRange).
-// maxStatsQueryRangeBytes caps the VL stats_query_range response size in the
-// direct (non-coalesced) path. High-cardinality by() clauses (e.g. by(extracted_float_field))
-// on broad selectors can return tens of megabytes per query; the Drilldown Fields
-// page issues ~20 such queries concurrently, causing OOM. When exceeded, an empty
-// Loki matrix is returned rather than buffering an unbounded response.
-const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
-
-// emptyLokiMatrix is returned when a VL stats_query_range response exceeds
-// maxStatsQueryRangeBytes. Grafana renders it as a blank (no-data) series.
-var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
-
-func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) (capExceeded bool) {
-	return p.proxyStatsQueryRangeDirectAnchored(w, r, logsqlQuery, 0)
+func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	p.proxyStatsQueryRangeDirectAnchored(w, r, logsqlQuery, 0)
 }
 
 // proxyStatsQueryRangeDirectAnchored is proxyStatsQueryRangeDirect with an
 // optional tumbling window. When tumblingWindow > 0 and the backend honours the
 // offset arg, buckets of that width are anchored at the request start with
-// Loki's (edge, edge+window] boundaries, and the end becomes inclusive.
-func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *http.Request, logsqlQuery string, tumblingWindow time.Duration) (capExceeded bool) {
-	// High-cardinality single-field count by(field) over a wide range (e.g. the
-	// Drilldown labels-overview pod panel: sum(count_over_time({...,pod!=""} |
-	// detected_level=... [2m])) by (pod)). VL's unbounded stats response is 40MB+
-	// / 25s+ and the bounded global top-N leaves the stacked overview chart sparse
-	// (the busiest churning pods are short-lived and cluster in a few time buckets
-	// — top-200 covered only ~117 of ~585 active buckets vs Loki's dense chart).
-	// Route to the window-sampled /hits path, which samples each time window's
-	// top-K so the merged set spans the whole timeline (dense, time-distributed)
-	// AND suppresses Grafana's 24h residual-chunk right-edge spike. Falls through
-	// to the bounded two-phase, then the direct fetch, when not applicable.
-	if p.tryHighCardCountByWindowedHits(w, r, logsqlQuery) {
-		return true
-	}
-	if out := p.tryHighCardCountByTwoPhase(r, logsqlQuery, tumblingWindow); out != nil {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(out)
-		return true
-	}
-
+// Loki's (edge, edge+window] boundaries: the start is exclusive and the end
+// inclusive.
+//
+// The answer follows Loki's series limit (the tenant's max_query_series). A
+// client other than Logs Drilldown gets Loki's 400 as soon as the response
+// holds more series than the limit. Logs Drilldown gets the busiest series
+// with Loki's partial-result warning: a single-field breakdown over the limit
+// is asked again with VictoriaLogs ranking the values (rankedSingleFieldQuery),
+// so the second response holds at most limit+1 series; any other shape is read
+// whole and capped.
+func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *http.Request, logsqlQuery string, tumblingWindow time.Duration) {
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
 	// stores these as stream labels under the underscore name; OTel data uses the dotted
@@ -177,82 +154,93 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
 	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
 
-	// Keep metric query_range as a single backend request. Window splitting and
-	// window-level cache reuse are for raw log queries only.
-	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
-		startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
-		endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
-		if startOK && endOK {
-			p.setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
+	ctx := r.Context()
+	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	drilldown := isGrafanaDrilldownRequest(r)
+	ranked, rankable := "", false
+	overLimitKey := ""
+	maxSeries := limit
+	if drilldown {
+		ranked, rankable = rankedSingleFieldQuery(logsqlQuery, limit)
+		if rankable {
+			// A breakdown seen over the limit is ranked straight away for a while.
+			// The ranked query returns the same answer under the limit, so a stale
+			// entry costs only the ranking.
+			overLimitKey = "drilldown-over-limit:" + getOrgID(ctx) + ":" + strconv.Itoa(limit) + ":" + logsqlQuery
+			if p.cache != nil {
+				if _, seen := p.cache.Get(overLimitKey); seen {
+					// At most limit+1 series: the limit+1st says the limit was passed.
+					logsqlQuery, rankable, maxSeries = ranked, false, limit+1
+				}
+			}
+		}
+		// Logs Drilldown fires one breakdown per label or field at once; they share
+		// the stats_query_range slots (-stats-query-range-concurrency), and a slot
+		// is free again only after the pause (-stats-query-range-inter-query-delay-ms),
+		// which does not hold back this response.
+		if sem := p.statsQueryRangeSem; sem != nil {
+			select {
+			case <-sem:
+				delay := p.statsQueryRangeInterQueryDelay
+				defer func() {
+					if delay <= 0 {
+						sem <- struct{}{}
+						return
+					}
+					time.AfterFunc(delay, func() { sem <- struct{}{} })
+				}()
+			case <-ctx.Done():
+				p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
+				return
+			}
 		}
 	}
 
-	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
-	// before the full body is allocated. The coalescer's 256 MB cap is too generous
-	// when many concurrent field queries each produce a large stats response.
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
-	if err != nil {
+	body, err := p.fetchStatsQueryRangeBody(r, logsqlQuery, tumblingWindow, maxSeries)
+	if errors.Is(err, errSeriesCountExceeded) && drilldown && rankable {
+		if p.cache != nil {
+			p.setLocalReadCacheWithTTL(overLimitKey, []byte("1"), drilldownOverLimitTTL)
+		}
+		// At most limit+1 series: the limit+1st says the limit was passed.
+		body, err = p.fetchStatsQueryRangeBody(r, ranked, tumblingWindow, limit+1)
+		logsqlQuery = ranked
+	}
+	if errors.Is(err, errSeriesCountExceeded) && drilldown {
+		// Not rankable (or the ranking returned more than it should): read the
+		// whole response and keep the busiest series below.
+		body, err = p.fetchStatsQueryRangeBody(r, logsqlQuery, tumblingWindow, 0)
+	}
+	var upstream *statsUpstreamError
+	switch {
+	case err == nil:
+	case errors.As(err, &upstream):
 		// Grafana-sourced traffic gets the same partial-results carve-out
 		// Loki applies (IsLogsDrilldownRequest in pkg/querier/queryrange/limits.go).
 		// Non-Grafana clients (curl, scripts, /ready probes) still see the
 		// upstream status so they can react meaningfully.
 		if isGrafanaSourcedRequest(r) {
-			p.writeGrafanaStatsFailure(w, err)
-			return false
-		}
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
-		return false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		if isGrafanaSourcedRequest(r) {
-			p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
-			return false
-		}
-		p.writeBackendError(w, resp.StatusCode, errBody)
-		return false
-	}
-
-	// Clients that get Loki's series limit error stop reading once the response
-	// holds more series than the limit allows.
-	counter := &seriesCountingReader{r: resp.Body}
-	if !isGrafanaDrilldownRequest(r) {
-		counter.limit = p.resolvedMaxStatsQuerySeries(r.Context())
-	}
-	body, bodyErr := readBodyLimited(counter, maxStatsQueryRangeBytes)
-	if errors.Is(bodyErr, errSeriesCountExceeded) {
-		p.writeError(w, http.StatusBadRequest, (&seriesLimitError{limit: counter.limit}).Error())
-		return false
-	}
-	if bodyErr != nil {
-		// Response exceeds the 16 MB per-request cap. Before giving up with an
-		// empty matrix, try a global top-N two-phase for single-field count
-		// aggregations: VL's instant single-bucket `| sort by (count) | limit N`
-		// returns just the busiest N field values (~21 KB), and a range query
-		// bounded to those values then fits comfortably. This rescues the
-		// labels-drilldown "pod" panel —
-		//   sum(count_over_time({env="production",pod!=""}
-		//       | detected_level="error" or detected_level="info" [w])) by (pod)
-		// — whose raw per-pod stats response is ~48 MB at 24h (each churning pod
-		// appears once). Without this it rendered an empty chart ("nothing").
-		// The level value-filter disqualifies it from the detectDrilldownSingleField
-		// fast paths (those require pure existence filters), so it lands here.
-		if spec, ok := parseSingleFieldCountSpec(logsqlQuery); ok {
-			field := spec.GroupBy[0]
-			phase1Query := spec.BaseQuery + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
-			if out := p.drilldownTwoPhase(r, phase1Query, spec.BaseQuery, field, r.FormValue("step")); len(out) > 0 {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(out)
-				return true
+			if upstream.status > 0 {
+				p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", upstream.status, upstream.body))
+			} else {
+				p.writeGrafanaStatsFailure(w, upstream.err)
 			}
+			return
 		}
-		// Fallback: empty matrix rather than OOMing on an unbounded response.
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(emptyLokiMatrix)
-		return true
+		if upstream.status > 0 {
+			p.writeBackendError(w, upstream.status, upstream.body)
+		} else {
+			p.writeError(w, statusFromUpstreamErr(upstream.err), upstream.err.Error())
+		}
+		return
+	case errors.Is(err, errSeriesCountExceeded):
+		p.writeError(w, http.StatusBadRequest, (&seriesLimitError{limit: limit}).Error())
+		return
+	case errors.Is(err, errBodyTooLarge):
+		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
+		return
+	default:
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		return
 	}
 
 	// Single parse pass: filter points to the requested end time AND translate
@@ -261,51 +249,92 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
 		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	}
-	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-	// Cap to the busiest maxStatsQuerySeries (default 500, top-N by total count).
-	// This is the path taken by `sum by (pod|trace_id|*_id) (count_over_time(
-	// {...} | detected_level="error" [w]))` from the Drilldown labels page —
-	// the level filter is NOT the `| field!=""` existence pattern, so the query
-	// misses the Drilldown single-field fast paths (which already cap) and lands
-	// here. Without the cap VL's per-pod stats response is ~146k single-point
-	// series at 24h (each churning pod appears once), which squeaks under the
-	// 16 MB body cap and floods Grafana with unrenderable scattered spikes.
-	// the series-limit cap ranks by total count so the busiest pods survive,
-	// not VL's alphabetical first-N (the count==1 noise floor).
+	body = p.trimAndTranslateStatsQRFJ(ctx, body, keepFn, r.FormValue("query"))
+	// Over the limit, Logs Drilldown keeps the busiest series (by total count,
+	// not VictoriaLogs' label order, which would keep the count==1 noise floor
+	// of a churning field) with Loki's warning; every other client has already
+	// stopped reading with Loki's error.
 	out := wrapAsLokiResponse(body, "matrix")
-	if limit := p.resolvedMaxStatsQuerySeries(r.Context()); lokiResultSeriesCount(out) > limit {
-		if err := seriesLimitReached(r.Context(), limit); err != nil {
+	if lokiResultSeriesCount(out) > limit {
+		if err := seriesLimitReached(ctx, limit); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
-			return false
+			return
 		}
 		out = limitLokiResultSeries(out, limit)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
-	return false
 }
 
-// maxDrilldownResponseBytes is the per-request body cap for Drilldown single-field
-// count queries on the DIRECT path (when | limit 500 per-bucket is effective).
-//
-// VL applies | limit per-bucket, not globally. For high-cardinality short-lived
-// fields (trace_id, span_id, session_id): each bucket has different unique values, so
-// 720 buckets × 500/bucket = 360k unique series (~32.8 MB) even with | limit 500.
-// When the direct-path response exceeds this cap, drilldownTwoPhase takes over:
-//
-//	Phase 1 — single-bucket query (step = entire range) → global top-N values, tiny
-//	Phase 2 — range query filtered via field:in(...) → ≤500 series with original step
-//
-// Do NOT inflate the step sent to VL: changing the step breaks Grafana's timestamp
-// alignment expectations and causes "no data" for all fields.
-const maxDrilldownResponseBytes = 32 << 20 // 32 MB — triggers two-phase fallback if exceeded
+// drilldownOverLimitTTL is how long a Logs Drilldown breakdown seen over the
+// series limit is ranked by VictoriaLogs straight away.
+const drilldownOverLimitTTL = 5 * time.Minute
 
-// drilldownSeriesLimit is the maximum series returned for Drilldown single-field
-// count queries: the request tenant's max_query_series. Loki returns partial
-// results with a series-limit warning at this threshold for Drilldown rather
-// than an error, so a Drilldown panel still shows real per-value histogram data.
-func (p *Proxy) drilldownSeriesLimit(ctx context.Context) int {
-	return p.resolvedMaxStatsQuerySeries(ctx)
+// statsUpstreamError is a stats_query_range call VictoriaLogs failed: a
+// transport error (status 0) or an error status with its body.
+type statsUpstreamError struct {
+	status int
+	body   []byte
+	err    error
+}
+
+func (e *statsUpstreamError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("stats_query_range backend status %d", e.status)
+}
+
+// fetchStatsQueryRangeBody runs one stats_query_range call for the request's
+// range and reads its body, bounded by -backend-max-buffered-response-bytes
+// (errBodyTooLarge) and, when maxSeries > 0, by that many series
+// (errSeriesCountExceeded).
+func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tumblingWindow time.Duration, maxSeries int) ([]byte, error) {
+	// Keep metric query_range as a single backend request. Window splitting and
+	// window-level cache reuse are for raw log queries only.
+	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
+		startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
+		endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
+		if startOK && endOK {
+			p.setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
+			// The first window is (start, start+window]: a line exactly at start
+			// belongs to the window before, which no sample covers.
+			params.Set("start", time.Unix(0, startNs+1).UTC().Format(time.RFC3339Nano))
+		}
+	}
+
+	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
+	// before the full body is allocated. The coalescer's 256 MB cap is too generous
+	// when many concurrent field queries each produce a large stats response.
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+	if err != nil {
+		return nil, &statsUpstreamError{err: err}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, &statsUpstreamError{status: resp.StatusCode, body: errBody}
+	}
+	counter := &seriesCountingReader{r: resp.Body, limit: maxSeries}
+	return readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+}
+
+// rankedSingleFieldQuery restricts a single-field grouped count to the limit+1
+// field values with the most lines in the request's time range, ranked by
+// VictoriaLogs in an in() subquery (which inherits the start and end
+// arguments). The response then holds every series when there are at most
+// limit of them and limit+1 otherwise, whatever the field's cardinality:
+// VictoriaLogs still reads the lines twice (the ranking and the buckets), but
+// the response, and what the proxy buffers, stay bounded.
+func rankedSingleFieldQuery(logsqlQuery string, limit int) (string, bool) {
+	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
+	if !ok || limit <= 0 || spec.GroupBy[0] == "_stream" {
+		return "", false
+	}
+	field := spec.GroupBy[0] // as the translator wrote it, quoted where needed
+	ranking := spec.BaseQuery + " | stats by (" + field + ") count() as __lvp_rank | sort by (__lvp_rank desc, " + field + ") | limit " + strconv.Itoa(limit+1) + " | fields " + field
+	return spec.BaseQuery + " | filter " + field + ":in(" + ranking + ")" + logsqlQuery[len(spec.BaseQuery):], true
 }
 
 // lokiResultSeriesCount returns the number of series in a Loki JSON response.
@@ -336,9 +365,8 @@ func fitTopValueFilter(field string, values []string, prefix, suffix string) (st
 // isGrafanaDrilldownRequest reports whether r originates from Grafana Logs Drilldown.
 // Grafana Logs Drilldown sets supportingQueryType="grafana-lokiexplore-app" on every
 // Loki data query; the datasource Go backend translates this to the HTTP header
-// X-Query-Tags: Source=grafana-lokiexplore-app. This header gates Drilldown-specific
-// optimizations (500-series cap, two-phase fallback) so that identical query patterns
-// from Explore or direct API clients are not subject to the series limit.
+// X-Query-Tags: Source=grafana-lokiexplore-app. As in Loki (IsLogsDrilldownRequest),
+// this header turns the series limit error into a partial result with a warning.
 func isGrafanaDrilldownRequest(r *http.Request) bool {
 	tag := strings.ToLower(parseGrafanaSourceTag(r.Header.Values("X-Query-Tags")))
 	return strings.Contains(tag, "lokiexplore") || strings.Contains(tag, "drilldown")
@@ -357,10 +385,22 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 //     Grafana backend on dashboard/explore queries).
 //
 // Returning a false negative is acceptable (a raw curl/scripts query is served
-// normally); a false positive on a non-Grafana client is harmless now that the
-// windowed-/hits gate also requires Drilldown or a high-cardinality field, and
-// the querySplitting residual is handled by per-chunk axis trimming rather than
-// by blanking Grafana-sourced sub-step requests.
+// normally).
+func isGrafanaSourcedRequest(r *http.Request) bool {
+	if isGrafanaDrilldownRequest(r) {
+		return true
+	}
+	if ua := r.Header.Get("User-Agent"); strings.HasPrefix(ua, "Grafana/") {
+		return true
+	}
+	for k := range r.Header {
+		if strings.HasPrefix(strings.ToLower(k), "x-grafana-") {
+			return true
+		}
+	}
+	return false
+}
+
 // isQuerySplitResidual reports whether r is the tiny trailing RESIDUAL chunk of
 // Grafana's 24h+ querySplitting: a Grafana-sourced request whose span is shorter
 // than one step. For a metric (matrix) query such a chunk yields a single-bucket,
@@ -388,7 +428,7 @@ func isQuerySplitResidual(r *http.Request) bool {
 }
 
 // isQuerySplitResidualParams is isQuerySplitResidual with explicit start/end/step.
-// Deep handlers (the /hits leaf) must pass their captured raw values: by the time
+// Deep handlers must pass their captured raw values: by the time
 // a request reaches them the proxy may have rewritten r.URL for downstream VL
 // calls, so r.FormValue("start"/"end"/"step") can be empty. Only the Drilldown-source
 // check reads r (it uses headers, which persist).
@@ -408,222 +448,9 @@ func isQuerySplitResidualParams(r *http.Request, startRaw, endRaw, stepRaw strin
 	return eNs-sNs < stepD.Nanoseconds()
 }
 
-func isGrafanaSourcedRequest(r *http.Request) bool {
-	if isGrafanaDrilldownRequest(r) {
-		return true
-	}
-	if ua := r.Header.Get("User-Agent"); strings.HasPrefix(ua, "Grafana/") {
-		return true
-	}
-	for k := range r.Header {
-		if strings.HasPrefix(strings.ToLower(k), "x-grafana-") {
-			return true
-		}
-	}
-	return false
-}
-
-// isLikelyHighCardinalityField returns true for field names whose values are
-// typically unique per log entry — trace/span IDs, session tokens, request keys.
-// For these fields the direct VL path (| limit 500 per bucket) still produces
-// numBuckets×500 unique series (e.g. 720×500=360k for a 12h/60s range), which
-// overflows maxDrilldownResponseBytes and forces two-phase fallback every time.
-// Detecting them eagerly skips the wasted 32 MB read-and-reject round trip.
-func isLikelyHighCardinalityField(name string) bool {
-	lower := strings.ToLower(name)
-	// Exact common names first (fast path, no allocation).
-	switch lower {
-	case "trace_id", "span_id", "parent_id", "session_id",
-		"request_id", "correlation_id", "transaction_id",
-		"traceid", "spanid", "parentid",
-		"trace.id", "span.id":
-		return true
-	}
-	// Suffix patterns — anything ending in _id/.id/_uuid/_token/_hash/_key is
-	// likely to carry a unique-per-request value.
-	return strings.HasSuffix(lower, "_id") ||
-		strings.HasSuffix(lower, ".id") ||
-		strings.HasSuffix(lower, "_uuid") ||
-		strings.HasSuffix(lower, ".uuid") ||
-		strings.HasSuffix(lower, "_token") ||
-		strings.HasSuffix(lower, "_hash") ||
-		strings.HasSuffix(lower, "_key")
-}
-
-// drilldownCardinalityCache remembers which {orgID, base, field} triples have
-// already overflowed maxDrilldownResponseBytes on the direct path. On subsequent
-// requests (e.g. after a Grafana filter change re-fires all N field queries), the
-// cache lets proxyStatsQueryRangeDrilldown skip the direct attempt and go straight
-// to the cheaper two-phase path.
-type drilldownCardinalityCache struct {
-	mu      sync.RWMutex
-	entries map[string]time.Time // key → expiry
-}
-
-const drilldownCardinalityCacheTTL = 5 * time.Minute
-
-func newDrilldownCardinalityCache() *drilldownCardinalityCache {
-	return &drilldownCardinalityCache{entries: make(map[string]time.Time)}
-}
-
-func (c *drilldownCardinalityCache) key(orgID, base, field string) string {
-	return orgID + "\x00" + base + "\x00" + field
-}
-
-func (c *drilldownCardinalityCache) isHigh(orgID, base, field string) bool {
-	k := c.key(orgID, base, field)
-	c.mu.RLock()
-	exp, ok := c.entries[k]
-	c.mu.RUnlock()
-	return ok && time.Now().Before(exp)
-}
-
-func (c *drilldownCardinalityCache) markHigh(orgID, base, field string) {
-	k := c.key(orgID, base, field)
-	c.mu.Lock()
-	c.entries[k] = time.Now().Add(drilldownCardinalityCacheTTL)
-	c.mu.Unlock()
-}
-
-// extractStatsGroupByFields returns the field names from a LogsQL "| stats by (...)"
-// clause. Used by the field batcher to collect the VL-side field names (including
-// underscore fallbacks added by addUnderscorefallbackByLabels) for the batched query.
-func extractStatsGroupByFields(logsqlQuery string) []string {
-	spec, ok := parseStatsCompatSpec(logsqlQuery)
-	if !ok {
-		return nil
-	}
-	return spec.GroupBy
-}
-
-// isHighCardinalityFieldName returns true for fields whose values are nearly
-// unique per log entry (trace_id, span_id, request_id, …). Including these in
-// a batch stats query multiplies the combination space by the number of unique
-// values (potentially millions) and saturates VL CPU. Beyond 6 h the proxy
-// returns empty rather than issuing the query.
-func isHighCardinalityFieldName(name string) bool {
-	return strings.HasSuffix(name, "_id") || strings.HasSuffix(name, "_uid")
-}
-
-// appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
-// descending and limit to N unique groups. This pushes the cardinality cap into
-// VL so only the top-N series are transmitted to the proxy — critical for
-// high-cardinality fields (trace_id, span_id) where unbound VL responses are
-// 50 MB+ for 300k+ unique values over long time ranges.
-// Returns query unchanged if it does not end with the bare count() token.
-func appendDrilldownSeriesLimit(query string, limit int) string {
-	q := strings.TrimSpace(query)
-	if !strings.HasSuffix(q, "count()") {
-		return query
-	}
-	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
-}
-
-// drilldownShouldEagerTwoPhase returns true when the proxy can predict that the
-// direct VL path (| limit 500 per bucket → readBodyLimited) will overflow
-// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Two
-// independent signals trigger eager two-phase:
-//
-//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …) —
-//     these fields carry unique-per-request values, so each time bucket produces a
-//     different set of values; | limit 500 per bucket ≠ global top 500.
-//
-//  2. Cardinality cache: a previous request for {orgID, cleanBase, field} already
-//     overflowed the cap, so subsequent re-renders (triggered by Grafana filter/time
-//     changes) skip the direct attempt entirely.
-func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field string) bool {
-	if isLikelyHighCardinalityField(field) {
-		return true
-	}
-	orgID := r.Header.Get("X-Scope-OrgID")
-	return p.drilldownCardCache != nil && p.drilldownCardCache.isHigh(orgID, cleanBase, field)
-}
-
-// drilldownStatsCacheTTL is the response cache TTL for Drilldown single-field
-// count queries. Drilldown fires 20–100 concurrent query_range calls on every
-// tab open or re-render; a 5-minute cache window eliminates all VL calls for
-// re-renders and periodic Grafana auto-refreshes within that window. The cache
-// is checked before the concurrency semaphore so cached responses bypass the
-// semaphore entirely. With coarsened steps and bucketed timestamps the key is
-// stable across minor Grafana panel-width changes so the window is effectively
-// used.
-const drilldownStatsCacheTTL = 5 * time.Minute
-
-// maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
-// Drilldown stats_query_range call for ranges > drilldownHybridThreshold.
-// maxDrilldownStatsBucketsShort raises the cap for ranges ≤ drilldownHybridThreshold:
-// more buckets reduce the expansion factor (coarseStep/fineStep) so sub-bars reflect
-// real VL variation and the precision slider in Grafana Drilldown has a visible effect.
-//
-// Both caps are aligned at 120 so the transition at drilldownHybridThreshold (12h)
-// is seamless — a 13h query produces ~120 bars at ~390s step instead of the previous
-// ~30 bars at ~1560s step. With high-card groupings already capped at the series limit,
-// (500 series), the worst-case stats matrix is 120 × 500 = 60k cells ≈ 3 MB on the wire,
-// well within maxDrilldownResponseBytes (32 MB).
-const (
-	maxDrilldownStatsBuckets      = DefaultDrilldownMaxStatsBuckets
-	maxDrilldownStatsBucketsShort = DefaultDrilldownMaxStatsBuckets
-)
-
-// drilldownLowCardThreshold is the cardinality (distinct grouped-field values)
-// at or below which the hybrid path skips step coarsening — for stream labels
-// like app/env/cluster/level (1–10 values) the result set stays small even at
-// native resolution, so we match Loki's per-bucket point count instead of the
-// 30-bucket cap.
-const drilldownLowCardThreshold = 50
-
-// drilldownLowCardStatsBuckets caps buckets for the low-cardinality hybrid path.
-// 1000 buckets × 50-value cardinality = 50k row response, well within the 32 MB
-// drilldown cap even with JSON serialization overhead. Crucially, this is large
-// enough that Grafana's native Drilldown steps (worst case 2d→300s = 576 buckets,
-// 7d→1200s = 504 buckets) are always preserved at the client's requested resolution.
-// The floor only kicks in when a client sends an absurdly fine step (e.g. step=1s at 7d).
-const drilldownLowCardStatsBuckets = 1000
-
-// drilldownHighCardStatsBuckets is the tighter bucket cap used when the by-field
-// is detected as truly high-cardinality (trace_id, span_id, *_id, *_uid). VL's
-// stats pipe materializes one entry per (bucket × distinct-value) pair before the
-// top-N heap can trim, so the memory cost scales with cardinality × buckets.
-// 30 buckets × ~500k unique trace_ids ≈ 15M map entries ≈ 750 MB — within VL's 40%
-// stats memory budget but tight enough that 120 buckets (3 GB) is risky.
-const drilldownHighCardStatsBuckets = 30
-
-// drilldownHybridThreshold is the range above which proxyStatsQueryRangeDrilldown
-// switches to the hybrid path: field_values (O(column-index), ~30ms at any range)
-// for value discovery over the full range, plus a capped stats_query_range for the
-// recent histogram window only. Below this threshold the direct/two-phase path is used.
-// Set to 12h so that 6h ranges (which Grafana's sliding "now-6h" window occasionally
-// exceeds by ~30s due to time rounding) stay on the full-range non-hybrid path and
-// show complete coverage rather than the ~1h adaptive histogram window.
-// drilldownHybridThreshold is kept as the documented boundary between short and
-// long Drilldown ranges; -drilldown-max-stats-buckets now bounds both.
-var _ = 12 * time.Hour
-
-// drilldownFVEntry is a field value returned by the VL field_values endpoint,
-// with its hit count for use in single-point matrix synthesis.
-type drilldownFVEntry struct {
-	Value string
-	Hits  int64
-}
-
-// vlStatsNameKeyRE matches VL's internal __name__ column marker that appears in
-// stats_query_range metric objects (e.g. "__name__":"_c",). VL adds it for
-// Prometheus compatibility; Loki/Grafana clients don't expect it.
-var vlStatsNameKeyRE = regexp.MustCompile(`"__name__":"[^"]*",?`)
-
-// stripVLStatsNameKey removes VL's __name__ column marker from a stats_query_range
-// body. Called in the hybrid path where label translation is skipped — we need to
-// clean __name__ without invoking ensureDetectedLevel which would rename level→detected_level.
-func stripVLStatsNameKey(body []byte) []byte {
-	if !bytes.Contains(body, []byte(`"__name__"`)) {
-		return body
-	}
-	return vlStatsNameKeyRE.ReplaceAll(body, nil)
-}
-
 // renameStatsBodyMetricKey renames a JSON metric key in a stats_query_range
-// response body. Used in the hybrid drilldown path when the VL field name
-// (e.g. "level") differs from the Loki label name (e.g. "detected_level").
+// response body, where the VL field name (e.g. "level") differs from the Loki
+// label name (e.g. "detected_level").
 func renameStatsBodyMetricKey(body []byte, from, to string) []byte {
 	if from == to || len(body) == 0 {
 		return body
@@ -631,1838 +458,8 @@ func renameStatsBodyMetricKey(body []byte, from, to string) []byte {
 	return bytes.ReplaceAll(body, []byte(`"`+from+`":`), []byte(`"`+to+`":`))
 }
 
-// synthesizeDrilldownMatrix builds a Loki matrix response with one data point per
-// field value at endSec. Used when stats_query_range is skipped (high-cardinality)
-// or as the fallback when VL returns an error.
-// drilldownSynthesizeBuckets is the number of stub buckets per series for the
-// synthesize-only path. Spreading the total hits across this many points produces
-// a visible "presence" band in Grafana even when field_values cannot give us a
-// real histogram (high-cardinality fields where the limit truncated hits to 0).
-// Matches maxDrilldownStatsBuckets so the high-card synthesize path keeps the
-// same horizontal resolution as the stats path at wide ranges.
-const drilldownSynthesizeBuckets = maxDrilldownStatsBuckets
-
-func synthesizeDrilldownMatrix(lokiField string, entries []drilldownFVEntry, endSec int64) []byte {
-	return synthesizeDrilldownMatrixSpread(lokiField, entries, endSec, endSec, 0)
-}
-
-// synthesizeDrilldownMatrixSpread builds a Loki matrix response and, when
-// (startSec, stepSec) describe a non-degenerate range, evenly distributes each
-// entry's total hits across drilldownSynthesizeBuckets points spanning that range.
-// Used by the hybrid path's high-cardinality and fallback branches so the chart
-// renders as a populated band rather than a single dot at the right edge.
-//
-// stepSec=0 (or startSec==endSec) falls back to a single point at endSec for
-// backwards compatibility with callers that have no range context.
-func synthesizeDrilldownMatrixSpread(lokiField string, entries []drilldownFVEntry, startSec, endSec, stepSec int64) []byte {
-	if len(entries) == 0 {
-		return emptyLokiMatrix
-	}
-	// Number of stub points per series and the step between them. When the caller
-	// supplies a usable range, spread across drilldownSynthesizeBuckets points
-	// anchored so the LAST point lands exactly at endSec.
-	nPoints := int64(1)
-	bucketStep := int64(0)
-	firstTs := endSec
-	if stepSec > 0 && endSec > startSec {
-		rangeSec := endSec - startSec
-		bucketStep = rangeSec / drilldownSynthesizeBuckets
-		if bucketStep < stepSec {
-			bucketStep = stepSec
-		}
-		// Snap bucketStep up to a step-aligned value so timestamps stay clean.
-		if rem := bucketStep % stepSec; rem != 0 {
-			bucketStep += stepSec - rem
-		}
-		nPoints = rangeSec/bucketStep + 1
-		if nPoints < 1 {
-			nPoints = 1
-		}
-		firstTs = endSec - (nPoints-1)*bucketStep
-	}
-
-	var b bytes.Buffer
-	b.Grow(len(entries)*int(nPoints)*24 + 64)
-	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
-	for i, e := range entries {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(`{"metric":{"`)
-		writeJSONEscaped(&b, lokiField)
-		b.WriteString(`":"`)
-		writeJSONEscaped(&b, e.Value)
-		b.WriteString(`"},"values":[`)
-		// Divide total hits across the stub buckets so the sum still matches
-		// the total. Floor to 1 when hits>0 so the band remains visible.
-		perBucket := e.Hits / nPoints
-		if perBucket < 1 && e.Hits > 0 {
-			perBucket = 1
-		}
-		perStr := strconv.FormatInt(perBucket, 10)
-		for j := int64(0); j < nPoints; j++ {
-			if j > 0 {
-				b.WriteByte(',')
-			}
-			b.WriteByte('[')
-			b.WriteString(strconv.FormatInt(firstTs+j*bucketStep, 10))
-			b.WriteString(`,"`)
-			b.WriteString(perStr)
-			b.WriteString(`"]`)
-		}
-		b.WriteString(`]}`)
-	}
-	b.WriteString(`]}}`)
-	return b.Bytes()
-}
-
-// writeJSONEscaped writes s to b, escaping only the characters that must be escaped
-// in a JSON string value (quotes and backslashes). Field names/values from VL do not
-// contain control characters so this fast path is sufficient.
-func writeJSONEscaped(b *bytes.Buffer, s string) {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '"' || c == '\\' {
-			b.WriteByte('\\')
-		}
-		b.WriteByte(c)
-	}
-}
-
-// mergeDrilldownWithFieldValues merges a stats_query_range Loki matrix (statsBody,
-// covering only the recent histogram window) with field_values entries (covering the
-// full requested range). Series present in statsBody keep their per-bucket histogram;
-// series present only in field_values get evenly-distributed stub bars spanning the
-// full range (not just a single spike at endSec) so Grafana renders a complete
-// time-series chart rather than an empty-looking chart with one point at the right edge.
-//
-// For stats-covered series the stats bars already cover the histogram window; this
-// function additionally prefixes averaged stubs from startSec to the first stats
-// timestamp so the full range appears populated.
-// field_values entries) into one zero-filled axis with stub prefixes for
-// values missing from the stats window. Each branch maps to a real merge case
-// (no-stats, stats-only, fv-only, fv-with-stats-prefix, …) documented inline.
-//
-//nolint:gocyclo // Merges two heterogeneous response shapes (stats matrix +
-func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries []drilldownFVEntry, endSec, fullRangeNs, histStepNs int64) []byte {
-	v, err := fj.ParseBytes(statsBody)
-	if err != nil || v == nil {
-		startSec := endSec - fullRangeNs/int64(time.Second)
-		return synthesizeDrilldownMatrixSpread(lokiField, entries, startSec, endSec, histStepNs/int64(time.Second))
-	}
-	result := v.GetArray("data", "result")
-
-	// Build value → total-hits lookup (field_values covers the full range).
-	fvHits := make(map[string]int64, len(entries))
-	for _, e := range entries {
-		fvHits[e.Value] = e.Hits
-	}
-
-	// Track which values already have histogram data and find the stats window start.
-	inStats := make(map[string]struct{}, len(result))
-	histStartSec := endSec // sentinel; updated below
-	for _, item := range result {
-		val := string(item.GetStringBytes("metric", lokiField))
-		if val != "" {
-			inStats[val] = struct{}{}
-		}
-		// Find minimum timestamp across all stats series — that is the histogram window start.
-		if values := item.GetArray("values"); len(values) > 0 {
-			if arr := values[0].GetArray(); len(arr) >= 1 {
-				if ts := arr[0].GetInt64(); ts > 0 && ts < histStartSec {
-					histStartSec = ts
-				}
-			}
-		}
-	}
-
-	// histStepNs here is the full-range stub step (stubStepNs from the caller).
-	// The hybrid path no longer calls expandDrilldownStep after merge, so stubs
-	// and stats may have different resolutions — this is intentional.
-	startSec := endSec - fullRangeNs/int64(time.Second)
-	var nFullStub, stubStepSec int64
-	if histStepNs > 0 {
-		stubStepSec = histStepNs / int64(time.Second)
-		if stubStepSec < 1 {
-			stubStepSec = 1
-		}
-		nFullStub = fullRangeNs / histStepNs // e.g. 24h/1h = 24 stubs for a 24h range with 1h histStep
-	}
-
-	// stubCount returns the per-bucket hit count averaged across the full range.
-	stubCount := func(totalHits int64) int64 {
-		if nFullStub < 1 {
-			return totalHits
-		}
-		c := totalHits / nFullStub
-		if c < 1 {
-			c = 1
-		}
-		return c
-	}
-
-	// writeStubs emits nBuckets time-value pairs starting at tsSec with stepSec.
-	writeStubs := func(buf *bytes.Buffer, tsSec, stepSec, nBuckets, hitsPerBucket int64, firstPoint *bool) {
-		hitsStr := strconv.FormatInt(hitsPerBucket, 10)
-		for i := int64(0); i < nBuckets; i++ {
-			if !*firstPoint {
-				buf.WriteByte(',')
-			}
-			*firstPoint = false
-			buf.WriteByte('[')
-			buf.WriteString(strconv.FormatInt(tsSec+i*stepSec, 10))
-			buf.WriteString(`,"`)
-			buf.WriteString(hitsStr)
-			buf.WriteString(`"]`)
-		}
-	}
-
-	endStr := strconv.FormatInt(endSec, 10)
-	var b bytes.Buffer
-	b.Grow(len(statsBody) + len(entries)*int(nFullStub+1)*24 + 64)
-	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
-
-	first := true
-	for _, item := range result {
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-
-		// Prefix pre-stats window with averaged stubs so the full range is populated.
-		totalHits := fvHits[string(item.GetStringBytes("metric", lokiField))]
-		preStatsGapSec := histStartSec - startSec
-
-		if preStatsGapSec > 0 && stubStepSec > 0 && totalHits > 0 {
-			preNBuckets := preStatsGapSec / stubStepSec
-			if preNBuckets > 0 {
-				b.WriteString(`{"metric":`)
-				if m := item.Get("metric"); m != nil {
-					b.Write(m.MarshalTo(nil))
-				} else {
-					b.WriteString(`{}`)
-				}
-				b.WriteString(`,"values":[`)
-				firstPoint := true
-				hitsPerBucket := stubCount(totalHits)
-				// Anchor stubs to histStartSec grid: last stub lands exactly at
-				// histStartSec-stubStepSec, eliminating the 1-2 step gap that
-				// would otherwise appear at the transition to the stats region.
-				alignedPreStart := histStartSec - preNBuckets*stubStepSec
-				writeStubs(&b, alignedPreStart, stubStepSec, preNBuckets, hitsPerBucket, &firstPoint)
-				for _, vv := range item.GetArray("values") {
-					if !firstPoint {
-						b.WriteByte(',')
-					}
-					firstPoint = false
-					b.Write(vv.MarshalTo(nil))
-				}
-				b.WriteString(`]}`)
-				continue
-			}
-		}
-		// No pre-stats gap or no fv data: emit stats item verbatim.
-		b.Write(item.MarshalTo(nil))
-	}
-
-	// Emit field_values-only entries with full-range stub bars — BUT ONLY when
-	// stats returned no real data. With real stats coverage, adding 500 stub-only
-	// series (each value=1 across N buckets) creates a synthetic "flat baseline"
-	// equal to ~500 in every time bucket. Grafana's stacked-bar Y-axis then
-	// auto-scales to (500 baseline + real data spikes) — and the real per-bucket
-	// variation looks like a thin band on top of a large flat floor. The user-
-	// visible symptom is "24h chart shows only a few minutes of data" because
-	// only the recent spikes stand out against the baseline.
-	//
-	// When stats has data, that data alone IS the useful signal. Skip stub-fill
-	// so the chart's Y-axis reflects real per-bucket counts (typically 1-30 per
-	// pod per coarse window) and bars span the actual range with visible variation.
-	if len(inStats) == 0 {
-		for _, e := range entries {
-			if !first {
-				b.WriteByte(',')
-			}
-			first = false
-			b.WriteString(`{"metric":{"`)
-			writeJSONEscaped(&b, lokiField)
-			b.WriteString(`":"`)
-			writeJSONEscaped(&b, e.Value)
-			b.WriteString(`"},"values":[`)
-
-			if nFullStub > 0 && stubStepSec > 0 {
-				firstPoint := true
-				// Align stub start UP to step boundary so the stub grid matches VL's
-				// step-aligned stats grid. Without alignment, stats and stub timestamps
-				// land at different offsets, doubling the time-axis tick count and
-				// scattering data across cells Grafana cannot reconcile.
-				alignedStart := startSec
-				if rem := alignedStart % stubStepSec; rem != 0 {
-					alignedStart += stubStepSec - rem
-				}
-				writeStubs(&b, alignedStart, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
-			} else {
-				// Fallback when we can't compute a grid: single point at endSec.
-				b.WriteByte('[')
-				b.WriteString(endStr)
-				b.WriteString(`,"`)
-				b.WriteString(strconv.FormatInt(e.Hits, 10))
-				b.WriteString(`"]`)
-			}
-			b.WriteString(`]}`)
-		}
-	}
-	b.WriteString(`]}}`)
-	return b.Bytes()
-}
-
-// drilldownNiceSteps are the candidate step values to snap to after coarsening.
-var drilldownNiceSteps = []time.Duration{
-	30 * time.Second,
-	60 * time.Second,
-	2 * time.Minute,
-	3 * time.Minute,
-	5 * time.Minute,
-	10 * time.Minute,
-	15 * time.Minute,
-	30 * time.Minute,
-	time.Hour,
-	2 * time.Hour,
-	6 * time.Hour,
-	12 * time.Hour,
-	24 * time.Hour,
-}
-
-// highCardStepFloor enforces a tighter step floor on the hybrid path when the
-// by-field is detected as truly high-cardinality (trace_id, span_id, *_id, *_uid).
-// VL's stats pipe materializes one map entry per (bucket × distinct-value) pair
-// before the top-N heap can trim, so memory cost scales with cardinality × buckets.
-// Capping the number of buckets at drilldownHighCardStatsBuckets keeps the worst-
-// case stats map within VL's 40% memory budget even for 500k+ unique values.
-//
-// Returns the original effectiveStepRaw unchanged if its parsed step already
-// satisfies the floor. The returned step is snapped UP to the next "nice" duration
-// for clean VL timestamps. Unparseable input passes through.
-func highCardStepFloor(effectiveStepRaw string, rangeNs int64) string {
-	d, ok := parsePositiveStepDuration(effectiveStepRaw)
-	if !ok || rangeNs <= 0 {
-		return effectiveStepRaw
-	}
-	hcMinStep := time.Duration(rangeNs) / drilldownHighCardStatsBuckets
-	if hcMinStep <= d {
-		return effectiveStepRaw
-	}
-	snapped := hcMinStep
-	for _, nice := range drilldownNiceSteps {
-		if hcMinStep <= nice {
-			snapped = nice
-			break
-		}
-	}
-	return strconv.FormatInt(int64(snapped/time.Second), 10) + "s"
-}
-
-// relaxStepForLowCardinality returns a finer effective step when the by-field
-// has low cardinality and can therefore be aggregated cheaply at native step.
-// originalStep is the step the client requested (before coarsening); cardinality
-// is the number of distinct values returned by the field_values fast tier;
-// rangeNs is the requested time range in nanoseconds.
-//
-// Returns (newStep, true) only when:
-//   - cardinality is small (≤ drilldownLowCardThreshold)
-//   - cardinality is known to be the full distinct set, i.e. not truncated by the limit param
-//   - the original step parses
-//
-// The returned step floor is rangeNs/drilldownLowCardStatsBuckets so VL still
-// stays bounded for very wide ranges.
-func relaxStepForLowCardinality(originalStepRaw string, cardinality int, rangeNs int64, seriesLimit int) (string, bool) {
-	if cardinality <= 0 || cardinality > drilldownLowCardThreshold {
-		return "", false
-	}
-	if seriesLimit > 0 && cardinality >= seriesLimit {
-		// field_values was truncated by the series limit; we don't know the true
-		// cardinality so assume high-card and keep the coarsened step.
-		return "", false
-	}
-	origStep, ok := parsePositiveStepDuration(originalStepRaw)
-	if !ok || origStep <= 0 || rangeNs <= 0 {
-		return "", false
-	}
-	minStep := time.Duration(rangeNs) / drilldownLowCardStatsBuckets
-	finerStep := origStep
-	if finerStep < minStep {
-		finerStep = minStep
-	}
-	return strconv.FormatInt(int64(finerStep/time.Second), 10) + "s", true
-}
-
-// coarsenDrilldownStep returns an effective step that is at least step but
-// ensures the range [startRaw, endRaw] contains at most maxDrilldownStatsBuckets
-// buckets (or maxDrilldownStatsBucketsShort for ranges ≤6h). The result is
-// snapped up to the next "nice" step so VL timestamps are round numbers.
-// If the requested step already satisfies the budget, it is returned unchanged.
-func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration, maxBuckets int) time.Duration {
-	if step <= 0 {
-		return step
-	}
-	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
-	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
-	if !ok1 || !ok2 || endNs <= startNs {
-		return step
-	}
-	rangeNs := endNs - startNs
-	cap := int64(maxBuckets)
-	minStep := time.Duration(rangeNs) / time.Duration(cap)
-	if minStep <= step {
-		return step
-	}
-	for _, nice := range drilldownNiceSteps {
-		if minStep <= nice {
-			return nice
-		}
-	}
-	return minStep
-}
-
-// drilldownStatsCacheKey returns a cache key for a Drilldown single-field
-// count response. Both start and end are bucketed to 5-minute (or effective-step)
-// granularity to absorb Grafana's sliding "last N h" window: for a "last 6h"
-// panel, both start and end drift by ~30 s on every Grafana refresh, producing
-// a unique key every tick and defeating the cache. Bucketing both timestamps to
-// the same granularity keeps the key stable within a 5-minute window.
-//
-// The step is coarsened via coarsenDrilldownStep before being written to the
-// key. Grafana derives the step from the panel's pixel width, so minor window
-// resizes produce slightly different step values (e.g. 59s vs 60s). Including
-// the raw step would bust the cache on every resize; the coarsened step is
-// stable for the entire range/bucket combination, eliminating spurious misses.
-func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
-	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
-	effectiveStep := time.Duration(0)
-	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		effectiveStep = coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets)
-	}
-	bucket := 5 * time.Minute
-	if effectiveStep > bucket {
-		bucket = effectiveStep
-	}
-	startBucketed := bucketTimestampString(startRaw, bucket)
-	endBucketed := bucketTimestampString(endRaw, bucket)
-	var b strings.Builder
-	b.WriteString("drilldown_stats:")
-	b.WriteString(r.Header.Get("X-Scope-OrgID"))
-	b.WriteByte(':')
-	b.WriteString(r.FormValue("query"))
-	b.WriteByte(':')
-	b.WriteString(startBucketed)
-	b.WriteByte(':')
-	b.WriteString(endBucketed)
-	b.WriteByte(':')
-	if effectiveStep > 0 {
-		b.WriteString(strconv.FormatInt(int64(effectiveStep.Seconds()), 10))
-		b.WriteByte('s')
-	} else {
-		b.WriteString(stepRaw)
-	}
-	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
-		b.WriteString(":auth:")
-		b.WriteString(fp)
-	}
-	return b.String()
-}
-
-// maxDrilldownExpansionFactor caps how many fine sub-buckets one coarse bucket
-// may be expanded into. When the Grafana-requested step is very fine (e.g. 20 s)
-// but the VL coarse step is large (e.g. 6 h for a 7-day range), dividing the
-// per-bucket count by 1080 makes every bar effectively invisible. Above this
-// threshold we return the coarse data as-is so bar heights remain readable.
-const maxDrilldownExpansionFactor = 120
-
-// expandDrilldownStep expands a Loki matrix JSON response produced at coarseStepRaw
-// into fineStepRaw resolution by replicating each coarse bucket value across
-// (coarseStep/fineStep) fine sub-buckets, each carrying the full coarseValue.
-//
-// This converts e.g. 25 sparse bars (3600s step, 24h) into 288 dense bars (300s
-// step), matching Loki's visual resolution without additional VL queries. The full
-// coarse value is replicated (not divided) into each sub-bucket so that sparse
-// high-cardinality fields (trace_id, span_id) remain visible. Relative bar heights
-// across series within the same field are preserved since all series use the same
-// factor. Sub-buckets whose timestamps exceed endRaw are omitted (edge bucket handling).
-//
-// Returns body unchanged when fineStep >= coarseStep, factor > maxDrilldownExpansionFactor
-// (to preserve readable bar heights for long ranges), or either step cannot be parsed.
-func expandDrilldownStep(body []byte, fineStepRaw, coarseStepRaw, endRaw string) []byte {
-	fineStep, fineOK := parsePositiveStepDuration(fineStepRaw)
-	coarseStep, coarseOK := parsePositiveStepDuration(coarseStepRaw)
-	if !fineOK || !coarseOK || fineStep <= 0 || coarseStep <= fineStep {
-		return body
-	}
-	factor := int64(coarseStep / fineStep)
-	if factor <= 1 || factor > maxDrilldownExpansionFactor {
-		return body
-	}
-	fineStepSec := int64(fineStep / time.Second)
-
-	var endSec int64
-	if endNs, ok := parseLokiTimeToUnixNano(endRaw); ok {
-		endSec = endNs / int64(time.Second)
-	}
-
-	v, parseErr := fj.ParseBytes(body)
-	if parseErr != nil {
-		return body
-	}
-	resultArr := v.GetArray("data", "result")
-	if len(resultArr) == 0 {
-		return body
-	}
-
-	var buf bytes.Buffer
-	buf.Grow(len(body) * int(factor))
-	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
-
-	scratch := make([]byte, 0, 512)
-	for si, series := range resultArr {
-		if si > 0 {
-			buf.WriteByte(',')
-		}
-		buf.WriteString(`{"metric":`)
-		if metric := series.Get("metric"); metric != nil {
-			scratch = metric.MarshalTo(scratch[:0])
-			buf.Write(scratch)
-		} else {
-			buf.WriteString(`{}`)
-		}
-		buf.WriteString(`,"values":[`)
-
-		firstPoint := true
-		for _, pair := range series.GetArray("values") {
-			arr := pair.GetArray()
-			if len(arr) < 2 {
-				continue
-			}
-			tsCoarse := arr[0].GetInt64()
-			coarseVal, parseFloatErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
-			if parseFloatErr != nil {
-				continue
-			}
-			// Replicate the full coarse count into every fine sub-bucket rather than
-			// dividing by factor. Dividing makes sparse fields (trace_id, span_id with
-			// 1-3 occurrences per coarse window) produce sub-1 values that are nearly
-			// invisible in Grafana's bar chart. Relative proportions between series are
-			// preserved since all series in the same field chart use the same factor.
-			//
-			// Format with precision -1 (shortest representation) to match Loki's
-			// integer-string output ("78" not "78.00") for whole counts, while still
-			// rendering floats correctly when fractional values come up from rate-style
-			// aggregations.
-			subValStr := strconv.FormatFloat(coarseVal, 'f', -1, 64)
-
-			for i := int64(0); i < factor; i++ {
-				tsFine := tsCoarse + i*fineStepSec
-				if endSec > 0 && tsFine > endSec {
-					break
-				}
-				if !firstPoint {
-					buf.WriteByte(',')
-				}
-				firstPoint = false
-				buf.WriteByte('[')
-				scratch = strconv.AppendInt(scratch[:0], tsFine, 10)
-				buf.Write(scratch)
-				buf.WriteString(`,"`)
-				buf.WriteString(subValStr)
-				buf.WriteString(`"]`)
-			}
-		}
-
-		buf.WriteString(`]}`)
-	}
-
-	buf.WriteString(`]}}`)
-	return buf.Bytes()
-}
-
-// proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
-//
-// Response cache path: checks a 60-second Drilldown-specific cache before
-// acquiring the concurrency semaphore. Re-renders (filter interactions, Grafana
-// ticks, second tab) are served from cache with zero VL calls.
-//
-// Fast path (low-cardinality fields, short ranges): appends VL-side sort+limit
-// so only the busiest values are transmitted per time bucket, then the proxy
-// caps the result to the series limit.
-//
-// Eager two-phase path: detected via drilldownShouldEagerTwoPhase (HC field
-// name, range > 60 buckets, or cached overflow). Bypasses the direct VL attempt
-// and goes straight to drilldownTwoPhase — one global sort (Phase 1) + filtered
-// scan (Phase 2) instead of per-bucket sorts.
-//
-// Fallback two-phase path: when the direct response still overflows
-// maxDrilldownResponseBytes (unknown HC field, first request for a new selector),
-// records the decision in drilldownCardCache and falls through to two-phase.
-//
-// cleanBase is the stream-selector base without the field existence filter.
-// field is the grouped field name. Both come from detectDrilldownSingleField.
-func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
-	// Check the 5-minute Drilldown response cache before any VL work.
-	drillCacheKey := p.drilldownStatsCacheKey(r)
-	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		return
-	}
-
-	// Apply transforms up-front (before both batcher and semaphore paths) so they
-	// run exactly once regardless of which path handles the request.
-	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
-	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
-	// Keep pre-limit query for two-phase fallback (Phase 1 needs it without the
-	// sort+limit suffix so it can set step = entire range for a single bucket).
-	effectiveForFallback := logsqlQuery
-
-	// Coarsen the step to at most range/maxDrilldownStatsBuckets.
-	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
-	effectiveStepRaw := stepRaw
-	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets); coarsened != d {
-			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
-		}
-	}
-
-	// Hybrid path (uses /hits internally) runs for ALL ranges, not just > 6h.
-	//
-	// Why all ranges: Grafana's Loki datasource splits metric queries at the 24h
-	// boundary (oneDayMs in querySplitting.ts) and Drilldown follows the same path
-	// for >24h panels. A 25h request becomes a 24h chunk + a ~1h leftover chunk;
-	// 7d becomes 7 × 24h chunks. Each chunk is a separate sub-request to the proxy.
-	//
-	// If the long chunk uses /hits top-N (20 values active across 24h) and the
-	// short leftover falls through to stats_query_range (up to 500 values active
-	// in 1h, mostly different from the 24h top-N), Grafana's mergeFrames unions
-	// the two series sets. The 500 leftover-only series have data ONLY in the
-	// rightmost 1h window — producing a tall spike at the right edge with the
-	// 24h distribution dwarfed underneath. Lowering the hybrid threshold to 0 so
-	// every chunk uses /hits keeps the series set bounded to top-20 per chunk
-	// regardless of duration, dramatically reducing the chunk-2-only series count
-	// and the resulting spike.
-	{
-		startNs, sok := parseLokiTimeToUnixNano(startRaw)
-		endNs, eok := parseLokiTimeToUnixNano(endRaw)
-		if sok && eok && endNs > startNs {
-			p.proxyStatsQueryRangeDrilldownHybrid(w, r, logsqlQuery, cleanBase, field, effectiveStepRaw, startNs, endNs, drillCacheKey, origGroupBy)
-			return
-		}
-	}
-
-	// Field batcher (short ranges ≤ drilldownHybridThreshold only): folds N concurrent
-	// single-field queries into one multi-field VL call. Wide ranges are handled by
-	// the hybrid path above which caps the scan window, so batcher only runs here for
-	// ranges where a full stats_query_range is cheap (≤6h).
-	if batcher := p.drilldownFieldBatcher; batcher != nil && !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
-		vlFields := extractStatsGroupByFields(logsqlQuery)
-		if len(vlFields) == 0 {
-			vlFields = []string{field}
-		}
-		lokiField := field
-		if len(origGroupBy) == 1 {
-			lokiField = origGroupBy[0]
-		} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
-			lokiField = lt.ToLoki(field)
-		}
-		orgID := r.Header.Get("X-Scope-OrgID")
-		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, field, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
-			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
-			if capErr != nil {
-				p.writeError(w, http.StatusBadRequest, capErr.Error())
-				return
-			}
-			body = expandDrilldownStep(capped, stepRaw, effectiveStepRaw, endRaw)
-			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(body)
-			return
-		}
-	}
-
-	// Individual path: semaphore limits concurrent VL stats_query_range calls.
-	// Covers both direct and two-phase for non-batched fields.
-	if sem := p.statsQueryRangeSem; sem != nil {
-		select {
-		case <-sem:
-			delay := p.statsQueryRangeInterQueryDelay
-			defer func() {
-				if delay > 0 {
-					time.Sleep(delay)
-				}
-				sem <- struct{}{}
-			}()
-		case <-r.Context().Done():
-			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
-			return
-		}
-	}
-
-	if !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
-		// Direct path: VL-side | limit 500 per bucket bounds the per-bucket result;
-		// the proxy caps the global matrix to the series limit. One over the
-		// limit is fetched so truncation is distinguishable from an exact fit.
-		limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit(r.Context())+1)
-		params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
-		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
-		if err != nil {
-			// Drilldown contract — partial-results 200 instead of raw VL error.
-			p.writeGrafanaStatsFailure(w, err)
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode >= 400 {
-			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
-			return
-		}
-
-		body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-		if bodyErr == nil {
-			// Direct path succeeded — serve the trimmed, translated matrix.
-			var keepFn func(int64) bool
-			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-				keepFn = func(tsNs int64) bool { return tsNs <= endNs }
-			}
-			body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
-			if capErr != nil {
-				p.writeError(w, http.StatusBadRequest, capErr.Error())
-				return
-			}
-			body = capped
-			final := wrapAsLokiResponse(body, "matrix")
-			final = expandDrilldownStep(final, stepRaw, effectiveStepRaw, endRaw)
-			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(final)
-			return
-		}
-
-		// Response overflowed maxDrilldownResponseBytes — remember for next re-render
-		// so subsequent requests for the same {org, base, field} skip the direct path.
-		orgID := r.Header.Get("X-Scope-OrgID")
-		if p.drilldownCardCache != nil {
-			p.drilldownCardCache.markHigh(orgID, cleanBase, field)
-		}
-	}
-
-	// Two-phase path (either eager or after direct-path overflow).
-	body := p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field, effectiveStepRaw)
-	if body == nil {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(emptyLokiMatrix)
-		return
-	}
-	body = expandDrilldownStep(body, stepRaw, effectiveStepRaw, endRaw)
-	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
-}
-
-// proxyStatsQueryRangeDrilldownParserDirect handles Drilldown single-field count
-// queries that require parser stages (| unpack_json, | unpack_logfmt) to access
-// fields embedded in the log body rather than VL's column index (e.g. trace_id,
-// span_id, level from logfmt). Unlike proxyStatsQueryRangeDrilldown — which strips
-// parser stages and uses column-index fast paths (batcher, two-phase, hybrid) —
-// this path issues one direct stats_query_range call with the parser preserved and
-// a VL-side | limit 500 to bound the per-bucket cardinality.
-//
-// Applies the same step coarsening, 5-minute response caching, trim-and-translate,
-// and proxy-side series cap as the direct subpath within proxyStatsQueryRangeDrilldown.
-//
-// cleanBase and field come from detectDrilldownSingleFieldWithParser and are used
-// to drive the /hits fast path. cleanBase still has parser stages (e.g. "{...} | json
-// | logfmt"); /hits with ignore_pipes=1 strips them and queries VL's column index
-// directly — VL automatically indexes parsed JSON fields, so this works for
-// trace_id, span_id, request_id, etc., without needing the parser to run server-side.
-func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
-	w http.ResponseWriter, r *http.Request,
-	logsqlQuery, cleanBase, field string,
-) {
-	drillCacheKey := p.drilldownStatsCacheKey(r)
-	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		return
-	}
-
-	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
-	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
-
-	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
-	effectiveStepRaw := stepRaw
-	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d, p.limits().DrilldownStatsBuckets); coarsened != d {
-			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
-		}
-	}
-
-	// /select/logsql/hits fast path — same logic as the hybrid path. /hits gives
-	// us top-N values + remainder bucket in one call, with native per-bucket
-	// counts. For high-cardinality FIELD queries (trace_id, span_id, request_id,
-	// session_id, etc.) this dramatically improves chart shape because the
-	// remainder series spans the full window. Without /hits, the legacy
-	// stats+merge pipeline below produces a sparse chart dominated by unique
-	// values that each appear in only one or two buckets.
-	//
-	// Pass CLIENT step (stepRaw) — NOT effectiveStepRaw which has been coarsened.
-	// /hits scales internally; coarsening would produce a sparse axis with visible
-	// empty spaces between buckets.
-	if cleanBase != "" && field != "" {
-		lokiField := field
-		if len(origGroupBy) == 1 {
-			lokiField = origGroupBy[0]
-		} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
-			lokiField = lt.ToLoki(field)
-		}
-		// /hits accepts only stream selector + field — strip parser/drop/bare
-		// filter pipes that VL's query parser rejects before ignore_pipes=1
-		// can run. The parsed JSON field is already indexed as a VL column,
-		// so we don't need `| json` to query it.
-		hitsQuery := extractStreamSelectorOnly(cleanBase)
-		if hitsQuery != "" {
-			if p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, stepRaw, drillCacheKey) {
-				return
-			}
-			w.Header().Set("X-Proxy-Drilldown-Hits-Fallback", "1")
-		}
-	}
-
-	if sem := p.statsQueryRangeSem; sem != nil {
-		select {
-		case <-sem:
-			delay := p.statsQueryRangeInterQueryDelay
-			defer func() {
-				if delay > 0 {
-					time.Sleep(delay)
-				}
-				sem <- struct{}{}
-			}()
-		case <-r.Context().Done():
-			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
-			return
-		}
-	}
-
-	limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit(r.Context())+1)
-	params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
-	if err != nil {
-		// Drilldown contract: never leak raw upstream transport errors to the
-		// plugin — Loki itself converts these to partial-results 200s. Same
-		// behavior here keeps the panel rendering an empty chart + warning
-		// badge instead of a hard error toast.
-		p.writeGrafanaStatsFailure(w, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		// Mirror Loki's IsLogsDrilldownRequest carve-out — for parser-direct
-		// stats queries that overflow VL's row-scan budget (502 with
-		// per-bucket limit exceeded; 503 from VL queue saturation), return a
-		// Loki-compatible 200 + Warning header instead of the raw VL status.
-		// See pkg/querier/queryrange/limits.go::seriesLimiter.Do upstream.
-		// A query VictoriaLogs rejected is Loki's 400 for Drilldown too.
-		p.writeGrafanaStatsFailure(w, p.redactedBackendStatusError("", resp.StatusCode, errBody))
-		return
-	}
-
-	body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-	if bodyErr != nil {
-		// VL-side limit should prevent this, but if it overflows serve empty.
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(emptyLokiMatrix)
-		return
-	}
-
-	var keepFn func(int64) bool
-	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
-	}
-	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-	capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
-	if capErr != nil {
-		p.writeError(w, http.StatusBadRequest, capErr.Error())
-		return
-	}
-	body = capped
-	// Zero-fill missing time buckets so the Drilldown field histogram renders a
-	// continuous chart rather than disconnected spikes. This is a Drilldown
-	// rendering choice for this call site: Loki itself omits steps without
-	// samples, and generic range metrics keep those steps absent. The hybrid
-	// path does the same; without it, parser-stage fields (most Drilldown
-	// queries — they include "| json field=..." stages) get gappy charts.
-	if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
-		startNs, sok := parseLokiTimeToUnixNano(startRaw)
-		endNs, eok := parseLokiTimeToUnixNano(endRaw)
-		if sok && eok {
-			body = zerofillStatsMatrix(body,
-				startNs/int64(time.Second),
-				endNs/int64(time.Second),
-				int64(stepDur/time.Second))
-		}
-	}
-	final := wrapAsLokiResponse(body, "matrix")
-	final = expandDrilldownStep(final, stepRaw, effectiveStepRaw, endRaw)
-	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(final)
-}
-
-// drilldownHitsFieldsLimit caps the number of top-N values returned per
-// /select/logsql/hits call. 20 matches Grafana Drilldown's default top-N
-// rendering in `VizPanelSeriesLimit` — sending more series than the plugin
-// will render wastes bandwidth and slows the browser. With dozens of field
-// panels on the page, even 100 series per field becomes thousands of series
-// total and Grafana noticeably lags.
-const drilldownHitsFieldsLimit = 20
-
-// hitsWindowSampleThreshold: time range above which the proxy splits the
-// /hits call into multiple windowed queries. VL's /hits picks top-N by
-// frequency across the whole range; for high-cardinality fields where every
-// value appears once, the top-N ends up clustered at whichever times VL
-// happened to scan (typically recent), producing a chart with all activity
-// "grouped at the latest part". Splitting the range and querying per-window
-// guarantees values are sampled from each time window — chart shows
-// distributed activity across the full range.
-const hitsWindowSampleThreshold = 6 * time.Hour
-
-// hitsWindowCount is the number of sub-windows the range is split into when
-// the windowed sampling kicks in. 8 windows × 2-3 values per window = 16-24
-// series total. Higher count is intentional: VL's /hits picks values from the
-// most recent activity within each window — coarser windows (e.g. 4 × 5)
-// produce 5 values all clustered at the recent edge of each 6h slice, which
-// Grafana's stacked bar chart renders as 4 tall stacks instead of 20
-// distributed bars. Finer windows produce more distinct time slots, so
-// stacking spreads across the chart visually.
-const hitsWindowCount = 8
-
-// proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
-// using VL's /select/logsql/hits endpoint. Unlike the stats+merge pipeline,
-// /hits natively returns top-N series with REAL per-bucket counts PLUS a
-// remainder bucket aggregating all other values. The remainder series spans
-// the full requested range and is what makes Grafana's default top-N rendering
-// useful for high-cardinality fields (where every value would otherwise appear
-// in only one or two buckets, making the chart look concentrated).
-//
-// Response shape from VL:
-//
-//	{"hits": [
-//	  {"fields": {"pod": "..."}, "timestamps": ["..."], "values": [...], "total": N},
-//	  ...,
-//	  {"fields": {}, "timestamps": [...], "values": [...], "total": LARGE}  // remainder
-//	]}
-//
-// Translation to Loki matrix: each hit becomes one series; ISO timestamps
-// parsed to Unix seconds. The remainder bucket (VL emits it with empty fields{})
-// is dropped — it aggregates everything outside top-N and dominates Grafana's
-// Y-axis for high-cardinality fields, hiding individual top-N values. Loki
-// Drilldown doesn't emit a catchall; matching that behaviour keeps the chart
-// readable.
-// queryHits runs a single VL /select/logsql/hits call and returns the parsed
-// response. Returns ok=false (with no error) when the call fails, returns
-// HTTP ≥400, or the body overflows the response cap — callers fall back to
-// the legacy stats+merge pipeline in those cases.
-//
-// stepRaw must already be a valid VL duration (e.g. "120s"); bare integer
-// formats from Grafana ("120") need normalisation by the caller.
-func (p *Proxy) queryHits(
-	ctx context.Context,
-	cleanBase, field string,
-	startRaw, endRaw, stepRaw string,
-	fieldsLimit int,
-) (vlHitsResponse, bool) {
-	params := url.Values{}
-	params.Set("query", cleanBase)
-	params.Set("field", field)
-	params.Set("fields_limit", strconv.Itoa(fieldsLimit))
-	params.Set("start", startRaw)
-	params.Set("end", endRaw)
-	params.Set("step", stepRaw)
-	// ignore_pipes=1 strips any pipe stages from the source query so /hits
-	// runs against the raw selector. The proxy has already extracted cleanBase
-	// from the full LogQL; we don't need VL to re-apply any pipes.
-	params.Set("ignore_pipes", "1")
-
-	resp, err := p.vlPost(ctx, "/select/logsql/hits", params)
-	if err != nil {
-		return vlHitsResponse{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return vlHitsResponse{}, false
-	}
-	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-	if err != nil {
-		return vlHitsResponse{}, false
-	}
-	return parseHits(body), true
-}
-
-// gatherWindowedHits splits [startSec,endSec) into hitsWindowCount equal sub-
-// windows, runs queryHits in parallel for each window with fields_limit=
-// drilldownHitsFieldsLimit/hitsWindowCount, and returns the merged hits.
-//
-// Why: VL /hits picks top-N by frequency across the whole range. For
-// high-cardinality fields where every value appears once, "top" is broken by
-// scan order — typically the most recent values. The full-range chart then
-// shows all selected values clustered at the latest time. Per-window
-// sampling guarantees each window contributes its own top-K, so the merged
-// set spans the timeline visually.
-//
-// Field values are deduplicated by value string: if the same value appears
-// in two windows, its timestamps+values arrays are concatenated.
-func (p *Proxy) gatherWindowedHits(
-	ctx context.Context,
-	cleanBase, field string,
-	startSec, endSec int64,
-	stepRaw string,
-) (vlHitsResponse, bool) {
-	perWindow := drilldownHitsFieldsLimit / hitsWindowCount
-	if perWindow < 1 {
-		perWindow = 1
-	}
-	windowDur := (endSec - startSec) / hitsWindowCount
-
-	type windowResult struct {
-		hits vlHitsResponse
-		ok   bool
-	}
-	results := make([]windowResult, hitsWindowCount)
-	var wg sync.WaitGroup
-	for i := 0; i < hitsWindowCount; i++ {
-		i := i
-		wStart := startSec + int64(i)*windowDur
-		wEnd := wStart + windowDur
-		if i == hitsWindowCount-1 {
-			wEnd = endSec // absorb rounding remainder into last window
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			h, ok := p.queryHits(ctx, cleanBase, field,
-				strconv.FormatInt(wStart, 10),
-				strconv.FormatInt(wEnd, 10),
-				stepRaw, perWindow)
-			results[i] = windowResult{hits: h, ok: ok}
-		}()
-	}
-	wg.Wait()
-
-	merged := vlHitsResponse{}
-	// Use index map so first-seen order is preserved (windows iterate oldest→newest,
-	// so older values appear first in the legend — looks chronological).
-	idx := make(map[string]int)
-	anyOK := false
-	for _, res := range results {
-		if !res.ok {
-			continue
-		}
-		anyOK = true
-		for _, h := range res.hits.Hits {
-			fv := h.Fields[field]
-			if fv == "" {
-				// Drop remainder buckets — see proxyStatsQueryRangeDrilldownHits.
-				continue
-			}
-			if pos, exists := idx[fv]; exists {
-				existing := merged.Hits[pos]
-				existing.Timestamps = append(existing.Timestamps, h.Timestamps...)
-				existing.Values = append(existing.Values, h.Values...)
-				existing.Total += h.Total
-				merged.Hits[pos] = existing
-			} else {
-				idx[fv] = len(merged.Hits)
-				merged.Hits = append(merged.Hits, h)
-			}
-		}
-	}
-	return merged, anyOK
-}
-
-// leftover-chunk suppression, windowed vs single-shot /hits selection,
-// remainder-bucket detection, shared-axis materialisation) — each branch is
-// load-bearing and individually documented above. Splitting further would
-// shuffle named state between helpers without reducing essential complexity.
-// Adjustments to this function are pinned by TestLock_* in
-// drilldown_regression_lock_test.go.
-//
-//nolint:gocyclo // Coordinates multiple inputs (cache, step normalisation,
-func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
-	w http.ResponseWriter, r *http.Request,
-	cleanBase, field, lokiField string,
-	startRaw, endRaw, stepRaw string,
-	drillCacheKey string,
-) bool {
-	// Check 5-min response cache before any VL work.
-	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		return true
-	}
-
-	// VL /hits requires step with a duration suffix (e.g. "120s"). Grafana
-	// sends bare integers ("120") to /loki/api/v1/query_range; append "s"
-	// when the string parses cleanly as a number.
-	stepForHits := stepRaw
-	if _, err := strconv.ParseFloat(stepRaw, 64); err == nil {
-		stepForHits = stepRaw + "s"
-	}
-
-	// Suppress the Grafana querySplitting RESIDUAL chunk. EVERY high-cardinality
-	// drilldown metric query — pod LABEL (stream-selector pod!="") and *_id FIELD
-	// (| field!="") alike — converges here at the /hits leaf (this is the only
-	// producer of the top-N per-value matrix), so this is the reliable single guard
-	// for the residual that the upstream routing's pre-translation AST check cannot
-	// catch (the translated drilldown query no longer parses as a metric expr). A
-	// sub-step (range < step) residual yields a single-bucket frame with N>1 series;
-	// Grafana's mergeFrames collapses all N single-point series onto ONE edge of the
-	// merged chart — a right-edge spike, or (when the residual is the oldest chunk) a
-	// left-edge "all data groups at the beginning" cluster. Axis trimming can't fix
-	// it (the bucket is legitimately within [start,end]); only suppression does.
-	// See [[grafana-loki-querysplitting-24h]]. Use the PASSED start/end/step (not
-	// r.FormValue, which may be stale here after URL rewrites — that empty-read was
-	// the bug that let the residual through and clustered the chart).
-	if isQuerySplitResidualParams(r, startRaw, endRaw, stepForHits) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
-		_, _ = w.Write(emptyLokiMatrix)
-		return true
-	}
-
-	// For long ranges, sample windows in parallel so the top-N spans the
-	// timeline instead of clustering at recent times (VL's natural bias).
-	startNs, sOK := parseLokiTimeToUnixNano(startRaw)
-	endNs, eOK := parseLokiTimeToUnixNano(endRaw)
-	useWindowed := sOK && eOK && time.Duration(endNs-startNs) >= hitsWindowSampleThreshold
-
-	var hits vlHitsResponse
-	var ok bool
-	if useWindowed {
-		hits, ok = p.gatherWindowedHits(r.Context(), cleanBase, field,
-			startNs/int64(time.Second), endNs/int64(time.Second), stepForHits)
-		if ok {
-			w.Header().Set("X-Proxy-Drilldown-Hits-Sampling", "windowed")
-		}
-	}
-	if !useWindowed || !ok {
-		hits, ok = p.queryHits(r.Context(), cleanBase, field,
-			startRaw, endRaw, stepForHits, drilldownHitsFieldsLimit)
-	}
-	if !ok {
-		return false
-	}
-	if len(hits.Hits) == 0 {
-		return false
-	}
-	// Fall back when VL returned only the remainder bucket (fields:{}). This
-	// happens for ultra-high-cardinality numeric fields (latency_ms, duration_ms)
-	// where every value is unique — VL has no meaningful top-N to compute, so it
-	// puts everything in remainder. Since we drop the remainder, accepting this
-	// response would emit zero series. The legacy stats+merge path produces a
-	// usable per-bucket histogram for these fields.
-	hasNamed := false
-	for _, h := range hits.Hits {
-		if h.Total > 0 && h.Fields[field] != "" {
-			hasNamed = true
-			break
-		}
-	}
-	if !hasNamed {
-		return false
-	}
-
-	// Per-value rendering: emit one Loki series per top-N value. Drop the
-	// remainder bucket (VL's fields:{} catchall) — including it dominates the
-	// Y-axis and hides individual values for high-cardinality fields.
-	//
-	// IMPORTANT: build a SHARED timestamp axis covering the full client range
-	// at step boundaries, and emit every series across that full axis (zero-
-	// filled where the series has no data). Without this, windowed sampling
-	// produces series with timestamp arrays limited to their 3h sub-window —
-	// Grafana's Loki datasource normalises by series and inconsistent
-	// timestamp arrays cause stacked bar charts to render all activity at one
-	// cluster instead of distributed across the timeline. The chart looked
-	// like a single spike at the latest part of the chart.
-	axisStartNs, axisSOK := parseLokiTimeToUnixNano(startRaw)
-	axisEndNs, axisEOK := parseLokiTimeToUnixNano(endRaw)
-	stepDur, stepOK := parsePositiveStepDuration(stepForHits)
-	if !axisSOK || !axisEOK || !stepOK || stepDur <= 0 {
-		return false
-	}
-	startSec := axisStartNs / int64(time.Second)
-	endSec := axisEndNs / int64(time.Second)
-	stepSec := int64(stepDur / time.Second)
-	if stepSec <= 0 {
-		stepSec = 1
-	}
-	// Requested window bounds (un-aligned) — used to trim the emitted axis so no
-	// bucket falls outside [start,end] of this chunk (see the per-chunk trim in
-	// the values loop below).
-	reqStartSec := startSec
-	reqEndSec := endSec
-	// Align startSec down to step boundary so all series share the same axis.
-	if rem := startSec % stepSec; rem != 0 {
-		startSec -= rem
-	}
-	axisLen := int((endSec-startSec)/stepSec) + 1
-	if axisLen <= 0 || axisLen > 100000 {
-		return false // sanity guard: 24h@1s would be 86k, plenty of headroom
-	}
-
-	// Build per-hit value lookup keyed by timestamp seconds.
-	type hitMap struct {
-		label  string
-		values map[int64]int
-	}
-	hitMaps := make([]hitMap, 0, len(hits.Hits))
-	for _, h := range hits.Hits {
-		if h.Total == 0 {
-			continue
-		}
-		labelValue := h.Fields[field]
-		if labelValue == "" {
-			continue
-		}
-		vm := make(map[int64]int, len(h.Timestamps))
-		n := len(h.Timestamps)
-		if len(h.Values) < n {
-			n = len(h.Values)
-		}
-		for i := 0; i < n; i++ {
-			t, terr := time.Parse(time.RFC3339, string(h.Timestamps[i]))
-			if terr != nil {
-				continue
-			}
-			// Align timestamp to axis step boundary.
-			tsAligned := t.Unix() - (t.Unix() % stepSec)
-			vm[tsAligned] = h.Values[i]
-		}
-		hitMaps = append(hitMaps, hitMap{label: labelValue, values: vm})
-	}
-
-	var buf bytes.Buffer
-	buf.Grow(64 + len(hitMaps)*axisLen*30)
-	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
-	for hi, hm := range hitMaps {
-		if hi > 0 {
-			buf.WriteByte(',')
-		}
-		buf.WriteString(`{"metric":{"`)
-		writeJSONEscaped(&buf, lokiField)
-		buf.WriteString(`":"`)
-		writeJSONEscaped(&buf, hm.label)
-		buf.WriteString(`"},"values":[`)
-		first := true
-		for i := 0; i < axisLen; i++ {
-			ts := startSec + int64(i)*stepSec
-			// Honor the requested [start,end] window per chunk. startSec was
-			// aligned DOWN to a step boundary, so the leading bucket(s) can
-			// precede the requested start — and emitting an out-of-window bucket
-			// is exactly what makes Grafana's 24h-chunked mergeFrames/closestIdx
-			// collapse a querySplitting residual onto the main chunk's right edge
-			// as a spike. Trimming to [reqStartSec,reqEndSec] (like the direct
-			// stats path) makes every chunk self-correcting, so no residual
-			// blanking is needed. See [[grafana-loki-querysplitting-24h]].
-			if ts < reqStartSec || ts > reqEndSec {
-				continue
-			}
-			if !first {
-				buf.WriteByte(',')
-			}
-			first = false
-			buf.WriteByte('[')
-			buf.WriteString(strconv.FormatInt(ts, 10))
-			buf.WriteString(`,"`)
-			buf.WriteString(strconv.Itoa(hm.values[ts]))
-			buf.WriteString(`"]`)
-		}
-		buf.WriteString(`]}`)
-	}
-	buf.WriteString(`]}}`)
-
-	final := buf.Bytes()
-	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Proxy-Drilldown-Path", "hits")
-	_, _ = w.Write(final)
-	return true
-}
-
-// proxyStatsQueryRangeDrilldownHybrid handles Drilldown fields queries for ranges
-// wider than drilldownHybridThreshold (6h). Instead of scanning the full range
-// with stats_query_range (O(log-volume), slow), it:
-//
-//  1. Issues field_values over the full range (~30ms, O(column-index)) to discover
-//     all unique values and their total hit counts.
-//  2. Computes an adaptive histogram window based on range size and data volume.
-//  3. Issues stats_query_range over only the recent adaptive window for sparkline data.
-//  4. Merges: values in stats get real histogram bars; values only in field_values get
-//     a single data point at endSec with their total count.
-//
-// High-cardinality fields (trace_id, *_id, *_uid, etc.) skip stats_query_range entirely
-// and return a pure field_values synthesis.
-//
-// X-Proxy-Drilldown-Path response header signals which path was taken for debugging.
-//
-// adaptive window) with merge logic and HC-field bypass — every branch maps to
-// a distinct dispatch decision and tightening would split related state across
-// helpers. Behaviour pinned by TestLock_* in drilldown_regression_lock_test.go.
-//
-//nolint:gocyclo // Two-tier strategy (fast field_values + slow stats with
-func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
-	w http.ResponseWriter, r *http.Request,
-	logsqlQuery, cleanBase, field, effectiveStepRaw string,
-	startNs, endNs int64,
-	drillCacheKey string, origGroupBy []string,
-) {
-	ctx := r.Context()
-	endRaw := r.FormValue("end")
-	startRaw := r.FormValue("start")
-
-	// Loki field name for response metric keys (what Grafana expects).
-	lokiField := field
-	if len(origGroupBy) == 1 {
-		lokiField = origGroupBy[0]
-	} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
-		lokiField = lt.ToLoki(field)
-	}
-
-	// /select/logsql/hits fast path — returns top-N + remainder bucket natively.
-	// Try this first; it produces a far better chart shape than the stats+merge
-	// pipeline because the remainder series naturally spans the full time range,
-	// guaranteeing Grafana's default top-N rendering shows something meaningful
-	// across the whole window (instead of a few concentrated tall spikes).
-	// Falls through to the legacy stats+merge path on any failure (404 on older
-	// VL, parse error, empty response, etc.).
-	//
-	// Pass the CLIENT step (r.FormValue("step")) — NOT effectiveStepRaw which
-	// has been coarsened to maxDrilldownStatsBuckets. /hits handles native step
-	// efficiently because it computes top-N internally per bucket; passing the
-	// coarsened step would produce a sparse axis (e.g. 96 timestamps at 15min
-	// instead of 720 at 120s for 24h), which Grafana renders as a chart with
-	// visible empty spaces between coarse buckets.
-	clientStep := r.FormValue("step")
-	if clientStep == "" {
-		clientStep = effectiveStepRaw
-	}
-	// /hits accepts only the stream selector — strip any trailing pipes
-	// defensively. For the hybrid path cleanBase is usually already pipe-free
-	// (detectDrilldownSingleField rejects parser stages), but extracting the
-	// selector explicitly keeps the call path uniform with parser-direct.
-	hitsQuery := extractStreamSelectorOnly(cleanBase)
-	if hitsQuery == "" {
-		hitsQuery = cleanBase
-	}
-	if p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, clientStep, drillCacheKey) {
-		return
-	}
-	// Mark response so callers / load tests know the fallback fired.
-	w.Header().Set("X-Proxy-Drilldown-Hits-Fallback", "1")
-
-	endSec := endNs / int64(time.Second)
-
-	// Fast tier: field_values over the full range (O(column-index)).
-	fvParams := url.Values{}
-	fvParams.Set("query", cleanBase)
-	fvParams.Set("field", field)
-	fvParams.Set("start", nanosToVLTimestamp(startNs))
-	fvParams.Set("end", nanosToVLTimestamp(endNs))
-	fvParams.Set("limit", strconv.Itoa(p.drilldownSeriesLimit(r.Context())))
-
-	var fvEntries []drilldownFVEntry
-	if resp, err := p.vlGet(ctx, "/select/logsql/field_values", fvParams); err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode < 400 {
-			fvBody, _ := readBodyLimited(resp.Body, 1<<20)
-			var parsed vlFieldValuesResponse
-			if json.Unmarshal(fvBody, &parsed) == nil {
-				for _, item := range parsed.Values {
-					if strings.TrimSpace(item.Value) == "" || item.Hits < 0 {
-						continue
-					}
-					fvEntries = append(fvEntries, drilldownFVEntry{Value: item.Value, Hits: item.Hits})
-				}
-			}
-		}
-	}
-
-	rangeNs := endNs - startNs
-
-	// High-cardinality fields (trace_id, span_id, *_id, *_uid, *_token, …): route
-	// through stats_query_range so per-bucket counts are real, not synthesized.
-	// field_values is unreliable here — when the limit truncates, hits are zeroed
-	// and a synthesized matrix shows all-zero values that Grafana renders blank.
-	// Tighten the step cap to drilldownHighCardStatsBuckets so VL's stats pipe
-	// doesn't OOM on 500k-cardinality grouping over many buckets.
-	isHighCard := isLikelyHighCardinalityField(field) || isHighCardinalityFieldName(field)
-	if isHighCard {
-		effectiveStepRaw = highCardStepFloor(effectiveStepRaw, rangeNs)
-		// Fall through to the regular stats tier below. The synthesize-from-
-		// field_values fallback inside that tier still acts as the last-resort
-		// safety net if VL returns no usable rows.
-	}
-
-	// Low-cardinality groupings (≤ drilldownLowCardThreshold distinct values):
-	// the 30-bucket cap from coarsenDrilldownStep is pure quality loss for stream
-	// labels like app/env/cluster/level — VL handles native step trivially when
-	// the result set is small. Restore the original requested step (capped to
-	// drilldownLowCardStatsBuckets buckets as a safety floor) so the proxy
-	// matches Loki's per-bucket resolution at 2d/7d.
-	if relaxed, ok := relaxStepForLowCardinality(r.FormValue("step"), len(fvEntries), rangeNs, p.drilldownSeriesLimit(r.Context())); ok {
-		effectiveStepRaw = relaxed
-	}
-
-	// Stats tier: stats_query_range over the full requested range at coarsened step.
-	// VL column-index stats are fast even for wide ranges (< 1s for 7d), so scanning
-	// only a recent partial window and filling the rest with flat stub bars is
-	// unnecessary — it makes different time ranges look identical (same flat bars).
-	// effectiveStepRaw is already coarsened to ≤ maxDrilldownStatsBuckets buckets
-	// (or relaxed to native step for low-cardinality groupings, see above).
-	histStartRaw := nanosToVLTimestamp(startNs)
-
-	// stubStepNs drives stub placement in mergeDrilldownWithFieldValues for values
-	// that appear in field_values but not in the top-N stats result (values beyond
-	// the series limit). Use effectiveStepRaw resolution so stubs
-	// align with the stats bars.
-	var stubStepNs int64
-	if d, ok := parsePositiveStepDuration(effectiveStepRaw); ok {
-		stubStepNs = int64(d)
-	}
-
-	// Build a clean stats query grouping by only the target field. logsqlQuery has
-	// underscore-fallback variants (e.g. detected_level) added by addUnderscorefallbackByLabels,
-	// which would produce duplicate series (level + detected_level) confusing Grafana.
-	hybridStatsQuery := cleanBase + " | filter " + field + `:!"" | stats by (` + field + `) count()`
-	limitedQuery := appendDrilldownSeriesLimit(hybridStatsQuery, p.drilldownSeriesLimit(r.Context())+1)
-	statsParams := buildStatsQueryRangeParams(limitedQuery, histStartRaw, endRaw, effectiveStepRaw)
-
-	var statsBody []byte
-	pathLabel := "hybrid/fv+full-range-stats"
-
-	// Acquire semaphore slot before issuing the stats_query_range.
-	if sem := p.statsQueryRangeSem; sem != nil {
-		select {
-		case <-sem:
-			delay := p.statsQueryRangeInterQueryDelay
-			defer func() {
-				if delay > 0 {
-					time.Sleep(delay)
-				}
-				sem <- struct{}{}
-			}()
-		case <-ctx.Done():
-			// Context cancelled — serve field_values synthesis immediately.
-			body := synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Proxy-Drilldown-Path", "field_values_sem_timeout")
-			_, _ = w.Write(body)
-			return
-		}
-	}
-
-	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", statsParams)
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode < 400 {
-			rawBody, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-			if bodyErr == nil {
-				// Skip trimAndTranslateStatsQRFJ: the hybrid stats query groups by
-				// `field` only (no underscore variants), so VL returns metric keys that
-				// match `field` (the VL name). Strip VL's internal __name__ marker, then
-				// rename metric keys from `field` to `lokiField` when they differ (e.g.
-				// VL "level" → Loki "detected_level") so mergeDrilldownWithFieldValues
-				// can look up the correct key. The generic translator is intentionally
-				// skipped: its ensureDetectedLevel would break when the query explicitly
-				// groups by "level".
-				rawBody = stripVLStatsNameKey(rawBody)
-				if field != lokiField {
-					rawBody = renameStatsBodyMetricKey(rawBody, field, lokiField)
-				}
-				capped, capErr := capSeriesToLimit(r.Context(), rawBody, p.drilldownSeriesLimit(r.Context()))
-				if capErr != nil {
-					p.writeError(w, http.StatusBadRequest, capErr.Error())
-					return
-				}
-				rawBody = capped
-				// Zero-fill missing time steps so the Drilldown chart draws a continuous
-				// line rather than disconnected spikes. This is a Drilldown rendering
-				// choice: Loki omits steps without samples, and generic range metrics
-				// keep those steps absent.
-				if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
-					stepSec := int64(stepDur / time.Second)
-					rawBody = zerofillStatsMatrix(rawBody,
-						startNs/int64(time.Second),
-						endNs/int64(time.Second),
-						stepSec)
-				}
-				statsBody = rawBody
-			}
-		}
-	}
-
-	// Merge: stats histogram + field_values stubs for values missing from recent window.
-	//
-	// Critical ordering: when stats returned real per-bucket data, those series MUST
-	// survive the series-limit cap. The stub-fill emits drilldownSynthesizeBuckets
-	// (or coarse-step) cells per series, all of value=1 (floored from hits/N when hits
-	// is small). For unique-per-request fields like pod, real stats series have 1
-	// nonzero bucket with count ~20-30 (sum~30), while stub-only series have 96+
-	// cells of value=1 (sum~96+). A naive post-merge the series-limit cap ranks by
-	// sum and DROPS the real stats series in favour of the synthetic stubs, producing
-	// the "every bar is uniform value=1" symptom users see in Drilldown.
-	//
-	// Skip the post-merge limit entirely. statsBody is already capped to
-	// the series limit by the earlier cap, and the merge
-	// only adds fvEntries that are NOT already in stats. We cap the fvEntries used
-	// for stub-fill so the combined output stays within the series limit × ~2 at
-	// worst — Grafana handles that fine and the real data is preserved.
-	var final []byte
-	switch {
-	case statsBody != nil && len(fvEntries) > 0:
-		final = mergeDrilldownWithFieldValues(statsBody, lokiField, fvEntries, endSec, rangeNs, stubStepNs)
-		// No post-merge the series-limit cap — see comment above. The merge function
-		// internally bounds output by stats_count + fv_count, both already capped at
-		// the series limit.
-	case statsBody != nil:
-		final = statsBody
-		pathLabel += "/no_fv"
-	case len(fvEntries) > 0:
-		final = synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
-		pathLabel = "field_values_stats_err"
-	default:
-		final = emptyLokiMatrix
-		pathLabel = "empty"
-	}
-
-	// Expansion is skipped for the hybrid path: stubs (at stubStepNs, coarsened
-	// for the full range) and stats (at histStepRaw, coarsened for histWin) may
-	// differ in resolution. Applying a single coarseStep via expandDrilldownStep
-	// would corrupt the mixed-resolution output. The non-hybrid path still expands.
-	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Proxy-Drilldown-Path", pathLabel)
-	_, _ = w.Write(final)
-}
-
-// drilldownTwoPhase is the fallback for proxyStatsQueryRangeDrilldown when the
-// direct VL response exceeds maxDrilldownResponseBytes. It runs two VL calls:
-//
-//  1. Phase 1 — a single-bucket stats_query_range (step = entire range) to get
-//     the busiest field values within the series limit. One bucket means VL's
-//     per-bucket | limit N is equivalent to a true global limit.
-//
-//  2. Phase 2 — a range query filtered to the Phase 1 values via field:in(...),
-//     returning unique series within the series limit with the effective step.
-//
-// effectiveStep is the coarsened step (from coarsenDrilldownStep); Phase 2 uses
-// it instead of the raw Grafana step to cap bucket count and reduce VL CPU.
-//
-// Returns the translated Loki matrix response, or nil on any VL error.
-// stripUnpackStagesForTopN removes `| unpack_logfmt` / `| unpack_json` pipes from
-// a translated LogsQL base so Phase-1 top-N SELECTION can use VL's auto-detected,
-// column-indexed fields (notably `level`) instead of re-parsing every log line.
-// Measured 404ms vs 26s for `... | filter level:="error" | stats by (pod)` over
-// 24h. Safe for selecting stream-label group keys (pod, namespace, …) whose
-// values exist without a parser. When the grouped field is itself parser-derived
-// (json/logfmt body field), the stripped query yields no rows and the caller
-// falls through to the slower exact path. Whitespace left by the removed pipe is
-// harmless to VL.
-func stripUnpackStagesForTopN(base string) string {
-	b := strings.ReplaceAll(base, "| unpack_logfmt", "")
-	b = strings.ReplaceAll(b, "| unpack_json", "")
-	return strings.TrimSpace(b)
-}
-
-// tryHighCardCountByTwoPhase handles single-field `count() by (field)` query_range
-// requests that would otherwise force VL to aggregate every value of a
-// high-cardinality field over a wide window — e.g. the Drilldown pod label panel:
-//
-//	sum(count_over_time({env="production",pod!=""}
-//	    | detected_level="error" or detected_level="info" [2m])) by (pod)
-//
-// At 24h that is ~142k churning-pod series / ~48MB / ~26s in VL, which overflows
-// the 16MB direct-path cap and is cancelled by Grafana (HTTP 499 → blank chart).
-//
-// Two phases:
-//   - Phase 1 (selection, fast): a single-bucket global top-N with `| unpack_*`
-//     stripped so VL uses its column index — ~0.4s — returns the busiest
-//     field values within the series limit.
-//   - Phase 2 (values, correct): the ORIGINAL query (parser preserved for exact
-//     detected_level semantics) restricted to those values via `field:in(...)`,
-//     so VL only aggregates ≤maxDrilldownPhase2Values series — fast and accurate.
-//
-// Returns nil when inapplicable (not a single-field count, range below the
-// gate, Phase 1 empty because the field is parser-derived, or any VL error) so
-// the caller falls through to the unchanged direct path.
-// tryHighCardCountByWindowedHits routes a single-field count by(field) query over
-// a wide range to the window-sampled /hits path (proxyStatsQueryRangeDrilldownHits
-// → gatherWindowedHits). VL /hits picks top-N by frequency, but per-window sampling
-// guarantees each time window contributes its own top-K, so the merged set spans
-// the whole timeline — fixing the sparse/one-spike overview chart that the bounded
-// global top-N produced for churning short-lived values (pod, *_id). The /hits path
-// also suppresses Drilldown's 24h querySplitting residual-chunk right-edge spike.
-//
-// The level value-filter (detected_level → `| filter level:=...`) is preserved:
-// VL /hits accepts a column-indexed filter pipe (verified), and stripUnpackStagesForTopN
-// drops only the redundant `| unpack_logfmt`. Returns true iff it wrote a response;
-// false (without writing a body) so the caller falls through to the two-phase/direct.
-func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
-	// The windowed-/hits path returns per-window-sampled top-N series rather than
-	// exact stats_query_range results. That visualization-optimized trade-off is
-	// right for Drilldown (visual exploration, any field) and for Grafana-sourced
-	// high-cardinality fields (trace_id, *_id, *_token — where the full unbounded
-	// response is 40MB+/25s and would be cancelled), but it is the WRONG default
-	// for normal low-cardinality panels and direct API clients, which expect exact
-	// aggregation. Scope to Drilldown OR Grafana-sourced high-card fields;
-	// everything else (normal dashboards, Explore low-card, non-Grafana API clients)
-	// falls through to the exact direct path (bounded to
-	// maxStatsQuerySeries top-N-by-count, like Loki's max_query_series, with the
-	// two-phase fallback only on a 16MB overflow).
-	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
-	if !ok {
-		return false
-	}
-	// Sampled top-N series are a Drilldown visualization; every other client
-	// (Explore and dashboards included) gets Loki's exact windows or its series
-	// limit error.
-	if !isGrafanaDrilldownRequest(r) {
-		return false
-	}
-	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
-	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
-	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
-	if !ok1 || !ok2 || endNs <= startNs {
-		return false
-	}
-	// Small ranges fit the direct path and are fast; only intervene on wide ranges
-	// where the coverage gap (and the 25s/40MB unbounded stats) actually bites.
-	if endNs-startNs < int64(2*time.Hour) {
-		return false
-	}
-	field := spec.GroupBy[0]
-	// /hits accepts a column-indexed `| filter level:=...` pipe but not the
-	// `| unpack_logfmt` parser stage; strip only the unpack so VL uses its column
-	// index. If the grouped field is parser-derived, /hits returns nothing and the
-	// caller falls through.
-	hitsQuery := stripUnpackStagesForTopN(spec.BaseQuery)
-	lokiField := field
-	if og := parseOriginalByLabels(r.FormValue("query")); len(og) == 1 {
-		lokiField = og[0]
-	}
-	drillCacheKey := p.drilldownStatsCacheKey(r)
-	return p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, stepRaw, drillCacheKey)
-}
-
-// tryHighCardCountByTwoPhase answers a wide single-field count in two phases (see
-// above). tumblingWindow > 0 (the tumbling relabel) keeps Loki's windows: Phase 2 uses
-// the anchored bucket grid of proxyStatsQueryRangeDirectAnchored, and lines
-// without the field stay in as the unlabelled series when Phase 1 ranks them.
-func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string, tumblingWindow time.Duration) []byte {
-	// A partial top-N answer is Drilldown's; every other client reads the exact
-	// direct path, which returns Loki's series limit error when over the limit.
-	if !isGrafanaDrilldownRequest(r) {
-		return nil
-	}
-	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
-	if !ok {
-		return nil
-	}
-	start, end := r.FormValue("start"), r.FormValue("end")
-	startNs, ok1 := parseLokiTimeToUnixNano(start)
-	endNs, ok2 := parseLokiTimeToUnixNano(end)
-	if !ok1 || !ok2 || endNs <= startNs {
-		return nil
-	}
-	// Gate: small ranges fit comfortably in the direct path (already capped to
-	// maxStatsQuerySeries) and are fast; only intervene where the unbounded VL
-	// response risks the 16MB overflow / multi-second compute.
-	if endNs-startNs < int64(2*time.Hour) {
-		return nil
-	}
-	field := spec.GroupBy[0]
-	ctx := r.Context()
-	rangeSec := (endNs - startNs) / int64(time.Second)
-	if rangeSec < 1 {
-		rangeSec = 1
-	}
-
-	// Phase 1: fast single-bucket global top-N (unpack stripped → column index).
-	p1Base := stripUnpackStagesForTopN(spec.BaseQuery)
-	limit := p.resolvedMaxStatsQuerySeries(r.Context())
-	p1Query := p1Base + " | stats by (" + quoteLogsQLIdent(field) + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(limit+1)
-	p1Params := url.Values{}
-	p1Params.Set("query", p1Query)
-	p1Params.Set("start", nanosToVLTimestamp(startNs))
-	p1Params.Set("end", nanosToVLTimestamp(endNs))
-	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
-	resp1, p1Err := p.vlPost(ctx, "/select/logsql/stats_query_range", p1Params)
-	if p1Err != nil {
-		return nil
-	}
-	defer resp1.Body.Close()
-	if resp1.StatusCode >= 400 {
-		return nil
-	}
-	p1Body, p1Err := readBodyLimited(resp1.Body, 4<<20)
-	if p1Err != nil {
-		return nil
-	}
-	topValues := drilldownTopValuesFromMatrix(p1Body, field)
-	if len(topValues) == 0 {
-		// Field is parser-derived (json/logfmt body field) or genuinely empty:
-		// fall through to the exact direct path.
-		return nil
-	}
-	ranked := len(topValues)
-	if len(topValues) > limit {
-		topValues = topValues[:limit]
-	}
-	keepUnlabelled := tumblingWindow > 0 && drilldownTopValuesHaveEmpty(p1Body, field)
-
-	// Phase 2: per-step counts for the selected values, bounded by field:in(...).
-	// Use the SAME unpack-stripped base as Phase 1 (column-indexed `level` filter,
-	// no | unpack_logfmt). This is safe precisely because Phase 1 already returned
-	// values for this field WITHOUT unpack — so the field is a stream label / column
-	// field, and grouping by it needs no parser. Result: Phase 2 is also ~0.4s
-	// instead of the ~15s the unpack variant takes, so a Drilldown labels page that
-	// fans out ~15 of these concurrently no longer overloads VL. Column-level counts
-	// run ~2x Loki's detected_level (a data-density quirk affecting both VL variants)
-	// but are actually CLOSER to Loki than the unpack variant — verified live.
-	prefix, suffix := p1Base+" | filter ", " | stats by ("+quoteLogsQLIdent(field)+") count()"
-	if keepUnlabelled {
-		prefix, suffix = prefix+"(", " or "+quoteLogsQLIdent(field)+`:"")`+suffix
-	}
-	inFilter, topValues, err := fitTopValueFilter(field, topValues, prefix, suffix)
-	if err != nil {
-		return nil
-	}
-	if len(topValues) < ranked {
-		_ = seriesLimitReached(r.Context(), len(topValues)) // Drilldown: partial with a warning
-	}
-	if keepUnlabelled {
-		inFilter = "(" + inFilter + " or " + quoteLogsQLIdent(field) + `:"")`
-	}
-	p2Query := p1Base + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
-	p2Query = p.addUnderscorefallbackByLabels(p2Query, parseOriginalByLabels(r.FormValue("query")))
-	p2Params := buildStatsQueryRangeParams(p2Query, start, end, r.FormValue("step"))
-	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
-		p.setSlidingStatsRangeParams(p2Params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
-	}
-	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
-	if err != nil {
-		return nil
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode >= 400 {
-		return nil
-	}
-	p2Body, p2Err := readBodyLimited(resp2.Body, maxDrilldownResponseBytes)
-	if p2Err != nil {
-		return nil
-	}
-	keepFn := func(tsNs int64) bool { return tsNs <= endNs }
-	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
-	p2Body = limitLokiResultSeries(p2Body, limit)
-	return wrapAsLokiResponse(p2Body, "matrix")
-}
-
-func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field, effectiveStep string) []byte {
-	ctx := r.Context()
-	start, end := r.FormValue("start"), r.FormValue("end")
-	step := effectiveStep
-	if step == "" {
-		step = r.FormValue("step")
-	}
-
-	startNs, ok1 := parseLokiTimeToUnixNano(start)
-	endNs, ok2 := parseLokiTimeToUnixNano(end)
-	if !ok1 || !ok2 || endNs <= startNs {
-		return nil
-	}
-	rangeSec := (endNs - startNs) / int64(time.Second)
-	if rangeSec < 1 {
-		rangeSec = 1
-	}
-
-	p1Params := url.Values{}
-	p1Params.Set("query", appendDrilldownSeriesLimit(effectiveQuery, p.drilldownSeriesLimit(r.Context())+1))
-	p1Params.Set("start", nanosToVLTimestamp(startNs))
-	p1Params.Set("end", nanosToVLTimestamp(endNs))
-	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
-
-	resp1, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p1Params)
-	if err != nil {
-		return nil
-	}
-	defer resp1.Body.Close()
-	if resp1.StatusCode >= 400 {
-		return nil
-	}
-
-	// 1 MB is generous for a series-limit-sized page of ~256-byte UUID entries.
-	p1Body, p1Err := readBodyLimited(resp1.Body, 1<<20)
-	if p1Err != nil {
-		return nil
-	}
-
-	topValues := drilldownTopValuesFromMatrix(p1Body, field)
-	if len(topValues) == 0 {
-		return emptyLokiMatrix
-	}
-
-	// Phase 2: range query restricted to the global top-N values that fit
-	// VictoriaLogs' query length.
-	inFilter, _, fitErr := fitTopValueFilter(field, topValues, cleanBase+" | filter ", " | stats by ("+quoteLogsQLIdent(field)+") count()")
-	if fitErr != nil {
-		return nil
-	}
-	p2Query := cleanBase + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
-	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
-	p2Query = p.addUnderscorefallbackByLabels(p2Query, origGroupBy)
-
-	p2Params := buildStatsQueryRangeParams(p2Query, start, end, step)
-	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
-	if err != nil {
-		return nil
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode >= 400 {
-		return nil
-	}
-
-	p2Body, p2Err := readBodyLimited(resp2.Body, maxDrilldownResponseBytes)
-	if p2Err != nil {
-		return nil
-	}
-
-	var keepFn func(int64) bool
-	if ok2 {
-		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
-	}
-	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
-	// Drilldown-only path: capSeriesToLimit records the partial-result warning
-	// and never errors here. A plain client that somehow reaches it gets no body,
-	// so the caller falls through to a path that applies the limit itself.
-	capped, capErr := capSeriesToLimit(r.Context(), p2Body, p.drilldownSeriesLimit(r.Context()))
-	if capErr != nil {
-		return nil
-	}
-	p2Body = capped
-	return wrapAsLokiResponse(p2Body, "matrix")
-}
-
 // drilldownTopValuesFromMatrix extracts the label values for field from a Loki
-// matrix JSON response. Used by drilldownTwoPhase to parse the Phase 1 result
-// (one bucket → global top-N values from a single-bucket stats_query_range call).
+// matrix JSON response (one bucket: the values ranked by line count).
 func drilldownTopValuesFromMatrix(body []byte, field string) []string {
 	v, err := fj.ParseBytes(body)
 	if err != nil {
@@ -2499,8 +496,7 @@ func drilldownTopValuesHaveEmpty(body []byte, field string) bool {
 
 // buildVLInFilter builds a LogsQL field:in("v1","v2",...) existence filter.
 // VL evaluates in() filters against pre-indexed columns without a parser stage,
-// making them fast even for high-cardinality fields. Used by drilldownTwoPhase
-// to restrict Phase 2 queries to the values returned by Phase 1.
+// making them fast even for high-cardinality fields.
 func buildVLInFilter(field string, values []string) string {
 	var sb strings.Builder
 	sb.WriteString(quoteLogsQLIdent(field))
@@ -2545,6 +541,7 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 	type ranked struct {
 		idx   int
 		total float64
+		key   string
 	}
 	sampleValue := func(pair *fj.Value) float64 {
 		arr := pair.GetArray()
@@ -2568,7 +565,19 @@ func limitLokiResultSeries(body []byte, maxSeries int) []byte {
 		}
 		ranks[i] = ranked{idx: i, total: total}
 	}
-	sort.Slice(ranks, func(i, j int) bool { return ranks[i].total > ranks[j].total })
+	// Ties break on the labels, so equal-volume series (a field whose values
+	// appear once each) are kept the same way on every request.
+	for i := range ranks {
+		if m := result[ranks[i].idx].Get("metric"); m != nil {
+			ranks[i].key = string(m.MarshalTo(nil))
+		}
+	}
+	sort.Slice(ranks, func(i, j int) bool {
+		if ranks[i].total != ranks[j].total {
+			return ranks[i].total > ranks[j].total
+		}
+		return ranks[i].key < ranks[j].key
+	})
 
 	buf := make([]byte, 0, maxSeries*256)
 	buf = append(buf, `{"status":"success","data":{"resultType":"`...)
@@ -2685,11 +694,8 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 // and relabel buckets onto Loki's evaluation timestamps. The parsed expression
 // is walked, so outer aggregations like sum by(x)(count_over_time(...)) are
 // detected, grouped or not, and function names inside string literals are not.
-//
-// Grafana Logs Drilldown requests keep their earlier routing: only rate,
-// bytes_rate and ungrouped sums are relabelled, and grouped counts stay on the
-// hits and hybrid paths, which build, coarsen and zero-fill their own
-// bucket-start axis. That keeps every panel of a Drilldown page on one axis.
+// Logs Drilldown requests are relabelled like any other: Loki answers them on
+// its evaluation timestamps.
 // NOTE: binary metric expressions are evaluated per operand through the normal
 // handlers; the legacy proxyBinaryMetric paths apply the shift independently.
 // Returns (spec, origStartNs, true) when shifting is needed.
@@ -2703,11 +709,8 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	if err != nil {
 		return
 	}
-	found, hasRate, logRangeOnly := logRangeFunctions(expr)
+	found, _, logRangeOnly := logRangeFunctions(expr)
 	if !found || !logRangeOnly {
-		return
-	}
-	if isGrafanaDrilldownRequest(r) && !hasRate && !isSumAllLogRange(stripped) {
 		return
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
@@ -2952,12 +955,30 @@ scanLoop:
 	return result
 }
 
+// statsQRSeriesKeepsPoint reports whether keep accepts any point of values.
+func statsQRSeriesKeepsPoint(values *fj.Value, keep func(int64) bool) bool {
+	points, _ := values.Array()
+	for _, point := range points {
+		if pts, _ := point.Array(); len(pts) > 0 && keep(statsQRFJPointNano(pts[0])) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, relabel func(int64) int64, scratch *[]byte) {
 	buf.WriteByte('[')
-	for si, series := range seriesArr {
-		if si > 0 {
+	written := 0
+	for _, series := range seriesArr {
+		// A series with no point left in the range is not part of the answer:
+		// Loki never returns a matrix series without samples.
+		if values := series.Get("values"); values != nil && !statsQRSeriesKeepsPoint(values, keep) {
+			continue
+		}
+		if written > 0 {
 			buf.WriteByte(',')
 		}
+		written++
 		buf.WriteByte('{')
 		fieldWritten := false
 		if metric := series.Get("metric"); metric != nil {
@@ -3268,11 +1289,18 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 // in a single write pass.
 func writeTrimmedTranslatedStatsFJ(buf *bytes.Buffer, items []*fj.Value, results []trimTranslateResult, keep func(int64) bool, scratch *[]byte) {
 	buf.WriteByte('[')
+	written := 0
 	for i, item := range items {
-		if i > 0 {
+		res := results[i]
+		// A range series with no point left before the end is not part of the
+		// answer: Loki never returns a matrix series without samples.
+		if values := item.Get("values"); res.valsTrim && keep != nil && values != nil && !statsQRSeriesKeepsPoint(values, keep) {
+			continue
+		}
+		if written > 0 {
 			buf.WriteByte(',')
 		}
-		res := results[i]
+		written++
 		if res.metric != nil || res.valsTrim {
 			buf.WriteString(`{"metric":`)
 			if res.metric != nil {

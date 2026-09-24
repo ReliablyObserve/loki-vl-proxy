@@ -91,64 +91,6 @@ func TestExtractCommonBase(t *testing.T) {
 	}
 }
 
-func TestExtractStreamSelectorOnly(t *testing.T) {
-	tests := []struct {
-		query string
-		want  string
-	}{
-		// Loki-bracketed form: trims at first pipe
-		{`{namespace="prod"}`, `{namespace="prod"}`},
-		{`{namespace="prod"} | json`, `{namespace="prod"}`},
-		{`{namespace="prod"} | json | logfmt | drop a,b`, `{namespace="prod"}`},
-		// VL-native bare form: still trims at first pipe
-		{`namespace:="prod"`, `namespace:="prod"`},
-		{`namespace:="prod" | unpack_json`, `namespace:="prod"`},
-		{`namespace:="prod" | unpack_json | filter trace_id:!""`, `namespace:="prod"`},
-		// Multi-label selectors preserved intact
-		{`{namespace="prod", app="api"} | json`, `{namespace="prod", app="api"}`},
-		// Whitespace handling
-		{`  {namespace="prod"}  |  json  `, `{namespace="prod"}`},
-		{``, ``},
-	}
-	for _, tc := range tests {
-		t.Run(tc.query, func(t *testing.T) {
-			got := extractStreamSelectorOnly(tc.query)
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestFieldHasExistenceFilter_QuotedDottedField(t *testing.T) {
-	// Regression: the translator quotes OTel attributes ("k8s.pod.name",
-	// "service.name") because VL requires quoting for identifiers with dots.
-	// Pre-fix, fieldHasExistenceFilter only checked the unquoted form, causing
-	// the parser-direct fast path (and /hits routing) to be skipped for these
-	// fields — Drilldown rendered 100k+ raw series instead of the top-N
-	// histogram. See proxyStatsQueryRangeDrilldownParserDirect.
-	tests := []struct {
-		base  string
-		field string
-		want  bool
-	}{
-		{`namespace:="prod" | unpack_json | filter "k8s.pod.name":!""`, "k8s.pod.name", true},
-		{`namespace:="prod" | unpack_json | filter "service.name":!""`, "service.name", true},
-		{`namespace:="prod" | unpack_json | filter trace_id:!""`, "trace_id", true},
-		// Quoted field present but different from requested
-		{`namespace:="prod" | unpack_json | filter "k8s.pod.name":!""`, "trace_id", false},
-		// Stream-selector form (already worked, regression guard)
-		{`{namespace="prod", trace_id!=""}`, "trace_id", true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.field, func(t *testing.T) {
-			if got := fieldHasExistenceFilter(tc.base, tc.field); got != tc.want {
-				t.Errorf("got %v, want %v\n  base:  %s\n  field: %s", got, tc.want, tc.base, tc.field)
-			}
-		})
-	}
-}
-
 func TestAllFiltersAreExistenceChecks(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -171,85 +113,6 @@ func TestAllFiltersAreExistenceChecks(t *testing.T) {
 			got := allFiltersAreExistenceChecks(tc.query)
 			if got != tc.want {
 				t.Errorf("allFiltersAreExistenceChecks(%q) = %v, want %v", tc.query, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestDetectDrilldownSingleField(t *testing.T) {
-	tests := []struct {
-		name      string
-		query     string
-		wantOK    bool
-		wantBase  string
-		wantField string
-	}{
-		{
-			name:      "clean drilldown query after strip",
-			query:     `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`,
-			wantOK:    true,
-			wantBase:  `env:="production"`,
-			wantField: "trace_id",
-		},
-		{
-			name:      "multiple stream filters, single existence filter",
-			query:     `env:="production" app:="myapp" | filter span_id:!"" | stats by (span_id) count()`,
-			wantOK:    true,
-			wantBase:  `env:="production" app:="myapp"`,
-			wantField: "span_id",
-		},
-		{
-			name:      "delete pipe stripped",
-			query:     `env:="production" | delete __error__ | filter trace_id:!"" | stats by (trace_id) count()`,
-			wantOK:    true,
-			wantBase:  `env:="production"`,
-			wantField: "trace_id",
-		},
-		{
-			name:   "multiple group-by fields — not a single-field drilldown",
-			query:  `env:="production" | filter trace_id:!"" | stats by (trace_id, span_id) count()`,
-			wantOK: false,
-		},
-		{
-			name:   "no existence filter — not drilldown",
-			query:  `env:="production" | stats by (trace_id) count()`,
-			wantOK: false,
-		},
-		{
-			name:   "value-comparison filter — not safe for count() if",
-			query:  `env:="production" | filter status:>="400" | stats by (status) count()`,
-			wantOK: false,
-		},
-		{
-			name:   "sum() not count()",
-			query:  `env:="production" | filter trace_id:!"" | stats by (trace_id) sum(bytes)`,
-			wantOK: false,
-		},
-		{
-			name:   "parser stage still present — not safe",
-			query:  `env:="production" | unpack_json | filter trace_id:!"" | stats by (trace_id) count()`,
-			wantOK: false,
-		},
-		{
-			name:   "no stats clause",
-			query:  `env:="production" | filter trace_id:!""`,
-			wantOK: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			base, field, ok := detectDrilldownSingleField(tc.query)
-			if ok != tc.wantOK {
-				t.Fatalf("detectDrilldownSingleField(%q) ok=%v want %v", tc.query, ok, tc.wantOK)
-			}
-			if !ok {
-				return
-			}
-			if base != tc.wantBase {
-				t.Errorf("base=%q want %q", base, tc.wantBase)
-			}
-			if field != tc.wantField {
-				t.Errorf("field=%q want %q", field, tc.wantField)
 			}
 		})
 	}
@@ -431,28 +294,5 @@ func TestFusedFieldHits_VLNonSuccess(t *testing.T) {
 	_, err := fireFn(context.Background(), []string{"trace_id"})
 	if err == nil {
 		t.Fatal("expected error from non-success status, got nil")
-	}
-}
-
-// TestStripDrilldownExistenceFilters_KeepsFilterPrefixForRemainingTerms: a line
-// filter ANDed into the removed existence-filter stage must keep its own
-// | filter prefix, or VictoriaLogs rejects the query ("unexpected token after
-// [unpack_logfmt]") on every version.
-func TestStripDrilldownExistenceFilters_KeepsFilterPrefixForRemainingTerms(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{`app:="api" | filter trace_id:!"" | stats by (trace_id) count()`, `app:="api"  | stats by (trace_id) count()`},
-		{`app:="api" ~"x" | unpack_logfmt | filter level:!"" ~"y"`, `app:="api" ~"x" | unpack_logfmt | filter ~"y"`},
-		{`app:="api" ~"x" | format "<status>" | filter level:!"" ~"y" | stats by (level) count()`, `app:="api" ~"x" | format "<status>" | filter ~"y" | stats by (level) count()`},
-		{`app:="api" | unpack_json | filter "k8s.pod.name":!"" -level:*`, `app:="api" | unpack_json | filter -level:*`},
-		{`app:="api" | filter level:!""`, `app:="api" `},
-	}
-	for _, tc := range cases {
-		if got := stripDrilldownExistenceFilters(tc.in); got != tc.want {
-			t.Errorf("stripDrilldownExistenceFilters(%q)\n got: %q\nwant: %q", tc.in, got, tc.want)
-		}
-	}
-	base, field, ok := detectDrilldownSingleFieldWithParser(`app:="api" ~"x" | unpack_logfmt | filter level:!"" ~"y" | stats by (level) count()`)
-	if !ok || field != "level" || base != `app:="api" ~"x" | unpack_logfmt | filter ~"y"` {
-		t.Fatalf("detectDrilldownSingleFieldWithParser: base=%q field=%q ok=%v", base, field, ok)
 	}
 }

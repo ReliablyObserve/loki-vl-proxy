@@ -28,7 +28,59 @@ var (
 	fakeWindowPhaseRE = regexp.MustCompile(`\| math \(\(_time - (-?\d+)\) % (\d+)\) as __lvp_window_phase \| filter __lvp_window_phase:>0 __lvp_window_phase:<=(\d+)`)
 	tumblingStatsByRE = regexp.MustCompile(`\| stats (?:by \(([^)]*)\) )?(count\(\)|sum_len\(_msg\))( as [A-Za-z_]+)?`)
 	tumblingMathRE    = regexp.MustCompile(`\| math __lvp_inner/(\d+) as __lvp_rate \| stats (?:by \(([^)]*)\) )?sum\(__lvp_rate\)`)
+	// The ranked single-field breakdown: `| filter f:in(<base> | stats by (f)
+	// count() as __lvp_rank | sort by (__lvp_rank desc, f) | limit K | fields f)`.
+	fakeRankedInRE = regexp.MustCompile(`\| filter ([A-Za-z_]+):in\((.*) \| stats by \(([A-Za-z_]+)\) count\(\) as __lvp_rank \| sort by \(__lvp_rank desc, ([A-Za-z_]+)\) \| limit (\d+) \| fields ([A-Za-z_]+)\)`)
 )
+
+// fakeRankedKeep evaluates the ranked in() subquery of q, as VictoriaLogs does,
+// over the lines in [start, end) (the subquery inherits the outer time range):
+// the K values of the field with the most lines, ties by value. It returns the
+// query without the subquery filter and the kept values, or nil when q has no
+// ranked filter.
+func fakeRankedKeep(t testing.TB, q string, lines []tumblingLine, start, end int64, parsed bool) (string, map[string]bool) {
+	m := fakeRankedInRE.FindStringSubmatchIndex(q)
+	if m == nil {
+		return q, nil
+	}
+	field, sub := q[m[2]:m[3]], q[m[4]:m[5]]
+	if q[m[6]:m[7]] != field || q[m[8]:m[9]] != field || q[m[12]:m[13]] != field {
+		t.Errorf("fake VL: ranked subquery mixes fields in %q", q)
+	}
+	k, _ := strconv.Atoi(q[m[10]:m[11]])
+	counts := map[string]int{}
+	for _, line := range lines {
+		if line.ts < start || line.ts >= end || !fakeWindowPhaseKeep(t, sub, line.ts) || !fakeInFilterKeep(sub, line.labels) {
+			continue
+		}
+		value := line.labels[field]
+		if value == "" && parsed {
+			value = slidingLogfmtFields(line.msg)[field]
+		}
+		if value == "" && strings.Contains(sub, field+`:!""`) {
+			continue
+		}
+		counts[value]++
+	}
+	values := make([]string, 0, len(counts))
+	for v := range counts {
+		values = append(values, v)
+	}
+	sort.Slice(values, func(i, j int) bool {
+		if counts[values[i]] != counts[values[j]] {
+			return counts[values[i]] > counts[values[j]]
+		}
+		return values[i] < values[j]
+	})
+	if len(values) > k {
+		values = values[:k]
+	}
+	keep := map[string]bool{}
+	for _, v := range values {
+		keep[v] = true
+	}
+	return q[:m[0]] + q[m[1]:], keep
+}
 
 // fakeWindowPhaseKeep applies the windowPhaseFilter pipes of a query to a line
 // timestamp, as VictoriaLogs math and filter pipes do; queries without them keep
@@ -73,6 +125,7 @@ type tumblingFakeVL struct {
 	statsCalls []slidingStatsCall
 	instant    string // stats_query response body
 	rawCalls   int
+	otherCalls []string // paths the fake does not serve, such as /hits
 }
 
 // newTumblingFakeVL serves stats_query_range with VictoriaLogs semantics for the
@@ -159,6 +212,9 @@ func newTumblingFakeVL(t *testing.T, lines []tumblingLine) (*httptest.Server, *t
 				_, _ = w.Write(append(row, '\n'))
 			}
 		default:
+			fake.mu.Lock()
+			fake.otherCalls = append(fake.otherCalls, r.URL.Path)
+			fake.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{}`))
 		}
@@ -182,6 +238,10 @@ func tumblingStream(labels map[string]string) string {
 
 func tumblingStatsBody(t *testing.T, q string, lines []tumblingLine, start, end, step, offset int64) []byte {
 	t.Helper()
+	// unpack_logfmt, and the `level=<level> <_>` pattern the tests use, expose
+	// the logfmt fields of a line.
+	parsed := strings.Contains(q, "| unpack_logfmt") || strings.Contains(q, `| extract "level=<level> <_>"`)
+	q, rankedKeep := fakeRankedKeep(t, q, lines, start, end, parsed)
 	m := tumblingStatsByRE.FindStringSubmatch(q)
 	if m == nil {
 		t.Errorf("fake VL: unsupported stats query %q", q)
@@ -201,9 +261,6 @@ func tumblingStatsBody(t *testing.T, q string, lines []tumblingLine, start, end,
 	}
 	bytesAgg := m[2] == "sum_len(_msg)"
 	withPresence := strings.Contains(q, "count() as __sample_count")
-	// unpack_logfmt, and the `level=<level> <_>` pattern the tests use, expose
-	// the logfmt fields of a line.
-	parsed := strings.Contains(q, "| unpack_logfmt") || strings.Contains(q, `| extract "level=<level> <_>"`)
 	type group struct {
 		metric  map[string]string
 		buckets map[int64]float64
@@ -224,6 +281,9 @@ func tumblingStatsBody(t *testing.T, q string, lines []tumblingLine, start, end,
 			default:
 				metric[f] = line.labels[f]
 			}
+		}
+		if rankedKeep != nil && !rankedKeep[metric[by[0]]] {
+			continue
 		}
 		raw, _ := json.Marshal(metric)
 		g := groups[string(raw)]
@@ -687,62 +747,6 @@ func TestTumblingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 				t.Fatalf("unaligned start: expected the window evaluator, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
 			}
 		})
-	}
-}
-
-// Grafana Logs Drilldown panels build a bucket-start axis in the hits and hybrid
-// paths. A Drilldown request keeps that axis for every grouped count panel, a
-// value-filter panel (routed through the direct path's windowed /hits) as well
-// as an existence-filter histogram, so all panels of a page line up.
-func TestTumblingRangeMetric_DrilldownPanelsShareOneAxis(t *testing.T) {
-	const startSec, endSec, stepSec = int64(1700006400), int64(1700017200), int64(300) // 3h, step-aligned
-	backend := newRecorderBackend()
-	backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-		points := [][2]any{}
-		for ts := startSec; ts <= endSec; ts += stepSec {
-			points = append(points, [2]any{time.Unix(ts, 0).UTC().Format(time.RFC3339), 3})
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{"a": points})))
-	})
-	vl := backend.server()
-	defer vl.Close()
-
-	// axis returns the first series as timestamp=value pairs.
-	axis := func(query, logsql string) []string {
-		t.Helper()
-		p := newTestProxy(t, vl.URL)
-		p.storeBackendVersion("v1.50.0", "v1.50.0")
-		r := drilldownRequest(t, query, startSec, endSec, strconv.FormatInt(stepSec, 10), "drilldown")
-		w := httptest.NewRecorder()
-		p.proxyStatsQueryRange(w, r, logsql)
-		var resp struct {
-			Data struct {
-				Result []struct {
-					Values [][2]any `json:"values"`
-				} `json:"result"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || len(resp.Data.Result) == 0 {
-			t.Fatalf("%s: expected series, got %s (%v)", query, w.Body.String(), err)
-		}
-		var out []string
-		for _, v := range resp.Data.Result[0].Values {
-			ts, _ := v[0].(float64)
-			out = append(out, fmt.Sprintf("%d=%v", int64(ts), v[1]))
-		}
-		return out
-	}
-	existence := axis(`sum by (pod) (count_over_time({namespace="prod"} | pod!="" [5m]))`,
-		`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-	valueFilter := axis(`sum by (pod) (count_over_time({namespace="prod"} | detected_level="error" [5m]))`,
-		`namespace:="prod" | filter level:="error" | stats by (pod) count()`)
-	if fmt.Sprint(existence) != fmt.Sprint(valueFilter) {
-		t.Fatalf("Drilldown panels on different axes:\nexistence filter: %v\nvalue filter:     %v", existence, valueFilter)
-	}
-	// The /hits bucket labelled start keeps its label.
-	if want := fmt.Sprintf("%d=3", startSec); existence[0] != want {
-		t.Fatalf("Drilldown axis must keep the bucket-start labels (first point %s), got %v", want, existence)
 	}
 }
 

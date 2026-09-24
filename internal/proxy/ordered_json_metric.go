@@ -107,7 +107,7 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	if plan.parser != "json" {
-		// Drilldown keeps its dedicated coalescing and residual-chunk routes.
+		// Drilldown keeps its per-field coalescing and residual-chunk routes.
 		return isRange && !isGrafanaDrilldownRequest(r) && p.serveLevelVolumeStatsBuckets(w, r, requestStart, query, plan)
 	}
 	if isRange && plan.isNativeDrilldownHistogram(r) && p.orderedJSONNativeGroupingIsExact(plan) {
@@ -186,9 +186,9 @@ func (p *Proxy) orderedJSONNativeGroupingIsExact(plan *orderedJSONMetricPlan) bo
 	return true
 }
 
-// Drilldown's field histogram intentionally returns the most frequent bounded
-// set of values. Preserve the existing native stats/hits route for that precise
-// UI query; ordinary exact metrics still use the fail-closed local evaluator.
+// Drilldown's field breakdown is answered by the native stats route, which
+// returns every series up to the tenant's series limit, ranked by VictoriaLogs
+// when over it; ordinary exact metrics still use the fail-closed local evaluator.
 func (plan *orderedJSONMetricPlan) isNativeDrilldownHistogram(r *http.Request) bool {
 	if !isGrafanaDrilldownRequest(r) || !plan.aggregated || plan.function != "count_over_time" ||
 		plan.grouping == nil || plan.grouping.Without || len(plan.grouping.Labels) != 1 {

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **A grouped count whose VictoriaLogs response is large is no longer
+  answered from a sample.** A `stats_query_range` response above 16 MB used to
+  be answered from a two-phase top-values query or, failing that, with an
+  empty matrix. The response is now read up to
+  `-backend-max-buffered-response-bytes` (64 MiB by default) and answered in
+  full, or with Loki's series-limit error or Drilldown partial result; above
+  that size the query fails with `502` naming the flag.
+- `-drilldown-max-stats-buckets`, `-drilldown-field-batch-window-ms` and
+  `-drilldown-field-batch-max-fields` are deprecated and have no effect; they
+  are still accepted so existing command lines keep working.
+
 ### Added
 
 - **Automatic A/B performance and parity runs: a smoke on every pull request,
@@ -33,6 +46,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   week-over-week `bench/ab/history/trend.md`, and the regenerated registry
   performance evidence. The e2e log generator gained a seeded backfill mode
   (`LOG_BACKFILL_SECONDS`) that the runs use.
+
+### Fixed
+
+- **Logs Drilldown label and field breakdowns answer exactly like Loki.** A
+  breakdown such as `sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)`
+  or `sum by (user_id) (count_over_time({env="production"} | json ... | user_id!="" [5m]))`
+  was answered from VictoriaLogs `/hits` top values: 16 to 20 series sampled
+  in 8 windows from 2h on, the step coarsened to at most 120 buckets, missing
+  steps zero-filled, samples on bucket starts instead of Loki's evaluation
+  timestamps, and no warning, so a label with six values could show two and a
+  pod breakdown showed 16 of 50,000 pods with counts that matched none of
+  Loki's. The breakdown now takes the same exact path as any other client:
+  every series up to the tenant's `max_query_series` with Loki's values on
+  Loki's evaluation timestamps, from one `stats_query_range` call. Above the
+  limit the breakdown is asked again with VictoriaLogs ranking the field's
+  values (an `in()` subquery keeping the `limit + 1` busiest, remembered for
+  five minutes), so the response stays bounded however many values the field
+  has, and Drilldown gets the `limit` busiest series with Loki's
+  `maximum number of series (N) reached for a single query; returning partial
+  results` warning. Breakdowns share the `-stats-query-range-concurrency`
+  slots. Loki keeps the first series it meets rather than the
+  busiest, so for series of equal volume the kept set can differ; every kept
+  series has Loki's values.
+- A Grafana-sourced stats failure on a range == step metric query kept its
+  partial-result reply but lost the `Warning` and `X-Proxy-Upstream-*`
+  headers.
 
 ## [1.96.0] - 2026-09-24
 

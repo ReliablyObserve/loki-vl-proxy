@@ -466,8 +466,9 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-stats-query-range-inter-query-delay-ms` | — | `200` | Minimum pause in ms between consecutive individual `stats_query_range` calls; the concurrency slot is held for this long after each call. `0` disables |
 | `-drilldown-burst-window-ms` | — | `50` | Window in ms for coalescing concurrent Drilldown Fields per-field count queries into one fused VictoriaLogs call. `0` disables the coalescer |
 | `-drilldown-burst-max-fields` | — | `30` | Maximum fields per coalesced burst call; further fields form another call |
-| `-drilldown-field-batch-window-ms` | — | `100` | Accumulation window in ms for folding concurrent per-field `stats_query_range` calls into one multi-field query. `0` disables batching |
-| `-drilldown-field-batch-max-fields` | — | `6` | Maximum fields per batched call; excess fields form additional batches or fall back to individual calls |
+| `-drilldown-field-batch-window-ms` | — | `100` | Deprecated, no effect: Logs Drilldown field breakdowns are answered exactly, one `stats_query_range` call each. Accepted so existing command lines keep working |
+| `-drilldown-field-batch-max-fields` | — | `6` | Deprecated, no effect (see `-drilldown-field-batch-window-ms`) |
+| `-drilldown-max-stats-buckets` | — | `120` | Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working |
 
 ### Loki-Aligned Defaults
 
@@ -908,7 +909,6 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-binary-metric-max-operand-bytes` | `0` (uses `256 MiB`) | Operand-response bytes one binary metric expression may capture |
 | `-binary-metric-max-arrays` | `0` (uses `2000000`) | JSON arrays one binary metric expression may allocate while joining operands |
 | `-max-zero-fill-buckets` | `0` (uses `32768`) | Buckets the proxy zero-fills in a metric response |
-| `-drilldown-max-stats-buckets` | `0` (uses `120`) | Time buckets a Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit |
 | `-detected-fields-max-scan-lines` | `0` (uses `2000`) | Log lines the `/detected_fields` and detected-field-values scan reads per request |
 | `-patterns-max-backend-rows` | `0` (uses `20000`) | Log lines `/patterns` reads from VictoriaLogs for one request |
 | `-patterns-second-pass-max-rows` | `0` (uses `8000`) | Log lines the `/patterns` second pass reads when the first pass mined too few patterns |
