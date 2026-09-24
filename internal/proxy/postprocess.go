@@ -167,7 +167,11 @@ func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[strin
 		},
 	}
 
-	tmpl, err := template.New("line_format").Option("missingkey=zero").Funcs(funcMap).Parse(tmplStr)
+	// A LogQL `| line_format "..."` template is client input by definition, and
+	// Loki executes it the same way (text/template, not HTML). It runs sandboxed:
+	// only the functions in funcMap, missingkey=zero, and every execution bounded
+	// by instrumentTemplateBudget below.
+	tmpl, err := template.New("line_format").Option("missingkey=zero").Funcs(funcMap).Parse(tmplStr) // #nosec G708 -- LogQL line_format templates are client input by design; sandboxed and budgeted
 	if err != nil {
 		return fmt.Errorf("invalid line_format: %w", err)
 	}
