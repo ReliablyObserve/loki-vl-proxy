@@ -158,6 +158,9 @@ type proxyRuntimeConfig struct {
 	logRateThreshold                    int
 	labelCacheTTL                       time.Duration
 	labelsCacheWarm                     bool
+	logqlDottedNames                    string
+	labelBrowseExtensions               string
+	errorResponseMessageField           bool
 	warmupMaxJitter                     time.Duration
 	labelStyle                          string
 	metadataFieldMode                   string
@@ -434,6 +437,15 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	logqlDottedNames := fs.String("logql-dotted-names", "auto", `Dotted names in LogQL (k8s.namespace.name in a stream matcher, label filter, by/without list, keep/drop, label_format, json/logfmt parameters, unwrap):
+  auto   - reject in the Loki-compatible profile (-label-style=underscores -metadata-field-mode=translated), accept otherwise (default)
+  reject - answer Loki's 400 parse error, as Loki does; detected_fields names dotted JSON keys by Loki's sanitized name with the key in jsonPath
+  accept - translate them to the dotted VictoriaLogs field (a proxy extension); detected_fields keeps dotted JSON keys`)
+	labelBrowseExtensions := fs.String("label-browse-extensions", "auto", `limit, offset and search/q on /labels and /label/{name}/values (a proxy extension; Loki ignores them):
+  auto - on outside the Loki-compatible profile or with -label-values-indexed-cache, off otherwise (default)
+  on   - honour them
+  off  - ignore them, as Loki does`)
+	errorResponseMessageField := fs.Bool("error-response-message-field", true, "Add a message field with the error text to JSON error bodies. Grafana's Loki datasource displays that field (Loki itself answers errors as text/plain); false restores the previous {status, errorType, error} body.")
 	labelsCacheWarm := fs.Bool("labels-cache-warm", true, "Warm the labels cache for the 1h/6h/24h/7d time-picker presets at startup and keep them warm in the background (every 75% of -labels-cache-ttl). Each refresh is a label-name scan of up to 7 days in VictoriaLogs; disable it on replicas that serve no interactive label pickers.")
 	warmupMaxJitter := fs.Duration("warmup-max-jitter", 0, "Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart.")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
@@ -877,6 +889,9 @@ func run(
 			logRateThreshold:                    *logRateThreshold,
 			labelCacheTTL:                       *labelsCacheTTL,
 			labelsCacheWarm:                     *labelsCacheWarm,
+			logqlDottedNames:                    *logqlDottedNames,
+			labelBrowseExtensions:               *labelBrowseExtensions,
+			errorResponseMessageField:           *errorResponseMessageField,
 			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
@@ -2079,6 +2094,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
+		LogQLDottedNames:                   cfg.logqlDottedNames,
+		LabelBrowseExtensions:              cfg.labelBrowseExtensions,
+		DisableErrorMessageField:           !cfg.errorResponseMessageField,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
 		TranslateOTel:                      cfg.translateOTel,

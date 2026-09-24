@@ -12,7 +12,9 @@ why: |
   VictoriaLogs field of the same name. Loki has no such mode: this is a
   profile-scoped extension, owner-accepted, and never active in the
   Loki-compatible profile (-label-style=underscores
-  -metadata-field-mode=translated). The e2e stack keeps it on the separately
+  -metadata-field-mode=translated) unless -logql-dotted-names=accept asks for
+  it there too; -logql-dotted-names=reject turns it off in any mode. The e2e
+  stack keeps it on the separately
   named "Loki (via VL proxy OTel hybrid)" and "Loki (via VL proxy native
   metadata)" datasources.
 request:

@@ -53,6 +53,9 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-translate-otel-attributes` | `TRANSLATE_OTEL_ATTRIBUTES` | `true` | Translate known OTel semantic-convention labels from underscore to dotted form in upstream queries; set `false` to preserve client label names (for example when VictoriaLogs stores underscore names) |
 | `-backend-default-msg-value` | — | — | VictoriaLogs `-defaultMsgValue` when it is customized. The proxy returns `_msg` as the log line; rows whose `_msg` is empty, starts with VictoriaLogs' default `missing _msg field` text, or equals this value stored no line (for example a Loki push of a JSON line), so the proxy rebuilds the line as a JSON object of the row's non-stream fields. See [Logging for compatibility](logging-for-compatibility.md#how-the-proxy-returns-lines) for the limits |
 | `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
+| `-logql-dotted-names` | — | `auto` | `auto`, `reject` or `accept`: dotted names in LogQL (`k8s.pod.name` in a matcher, label filter, `by`/`without` list, `keep`/`drop`, `label_format`, parser parameters, `unwrap`). `reject` answers Loki's exact 400 parse error and names dotted JSON keys in `detected_fields` by Loki's sanitized label (`http_method`, key in `jsonPath`); `accept` translates them to the dotted VictoriaLogs field and keeps dotted JSON keys in `detected_fields`; `auto` rejects in the Loki-compatible profile and accepts otherwise. See [Compatibility option matrix](#compatibility-option-matrix) |
+| `-label-browse-extensions` | — | `auto` | `auto`, `on` or `off`: `limit`, `offset` and `search`/`q` on `/labels` and `/label/{name}/values`, a proxy extension Loki ignores. `auto` is off in the Loki-compatible profile unless `-label-values-indexed-cache=true`, on otherwise |
+| `-error-response-message-field` | — | `true` | Add `message` (the field Grafana's Loki datasource displays) with the error text to JSON error bodies; `false` restores the previous `{status, errorType, error}` body |
 | `-detected-level-body-scan` | — | `true` | Derive `detected_level` like Loki for rows without a stored level field: the log line is read as JSON, then logfmt, then scanned for level keywords, with `unknown` as the fallback. `false` uses only stored fields (a stored `detected_level`, Loki's `log_level_fields` such as `level`, `severity`, `lvl`, `severity_text`, then `severity_number`) and answers `unknown` otherwise, which skips the per-line scan on large plain-text tenants but differs from Loki for lines that carry their level only in the text. Applies to log query responses, tail, `/detected_fields` and patterns collected from log queries; the `/patterns` endpoint's own sample always reads the line, and reads a row whose `_msg` VictoriaLogs replaced with `-backend-default-msg-value` as an ordinary line |
 | `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns an empty successful response (`{"status":"success","data":[]}`) |
 | `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
@@ -252,21 +255,65 @@ is answered with Loki's exact 400 parse error - line, column and expected-token
 list included - on query, query_range, tail and every selector parameter
 (labels, label values, series, index, patterns, detected fields), before any VictoriaLogs
 call; the label endpoints ignore `limit`, `offset` and `search` the way Loki
-does unless `-label-values-indexed-cache=true` opts into the browse window. The
-hybrid and native modes expose dotted VictoriaLogs names, so they keep
-accepting dotted names in queries and keep the browse parameters: those are
-documented extensions of those modes, not Loki behaviour.
+does. Both follow from `-logql-dotted-names=auto` and
+`-label-browse-extensions=auto`, which match the profile; set either
+explicitly to keep an extension with Loki's names, or Loki's grammar with the
+hybrid or native names. The hybrid and native modes expose dotted
+VictoriaLogs names, so with `auto` they keep accepting dotted names in queries
+and keep the browse parameters: those are documented extensions, not Loki
+behaviour.
 
-There is no single profile flag: the three flags above already default to the
+There is no single profile flag: the flags already default to the
 Loki-compatible profile, each also changes one surface on its own (for example
 `-emit-structured-metadata=false` for clients that reject metadata objects),
 and a profile flag would need precedence rules against them. Set the flags
-explicitly to pin a profile.
+explicitly to pin a profile; the [option matrix](#compatibility-option-matrix)
+lists what each combination does.
 
 For tuple behavior and endpoint-level details, see [API Reference](api-reference.md).
 For support scope by product/version track, see [Compatibility Matrix](compatibility-matrix.md).
 
 If you must interoperate with legacy clients that reject metadata objects in `categorize-labels` mode, explicitly set `-emit-structured-metadata=false`.
+
+### Compatibility option matrix
+
+Every option below is its own flag, and any combination is supported. The
+Loki-compatible profile is the default; each extension can be turned on alone
+without leaving it, and each Loki behaviour can be turned off alone.
+
+| Option | Values (default first) | Loki behaviour | What the other values do |
+|---|---|---|---|
+| `-label-style` | `underscores`, `passthrough` | `underscores`: stream labels and label names sanitized (`service.name` -> `service_name`) | `passthrough`: VictoriaLogs field names as stored, dots included |
+| `-metadata-field-mode` | `translated`, `hybrid`, `native` | `translated`: `detected_fields` and structured metadata under Loki's names only | `hybrid`: both the dotted and the Loki name; `native`: the dotted name only |
+| `-emit-structured-metadata` | `true`, `false` | `true`: `categorize-labels` 3-tuples carry structured metadata and parsed fields | `false`: the metadata object stays empty, for clients that reject it |
+| `-logql-dotted-names` | `auto`, `reject`, `accept` | `reject`: a dotted name is Loki's 400 parse error; dotted JSON keys appear in `detected_fields` as Loki's sanitized label with the key in `jsonPath` | `accept`: dotted names are translated to the dotted VictoriaLogs field; `detected_fields` keeps dotted JSON keys. `auto` = `reject` exactly when `-label-style=underscores` and `-metadata-field-mode=translated` |
+| `-label-browse-extensions` | `auto`, `on`, `off` | `off`: `limit`, `offset`, `search`/`q` are ignored on the label endpoints | `on`: the browse window applies (hot set first with `-label-values-indexed-cache`). `auto` = `off` in the Loki-compatible profile without `-label-values-indexed-cache`, `on` otherwise |
+| `-error-response-message-field` | `true`, `false` | (Loki answers text/plain) `true`: Grafana shows the error text | `false`: the previous `{status, errorType, error}` body |
+| `-label-values-max-response-bytes` | `67108864` | label values fail with Loki's `ResourceExhausted` 500 past the querier's message size | raise it (per tenant too) to answer larger label value lists; `268435456` is the previous implicit bound |
+
+What each combination of the three profile flags does with the `auto`
+settings (the unit test `TestCompatOptionMatrix` checks every combination of
+all six options: dotted-name handling, browse parameters, structured-metadata
+keys and `detected_fields` names):
+
+| `-label-style` | `-metadata-field-mode` | Labels | Structured metadata / detected fields | Dotted names in LogQL (`auto`) | Browse params (`auto`) | e2e variant |
+|---|---|---|---|---|---|---|
+| `underscores` | `translated` | `service_name` | `http_target` | rejected, Loki's error | ignored (on with the indexed cache) | `loki-vl-proxy`, `-underscore`, `-patterns-autodetect`, `-translated-metadata`, `-vmauth`, `-tail*` |
+| `underscores` | `hybrid` | `service_name` | `http.target` and `http_target` | accepted | honoured | `loki-vl-proxy-otel-hybrid` |
+| `underscores` | `native` | `service_name` | `http.target` | accepted | honoured | `loki-vl-proxy-native-metadata` |
+| `passthrough` | `translated` | `service.name` | `http.target` (nothing to translate) | accepted | honoured | (unit test only) |
+| `passthrough` | `hybrid` | `service.name` | `http.target` | accepted | honoured | (unit test only) |
+| `passthrough` | `native` | `service.name` | `http.target` | accepted | honoured | (unit test only) |
+
+`-emit-structured-metadata=false` empties the metadata object in any row
+(`loki-vl-proxy-no-metadata` runs it with the Loki profile). Combinations that
+mix the rows are valid: `-metadata-field-mode=translated -logql-dotted-names=accept`
+keeps Loki's names in every response while still running queries a user wrote
+with dotted names; `-metadata-field-mode=hybrid -logql-dotted-names=reject`
+shows both spellings but holds queries to Loki's grammar (the dotted spelling
+then cannot be queried, so it is only useful for display). With
+`-label-style=passthrough` the labels themselves carry dots, so rejecting
+dotted names leaves them unqueryable; keep `accept` there.
 
 ### Maximum Loki Compatibility — Annotated Configuration
 

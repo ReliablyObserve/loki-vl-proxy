@@ -1409,10 +1409,13 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						if shouldSuppressDetectedField(key) {
 							return
 						}
-						if _, conflict := labelNames[string(keyBytes)]; conflict {
+						// Loki names a parsed key by its sanitized label and
+						// keeps the key itself in jsonPath (-logql-dotted-names).
+						label := p.detectedFieldName(key)
+						if _, conflict := labelNames[label]; conflict {
 							return
 						}
-						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+						addDetectedField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
 					})
 				}
 			}

@@ -252,6 +252,20 @@ type Config struct {
 	// requests are still cached and served; only the proactive scans stop.
 	DisableLabelsCacheWarm bool
 
+	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
+	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
+	// for a dotted name in LogQL) or "accept" (translate it to the dotted
+	// VictoriaLogs field). It also picks the detected_fields name of a dotted
+	// JSON key: Loki's sanitized name when rejected, the stored name otherwise.
+	LogQLDottedNames string
+	// LabelBrowseExtensions is -label-browse-extensions: "auto" (default: on
+	// outside the Loki-compatible profile or with LabelValuesIndexedCache),
+	// "on" or "off" for limit/offset/search on the label endpoints.
+	LabelBrowseExtensions string
+	// DisableErrorMessageField drops the "message" copy of the error text
+	// from JSON error bodies (-error-response-message-field=false).
+	DisableErrorMessageField bool
+
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
@@ -517,7 +531,9 @@ type Proxy struct {
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
-	lokiNames                             bool             // Loki-compatible profile; see lokiProfile
+	rejectDottedNames                     bool             // -logql-dotted-names resolved; see loki_profile.go
+	labelBrowse                           bool             // -label-browse-extensions resolved
+	errorMessageField                     bool             // -error-response-message-field
 	streamFieldsMap                       map[string]bool  // known _stream_fields for VL stream selector optimization
 	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache // L3 fleet peer cache
@@ -927,6 +943,14 @@ func New(cfg Config) (*Proxy, error) {
 		tailAllowedOrigins[origin] = struct{}{}
 	}
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
+	rejectDottedNames, err := resolveDottedNames(cfg.LogQLDottedNames, cfg.LabelStyle, metadataFieldMode)
+	if err != nil {
+		return nil, err
+	}
+	labelBrowse, err := resolveLabelBrowse(cfg.LabelBrowseExtensions, cfg.LabelStyle, metadataFieldMode, cfg.LabelValuesIndexedCache)
+	if err != nil {
+		return nil, err
+	}
 	queryRangeMaxParallel := cfg.QueryRangeMaxParallel
 	if queryRangeMaxParallel <= 0 {
 		queryRangeMaxParallel = 2
@@ -1160,7 +1184,9 @@ func New(cfg Config) (*Proxy, error) {
 		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,
-		lokiNames:                             lokiProfile(cfg.LabelStyle, metadataFieldMode),
+		rejectDottedNames:                     rejectDottedNames,
+		labelBrowse:                           labelBrowse,
+		errorMessageField:                     !cfg.DisableErrorMessageField,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
 		declaredLabelFields:                   declaredLabelFields,
 		peerCache:                             cfg.PeerCache,
@@ -1306,7 +1332,9 @@ func New(cfg Config) (*Proxy, error) {
 			patternsAutodetectFromQueries:         p.patternsAutodetectFromQueries,
 			patternsCustom:                        p.patternsCustom,
 			metadataFieldMode:                     p.metadataFieldMode,
-			lokiNames:                             p.lokiNames,
+			rejectDottedNames:                     p.rejectDottedNames,
+			labelBrowse:                           p.labelBrowse,
+			errorMessageField:                     p.errorMessageField,
 			streamFieldsMap:                       p.streamFieldsMap,
 			declaredLabelFields:                   p.declaredLabelFields,
 			registerInstrumentation:               p.registerInstrumentation,

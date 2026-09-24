@@ -34,7 +34,9 @@ type HandlerConfig struct {
 	patternsAutodetectFromQueries         bool
 	patternsCustom                        []string
 	metadataFieldMode                     MetadataFieldMode
-	lokiNames                             bool
+	rejectDottedNames                     bool
+	labelBrowse                           bool
+	errorMessageField                     bool
 	streamFieldsMap                       map[string]bool
 	declaredLabelFields                   []string
 	registerInstrumentation               bool

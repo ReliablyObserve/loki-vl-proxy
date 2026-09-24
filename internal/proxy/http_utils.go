@@ -271,12 +271,15 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	// "message" field of a JSON error body and the raw body otherwise, so the
 	// envelope carries the text there too: Explore then shows exactly Loki's
 	// message instead of this JSON.
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	body := map[string]interface{}{
 		"status":    "error",
 		"errorType": lokiErrorType(code),
 		"error":     msg,
-		"message":   msg,
-	})
+	}
+	if p == nil || p.errorMessageField {
+		body["message"] = msg
+	}
+	json.NewEncoder(w).Encode(body)
 }
 
 func statusFromUpstreamErr(err error) int {

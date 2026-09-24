@@ -702,6 +702,58 @@ services:
       retries: 10
       start_period: 5s
 
+  # Loki-VL-proxy with underscore labels and translated-only metadata aliases
+  loki-vl-proxy-translated-metadata:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-translated-metadata
+    ports:
+      - "13107:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
+      # Match this stack's Loki limits_config (loki-local-config.yaml:
+      # max_query_series 1000000, max_entries_limit_per_query 0,
+      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query over a limit fails on both sides at the same point, parity
+      # tests compare answers rather than two different limits, and
+      # /loki/api/v1/drilldown-limits publishes what Loki publishes.
+      - "-max-stats-query-series=1000000"
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - "-backend-timeout=5m"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
+      - "-metadata-default-lookback=0"
+      - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # Loki-VL-proxy in the OTel hybrid profile: underscore labels, metadata
   # fields exposed under both the dotted VictoriaLogs name and the Loki
   # alias, dotted names accepted in queries (a documented extension of
@@ -993,6 +1045,7 @@ services:
       - loki-vl-proxy-vmauth
       - loki-vl-proxy-underscore
       - loki-vl-proxy-native-metadata
+      - loki-vl-proxy-translated-metadata
       - loki-vl-proxy-otel-hybrid
       - loki-vl-proxy-tail
       - loki-vl-proxy-tail-native

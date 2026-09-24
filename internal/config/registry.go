@@ -54,7 +54,7 @@ var categories = []Category{
 	{"timeouts", []string{"backend-timeout", "backend-version-check-timeout", "drilldown-scan-timeout", "query-range-window-timeout", "http-read", "http-write", "http-idle", "shutdown-"}},
 	{"cache", []string{"cache-", "compat-cache-", "disk-cache-", "labels-cache-", "query-range-", "recent-tail-", "label-values-"}},
 	{"tenancy", []string{"tenant", "require-tenant-header", "allow-global-tenant", "forward-tenant-header", "auth"}},
-	{"compatibility", []string{"label-style", "metadata-", "emit-structured-metadata", "extra-label-fields", "stream-fields", "field-mapping", "derived-fields", "patterns", "translate-otel", "backend-min-version", "backend-allow-unsupported-version", "backend-version-strict", "tail", "drilldown-", "align-queries-with-step", "detected-level-body-scan", "exact-parser-series-identity"}},
+	{"compatibility", []string{"label-style", "metadata-", "emit-structured-metadata", "extra-label-fields", "stream-fields", "field-mapping", "derived-fields", "patterns", "translate-otel", "backend-min-version", "backend-allow-unsupported-version", "backend-version-strict", "tail", "drilldown-", "align-queries-with-step", "detected-level-body-scan", "exact-parser-series-identity", "logql-dotted-names", "label-browse-extensions", "error-response-message-field"}},
 	{"security", []string{"server.", "tls-", "client-ca", "cb-", "coalescer-disabled", "debug-log-raw-queries", "forward-authorization", "forward-cookies", "forward-headers"}},
 	{"observability", []string{"metrics-", "metrics.", "otlp-", "otel-", "log-", "enable-query-analytics", "systemMetrics", "host-proc-root", "proc-root", "deployment-environment"}},
 	{"peer cache", []string{"peer-"}},

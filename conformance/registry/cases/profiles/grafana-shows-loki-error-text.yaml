@@ -16,6 +16,7 @@ why: |
   unexpected .` (measured through /api/ds/query on Grafana 13.2.1). The
   envelope now also carries "message" with the same text, so Grafana shows
   Loki's message verbatim; API clients keep reading "error".
+  -error-response-message-field=false restores the previous body.
 request:
   method: POST
   path: /api/ds/query
