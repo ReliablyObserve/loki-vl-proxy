@@ -615,6 +615,9 @@ jobs:
       - name: Conformance gate
         run: python3 scripts/ci/check_conformance.py --go-results /tmp/unit-results.json
 
+      - name: A/B harness unit tests (selection, PR comment, history)
+        run: python3 -m unittest discover -s bench/ab/tests
+
       - name: Registry report for this change
         if: github.event_name == 'pull_request'
         run: |

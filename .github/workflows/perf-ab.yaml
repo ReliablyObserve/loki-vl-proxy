@@ -1,0 +1,132 @@
+name: Perf A/B
+
+# Per-pull-request A/B smoke: the base build, the PR build and Loki on one
+# fresh stack, over the shapes bench/ab/selection.py picks from the changed
+# files. Posts one sticky comment and fails the `perf-smoke` check on a broken
+# shape, a slowdown confirmed by a re-run, or a new result difference from
+# Loki. See bench/ab/README.md.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-ab-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  perf-smoke:
+    name: perf-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      OUT: /tmp/ab-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The base build comes from a worktree of the merge commit's first parent.
+          fetch-depth: 0
+
+      - name: Select shapes for this change
+        id: select
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          # HEAD is the PR merged onto the base; its first parent is that base.
+          BASE="$(git rev-parse HEAD^1)"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          python3 bench/ab/selection.py --base "$BASE" --out "$OUT/selection.json" > /dev/null
+          RUN="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["run"]).lower())' "$OUT/selection.json")"
+          echo "run=${RUN}" >> "$GITHUB_OUTPUT"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print({k: len(v) for k, v in d["sets"].items()} or "nothing to run")' "$OUT/selection.json"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        if: steps.select.outputs.run == 'true'
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - name: Run the A/B smoke
+        id: smoke
+        if: steps.select.outputs.run == 'true'
+        env:
+          BASE: ${{ steps.select.outputs.base }}
+        run: |
+          set +e
+          python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT"
+          # The verdict file, not the exit status, decides: a crash of the
+          # interpreter itself leaves none and is reported as incomplete.
+          CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
+          echo "exit=${CODE}" >> "$GITHUB_OUTPUT"
+
+      - name: Render the skipped comment
+        if: steps.select.outputs.run != 'true'
+        env:
+          BASE: ${{ steps.select.outputs.base }}
+        run: |
+          printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$(git rev-parse HEAD)" > "$OUT/meta.json"
+          python3 bench/ab/comment.py --selection "$OUT/selection.json" --meta "$OUT/meta.json" --out "$OUT/comment.md" > /dev/null
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f "$OUT/comment.md" ]; then cat "$OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Upload A/B artifacts
+        if: always() && steps.select.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: perf-ab-smoke
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+      - name: Publish sticky PR comment
+        # Fork PRs run with a read-only token: the step summary still has the table.
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          RAN: ${{ steps.select.outputs.run }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `${process.env.OUT}/comment.md`;
+            const marker = '<!-- perf-ab-smoke -->';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // No rendered comment means the job died before pr_smoke.py could
+            // write one (timeout, runner loss): never leave the previous
+            // commit's table standing as if it were this commit's.
+            const body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8')
+              : `${marker}\n### ⚠️ Performance A/B: did not complete\n\nThe run for \`${context.sha.slice(0, 10)}\` stopped before it could report. See ${runUrl}.\n`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else if (process.env.RAN !== 'false') {
+              // A docs- or CI-only change gets no new comment; an existing one is updated to say it was skipped.
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail on regression
+        if: steps.select.outputs.run == 'true'
+        env:
+          CODE: ${{ steps.smoke.outputs.exit }}
+        run: |
+          case "$CODE" in
+            0) echo "no regression" ;;
+            1) echo "::error::A/B smoke: a shape broke, got slower on the re-run, or differs from Loki where the base did not (see the PR comment)"; exit 1 ;;
+            2) echo "::error::A/B smoke run invalid: VictoriaLogs restarted during the run; re-run the job"; exit 1 ;;
+            3) echo "::error::A/B smoke did not complete; see the PR comment, the log and the uploaded artifacts"; exit 1 ;;
+            *) echo "::error::A/B smoke did not complete (exit ${CODE:-none}); see the log and the uploaded artifacts"; exit 1 ;;
+          esac

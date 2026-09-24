@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Automatic A/B performance and parity runs: a smoke on every pull request,
+  a full run every day.** Every pull request that touches runtime code now
+  builds the base and the PR, starts a fresh Loki and VictoriaLogs stack of
+  its own (separate compose project and ports), seeds a fixed 86-minute
+  window of the log generator's data into both, and runs the affected
+  `bench/ab` shapes over 1h against base, PR and Loki, interleaved on the same
+  windows. One sticky comment shows, per shape, base and PR p50 with the
+  change (🟢 faster, 🔴 slower, ✅ fixed, ❌ broken, ⚪ within noise), Loki's
+  p50, the PR's time as a multiple of Loki's and whether the answer matches
+  Loki's, with cold timings and the selection reasons folded below. The
+  `perf-smoke` check fails on a broken shape, a new difference from Loki, or a
+  slowdown beyond 30% and 100 ms that a 7-run re-measure on unused windows
+  confirms; faster shapes are re-measured the same way before they are shown.
+  The shapes are chosen from the changed files through the conformance
+  registry — each shape's `covers` and the implementation sites of those items
+  — so the mapping follows the registry with no path list to maintain; the
+  conformance gate fails when a shape cannot be reached from any code. Docs,
+  CI, test, Dockerfile and Helm-only changes run nothing. A scheduled run from
+  `main` measures every set over its ranges up to 24h against the last release
+  and Loki, and opens a bot pull request with `bench/ab/results/daily-*.json`,
+  an append-only `bench/ab/history/<set>.jsonl`, a day-over-day and
+  week-over-week `bench/ab/history/trend.md`, and the regenerated registry
+  performance evidence. The e2e log generator gained a seeded backfill mode
+  (`LOG_BACKFILL_SECONDS`) that the runs use.
+
 ### Security
 
 - gosec v2.29.0's taint rule G708 ("server-side template injection") flags

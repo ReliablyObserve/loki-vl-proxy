@@ -1,0 +1,178 @@
+name: Perf daily
+
+# Daily full A/B run from main: the last release, main and Loki on a fresh
+# stack, every shape set over its ranges up to 24h. Results, the append-only
+# history and the trend report are delivered through a bot pull request on
+# the rolling branch bench/daily-perf (never pushed to main). See
+# bench/ab/README.md.
+#
+# A pull request that edits this pipeline runs a short validation instead
+# (control set, 1h, 3 runs): it writes the files on the runner and shows the
+# trend report in the job summary, but opens no pull request.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      sets:
+        description: "comma-separated shape sets (empty: all)"
+        required: false
+        default: ""
+      max_range:
+        description: "longest range to run and seed"
+        required: false
+        default: "24h"
+      runs:
+        description: "runs per shape x range x target"
+        required: false
+        default: "7"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/perf-daily.yaml"
+      - "bench/ab/daily.py"
+      - "bench/ab/history.py"
+      - "bench/ab/pr_smoke.py"
+      - "bench/ab/stack.py"
+      - "bench/ab/perf_matrix.py"
+      - "bench/ab/report.py"
+      - "bench/ab/docker-compose.ab.yml"
+      - "test/e2e-compat/log-generator.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-daily-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Pull requests that edit the pipeline: a short run with a read-only token.
+  validate:
+    name: perf-daily
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      OUT: /tmp/ab-daily
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - name: Run the daily A/B (validation size)
+        run: python3 bench/ab/daily.py --out "$OUT" --sets control --max-range 1h --runs 3
+
+      - name: Publish trend
+        if: always()
+        run: |
+          if [ -f bench/ab/history/trend.md ]; then cat bench/ab/history/trend.md >> "$GITHUB_STEP_SUMMARY"; fi
+          git status --short
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: perf-daily
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.log
+            bench/ab/results/daily-*.json
+            bench/ab/history/
+          if-no-files-found: ignore
+
+  daily:
+    name: perf-daily
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      OUT: /tmp/ab-daily
+      BRANCH: bench/daily-perf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          # The baseline is the newest release tag; it builds from a worktree.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - name: Carry history an unmerged daily PR already holds
+        run: |
+          # History is append-only and only these PRs write it, so the open
+          # branch's copy is main's plus the days not merged yet.
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+            git checkout FETCH_HEAD -- bench/ab/history/ || true
+          fi
+
+      - name: Run the daily A/B
+        env:
+          SETS: ${{ inputs.sets }}
+          MAX_RANGE: ${{ inputs.max_range || '24h' }}
+          RUNS: ${{ inputs.runs || '7' }}
+        run: python3 bench/ab/daily.py --out "$OUT" --sets "$SETS" --max-range "$MAX_RANGE" --runs "$RUNS"
+
+      - name: Publish trend
+        if: always()
+        run: |
+          if [ -f bench/ab/history/trend.md ]; then cat bench/ab/history/trend.md >> "$GITHUB_STEP_SUMMARY"; fi
+          git status --short
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: perf-daily
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.log
+            bench/ab/results/daily-*.json
+            bench/ab/history/
+          if-no-files-found: ignore
+
+      - name: Open or update the daily report PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          FILES=(bench/ab/results bench/ab/history conformance/registry/generated/perf-evidence.json
+                 conformance/reports/performance.md conformance/reports/gaps.md)
+          if [ -z "$(git status --porcelain -- "${FILES[@]}")" ]; then
+            echo "nothing changed"
+            exit 0
+          fi
+          DATE="$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -- "${FILES[@]}"
+          git commit -m "bench: daily performance report ${DATE}"
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH" --force
+          TITLE="bench: daily performance report ${DATE}"
+          BODY="$(printf '%s\n\n%s\n\n%s\n' \
+            "Daily A/B run from \`main\` ($(git rev-parse --short HEAD^1)): the last release vs \`main\` vs Loki direct on a fresh stack, every shape set over its ranges up to 24h." \
+            "Updates \`bench/ab/results/daily-*.json\`, appends \`bench/ab/history/*.jsonl\`, regenerates \`bench/ab/history/trend.md\` and the registry performance evidence. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Merging keeps the history continuous; an unmerged day is carried into the next day's PR.")"
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi

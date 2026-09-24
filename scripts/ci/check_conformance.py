@@ -7,6 +7,8 @@ Fails when:
   * a registry item points at code that no longer exists,
   * a bench/ab shape covers an unknown registry id, or a saved A/B result does
     not match the shape sets (performance evidence);
+  * a bench/ab shape outside `control` covers no registry item that names code,
+    so no change could select it for the per-PR A/B run (bench/ab/selection.py);
   * a generated report is stale (performance, coverage map, gaps, translation map, roadmap,
     compatibility matrix),
   * a flag is missing from the places that list every flag,
@@ -58,6 +60,13 @@ def main():
     print(performance.stdout.strip())
     if performance.returncode:
         failures.append("performance evidence")
+
+    # The per-PR A/B selection is derived from shape covers and registry
+    # implementation sites; every shape must stay reachable from code.
+    ab_selection = subprocess.run([sys.executable, "bench/ab/selection.py", "--check"], capture_output=True, text=True)
+    print(ab_selection.stdout.strip() or ab_selection.stderr.strip())
+    if ab_selection.returncode:
+        failures.append("A/B shape selection")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

@@ -32,6 +32,9 @@ proxy: |
   query. A metric Loki fails on an unparsed line fails with Loki's
   `pipeline error` text from one lookup, before any row is read.
 
+implementation:
+  - "internal/proxy/ordered_json_metric.go orderedJSONMetricPlan.setStatsPushdown, orderedJSONMetricPlan.pushdownLabelFilters, Proxy.orderedJSONPartialParseRisk, Proxy.statsPushdownStoredFieldRisk, Proxy.cachedStatsPushdownRisk"
+
 cases:
   - semantics/json-parse-error-excluded
   - semantics/drop-error-includes-line

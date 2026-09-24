@@ -100,6 +100,10 @@ def main():
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--ranges", default="", help="comma-separated override of the set's ranges")
     ap.add_argument("--shapes", default="", help="comma-separated shape name prefixes (default all)")
+    ap.add_argument("--shape", action="append", default=[], metavar="NAME",
+                    help="repeatable exact shape name (names may contain commas)")
+    ap.add_argument("--end", type=int, default=0,
+                    help="unix seconds the first run's window ends at (default: a minute ago); floored to the minute")
     ap.add_argument("--shapes-file", default=os.path.join(HERE, "shapes.json"))
     ap.add_argument("--tenant", default="0")
     ap.add_argument("--timeout", type=int, default=180)
@@ -119,6 +123,7 @@ def main():
     targets = [t.split("=", 1) for t in args.target]
     long_runs = dict(x.split("=", 1) for x in args.long_runs.split(",") if x)
     wanted = [s for s in args.shapes.split(",") if s]
+    exact = set(args.shape)
 
     def restarts():
         return subprocess.check_output(["docker", "inspect", args.container, "--format", "{{.RestartCount}}"], text=True).strip()
@@ -137,12 +142,14 @@ def main():
             print(f"VictoriaLogs did not become healthy: {last_error}", flush=True)
         return restarts() == ref
 
-    end = (int(time.time()) - 60) // 60 * 60  # step-aligned for every range's step
+    end = (args.end or int(time.time()) - 60) // 60 * 60  # step-aligned for every range's step
     sampler = CPUSampler(args.container)
     sampler.start()
     restart0, rows, aborted = restarts(), [], False
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
+            continue
+        if exact and shape["name"] not in exact:
             continue
         shape_ranges = ["instant"] if shape.get("instant") else ranges
         for rname in shape_ranges:

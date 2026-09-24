@@ -5,12 +5,24 @@ visible (the shapes it targets got faster or stopped failing) and nothing else
 degraded (a fixed control set is unchanged). This directory holds the tooling
 and the saved results, so each run can be compared with the ones before it.
 
+Both proofs also run on their own: a small A/B smoke on every pull request
+that touches runtime code (a sticky comment with the table), and a full run
+from `main` every day whose results and history are committed through a bot
+pull request. See [Automation](#automation).
+
 | file | purpose |
 |---|---|
-| `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. |
+| `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. Shapes marked `"smoke": true` run on every code change. |
 | `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. |
 | `report.py` | `summarize` turns raw rows into a compact table and a summary JSON; `compare` diffs two summaries. |
-| `results/` | Saved summaries, `<date>-<label>.json`. Commit these; keep raw rows out of the repository. |
+| `selection.py` | Picks the shapes a change needs from the files it touches, through the registry. `--check` is part of the conformance gate. |
+| `stack.py` | A fresh Loki + VictoriaLogs stack under its own compose project and ports, seeded with a fixed window of the log generator's data; proxy builds run as host processes with the stack proxy's flags. |
+| `pr_smoke.py` | The per-PR run: select, stack, seed, build base and PR, measure, re-measure what looks slower, render the comment. |
+| `comment.py` | Renders the PR comment and decides the `perf-smoke` check. |
+| `daily.py` | The daily run: last release vs `main` vs Loki, every set and range up to 24h. |
+| `history.py` | Appends the daily results to `history/<set>.jsonl` and renders `history/trend.md`. |
+| `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` from the daily run. Commit these; keep raw rows out of the repository. |
+| `history/` | Written by the daily run only: append-only JSONL per set and the generated trend report. |
 
 ## Registry
 
@@ -95,3 +107,132 @@ It lists only the shapes that changed beyond noise and prints one summary line.
   attribute its errors to either build.
 - Repeated 24h raw-row scans can exhaust the shared VictoriaLogs. When a
   baseline still takes a raw-row path, cap its long ranges with `--long-runs`.
+
+## Automation
+
+### Every pull request: the A/B smoke
+
+`.github/workflows/perf-ab.yaml` (check `perf-smoke`) runs
+`pr_smoke.py` on each push to a pull request:
+
+1. `selection.py` maps the changed files to shapes (below). A change to docs,
+   CI, tests, the Helm chart or registry text selects nothing: the job ends in
+   seconds, and an existing comment is updated to say the run was skipped.
+2. A fresh Loki and VictoriaLogs start from the e2e compose file with
+   `docker-compose.ab.yml` (own project, container names and ports). While
+   the log generator seeds a fixed 86-minute window into both (about 75 lines/s,
+   seeded random, lines on half-second timestamps) and waits until both count
+   the same lines in every 10-minute slice, the base (the merge commit's first
+   parent, built in a detached worktree) and the PR build compile.
+3. Each build runs as a host process with its own tree's flags of the stack's
+   `loki-vl-proxy-underscore` service. A port that is not free fails the run
+   instead of measuring someone else's process.
+4. `perf_matrix.py` runs the selected shapes over 1h (instant shapes at one
+   instant), 4 runs each, base, PR and Loki interleaved per request on the
+   same step-aligned windows ending at the seeded data's end.
+5. A shape the first pass calls slower or faster is measured again with 7
+   runs on windows the first pass did not use (the same windows would only
+   time the caches it filled); only a move that holds is reported.
+6. `comment.py` updates one sticky comment and sets the check.
+
+Reproduce it locally (it never touches the e2e stack; smaller memory limits
+keep it friendly to a laptop that also runs that stack):
+
+```bash
+python3 bench/ab/pr_smoke.py --base origin/main --out /tmp/ab-smoke --loki-mem 3g --vl-mem 4g
+python3 bench/ab/pr_smoke.py --same-build --out /tmp/ab-aa ...   # A/A: the noise floor
+```
+
+### Reading the comment
+
+| column | meaning |
+|---|---|
+| icon | ❌ broken (base answered 200, PR does not) · 🔴 slower, confirmed by the re-run · ✅ fixed (base failed, PR answers) · 🟢 faster · ⚪ within noise |
+| base p50 / PR p50 | warm p50 over runs 2..n; a bold status is an HTTP error |
+| change | PR p50 against base p50 |
+| Loki p50 | Loki direct, same window |
+| PR ÷ Loki | the PR's time as a multiple of Loki's; bold when the PR is more than 25% and 50 ms slower |
+| result vs Loki | ✅ same answer (or the same series with a sum within 1%) · ➖ differs, as the base already did · ⚠️ differs, new in this PR |
+
+Rows that did not move are folded into "unchanged", so the visible table is
+what the change did. The collapsed sections hold cold (first-run) timings —
+what a user opening a panel sees, since warm timings on both sides are
+helped by caches — and the reason each shape was selected.
+
+The check fails on ❌, on 🔴 and on ⚠️ (a new difference from Loki). A run in
+which VictoriaLogs restarted is invalid and fails with a request to re-run; a
+run that could not finish posts what stopped it. A shape counts as slower only
+beyond 30% and 100 ms of the base's p50, and only if the 7-run re-measure
+agrees. The thresholds come from A/A runs (`--same-build`: one build as both
+targets) of 29 shapes on the seeded stack. On the 4-run first pass the median
+move is about 25% and single shapes move up to +73% (+327 ms); two runs had 7
+and 2 shapes cross both thresholds. Every shape the 7-run re-measure on fresh
+windows took again (6 across both runs) came back within noise (largest
+remaining move 15%); the run that re-measured both directions ended with 29
+of 29 unchanged. The absolute floor keeps a 20 ms query
+from flapping, and the re-measure keeps a single slow request from failing a
+pull request. The check is not a required status yet: make it
+one once the daily history confirms the noise floor on hosted runners.
+
+### How shapes are selected
+
+Nothing maps paths to shapes by hand. Each shape lists the registry items it
+measures (`covers`); registry items name their implementation (`where`,
+`seen_in`, `implementation`, and each endpoint's handler in
+`conformance/registry/generated/proxy/implementation.json`), and a case links
+to the behaviours it proves. A changed file selects every shape whose items,
+or the items those link to, name it:
+
+| changed path | runs |
+|---|---|
+| `internal/`, `pkg/` Go (not tests) | the shapes whose items name the file, plus the smoke subset of `control` |
+| an endpoint handler only (for example `proxy.go` for `loki_api_v1_query_range`) | the smoke shapes of that endpoint — nearly every change touches the handler |
+| `cmd/`, `go.mod`, `go.sum` | the whole `control` set |
+| `bench/ab/shapes.json` | the shapes added or edited, plus smoke |
+| the harness (`bench/ab/*.py`, the compose files, Loki config, log generator, this workflow) | the smoke subset |
+| anything else, including the `Dockerfile` (the runs build host binaries) | nothing |
+
+`python3 bench/ab/selection.py --base origin/main` prints the selection and
+the reason for each shape. `selection.py --check` runs in the conformance gate
+and fails when a shape outside `control` cannot be reached from any code —
+the fix is an implementation site on the registry item it covers, not a path
+list here.
+
+### Adding a shape
+
+1. Add it to the set for your change in `shapes.json` (`name`, `query`, and
+   `headers` / `instant` / `logs` as needed) with `covers`: the registry
+   cases, behaviours or translations it measures. Add `"smoke": true` only to
+   a `control` shape that should run on every code change.
+2. `python3 bench/ab/selection.py --check` and
+   `python3 conformance/scripts/perf_evidence.py --check` must pass.
+3. The pull request that adds it runs it (it is "added or edited"), and every
+   later change to the code its items name runs it again.
+
+### Every day: the full run and its history
+
+`.github/workflows/perf-daily.yaml` runs `daily.py` at 03:17 UTC (and on
+manual dispatch) on a fresh runner: the newest release tag vs `main` vs Loki,
+every set over its own ranges up to 24h, 7 runs, on a seeded window of about
+24.4h (24h plus the runs' shifts and margin; about 25 lines/s, a batch every
+30 s, about 2.2 M lines; fixed so days are comparable). The
+release build's 24h ranges are capped at 3 runs. It writes:
+
+| path | content |
+|---|---|
+| `results/daily-<set>.json` | the day's summary per set (`report.py` format), overwritten daily; git history keeps every day, and `perf_evidence.py` reads it as the latest evidence |
+| `history/<set>.jsonl` | one line per set per day, append-only: date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release) |
+| `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
+| `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
+
+The files reach `main` through a bot pull request on the rolling branch
+`bench/daily-perf` (never a push to `main`); a day that was not merged yet is
+carried into the next day's pull request, so history has no gaps. Closing a
+daily pull request without merging does not drop its days while the branch
+exists; delete `bench/daily-perf` to discard them. A run in which
+VictoriaLogs restarted writes nothing and fails.
+
+For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
+with each row) or reuse `history/trend.md` as is. A pull request that edits
+the daily pipeline runs a short version of it (control set, 1h, 3 runs) that
+writes the files on the runner and shows the trend in the job summary.
