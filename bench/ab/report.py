@@ -108,8 +108,16 @@ def summarize(args):
 
         b_ok = entry["status"].get(args.baseline) == "200"
         c_ok = entry["status"].get(args.candidate) == "200"
+        # A candidate that now fails exactly as the reference (Loki) does - same
+        # status, same error on every run - is a fix towards Loki, not a break:
+        # the baseline answered a query Loki rejects.
+        c_matches_ref_error = (not c_ok and entry["status"].get(args.candidate) == entry["status"].get(args.reference)
+                               and bool(vs_ref) and all(v == "same" for v in vs_ref))
         if not b_ok and c_ok:
             verdict = "fixed"
+        elif b_ok and c_matches_ref_error:
+            verdict = "fixed"
+            entry["note"] = "now rejected exactly as the reference rejects it"
         elif b_ok and not c_ok:
             verdict = "broken"
         else:
