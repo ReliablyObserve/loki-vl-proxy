@@ -1,0 +1,48 @@
+id: limits/label-values-response-cap
+title: A label values answer above the size limit fails with Loki's ResourceExhausted error, not an unbounded read
+proves:
+  - operator-configurable-limits
+  - tenant-query-limits
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Loki bounds a label values answer only by message size: its querier fails a
+  response above grpc_server_max_send_msg_size (dskit default 4 MiB) with HTTP
+  500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message
+  larger than max (N vs. LIMIT)`, and past query_timeout with 504. It has no
+  per-tenant count limit on label values (max_entries_limit_per_query and
+  max_query_series do not apply). On the e2e stack `pod` values for
+  `{env="production"}` are 4,584 values at 5m and 51,303 values (1.34 MB of
+  JSON, 1.2s) at 1h from the proxy, about 1.17 million at 24h; Loki v3.7.7
+  (grpc_server_max_send_msg_size 8388608) already fails the 1h request with
+  `(10893991 vs. 8388608)`. The proxy read the whole VictoriaLogs body (up to a
+  hidden 256 MiB), then decoded, indexed and cached it. It now stops reading at
+  -label-values-max-response-bytes (default 64 MiB, per tenant as
+  label_values_max_response_bytes), answers with Loki's status and text plus the
+  flag that bounded it, and caches or indexes nothing from the rejected
+  response.
+request:
+  method: GET
+  path: /loki/api/v1/label/pod/values
+  params:
+    query: '{env="production"}'
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: structural
+  fields: [status, error]
+  values:
+    mode: exact
+    reason: |
+      Loki's prefix is the contract: HTTP 500 and `rpc error: code =
+      ResourceExhausted desc = grpc: trying to send message larger than max (N
+      vs. LIMIT)`. The proxy appends `; raise -label-values-max-response-bytes
+      or narrow the query`; N is the bytes read from VictoriaLogs when the proxy
+      stopped (LIMIT + 1), not the full response size. Both sides are
+      compared with limits that the request exceeds; under the limit the
+      answer is every value, as Loki returns it.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

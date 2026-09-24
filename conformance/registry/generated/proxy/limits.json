@@ -115,6 +115,20 @@
       "sizing": "Raise it for clients that ask for more log lines per request; lower it towards Loki's 5000 to bound response size. Grafana asks for its Max lines setting (1000 by default), well below the default."
     },
     {
+      "flag": "label-values-max-response-bytes",
+      "helm_value": "extraArgs.label-values-max-response-bytes",
+      "type": "Int",
+      "default": "67108864",
+      "unit": "bytes",
+      "bounds": "bytes read from one VictoriaLogs response of a /loki/api/v1/label/{name}/values request; the read stops one byte past the limit, and a rejected response is neither cached nor indexed; per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits (not published: Loki has no per-tenant equivalent)",
+      "error": "500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT); raise -label-values-max-response-bytes or narrow the query` (Loki's querier text above grpc_server_max_send_msg_size, with the flag appended; N is the bytes read when the proxy stopped)",
+      "metric": "loki_vl_proxy_internal_operation_total{operation=\"label_values_response_cap\"}",
+      "alert": "none",
+      "loki_parity": "grpc_server_max_send_msg_size (dskit default 4 MiB): Loki's querier fails a larger label values response with 500 ResourceExhausted; Loki has no per-tenant limit on label values count",
+      "per_tenant": true,
+      "sizing": "The VictoriaLogs response carries a hit count per value, so it is about 1.7x the Loki JSON answer: on the e2e stack `pod` values for `{env=\"production\"}` are 2.4 MB from VictoriaLogs (1.4 MB of Loki JSON, 54,405 values) over 1h and grow with the window, about 53 MB for 24h. The 64 MiB default (the same per-response budget as -backend-max-buffered-response-bytes, 16x Loki's default message size) admits about 1.4 million such values, so a day of a high-churn label still answers, while Loki on the same stack already fails the 1h request. While an admitted response is decoded, indexed and encoded, proxy memory holds a small multiple of it (the body, the decoded values and the Loki JSON) per concurrent request. Lower it towards 4 MiB to fail where Loki's defaults would; raise it only with replica memory, since Grafana's label pickers cannot render lists of that size anyway."
+    },
+    {
       "flag": "max-query-length-bytes",
       "helm_value": "extraArgs.max-query-length-bytes",
       "type": "Int",

@@ -13,6 +13,8 @@ scrape_configs:
         labels:
           component: proxy
           instance: proxy-0
+  # The peer ring starts only with `docker compose --profile peers up -d`;
+  # without it these two targets report up=0.
   - job_name: loki-vl-proxy-peer-a
     scrape_interval: 5s
     scrape_timeout: 4s

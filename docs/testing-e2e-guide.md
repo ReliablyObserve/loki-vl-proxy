@@ -40,10 +40,10 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `loki` (Loki 3.7.7) | 13101 | Reference implementation (ground truth) |
 | `victorialogs` (VictoriaLogs v1.52.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
-| `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies |
+| `vmauth-ring` (vmauth v1.138.0, profile `peers`) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
-| 11 proxy variants | 13100, 13102-13103, 13105-13110, 13150-13151 | See [Proxy Variants](#proxy-variants) |
+| 10 proxy variants (+2 with profile `peers`) | 13100, 13102-13103, 13105-13111 (13150-13151 with `peers`) | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
 | `grafana` (Grafana 13.2.1) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
@@ -95,19 +95,43 @@ The Go tests read their endpoints from environment variables with compose defaul
 
 ## Proxy Variants
 
-| Port | Service | Label Style | Metadata Mode | Purpose |
-|------|---------|-------------|---------------|---------|
-| 13100 | loki-vl-proxy | underscores | translated | Primary proxy: indexed label-values cache, L2 disk cache, L3 static peer ring with peer-a/peer-b |
-| 13102 | loki-vl-proxy-underscore | underscores | hybrid | OTel dot-to-underscore, structured metadata; backs the Grafana `Loki (via VL proxy)` datasources |
-| 13103 | loki-vl-proxy-tail | underscores | translated (default) | Synthetic tail mode, browser origin allowlist |
-| 13105 | loki-vl-proxy-tail-native | underscores | translated (default) | Native VL tail mode |
-| 13106 | loki-vl-proxy-native-metadata | underscores | native | Native metadata field mode |
-| 13107 | loki-vl-proxy-translated-metadata | underscores | translated | Translated-only metadata aliases |
-| 13108 | loki-vl-proxy-no-metadata | underscores | translated | Structured metadata emission disabled |
-| 13109 | loki-vl-proxy-vmauth | underscores | translated | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (500), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
-| 13110 | loki-vl-proxy-patterns-autodetect | underscores | hybrid | Patterns autodetect from queries; Grafana default datasource |
-| 13150 | loki-vl-proxy-peer-a | underscores | translated | L3 peer ring member (zone-a) |
-| 13151 | loki-vl-proxy-peer-b | underscores | translated | L3 peer ring member (zone-b) |
+The stack is a Loki-compatibility testing target: the proxies behind the
+datasources a user opens in Grafana run the Loki-compatible profile
+(`-label-style=underscores -metadata-field-mode=translated`, the default), so
+Explore and Logs Drilldown show exactly the label, field and
+structured-metadata names Loki shows, and a dotted name in a query is Loki's
+parse error. The OTel hybrid and native metadata profiles, which expose the
+dotted VictoriaLogs field names on purpose, are separate, explicitly named
+datasources. `TestCompat_StackProfilesMatchDatasources` fails CI if that
+wiring drifts. `TestCompat_OptionMatrixAgainstStack` also runs every combination of
+`-label-style`, `-metadata-field-mode`, `-emit-structured-metadata`,
+`-logql-dotted-names`, `-label-browse-extensions` and
+`-label-values-indexed-cache` as an in-process proxy against the stack's
+VictoriaLogs, plus every variant above, and checks each against Loki.
+
+| Port | Service | Profile (label style / metadata mode) | Label warm-up | Purpose |
+|------|---------|---------------------------------------|---------------|---------|
+| 13100 | loki-vl-proxy | Loki (underscores / translated) | on | Parity proxy for the Go suites: indexed label-values cache, L2 disk cache, L3 static peer ring (peers only with profile `peers`) |
+| 13102 | loki-vl-proxy-underscore | Loki (underscores / translated) | on | Backs the Grafana `Loki (via VL proxy)` Explore datasource and its multi-tenant twin; OTel dot-to-underscore tests |
+| 13110 | loki-vl-proxy-patterns-autodetect | Loki (underscores / translated) | on | Grafana default datasource (Logs Drilldown); patterns autodetect from queries |
+| 13107 | loki-vl-proxy-translated-metadata | Loki (underscores / translated) | off | Dedicated translated-metadata variant for the structured-metadata and line-body tests |
+| 13111 | loki-vl-proxy-otel-hybrid | OTel hybrid (underscores / hybrid) | off | Grafana `Loki (via VL proxy OTel hybrid)`: dotted and underscore metadata names, dotted names accepted in queries |
+| 13106 | loki-vl-proxy-native-metadata | native (underscores / native) | off | Grafana `Loki (via VL proxy native metadata)`: dotted metadata names |
+| 13108 | loki-vl-proxy-no-metadata | Loki, `-emit-structured-metadata=false` | off | Structured metadata emission disabled |
+| 13103 | loki-vl-proxy-tail | Loki (default) | off | Synthetic tail mode, browser origin allowlist |
+| 13105 | loki-vl-proxy-tail-native | Loki (default) | off | Native VL tail mode |
+| 13109 | loki-vl-proxy-vmauth | Loki (underscores / translated) | off | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (500), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
+| 13150 | loki-vl-proxy-peer-a (profile `peers`) | Loki | off | L3 peer ring member (zone-a), cache-tier benchmarks |
+| 13151 | loki-vl-proxy-peer-b (profile `peers`) | Loki | off | L3 peer ring member (zone-b), cache-tier benchmarks |
+
+Every proxy replica warms its labels cache for the 1h/6h/24h/7d presets at
+startup and every 75% of `-labels-cache-ttl`; each refresh is a label-name
+scan of up to 7 days in VictoriaLogs. Eleven variants doing that against one
+VictoriaLogs OOM-killed it, so only the parity proxy and the two
+Grafana-facing Loki-mode proxies warm; the others run
+`-labels-cache-warm=false`. Start the peer ring and its load balancer for
+`scripts/bench-cache-tiers.sh` and `bench/drilldown-*.sh` with
+`docker compose --profile peers up -d`.
 
 `tail-ingress` (nginx, port 13104) sits in front of `loki-vl-proxy-tail` for WebSocket ingress tests.
 
@@ -121,7 +145,7 @@ The Go tests read their endpoints from environment variables with compose defaul
 |-------|----------|
 | `core` | `TestCompat_*`, `TestExtended_*`, `TestChaining_*`, `TestAlertingCompat_*`, Explore HTTP contracts, `TestLokiFunctions_*`, datasource catalog, pinned matrix vs compose |
 | `drilldown` | `TestDrilldown_*`, Drilldown cluster/level filter features, Loki/Drilldown/VL track scores |
-| `otel-edge` | OTel labels, structured metadata, underscore proxy, label dedup/translation, `TestEdge_*`, `TestComplex_*` |
+| `otel-edge` | OTel labels, structured metadata per profile (Loki, OTel hybrid, native, disabled), label dedup/translation, `TestEdge_*`, `TestComplex_*` |
 | `tail-multitenancy` | Multitenancy, tail modes, security headers, metrics, gzip, derived fields, concurrent/edge queries |
 | `semantics` | Query semantics matrix, operations inventory, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout, missing ops |
 
@@ -149,13 +173,13 @@ Some `test/e2e-compat` tests match no group pattern (for example `TestOperations
 
 ## Debugging
 
-**Grafana UI** -- open http://localhost:3002 (anonymous admin, no login). Eleven datasources are provisioned from `test/e2e-compat/grafana-datasources.yaml`: `Loki (direct)`, eight proxy-backed Loki datasources (`Loki (via VL proxy)`, multi-tenant, native metadata, live tail, ingress tail, live tail native, patterns autodetect, vmauth), `VictoriaLogs (direct)`, and `VictoriaMetrics`.
+**Grafana UI** -- open http://localhost:3002 (anonymous admin, no login). Twelve datasources are provisioned from `test/e2e-compat/grafana-datasources.yaml`: `Loki (direct)`, nine proxy-backed Loki datasources (`Loki (via VL proxy)`, multi-tenant and patterns autodetect - the Logs Drilldown default - in the Loki-compatible profile; `Loki (via VL proxy OTel hybrid)`; native metadata; live tail, ingress tail, live tail native; vmauth), `VictoriaLogs (direct)`, and `VictoriaMetrics`. Compare `Loki (direct)` with `Loki (via VL proxy)` to see what a Loki user sees.
 
 **Docker logs** (compose service names):
 ```bash
 cd test/e2e-compat
 docker compose logs loki-vl-proxy              # main proxy
-docker compose logs loki-vl-proxy-underscore   # underscore variant
+docker compose logs loki-vl-proxy-underscore   # Explore datasource (Loki-compatible profile)
 docker compose logs loki                       # reference Loki
 docker compose logs -f victorialogs            # follow VL logs
 ```

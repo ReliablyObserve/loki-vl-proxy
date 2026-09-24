@@ -72,6 +72,11 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
+	if err := p.lokiNameError(query); err != "" {
+		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
+		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+		return "", false
+	}
 	if err := validateLogQLSyntax(query); err != "" {
 		p.writeError(w, http.StatusBadRequest, truncateQueryError(err))
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
@@ -262,14 +267,36 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Loki answers errors as text/plain. Grafana's Loki datasource shows the
+	// "message" field of a JSON error body and the raw body otherwise, so the
+	// envelope carries the text there too: Explore then shows exactly Loki's
+	// message instead of this JSON.
+	body := map[string]interface{}{
 		"status":    "error",
 		"errorType": lokiErrorType(code),
 		"error":     msg,
-	})
+	}
+	if p == nil || p.errorMessageField {
+		body["message"] = msg
+	}
+	json.NewEncoder(w).Encode(body)
 }
 
 func statusFromUpstreamErr(err error) int {
+	// A VictoriaLogs body that failed after its headers: Loki's 504 when the
+	// query ran out of time, a sanitized 502 otherwise.
+	var aborted *vlResponseAbortedError
+	if errors.As(err, &aborted) {
+		if aborted.timedOut {
+			return http.StatusGatewayTimeout
+		}
+		return http.StatusBadGateway
+	}
+	// Loki's querier fails a label values response above
+	// grpc_server_max_send_msg_size with 500 ResourceExhausted.
+	if isLabelValuesResponseTooLarge(err) {
+		return http.StatusInternalServerError
+	}
 	if isUpstreamQueryRejected(err) {
 		return http.StatusBadRequest
 	}

@@ -50,6 +50,20 @@ func readBodyPooled(r io.Reader, limit int64) ([]byte, error) {
 	return result, nil
 }
 
+// defaultBodyReadLimit bounds a shared response body when its reader sets no
+// limit of its own.
+const defaultBodyReadLimit = 256 << 20
+
+// bodyReadLimit is the read limit for body: a reader that enforces an
+// operator-configured cap above the default (the proxy's per-request response
+// caps) raises it, so the coalescer never hides a larger configured limit.
+func bodyReadLimit(body io.Reader) int64 {
+	if limited, ok := body.(interface{ BodyLimit() int64 }); ok && limited.BodyLimit() > defaultBodyReadLimit {
+		return limited.BodyLimit()
+	}
+	return defaultBodyReadLimit
+}
+
 // Coalescer deduplicates identical concurrent requests.
 // When N clients send the same query simultaneously, only 1 request
 // goes to the backend. All N clients share the single response.
@@ -102,7 +116,7 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 		defer func() { _ = resp.Body.Close() }()
 
 		// Limit response body to 256MB to prevent unbounded memory allocation
-		body, err := readBodyPooled(resp.Body, 256<<20)
+		body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +149,7 @@ func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Hea
 		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := readBodyPooled(resp.Body, 256<<20)
+	body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
 	if err != nil {
 		return 0, nil, nil, err
 	}

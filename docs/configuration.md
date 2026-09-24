@@ -53,6 +53,9 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-translate-otel-attributes` | `TRANSLATE_OTEL_ATTRIBUTES` | `true` | Translate known OTel semantic-convention labels from underscore to dotted form in upstream queries; set `false` to preserve client label names (for example when VictoriaLogs stores underscore names) |
 | `-backend-default-msg-value` | — | — | VictoriaLogs `-defaultMsgValue` when it is customized. The proxy returns `_msg` as the log line; rows whose `_msg` is empty, starts with VictoriaLogs' default `missing _msg field` text, or equals this value stored no line (for example a Loki push of a JSON line), so the proxy rebuilds the line as a JSON object of the row's non-stream fields. See [Logging for compatibility](logging-for-compatibility.md#how-the-proxy-returns-lines) for the limits |
 | `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
+| `-logql-dotted-names` | — | `auto` | `auto`, `reject` or `accept`: dotted names in LogQL (`k8s.pod.name` in a matcher, label filter, `by`/`without` list, `keep`/`drop`, `label_format`, parser parameters, `unwrap`). `reject` answers Loki's exact 400 parse error and names dotted JSON keys in `detected_fields` by Loki's sanitized label (`http_method`, key in `jsonPath`); `accept` translates them to the dotted VictoriaLogs field and keeps dotted JSON keys in `detected_fields`; `auto` rejects in the Loki-compatible profile and accepts otherwise. See [Compatibility option matrix](#compatibility-option-matrix) |
+| `-label-browse-extensions` | — | `auto` | `auto`, `on` or `off`: `limit`, `offset` and `search`/`q` on `/labels` and `/label/{name}/values`, a proxy extension Loki ignores. `auto` is off in the Loki-compatible profile unless `-label-values-indexed-cache=true`, on otherwise |
+| `-error-response-message-field` | — | `true` | Add `message` (the field Grafana's Loki datasource displays) with the error text to JSON error bodies; `false` restores the previous `{status, errorType, error}` body |
 | `-detected-level-body-scan` | — | `true` | Derive `detected_level` like Loki for rows without a stored level field: the log line is read as JSON, then logfmt, then scanned for level keywords, with `unknown` as the fallback. `false` uses only stored fields (a stored `detected_level`, Loki's `log_level_fields` such as `level`, `severity`, `lvl`, `severity_text`, then `severity_number`) and answers `unknown` otherwise, which skips the per-line scan on large plain-text tenants but differs from Loki for lines that carry their level only in the text. Applies to log query responses, tail, `/detected_fields` and patterns collected from log queries; the `/patterns` endpoint's own sample always reads the line, and reads a row whose `_msg` VictoriaLogs replaced with `-backend-default-msg-value` as an ordinary line |
 | `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns an empty successful response (`{"status":"success","data":[]}`) |
 | `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
@@ -245,10 +248,72 @@ The three flags below define the compatibility profile:
 | Drilldown/OTel mixed mode | `label-style=underscores`, `metadata-field-mode=hybrid`, `emit-structured-metadata=true` | Grafana + OTel correlation where both dotted and translated field names are useful |
 | Native VL field surface | `label-style=passthrough`, `metadata-field-mode=native`, `emit-structured-metadata=true` | Consumers that prefer raw VictoriaLogs field names and structured metadata |
 
+The Loki/Grafana conservative profile is the **Loki-compatible profile**: the
+proxy holds requests to Loki's contract as well as responses. A dotted name in
+LogQL (`| k8s.namespace.name="x"`, `by (k8s.pod.name)`, `{service.name="x"}`)
+is answered with Loki's exact 400 parse error - line, column and expected-token
+list included - on query, query_range, tail and every selector parameter
+(labels, label values, series, index, patterns, detected fields), before any VictoriaLogs
+call; the label endpoints ignore `limit`, `offset` and `search` the way Loki
+does. Both follow from `-logql-dotted-names=auto` and
+`-label-browse-extensions=auto`, which match the profile; set either
+explicitly to keep an extension with Loki's names, or Loki's grammar with the
+hybrid or native names. The hybrid and native modes expose dotted
+VictoriaLogs names, so with `auto` they keep accepting dotted names in queries
+and keep the browse parameters: those are documented extensions, not Loki
+behaviour.
+
+There is no single profile flag: the flags already default to the
+Loki-compatible profile, each also changes one surface on its own (for example
+`-emit-structured-metadata=false` for clients that reject metadata objects),
+and a profile flag would need precedence rules against them. Set the flags
+explicitly to pin a profile; the [option matrix](#compatibility-option-matrix)
+lists what each combination does.
+
 For tuple behavior and endpoint-level details, see [API Reference](api-reference.md).
 For support scope by product/version track, see [Compatibility Matrix](compatibility-matrix.md).
 
 If you must interoperate with legacy clients that reject metadata objects in `categorize-labels` mode, explicitly set `-emit-structured-metadata=false`.
+
+### Compatibility option matrix
+
+Every option below is its own flag, and any combination is supported. The
+Loki-compatible profile is the default; each extension can be turned on alone
+without leaving it, and each Loki behaviour can be turned off alone.
+
+| Option | Values (default first) | Loki behaviour | What the other values do |
+|---|---|---|---|
+| `-label-style` | `underscores`, `passthrough` | `underscores`: stream labels and label names sanitized (`service.name` -> `service_name`) | `passthrough`: VictoriaLogs field names as stored, dots included |
+| `-metadata-field-mode` | `translated`, `hybrid`, `native` | `translated`: `detected_fields` and structured metadata under Loki's names only | `hybrid`: both the dotted and the Loki name; `native`: the dotted name only |
+| `-emit-structured-metadata` | `true`, `false` | `true`: `categorize-labels` 3-tuples carry structured metadata and parsed fields | `false`: the metadata object stays empty, for clients that reject it |
+| `-logql-dotted-names` | `auto`, `reject`, `accept` | `reject`: a dotted name is Loki's 400 parse error; dotted JSON keys appear in `detected_fields` as Loki's sanitized label with the key in `jsonPath` | `accept`: dotted names are translated to the dotted VictoriaLogs field; `detected_fields` keeps dotted JSON keys. `auto` = `reject` exactly when `-label-style=underscores` and `-metadata-field-mode=translated` |
+| `-label-browse-extensions` | `auto`, `on`, `off` | `off`: `limit`, `offset`, `search`/`q` are ignored on the label endpoints | `on`: the browse window applies (hot set first with `-label-values-indexed-cache`). `auto` = `off` in the Loki-compatible profile without `-label-values-indexed-cache`, `on` otherwise |
+| `-error-response-message-field` | `true`, `false` | (Loki answers text/plain) `true`: Grafana shows the error text | `false`: the previous `{status, errorType, error}` body |
+| `-label-values-max-response-bytes` | `67108864` | label values fail with Loki's `ResourceExhausted` 500 past the querier's message size | raise it (per tenant too) to answer larger label value lists; `268435456` is the previous implicit bound |
+
+What each combination of the three profile flags does with the `auto`
+settings (the unit test `TestCompatOptionMatrix` checks every combination of
+all six options: dotted-name handling, browse parameters, structured-metadata
+keys and `detected_fields` names):
+
+| `-label-style` | `-metadata-field-mode` | Labels | Structured metadata / detected fields | Dotted names in LogQL (`auto`) | Browse params (`auto`) | e2e variant |
+|---|---|---|---|---|---|---|
+| `underscores` | `translated` | `service_name` | `http_target` | rejected, Loki's error | ignored (on with the indexed cache) | `loki-vl-proxy`, `-underscore`, `-patterns-autodetect`, `-translated-metadata`, `-vmauth`, `-tail*` |
+| `underscores` | `hybrid` | `service_name` | `http.target` and `http_target` | accepted | honoured | `loki-vl-proxy-otel-hybrid` |
+| `underscores` | `native` | `service_name` | `http.target` | accepted | honoured | `loki-vl-proxy-native-metadata` |
+| `passthrough` | `translated` | `service.name` | `http.target` (nothing to translate) | accepted | honoured | (unit test only) |
+| `passthrough` | `hybrid` | `service.name` | `http.target` | accepted | honoured | (unit test only) |
+| `passthrough` | `native` | `service.name` | `http.target` | accepted | honoured | (unit test only) |
+
+`-emit-structured-metadata=false` empties the metadata object in any row
+(`loki-vl-proxy-no-metadata` runs it with the Loki profile). Combinations that
+mix the rows are valid: `-metadata-field-mode=translated -logql-dotted-names=accept`
+keeps Loki's names in every response while still running queries a user wrote
+with dotted names; `-metadata-field-mode=hybrid -logql-dotted-names=reject`
+shows both spellings but holds queries to Loki's grammar (the dotted spelling
+then cannot be queried, so it is only useful for display). With
+`-label-style=passthrough` the labels themselves carry dots, so rejecting
+dotted names leaves them unqueryable; keep `accept` there.
 
 ### Maximum Loki Compatibility — Annotated Configuration
 
@@ -325,6 +390,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-cache-max` | — | `10000` | Maximum cache entries |
 | `-cache-max-bytes` | — | `268435456` | Maximum in-memory L1 cache size in bytes (256 MiB by default) |
 | `-labels-cache-ttl` | — | `0` (uses `5m`) | Cache TTL for `/labels` and `/label/{name}/values` responses. `0` uses the built-in 5-minute default. The keep-warm loop runs at 75% of this TTL (the built-in 5 minutes when unset). A cache miss queries VictoriaLogs over the full requested `start`–`end` range, so the first response is complete; there is no reduced first scan. |
+| `-labels-cache-warm` | — | `true` | Warm the labels cache for the 1h, 6h, 24h and 7d time-picker presets at startup and keep them warm in the background (every 75% of `-labels-cache-ttl`). Each refresh is a label-name scan of up to 7 days in VictoriaLogs, per replica. Set `false` on replicas that serve no interactive label pickers (batch/API-only replicas, test variants): label requests are still cached and answered, only the proactive scans stop. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
 | `-compat-cache-max-percent` | — | `10` | Percent of `-cache-max-bytes` reserved for Tier0 (`0` disables, max `50`) |
 
@@ -731,7 +797,9 @@ A request for several tenants (`X-Scope-OrgID: a|b`) is held to them combined as
 
 `max_query_bytes_read`, `max_querier_bytes_read` and `volume_max_series` are published at Loki's disabled or default value (`0B`, `0B`, `1000`): VictoriaLogs reports no bytes read before a query runs, and the volume endpoints bound their answer by the request `limit`. Overriding them is rejected at startup, since nothing would apply the published value. The other published fields (`discover_log_levels`, `discover_service_name`, `log_level_fields`, `retention_period`, `otlp_config`, ...) are published as configured; they describe the deployment and do not change how the proxy derives `service_name` or `detected_level`. Label values requests are capped at the `-max-entries-limit-per-query` flag value, a proxy protection Loki does not have, whatever a tenant's `max_entries_limit_per_query`.
 
-Invalid values are rejected at startup with a message naming the tenant and the field: `max_query_series` must be a positive integer, `max_entries_limit_per_query` `0` or positive, durations Loki duration strings (`"5m"`, `"30d1h"`, `"0s"`), `query_timeout` positive and not above `-backend-timeout`.
+One proxy limit is also settable per tenant in the same maps: `label_values_max_response_bytes` overrides `-label-values-max-response-bytes` (see [Fixed Execution Limits](#fixed-execution-limits)). Loki has no per-tenant equivalent (its bound is the querier's `grpc_server_max_send_msg_size`), so it is enforced but never published; a multi-tenant label values request fans out per tenant, and each tenant's read is bounded by that tenant's value.
+
+Invalid values are rejected at startup with a message naming the tenant and the field: `max_query_series` must be a positive integer, `max_entries_limit_per_query` `0` or positive, durations Loki duration strings (`"5m"`, `"30d1h"`, `"0s"`), `query_timeout` positive and not above `-backend-timeout`, `label_values_max_response_bytes` a positive number of bytes.
 
 ```bash
 # Every tenant: Loki's defaults for series and entries; team-a gets more series and a 7-day lookback
@@ -890,7 +958,9 @@ These protective limits bound what one request may do. Rejections are errors, no
 | Heavy VictoriaLogs calls | `-backend-max-concurrent-heavy-queries` (default 2) running, queued for `-backend-heavy-query-queue-wait` (default 20s) | `429` (`too many outstanding requests`) |
 | Ordered JSON metric evaluator | `-ordered-json-metric-max-bytes` (default 1 GiB) on the raw rows response and on the built response; `-manual-range-metric-row-limit` rows | `502` |
 | Metric query series | `-max-stats-query-series` (default 500) | `400` with Loki's `maximum number of series (N) reached for a single query` on every metric path, range and instant; Grafana Logs Drilldown gets the busiest series and the `... returning partial results` warning |
-| Request coalescer | 256 MiB per shared response body | error instead of silent truncation |
+| Label values responses | `-label-values-max-response-bytes` (default 64 MiB) read from one VictoriaLogs response of `/loki/api/v1/label/{name}/values`; per tenant as `label_values_max_response_bytes` | `500` with Loki's `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` and the flag appended; nothing is cached or indexed |
+| Request coalescer | 256 MiB per shared response body, or a larger configured response cap such as `-label-values-max-response-bytes` | error instead of silent truncation |
+| VictoriaLogs response aborted after its headers (GET reads: label names and values, series, detected fields, hits and other metadata calls) | VictoriaLogs ends a started response with a raw abort line when a query outlives its deadline | `504` with Loki's `request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed` when the request deadline or the `timeout` sent to VictoriaLogs ran out (or VictoriaLogs reported its deadline), otherwise `502` `VictoriaLogs aborted the response after D, before it was complete; ...`; the partial body is never decoded or cached |
 | Hot/cold merge | 64 MiB buffered per hot or cold response | error |
 | Multi-tenant reads | `-multi-tenant-max-fanout` (default 64) tenants per request; `-multi-tenant-max-merged-response-bytes` (default 32 MiB) merged response | `400` / `413`, each naming its flag |
 | `/tail` client messages | 4 KiB per client message | WebSocket close `1009` |
@@ -904,6 +974,7 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-max-entries-limit-per-query` | `0` (uses `10000`) | Loki's `max_entries_limit_per_query` (Loki's default is `5000`). A log query (range or instant) asking for more lines gets Loki's `400` `max entries limit per query exceeded, limit > max_entries_limit_per_query (L > N)`; metric queries carry no entry limit; a label values request above it is capped. Per tenant through `-tenant-limits` / `-tenant-default-limits`, where `0` is unlimited |
 | `-max-entries-limit-per-query-cap` | `false` | Lower a log query `limit` above `max_entries_limit_per_query` to that value and answer, instead of Loki's `400` (the proxy's behaviour before per-tenant limits) |
 | `-max-query-length-bytes` | `0` (uses `131072`) | LogQL query string length. The default is Loki's `syntax.maxInputSize`, so the proxy rejects only what Loki rejects; lower it to reject long queries earlier |
+| `-label-values-max-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response of a `/loki/api/v1/label/{name}/values` request. Above it the request fails as Loki's querier does above `grpc_server_max_send_msg_size` (`500` `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)`, with this flag named), and nothing is cached or indexed. The VictoriaLogs response is about 1.7x the Loki JSON (it carries a hit count per value): 1h of a high-churn `pod` label on the e2e stack is 2.4 MB (54,405 values), 24h about 53 MB. The default is 16x Loki's default message size, so a day of such a label still answers; lower it towards 4 MiB to fail where Loki's defaults would. Per tenant as `label_values_max_response_bytes` in `-tenant-limits` / `-tenant-default-limits` |
 | `-backend-max-buffered-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response the proxy has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns `502` naming the flag rather than a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response |
 | `-binary-metric-max-operand-bytes` | `0` (uses `256 MiB`) | Operand-response bytes one binary metric expression may capture |
 | `-binary-metric-max-arrays` | `0` (uses `2000000`) | JSON arrays one binary metric expression may allocate while joining operands |

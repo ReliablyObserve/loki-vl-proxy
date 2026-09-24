@@ -6,7 +6,8 @@
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "backend-deadlines-and-cancellation": [
-      "internal/proxy/backend_heavy_test.go"
+      "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/backend_response_guard_test.go"
     ],
     "drilldown/index_volume/single-sample-returns-vector": [
       "internal/proxy/volume_test.go"
@@ -44,6 +45,11 @@
     ],
     "limits/label-values-not-truncated-by-default": [
       "internal/proxy/label_surface_test.go"
+    ],
+    "limits/label-values-response-cap": [
+      "internal/middleware/coalescer_body_limit_test.go",
+      "internal/proxy/backend_response_guard_review_test.go",
+      "internal/proxy/backend_response_guard_test.go"
     ],
     "limits/max-entries-limit-rejects": [
       "internal/proxy/tenant_query_limits_test.go",
@@ -96,6 +102,11 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "loki-compatible-profile": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
+      "test/e2e-compat/stack_profiles_test.go"
+    ],
     "loki_api_v1_drilldown_limits": [
       "internal/proxy/tenant_query_limits_test.go",
       "test/e2e-compat/tenant_limits_published_test.go"
@@ -134,6 +145,7 @@
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
       "internal/config/registry_test.go",
+      "internal/proxy/backend_response_guard_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_query_validation_test.go"
     ],
@@ -146,6 +158,44 @@
       "internal/proxy/ordered_json_drilldown_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "profiles/detected-fields-dotted-json-keys": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go"
+    ],
+    "profiles/dotted-name-parse-error": [
+      "internal/logql/dotted_names_test.go",
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
+      "test/e2e-compat/loki_profile_parity_test.go",
+      "test/e2e-ui/tests/datasource.spec.ts"
+    ],
+    "profiles/dotted-names-accepted-outside-loki-profile": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
+      "test/e2e-compat/loki_profile_parity_test.go"
+    ],
+    "profiles/grafana-shows-loki-error-text": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-ui/tests/datasource.spec.ts"
+    ],
+    "profiles/label-browse-params-ignored": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
+      "test/e2e-compat/loki_profile_parity_test.go"
+    ],
+    "profiles/structured-metadata-keys-per-profile": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
+      "test/e2e-ui/tests/datasource.spec.ts"
+    ],
+    "quality/label-cache-warm": [
+      "internal/proxy/labels_cache_warm_test.go",
+      "test/e2e-compat/stack_profiles_test.go"
+    ],
+    "semantics/backend-aborted-response": [
+      "internal/proxy/backend_response_guard_review_test.go",
+      "internal/proxy/backend_response_guard_test.go"
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
@@ -233,7 +283,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 184,
+  "registry_items": 198,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -244,8 +294,14 @@
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits"
     ],
+    "internal/logql/dotted_names_test.go": [
+      "profiles/dotted-name-parse-error"
+    ],
     "internal/logql/parser_captures_test.go": [
       "parsed-label-series-identity"
+    ],
+    "internal/middleware/coalescer_body_limit_test.go": [
+      "limits/label-values-response-cap"
     ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -264,6 +320,16 @@
       "semantics/client-cancellation-propagates",
       "series-limits-and-partial-results"
     ],
+    "internal/proxy/backend_response_guard_review_test.go": [
+      "limits/label-values-response-cap",
+      "semantics/backend-aborted-response"
+    ],
+    "internal/proxy/backend_response_guard_test.go": [
+      "backend-deadlines-and-cancellation",
+      "limits/label-values-response-cap",
+      "operator-configurable-limits",
+      "semantics/backend-aborted-response"
+    ],
     "internal/proxy/detected_level_response_test.go": [
       "severity-exposure-surfaces"
     ],
@@ -274,6 +340,18 @@
       "limits/label-values-not-truncated-by-default",
       "loki_api_v1_label_name_values",
       "operator-configurable-limits"
+    ],
+    "internal/proxy/labels_cache_warm_test.go": [
+      "quality/label-cache-warm"
+    ],
+    "internal/proxy/loki_profile_test.go": [
+      "loki-compatible-profile",
+      "profiles/detected-fields-dotted-json-keys",
+      "profiles/dotted-name-parse-error",
+      "profiles/dotted-names-accepted-outside-loki-profile",
+      "profiles/grafana-shows-loki-error-text",
+      "profiles/label-browse-params-ignored",
+      "profiles/structured-metadata-keys-per-profile"
     ],
     "internal/proxy/metadata_query_validation_test.go": [
       "limits/query-length-limit-is-configurable",
@@ -358,6 +436,14 @@
     "internal/translator/series_aggregation_test.go": [
       "metric-series-identity"
     ],
+    "test/e2e-compat/compat_option_matrix_test.go": [
+      "loki-compatible-profile",
+      "profiles/detected-fields-dotted-json-keys",
+      "profiles/dotted-name-parse-error",
+      "profiles/dotted-names-accepted-outside-loki-profile",
+      "profiles/label-browse-params-ignored",
+      "profiles/structured-metadata-keys-per-profile"
+    ],
     "test/e2e-compat/detected_level_corpus_test.go": [
       "severity-detected-level-derivation",
       "severity/normalisation-table"
@@ -388,6 +474,11 @@
       "semantics/json-filter-pushdown-without-error-drop",
       "semantics/json-label-spelling-probe"
     ],
+    "test/e2e-compat/loki_profile_parity_test.go": [
+      "profiles/dotted-name-parse-error",
+      "profiles/dotted-names-accepted-outside-loki-profile",
+      "profiles/label-browse-params-ignored"
+    ],
     "test/e2e-compat/parser_capture_identity_test.go": [
       "loki_api_v1_query",
       "parsed-label-series-identity"
@@ -405,14 +496,23 @@
       "metric-series-identity",
       "series-limits-and-partial-results"
     ],
+    "test/e2e-compat/stack_profiles_test.go": [
+      "loki-compatible-profile",
+      "quality/label-cache-warm"
+    ],
     "test/e2e-compat/tenant_limits_published_test.go": [
       "limits/max-entries-limit-rejects",
       "limits/published-equals-enforced",
       "loki_api_v1_drilldown_limits",
       "tenant-query-limits"
+    ],
+    "test/e2e-ui/tests/datasource.spec.ts": [
+      "profiles/dotted-name-parse-error",
+      "profiles/grafana-shows-loki-error-text",
+      "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 29,
+  "tests_with_markers": 39,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -448,9 +548,13 @@
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
     "parsed-identity/regexp-partial-match-series-count",
+    "profiles/label-endpoints-window-and-data",
+    "profiles/parsed-fields-without-parser",
+    "profiles/structured-metadata-label-collision",
+    "profiles/uncategorized-streams-carry-structured-metadata",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 57
+  "wired_items": 67
 }

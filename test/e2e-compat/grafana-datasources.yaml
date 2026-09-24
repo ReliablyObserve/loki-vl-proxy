@@ -12,7 +12,16 @@ datasources:
     secureJsonData:
       httpHeaderValue1: "0"
 
-  # 2. VictoriaLogs via Loki-VL-proxy (under test)
+  # 2. VictoriaLogs via Loki-VL-proxy (under test).
+  #
+  # The Explore datasource ("Loki (via VL proxy)", its multi-tenant twin) and
+  # the default datasource Logs Drilldown opens ("Loki (via VL proxy patterns
+  # autodetect)") run the Loki-compatible profile (-label-style=underscores
+  # -metadata-field-mode=translated): every label, field and structured-metadata
+  # key is the name Loki shows, and a dotted name in a query is Loki's parse
+  # error. The OTel hybrid and native metadata profiles expose dotted
+  # VictoriaLogs names on purpose and are separate, explicitly named
+  # datasources. Datasource UIDs derive from these names, so keep the names.
   - name: Loki (via VL proxy)
     type: loki
     access: proxy
@@ -34,6 +43,17 @@ datasources:
       maxLines: 1000
     secureJsonData:
       httpHeaderValue1: "0|fake"
+
+  - name: Loki (via VL proxy OTel hybrid)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy-otel-hybrid:3100
+    isDefault: false
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+      maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0"
 
   - name: Loki (via VL proxy native metadata)
     type: loki

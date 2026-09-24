@@ -176,6 +176,7 @@ extraArgs:
   # drilldown-max-stats-buckets: "120"                  # time buckets per Drilldown stats call; finer steps are coarsened
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
+  # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 502 (no truncated results)
 
@@ -237,6 +238,9 @@ extraArgs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)
   # - emit-structured-metadata: true | false
+  # - logql-dotted-names: auto | reject | accept (auto: reject in the Loki-compatible profile)
+  # - label-browse-extensions: auto | on | off (limit/offset/search on the label endpoints)
+  # - error-response-message-field: true | false
   # - patterns-enabled: true | false
   #
   # Common profile examples:
@@ -255,6 +259,9 @@ extraArgs:
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/compatibility-matrix.md
   # metadata-field-mode: "translated"        # field exposure: native | translated | hybrid (default translated; set via flag, METADATA_FIELD_MODE env does not override it)
   # emit-structured-metadata: "true"         # include 3-tuple stream values [timestamp, line, metadata]
+  # logql-dotted-names: "auto"               # auto | reject | accept: dotted names (k8s.pod.name) in LogQL; auto rejects them with Loki's parse error in the Loki-compatible profile and accepts them otherwise
+  # label-browse-extensions: "auto"          # auto | on | off: limit/offset/search on /labels and /label/{name}/values (Loki ignores them); auto = off in the Loki-compatible profile unless label-values-indexed-cache
+  # error-response-message-field: "true"     # add "message" (shown by Grafana) to JSON error bodies; "false" restores {status, errorType, error}
   # detected-level-body-scan: "true"         # derive detected_level from the log line when no level field is stored (false: stored fields only, unknown otherwise)
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # default; convert VL dotted fields (service.name) to Loki underscores (service_name); set via flag, LABEL_STYLE env does not override it
@@ -299,6 +306,7 @@ extraArgs:
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
   # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache

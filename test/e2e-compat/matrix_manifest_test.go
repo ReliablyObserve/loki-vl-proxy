@@ -116,8 +116,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 	}
 
 	// Keep translation profile matrix pinned in compose so CI always exercises:
+	// - translated + underscores + emit=true (the Loki-compatible profile the
+	//   Grafana-facing proxies run; TestCompat_StackProfilesMatchDatasources
+	//   checks the per-service wiring)
 	// - hybrid + underscores + emit=true
-	// - translated + underscores + emit=true
 	// - native + underscores + emit=true
 	// - translated + underscores + emit=false
 	profileExpectations := []string{
@@ -128,10 +130,11 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		`- "-label-values-index-persist-path=/cache/label-values-index.json"`,
 		`- "-label-values-index-persist-interval=5s"`,
 		"loki-vl-proxy-underscore:",
-		`- "-metadata-field-mode=hybrid"`,
+		`- "-metadata-field-mode=translated"`,
 		`- "-emit-structured-metadata=true"`,
 		"loki-vl-proxy-translated-metadata:",
-		`- "-metadata-field-mode=translated"`,
+		"loki-vl-proxy-otel-hybrid:",
+		`- "-metadata-field-mode=hybrid"`,
 		"loki-vl-proxy-native-metadata:",
 		`- "-metadata-field-mode=native"`,
 		"loki-vl-proxy-no-metadata:",

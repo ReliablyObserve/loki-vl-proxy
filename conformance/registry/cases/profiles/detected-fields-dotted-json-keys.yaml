@@ -1,0 +1,39 @@
+id: profiles/detected-fields-dotted-json-keys
+title: detected_fields names a dotted JSON key by Loki's sanitized label, key in jsonPath
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  A JSON log line with dotted keys ({"http.method":"GET","k8s.pod.name":...})
+  is unpacked by VictoriaLogs into fields named with the dots. Loki's json
+  parser sanitizes each key (sanitizeLabelKey: every rune outside
+  [A-Za-z0-9_] becomes an underscore, a leading digit gets one), so Loki's
+  detected_fields lists `http_method` with parsers ["json"] and jsonPath
+  ["http.method"]. The proxy listed `http.method`, and Logs Drilldown built
+  field breakdowns and filters from that label (`sum by (http.method) (...)`),
+  which the Loki-compatible profile answers with Loki's parse error.
+  Owner decision (2026-09-24): with dotted names rejected
+  (-logql-dotted-names=reject, or auto in the Loki-compatible profile) the
+  proxy reports Loki's sanitized label and keeps the original key in
+  jsonPath, which Drilldown turns into `| json http_method="[\"http.method\"]"`;
+  with dotted names accepted (hybrid, native, passthrough, or
+  -logql-dotted-names=accept) the stored dotted name stays, as before. The
+  2026-04-25 decision on the _extracted suffix is unchanged (see
+  profiles/structured-metadata-label-collision).
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{app="compat-matrix-<ts>"}'
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [fields.label, fields.jsonPath]
+  expect: |
+    Loki-compatible profile: `http_method` with jsonPath ["http.method"], as
+    Loki answers (checked against Loki in TestCompat_OptionMatrixAgainstStack).
+    Dotted names accepted: `http.method` with jsonPath ["http.method"].

@@ -247,7 +247,7 @@ func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params ur
 }
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
-	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
+	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode() + responseCapKeySuffix(ctx)
 	// Include per-user auth fingerprint to prevent cross-user coalescing when
 	// forwarded auth headers/cookies are configured.
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
@@ -700,6 +700,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
+			ctx = withLabelValuesResponseCap(ctx, p.labelValuesMaxResponseBytes(orgID))
 
 			var (
 				values   []string

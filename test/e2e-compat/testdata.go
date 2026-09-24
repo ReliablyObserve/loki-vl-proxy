@@ -5,6 +5,7 @@ package e2e_compat
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -507,17 +508,29 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 				lokiValues = append(lokiValues, []string{tsStr, line})
 			}
 		}
+		// Loki rejects a push whose label names hold dots (400 "invalid
+		// label"); an OTel pipeline delivers such a stream to Loki under the
+		// sanitized names, so the Loki copy carries those.
+		lokiLabels := make(map[string]string, len(sd.Labels))
+		for k, v := range sd.Labels {
+			lokiLabels[strings.ReplaceAll(k, ".", "_")] = v
+		}
 		lokiPayload := map[string]interface{}{
 			"streams": []map[string]interface{}{
-				{"stream": sd.Labels, "values": lokiValues},
+				{"stream": lokiLabels, "values": lokiValues},
 			},
 		}
 		body, _ := json.Marshal(lokiPayload)
 		resp, err := http.Post(lokiURL+"/loki/api/v1/push", "application/json", strings.NewReader(string(body)))
 		if err != nil {
-			t.Logf("Loki push (%s): failed: %v", sd.Labels["app"], err)
-		} else {
-			resp.Body.Close()
+			t.Fatalf("Loki push (%s): failed: %v", sd.Labels["app"], err)
+		}
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		resp.Body.Close()
+		// A fixture on one side only makes every later parity comparison a
+		// data difference, so a rejected push fails the setup.
+		if resp.StatusCode/100 != 2 {
+			t.Fatalf("Loki push (%s): status %d: %s", sd.Labels["app"], resp.StatusCode, respBody)
 		}
 	}
 
@@ -549,8 +562,11 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		strings.NewReader(strings.Join(vlLines, "\n")),
 	)
 	if err != nil {
-		t.Logf("VL push (%s): failed: %v", sd.Labels["app"], err)
-	} else {
-		resp.Body.Close()
+		t.Fatalf("VL push (%s): failed: %v", sd.Labels["app"], err)
+	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		t.Fatalf("VL push (%s): status %d: %s", sd.Labels["app"], resp.StatusCode, respBody)
 	}
 }

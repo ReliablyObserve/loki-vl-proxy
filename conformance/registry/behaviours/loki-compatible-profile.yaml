@@ -1,0 +1,58 @@
+id: loki-compatible-profile
+kind: semantics
+title: The Loki-compatible profile holds requests and responses to Loki's contract
+
+loki: |
+  Loki exposes label names that match its grammar only: OTel resource and
+  log attributes arrive with dots (k8s.namespace.name) and are stored as
+  k8s_namespace_name, in stream labels and in structured metadata alike.
+  Its lexer turns "." into a DOT token that no grammar rule accepts, so a
+  dotted name anywhere in LogQL - stream matcher, label filter, by/without,
+  on/ignoring, keep/drop, label_format, json/logfmt parameters, unwrap - is a
+  400 parse error at the dot's line and column. /labels and
+  /label/{name}/values read only start, end and query
+  (loghttp.ParseLabelQuery); any other parameter changes nothing.
+
+victorialogs: |
+  VictoriaLogs stores the names it was given: an OTLP or Loki-push payload
+  keeps k8s.namespace.name with its dots, and LogsQL addresses the field by
+  that name.
+
+proxy: |
+  The profile is -label-style=underscores with -metadata-field-mode=translated
+  (the default; -emit-structured-metadata is independent). Every name a
+  client sees is Loki's underscore name, and queries written with Loki's names
+  are translated to the stored dotted fields before they reach VictoriaLogs.
+  Each Loki behaviour is its own option, defaulting to Loki in this profile:
+  -logql-dotted-names (auto|reject|accept) answers a dotted name with Loki's
+  exact parse error before any backend call and names dotted JSON keys in
+  detected_fields by Loki's sanitized label with the key in jsonPath;
+  -label-browse-extensions (auto|on|off) ignores limit, offset and search/q on
+  the label endpoints (auto keeps them with -label-values-indexed-cache);
+  -error-response-message-field adds the "message" Grafana displays. "auto"
+  keeps the dotted names and the browse window in the hybrid and native
+  metadata modes and with passthrough labels, which expose dotted names on
+  purpose; every combination is documented in docs/configuration.md
+  (Compatibility option matrix) and walked by TestCompatOptionMatrix (unit)
+  and TestCompat_OptionMatrixAgainstStack (e2e, against Loki). The e2e stack's
+  Grafana-facing datasources (Explore "Loki (via VL proxy)" and the Logs
+  Drilldown default) run this profile; the hybrid and native modes are
+  separate, explicitly named datasources.
+
+implementation:
+  - "internal/logql/dotted_names.go DottedNameError"
+  - "internal/proxy/loki_profile.go lokiProfile, resolveDottedNames, resolveLabelBrowse, Proxy.lokiNameError, Proxy.lokiNameCheck, Proxy.labelBrowseExtensions, Proxy.detectedFieldName, lokiJSONKeyLabel"
+  - "internal/proxy/drilldown.go Proxy.detectFieldSummariesStream"
+  - "internal/proxy/http_utils.go Proxy.validateQuery, Proxy.writeError"
+
+cases:
+  - profiles/dotted-name-parse-error
+  - profiles/dotted-names-accepted-outside-loki-profile
+  - profiles/structured-metadata-keys-per-profile
+  - profiles/label-browse-params-ignored
+  - profiles/label-endpoints-window-and-data
+  - profiles/grafana-shows-loki-error-text
+  - profiles/parsed-fields-without-parser                    # open gap
+  - profiles/structured-metadata-label-collision             # open gap, owner decision
+  - profiles/uncategorized-streams-carry-structured-metadata # open gap
+  - profiles/detected-fields-dotted-json-keys

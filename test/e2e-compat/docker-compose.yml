@@ -166,6 +166,9 @@ services:
   vmauth-ring:
     image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.138.0}
     container_name: e2e-vmauth-ring
+    # Benchmark-only (scripts/bench-cache-tiers.sh, bench/drilldown-*.sh):
+    # start with `docker compose --profile peers up -d`.
+    profiles: ["peers"]
     ports:
       - "13200:8427"
     command:
@@ -334,6 +337,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-a
+    # Benchmark-only peer: `docker compose --profile peers up -d`.
+    profiles: ["peers"]
     user: root
     ports:
       - "13150:3100"
@@ -344,6 +349,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -403,6 +413,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-b
+    # Benchmark-only peer: `docker compose --profile peers up -d`.
+    profiles: ["peers"]
     user: root
     ports:
       - "13151:3100"
@@ -413,6 +425,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -493,7 +510,9 @@ services:
       - "-log-level=info"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
-      - "-metadata-field-mode=hybrid"
+      # Loki-compatible profile (the default): Logs Drilldown on the
+      # stack's default datasource sees exactly the names Loki shows.
+      - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
       - "-patterns-enabled=true"
       - "-patterns-autodetect-from-queries=true"
@@ -532,6 +551,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # The one proxy left at the built-in -max-stats-query-series default
       # (500, Loki's own default max_query_series), so the series-limit
       # behaviour (Loki's error for a plain client, a partial result with a
@@ -565,7 +589,10 @@ services:
       retries: 10
       start_period: 5s
 
-  # Loki-VL-proxy with label-style=underscores (for OTel dot→underscore tests)
+  # Loki-VL-proxy in the Loki-compatible profile (underscore labels,
+  # translated metadata): backs the Grafana "Loki (via VL proxy)" and
+  # "Loki (via VL proxy multi-tenant)" datasources, so Explore shows exactly
+  # what a Loki user sees, and the OTel dot→underscore tests.
   loki-vl-proxy-underscore:
     image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
     build:
@@ -575,7 +602,7 @@ services:
     ports:
       - "13102:3100"
     environment:
-      # Soft GC pressure limit: hybrid mode + no label-values index = many concurrent
+      # Soft GC pressure limit: no label-values index = many concurrent
       # VL NDJSON responses in memory. Without GOMEMLIMIT Go's GC only triggers at
       # 2× live heap, causing rapid unbounded growth under e2e load.
       # 2 GiB gives headroom above the 64 MB window cache + streaming buffers.
@@ -597,7 +624,7 @@ services:
       - "-log-level=info"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
-      - "-metadata-field-mode=hybrid"
+      - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
       # Cap the query_range window cache to 64 MB. The default 256 MB is sized for
       # large deployments; the e2e underscore proxy handles only test load.
@@ -635,6 +662,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -682,6 +714,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -717,6 +754,62 @@ services:
       retries: 10
       start_period: 5s
 
+  # Loki-VL-proxy in the OTel hybrid profile: underscore labels, metadata
+  # fields exposed under both the dotted VictoriaLogs name and the Loki
+  # alias, dotted names accepted in queries (a documented extension of
+  # this mode, not Loki behaviour). Backs the Grafana "Loki (via VL proxy
+  # OTel hybrid)" datasource and the hybrid-mode tests.
+  loki-vl-proxy-otel-hybrid:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-otel-hybrid
+    ports:
+      - "13111:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
+      # Match this stack's Loki limits_config (loki-local-config.yaml:
+      # max_query_series 1000000, max_entries_limit_per_query 0,
+      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query over a limit fails on both sides at the same point, parity
+      # tests compare answers rather than two different limits, and
+      # /loki/api/v1/drilldown-limits publishes what Loki publishes.
+      - "-max-stats-query-series=1000000"
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - "-backend-timeout=5m"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=hybrid"
+      - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
+      - "-metadata-default-lookback=0"
+      - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # Loki-VL-proxy with underscore labels and structured metadata disabled
   loki-vl-proxy-no-metadata:
     image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
@@ -729,6 +822,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -776,6 +874,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -822,6 +925,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      # Correctness/bench variant: no interactive label picker is served
+      # from it, so it skips the startup and keep-warm label scans that
+      # every replica would otherwise send VictoriaLogs (7d scans from all
+      # variants at once OOM-killed VictoriaLogs).
+      - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, and Loki's default max_query_length 721h): a
@@ -937,6 +1045,8 @@ services:
       - loki-vl-proxy-vmauth
       - loki-vl-proxy-underscore
       - loki-vl-proxy-native-metadata
+      - loki-vl-proxy-translated-metadata
+      - loki-vl-proxy-otel-hybrid
       - loki-vl-proxy-tail
       - loki-vl-proxy-tail-native
       - tail-ingress

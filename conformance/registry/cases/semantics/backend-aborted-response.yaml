@@ -1,0 +1,34 @@
+id: semantics/backend-aborted-response
+title: A VictoriaLogs response aborted after its headers is Loki's timeout, never a Go transport error
+proves:
+  - backend-deadlines-and-cancellation
+consumer: any
+why: |
+  When a VictoriaLogs query outlives its deadline after the 200 headers are
+  sent, lib/httpserver Errorf writes the error into the (often compressed) body,
+  then abort() hijacks the connection, writes a raw "the connection has been
+  aborted" line and closes it. Go's HTTP client then fails the body read with
+  `chunked line ends with bare LF` (or an unexpected EOF or a decompression
+  error), and the proxy answered `502 {"error":"chunked line ends with bare
+  LF"}` on the e2e stack's long label values requests. Loki answers a query
+  past its deadline with 504 and its fixed text; a transport detail tells a
+  Grafana user nothing, and a partial body must never be decoded or cached.
+request:
+  scope: internal
+  entry: (*Proxy).guardBackendBody, statusFromUpstreamErr
+  setup: |
+    A fake VictoriaLogs that starts a 200 response (identity and gzip), then
+    hijacks the connection and writes the raw abort line, either early, at the
+    `timeout` argument the proxy sent, or after VictoriaLogs' own deadline
+    message.
+compare:
+  mode: exact
+  expect: |
+    At or past the timeout argument, past the request deadline, or when
+    VictoriaLogs' deadline message is in the body: HTTP 504 with Loki's
+    `request timed out, decrease the duration of the request or add more label
+    matchers (prefer exact match over regex match) to reduce the amount of data
+    processed`. Otherwise HTTP 502 `VictoriaLogs aborted the response after D,
+    before it was complete; ...` with no Go transport text. A client
+    cancellation stays 499. Nothing is cached or indexed, so the next request
+    reaches VictoriaLogs again.
