@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   performance evidence. The e2e log generator gained a seeded backfill mode
   (`LOG_BACKFILL_SECONDS`) that the runs use.
 
+## [1.96.0] - 2026-09-24
+
 ### Security
 
 - gosec v2.29.0's taint rule G708 ("server-side template injection") flags
