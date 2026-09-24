@@ -288,3 +288,73 @@ func TestLabelKeepWarmDelay_JittersAroundTheInterval(t *testing.T) {
 		t.Fatalf("delay for a zero interval = %s, want 0", got)
 	}
 }
+
+// A background refresh must never be the single-flight leader a synchronous
+// request shares: skipped at once when the slots are busy, it would hand the
+// user its rejection without the user's call ever queueing.
+//
+// conformance: backend-admission-and-heavy-query-queueing, limits/metadata-scan-queue-429
+func TestVLMetadataCoalesceKey_BackgroundNeverSharesWithSynchronous(t *testing.T) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Millisecond, 10), LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	params := url.Values{"query": {"*"}, "start": {"1"}, "end": {"2"}}
+	ctx := context.WithValue(context.Background(), orgIDKey, "0")
+	sync := p.vlMetadataCoalesceKey(ctx, "/select/logsql/stream_field_names", params)
+	background := p.vlMetadataCoalesceKey(withBackgroundInventory(ctx), "/select/logsql/stream_field_names", params)
+	if sync == background {
+		t.Fatalf("background and synchronous listings share coalescer key %q", sync)
+	}
+	if again := p.vlMetadataCoalesceKey(ctx, "/select/logsql/stream_field_names", params); again != sync {
+		t.Fatalf("identical synchronous listings do not share a key: %q vs %q", sync, again)
+	}
+}
+
+// A background skip is not a client rejection: it is recorded as "skipped".
+//
+// conformance: backend-admission-and-heavy-query-queueing, limits/concurrent-full-retention-scans-exhaust-backend
+func TestMetadataScanAdmission_BackgroundSkipIsRecordedAsSkipped(t *testing.T) {
+	p, err := New(Config{
+		BackendURL:                        "http://127.0.0.1:1",
+		Cache:                             cache.New(time.Millisecond, 10),
+		LogLevel:                          "error",
+		BackendMaxConcurrentMetadataScans: 1,
+		BackendHeavyQueryQueueWait:        0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	release, err := p.metadataScanLimiter.acquire(context.Background(), "0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	params := url.Values{"query": {"*"}}
+	for _, tc := range []struct {
+		name    string
+		ctx     context.Context
+		outcome string
+	}{
+		{"synchronous", context.Background(), "rejected"},
+		{"background", withBackgroundInventory(context.Background()), "skipped"},
+	} {
+		rt := newRequestTelemetry()
+		ctx := context.WithValue(tc.ctx, requestTelemetryKey, rt)
+		if _, err := p.admitBackendRequest(ctx, "/select/logsql/stream_field_names", params); !isHeavyQueryQueueFull(err) {
+			t.Fatalf("%s: err = %v, want queue-full", tc.name, err)
+		}
+		rt.mu.Lock()
+		got := rt.internalOpsByType[internalOperationBreakdownKey("backend_metadata_scan_admission", tc.outcome)]
+		keys := make([]string, 0, len(rt.internalOpsByType))
+		for k := range rt.internalOpsByType {
+			keys = append(keys, k)
+		}
+		rt.mu.Unlock()
+		if got != 1 {
+			t.Fatalf("%s: outcome %q not recorded once; recorded %v", tc.name, tc.outcome, keys)
+		}
+	}
+}

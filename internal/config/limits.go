@@ -18,8 +18,8 @@ var Limits = []Limit{
 	{
 		Flag:       "backend-max-concurrent-metadata-scans",
 		Unit:       "concurrent calls",
-		Bounds:     "long-range VictoriaLogs metadata listings running at once per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range (the /labels, /label/{name}/values, /series and inventory warm-up scans); shorter listings are never queued",
-		Error:      "429 `too many outstanding requests: long-range VictoriaLogs metadata scans are limited to -backend-max-concurrent-metadata-scans=N per replica and this query waited -backend-heavy-query-queue-wait=D`; a background inventory refresh that finds every slot busy is skipped and retried on its next schedule instead",
+		Bounds:     "long-range VictoriaLogs metadata listings running at once per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range (the /labels, /label/{name}/values, /series, detected_fields and inventory warm-up scans); shorter listings are never queued",
+		Error:      "429 `too many outstanding requests: long-range VictoriaLogs metadata scans are limited to -backend-max-concurrent-metadata-scans=N per replica and this query waited -backend-heavy-query-queue-wait=D`; a background inventory refresh that finds every slot busy is skipped (outcome `skipped`) and retried on its next schedule instead",
 		Metric:     "loki_vl_proxy_internal_operation_total{operation=\"backend_metadata_scan_admission\"}",
 		Alert:      "none",
 		LokiParity: "querier.max_concurrent / the query scheduler queue (Loki answers a full queue with the same 429 message); Loki serves /labels from its index in milliseconds, VictoriaLogs scans every partition in the range",

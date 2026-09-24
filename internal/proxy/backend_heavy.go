@@ -252,9 +252,9 @@ var trailingLimitPipeRE = regexp.MustCompile(`\|\s*(?:limit|head)\s+(\d+)\s*$`)
 // isHeavyBackendRequest classifies a VictoriaLogs select call by the work it
 // can make VictoriaLogs do. Raw-row fetches above log-query sizes, and stats or
 // hits calls over long ranges or finer-than-Loki bucket grids, are heavy.
-// Metadata lookups (field names/values, streams) are bounded by their own
-// limits and stay outside the limiter so label browsing keeps working while
-// heavy queries queue.
+// Metadata listings (field names/values, streams) stay outside this limiter
+// so label browsing keeps working while heavy queries queue; long-range ones
+// have their own (isMetadataScanRequest).
 func isHeavyBackendRequest(path string, params url.Values, minRange time.Duration) bool {
 	switch path {
 	case "/select/logsql/query":
@@ -408,6 +408,10 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 	outcome := "admitted"
 	switch {
 	case err == nil:
+	case isHeavyQueryQueueFull(err) && isBackgroundInventory(ctx):
+		// No client was refused: the background refresh is retried on its
+		// next schedule.
+		outcome = "skipped"
 	case isHeavyQueryQueueFull(err):
 		outcome = "rejected"
 	default:

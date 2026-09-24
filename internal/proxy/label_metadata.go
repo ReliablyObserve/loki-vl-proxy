@@ -248,14 +248,7 @@ func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params ur
 }
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
-	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
-	// Include per-user auth fingerprint to prevent cross-user coalescing when
-	// forwarded auth headers/cookies are configured.
-	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
-			key += ":auth:" + fp
-		}
-	}
+	key := p.vlMetadataCoalesceKey(ctx, path, params)
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlGetInner(ctx, path, params)
 	})
@@ -266,6 +259,24 @@ func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params 
 		return 0, nil, err
 	}
 	return status, body, nil
+}
+
+// vlMetadataCoalesceKey identifies one metadata call for single-flighting.
+// It carries the tenant and the per-user auth fingerprint so users never share
+// a backend response, and a background marker so a background refresh that is
+// skipped by the metadata-scan limiter never becomes the leader a synchronous
+// request waits on: the user's own call must queue for its slot.
+func (p *Proxy) vlMetadataCoalesceKey(ctx context.Context, path string, params url.Values) string {
+	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
+	if isBackgroundInventory(ctx) {
+		key += ":bg"
+	}
+	return key
 }
 
 func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.Values) ([]string, error) {
@@ -1002,6 +1013,12 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
+			if ctx.Err() != nil {
+				// The pass ran out of budget, which says nothing about this
+				// window; leave its schedule alone.
+				p.log.Debug("label cache warmup pass ended", "window", w.window, "err", fetchErr)
+				return
+			}
 			// A window that fails (timeout under contention, a busy slot) is
 			// not retried on every tick: with many replicas ticking in step,
 			// that was a synchronized storm of full-retention scans.
