@@ -1,160 +1,101 @@
-# Drilldown Field Histogram Quality
+# Drilldown Label And Field Breakdowns
 
-This document describes how the proxy produces drilldown field histograms,
-how quality is measured, and the strategies used to match Loki's behaviour.
+This document describes how the proxy answers the label and field breakdowns
+of Grafana Logs Drilldown, and how their parity with Loki is measured.
 
 ## Overview
 
-Grafana Logs Drilldown displays per-field histograms: for each detected
-field (e.g. `level`, `http_method`, `duration_ms`), it shows how many log
-lines matched each value over time. These charts are the main "fields panel"
-in the Drilldown view. The proxy answers Loki's `count_over_time` +
-`sum by (field)` LogQL with VictoriaLogs `/select/logsql/hits` top-N values
-first. When `/hits` cannot serve the query it falls back to
-`stats_query_range` merged with `field_values` data, and zero-fills missing
-time steps to match Loki's continuous-line behaviour.
-
-## Path Selection
-
-Drilldown-shaped single-field count queries (an existence filter on the
-grouped field) are routed the same way for every client and every parseable
-range:
+Grafana Logs Drilldown shows, for each label and each detected field (for
+example `pod`, `level`, `http_method`, `trace_id`), how many log lines carry
+each value over time. It asks for one metric range query per label or field:
 
 ```
-proxyStatsQueryRangeDrilldown (metric_binary.go)
-  → proxyStatsQueryRangeDrilldownHybrid
-      1. proxyStatsQueryRangeDrilldownHits
-           /select/logsql/hits, top 20 values (drilldownHitsFieldsLimit)
-           range ≥ 6 h: 8 windows sampled in parallel (hitsWindowSampleThreshold,
-                        hitsWindowCount)
-           Drilldown-tagged residual chunk (end - start < step): empty matrix
-           remainder bucket dropped; shared timestamp axis
-      2. on /hits failure (X-Proxy-Drilldown-Hits-Fallback: 1)
-           field_values over the full range (limit 500)
-           + stats_query_range over the full range, | limit 500
-           step capped to ≤ 120 buckets (maxDrilldownStatsBuckets)
-           ≤ 30 buckets for likely high-cardinality fields
-           ≤ 50 distinct values: requested step, floor range / 1000 buckets
-           Zero-filled by zerofillStatsMatrix
-           Merged by mergeDrilldownWithFieldValues
-
-Parser-stage variant (| json / | logfmt before the filter)
-  → proxyStatsQueryRangeDrilldownParserDirect
-      /hits first, then stats_query_range with | limit 500
+sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)
+sum by (user_id) (count_over_time({env="production"} | json user_id="[\"user_id\"]" | drop __error__, __error_details__ | user_id!="" [5m]))
 ```
 
-The per-field batcher (`drilldown_field_batcher.go`) remains behind the hybrid
-path and only runs when `start`/`end` cannot be parsed.
+`step` equals the range (`$__auto`), and ranges of 24h or more reach the proxy
+as Grafana's 24h query-split chunks. The plugin does not cap or sample the
+series it receives; it sorts them and draws them.
 
-Non-Drilldown-shaped `count() by (field)` queries use
-`proxyStatsQueryRangeDirect`. They reach the window-sampled `/hits` path only
-for ranges of 2 h or more when the request is Drilldown-tagged, or comes from
-another Grafana client and groups by a likely high-cardinality field; otherwise
-they get `stats_query_range` capped to the busiest `-max-stats-query-series`
-(default 500) series.
+Loki (v3.7.7) answers these like any other metric query: every series, exact
+values on its evaluation timestamps, no sample for a step whose window holds no
+line. Above `max_query_series` (default 500) it returns a partial result with
+the warning `maximum number of series (N) reached for a single query; returning
+partial results` for Drilldown (`JoinSampleVector` in `pkg/logql/engine.go`, the
+`seriesLimiter` in `pkg/querier/queryrange/limits.go`) and a `400` for every
+other client.
 
-## Cardinality Tiers
+## How The Proxy Answers
 
-On the stats fallback, the proxy classifies each field by name and by the distinct-value count returned by `field_values`:
+The breakdown takes the same path as any other client's grouped count
+(`proxyStatsQueryRange` in `internal/proxy/metric_binary.go`):
 
-| Tier | Detection | Stats fallback strategy | Examples |
-|------|-----------|----------|---------|
-| **High** | `isLikelyHighCardinalityField` (exact names such as `trace_id`, `session_id`, or suffix `_id`, `.id`, `_uuid`, `_token`, `_hash`, `_key`) or `isHighCardinalityFieldName` (`_id`, `_uid`) | `stats_query_range` with step floored to ≤ 30 buckets (`drilldownHighCardStatsBuckets`); `field_values` synthesis only as last resort | `trace_id`, `span_id`, `api_key` |
-| **Low** | ≤ 50 distinct values in `field_values` (`drilldownLowCardThreshold`) | requested step, floored to ≤ 1000 buckets (`drilldownLowCardStatsBuckets`) | `level`, `http_method` |
-| **All others** | none | step coarsened to ≤ 120 buckets + `field_values` merge | `duration_ms` |
+```
+proxyStatsQueryRange
+  Drilldown sub-step residual chunk (end - start < step): empty matrix
+  range == step: fetch from start - range on buckets anchored to the request
+                 start, relabel each bucket onto Loki's evaluation timestamp
+  proxyStatsQueryRangeDirectAnchored
+      limit = tenant's max_query_series
+              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
+      Drilldown: take a -stats-query-range-concurrency slot
+      one stats_query_range call, read until limit+1 series
+      under the limit: every series (Drilldown and plain clients alike)
+      plain client over the limit: Loki's 400
+      Drilldown single-field breakdown over the limit: rankedSingleFieldQuery
+          <base> | filter f:in(<base> | stats by (f) count() as __lvp_rank
+                               | sort by (__lvp_rank desc, f) | limit <limit+1>
+                               | fields f)
+                 | stats by (f) count()
+          (remembered for 5 minutes: later requests rank straight away)
+      Drilldown over the limit: keep the limit busiest series + Loki's warning
+      response above -backend-max-buffered-response-bytes → 502 naming the flag
+```
 
-High-cardinality fields get a tighter bucket cap because VictoriaLogs' stats
-pipe materializes one entry per (bucket × distinct value) before the top-N
-limit applies. These tiers only apply when `/hits` fails; the `/hits` path
-itself returns the top 20 values.
+The ranking subquery inherits the call's time range, so the ranked response
+holds at most `limit + 1` series however many values the field has, and
+`limit + 1` series means the limit was passed. VictoriaLogs still reads the
+lines twice for the ranked call (the ranking, then the buckets). Each returned
+series is the exact per-step count. A breakdown that cannot be ranked (the
+underscore label style groups a dotted field by both spellings) is read whole
+and capped the same way, bounded by `-backend-max-buffered-response-bytes`.
 
-## Zero-fill: Why and How
+### Deviation From Loki
 
-VictoriaLogs `stats_query_range` omits time buckets where count = 0.
-Loki's `count_over_time` aggregation emits every step in the query window,
-including zero-count steps.
-
-Without zero-fill:
-- VL returns points at t=100, t=300 (skipping t=200)
-- Grafana connects those points with a line, drawing incorrect trends
-- The chart appears "spiky" even for smooth traffic
-
-With zero-fill (`zerofillStatsMatrix` in `drilldown_quality.go`):
-- The proxy builds the complete time axis from startSec to endSec at stepSec
-- For each existing series, missing steps are filled with `"0"`
-- No new series are introduced; only existing series are zero-filled
-- FV-only stub series (values in `field_values` but not in top-N stats)
-  keep their averaged stub counts — they have no per-step data from VL
-
-`zerofillStatsMatrix` is applied on the stats fallback paths:
-1. `proxyStatsQueryRangeDrilldownHybrid` (stats tier after a `/hits` failure)
-2. `proxyStatsQueryRangeDrilldownParserDirect` (parser-stage stats subpath)
-3. `fieldBatch.fire()` goroutine (per-field batcher)
+Over the limit, Loki keeps the first series it meets while evaluating; the
+proxy keeps the busiest. For series of equal volume the kept set can differ;
+the values of every kept series match Loki's. The residual-chunk suppression
+exists for Grafana's merge of split chunks (see
+[Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-and-grafana-querysplitting)).
 
 ## Loki Parity
 
+`internal/proxy/drilldown_breakdown_exact_test.go` pins the contract against a
+Loki reference evaluator: the labels and fields breakdown request shapes above,
+under the limit (every series, Loki's values, no warning, one
+`stats_query_range` call, no `/hits` call, no raw scan) and over a per-tenant
+limit (the busiest series with Loki's warning for Drilldown, Loki's `400` for a
+plain client, another tenant unaffected).
+
 The e2e test `TestDrilldown_LokiCompare_FieldQuality` seeds identical log
-streams into both Loki and VL, then compares proxy vs Loki responses.
+streams into Loki and VictoriaLogs and compares proxy and Loki responses per
+field and range.
 
-Acceptance thresholds (enforced for low/medium cardinality fields):
-
-| Metric | Threshold |
-|--------|-----------|
-| Series count | proxy ≥ loki |
-| Total count per series | within ±15% |
-| Non-zero bucket coverage | proxy ≥ 90% of Loki |
-
-The ±15% count threshold accounts for the ~6% dual-push timing skew
-observed in the e2e environment (sequential Loki + VL pushes, occasional
-push failures). The 90% bucket coverage threshold ensures the proxy does not
-lose data points that Loki shows.
-
-Comparison is limited to 1 h, 3 h, and 6 h ranges because the e2e Loki
-instance retains only ~12 h of data. For 24 h+ ranges only VL proxy output
-is verified (via the quality matrix test).
-
-## Quality Matrix Measurement
-
-`TestDrilldown_QualityMatrix` seeds 1200 entries over 2 h into VL and
-measures the proxy at 7 ranges × 5 field types:
-
-**Ranges:** 1 h, 3 h, 6 h, 12 h, 24 h, 2 d, 7 d
-
-**Fields:**
-
-| Field | Cardinality | Type |
-|-------|-------------|------|
-| `level` | 3 values | stream label |
-| `http_method` | 5 values | JSON field |
-| `http_status` | 10 values | JSON field |
-| `duration_ms` | ~50 values | JSON field |
-| `trace_id` | unique/entry | JSON field (ultra-high) |
-
-**Hard failures** (block CI):
-- Empty result for `level` or `detected_level`
-- Proxy HTTP 5xx
-
-**Quality metrics** (logged, never fail CI):
-- Series count
-- Non-zero bucket count / total buckets (density %)
-- Total log count
-- End-to-end proxy latency (ms)
-- `X-Proxy-Drilldown-Path` header value
+`TestDrilldown_QualityMatrix` seeds entries into VictoriaLogs and logs, per
+range (1h to 7d) and field type (`level`, `http_method`, `http_status`,
+`duration_ms`, `trace_id`), the series count, bucket density, total count and
+proxy latency. An empty result for `level` or `detected_level`, or a proxy 5xx,
+fails CI.
 
 ## Reference
 
 | Symbol | File | Purpose |
 |--------|------|---------|
-| `zerofillStatsMatrix` | `internal/proxy/drilldown_quality.go` | Fill missing VL time steps with 0 |
-| `proxyStatsQueryRangeDrilldownHits` | `internal/proxy/metric_binary.go` | `/hits` top-N path, windowed sampling, residual suppression |
-| `proxyStatsQueryRangeDrilldownHybrid` | `internal/proxy/metric_binary.go` | Drilldown path for all parseable ranges: `/hits`, then stats + `field_values` |
-| `fieldBatch.fire` | `internal/proxy/drilldown_field_batcher.go` | Batched per-field stats (reached only without parseable `start`/`end`) |
-| `mergeDrilldownWithFieldValues` | `internal/proxy/metric_binary.go` | Merge stats histogram + FV stubs |
-| `synthesizeDrilldownMatrix` | `internal/proxy/metric_binary.go` | FV-only stub matrix (no stats) |
-| `isHighCardinalityFieldName` | `internal/proxy/metric_binary.go` | `_id`/`_uid` suffix detection |
-| `isLikelyHighCardinalityField` | `internal/proxy/metric_binary.go` | Broad HC name detection |
-| `coarsenDrilldownStep` | `internal/proxy/metric_binary.go` | Cap bucket count to ≤ 120 |
-| `highCardStepFloor` | `internal/proxy/metric_binary.go` | Cap high-cardinality fallback to ≤ 30 buckets |
+| `proxyStatsQueryRange` | `internal/proxy/metric_binary.go` | Entry: residual suppression, range == step relabel |
+| `proxyStatsQueryRangeDirectAnchored` | `internal/proxy/metric_binary.go` | One stats call, series limit, warning or 400 |
+| `rankedSingleFieldQuery` | `internal/proxy/metric_binary.go` | `in()` subquery keeping the `limit + 1` busiest values |
 | `isQuerySplitResidual` | `internal/proxy/metric_binary.go` | Drilldown-tagged sub-step residual chunk detection |
-| `TestDrilldown_QualityMatrix` | `test/e2e-compat/drilldown_quality_report_test.go` | Quality measurement (non-blocking) |
+| `TestDrilldownBreakdown_*` | `internal/proxy/drilldown_breakdown_exact_test.go` | Loki parity under and over the series limit |
+| `TestDrilldown_QualityMatrix` | `test/e2e-compat/drilldown_quality_report_test.go` | Quality measurement |
 | `TestDrilldown_LokiCompare_FieldQuality` | `test/e2e-compat/drilldown_loki_compare_test.go` | Loki parity assertions |

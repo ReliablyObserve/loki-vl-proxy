@@ -1,0 +1,42 @@
+id: limits/drilldown-breakdown-exact
+title: Logs Drilldown label and field breakdowns hold every series with Loki's values
+proves:
+  - series-limits-and-partial-results
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown draws a label or field breakdown from one metric range query
+  per label or field, such as
+  `sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)` or
+  `sum by (user_id) (count_over_time({env="production"} | json user_id="[\"user_id\"]" | drop __error__, __error_details__ | user_id!="" [5m]))`,
+  with step equal to the range. The plugin (2.5.2, src/services/labels.ts and
+  fields.ts) neither caps nor samples the series; it sorts them. Loki answers
+  like any other metric query: every series with exact values, and above
+  max_query_series the Drilldown partial result with its warning
+  (pkg/logql/engine.go JoinSampleVector, v3.7.7). A breakdown answered from a
+  sample of top values shows fewer series than Loki, wrong counts and no
+  warning, so the panel looks complete when it is not.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({app="tumble" ,pod != ""} [5m])) by (pod)'
+    start: "<start>"
+    end: "<start+20m>"
+    step: "300"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: structural
+  fields: [status, warnings, data.resultType, data.result[].metric]
+  values:
+    mode: exact
+    field: data.result[].values
+    reason: |
+      Under the limit the series set, the timestamps and the values equal
+      Loki's. Over the limit the proxy keeps the busiest series where Loki
+      keeps the first it encounters; every kept series equals Loki's.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

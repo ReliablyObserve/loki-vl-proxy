@@ -199,8 +199,8 @@ func TestGroupedRangeMetricSingleFieldLongRangeMatchesLoki(t *testing.T) {
 	}
 }
 
-// The Drilldown single-field detectors and the count fast paths share one shape
-// gate: only a bare `| stats by (field) count()` may be rebuilt as a count.
+// The count fast paths share one shape gate: only a bare
+// `| stats by (field) count()` may be rebuilt as a count.
 func TestParseSingleFieldCountSpecRejectsRateLikeTranslations(t *testing.T) {
 	cases := []struct {
 		query string
@@ -219,12 +219,5 @@ func TestParseSingleFieldCountSpecRejectsRateLikeTranslations(t *testing.T) {
 		if _, got := parseSingleFieldCountSpec(tc.query); got != tc.want {
 			t.Errorf("parseSingleFieldCountSpec(%q) = %v, want %v", tc.query, got, tc.want)
 		}
-	}
-	rate := `namespace:="prod" app:!"" | stats by (app) count() as __lvp_inner | math __lvp_inner/60 as __lvp_rate | stats by (app) sum(__lvp_rate)`
-	if _, _, ok := detectDrilldownSingleField(rate); ok {
-		t.Errorf("detectDrilldownSingleField must not treat a rate translation as a count: %q", rate)
-	}
-	if _, _, ok := detectDrilldownSingleFieldWithParser(rate); ok {
-		t.Errorf("detectDrilldownSingleFieldWithParser must not treat a rate translation as a count: %q", rate)
 	}
 }

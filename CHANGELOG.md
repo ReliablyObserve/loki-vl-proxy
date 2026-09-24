@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **A grouped count whose VictoriaLogs response is large is no longer
+  answered from a sample.** A `stats_query_range` response above 16 MB used to
+  be answered from a two-phase top-values query or, failing that, with an
+  empty matrix. The response is now read up to
+  `-backend-max-buffered-response-bytes` (64 MiB by default) and answered in
+  full, or with Loki's series-limit error or Drilldown partial result; above
+  that size the query fails with `502` naming the flag.
+- `-drilldown-max-stats-buckets`, `-drilldown-field-batch-window-ms` and
+  `-drilldown-field-batch-max-fields` are deprecated and have no effect; they
+  are still accepted so existing command lines keep working.
+
+### Fixed
+
+- **Logs Drilldown label and field breakdowns answer exactly like Loki.** A
+  breakdown such as `sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)`
+  or `sum by (user_id) (count_over_time({env="production"} | json ... | user_id!="" [5m]))`
+  was answered from VictoriaLogs `/hits` top values: 16 to 20 series sampled
+  in 8 windows from 2h on, the step coarsened to at most 120 buckets, missing
+  steps zero-filled, samples on bucket starts instead of Loki's evaluation
+  timestamps, and no warning, so a label with six values could show two and a
+  pod breakdown showed 16 of 50,000 pods with counts that matched none of
+  Loki's. The breakdown now takes the same exact path as any other client:
+  every series up to the tenant's `max_query_series` with Loki's values on
+  Loki's evaluation timestamps, from one `stats_query_range` call. Above the
+  limit the breakdown is asked again with VictoriaLogs ranking the field's
+  values (an `in()` subquery keeping the `limit + 1` busiest, remembered for
+  five minutes), so the response stays bounded however many values the field
+  has, and Drilldown gets the `limit` busiest series with Loki's
+  `maximum number of series (N) reached for a single query; returning partial
+  results` warning. Breakdowns share the `-stats-query-range-concurrency`
+  slots. Loki keeps the first series it meets rather than the
+  busiest, so for series of equal volume the kept set can differ; every kept
+  series has Loki's values.
+- **A field breakdown asks VictoriaLogs to parse only the lines that can hold
+  the field, and a stored value wins over the line's key as in Loki.** A
+  breakdown such as `sum by (f) (count_over_time({...} | json | drop __error__, __error_details__ | f!="" [5m]))`
+  (or `| json f="[\"f\"]"`, or `| logfmt`) was sent as `unpack_json` over
+  every key of every line, then the non-empty filter, so VictoriaLogs parsed
+  the whole range, and a line's key overwrote a stored `f` (a stream label or
+  structured metadata) where Loki keeps the stored value and renames the key
+  to `f_extracted`. When only filters precede the parser, the query now
+  parses only lines without a stored `f` that hold `f` as a word, or a JSON
+  `\u` escape that may spell the key, and reads only `f`:
+  `| filter (f:* or _msg:"f" or _msg:~"\\\\u") | unpack_json if (-f:*) fields (f)`.
+  Where the ingestion route keeps the JSON keys as fields, the lines holding
+  `f` are not parsed at all: on the A/B stack's hour of generator data the
+  `pipeline`, `user_id` and `batch_id` breakdowns take VictoriaLogs 15 to
+  30 ms instead of 90 to 100 ms (4 CPUs), and the proxy answers them in
+  Loki's range. Where lines are kept only as `_msg`, VictoriaLogs still reads
+  every line and saves the JSON parse of the lines without the field's word
+  (26 to 67 ms instead of 85 to 100 ms for the same three breakdowns).
+  Value filters on a parsed field (`| json | f="v"`) still let the body key
+  replace a stored `f`.
+- A Grafana-sourced stats failure on a range == step metric query kept its
+  partial-result reply but lost the `Warning` and `X-Proxy-Upstream-*`
+  headers.
+
 ## [1.97.2] - 2026-09-30
 
 ### Security

@@ -2327,7 +2327,7 @@ func TestDrilldownLogCountUnderscokeProxyOTelData(t *testing.T) {
 							"service.name": "otel-service", // OTel field found
 							"service_name": "",             // stream label not found
 						},
-						"values": [][]interface{}{{float64(1712538000), "4200"}},
+						"values": [][]interface{}{{float64(1775644200), "4200"}},
 					},
 				},
 			},

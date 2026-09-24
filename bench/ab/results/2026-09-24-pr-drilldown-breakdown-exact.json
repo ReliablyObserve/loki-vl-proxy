@@ -1,0 +1,549 @@
+{
+ "label": "pr-drilldown-breakdown-exact",
+ "date": "2026-09-24",
+ "set": "drilldown-breakdown-exact",
+ "description": "Logs Drilldown label and field breakdowns as the plugin sends them, answered exactly (every series up to the tenant's max_query_series, the busiest with Loki's warning over it) instead of from sampled /hits top values. High-cardinality labels and fields (pod, user_id, batch_id) and a low-cardinality one (namespace).",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 3,
+ "valid": true,
+ "restart_before": "2",
+ "restart_after": "2",
+ "noise": 0.25,
+ "timing": "cold",
+ "verdicts": {
+  "faster": 2,
+  "same": 7,
+  "slower": 7
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "main": 16,
+  "branch": 8,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DB1 label breakdown pod",
+   "range": "1h",
+   "p50": {
+    "main": 0.178,
+    "branch": 0.06
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.119
+   },
+   "cold": {
+    "main": 0.178,
+    "branch": 0.06
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0,
+    "branch": 1211.87
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "faster",
+   "speedup": 2.97
+  },
+  {
+   "shape": "DB1 label breakdown pod",
+   "range": "6h",
+   "p50": {
+    "main": 0.214,
+    "branch": 0.237
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.255
+   },
+   "cold": {
+    "main": 0.214,
+    "branch": 0.237
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1331.41,
+    "branch": 1331.41
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "DB1 label breakdown pod",
+   "range": "24h",
+   "p50": {
+    "main": 0.876,
+    "branch": 0.778
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.745
+   },
+   "cold": {
+    "main": 0.876,
+    "branch": 0.778
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1470.97,
+    "branch": 1470.97
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.13
+  },
+  {
+   "shape": "DB1 label breakdown pod",
+   "range": "7d",
+   "p50": {
+    "main": 6.028,
+    "branch": 1.939
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 1.632
+   },
+   "cold": {
+    "main": 6.028,
+    "branch": 1.939
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1356.14,
+    "branch": 1356.14
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "faster",
+   "speedup": 3.11
+  },
+  {
+   "shape": "DB2 label breakdown namespace",
+   "range": "1h",
+   "p50": {
+    "main": 0.025,
+    "branch": 0.017
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.027
+   },
+   "cold": {
+    "main": 0.025,
+    "branch": 0.017
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1289.1,
+    "branch": 1289.1
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same series, sum \u00b10.17%",
+   "verdict": "same",
+   "speedup": 1.47
+  },
+  {
+   "shape": "DB2 label breakdown namespace",
+   "range": "6h",
+   "p50": {
+    "main": 0.073,
+    "branch": 0.094
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.121
+   },
+   "cold": {
+    "main": 0.073,
+    "branch": 0.094
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 329.71,
+    "branch": 481.82
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.78
+  },
+  {
+   "shape": "DB2 label breakdown namespace",
+   "range": "24h",
+   "p50": {
+    "main": 0.25,
+    "branch": 0.385
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.31
+   },
+   "cold": {
+    "main": 0.25,
+    "branch": 0.385
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1575.9,
+    "branch": 1575.9
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.65
+  },
+  {
+   "shape": "DB2 label breakdown namespace",
+   "range": "7d",
+   "p50": {
+    "main": 0.617,
+    "branch": 0.614
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.569
+   },
+   "cold": {
+    "main": 0.617,
+    "branch": 0.614
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1575.9,
+    "branch": 1503.74
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DB3 json field breakdown user_id",
+   "range": "1h",
+   "p50": {
+    "main": 0.033,
+    "branch": 0.044
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.037
+   },
+   "cold": {
+    "main": 0.033,
+    "branch": 0.044
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1002.55,
+    "branch": 449.29
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.75
+  },
+  {
+   "shape": "DB3 json field breakdown user_id",
+   "range": "6h",
+   "p50": {
+    "main": 0.067,
+    "branch": 0.288
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.249
+   },
+   "cold": {
+    "main": 0.067,
+    "branch": 0.288
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 513.76,
+    "branch": 513.76
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.23
+  },
+  {
+   "shape": "DB3 json field breakdown user_id",
+   "range": "24h",
+   "p50": {
+    "main": 0.232,
+    "branch": 0.752
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 1.199
+   },
+   "cold": {
+    "main": 0.232,
+    "branch": 0.752
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 662.54,
+    "branch": 937.71
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.31
+  },
+  {
+   "shape": "DB3 json field breakdown user_id",
+   "range": "7d",
+   "p50": {
+    "main": 0.625,
+    "branch": 2.121
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 1.757
+   },
+   "cold": {
+    "main": 0.625,
+    "branch": 2.121
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1462.79,
+    "branch": 1487.9
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.29
+  },
+  {
+   "shape": "DB4 json field breakdown batch_id",
+   "range": "1h",
+   "p50": {
+    "main": 0.056,
+    "branch": 0.05
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.067
+   },
+   "cold": {
+    "main": 0.056,
+    "branch": 0.05
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1487.9,
+    "branch": 1487.9
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.12
+  },
+  {
+   "shape": "DB4 json field breakdown batch_id",
+   "range": "6h",
+   "p50": {
+    "main": 0.09,
+    "branch": 0.401
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.414
+   },
+   "cold": {
+    "main": 0.09,
+    "branch": 0.401
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 522.84,
+    "branch": 522.84
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.22
+  },
+  {
+   "shape": "DB4 json field breakdown batch_id",
+   "range": "24h",
+   "p50": {
+    "main": 0.249,
+    "branch": 1.482
+   },
+   "p95": {
+    "main": 0.003,
+    "branch": 2.792
+   },
+   "cold": {
+    "main": 0.249,
+    "branch": 1.482
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1166.87,
+    "branch": 1166.87
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.17
+  },
+  {
+   "shape": "DB4 json field breakdown batch_id",
+   "range": "7d",
+   "p50": {
+    "main": 1.13,
+    "branch": 4.128
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 3.75
+   },
+   "cold": {
+    "main": 1.13,
+    "branch": 4.128
+   },
+   "status": {
+    "main": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1513.05,
+    "branch": 1513.05
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "slower",
+   "speedup": 0.27
+  }
+ ]
+}

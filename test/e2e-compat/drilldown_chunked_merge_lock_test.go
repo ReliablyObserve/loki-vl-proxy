@@ -23,7 +23,7 @@
 //
 // The replay validates the END-TO-END contract on real ingested data, so a
 // future change that breaks any single layer (routing, leftover suppression,
-// shared axis, /hits semantics) shows up as a real-stack spike. Unit-only
+// per-chunk axis trimming, exact series) shows up as a real-stack spike. Unit-only
 // locks live in `internal/proxy/drilldown_regression_lock_test.go`.
 
 package e2e_compat
@@ -272,11 +272,24 @@ func fetchChunkAsMergedFrame(t *testing.T, base, query string, start, end time.T
 	if len(parsed.Data.Result) == 0 {
 		return nil
 	}
+	// Like Loki, the proxy leaves out the steps where a series has no sample,
+	// so series carry different timestamps. The chunk's frame spans every
+	// timestamp of the chunk, a series holding 0 where it has no sample.
 	f := &mergedFrame{series: map[string][]int64{}}
-	// Axis from series[0] (assert shared axis as a side-effect — same length).
-	for _, v := range parsed.Data.Result[0].Values {
-		ts, _ := v[0].(float64)
-		f.times = append(f.times, int64(ts)*1000)
+	seen := map[int64]bool{}
+	for _, s := range parsed.Data.Result {
+		for _, v := range s.Values {
+			ts, _ := v[0].(float64)
+			if ms := int64(ts) * 1000; !seen[ms] {
+				seen[ms] = true
+				f.times = append(f.times, ms)
+			}
+		}
+	}
+	sort.Slice(f.times, func(i, j int) bool { return f.times[i] < f.times[j] })
+	index := make(map[int64]int, len(f.times))
+	for i, ms := range f.times {
+		index[ms] = i
 	}
 	for _, s := range parsed.Data.Result {
 		var label string
@@ -284,11 +297,12 @@ func fetchChunkAsMergedFrame(t *testing.T, base, query string, start, end time.T
 			label = v
 			break
 		}
-		vals := make([]int64, len(s.Values))
-		for i, v := range s.Values {
+		vals := make([]int64, len(f.times))
+		for _, v := range s.Values {
+			ts, _ := v[0].(float64)
 			vs, _ := v[1].(string)
 			n, _ := strconv.ParseInt(vs, 10, 64)
-			vals[i] = n
+			vals[index[int64(ts)*1000]] = n
 		}
 		f.series[label] = vals
 	}
