@@ -21,7 +21,6 @@ Ranges are each set's own, up to --max-range (the seeded window is sized from
 it); 7d is not seeded.
 """
 import argparse
-import concurrent.futures
 import json
 import os
 import subprocess
@@ -38,8 +37,9 @@ ROOT = stack.ROOT
 RESULTS = os.path.join(HERE, "results")
 PY = sys.executable
 # Daily data profile: a batch per 30 s at a third of the PR smoke's line rate
-# (about 25 lines/s), so a 25 h seed stays near 2.3 M lines and 120 k streams
-# on a hosted runner. Fixed: every day of history measures the same data.
+# (about 25 lines/s), so the ~24.4 h seed (24h + the runs' shifts + margin)
+# stays near 2.2 M lines and 120 k streams on a hosted runner. Fixed: every
+# day of history measures the same data.
 DAILY_BATCH, DAILY_INTERVAL = 60, 30
 
 
@@ -75,28 +75,26 @@ def main():
     stack.log(f"daily: {baseline} vs main {head[:10]} vs Loki; sets {sets}; ranges up to {args.max_range}")
 
     st = stack.stack_from(args)
-    proxies, trees, summaries = [], [], []
+    proxies, trees, summaries = [], {}, []
     try:
         st.up()
         seed_s = max_secs + 60 * args.runs + 900
         end = int(time.time()) // 60 * 60
         bins = {name: os.path.join(out, f"proxy-{name}") for name in ("release", "main")}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            seeding = pool.submit(st.seed, seed_s, end, args.seed_timeout, DAILY_BATCH, DAILY_INTERVAL)
-            main_build = pool.submit(stack.build, None, bins["main"])
-            release_build = pool.submit(stack.build, baseline, bins["release"])
-            trees += [main_build.result(), release_build.result()]
-            seeding.result()
-        for name, tree, port in (("release", trees[1], args.proxy_port), ("main", trees[0], args.proxy_port + 2)):
-            work = os.path.join(out, f"work-{name}")
-            os.makedirs(work, exist_ok=True)
-            cmd, env = stack.proxy_command(tree, args.service, port, st.vl, work)
-            proxy = stack.Proxy(name, bins[name], cmd, env, port, out)
-            proxy.start()
-            proxies.append(proxy)
+        try:
+            trees.update(stack.build_and_seed(st, [("main", None, bins["main"]), ("release", baseline, bins["release"])],
+                                              (seed_s, end, args.seed_timeout, DAILY_BATCH, DAILY_INTERVAL)))
+        except BaseException as e:
+            trees.update(getattr(e, "trees", {}))
+            raise
+        stack.start_proxies([("release", bins["release"], trees["release"], args.proxy_port),
+                             ("main", bins["main"], trees["main"], args.proxy_port + 2)], out, st, args.service, proxies)
         targets = [("release", proxies[0].url), ("main", proxies[1].url), ("loki", st.loki)]
         for set_name in sets:
             ranges = [r for r in spec["sets"][set_name]["ranges"] if range_defs[r][0] <= max_secs]
+            if not ranges:
+                stack.log(f"skipping set {set_name}: no range up to {args.max_range}")
+                continue
             summary = pr_smoke.run_matrix(set_name, None, targets, args, end, st, out, args.runs, ranges=ranges,
                                           label="daily", extra=["--long-runs", f"release={args.long_runs}"])
             summary["baseline_ref"], summary["commit"] = baseline, head
@@ -104,12 +102,7 @@ def main():
             if not all(p.alive() for p in proxies):
                 raise RuntimeError("a proxy died during the run; see the proxy logs in " + out)
     finally:
-        for p in proxies:
-            p.stop()
-        for tree in trees:
-            stack.remove_tree(tree)
-        if not args.keep_stack:
-            st.down()
+        stack.teardown(proxies, trees.values(), st, args.keep_stack)
 
     meta = {"baseline": baseline, "commit": head, "runs": args.runs, "max_range": args.max_range,
             "elapsed_s": round(time.time() - t0), "sets": sets,

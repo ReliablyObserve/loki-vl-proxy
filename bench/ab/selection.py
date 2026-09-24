@@ -13,13 +13,14 @@ shape cannot be reached from any code.
 Rules, per changed path:
   internal/, pkg/ (non-test Go)  shapes whose items name the file, plus the
                                  control smoke subset
-  cmd/, go.mod, go.sum, Dockerfile  the whole control set (flags, wiring and
-                                 the toolchain reach every query)
+  cmd/, go.mod, go.sum           the whole control set (flags, wiring and
+                                 the module graph reach every query)
   bench/ab/shapes.json           the shapes the change adds or edits, plus smoke
   A/B harness, stack and data    the control smoke subset (bench/ab/*.py,
   (see HARNESS)                  docker-compose files, Loki config, generator)
-  everything else                nothing: docs, CI, Helm chart, tests, registry
-                                 text and website do not change the binary
+  everything else                nothing: docs, CI, Helm chart, Dockerfile,
+                                 tests, registry text and website do not
+                                 change the host-built binary
 
 Endpoint items (loki_api_v1_*) sit under every shape of an endpoint and their
 handler file is touched by most changes, so a handler change selects that
@@ -52,7 +53,9 @@ LINK_KEYS = ("proves", "cases", "covers", "endpoints", "behaviours", "translatio
 LINK_BLOCK = re.compile(r"^(\s*)(" + "|".join(LINK_KEYS) + r"):[ \t]*(.*)$")
 TOKEN = re.compile(r"[A-Za-z0-9_./:-]+")
 
-RUNTIME_ALL = ("go.mod", "go.sum", "Dockerfile")
+# The A/B builds are host `go build`s, so the Dockerfile is not what they
+# measure; the toolchain and module graph are.
+RUNTIME_ALL = ("go.mod", "go.sum")
 # The measurement itself: a change here must prove the pipeline still runs.
 HARNESS = (
     "bench/ab/perf_matrix.py", "bench/ab/report.py", "bench/ab/stack.py", "bench/ab/selection.py",
@@ -133,6 +136,7 @@ def shape_files(shape, items):
 
 
 def shapes_at(ref):
+    """The shape sets at a git ref; none when the ref predates shapes.json or it does not parse."""
     try:
         text = subprocess.run(["git", "show", f"{ref}:{SHAPES}"], cwd=ROOT, capture_output=True, text=True,
                               check=True).stdout
@@ -252,8 +256,9 @@ def main():
             print(p)
         print(f"bench/ab selection: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
-    files = args.files if args.files is not None else changed_files(args.base or "origin/main", args.head)
-    result = select(files, base=args.base or None, head=None if args.head == "HEAD" else args.head)
+    base = args.base or "origin/main"
+    files = args.files if args.files is not None else changed_files(base, args.head)
+    result = select(files, base=base, head=None if args.head == "HEAD" else args.head)
     text = json.dumps(result, indent=1)
     if args.out:
         with open(args.out, "w") as f:

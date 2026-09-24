@@ -24,6 +24,8 @@ The steps, in order:
      services this stack does not start are dropped.
 """
 import argparse
+import concurrent.futures
+import contextlib
 import json
 import os
 import shutil
@@ -123,7 +125,8 @@ class Stack:
         t0 = time.time()
         subprocess.run([sys.executable, GENERATOR], cwd=self.root, env=env, check=True, stdout=sys.stderr)
         try:
-            urllib.request.urlopen(urllib.request.Request(f"{self.loki}/flush", method="POST"), timeout=60).close()
+            with urllib.request.urlopen(urllib.request.Request(f"{self.loki}/flush", method="POST"), timeout=60):
+                pass  # the response body is empty; only the status matters
         except (urllib.error.URLError, OSError) as e:
             log(f"Loki /flush failed ({e}); waiting for the counts anyway")
         self.wait_equal_counts(end - seconds, end, timeout)
@@ -199,14 +202,22 @@ def proxy_command(compose_root, service, listen_port, backend, work_dir):
 
 
 def build(ref, out, root=ROOT):
-    """Build ./cmd/proxy at a git ref (or the working tree when ref is None) into `out`."""
+    """Build ./cmd/proxy at a git ref (or the working tree when ref is None) into `out`.
+
+    Returns the tree it built from; a worktree it created is removed again
+    when the build fails.
+    """
     if ref is None:
         subprocess.run(["go", "build", "-o", out, "./cmd/proxy"], cwd=root, check=True)
         return root
     tree = tempfile.mkdtemp(prefix="ab-tree-")
-    subprocess.run(["git", "worktree", "add", "--detach", "--force", tree, ref], cwd=root, check=True,
-                   stdout=subprocess.DEVNULL)
-    subprocess.run(["go", "build", "-o", out, "./cmd/proxy"], cwd=tree, check=True)
+    try:
+        subprocess.run(["git", "worktree", "add", "--detach", "--force", tree, ref], cwd=root, check=True,
+                       stdout=subprocess.DEVNULL)
+        subprocess.run(["go", "build", "-o", out, "./cmd/proxy"], cwd=tree, check=True)
+    except BaseException:
+        remove_tree(tree, root)
+        raise
     return tree
 
 
@@ -214,6 +225,56 @@ def remove_tree(tree, root=ROOT):
     if tree and tree != root:
         subprocess.run(["git", "worktree", "remove", "--force", tree], cwd=root, check=False)
         shutil.rmtree(tree, ignore_errors=True)
+
+
+def build_and_seed(st, builds, seed_args):
+    """Build every (name, ref, out) while the stack seeds; returns {name: tree}.
+
+    A failed build stops the run at once instead of waiting for the seed (the
+    seed thread ends on its own when the stack goes down). Trees of the builds
+    that succeeded are returned through the exception's `trees` attribute so
+    the caller can remove them.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(builds) + 1)
+    seeding = pool.submit(st.seed, *seed_args)
+    futures = {pool.submit(build, ref, out): name for name, ref, out in builds}
+    trees = {}
+    try:
+        for future in concurrent.futures.as_completed(futures):
+            trees[futures[future]] = future.result()
+        seeding.result()
+    except BaseException as e:
+        for future, name in futures.items():
+            if future.done() and future.exception() is None:
+                trees[name] = future.result()
+        e.trees = trees
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return trees
+
+
+def start_proxies(specs, out, st, service, proxies):
+    """Start (name, binary, tree, port) builds with their tree's stack flags; appends to `proxies` first."""
+    for name, binary, tree, port in specs:
+        work = os.path.join(out, f"work-{name}")
+        os.makedirs(work, exist_ok=True)
+        cmd, env = proxy_command(tree, service, port, st.vl, work)
+        proxy = Proxy(name, binary, cmd, env, port, out)
+        proxies.append(proxy)  # before start(): a start that fails is still stopped
+        proxy.start()
+
+
+def teardown(proxies, trees, st, keep_stack=False):
+    """Stop everything; one failing step never skips the others."""
+    steps = [(p.stop, ()) for p in proxies] + [(remove_tree, (t,)) for t in trees]
+    if not keep_stack:
+        steps.append((st.down, ()))
+    for fn, args in steps:
+        try:
+            fn(*args)
+        except Exception as e:  # noqa: BLE001 - cleanup must go on
+            log(f"cleanup step {getattr(fn, '__name__', fn)} failed: {e}")
 
 
 class Proxy:
@@ -232,28 +293,36 @@ class Proxy:
         with open(self.log_path, "w") as logf:
             self.proc = subprocess.Popen([self.binary, *self.args], env=dict(os.environ, **self.env),
                                          stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
-        deadline = time.time() + 90
+        deadline, last_error = time.time() + 90, None
         while time.time() < deadline:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"proxy '{self.name}' exited with {self.proc.returncode}; see {self.log_path}")
             try:
-                if http_get(f"{self.url}/ready", timeout=3)[0] == 200:
+                status, _ = http_get(f"{self.url}/ready", timeout=3)
+                if status == 200:
                     log(f"proxy {self.name} ready on {self.url} (pid {self.proc.pid})")
                     return
-            except (urllib.error.URLError, OSError):
-                pass
+                last_error = f"/ready answered {status}"
+            except (urllib.error.URLError, OSError) as e:
+                last_error = e  # still starting (label index warm-up, backend probe); retry until the deadline
             time.sleep(1)
-        raise RuntimeError(f"proxy '{self.name}' not ready; see {self.log_path}")
+        self.stop()
+        raise RuntimeError(f"proxy '{self.name}' not ready in 90s (last: {last_error}); see {self.log_path}")
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
     def stop(self):
-        if self.alive():
+        if not self.alive():
+            return
+        # The process can exit between the alive() check and a signal; that
+        # ProcessLookupError means it is already stopped, which is the goal.
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(self.proc.pid, signal.SIGTERM)
             try:
                 self.proc.wait(timeout=20)
             except subprocess.TimeoutExpired:
+                log(f"proxy {self.name} ignored SIGTERM for 20s; killing it")
                 os.killpg(self.proc.pid, signal.SIGKILL)
 
 

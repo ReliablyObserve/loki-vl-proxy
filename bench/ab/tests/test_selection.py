@@ -36,10 +36,11 @@ def pick(files):
 class SelectTest(unittest.TestCase):
     def test_docs_ci_tests_chart_select_nothing(self):
         result = pick(["docs/a.md", ".github/workflows/ci.yaml", "internal/proxy/x_test.go",
-                       "charts/loki-vl-proxy/values.yaml", "conformance/registry/cases/x.yaml", "CHANGELOG.md"])
+                       "charts/loki-vl-proxy/values.yaml", "conformance/registry/cases/x.yaml", "CHANGELOG.md",
+                       "Dockerfile", "bench/ab/results/2026-09-24-x.json"])
         self.assertFalse(result["run"])
         self.assertEqual(result["sets"], {})
-        self.assertEqual(len(result["ignored"]), 6)
+        self.assertEqual(len(result["ignored"]), 8)
 
     def test_code_file_selects_shapes_through_registry_and_one_hop(self):
         result = pick(["internal/proxy/ordered_json_metric.go"])
@@ -60,7 +61,7 @@ class SelectTest(unittest.TestCase):
         self.assertEqual(result["sets"], {"control": ["logs plain"]})
 
     def test_runtime_files_select_whole_control_set(self):
-        for path in ("cmd/proxy/main.go", "go.mod", "go.sum", "Dockerfile"):
+        for path in ("cmd/proxy/main.go", "go.mod", "go.sum"):
             result = pick([path])
             self.assertEqual(result["sets"], {"control": ["logs plain", "json volume", "rate"]}, path)
 

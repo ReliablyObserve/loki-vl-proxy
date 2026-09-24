@@ -10,7 +10,7 @@ answer matches Loki's. Rows that did not move are folded into a collapsed
 section, as are cold (first-run) timings and why each shape was selected.
 
 Exit status (the `perf-smoke` check): 1 when a shape broke (base answered, PR
-does not), got slower beyond noise on the confirmation re-run, or returns a
+does not), is slower beyond noise on the confirmation re-run, or returns a
 result that differs from Loki where the base's did not; 2 when the run is
 invalid (VictoriaLogs restarted mid-run); 3 when the run did not complete
 (pr_smoke.py renders that comment); 0 otherwise.
@@ -104,7 +104,7 @@ def cell(text):
 def skipped(selection, meta):
     lines = [MARKER, "### ⏭️ Performance A/B: skipped", "",
              f"No change to the proxy's runtime code in this pull request ({selection.get('changed', 0)} file(s) changed: "
-             "docs, CI, tests, Helm chart or registry text), so no A/B run was needed."]
+             "docs, CI, tests, Dockerfile, Helm chart or registry text), so no A/B run was needed."]
     if meta.get("head"):
         lines += ["", f"<sub>Commit `{meta['head'][:10]}`.</sub>"]
     return "\n".join(lines) + "\n", {"state": "skipped", "failed": False, "exit": 0}
@@ -158,7 +158,7 @@ def render(summaries, selection, meta):
         lines.append(f"Every shape is within noise of the base build (±{meta.get('noise', 0.25) * 100:.0f}% "
                      f"and {meta.get('min_delta', 0.05) * 1000:.0f} ms).")
     if any(row.get("confirmed") for _, row in rows):
-        lines += ["", f"¹ re-measured with {meta.get('confirm_runs', '?')} runs, on windows the first pass did not use, after it flagged the shape slower."]
+        lines += ["", f"¹ re-measured with {meta.get('confirm_runs', '?')} runs, on windows the first pass did not use, after it moved beyond noise."]
     if still:
         lines += ["", f"<details><summary>{len(still)} unchanged shape×range (within noise)</summary>", ""]
         lines += table(still, b, c, r)

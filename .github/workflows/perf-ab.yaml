@@ -61,7 +61,10 @@ jobs:
         run: |
           set +e
           python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT"
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          # The verdict file, not the exit status, decides: a crash of the
+          # interpreter itself leaves none and is reported as incomplete.
+          CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
+          echo "exit=${CODE}" >> "$GITHUB_OUTPUT"
 
       - name: Render the skipped comment
         if: steps.select.outputs.run != 'true'
@@ -97,19 +100,20 @@ jobs:
           script: |
             const fs = require('fs');
             const path = `${process.env.OUT}/comment.md`;
-            if (!fs.existsSync(path)) {
-              core.warning('no comment rendered');
-              return;
-            }
-            const body = fs.readFileSync(path, 'utf8');
             const marker = '<!-- perf-ab-smoke -->';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // No rendered comment means the job died before pr_smoke.py could
+            // write one (timeout, runner loss): never leave the previous
+            // commit's table standing as if it were this commit's.
+            const body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8')
+              : `${marker}\n### ⚠️ Performance A/B: did not complete\n\nThe run for \`${context.sha.slice(0, 10)}\` stopped before it could report. See ${runUrl}.\n`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
             const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else if (process.env.RAN === 'true') {
+            } else if (process.env.RAN !== 'false') {
               // A docs- or CI-only change gets no new comment; an existing one is updated to say it was skipped.
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
@@ -123,5 +127,6 @@ jobs:
             0) echo "no regression" ;;
             1) echo "::error::A/B smoke: a shape broke, got slower on the re-run, or differs from Loki where the base did not (see the PR comment)"; exit 1 ;;
             2) echo "::error::A/B smoke run invalid: VictoriaLogs restarted during the run; re-run the job"; exit 1 ;;
+            3) echo "::error::A/B smoke did not complete; see the PR comment, the log and the uploaded artifacts"; exit 1 ;;
             *) echo "::error::A/B smoke did not complete (exit ${CODE:-none}); see the log and the uploaded artifacts"; exit 1 ;;
           esac

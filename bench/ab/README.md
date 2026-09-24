@@ -130,8 +130,9 @@ It lists only the shapes that changed beyond noise and prints one summary line.
 4. `perf_matrix.py` runs the selected shapes over 1h (instant shapes at one
    instant), 4 runs each, base, PR and Loki interleaved per request on the
    same step-aligned windows ending at the seeded data's end.
-5. A shape the first pass calls slower is measured again with 7 runs; only a
-   slowdown that holds is reported.
+5. A shape the first pass calls slower or faster is measured again with 7
+   runs on windows the first pass did not use (the same windows would only
+   time the caches it filled); only a move that holds is reported.
 6. `comment.py` updates one sticky comment and sets the check.
 
 Reproduce it locally (it never touches the e2e stack; smaller memory limits
@@ -162,11 +163,16 @@ The check fails on ❌, on 🔴 and on ⚠️ (a new difference from Loki). A ru
 which VictoriaLogs restarted is invalid and fails with a request to re-run; a
 run that could not finish posts what stopped it. A shape counts as slower only
 beyond 30% and 100 ms of the base's p50, and only if the 7-run re-measure
-agrees. Those thresholds come from A/A runs (the same build as both targets)
-on the seeded stack, whose largest per-shape move was NOISE_AA; hosted runners
-are noisier than a laptop, so the absolute floor is what keeps a 20 ms query
-from flapping. The check is not a required status yet: make it one once the
-daily history confirms the noise floor on hosted runners.
+agrees. The thresholds come from A/A runs (`--same-build`: one build as both
+targets) of 29 shapes on the seeded stack. On the 4-run first pass the median
+move is about 25% and single shapes move up to +73% (+327 ms); two runs had 7
+and 2 shapes cross both thresholds. Every shape the 7-run re-measure on fresh
+windows took again (6 across both runs) came back within noise (largest
+remaining move 15%); the run that re-measured both directions ended with 29
+of 29 unchanged. The absolute floor keeps a 20 ms query
+from flapping, and the re-measure keeps a single slow request from failing a
+pull request. The check is not a required status yet: make it
+one once the daily history confirms the noise floor on hosted runners.
 
 ### How shapes are selected
 
@@ -181,10 +187,10 @@ or the items those link to, name it:
 |---|---|
 | `internal/`, `pkg/` Go (not tests) | the shapes whose items name the file, plus the smoke subset of `control` |
 | an endpoint handler only (for example `proxy.go` for `loki_api_v1_query_range`) | the smoke shapes of that endpoint — nearly every change touches the handler |
-| `cmd/`, `go.mod`, `go.sum`, `Dockerfile` | the whole `control` set |
+| `cmd/`, `go.mod`, `go.sum` | the whole `control` set |
 | `bench/ab/shapes.json` | the shapes added or edited, plus smoke |
 | the harness (`bench/ab/*.py`, the compose files, Loki config, log generator, this workflow) | the smoke subset |
-| anything else | nothing |
+| anything else, including the `Dockerfile` (the runs build host binaries) | nothing |
 
 `python3 bench/ab/selection.py --base origin/main` prints the selection and
 the reason for each shape. `selection.py --check` runs in the conformance gate
@@ -207,8 +213,9 @@ list here.
 
 `.github/workflows/perf-daily.yaml` runs `daily.py` at 03:17 UTC (and on
 manual dispatch) on a fresh runner: the newest release tag vs `main` vs Loki,
-every set over its own ranges up to 24h, 7 runs, on a seeded 25h window
-(about 25 lines/s, a batch every 30 s; fixed so days are comparable). The
+every set over its own ranges up to 24h, 7 runs, on a seeded window of about
+24.4h (24h plus the runs' shifts and margin; about 25 lines/s, a batch every
+30 s, about 2.2 M lines; fixed so days are comparable). The
 release build's 24h ranges are capped at 3 runs. It writes:
 
 | path | content |
@@ -220,8 +227,10 @@ release build's 24h ranges are capped at 3 runs. It writes:
 
 The files reach `main` through a bot pull request on the rolling branch
 `bench/daily-perf` (never a push to `main`); a day that was not merged yet is
-carried into the next day's pull request, so history has no gaps. A run in
-which VictoriaLogs restarted writes nothing and fails.
+carried into the next day's pull request, so history has no gaps. Closing a
+daily pull request without merging does not drop its days while the branch
+exists; delete `bench/daily-perf` to discard them. A run in which
+VictoriaLogs restarted writes nothing and fails.
 
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits

@@ -17,15 +17,14 @@ Steps:
   3. Both builds run as host processes with their own tree's stack flags.
   4. perf_matrix.py runs each selected set over the short ranges, the three
      targets interleaved per request on the same pinned windows.
-  5. Shapes the first pass flags slower are re-measured with more runs; only a
-     slowdown that holds on the re-run is reported slower.
+  5. Shapes the first pass calls slower or faster are re-measured with more runs
+     on windows it did not use; only a move that holds is reported.
   6. comment.py renders the sticky comment and sets the exit status.
 
 Outputs in --out: selection.json, raw-<set>.json, summary-<set>.json,
 comment.md, verdict.json, meta.json and the proxies' logs.
 """
 import argparse
-import concurrent.futures
 import json
 import os
 import subprocess
@@ -72,18 +71,23 @@ def run_matrix(set_name, shapes, targets, args, end, st, out, runs, tag="", rang
 
 
 def confirm(summary, args, end, st, out, targets):
-    """Re-measure the shapes the first pass flagged slower; keep the re-run's verdict."""
-    slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] == "slower"})
+    """Re-measure the shapes the first pass called slower or faster; keep the re-run's verdict.
+
+    A/A runs (the same build as both targets) move single shapes by up to
+    ~70% on a first pass of 4 runs; a 7-run pass on fresh windows settles them.
+    """
+    moved = ("slower", "faster")
+    slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] in moved})
     if not slow:
         return summary
-    stack.log(f"re-measuring {len(slow)} shape(s) flagged slower in {summary['set']}")
+    stack.log(f"re-measuring {len(slow)} shape(s) the first pass moved in {summary['set']}")
     # Windows the first pass did not use: a re-run over the same windows would
     # time the caches the first pass filled on every target.
     again = run_matrix(summary["set"], slow, targets, args, end - 60 * args.runs, st, out, args.confirm_runs,
                        tag="-confirm")
     redo = {(row["shape"], row["range"]): row for row in again["rows"]}
     for i, row in enumerate(summary["rows"]):
-        if (row["shape"], row["range"]) in redo and row["verdict"] == "slower":
+        if (row["shape"], row["range"]) in redo and row["verdict"] in moved:
             summary["rows"][i] = dict(redo[(row["shape"], row["range"])], confirmed=True)
     summary["valid"] = summary.get("valid", True) and again.get("valid", True)
     summary["restart_after"] = again.get("restart_after")
@@ -117,35 +121,31 @@ def main():
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
 
-    base = args.base or git("merge-base", "origin/main", "HEAD")
-    base_sha = git("rev-parse", base)
-    head_sha = git("rev-parse", args.head or "HEAD")
-    meta = {"base": base_sha, "head": head_sha, "runs": args.runs, "ranges": args.ranges, "noise": args.noise,
-            "min_delta": args.min_delta, "confirm_runs": args.confirm_runs, "same_build": args.same_build}
-
-    if args.selection:
-        with open(args.selection) as f:
-            sel = json.load(f)
-    else:
-        sel = selection.select(selection.changed_files(base_sha, args.head or "HEAD"), base=base_sha,
-                               head=args.head or None)
-    with open(os.path.join(out, "selection.json"), "w") as f:
-        json.dump(sel, f, indent=1)
-    if not sel["run"]:
-        text, verdict = comment.render([], sel, meta)
-        finish(out, text, verdict, meta)
-        return 0
-
+    meta = {"runs": args.runs, "ranges": args.ranges, "noise": args.noise, "min_delta": args.min_delta,
+            "confirm_runs": args.confirm_runs, "same_build": args.same_build}
+    sel = {"run": True, "sets": {}}
     try:
-        summaries = measure(args, sel, out, base_sha)
-    except Exception as e:  # noqa: BLE001 - any failure must still produce a comment
+        base = args.base or git("merge-base", "origin/main", "HEAD")
+        meta["base"] = base_sha = git("rev-parse", base)
+        meta["head"] = git("rev-parse", args.head or "HEAD")
+        if args.selection:
+            with open(args.selection) as f:
+                sel = json.load(f)
+        else:
+            sel = selection.select(selection.changed_files(base_sha, args.head or "HEAD"), base=base_sha,
+                                   head=args.head or None)
+        with open(os.path.join(out, "selection.json"), "w") as f:
+            json.dump(sel, f, indent=1)
+        if not sel["run"]:
+            text, verdict = comment.render([], sel, meta)
+        else:
+            summaries = measure(args, sel, out, base_sha)
+            meta["elapsed_s"] = round(time.time() - t0)
+            text, verdict = comment.render(summaries, sel, meta)
+    except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
+        traceback.print_exc()
         meta["elapsed_s"] = round(time.time() - t0)
         text, verdict = comment.errored(sel, meta, f"{type(e).__name__}: {e}")
-        finish(out, text, verdict, meta)
-        traceback.print_exc()
-        return verdict["exit"]
-    meta["elapsed_s"] = round(time.time() - t0)
-    text, verdict = comment.render(summaries, sel, meta)
     finish(out, text, verdict, meta)
     return verdict["exit"]
 
@@ -153,36 +153,27 @@ def main():
 def measure(args, sel, out, base_sha):
     """Stack up, seed, build, run every selected set; returns the summaries."""
     st = stack.stack_from(args)
-    proxies, trees, summaries = [], [], []
+    proxies, trees, summaries = [], {}, []
     try:
         st.up()
-        # Window: the longest range, the runs' one-minute shifts and the
-        # largest range-vector lookback ([5m]) plus margin, ending at the
-        # last whole minute.
+        # Window: the longest range, the first pass's and the re-measure's
+        # one-minute shifts and the largest range-vector lookback ([5m]) plus
+        # margin, ending at the last whole minute.
         range_secs = max(1 if r == "instant" else stack_range_seconds(r) for r in args.ranges)
         seed_s = range_secs + 60 * (args.runs + args.confirm_runs) + 900
         end = int(time.time()) // 60 * 60
         bins = {name: os.path.join(out, f"proxy-{name}") for name in ("base", "pr")}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            seeding = pool.submit(st.seed, seed_s, end)
-            builds = [pool.submit(stack.build, args.head or None, bins["pr"])]
-            if not args.same_build:
-                builds.append(pool.submit(stack.build, base_sha, bins["base"]))
-        for build in builds:
-            if build.exception() is None:
-                trees.append(build.result())
-        for future in (*builds, seeding):
-            future.result()  # re-raise the first failure, after every worktree is recorded for removal
-        base_tree = trees[0] if args.same_build else trees[1]
-        base_bin = bins["pr"] if args.same_build else bins["base"]
-        for name, binary, tree, port in (("base", base_bin, base_tree, args.proxy_port),
-                                         ("pr", bins["pr"], trees[0], args.proxy_port + 2)):
-            work = os.path.join(out, f"work-{name}")
-            os.makedirs(work, exist_ok=True)
-            cmd, env = stack.proxy_command(tree, args.service, port, st.vl, work)
-            proxy = stack.Proxy(name, binary, cmd, env, port, out)
-            proxy.start()
-            proxies.append(proxy)
+        builds = [("pr", args.head or None, bins["pr"])]
+        if not args.same_build:
+            builds.append(("base", base_sha, bins["base"]))
+        try:
+            trees.update(stack.build_and_seed(st, builds, (seed_s, end)))
+        except BaseException as e:
+            trees.update(getattr(e, "trees", {}))
+            raise
+        base_name = "pr" if args.same_build else "base"
+        stack.start_proxies([("base", bins[base_name], trees[base_name], args.proxy_port),
+                             ("pr", bins["pr"], trees["pr"], args.proxy_port + 2)], out, st, args.service, proxies)
         targets = [("base", proxies[0].url), ("pr", proxies[1].url), ("loki", st.loki)]
         for set_name, shapes in sel["sets"].items():
             summary = run_matrix(set_name, shapes, targets, args, end, st, out, args.runs)
@@ -191,12 +182,7 @@ def measure(args, sel, out, base_sha):
                 if not p.alive():
                     raise RuntimeError(f"proxy '{p.name}' died during the run; see {p.log_path}")
     finally:
-        for p in proxies:
-            p.stop()
-        for tree in trees:
-            stack.remove_tree(tree)
-        if not args.keep_stack:
-            st.down()
+        stack.teardown(proxies, trees.values(), st, args.keep_stack)
     return summaries
 
 
