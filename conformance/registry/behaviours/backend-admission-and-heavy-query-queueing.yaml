@@ -31,6 +31,12 @@ proxy: |
   keep its 429 even for Grafana-sourced stats queries that otherwise carry the
   Drilldown partial-result carve-out.
 
+  Known gap (limits/concurrent-full-retention-scans-exhaust-backend): the
+  stream-field inventory refresh scans the whole retention when
+  -metadata-default-lookback is 0 and, being a metadata lookup, is never
+  queued, so many replicas refreshing at once beside long-range raw-row
+  fetches have OOM-killed an 8 GiB VictoriaLogs three times in seven minutes.
+
 implementation:
   - internal/proxy/backend_heavy.go
   - internal/proxy/backend.go
@@ -44,3 +50,4 @@ cases:
   - limits/metadata-not-queued
   - limits/queue-rejection-not-a-backend-failure
   - limits/drilldown-stats-rejection-keeps-429
+  - limits/concurrent-full-retention-scans-exhaust-backend

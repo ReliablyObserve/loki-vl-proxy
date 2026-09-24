@@ -1,0 +1,46 @@
+id: semantics/label-filter-before-parser-pushdown
+title: A label filter before the parser keeps a `| json` metric on stats buckets
+proves:
+  - parser-error-and-label-collision
+consumer: drilldown
+why: |
+  Logs Drilldown's fields page with a level filter selected sends
+  `sum by (export_ms) (count_over_time({env="production",
+  namespace="monitoring"} | detected_level="info" | json | drop __error__,
+  __error_details__ | export_ms!="" | pipeline="logs/loki" [2m]))`. In
+  Loki a label filter before the first parser reads stream labels and
+  structured metadata only (nothing has been parsed yet), so it is the same
+  filter the log query `{...} | detected_level="info"` applies, which the
+  translator already renders in LogsQL (a stream or field filter; for
+  `detected_level` the read-path derivation). The stats pushdown refused
+  any plan with a filter before the parser, so the query fell to the
+  raw-row evaluator: 1.6-2.0 s inside the proxy over the namespace's 24 h
+  with 4 ms of VictoriaLogs time, and Grafana cancelled a quarter of them
+  (499), where Loki answers in 0.33 s.
+
+  Now the filters before the first parser join the line filters in the
+  fetch query VictoriaLogs evaluates (the base of the stats query, of every
+  probe and of the raw-row fetch), and leave the plan's stages, so every
+  evaluator reads only the selected lines. A filter on `__error__` or
+  `__error_details__` before the parser stays out (nothing can carry them
+  there). Layer: VictoriaLogs native stats; exactness of the filter is the
+  translator's log-query contract.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (export_ms) (count_over_time({env="production", namespace="monitoring"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" | pipeline="logs/loki" [2m]))'
+    start: now-24h
+    end: now
+    step: "120"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values, answered from `stats_query_range`
+    over `... namespace:="monitoring" | ... level:="info" | unpack_json ...`
+    with the probes on the same base and no raw-row fetch: 0.29 s at 24 h
+    against 1.65 s before and Loki's 0.33 s.

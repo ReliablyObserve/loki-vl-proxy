@@ -1,0 +1,60 @@
+id: semantics/pipeline-error-text-parity
+title: A metric Loki fails with `pipeline error` fails with Loki's text, and fast
+proves:
+  - parser-error-and-label-collision
+consumer: any
+why: |
+  Loki v3.7.7 fails a range or instant metric whose sample carries
+  `__error__` with HTTP 400 and `logqlmodel.PipelineError.Error()`:
+
+      pipeline error: 'JSONParserErr' for series: '{__error__="JSONParserErr", __error_details__="Value looks like object, but can't find closing '}' symbol", app="payment-service", ..., service_name="payment-service"}'.
+      Use a label filter to intentionally skip this error. (e.g | __error__!="JSONParserErr").
+      To skip all potential errors you can match empty errors.(e.g __error__="")
+      The label filter can also be specified after unwrap. (e.g | unwrap latency | __error__="" )
+
+  The series is `labels.Labels.String()` of the failing sample: sorted by
+  name, `, ` separated, values Go-quoted, holding the stream labels, the
+  structured metadata Loki derived at ingest (`detected_level`,
+  `service_name`), the keys parsed before the failure, `__error__` and
+  `__error_details__` (the parser's own message; the proxy's JSON parser is
+  the same library, so the detail text matches). The raw-row evaluator used
+  its own wording (`pipeline error: "JSONParserErr"; filter errors with
+  __error__="" or explicitly drop __error__`), and read rows until it met
+  the first failing line, which depends on the order VictoriaLogs streams
+  blocks: 3 ms when the first block held a plain line, 1.6 s p50 in the
+  owner's session when it did not.
+
+  Now, for a `| json` metric whose pipeline neither drops `__error__` nor
+  carries a label filter an unparsed line fails (and that requires labels,
+  so the parser runs), one `| limit 1` lookup of a selected line that is
+  not a JSON object (`-_msg:~"^\s*\{"`, Loki's `jsonparser.ObjectEach`
+  fails every such line) answers the error before any row is scanned, with
+  Loki's text and that line's series; the evaluator's own check keeps the
+  same text for a malformed object it meets while scanning. Only lines Loki
+  evaluates count: the lookup starts one nanosecond after `start - range`
+  (Loki's window is left-open), ends at the last evaluation `start + k*step
+  <= end` (a line after it is in no window) and runs only when the step is
+  not wider than the range, so no line falls between two windows. The proxy
+  keeps its JSON error
+  envelope (`{"status":"error","errorType":"bad_data","error":...}`); Loki
+  writes the text as `text/plain`. Which failing line Loki names first is
+  not deterministic across its shards, so the series is compared by shape.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (status) (count_over_time({env="production"} | json [5m]))'
+    start: now-1h
+    end: now
+    step: "5"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The stream holds at least one line that is not a JSON object.
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: |
+    HTTP 400 on both; the proxy's `error` equals Loki's body except for the
+    series named. Time to the error: 3-10 ms on the proxy (one lookup, no
+    raw rows), 0.16-0.73 s on Loki direct at 1h-24h.

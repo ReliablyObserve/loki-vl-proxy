@@ -135,12 +135,19 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
+    "semantics/label-filter-before-parser-pushdown": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go"
+    ],
     "semantics/offset-sample-timestamps": [
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "semantics/partial-parse-before-error": [
       "internal/proxy/ordered_json_filter_pushdown_test.go"
+    ],
+    "semantics/pipeline-error-text-parity": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "internal/proxy/ordered_json_metric_test.go"
     ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
@@ -172,6 +179,7 @@
       "test/e2e-compat/detected_level_corpus_test.go"
     ],
     "status-400": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/volume_test.go"
     ],
     "window-bounds-and-step-alignment": [
@@ -180,7 +188,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 171,
+  "registry_items": 174,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -238,7 +246,13 @@
       "semantics/json-filter-pushdown-ungrouped-sum",
       "semantics/json-filter-pushdown-without-error-drop",
       "semantics/json-label-spelling-probe",
-      "semantics/partial-parse-before-error"
+      "semantics/label-filter-before-parser-pushdown",
+      "semantics/partial-parse-before-error",
+      "semantics/pipeline-error-text-parity",
+      "status-400"
+    ],
+    "internal/proxy/ordered_json_metric_test.go": [
+      "semantics/pipeline-error-text-parity"
     ],
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
@@ -324,7 +338,7 @@
       "series-limits-and-partial-results"
     ]
   },
-  "tests_with_markers": 25,
+  "tests_with_markers": 26,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -338,6 +352,7 @@
     "api_prom_tail",
     "data-density-and-chart-quality",
     "data-probing-and-freshness",
+    "limits/concurrent-full-retention-scans-exhaust-backend",
     "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_delete",
@@ -364,5 +379,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 44
+  "wired_items": 46
 }

@@ -42,12 +42,7 @@ type pushdownFakeVL struct {
 	raw    int
 }
 
-var (
-	pushdownMsgFilterRE = regexp.MustCompile(`_msg:~("(?:[^"\\]|\\.)*")`)
-	pushdownFormatRE    = regexp.MustCompile("^format if \\(`?([^`:]+)`?:\\*\\) \"<([^>]+)>\" as (\\S+)$")
-	pushdownFilterRE    = regexp.MustCompile("^(-?)`?([^`:]+)`?:(=|~)(\"(?:[^\"\\\\]|\\\\.)*\")$")
-	pushdownStoredRE    = regexp.MustCompile("`?([A-Za-z0-9_.]+)`?:\\*")
-)
+var pushdownFormatRE = regexp.MustCompile("^format if \\(`?([^`:]+)`?:\\*\\) \"<([^>]+)>\" as (\\S+)$")
 
 // vlUnpackJSONFields mirrors unpack_json: a line that is one JSON object after
 // trimming whitespace yields its keys raw, nested objects flattened with a
@@ -107,25 +102,218 @@ func fieldList(pipe string) []string {
 	return strings.Split(pipe[open+1:closing], ", ")
 }
 
-// applyPipes runs the non-stats pipes of a query over one row and reports
-// whether the row survives its filters.
+// splitLogsQLPipes splits a query at " | " outside quoted strings.
+func splitLogsQLPipes(query string) []string {
+	var parts []string
+	var quote byte
+	last := 0
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == ' ' && strings.HasPrefix(query[i:], " | "):
+			parts = append(parts, query[last:i])
+			last = i + 3
+			i += 2
+		}
+	}
+	return append(parts, query[last:])
+}
+
+// fakeLogsQLFilter parses and evaluates the filter expressions the pushdown
+// and its probes emit with VictoriaLogs semantics over a row's values:
+// `field:="v"`, `field:~"re"`, `field:*`, `field:"phrase"` and `field:word`
+// (a word delimited by non-word characters; letters, digits and underscores
+// are word characters), `-`/`!` negation, parentheses, implicit and, `or`.
+type fakeLogsQLFilter struct {
+	t    testing.TB
+	src  string
+	pos  int
+	vals map[string]string
+}
+
+func (f *fakeLogsQLFilter) skipSpace() {
+	for f.pos < len(f.src) && f.src[f.pos] == ' ' {
+		f.pos++
+	}
+}
+
+func (f *fakeLogsQLFilter) peek(s string) bool {
+	f.skipSpace()
+	return strings.HasPrefix(f.src[f.pos:], s)
+}
+
+func (f *fakeLogsQLFilter) expr() bool {
+	result := f.term()
+	for f.peek("or ") || f.peek("OR ") {
+		f.pos += 3
+		result = f.term() || result
+	}
+	return result
+}
+
+func (f *fakeLogsQLFilter) term() bool {
+	result := f.factor()
+	for {
+		f.skipSpace()
+		if f.pos >= len(f.src) || f.peek(")") || f.peek("or ") || f.peek("OR ") {
+			return result
+		}
+		if f.peek("and ") || f.peek("AND ") {
+			f.pos += 4
+		}
+		result = f.factor() && result
+	}
+}
+
+func (f *fakeLogsQLFilter) factor() bool {
+	f.skipSpace()
+	if f.peek("-") || f.peek("!") {
+		f.pos++
+		return !f.factor()
+	}
+	if f.peek("(") {
+		f.pos++
+		result := f.expr()
+		if !f.peek(")") {
+			f.t.Errorf("fake VL: expected ) at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return result
+	}
+	return f.fieldFilter()
+}
+
+func (f *fakeLogsQLFilter) quoted() string {
+	f.skipSpace()
+	if f.pos < len(f.src) && f.src[f.pos] == '`' {
+		end := strings.IndexByte(f.src[f.pos+1:], '`')
+		s := f.src[f.pos+1 : f.pos+1+end]
+		f.pos += end + 2
+		return s
+	}
+	if f.pos < len(f.src) && f.src[f.pos] == '"' {
+		end := f.pos + 1
+		for end < len(f.src) && f.src[end] != '"' {
+			if f.src[end] == '\\' {
+				end++
+			}
+			end++
+		}
+		s, err := strconv.Unquote(f.src[f.pos : end+1])
+		if err != nil {
+			f.t.Errorf("fake VL: bad string at %d in %q: %v", f.pos, f.src, err)
+		}
+		f.pos = end + 1
+		return s
+	}
+	start := f.pos
+	for f.pos < len(f.src) && f.src[f.pos] != ' ' && f.src[f.pos] != ')' && f.src[f.pos] != ':' {
+		f.pos++
+	}
+	return f.src[start:f.pos]
+}
+
+func (f *fakeLogsQLFilter) fieldFilter() bool {
+	name := f.quoted()
+	if !strings.HasPrefix(f.src[f.pos:], ":") {
+		f.t.Errorf("fake VL: expected : after %q at %d in %q", name, f.pos, f.src)
+		return false
+	}
+	f.pos++
+	value := f.vals[name]
+	switch {
+	case strings.HasPrefix(f.src[f.pos:], "*"):
+		f.pos++
+		return value != ""
+	case strings.HasPrefix(f.src[f.pos:], "="):
+		f.pos++
+		return value == f.quoted()
+	case strings.HasPrefix(f.src[f.pos:], "~"):
+		f.pos++
+		return regexp.MustCompile(f.quoted()).MatchString(value)
+	case strings.HasPrefix(f.src[f.pos:], "!"):
+		f.pos++
+		return value != f.quoted()
+	default:
+		// A word or phrase, or with a trailing * a word prefix. VictoriaLogs'
+		// tokenizer takes every Unicode letter and digit and the underscore
+		// as word runes (isTokenRune).
+		word := f.quoted()
+		boundary := `[\p{L}\p{Nd}_]`
+		if strings.HasPrefix(f.src[f.pos:], "*") {
+			f.pos++
+			return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])` + regexp.QuoteMeta(word)).MatchString(value)
+		}
+		return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])`+regexp.QuoteMeta(word)+`([^\p{L}\p{Nd}_]|$)`).MatchString(value) && boundary != ""
+	}
+}
+
+func fakeLogsQLMatch(t testing.TB, expr string, values map[string]string) bool {
+	f := &fakeLogsQLFilter{t: t, src: expr, vals: values}
+	result := f.expr()
+	f.skipSpace()
+	if f.pos != len(f.src) {
+		t.Errorf("fake VL: trailing text at %d in %q", f.pos, expr)
+	}
+	return result
+}
+
+// unpackOptions parses `[from f] [fields (a, b)] [keep_original_fields] [result_prefix "p"]`.
+func unpackOptions(pipe string) (fields []string, keep bool, prefix string) {
+	if i := strings.Index(pipe, "fields ("); i >= 0 {
+		fields = strings.Split(pipe[i+8:i+8+strings.Index(pipe[i+8:], ")")], ", ")
+		for j, field := range fields {
+			fields[j] = strings.Trim(field, "`")
+		}
+	}
+	if i := strings.Index(pipe, `result_prefix "`); i >= 0 {
+		prefix = pipe[i+15 : i+15+strings.Index(pipe[i+15:], `"`)]
+	}
+	return fields, strings.Contains(pipe, "keep_original_fields"), prefix
+}
+
+// applyPipes evaluates a query (its base filter and every pipe before the
+// stats pipe) over one row with VictoriaLogs semantics and reports the row's
+// values and whether it survives the filters.
 func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow) (map[string]string, bool) {
 	values := f.values(row)
-	for _, pipe := range strings.Split(query, " | ")[1:] {
+	pipes := splitLogsQLPipes(query)
+	if !fakeLogsQLMatch(t, pipes[0], values) {
+		return values, false
+	}
+	for _, pipe := range pipes[1:] {
 		switch {
-		case strings.HasPrefix(pipe, "unpack_json fields (") || strings.HasPrefix(pipe, "unpack_logfmt fields ("):
+		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
 			var unpacked map[string]string
 			if strings.HasPrefix(pipe, "unpack_json") {
-				unpacked = vlUnpackJSONFields(row.msg)
+				unpacked = vlUnpackJSONFields(values["_msg"])
 			} else {
-				unpacked = slidingLogfmtFields(row.msg)
+				unpacked = slidingLogfmtFields(values["_msg"])
 			}
-			keep := strings.HasSuffix(pipe, " keep_original_fields")
-			for _, field := range fieldList(pipe) {
-				if keep && values[field] != "" {
+			fields, keep, prefix := unpackOptions(pipe)
+			if fields == nil {
+				for field := range unpacked {
+					fields = append(fields, field)
+				}
+			}
+			for _, field := range fields {
+				if keep && values[prefix+field] != "" {
 					continue
 				}
-				values[field] = unpacked[field]
+				if v, ok := unpacked[field]; ok {
+					values[prefix+field] = v
+				} else if !keep {
+					values[prefix+field] = ""
+				}
 			}
 		case strings.HasPrefix(pipe, "format if ("):
 			m := pushdownFormatRE.FindStringSubmatch(pipe)
@@ -136,20 +324,17 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			if values[m[1]] != "" {
 				values[m[3]] = values[m[1]]
 			}
-		case strings.HasPrefix(pipe, "filter "):
-			m := pushdownFilterRE.FindStringSubmatch(strings.TrimPrefix(pipe, "filter "))
+		case strings.HasPrefix(pipe, "replace_regexp ("):
+			m := regexp.MustCompile(`^replace_regexp \(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\) at (\S+)$`).FindStringSubmatch(pipe)
 			if m == nil {
-				t.Errorf("fake VL: unsupported filter pipe %q", pipe)
+				t.Errorf("fake VL: unsupported replace_regexp pipe %q", pipe)
 				return nil, false
 			}
-			want, _ := strconv.Unquote(m[4])
-			var match bool
-			if m[3] == "=" {
-				match = values[m[2]] == want
-			} else {
-				match = regexp.MustCompile(want).MatchString(values[m[2]])
-			}
-			if match == (m[1] == "-") {
+			re, _ := strconv.Unquote(m[1])
+			repl, _ := strconv.Unquote(m[2])
+			values[m[3]] = regexp.MustCompile(re).ReplaceAllString(values[m[3]], repl)
+		case strings.HasPrefix(pipe, "filter "):
+			if !fakeLogsQLMatch(t, strings.TrimPrefix(pipe, "filter "), values) {
 				return values, false
 			}
 		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "):
@@ -161,104 +346,10 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 	return values, true
 }
 
-// guardMatches evaluates a `| limit 1` probe for one row the way the proxy's
-// probes are meant to read: the stored-field probe fires on a stored value,
-// the JSON probe on a line an absent label could still be parsed from
-// (partially, from a differently spelled key), the logfmt probe on a token
-// shape the two decoders split differently.
+// guardMatches evaluates a `| limit 1` probe for one row.
 func (f *pushdownFakeVL) guardMatches(t testing.TB, query string, row pushdownRow) bool {
-	values := f.values(row)
-	var patterns []string
-	for _, m := range pushdownMsgFilterRE.FindAllStringSubmatch(query, -1) {
-		pattern, err := strconv.Unquote(m[1])
-		if err != nil {
-			t.Errorf("fake VL: probe pattern %s: %v", m[1], err)
-			return false
-		}
-		patterns = append(patterns, pattern)
-	}
-	match := func(pattern string) bool { return regexp.MustCompile(pattern).MatchString(row.msg) }
-	if len(patterns) == 0 {
-		// The stored-field probe: a stored value for a filter label whose body
-		// yields none (the unpack without keep_original_fields overwrites it).
-		stored := false
-		for _, m := range pushdownStoredRE.FindAllStringSubmatch(query, -1) {
-			stored = stored || values[m[1]] != ""
-		}
-		if !stored {
-			return false
-		}
-		var unpacked map[string]string
-		switch {
-		case strings.Contains(query, "| unpack_json fields ("):
-			unpacked = vlUnpackJSONFields(row.msg)
-		case strings.Contains(query, "| unpack_logfmt fields ("):
-			unpacked = slidingLogfmtFields(row.msg)
-		default:
-			return true
-		}
-		for _, field := range fieldList(query[strings.Index(query, "| unpack_"):]) {
-			if unpacked[field] == "" {
-				return true
-			}
-		}
-		return false
-	}
-	absent := func(field string) bool {
-		return values[field] == "" && (f.stored == nil || values[f.stored(field)] == "")
-	}
-	if strings.Contains(query, "| unpack_json fields (") {
-		unpack := strings.SplitN(query, "| unpack_json fields (", 2)[1]
-		fields := strings.Split(unpack[:strings.Index(unpack, ")")], ", ")
-		anyAbsent := false
-		for _, field := range fields {
-			anyAbsent = anyAbsent || absent(field)
-		}
-		// After the candidate pattern(s) the second filter carries one key
-		// pattern per field (paired with an empty unpacked value), then the
-		// repeated-key, array, escaped-key and U+FFFD patterns, then the alias.
-		alias := orderedJSONLabelAliasPattern(fields)
-		rest := patterns[1+len(fields):]
-		if alias != "" {
-			if len(patterns) < 3+len(fields) || patterns[1] != alias || patterns[len(patterns)-1] != alias {
-				t.Errorf("fake VL: alias pattern missing from probe %q", query)
-			}
-			rest = patterns[2+len(fields) : len(patterns)-1]
-		}
-		candidate := match(patterns[0]) || (alias != "" && match(alias))
-		if !anyAbsent || !candidate {
-			return false
-		}
-		if alias != "" && match(alias) {
-			return true
-		}
-		unpacked := vlUnpackJSONFields(row.msg)
-		for _, field := range fields {
-			if absent(field) && unpacked[field] == "" && regexp.MustCompile(`"\s*`+regexp.QuoteMeta(field)+`\s*"\s*:`).MatchString(row.msg) {
-				return true
-			}
-		}
-		for _, pattern := range rest {
-			if match(pattern) {
-				return true
-			}
-		}
-		return false
-	}
-	// logfmt probe: one condition per field, plus the alias condition.
-	alias := ""
-	for _, pattern := range patterns {
-		if strings.HasPrefix(pattern, `(?:^|\s)`) {
-			alias = pattern
-		}
-	}
-	for _, m := range regexp.MustCompile(`\(-([A-Za-z0-9_]+):\*`).FindAllStringSubmatch(query, -1) {
-		field := m[1]
-		if absent(field) && (logfmtLineIsRisk(row.msg, field) || (alias != "" && match(alias))) {
-			return true
-		}
-	}
-	return false
+	_, kept := f.applyPipes(t, query, row)
+	return kept
 }
 
 func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) string) (*httptest.Server, *pushdownFakeVL) {
@@ -512,7 +603,7 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		stats  string
 	}{
 		// Explore's logs volume for `{...} | json | service_version=`0.96.0` | pipeline=`logs/loki``.
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 1,
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2,
 			`unpack_json fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
 		// A user's grouped sum: the filter excludes unparsed lines, so errors need not be dropped.
 		{`sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
@@ -523,12 +614,12 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		{`sum(rate({app="api"} | json | pipeline=~"logs/.*" [2m]))`, 2,
 			`unpack_json fields (pipeline) keep_original_fields | filter pipeline:~"^(?:logs/.*)$" | stats count() as c`},
 		// A Drilldown field breakdown on a structured-metadata label.
-		{`sum by (service_version) (count_over_time({app="api"} | json | drop __error__ | service_version!="" [1m]))`, 1,
+		{`sum by (service_version) (count_over_time({app="api"} | json | drop __error__ | service_version!="" [1m]))`, 2,
 			`unpack_json fields (service_version) keep_original_fields` + stored + ` | filter -service_version:="" | stats by (service_version) count() as c`},
 		// A field breakdown on a body key without dropping errors: `!=""` rejects unparsed lines.
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
 			`unpack_json fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
-		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 1,
+		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2,
 			`unpack_json fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
@@ -578,9 +669,20 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 		guards           int
 		pipelineError    bool // Loki fails the query: the line passes the filter with a parser error
 	}{
-		{"nested key", volume, `{"service":{"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 1, false},
-		{"dotted key", volume, `{"service.version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 1, false},
-		{"hyphenated key", volume, `{"service-version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 1, false},
+		{"nested key", volume, `{"service":{"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"dotted key", volume, `{"service.version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"hyphenated key", volume, `{"service-version":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
+		// A non-ASCII rune Loki sanitizes is a word rune for VictoriaLogs' tokenizer: one word, serviceéversion.
+		{"key joined by a non-ASCII letter", volume, `{"serviceéversion":"0.96.0","pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"key joined by an invalid byte", volume, "{\"service\xffversion\":\"0.96.0\",\"pipeline\":\"logs/loki\"}", nil, nil, 2, false},
+		{"nested parent joined by a non-ASCII letter", `sum by (level, detected_level) (count_over_time({app="api"} | json | k8s_pod_name="p" | pipeline="logs/loki" | drop __error__ [1m]))`, `{"k8sépod":{"name":"p"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"spaced nested parent", volume, `{" service ":{"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"blank key in the nesting", volume, `{"service":{"":{"version":"0.96.0"}},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"sibling nested five deep", volume, `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}},"version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		{"brace inside a sibling string", volume, `{"service":{"msg":"}","version":"0.96.0"},"pipeline":"logs/loki"}`, nil, nil, 2, false},
+		// Loki reads the nested keys before the syntax error and, with the
+		// error dropped, counts the line; unpack_json reads nothing.
+		{"nested key before syntax error", volume, `{"service":{"version":"0.96.0"},"pipeline":"logs/loki","msg": truncated`, nil, nil, 2, false},
 		{"key before syntax error", `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, `{"pipeline":"logs/loki","msg": truncated`, nil, nil, 2, true},
 		{"stored filter label", `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, `{"n":1}`, map[string]string{"pipeline": "logs/loki"}, map[string]string{"pipeline": "logs/loki"}, 2, false},
 	} {
@@ -657,10 +759,14 @@ func TestOrderedJSONFilterPushdownStoredBodyKeyKeepsStats(t *testing.T) {
 	}
 }
 
-// The spelling probe matches JSON text in which Loki's parser yields the
-// label from a key spelled differently, and only such text.
+// The key-spelling probe's parts: the word prefilter holds every piece of
+// the label between underscores, the flat key regexp matches a key spelled
+// with a sanitized rune, spaces or a blank name (and only such keys; nesting
+// is left to unpack_json), and the nested splits name every dotted field a
+// nesting can produce. None of the patterns needs balanced braces, so
+// VictoriaLogs prepares them in microseconds instead of a third of a second.
 // conformance: parser-error-and-label-collision, semantics/json-label-spelling-probe
-func TestOrderedJSONLabelAliasPattern(t *testing.T) {
+func TestOrderedJSONKeySpellingProbeParts(t *testing.T) {
 	for _, tc := range []struct {
 		label, text string
 		match       bool
@@ -671,49 +777,91 @@ func TestOrderedJSONLabelAliasPattern(t *testing.T) {
 		{"service_version", `{"service version":"1"}`, true},
 		{"service_version", `{"service/version":"1"}`, true},
 		{"service_version", `{"servicé_version":"1"}`, false},
-		{"service_version", `{"service":{"version":"1"}}`, true},
-		{"service_version", `{"service": { "x": 1, "version": "1" }}`, true},
-		{"service_version", `{"service":{"ver-sion":"1"}}`, false}, // service_ver_sion in Loki
+		{"service_version", `{"service":{"version":"1"}}`, false}, // nesting: verified by unpack_json
 		{"service_version", `{"version":"1","service":"2"}`, false},
-		{"service_version", `{"service":"a","version":"b"}`, false},
 		{"service_version", `{"a":{"service_version":"1"}}`, false},
-		// The e2e generator's shape: a service object beside a top-level version.
 		{"service_version", `{"service": {"name": "api-gateway"}, "method": "GET", "level": "info", "version": "v1"}`, false},
-		{"service_version", `{"service":{"name":"api","meta":{"a":{"b":1}}},"version":"v1"}`, false},
-		{"service_version", `{"service":{"msg":"{\"version\":1}"},"version":"v1"}`, false},
-		{"service_version", `{"service":{"a":{"b":{"c":1}},"version":"1"}}`, true},              // sibling three deep
-		{"service_version", `{"service":{"msg":"}","version":"1"}}`, true},                      // brace inside a string
-		{"service_version", `{"service":{"":{"version":"1"}}}`, true},                           // blank key skipped by Loki
-		{"service_version", `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}},"version":"1"}}`, true}, // sibling too deep: matched outright
-		{"service_version", `{"service":{"a":{"b":{"c":{"d":{"e":1}}}}}},"version":"1"}`, true}, // same, though version is outside
-		{"service_version", `{"x":{"y":{"z":{"w":{"v":1}}}}},"version":2}`, false},              // deep nesting outside the parent
-		{"service_version", `{"x":{"y":{"z":{"w":1}}}},"service":{"name":1},"version":2}`, false},
-		{"service_version", `{" service ":{"version":"1"}}`, true},                       // Loki trims unicode spaces
-		{"k8s_pod_labels_app", `{"k8s":{"x":1},"pod":{"labels":{"y":2}},"app":3}`, true}, // three underscores: parts in order suffice
-		{"k8s_pod_name", `{"k8s":{"pod":{"name":"p"}}}`, true},
+		{"service_version", `{" service ":{"version":"1"}}`, true},    // Loki trims unicode spaces
+		{"service_version", `{"service":{"":{"version":"1"}}}`, true}, // blank key skipped by Loki
 		{"k8s_pod_name", `{"k8s.pod.name":"p"}`, true},
-		{"k8s_pod_name", `{"k8s_pod":{"name":"p"}}`, true},
-		{"k8s_pod_name", `{"k8s":{"pod_name":"p"}}`, true},
+		{"k8s_pod_name", `{"k8s-pod":{"name":"p"}}`, true}, // a piece spelled with a sanitized rune
+		{"k8s_pod_name", `{"k8s_pod":{"name":"p"}}`, false},
 		{"k8s_pod_name", `{"k8s_pod_name":"p"}`, false},
-		{"k8s_pod_name", `{"k8s":{"pod":"p"},"name":"n"}`, false},
 		{"_1st", `{"1st":"a"}`, true},
 		{"_1st", `{"_1st":"a"}`, false},
 		{"_1st", `{"-1st":"a"}`, true},
 		{"a__b", `{"a\"b":"1"}`, true},
-		{"a__b", `{"a":{"":{"b":"1"}}}`, false},
-		{"a__b", `{"a":{"_b":"1"}}`, true},
-		{"a__b", `{"a_":{"b":"1"}}`, true},
+		{"a__b", `{"a":{"_b":"1"}}`, false},
+		{"a__b", `{"a_":{"b":"1"}}`, false},
 	} {
-		pattern := orderedJSONLabelAliasPattern([]string{tc.label})
+		pattern := orderedJSONKeyAliasPattern([]string{tc.label})
 		if pattern == "" {
 			t.Fatalf("%s: no pattern", tc.label)
+		}
+		if strings.Contains(pattern, `\{(?:`) {
+			t.Fatalf("%s: pattern nests braces: %s", tc.label, pattern)
 		}
 		if got := regexp.MustCompile(pattern).MatchString(tc.text); got != tc.match {
 			t.Errorf("%s on %s: match=%v, want %v (pattern %s)", tc.label, tc.text, got, tc.match, pattern)
 		}
 	}
-	if got := orderedJSONLabelAliasPattern([]string{"level", "pipeline"}); got != "" {
+	if got := orderedJSONKeyAliasPattern([]string{"level", "pipeline"}); got != "" {
 		t.Errorf("labels without an underscore have no other spelling, got %s", got)
+	}
+	for _, tc := range []struct {
+		label string
+		spans []string
+	}{
+		{"service_version", []string{"service", "service_version", "version"}},
+		{"k8s_pod_name", []string{"k8s", "k8s_pod", "k8s_pod_name", "pod", "pod_name", "name"}},
+		{"_1st", []string{"_1st", "1st"}},
+		{"a__b", []string{"a", "a_", "a__b", "_b", "b"}},
+		{"level", []string{"level"}},
+	} {
+		if got := orderedJSONLabelSpans(tc.label); !reflect.DeepEqual(got, tc.spans) {
+			t.Errorf("spans of %s: %q, want %q", tc.label, got, tc.spans)
+		}
+	}
+	if got := logsqlWordPrefilter([]string{"service", "or", "service"}); got != `(_msg:"service" or _msg:"or")` {
+		t.Errorf("word prefilter: %s", got)
+	}
+	for _, tc := range []struct {
+		labels []string
+		want   string
+	}{
+		{[]string{"level", "service_version"}, `_msg:"service"*`},
+		{[]string{"_1st"}, `(_msg:"1st"* or _msg:~` + strconv.Quote(`"[\s\v\x{85}\p{Z}]*[^\x00-\x7F]`) + `)`},
+		{[]string{"a__b", "k8s_pod_name"}, `(_msg:"a"* or _msg:"k8s"*)`},
+		{[]string{"level"}, ""},
+	} {
+		if got := orderedJSONSpellingPrefilter(tc.labels); got != tc.want {
+			t.Errorf("spelling prefilter of %q: %s, want %s", tc.labels, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		label  string
+		dotted []string
+		loose  []string
+	}{
+		{"service_version", []string{"service.version"}, []string{`{"service":{"version":1}}`, `{"service": {"name": "a"}, "version": "v1"}`}},
+		{"k8s_pod_name", []string{"k8s.pod_name", "k8s_pod.name", "k8s.pod.name"}, []string{`{"k8s":{"pod":{"name":"p"}}}`, `{"k8s_pod":{"name":"p"}}`}},
+		{"_1st_x", []string{"_1st.x", "1st.x"}, []string{`{"1st":{"x":1}}`}},
+		{"a__b", []string{"a._b", "a_.b"}, nil},
+		{"level", nil, nil},
+	} {
+		dotted, loose := orderedJSONNestedSplits([]string{tc.label})
+		if !reflect.DeepEqual(dotted, tc.dotted) {
+			t.Errorf("nested names of %s: %q, want %q", tc.label, dotted, tc.dotted)
+		}
+		for _, text := range tc.loose {
+			matched := false
+			for _, pattern := range loose {
+				matched = matched || regexp.MustCompile(pattern).MatchString(text)
+			}
+			if !matched {
+				t.Errorf("no loose pattern of %s matches %s: %q", tc.label, text, loose)
+			}
+		}
 	}
 	for _, tc := range []struct {
 		text  string
@@ -850,5 +998,133 @@ func TestRangeMetricEvaluatorCounter(t *testing.T) {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Fatalf("/metrics lacks %q in:\n%s", want, body)
 		}
+	}
+}
+
+// A label filter before the parser reads stream labels and structured
+// metadata, which VictoriaLogs filters in the base query, so a Drilldown
+// field breakdown filtered on a stream label (`{env="production",
+// namespace="monitoring"} | detected_level="info" | json | drop __error__,
+// __error_details__ | export_ms!="" | pipeline="logs/loki"`) is answered
+// from stats buckets instead of the raw-row evaluator that took 1.6 s over
+// the namespace's 24 h while VictoriaLogs answered in 4 ms.
+// conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-without-error-drop, semantics/label-filter-before-parser-pushdown
+func TestOrderedJSONFilterPushdownLabelFilterBeforeParser(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	var rows []pushdownRow
+	for i := 0; i < 24; i++ {
+		row := pushdownRow{ts: s0.Add(time.Duration(i) * 5 * time.Second), stream: map[string]string{"app": "api", "namespace": "prod", "level": "info"},
+			msg: `{"level":"info","export_ms":"` + strconv.Itoa(10+i%3) + `","pipeline":"logs/loki"}`}
+		if i%4 == 1 {
+			row.stream["namespace"] = "dev"
+		}
+		if i%4 == 2 {
+			row.msg = "plain text " + strconv.Itoa(i)
+		}
+		rows = append(rows, row)
+	}
+	query := `sum by (export_ms) (count_over_time({app="api"} | namespace="prod" | json | drop __error__, __error_details__ | export_ms!="" | pipeline="logs/loki" [1m]))`
+	srv, fake := newPushdownFakeVL(t, rows, nil)
+	p := newFilterPushdownProxy(t, srv.URL)
+	fake.stored = p.labelTranslator.ToVL
+	plan, ok := compileOrderedJSONMetric(query)
+	if !ok || !plan.pushdown {
+		t.Fatalf("expected a pushdown plan, got ok=%v plan=%+v", ok, plan)
+	}
+	if !strings.Contains(plan.fetchQuery, `namespace="prod"`) || len(plan.stages) != 4 {
+		t.Fatalf("the filter before the parser belongs to the fetch query: %q stages=%d", plan.fetchQuery, len(plan.stages))
+	}
+	var selected []pushdownRow
+	for _, row := range rows {
+		if row.stream["namespace"] == "prod" {
+			selected = append(selected, row)
+		}
+	}
+	start, end := s0.Add(time.Minute), s0.Add(2*time.Minute)
+	want := lokiPushdownReference(t, plan, selected, start, end, time.Minute)
+	if len(want) != 3 {
+		t.Fatalf("fixture yields %d series, want 3", len(want))
+	}
+	got := runJSONVolumeQueryRange(t, p, query, start, end, time.Minute)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.raw != 0 || len(fake.stats) != 1 || !strings.Contains(fake.stats[0], `namespace:="prod"`) {
+		t.Fatalf("expected one stats call filtered on the stream label without raw rows: raw=%d stats=%q", fake.raw, fake.stats)
+	}
+}
+
+// A `| json` metric that Loki fails on a line that is not a JSON object
+// (no `drop __error__`, no filter an unparsed line fails) is failed the way
+// Loki fails it: the exact text of logqlmodel.PipelineError with the line's
+// series, and before the rows are scanned, from one `| limit 1` lookup of
+// such a line. A line at the window's left edge is excluded, as Loki
+// excludes it.
+// conformance: parser-error-and-label-collision, status-400, semantics/pipeline-error-text-parity
+func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	rows := []pushdownRow{
+		{ts: s0.Add(10 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: `{"status":"200"}`},
+		{ts: s0.Add(20 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: `{"status":"500"}`},
+		{ts: s0.Add(30 * time.Second), stream: map[string]string{"app": "api", "level": "warn"}, msg: `plain text`},
+	}
+	srv, fake := newPushdownFakeVL(t, rows, nil)
+	p := newFilterPushdownProxy(t, srv.URL)
+	fake.stored = p.labelTranslator.ToVL
+	run := func(query string, at time.Time) (int, string) {
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.UnixNano(), 10)}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		var body struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return rec.Code, body.Error
+	}
+	query := `sum by (status) (count_over_time({app="api"} | json [1m]))`
+	code, msg := run(query, s0.Add(time.Minute))
+	// The series carries the labels Loki derives at ingest (detected_level,
+	// service_name), which the proxy derives on the read path.
+	want := "pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=\"api\", detected_level=\"warn\", level=\"warn\", service_name=\"api\"}'.\n" +
+		"Use a label filter to intentionally skip this error. (e.g | __error__!=\"JSONParserErr\").\n" +
+		"To skip all potential errors you can match empty errors.(e.g __error__=\"\")\n" +
+		"The label filter can also be specified after unwrap. (e.g | unwrap latency | __error__=\"\" )\n"
+	if code != http.StatusBadRequest || msg != want {
+		t.Fatalf("got %d %q\nwant 400 %q", code, msg, want)
+	}
+	fake.mu.Lock()
+	if fake.raw != 0 || len(fake.guards) != 1 || !strings.HasSuffix(fake.guards[0], ` | filter -_msg:~"^\\s*\\{" | limit 1`) {
+		t.Fatalf("expected the error from one lookup without a raw scan: raw=%d guards=%q", fake.raw, fake.guards)
+	}
+	fake.mu.Unlock()
+	// The plain line sits exactly one window before the evaluation: outside
+	// Loki's left-open window, so the query succeeds.
+	if code, msg := run(query, s0.Add(90*time.Second)); code != http.StatusOK {
+		t.Fatalf("a line at the window's left edge must not fail the query: %d %s", code, msg)
+	}
+	// An end off the step grid: Loki evaluates at start and start+step only
+	// (s0-60s and s0), so the plain line at s0+30s is in no window.
+	{
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(s0.Add(-time.Minute).UnixNano(), 10)}, "end": {strconv.FormatInt(s0.Add(40*time.Second).UnixNano(), 10)}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("a line after the last evaluation must not fail the query: %d %s", rec.Code, rec.Body)
+		}
+	}
+	// A filter an unparsed line fails excludes it, so the pushdown answers
+	// without the lookup.
+	fake.mu.Lock()
+	raw, guards := fake.raw, len(fake.guards)
+	fake.mu.Unlock()
+	if code, _ := run(`sum by (status) (count_over_time({app="api"} | json | status!="" [1m]))`, s0.Add(time.Minute)); code != http.StatusOK {
+		t.Fatalf("a filter rejecting the empty value excludes unparsed lines: %d", code)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.raw != raw || len(fake.guards) != guards+2 {
+		t.Fatalf("expected the stats pushdown and its two probes to answer the filtered query: raw=%d guards=%q", fake.raw-raw, fake.guards[guards:])
 	}
 }

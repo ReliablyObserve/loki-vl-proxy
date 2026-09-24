@@ -316,6 +316,76 @@
      ]
     }
    ]
+  },
+  "metric-latency-gap": {
+   "description": "Shapes the metric latency work targets: the parse-risk probes of the | json stats pushdown (breakdowns and volumes by underscore labels), label filters before the parser (Logs Drilldown pages with a level filter selected) and Explore volumes with a level filter. Run with the json-filter-pushdown set.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "DL6 explore volume, level filter before json",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | detected_level=\"info\" | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/label-filter-before-parser-pushdown",
+      "explore-logs-volume-json",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DL2 drilldown field breakdown, level + stream-label filter before json",
+     "query": "sum by (export_ms) (count_over_time({env=\"production\", namespace=\"monitoring\"} | detected_level=\"info\" | json | drop __error__, __error_details__ | export_ms!=\"\" | pipeline=\"logs/loki\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/label-filter-before-parser-pushdown",
+      "severity-detected-level-derivation",
+      "parsed-label-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DL1 drilldown field breakdown json-expr, level filter",
+     "query": "sum by (event) (count_over_time({env=\"production\"} | detected_level=\"info\" | json event=\"[\\\"event\\\"]\" | drop __error__, __error_details__ | event!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "parser-json",
+      "parsed-label-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DL3 drilldown logfmt field breakdown, level filter",
+     "query": "sum by (job_id) (count_over_time({env=\"production\"} | detected_level=\"info\" | logfmt | job_id!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DL4 instant count, level filter, json+logfmt, 1h",
+     "query": "sum(count_over_time({env=\"production\"} | detected_level=\"info\" | json | logfmt | drop __error__, __error_details__ [1h]))",
+     "instant": true,
+     "covers": [
+      "severity-detected-level-derivation",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query"
+     ]
+    }
+   ]
   }
  }
 }

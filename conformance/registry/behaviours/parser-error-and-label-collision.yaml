@@ -23,8 +23,14 @@ proxy: |
   metrics over one parser with string label filters are pushed down to
   VictoriaLogs stats over unpack_json/unpack_logfmt and filter pipes; cheap
   `| limit 1` probes over the range decline the pushdown for one such line
-  and keep the exact raw-row evaluator. A filter that rejects the empty value
-  stands in for `drop __error__`, since no unparsed line has the key.
+  and keep the exact raw-row evaluator. The probes draw their lines through
+  VictoriaLogs' word index (the label or a piece of it must be a word of the
+  line) and verify nested keys with unpack_json itself, so no probe needs a
+  regexp VictoriaLogs is slow to prepare. A filter that rejects the empty
+  value stands in for `drop __error__`, since no unparsed line has the key.
+  A label filter before the parser is applied by VictoriaLogs, as for a log
+  query. A metric Loki fails on an unparsed line fails with Loki's
+  `pipeline error` text from one lookup, before any row is read.
 
 cases:
   - semantics/json-parse-error-excluded
@@ -39,3 +45,5 @@ cases:
   - semantics/json-filter-pushdown-ungrouped-sum
   - semantics/json-filter-pushdown-translated-label
   - semantics/json-label-spelling-probe
+  - semantics/label-filter-before-parser-pushdown
+  - semantics/pipeline-error-text-parity

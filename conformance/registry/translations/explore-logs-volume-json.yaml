@@ -71,8 +71,8 @@ deltas:
       Reads underscore labels through unpack_json and adds their other spellings (per Loki v3.7.7 sanitizeLabelKey and nested-key rules) to the parse-risk probe; accepts a filter that rejects the empty value in place of `drop __error__`, guarded by the partial-parse probe and a stored-field probe; unpacks only the filter keys of an ungrouped sum; reads a label VictoriaLogs stores under another spelling from the stored field with `format if`.
     where: internal/proxy/ordered_json_metric.go
     cost: |
-      the existing probe (one scan, cached per window) carries the extra regexp; one more `field:*` probe when errors are not dropped
-    cases: [semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe]
+      one key-spelling probe beside the partial-parse probe (both read only the lines VictoriaLogs' word index holds the label's pieces in; cached per window); one more `field:*` probe when errors are not dropped
+    cases: [semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe, semantics/label-filter-before-parser-pushdown]
     state: proven
   - id: bucket-edges
     difference: |
@@ -104,5 +104,9 @@ performance:
   evidence: |
     24h at 8s step: 0.39s (main returned 400). 7d uncached: 4.6-5.4s against
     Loki's 2.8-6.9s uncached, dominated by the parse-difference probe; a refreshed
-    range is about 1s. The probe is the remaining cost: folding it into the stats
-    query would make a first request a single VictoriaLogs scan.
+    range is about 1s. The probes were the remaining cost: a balanced-brace
+    regexp VictoriaLogs prepared in 0.33 s per query (twice per probe) and
+    key regexps run over every line of the range. They now read only the
+    lines VictoriaLogs' word index holds the label's pieces in: Explore's
+    two-filter volume 1.1-1.4 s to 0.55 s at 1 h and 12 s to 1.4 s at 24 h
+    on the shared stack; Loki cold 0.3-0.5 s at 1 h and 14-17 s at 24 h.
