@@ -1,0 +1,36 @@
+id: profiles/structured-metadata-label-collision
+title: Structured metadata named like a stream label gets Loki's _extracted suffix (open gap)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's LabelsBuilder renames a structured-metadata key that equals a
+  stream label name with the `_extracted` suffix. The UI generator pushes
+  OTel metadata `service.name` for streams whose derived stream label is also
+  service_name, so Loki answers structuredMetadata `service_name_extracted`.
+  The proxy compares collisions against VictoriaLogs' _stream only, not
+  against the service_name it derives for the response, and emits a second
+  `service_name` in structuredMetadata; Grafana then types service_name as
+  structured metadata instead of an indexed label (measured 2026-09-24 via
+  /api/ds/query labelTypes: Loki I=service_name, S=service_name_extracted;
+  proxy S=service_name). Open, and related to the owner's stamped decision
+  that detected_fields keeps `service`/`service.name` without the suffix:
+  the query-response encoding needs its own owner decision before it
+  changes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="otel-collector"}'
+    start: now-15m
+    end: now
+    limit: "3"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: exact
+  fields: [structured_metadata_keys]
+  expect: |
+    structuredMetadata carries service_name_extracted, not service_name.

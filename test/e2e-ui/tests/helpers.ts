@@ -8,6 +8,10 @@ export const PROXY_TAIL_DS = "Loki (via VL proxy live tail)";
 export const PROXY_TAIL_INGRESS_DS = "Loki (via ingress tail)";
 export const PROXY_TAIL_NATIVE_DS = "Loki (via VL proxy live tail native)";
 export const PROXY_PATTERNS_AUTODETECT_DS = "Loki (via VL proxy patterns autodetect)";
+// Explicitly named OTel hybrid profile: dotted and underscore metadata names,
+// dotted names accepted in queries (not Loki behaviour). PROXY_DS,
+// PROXY_MULTI_DS and PROXY_PATTERNS_AUTODETECT_DS run the Loki-compatible profile.
+export const PROXY_OTEL_HYBRID_DS = "Loki (via VL proxy OTel hybrid)";
 // Use native-metadata proxy for UI interaction tests — dedicated container avoids
 // circuit-breaker cross-contamination from known-failing queries on other proxies.
 export const PROXY_INTERACT_DS = "Loki (via VL proxy native metadata)";

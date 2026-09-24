@@ -44,7 +44,8 @@ For Grafana Logs Drilldown and Explore compatibility:
 - Stream labels stay Loki-compatible on the `stream` object.
 - Label APIs prefer VictoriaLogs stream metadata so parsed fields do not leak into Loki label pickers when the backend supports the stream-only endpoints.
 - `-extra-label-fields` extends label-facing APIs (`/labels`, `/label/{name}/values`) with explicit VL fields and improves custom dot/underscore alias resolution.
-- Optional indexed browse mode for label values (`-label-values-indexed-cache=true`) supports hotset-first responses and optional `offset`/`search` (`search` or `q`) on `GET /loki/api/v1/label/{name}/values`.
+- Optional indexed browse mode for label values (`-label-values-indexed-cache=true`) supports hotset-first responses and optional `limit`/`offset`/`search` (`search` or `q`) on `GET /loki/api/v1/label/{name}/values`. Loki ignores those parameters; in the Loki-compatible profile (`-label-style=underscores -metadata-field-mode=translated`) the proxy ignores them too unless this flag is on, and `search` on `/labels` likewise.
+- In the Loki-compatible profile a dotted name anywhere in LogQL is Loki's 400 parse error (`parse error at line L, col C: syntax error: unexpected .` plus the expected-token list Loki prints in that position); the hybrid and native metadata modes accept dotted names.
 - Patterns API can be explicitly gated via `-patterns-enabled` (default `true`) to match deployments that do not expose Drilldown pattern discovery.
 - Patterns responses are clamped to `1000` entries per request and can be persisted/restored with `-patterns-persist-*` flags.
 - Indexed label-values cache snapshots can be persisted to disk (`-label-values-index-persist-path`) and restored at startup.

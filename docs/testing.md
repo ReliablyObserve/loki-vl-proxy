@@ -541,8 +541,9 @@ Field-surface defaults in the pinned stack:
 
 - `-label-style=underscores` is the binary default, so labels stay Loki-compatible
 - `-metadata-field-mode=translated` is the binary default: field APIs expose Loki-compatible translated names only; the main proxy (`loki-vl-proxy`, port 13100) runs this mode
-- `-metadata-field-mode=hybrid` exposes both native dotted names and translated aliases; `loki-vl-proxy-underscore` (port 13102, behind the Grafana `Loki (via VL proxy)` datasources) and `loki-vl-proxy-patterns-autodetect` (port 13110) run it
-- Dedicated `loki-vl-proxy-native-metadata` (`native`), `loki-vl-proxy-translated-metadata` (`translated`) and `loki-vl-proxy-no-metadata` (`-emit-structured-metadata=false`) variants cover the other structured-metadata exposure modes
+- `-metadata-field-mode=translated` (the Loki-compatible profile, with `-label-style=underscores`) exposes Loki's sanitized names only and answers a dotted name in LogQL with Loki's parse error; `loki-vl-proxy` (13100), `loki-vl-proxy-underscore` (13102, behind the Grafana `Loki (via VL proxy)` datasources) and `loki-vl-proxy-patterns-autodetect` (13110, the Logs Drilldown default datasource) run it
+- `-metadata-field-mode=hybrid` exposes both native dotted names and translated aliases and accepts dotted names in queries; `loki-vl-proxy-otel-hybrid` (13111, Grafana `Loki (via VL proxy OTel hybrid)`) runs it
+- Dedicated `loki-vl-proxy-native-metadata` (`native`) and `loki-vl-proxy-no-metadata` (`-emit-structured-metadata=false`) variants cover the other structured-metadata exposure modes
 
 Alerting and recording-rule parity coverage:
 

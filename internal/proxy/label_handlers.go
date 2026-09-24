@@ -34,21 +34,14 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if !metadataListPayloadEmpty(cached) && p.shouldRefreshLabelsInBackground(remaining, labelsTTL) {
-			search := strings.TrimSpace(r.FormValue("search"))
-			if search == "" {
-				search = strings.TrimSpace(r.FormValue("q"))
-			}
-			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, p.snapshotForwardedAuth(r))
+			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), p.labelSearchParam(r), p.snapshotForwardedAuth(r))
 		}
 		return
 	}
 	p.metrics.RecordCacheMiss()
 	r = p.withRequestScope(r)
 
-	search := strings.TrimSpace(r.FormValue("search"))
-	if search == "" {
-		search = strings.TrimSpace(r.FormValue("q"))
-	}
+	search := p.labelSearchParam(r)
 
 	labels, err := p.fetchScopedLabelNames(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, true)
 	if err != nil {
@@ -129,6 +122,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(search) == "" {
 		search = r.FormValue("q")
 	}
+	if !p.labelBrowseExtensions() {
+		rawLimit, rawOffset, search = "", "", ""
+	}
 	offset := parseNonNegativeInt(rawOffset, 0)
 	// Loki answers /label/{name}/values with every value it knows. The browse
 	// window (limit, offset, search) is a proxy extension, so only a request
@@ -154,7 +150,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 				r.FormValue("query"),
 				r.FormValue("start"),
 				r.FormValue("end"),
-				r.FormValue("limit"),
+				rawLimit,
 				search,
 				p.snapshotForwardedAuth(r),
 			)
@@ -202,10 +198,14 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	values, err := p.fetchScopedLabelValues(r.Context(), labelName, rawQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("limit"), search)
+	// Loki's querier fails a response above grpc_server_max_send_msg_size; the
+	// proxy stops reading VictoriaLogs at -label-values-max-response-bytes.
+	valuesCtx := withLabelValuesResponseCap(r.Context(), p.labelValuesMaxResponseBytes(orgID))
+	values, err := p.fetchScopedLabelValues(valuesCtx, labelName, rawQuery, r.FormValue("start"), r.FormValue("end"), rawLimit, search)
 	if err != nil {
-		// Last known-good full-range answer, if any; otherwise the error.
-		if p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
+		// Last known-good full-range answer, if any; otherwise the error. A
+		// response over its size limit is answered with the limit error.
+		if !isLabelValuesResponseTooLarge(err) && p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
 			return
 		}
 		status := statusFromUpstreamErr(err)
@@ -249,7 +249,7 @@ func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Re
 	var values []string
 	if p.supportsStreamMetadataEndpoints() {
 		for _, candidate := range metadataQueryCandidates(r.FormValue("query")) {
-			params, err := p.metadataQueryParams(r.Context(), candidate, r.FormValue("start"), r.FormValue("end"), r.FormValue("limit"), "")
+			params, err := p.metadataQueryParams(r.Context(), candidate, r.FormValue("start"), r.FormValue("end"), p.labelLimitParam(r), "")
 			if err != nil {
 				p.writeError(w, http.StatusBadRequest, err.Error())
 				p.metrics.RecordRequest("label_values", http.StatusBadRequest, time.Since(start))
@@ -906,7 +906,11 @@ func truncateQueryError(msg string) string {
 
 // lokiQueryParamError returns Loki's 400 message for an invalid selector
 // parameter on endpoint, or "" when Loki would accept the request.
-func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes int) string {
+//
+// nameError, when set, reports a name Loki's grammar rejects (the
+// Loki-compatible profile's dotted-name check); it runs after the size check
+// and before the selector is parsed, where Loki's lexer reports it.
+func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes int, nameError func(string) string) string {
 	query := r.FormValue("query")
 	if rule == lokiSeriesMatchers {
 		// Loki reads both match and match[] (loghttp.ParseSeriesQuery).
@@ -915,11 +919,21 @@ func lokiQueryParamError(rule lokiQueryParamRule, r *http.Request, maxQueryBytes
 			if msg := queryLengthError(group, maxQueryBytes); msg != "" {
 				return msg
 			}
+			if nameError != nil {
+				if msg := nameError(group); msg != "" {
+					return msg
+				}
+			}
 		}
 		return logqlpkg.ValidateSeriesMatchers(groups)
 	}
 	if msg := queryLengthError(query, maxQueryBytes); msg != "" {
 		return msg
+	}
+	if nameError != nil {
+		if msg := nameError(query); msg != "" {
+			return msg
+		}
 	}
 	switch rule {
 	case lokiMatchersOptional:
@@ -954,7 +968,7 @@ func (p *Proxy) lokiQueryParamValidation(endpoint string, next http.HandlerFunc)
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes); msg != "" {
+		if msg := lokiQueryParamError(rule, r, p.limits().QueryLengthBytes, p.lokiNameCheck()); msg != "" {
 			p.writeError(w, http.StatusBadRequest, truncateQueryError(msg))
 			p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 			return

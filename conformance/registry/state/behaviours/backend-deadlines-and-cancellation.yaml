@@ -5,6 +5,10 @@ reason: |
   TestBackendRequests_PassRemainingBudgetAsVLTimeout and
   TestBackendRequests_ClientCancellationCancelsVLRequest, the latter against a
   backend that reads the request body so Go's server reports the disconnect.
+  A response VictoriaLogs aborts after its headers (its hijack-and-close on a
+  query deadline) is covered by TestVLResponseAbortedAfterHeaders with and
+  without gzip: Loki's 504 timeout text at the budget, a sanitized 502 before
+  it, nothing cached.
 owner_decision: null
 waiver: |
   VictoriaLogs caps the argument at -search.maxQueryDuration, so a proxy budget
