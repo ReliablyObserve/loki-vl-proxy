@@ -33,6 +33,11 @@ proxy: |
   Drilldown default) run this profile; the hybrid and native modes are
   separate, explicitly named datasources.
 
+implementation:
+  - "internal/logql/dotted_names.go DottedNameError"
+  - "internal/proxy/loki_profile.go lokiProfile, Proxy.lokiNameError, Proxy.lokiNameCheck, Proxy.labelBrowseExtensions"
+  - "internal/proxy/http_utils.go Proxy.validateQuery, Proxy.writeError"
+
 cases:
   - profiles/dotted-name-parse-error
   - profiles/dotted-names-accepted-outside-loki-profile

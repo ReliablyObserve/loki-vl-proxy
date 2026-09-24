@@ -15,7 +15,7 @@
  "verdicts": {
   "same": 7,
   "slower": 1,
-  "broken": 6,
+  "fixed": 6,
   "faster": 2
  },
  "result_differs_from_reference": 0,
@@ -351,7 +351,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {
@@ -388,7 +389,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {
@@ -425,7 +427,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {
@@ -459,7 +462,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {
@@ -496,7 +500,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {
@@ -533,7 +538,8 @@
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
-   "verdict": "broken",
+   "note": "now rejected exactly as the reference rejects it",
+   "verdict": "fixed",
    "speedup": null
   },
   {

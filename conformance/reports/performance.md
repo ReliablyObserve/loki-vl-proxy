@@ -47,9 +47,9 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 |---|---|---|---|---|---|
 | `drilldown-service-landing` | 2 × 2 ranges | 1 faster, 2 same, 1 slower | worst 0.36s / 0.46s (24h) | 121.96s / 0.44s | differs |
 | `explore-logs-volume-json` | 7 × 5 ranges | 7 faster, 2 fixed, 12 same, 2 slower | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | differs; 9 slower than Loki cold |
-| `loki-compatible-profile` | 4 × 4 ranges | 6 broken, 2 faster, 7 same, 1 slower | worst 0.71s / 0.24s (3h) | 0.42s / 0.30s | same |
+| `loki-compatible-profile` | 4 × 4 ranges | 2 faster, 6 fixed, 7 same, 1 slower | worst 0.71s / 0.24s (3h) | 0.42s / 0.30s | same |
 | `loki_api_v1_query` | 4 × 1 ranges | 4 same | worst 0.35s / 0.33s (instant) | 0.13s / 0.14s | differs; 1 slower than Loki cold |
-| `loki_api_v1_query_range` | 34 × 4 ranges | 6 broken, 23 faster, 2 fixed, 64 same, 7 slower | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | differs; 24 slower than Loki cold |
+| `loki_api_v1_query_range` | 34 × 4 ranges | 23 faster, 8 fixed, 64 same, 7 slower | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | differs; 24 slower than Loki cold |
 | `metric-series-identity` | 1 × 2 ranges | 1 faster, 1 same | worst 0.36s / 0.21s (24h) | 45.80s / 0.21s | same |
 | `operator-sum` | 3 × 2 ranges | 2 faster, 4 same | worst 0.51s / 0.60s (24h) | 50.46s / 0.27s | same |
 | `operator-topk` | 1 × 2 ranges | 1 same, 1 slower | worst 0.37s / 0.48s (24h) | 45.39s / 0.31s | differs |
@@ -57,7 +57,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `parser-error-and-label-collision` | 4 × 4 ranges | 5 faster, 9 same | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | same; 5 slower than Loki cold |
 | `parser-json` | 6 × 5 ranges | 17 same | worst 1.35s / 1.30s (24h) | 1.66s / 0.02s | differs; 2 slower than Loki cold |
 | `parser-logfmt` | 5 × 5 ranges | 11 same | worst 4.05s / 3.93s (24h) | 0.94s / 0.47s | differs; 3 slower than Loki cold |
-| `profiles/dotted-name-parse-error` | 2 × 4 ranges | 6 broken, 2 faster | worst **400** / **400** (1h) | 0.01s / 0.00s | same |
+| `profiles/dotted-name-parse-error` | 2 × 4 ranges | 2 faster, 6 fixed | worst **400** / **400** (1h) | 0.01s / 0.00s | same |
 | `profiles/structured-metadata-keys-per-profile` | 2 × 4 ranges | 7 same, 1 slower | worst 0.71s / 0.24s (3h) | 0.42s / 0.30s | same |
 | `range_function-bytes-over-time` | 1 × 2 ranges | 1 faster, 1 same | worst 0.51s / 0.60s (24h) | 50.46s / 0.27s | same |
 | `range_function-count-over-time` | 1 × 2 ranges | 1 faster, 1 same | worst 0.36s / 0.21s (24h) | 45.80s / 0.21s | same |
