@@ -128,11 +128,11 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `parser-error-and-label-collision` | 5 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `semantics/json-filter-pushdown-translated-label` | 2 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `semantics/json-filter-pushdown-underscore-label` | 6 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
-| `parser-logfmt` | 2 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
-| `severity-detected-level-derivation` | 12 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
+| `parser-logfmt` | 3 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
+| `severity-detected-level-derivation` | 11 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
 | `semantics/label-filter-before-parser-pushdown` | 7 | 2.80s (DL6 explore volume, level filter before json, 24h) | 0.38s |
 | `parsed-label-series-identity` | 9 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
 | `semantics/json-label-spelling-probe` | 4 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 4 | 1.43s (B grouped sum, filter, no drop, 24h) | 1.07s |
+| `semantics/json-filter-pushdown-without-error-drop` | 3 | 1.43s (B grouped sum, filter, no drop, 24h) | 1.07s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |

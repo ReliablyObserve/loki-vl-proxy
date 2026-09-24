@@ -43,3 +43,4 @@ cases:
   - profiles/parsed-fields-without-parser                    # open gap
   - profiles/structured-metadata-label-collision             # open gap, owner decision
   - profiles/uncategorized-streams-carry-structured-metadata # open gap
+  - profiles/detected-fields-dotted-json-keys               # open, owner decision

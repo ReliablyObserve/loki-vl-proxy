@@ -249,7 +249,8 @@ The Loki/Grafana conservative profile is the **Loki-compatible profile**: the
 proxy holds requests to Loki's contract as well as responses. A dotted name in
 LogQL (`| k8s.namespace.name="x"`, `by (k8s.pod.name)`, `{service.name="x"}`)
 is answered with Loki's exact 400 parse error - line, column and expected-token
-list included - on every endpoint that parses LogQL, before any VictoriaLogs
+list included - on query, query_range, tail and every selector parameter
+(labels, label values, series, index, patterns, detected fields), before any VictoriaLogs
 call; the label endpoints ignore `limit`, `offset` and `search` the way Loki
 does unless `-label-values-indexed-cache=true` opts into the browse window. The
 hybrid and native modes expose dotted VictoriaLogs names, so they keep
@@ -749,7 +750,7 @@ A request for several tenants (`X-Scope-OrgID: a|b`) is held to them combined as
 
 `max_query_bytes_read`, `max_querier_bytes_read` and `volume_max_series` are published at Loki's disabled or default value (`0B`, `0B`, `1000`): VictoriaLogs reports no bytes read before a query runs, and the volume endpoints bound their answer by the request `limit`. Overriding them is rejected at startup, since nothing would apply the published value. The other published fields (`discover_log_levels`, `discover_service_name`, `log_level_fields`, `retention_period`, `otlp_config`, ...) are published as configured; they describe the deployment and do not change how the proxy derives `service_name` or `detected_level`. Label values requests are capped at the `-max-entries-limit-per-query` flag value, a proxy protection Loki does not have, whatever a tenant's `max_entries_limit_per_query`.
 
-One proxy limit is also settable per tenant in the same maps: `label_values_max_response_bytes` overrides `-label-values-max-response-bytes` (see [Fixed Execution Limits](#fixed-execution-limits)). Loki has no per-tenant equivalent (its bound is the querier's `grpc_server_max_send_msg_size`), so it is enforced but never published; a multi-tenant request is held to the smallest value of its tenants.
+One proxy limit is also settable per tenant in the same maps: `label_values_max_response_bytes` overrides `-label-values-max-response-bytes` (see [Fixed Execution Limits](#fixed-execution-limits)). Loki has no per-tenant equivalent (its bound is the querier's `grpc_server_max_send_msg_size`), so it is enforced but never published; a multi-tenant label values request fans out per tenant, and each tenant's read is bounded by that tenant's value.
 
 Invalid values are rejected at startup with a message naming the tenant and the field: `max_query_series` must be a positive integer, `max_entries_limit_per_query` `0` or positive, durations Loki duration strings (`"5m"`, `"30d1h"`, `"0s"`), `query_timeout` positive and not above `-backend-timeout`, `label_values_max_response_bytes` a positive number of bytes.
 
@@ -912,7 +913,7 @@ These protective limits bound what one request may do. Rejections are errors, no
 | Metric query series | `-max-stats-query-series` (default 500) | `400` with Loki's `maximum number of series (N) reached for a single query` on every metric path, range and instant; Grafana Logs Drilldown gets the busiest series and the `... returning partial results` warning |
 | Label values responses | `-label-values-max-response-bytes` (default 64 MiB) read from one VictoriaLogs response of `/loki/api/v1/label/{name}/values`; per tenant as `label_values_max_response_bytes` | `500` with Loki's `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` and the flag appended; nothing is cached or indexed |
 | Request coalescer | 256 MiB per shared response body, or a larger configured response cap such as `-label-values-max-response-bytes` | error instead of silent truncation |
-| VictoriaLogs response aborted after its headers | VictoriaLogs ends a started response with a raw abort line when a query outlives its deadline | `504` with Loki's `request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed` when the request deadline or the `timeout` sent to VictoriaLogs ran out (or VictoriaLogs reported its deadline), otherwise `502` `VictoriaLogs aborted the response after D, before it was complete; ...`; the partial body is never decoded or cached |
+| VictoriaLogs response aborted after its headers (GET reads: label names and values, series, detected fields, hits and other metadata calls) | VictoriaLogs ends a started response with a raw abort line when a query outlives its deadline | `504` with Loki's `request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed` when the request deadline or the `timeout` sent to VictoriaLogs ran out (or VictoriaLogs reported its deadline), otherwise `502` `VictoriaLogs aborted the response after D, before it was complete; ...`; the partial body is never decoded or cached |
 | Hot/cold merge | 64 MiB buffered per hot or cold response | error |
 | Multi-tenant reads | `-multi-tenant-max-fanout` (default 64) tenants per request; `-multi-tenant-max-merged-response-bytes` (default 32 MiB) merged response | `400` / `413`, each naming its flag |
 | `/tail` client messages | 4 KiB per client message | WebSocket close `1009` |

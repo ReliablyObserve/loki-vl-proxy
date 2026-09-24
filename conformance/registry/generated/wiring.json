@@ -48,6 +48,7 @@
     ],
     "limits/label-values-response-cap": [
       "internal/middleware/coalescer_body_limit_test.go",
+      "internal/proxy/backend_response_guard_review_test.go",
       "internal/proxy/backend_response_guard_test.go"
     ],
     "limits/max-entries-limit-rejects": [
@@ -182,6 +183,7 @@
       "test/e2e-compat/stack_profiles_test.go"
     ],
     "semantics/backend-aborted-response": [
+      "internal/proxy/backend_response_guard_review_test.go",
       "internal/proxy/backend_response_guard_test.go"
     ],
     "semantics/backend-timeout-argument": [
@@ -270,7 +272,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 197,
+  "registry_items": 198,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -306,6 +308,10 @@
       "semantics/backend-timeout-argument",
       "semantics/client-cancellation-propagates",
       "series-limits-and-partial-results"
+    ],
+    "internal/proxy/backend_response_guard_review_test.go": [
+      "limits/label-values-response-cap",
+      "semantics/backend-aborted-response"
     ],
     "internal/proxy/backend_response_guard_test.go": [
       "backend-deadlines-and-cancellation",
@@ -484,7 +490,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 37,
+  "tests_with_markers": 38,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -520,6 +526,7 @@
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
     "parsed-identity/regexp-partial-match-series-count",
+    "profiles/detected-fields-dotted-json-keys",
     "profiles/label-endpoints-window-and-data",
     "profiles/parsed-fields-without-parser",
     "profiles/structured-metadata-label-collision",

@@ -1,0 +1,38 @@
+id: profiles/detected-fields-dotted-json-keys
+title: detected_fields names dotted JSON-body keys the Loki-compatible profile then rejects (open, owner decision)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  A JSON log line with dotted keys ({"http.method":"GET","k8s.pod.name":...},
+  e2e fixture otel-api-service) is unpacked by VictoriaLogs into fields named
+  with the dots. In the Loki-compatible profile the proxy's detected_fields
+  still lists them under those names (http.method, http.status_code,
+  http.url, k8s.pod.name, service.name, parsers ["json"]), while its own
+  `| json` result labels are sanitized as Loki's are (http_method,
+  k8s_pod_name), and Loki's detected_fields reports the sanitized names with
+  the original key in jsonPath. Logs Drilldown builds field breakdowns and
+  include/exclude filters from the detected_fields label (for example
+  `sum by (http.method) (count_over_time({...} | json | http.method!="" [..]))`),
+  which is now Loki's 400 parse error on the Loki-compatible datasources.
+  The 2026-04-25 owner decision keeps detected_fields' VictoriaLogs names for
+  nested JSON (service / service.name rather than Loki's _extracted
+  convention); whether the Loki-compatible profile should instead report the
+  sanitized name with jsonPath, as Loki does, needs a new owner decision.
+  Open.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="otel-api-service"}'
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [fields.label, fields.jsonPath]
+  expect: |
+    Labels are Loki's sanitized names (http_method) with the original key in
+    jsonPath, so every label Drilldown offers is a valid LogQL name.

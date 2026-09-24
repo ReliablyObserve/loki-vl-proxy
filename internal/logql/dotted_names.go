@@ -118,6 +118,18 @@ var groupKeywords = map[string]bool{
 	"group_left": true, "group_right": true,
 }
 
+// lokiKeywords are the words Loki's lexer returns as their own tokens
+// (syntax.tokens), not as IDENTIFIER: ".5" right after one of them is a
+// NUMBER the grammar may accept (offset.5h, > bool.5).
+var lokiKeywords = map[string]bool{
+	"by": true, "without": true, "bool": true, "offset": true, "on": true,
+	"ignoring": true, "group_left": true, "group_right": true, "or": true,
+	"and": true, "unless": true, "unwrap": true, "label_replace": true,
+	"json": true, "regexp": true, "logfmt": true, "unpack": true, "pattern": true,
+	"label_format": true, "line_format": true, "ip": true, "decolorize": true,
+	"drop": true, "keep": true, "variants": true, "of": true,
+}
+
 var unwrapConversions = map[string]bool{
 	"bytes": true, "duration": true, "duration_seconds": true,
 }
@@ -156,7 +168,7 @@ func (d *dotScanner) run() string {
 		case r == '.':
 			unexpected := "."
 			if next := d.peekAt(1); next >= '0' && next <= '9' {
-				if d.prev.kind != dotTokIdent || d.identEnd != d.pos {
+				if d.prev.kind != dotTokIdent || d.identEnd != d.pos || lokiKeywords[d.prev.text] {
 					d.scanNumber()
 					d.push(dotTok{kind: dotTokNumber})
 					continue

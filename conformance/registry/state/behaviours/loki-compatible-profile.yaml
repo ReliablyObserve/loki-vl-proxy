@@ -9,8 +9,9 @@ reason: |
   400 parse error but names the dot rather than Loki's earlier token.
   Open gaps found by the Loki-compatibility stack: parsed labels on a query
   without a parser, the _extracted suffix for structured metadata named like
-  a stream label, and structured metadata merged into stream labels without
-  categorize-labels.
+  a stream label, structured metadata merged into stream labels without
+  categorize-labels, and detected_fields naming dotted JSON-body keys that
+  the profile's LogQL then rejects (needs an owner decision).
 owner_decision: |
   Accepted deviations, scoped by profile (2026-09-24): the hybrid and native
   metadata modes keep accepting dotted names, since they expose them; the
