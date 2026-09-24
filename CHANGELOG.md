@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- gosec v2.29.0's taint rule G708 ("server-side template injection") flags
+  the `line_format` template parse. A LogQL `| line_format "..."` template is
+  client input by definition and Loki executes it the same way (Go
+  `text/template`, not HTML); the proxy runs it sandboxed — only its own
+  template functions, `missingkey=zero`, and every execution bounded by the
+  template budget. The finding is annotated in place (`#nosec G708` on that one
+  call, with the reason), so G708 stays active for every other template. The
+  rule started firing on `main` after #614 and failed `Security / static` on
+  every pull request.
+
 ## [1.95.0] - 2026-09-24
 
 ### Breaking Changes
