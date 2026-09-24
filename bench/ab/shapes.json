@@ -137,7 +137,8 @@
      "logs": true,
      "covers": [
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "logs | json",
@@ -146,7 +147,8 @@
      "covers": [
       "parser-json",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "logs | logfmt",
@@ -164,7 +166,8 @@
       "explore-logs-volume-json",
       "severity-detected-level-derivation",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "logfmt volume",
@@ -191,7 +194,8 @@
       "operator-sum",
       "metric-series-identity",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "ungrouped rate",
@@ -218,7 +222,8 @@
       "operator-topk",
       "range_function-rate",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "detected_level volume",
@@ -258,7 +263,8 @@
       "drilldown-service-landing",
       "service-name-derivation",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "drilldown detected_level",
@@ -278,7 +284,8 @@
       "parser-json",
       "parser-error-and-label-collision",
       "loki_api_v1_query_range"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "logfmt count by level, filter, drop",
@@ -295,7 +302,8 @@
      "covers": [
       "range_function-rate",
       "loki_api_v1_query"
-     ]
+     ],
+     "smoke": true
     },
     {
      "name": "instant json volume",

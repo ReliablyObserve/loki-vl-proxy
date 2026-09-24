@@ -1,0 +1,26 @@
+# A/B stack overlay: Loki and VictoriaLogs from the e2e compose stack, under
+# their own container names and host ports, so an A/B run can start a fresh
+# stack next to a running e2e stack without touching it. Only these two
+# services are started (with --no-deps); the proxy builds under test run as
+# host processes with the flags of the stack's proxy service (see stack.py).
+#
+#   docker compose -p ab-smoke -f test/e2e-compat/docker-compose.yml \
+#     -f bench/ab/docker-compose.ab.yml up -d --no-deps loki victorialogs
+#
+# Every value defaults to the base stack's, so CI measures the same Loki and
+# VictoriaLogs configuration the e2e jobs test. Shrink the memory limits only
+# on a shared host (for example AB_LOKI_MEM=4g AB_LOKI_GOMEMLIMIT=3GiB).
+services:
+  loki:
+    container_name: ${AB_PROJECT:-ab-smoke}-loki
+    ports: !override
+      - "127.0.0.1:${AB_LOKI_PORT:-23101}:3100"
+    mem_limit: ${AB_LOKI_MEM:-12g}
+    environment:
+      - GOMEMLIMIT=${AB_LOKI_GOMEMLIMIT:-10GiB}
+      - GOGC=80
+  victorialogs:
+    container_name: ${AB_PROJECT:-ab-smoke}-victorialogs
+    ports: !override
+      - "127.0.0.1:${AB_VL_PORT:-29428}:9428"
+    mem_limit: ${AB_VL_MEM:-8g}

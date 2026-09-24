@@ -39,12 +39,38 @@ LOKI_URL   = os.getenv("LOKI_URL",   "http://loki:3100")
 VL_URL     = os.getenv("VL_URL",     "http://victorialogs:9428")
 INTERVAL   = int(os.getenv("LOG_INTERVAL", "10"))   # seconds between batches
 BATCH_SIZE = int(os.getenv("LOG_BATCH",    "8"))     # lines per service per batch
+# Backfill: before the live loop, write LOG_BACKFILL_SECONDS of history ending
+# at LOG_BACKFILL_END (unix seconds, default now), one batch per
+# LOG_BACKFILL_INTERVAL seconds of simulated time, to both backends.
+# LOG_BACKFILL_ONLY=1 exits after the backfill: bench/ab seeds a fresh stack
+# this way with the data profile the live generator produces.
+BACKFILL_SECONDS  = int(os.getenv("LOG_BACKFILL_SECONDS", "0"))
+BACKFILL_INTERVAL = int(os.getenv("LOG_BACKFILL_INTERVAL", str(INTERVAL)))
+BACKFILL_ONLY     = os.getenv("LOG_BACKFILL_ONLY", "0") == "1"
+BACKFILL_SEED     = os.getenv("LOG_BACKFILL_SEED", "")
+BACKFILL_END      = int(os.getenv("LOG_BACKFILL_END", "0"))  # unix seconds; 0 = now
+
+# Simulated clock for the backfill, in nanoseconds. None in live mode. While
+# set, every line gets its own timestamp 1 µs after the previous one, so no two
+# lines share a timestamp and limit-capped log queries cut at the same line on
+# Loki and VictoriaLogs.
+_virtual_ns = None
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def ns() -> str:
     """Current time as nanosecond epoch string (Loki push format)."""
+    global _virtual_ns
+    if _virtual_ns is not None:
+        _virtual_ns += 1_000
+        return str(_virtual_ns)
     return str(int(time.time() * 1_000_000_000))
+
+def now_utc() -> datetime:
+    """Wall clock, or the simulated clock during a backfill."""
+    if _virtual_ns is not None:
+        return datetime.fromtimestamp(_virtual_ns / 1e9, tz=timezone.utc)
+    return datetime.now(timezone.utc)
 
 def rand_id(length=8) -> str:
     return ''.join(random.choices(string.hexdigits[:16], k=length))
@@ -140,6 +166,8 @@ def dual_push(streams: list):
 
 def stream(labels: dict, lines: list[str]) -> dict:
     """Build a Loki stream object from labels + log lines (2-tuple values)."""
+    if _virtual_ns is not None:
+        return {"stream": labels, "values": [[ns(), line] for line in lines]}
     ts = ns()
     return {
         "stream": labels,
@@ -152,6 +180,8 @@ def stream_with_metadata(labels: dict, entries: list[tuple[str, dict]]) -> dict:
     entries: list of (log_line, metadata_dict) tuples.
     The structured metadata dict is appended as the third element per Loki push spec.
     """
+    if _virtual_ns is not None:
+        return {"stream": labels, "values": [[ns(), line, meta] for line, meta in entries]}
     ts = ns()
     return {
         "stream": labels,
@@ -287,7 +317,7 @@ def gen_nginx_ingress(n: int) -> list[str]:
         size   = random.randint(0, 102400)
         lat    = random.randint(1, 5000) / 1000.0
         ua     = random.choice(uas)
-        now    = datetime.now(timezone.utc).strftime("%d/%b/%Y:%H:%M:%S +0000")
+        now    = now_utc().strftime("%d/%b/%Y:%H:%M:%S +0000")
         lines.append(
             f'{ip} - {user} [{now}] "{method} {path} HTTP/1.1" '
             f'{status} {size} "-" "{ua}" {lat:.3f}'
@@ -346,7 +376,7 @@ def gen_postgres(n: int) -> list[str]:
              "autovacuum", "error"],
             weights=[30, 20, 15, 15, 10, 10],
         )[0]
-        now  = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        now  = now_utc().strftime("%Y-%m-%d %H:%M:%S UTC")
         if evt == "slow_query":
             table = random.choice(tables)
             dur   = round(random.uniform(100, 30000), 3)
@@ -820,9 +850,56 @@ def wait_for_backends(max_wait: int = 120):
     print("[WARN] Timed out waiting for backends — starting anyway", flush=True)
 
 
+def post_strict(url: str, payload: dict):
+    """POST a push payload and raise on any failure: a backfill must land on both backends."""
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=60):
+        pass
+
+
+def backfill(seconds: int, interval: int):
+    """Write `seconds` of history ending now, oldest first, to both backends.
+
+    Batches are generated on a simulated clock and pushed in chunks of
+    simulated time. A failed push stops the backfill with a non-zero exit:
+    one backend would then hold lines the other does not, so the only
+    recovery is a fresh stack.
+    """
+    global _virtual_ns
+    if BACKFILL_SEED:
+        random.seed(BACKFILL_SEED)
+    end = BACKFILL_END or int(time.time())
+    t, lines, pending, started = end - seconds, 0, [], time.time()
+    while t < end:
+        # Half a second past the batch second: every line sits well inside a
+        # millisecond, a second and a step, so engines that round timestamps
+        # to milliseconds (Loki) and ones that keep nanoseconds (VictoriaLogs)
+        # put it in the same bucket.
+        _virtual_ns = t * 1_000_000_000 + 500_000_000
+        # Vary the batch size (seeded, so reproducible): with a constant line
+        # rate every window of the same length would hold the same count, and
+        # a correct answer could not be told from a cached one.
+        pending.extend(services_batch(random.randint(max(1, BATCH_SIZE * 2 // 3), BATCH_SIZE * 4 // 3)))
+        t += interval
+        if len(pending) >= 400 or t >= end:
+            payload = {"streams": pending}
+            post_strict(f"{LOKI_URL}/loki/api/v1/push", payload)
+            post_strict(f"{VL_URL}/insert/loki/api/v1/push", _inject_vl_msg(payload))
+            lines += sum(len(s["values"]) for s in pending)
+            pending = []
+    _virtual_ns = None
+    print(f"[INFO] backfill wrote {lines} lines over {seconds}s ending {end} "
+          f"in {time.time() - started:.1f}s", flush=True)
+
+
 def main():
     print(f"[INFO] Log generator starting: interval={INTERVAL}s batch={BATCH_SIZE}", flush=True)
     wait_for_backends()
+    if BACKFILL_SECONDS > 0:
+        backfill(BACKFILL_SECONDS, BACKFILL_INTERVAL)
+        if BACKFILL_ONLY:
+            return
 
     cycle = 0
     while True:
