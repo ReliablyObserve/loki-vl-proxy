@@ -15,6 +15,7 @@ import (
 
 var (
 	proxyNativeMetadataURL       = envOrOtel("PROXY_NATIVE_METADATA_URL", "http://localhost:13106")
+	proxyTranslatedMetadataURL   = envOrOtel("PROXY_TRANSLATED_METADATA_URL", "http://localhost:13107")
 	proxyNoStructuredMetadataURL = envOrOtel("PROXY_NO_STRUCTURED_METADATA_URL", "http://localhost:13108")
 	structuredMetadataOnce       sync.Once
 	nonOTelMetadataOnce          sync.Once
@@ -81,8 +82,16 @@ func TestStructuredMetadata_NativeModeKeepsDottedMetadataWithUnderscoreLabels(t 
 func TestStructuredMetadata_TranslatedModeExposesOnlyTranslatedAliases(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
-	// The Grafana-facing proxy runs the Loki-compatible profile.
-	resp := queryRangeCategorized(t, proxyUnderscoreURL, `{service_name="structured-metadata-e2e",level="info"}`)
+	// The dedicated translated variant and the Grafana-facing proxy both run
+	// the Loki-compatible profile.
+	for _, base := range []string{proxyTranslatedMetadataURL, proxyUnderscoreURL} {
+		assertTranslatedStructuredMetadata(t, base)
+	}
+}
+
+func assertTranslatedStructuredMetadata(t *testing.T, base string) {
+	t.Helper()
+	resp := queryRangeCategorized(t, base, `{service_name="structured-metadata-e2e",level="info"}`)
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 
@@ -141,6 +150,7 @@ func TestStructuredMetadata_LabelShapeMatchesLokiExpectations(t *testing.T) {
 		"loki_direct":           lokiURL,
 		"proxy_loki_profile":    proxyUnderscoreURL,
 		"proxy_otel_hybrid":     proxyOTelHybridURL,
+		"proxy_translated":      proxyTranslatedMetadataURL,
 		"proxy_native_metadata": proxyNativeMetadataURL,
 		"proxy_no_metadata":     proxyNoStructuredMetadataURL,
 	} {

@@ -425,6 +425,7 @@ func TestCompat_LogLineBodyMatchesLoki(t *testing.T) {
 		{"loki-profile", proxyUnderscoreURL},
 		{"otel-hybrid", proxyOTelHybridURL},
 		{"native-metadata", proxyNativeMetadataURL},
+		{"translated-metadata", proxyTranslatedMetadataURL},
 		{"no-metadata", proxyNoStructuredMetadataURL},
 	}
 	for _, style := range []proxy.LabelStyle{proxy.LabelStylePassthrough, proxy.LabelStyleUnderscores} {

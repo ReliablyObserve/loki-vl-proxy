@@ -147,7 +147,7 @@ func TestCompat_StackProfilesMatchDatasources(t *testing.T) {
 
 	// The parity proxy and every proxy the CI parity groups compare with Loki
 	// run the Loki-compatible profile.
-	for _, service := range []string{"loki-vl-proxy", "loki-vl-proxy-underscore", "loki-vl-proxy-patterns-autodetect", "loki-vl-proxy-vmauth", "loki-vl-proxy-no-metadata"} {
+	for _, service := range []string{"loki-vl-proxy", "loki-vl-proxy-underscore", "loki-vl-proxy-patterns-autodetect", "loki-vl-proxy-vmauth", "loki-vl-proxy-no-metadata", "loki-vl-proxy-translated-metadata"} {
 		if got := profileOf(service); got != "loki" {
 			t.Errorf("%s runs the %s profile, want the Loki-compatible profile", service, got)
 		}

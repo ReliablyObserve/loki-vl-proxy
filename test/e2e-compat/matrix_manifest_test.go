@@ -132,6 +132,7 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		"loki-vl-proxy-underscore:",
 		`- "-metadata-field-mode=translated"`,
 		`- "-emit-structured-metadata=true"`,
+		"loki-vl-proxy-translated-metadata:",
 		"loki-vl-proxy-otel-hybrid:",
 		`- "-metadata-field-mode=hybrid"`,
 		"loki-vl-proxy-native-metadata:",

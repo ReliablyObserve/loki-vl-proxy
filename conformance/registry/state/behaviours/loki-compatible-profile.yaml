@@ -2,19 +2,21 @@ id: loki-compatible-profile
 state: partial
 reason: |
   Dotted names return Loki v3.7.7's parse error (message, line and column
-  recorded from Loki for 189 query shapes, unit-tested, and compared live
-  against Loki in e2e); structured-metadata keys per profile and the ignored
-  browse parameters are proven by unit and e2e tests. A query that already
-  holds an earlier, unrelated syntax error before its dotted name is still a
-  400 parse error but names the dot rather than Loki's earlier token.
-  Open gaps found by the Loki-compatibility stack: parsed labels on a query
-  without a parser, the _extracted suffix for structured metadata named like
-  a stream label, structured metadata merged into stream labels without
-  categorize-labels, and detected_fields naming dotted JSON-body keys that
-  the profile's LogQL then rejects (needs an owner decision).
+  recorded from Loki for 192 query shapes, unit-tested, and compared live
+  against Loki in e2e); structured-metadata keys, browse parameters and
+  detected_fields names are checked for every option combination in unit and
+  e2e tests. A query that already holds an earlier, unrelated syntax error
+  before its dotted name is still a 400 parse error but names the dot rather
+  than Loki's earlier token. Open gaps found by the Loki-compatibility stack:
+  parsed labels on a query without a parser, the _extracted suffix for
+  structured metadata named like a stream label (owner decision pending), and
+  structured metadata merged into stream labels without categorize-labels.
 owner_decision: |
-  Accepted deviations, scoped by profile (2026-09-24): the hybrid and native
-  metadata modes keep accepting dotted names, since they expose them; the
-  Loki-compatible profile honours the label-browse parameters only when the
-  operator opts into -label-values-indexed-cache.
+  2026-09-24: every behaviour stays configurable - -logql-dotted-names,
+  -label-browse-extensions and -error-response-message-field restore the
+  previous behaviour; "auto" keeps dotted names and the browse window in the
+  hybrid and native modes (profile-scoped, accepted deviations). In the
+  Loki-compatible default, detected_fields names dotted JSON keys by Loki's
+  sanitized label with the key in jsonPath. The 2026-04-25 _extracted
+  decision is unchanged and stays open for the owner.
 waiver: null

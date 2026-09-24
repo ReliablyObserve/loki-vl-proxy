@@ -43,7 +43,7 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `vmauth-ring` (vmauth v1.138.0, profile `peers`) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
-| 9 proxy variants (+2 with profile `peers`) | 13100, 13102-13103, 13105-13106, 13108-13111 (13150-13151 with `peers`) | See [Proxy Variants](#proxy-variants) |
+| 10 proxy variants (+2 with profile `peers`) | 13100, 13102-13103, 13105-13111 (13150-13151 with `peers`) | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
 | `grafana` (Grafana 13.2.1) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
@@ -103,13 +103,18 @@ structured-metadata names Loki shows, and a dotted name in a query is Loki's
 parse error. The OTel hybrid and native metadata profiles, which expose the
 dotted VictoriaLogs field names on purpose, are separate, explicitly named
 datasources. `TestCompat_StackProfilesMatchDatasources` fails CI if that
-wiring drifts.
+wiring drifts. `TestCompat_OptionMatrixAgainstStack` also runs every combination of
+`-label-style`, `-metadata-field-mode`, `-emit-structured-metadata`,
+`-logql-dotted-names`, `-label-browse-extensions` and
+`-label-values-indexed-cache` as an in-process proxy against the stack's
+VictoriaLogs, plus every variant above, and checks each against Loki.
 
 | Port | Service | Profile (label style / metadata mode) | Label warm-up | Purpose |
 |------|---------|---------------------------------------|---------------|---------|
 | 13100 | loki-vl-proxy | Loki (underscores / translated) | on | Parity proxy for the Go suites: indexed label-values cache, L2 disk cache, L3 static peer ring (peers only with profile `peers`) |
 | 13102 | loki-vl-proxy-underscore | Loki (underscores / translated) | on | Backs the Grafana `Loki (via VL proxy)` Explore datasource and its multi-tenant twin; OTel dot-to-underscore tests |
 | 13110 | loki-vl-proxy-patterns-autodetect | Loki (underscores / translated) | on | Grafana default datasource (Logs Drilldown); patterns autodetect from queries |
+| 13107 | loki-vl-proxy-translated-metadata | Loki (underscores / translated) | off | Dedicated translated-metadata variant for the structured-metadata and line-body tests |
 | 13111 | loki-vl-proxy-otel-hybrid | OTel hybrid (underscores / hybrid) | off | Grafana `Loki (via VL proxy OTel hybrid)`: dotted and underscore metadata names, dotted names accepted in queries |
 | 13106 | loki-vl-proxy-native-metadata | native (underscores / native) | off | Grafana `Loki (via VL proxy native metadata)`: dotted metadata names |
 | 13108 | loki-vl-proxy-no-metadata | Loki, `-emit-structured-metadata=false` | off | Structured metadata emission disabled |

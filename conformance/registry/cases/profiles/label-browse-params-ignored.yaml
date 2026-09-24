@@ -13,10 +13,11 @@ why: |
   window to any request carrying those parameters: limit=2 returned two
   values, search=api one, and /labels?search=k8s an empty list. In the
   Loki-compatible profile the parameters are ignored. The browse window is a
-  documented proxy extension of -label-values-indexed-cache (hot-set-first
-  browse of very high-cardinality labels); an operator who enables that flag
-  opts into it, and the hybrid and native modes keep it (profile-scoped,
-  owner-accepted deviation).
+  documented proxy extension: -label-browse-extensions=on keeps it in any
+  profile, =off drops it in any profile, and auto keeps it with
+  -label-values-indexed-cache (hot-set-first browse of very high-cardinality
+  labels) and in the hybrid and native modes (profile-scoped, owner-accepted
+  deviation).
 request:
   method: GET
   path: /loki/api/v1/label/service_name/values

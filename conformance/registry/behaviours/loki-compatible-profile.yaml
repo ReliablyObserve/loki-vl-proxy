@@ -21,21 +21,28 @@ victorialogs: |
 proxy: |
   The profile is -label-style=underscores with -metadata-field-mode=translated
   (the default; -emit-structured-metadata is independent). Every name a
-  client sees is Loki's underscore name, queries written with Loki's names are
-  translated to the stored dotted fields before they reach VictoriaLogs, a
-  dotted name in a query is answered with Loki's exact parse error before any
-  backend call, and the label-browse parameters (limit, offset, search/q) are
-  ignored unless the operator enables -label-values-indexed-cache. The
-  hybrid and native metadata modes (and passthrough label style) expose the
-  stored dotted names on purpose, so they accept them in queries: that is a
-  documented extension of those modes, not Loki behaviour. The e2e stack's
+  client sees is Loki's underscore name, and queries written with Loki's names
+  are translated to the stored dotted fields before they reach VictoriaLogs.
+  Each Loki behaviour is its own option, defaulting to Loki in this profile:
+  -logql-dotted-names (auto|reject|accept) answers a dotted name with Loki's
+  exact parse error before any backend call and names dotted JSON keys in
+  detected_fields by Loki's sanitized label with the key in jsonPath;
+  -label-browse-extensions (auto|on|off) ignores limit, offset and search/q on
+  the label endpoints (auto keeps them with -label-values-indexed-cache);
+  -error-response-message-field adds the "message" Grafana displays. "auto"
+  keeps the dotted names and the browse window in the hybrid and native
+  metadata modes and with passthrough labels, which expose dotted names on
+  purpose; every combination is documented in docs/configuration.md
+  (Compatibility option matrix) and walked by TestCompatOptionMatrix (unit)
+  and TestCompat_OptionMatrixAgainstStack (e2e, against Loki). The e2e stack's
   Grafana-facing datasources (Explore "Loki (via VL proxy)" and the Logs
   Drilldown default) run this profile; the hybrid and native modes are
   separate, explicitly named datasources.
 
 implementation:
   - "internal/logql/dotted_names.go DottedNameError"
-  - "internal/proxy/loki_profile.go lokiProfile, Proxy.lokiNameError, Proxy.lokiNameCheck, Proxy.labelBrowseExtensions"
+  - "internal/proxy/loki_profile.go lokiProfile, resolveDottedNames, resolveLabelBrowse, Proxy.lokiNameError, Proxy.lokiNameCheck, Proxy.labelBrowseExtensions, Proxy.detectedFieldName, lokiJSONKeyLabel"
+  - "internal/proxy/drilldown.go Proxy.detectFieldSummariesStream"
   - "internal/proxy/http_utils.go Proxy.validateQuery, Proxy.writeError"
 
 cases:
@@ -48,4 +55,4 @@ cases:
   - profiles/parsed-fields-without-parser                    # open gap
   - profiles/structured-metadata-label-collision             # open gap, owner decision
   - profiles/uncategorized-streams-carry-structured-metadata # open gap
-  - profiles/detected-fields-dotted-json-keys               # open, owner decision
+  - profiles/detected-fields-dotted-json-keys

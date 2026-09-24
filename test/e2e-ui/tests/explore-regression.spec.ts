@@ -381,10 +381,18 @@ test.describe("@regression Pipeline stages — exact Loki parity", () => {
 // Metric parity is asserted on aggregated forms with bounded cardinality. Raw
 // per-stream series (e.g. `rate({app="api-gateway"}[5m])`) are legitimately
 // capped by the proxy at `-max-stats-query-series` (default 500, matching
-// Drilldown's own cap; see docs) while Loki returns every stream, so an exact
+// Drilldown's own cap; the e2e stack raises it to match its Loki) while Loki
+// returns every stream, so an exact
 // series-count comparison on high-cardinality selectors is not a parity signal.
 // The cap itself is locked by the dedicated test below.
-const PROXY_STATS_SERIES_CAP = 500;
+async function publishedSeriesCap(page: Page, uid: string): Promise<number> {
+  const response = await page.request.get(`/api/datasources/uid/${uid}/resources/drilldown-limits`);
+  expect(response.ok(), "drilldown-limits status").toBeTruthy();
+  const body = await response.json();
+  const cap = Number(body?.limits?.max_query_series);
+  expect(cap, "published max_query_series").toBeGreaterThan(0);
+  return cap;
+}
 
 // Documented proxy deviation, not Loki parity: Loki (as configured for this
 // stack) returns every stream, the proxy caps raw per-stream stats series at
@@ -412,15 +420,14 @@ test.describe("@regression Proxy series cap", () => {
     ]);
     expect(proxy.statusCode, "raw rate: status code").toBe(200);
     const proxySeries = seriesCount(proxy.body);
-    expect(proxySeries, "raw rate: proxy never exceeds its series cap").toBeLessThanOrEqual(
-      PROXY_STATS_SERIES_CAP
-    );
-    if (indexed <= PROXY_STATS_SERIES_CAP) {
-      expect(proxySeries, "raw rate: one series per indexed stream below the cap").toBe(
-        indexed
-      );
+    // The cap the datasource's proxy enforces is the one it publishes
+    // (drilldown-limits max_query_series, equal to -max-stats-query-series).
+    const seriesCap = await publishedSeriesCap(page, proxyUID);
+    expect(proxySeries, "raw rate: proxy never exceeds its series cap").toBeLessThanOrEqual(seriesCap);
+    if (indexed <= seriesCap) {
+      expect(proxySeries, "raw rate: one series per indexed stream below the cap").toBe(indexed);
     } else {
-      expect(proxySeries, "raw rate: cap reached").toBe(PROXY_STATS_SERIES_CAP);
+      expect(proxySeries, "raw rate: cap reached").toBe(seriesCap);
     }
   });
 });
