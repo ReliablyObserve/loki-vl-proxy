@@ -15,5 +15,6 @@ owner_decision: |
 waiver: |
   Per-tenant enforcement of the Loki query limits (max_query_series,
   max_entries_limit_per_query, max_query_length, max_query_lookback,
-  max_query_range, query_timeout) is proven under tenant-query-limits; the
-  proxy's own execution limits have no per-tenant layer.
+  max_query_range, query_timeout) is proven under tenant-query-limits; of the
+  proxy's own execution limits only -label-values-max-response-bytes has a
+  per-tenant layer (label_values_max_response_bytes, enforced, not published).

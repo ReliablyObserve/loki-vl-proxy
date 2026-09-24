@@ -1,0 +1,35 @@
+id: profiles/structured-metadata-keys-per-profile
+title: Structured-metadata keys equal Loki's in the Loki-compatible profile
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki stores OTel attributes as structured metadata under sanitized names
+  (k8s_cluster_name, k8s_namespace_name, k8s_pod_name), and Grafana's log
+  details and field filters offer exactly those keys. In the
+  Loki-compatible profile the proxy's structured metadata (the third element
+  of each value with categorize-labels) carries the same keys and no dotted
+  duplicate; hybrid mode carries both spellings, native mode the dotted
+  spelling only, and -emit-structured-metadata=false none. Measured on the
+  e2e stack (2026-09-24): Loki and the translated proxy both return
+  k8s_cluster_name, k8s_namespace_name, k8s_pod_name for the OTel collector
+  stream; the hybrid proxy added k8s.cluster.name, k8s.namespace.name,
+  k8s.pod.name.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="structured-metadata-e2e",level="info"}'
+    start: now-1h
+    end: now
+    limit: "10"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: exact
+  fields: [structured_metadata_keys]
+  expect: |
+    The set of structured-metadata keys per line equals Loki's; no key
+    contains a dot.

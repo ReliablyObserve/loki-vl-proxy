@@ -34,6 +34,7 @@ type HandlerConfig struct {
 	patternsAutodetectFromQueries         bool
 	patternsCustom                        []string
 	metadataFieldMode                     MetadataFieldMode
+	lokiNames                             bool
 	streamFieldsMap                       map[string]bool
 	declaredLabelFields                   []string
 	registerInstrumentation               bool
@@ -76,6 +77,7 @@ type HandlerConfig struct {
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
 	warmupMaxJitter                       time.Duration
+	labelsCacheWarm                       bool
 	labelValuesIndexedCache               bool
 	labelValuesHotLimit                   int
 	labelValuesIndexMaxEntries            int

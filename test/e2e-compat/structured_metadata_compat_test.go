@@ -15,7 +15,6 @@ import (
 
 var (
 	proxyNativeMetadataURL       = envOrOtel("PROXY_NATIVE_METADATA_URL", "http://localhost:13106")
-	proxyTranslatedMetadataURL   = envOrOtel("PROXY_TRANSLATED_METADATA_URL", "http://localhost:13107")
 	proxyNoStructuredMetadataURL = envOrOtel("PROXY_NO_STRUCTURED_METADATA_URL", "http://localhost:13108")
 	structuredMetadataOnce       sync.Once
 	nonOTelMetadataOnce          sync.Once
@@ -24,7 +23,7 @@ var (
 func TestStructuredMetadata_HybridModeExposesNativeAndTranslatedAliases(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
-	resp := queryRangeCategorized(t, proxyUnderscoreURL, `{service_name="structured-metadata-e2e",level="info"}`)
+	resp := queryRangeCategorized(t, proxyOTelHybridURL, `{service_name="structured-metadata-e2e",level="info"}`)
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 
@@ -82,7 +81,8 @@ func TestStructuredMetadata_NativeModeKeepsDottedMetadataWithUnderscoreLabels(t 
 func TestStructuredMetadata_TranslatedModeExposesOnlyTranslatedAliases(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
-	resp := queryRangeCategorized(t, proxyTranslatedMetadataURL, `{service_name="structured-metadata-e2e",level="info"}`)
+	// The Grafana-facing proxy runs the Loki-compatible profile.
+	resp := queryRangeCategorized(t, proxyUnderscoreURL, `{service_name="structured-metadata-e2e",level="info"}`)
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 
@@ -138,11 +138,11 @@ func TestStructuredMetadata_LabelShapeMatchesLokiExpectations(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
 	for name, baseURL := range map[string]string{
-		"loki_direct":             lokiURL,
-		"proxy_hybrid_underscore": proxyUnderscoreURL,
-		"proxy_native_metadata":   proxyNativeMetadataURL,
-		"proxy_translated":        proxyTranslatedMetadataURL,
-		"proxy_no_metadata":       proxyNoStructuredMetadataURL,
+		"loki_direct":           lokiURL,
+		"proxy_loki_profile":    proxyUnderscoreURL,
+		"proxy_otel_hybrid":     proxyOTelHybridURL,
+		"proxy_native_metadata": proxyNativeMetadataURL,
+		"proxy_no_metadata":     proxyNoStructuredMetadataURL,
 	} {
 		resp := queryRangeCategorized(t, baseURL, `{service_name="structured-metadata-e2e",level="info"}`)
 		labels := firstStreamLabels(t, resp)
@@ -161,7 +161,7 @@ func TestStructuredMetadata_LabelShapeMatchesLokiExpectations(t *testing.T) {
 func TestStructuredMetadata_DefaultProxyCategorizedIncludesEventMetadata(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
-	resp := queryRangeCategorized(t, proxyURL, `{service.name="structured-metadata-e2e",level="info"}`)
+	resp := queryRangeCategorized(t, proxyURL, `{service_name="structured-metadata-e2e",level="info"}`)
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 

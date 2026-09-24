@@ -1,0 +1,33 @@
+id: quality/label-cache-warm
+title: The label keep-warm scans are bounded and can be switched off per replica
+proves:
+  - data-probing-and-freshness
+consumer: explore
+why: |
+  Every replica warms the labels cache for the 1h, 6h, 24h and 7d
+  time-picker presets at startup and refreshes them every 75% of
+  -labels-cache-ttl (3m45s by default), so a Grafana label picker is served
+  from cache. Each refresh is a label-name scan of up to 7 days in
+  VictoriaLogs. The e2e stack ran eleven proxy variants against one
+  VictoriaLogs, all warming: coinciding 7d scans OOM-killed VictoriaLogs 53 s
+  after a stack start. Only the replicas behind interactive datasources need
+  the warm-up; -labels-cache-warm=false (default true) stops the startup
+  warm-up and the keep-warm loop on the others while label requests are
+  still cached and answered. The stack now warms three variants (the parity
+  proxy and the two Grafana-facing Loki-mode proxies) instead of eleven.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: status
+  fields: [status]
+  expect: |
+    With the default, the preset windows are cached before the first
+    request. With -labels-cache-warm=false no label scan reaches
+    VictoriaLogs until a client asks; the first request is answered from
+    VictoriaLogs and cached as usual.

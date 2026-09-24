@@ -394,6 +394,54 @@
      ]
     }
    ]
+  },
+  "loki-profile-otel-metadata": {
+   "description": "OTel structured-metadata filters in the Loki-compatible profile: the underscore spelling Loki accepts (log query and the Explore log volume, pushed down to VictoriaLogs stats) and the dotted spelling Loki rejects with a parse error (the proxy used to run it on the raw-row path). Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "O1 explore logs, underscore structured-metadata filter",
+     "query": "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s_namespace_name=`monitoring`",
+     "covers": [
+      "profiles/structured-metadata-keys-per-profile",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s_namespace_name=`monitoring` | drop __error__ [1m]))",
+     "covers": [
+      "profiles/structured-metadata-keys-per-profile",
+      "loki-compatible-profile",
+      "explore-logs-volume-json",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "O3 explore logs, dotted structured-metadata filter",
+     "query": "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s.namespace.name=`monitoring`",
+     "covers": [
+      "profiles/dotted-name-parse-error",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s.namespace.name=`monitoring` | drop __error__ [1m]))",
+     "covers": [
+      "profiles/dotted-name-parse-error",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

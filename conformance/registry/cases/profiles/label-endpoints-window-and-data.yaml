@@ -1,0 +1,46 @@
+id: profiles/label-endpoints-window-and-data
+title: /labels and /label/{name}/values answer the requested window from the stored streams
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Measured on the e2e stack (proxy in the Loki-compatible profile vs Loki
+  v3.7.7, tenant 0, 2026-09-24), each difference traced to its cause:
+
+  /labels over 7d: proxy 39 names, Loki 24 (1h/6h/24h equal). All 24 of
+  Loki's names are in the proxy's answer; the 15 extra
+  (deployment_environment, k8s_*_name, host_*, telemetry_sdk_*, ...) are
+  stream fields of five VictoriaLogs-only fixture streams (testdata.go
+  `VLOnly: true`, written 2026-09-22 06:49-08:53Z). Loki has no stream for
+  them. Data difference, not a proxy defect: the proxy reports the stream
+  label names stored in the window, as Loki does.
+
+  /label/service_name/values: proxy 15 vs Loki 28 at 1h, 46 vs 72 at 24h,
+  297 vs 294 at 7d. Loki's TSDB index returns every value of each daily
+  index file that overlaps the window and ignores from/through
+  (single_file_index.go LabelValues), and the ingester returns every
+  in-memory stream; the 13 values Loki added at 1h have no sample in the
+  window (Loki's own /series over the same 1h returns 0 series for them).
+  The proxy answers the exact [start, end] window. At 7d the rest is fixture
+  asymmetry (VL-only and Loki-only fixtures; a VL push whose failure the
+  fixture helper ignored - it now fails the setup). Documented deviation:
+  emulating Loki's day-granularity over-reporting would widen every label
+  request to UTC day boundaries (up to 48h of VictoriaLogs scanning for a 1h
+  picker), so the proxy keeps the exact window; parity tests compare
+  day-aligned windows or assert proxy values within Loki's.
+request:
+  method: GET
+  path: /loki/api/v1/label/service_name/values
+  params:
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: subset
+  fields: [data]
+  expect: |
+    Every value the proxy returns is a value Loki returns; Loki may add
+    values of streams without samples in the window.

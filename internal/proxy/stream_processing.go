@@ -1811,13 +1811,16 @@ func lokiEmptyResultResponse(resultType string) []byte {
 	return b
 }
 
-// lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>"}
-// directly as bytes. errMsg is JSON-escaped.
+// lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>","message":"<errMsg>"}
+// directly as bytes. errMsg is JSON-escaped; "message" is the field Grafana's
+// Loki datasource displays (see writeError).
 func lokiErrorResponse(errMsg string) []byte {
 	// Fixed initial capacity — avoids integer overflow in size arithmetic.
 	// append grows the slice as needed when errMsg is larger than 128 bytes.
 	b := make([]byte, 0, 128)
 	b = append(b, `{"status":"error","errorType":"bad_request","error":`...)
+	b = appendJSONString(b, errMsg)
+	b = append(b, `,"message":`...)
 	b = appendJSONString(b, errMsg)
 	b = append(b, '}')
 	return b

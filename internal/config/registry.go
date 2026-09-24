@@ -50,9 +50,9 @@ type Category struct {
 
 // categories are matched in order; the first matching prefix wins.
 var categories = []Category{
-	{"limits", []string{"http-conn-", "max-", "backend-max-", "backend-heavy-", "manual-range-metric-row-limit", "ordered-json-metric-max-bytes", "binary-metric-", "multi-tenant-max-", "detected-fields-max-", "patterns-max-", "patterns-second-pass-", "drilldown-max-", "stats-query-range-concurrency", "stats-query-range-inter-query-delay-ms", "default-max-query-length", "rate-limit-", "http-max-"}},
+	{"limits", []string{"http-conn-", "max-", "backend-max-", "label-values-max-", "backend-heavy-", "manual-range-metric-row-limit", "ordered-json-metric-max-bytes", "binary-metric-", "multi-tenant-max-", "detected-fields-max-", "patterns-max-", "patterns-second-pass-", "drilldown-max-", "stats-query-range-concurrency", "stats-query-range-inter-query-delay-ms", "default-max-query-length", "rate-limit-", "http-max-"}},
 	{"timeouts", []string{"backend-timeout", "backend-version-check-timeout", "drilldown-scan-timeout", "query-range-window-timeout", "http-read", "http-write", "http-idle", "shutdown-"}},
-	{"cache", []string{"cache-", "compat-cache-", "disk-cache-", "labels-cache-ttl", "query-range-", "recent-tail-", "label-values-"}},
+	{"cache", []string{"cache-", "compat-cache-", "disk-cache-", "labels-cache-", "query-range-", "recent-tail-", "label-values-"}},
 	{"tenancy", []string{"tenant", "require-tenant-header", "allow-global-tenant", "forward-tenant-header", "auth"}},
 	{"compatibility", []string{"label-style", "metadata-", "emit-structured-metadata", "extra-label-fields", "stream-fields", "field-mapping", "derived-fields", "patterns", "translate-otel", "backend-min-version", "backend-allow-unsupported-version", "backend-version-strict", "tail", "drilldown-", "align-queries-with-step", "detected-level-body-scan", "exact-parser-series-identity"}},
 	{"security", []string{"server.", "tls-", "client-ca", "cb-", "coalescer-disabled", "debug-log-raw-queries", "forward-authorization", "forward-cookies", "forward-headers"}},

@@ -18,7 +18,8 @@
 #
 # Required: jq, curl, awk
 # Optional env overrides:
-#   PROXY_URL          (default http://localhost:13200 — vmauth-ring LB)
+#   PROXY_URL          (default http://localhost:13200 — vmauth-ring LB;
+#                      start it with docker compose --profile peers up -d)
 #   QUERY_BASE         (default '{env="production"}')
 #   LOOKBACK_SECONDS   (default 86400 — 24h, matches Drilldown default)
 #   SLOW_THRESHOLD_MS  (default 1000 — annotated with ★)

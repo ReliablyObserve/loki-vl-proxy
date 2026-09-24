@@ -303,9 +303,13 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-2 * time.Hour).Format(time.RFC3339Nano)
 	end := now.Format(time.RFC3339Nano)
+	// dsUID, autodetectUID and multiUID run the Loki-compatible profile (what
+	// Explore and Logs Drilldown open); hybridUID is the explicitly named OTel
+	// hybrid datasource that also exposes dotted VictoriaLogs field names.
 	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
 	autodetectUID := grafanaDatasourceUID(t, "Loki (via VL proxy patterns autodetect)")
 	multiUID := grafanaDatasourceUID(t, "Loki (via VL proxy multi-tenant)")
+	hybridUID := grafanaDatasourceUID(t, "Loki (via VL proxy OTel hybrid)")
 
 	t.Run("service_buckets", func(t *testing.T) {
 		params := url.Values{}
@@ -434,13 +438,43 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("structured_metadata_fields_and_values", func(t *testing.T) {
+	t.Run("structured_metadata_fields_loki_profile", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", `{service_name="otel-auth-service"}`)
 		params.Set("start", start)
 		params.Set("end", end)
 
 		fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+params.Encode())
+		fields, _ := fieldsResp["fields"].([]interface{})
+		if len(fields) == 0 {
+			t.Fatalf("expected grafana detected fields for otel service, got %v", fieldsResp)
+		}
+		seen := map[string]bool{}
+		for _, field := range fields {
+			label, _ := field.(map[string]interface{})["label"].(string)
+			seen[label] = true
+			if strings.Contains(label, ".") {
+				t.Fatalf("Loki-compatible profile exposed dotted field %q; Loki shows only sanitized names: %v", label, fieldsResp)
+			}
+		}
+		for _, want := range []string{"service_name", "service_namespace", "k8s_pod_name", "deployment_environment"} {
+			if !seen[want] {
+				t.Fatalf("expected structured metadata field %q, got %v", want, fieldsResp)
+			}
+		}
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/service_name/values?"+params.Encode())
+		if values, _ := valuesResp["values"].([]interface{}); len(values) == 0 {
+			t.Fatalf("expected service_name values, got %v", valuesResp)
+		}
+	})
+
+	t.Run("structured_metadata_fields_and_values_otel_hybrid", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="otel-auth-service"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+hybridUID+"/resources/detected_fields?"+params.Encode())
 		fields, _ := fieldsResp["fields"].([]interface{})
 		if len(fields) == 0 {
 			t.Fatalf("expected grafana detected fields for otel service, got %v", fieldsResp)
@@ -472,7 +506,7 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			}
 		}
 
-		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/service.name/values?"+params.Encode())
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+hybridUID+"/resources/detected_field/service.name/values?"+params.Encode())
 		values, _ := valuesResp["values"].([]interface{})
 		if len(values) == 0 {
 			t.Fatalf("expected service.name values, got %v", valuesResp)
@@ -488,7 +522,7 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			t.Fatalf("expected structured metadata value otel-auth-service, got %v", valuesResp)
 		}
 
-		aliasValuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/service_name/values?"+params.Encode())
+		aliasValuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+hybridUID+"/resources/detected_field/service_name/values?"+params.Encode())
 		aliasValues, _ := aliasValuesResp["values"].([]interface{})
 		if len(aliasValues) == 0 {
 			t.Fatalf("expected service_name alias values, got %v", aliasValuesResp)
@@ -596,14 +630,34 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("label_values_honor_limit", func(t *testing.T) {
+	t.Run("label_values_ignore_limit_like_loki", func(t *testing.T) {
+		// Loki reads only start, end and query on label values; the
+		// Loki-compatible profile ignores limit the same way.
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		all := extractStrings(getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+params.Encode()), "data")
+		if len(all) < 2 {
+			t.Fatalf("need at least two cluster values to prove limit is ignored, got %v", all)
+		}
+		params.Set("limit", "1")
+		limited := extractStrings(getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+params.Encode()), "data")
+		if len(limited) != len(all) {
+			t.Fatalf("limit=1 changed the Loki-compatible answer: %v vs %v", limited, all)
+		}
+	})
+
+	t.Run("label_values_honor_limit_otel_hybrid", func(t *testing.T) {
+		// The browse window (limit/offset/search) is a proxy extension kept
+		// outside the Loki-compatible profile.
 		params := url.Values{}
 		params.Set("query", `{service_name="api-gateway"}`)
 		params.Set("start", start)
 		params.Set("end", end)
 		params.Set("limit", "1")
 
-		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+params.Encode())
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+hybridUID+"/resources/label/cluster/values?"+params.Encode())
 		values := extractStrings(resp, "data")
 		if len(values) != 1 {
 			t.Fatalf("expected label values limit=1 to return one value, got %v", resp)
@@ -724,14 +778,48 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("datasource_proxy_query_range_accepts_dotted_field_filters", func(t *testing.T) {
+	t.Run("datasource_proxy_dotted_field_filter_is_lokis_parse_error", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", "{service_name=\"otel-collector\"} | k8s.cluster.name = `us-east-1`")
+		params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("limit", "50")
+		lokiStatus, lokiBody := rejectedQueryGet(t, lokiURL, "/loki/api/v1/query_range", params, "0", nil)
+		lokiMsg := strings.TrimSpace(string(lokiBody))
+		if lokiStatus != http.StatusBadRequest {
+			t.Fatalf("Loki fixture drifted: want 400, got %d %s", lokiStatus, lokiBody)
+		}
+		status, body := rejectedQueryGet(t, grafanaURL, "/api/datasources/proxy/uid/"+dsUID+"/loki/api/v1/query_range", params, "", nil)
+		var envelope struct{ Error string }
+		if status != http.StatusBadRequest || json.Unmarshal(body, &envelope) != nil || envelope.Error != lokiMsg {
+			t.Fatalf("Explore datasource: %d %s, want Loki's 400 %q", status, body, lokiMsg)
+		}
+	})
+
+	t.Run("datasource_proxy_query_range_accepts_underscore_field_filters", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", "{service_name=\"otel-collector\"} | k8s_cluster_name = `us-east-1`")
+		params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("limit", "50")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/proxy/uid/"+dsUID+"/loki/api/v1/query_range?"+params.Encode())
+		if resp == nil || resp["status"] != "success" {
+			t.Fatalf("expected success for the underscore field filter via Grafana datasource proxy, got %v", resp)
+		}
+		if result := extractArray(extractMap(resp, "data"), "result"); len(result) == 0 {
+			t.Fatalf("expected non-empty streams for the underscore field filter, got %v", resp)
+		}
+	})
+
+	t.Run("datasource_proxy_query_range_accepts_dotted_field_filters_otel_hybrid", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", "{service_name=\"otel-collector\"} | k8s.cluster.name = `us-east-1`")
 		params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
 		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 		params.Set("limit", "50")
 
-		resp := getJSON(t, grafanaURL+"/api/datasources/proxy/uid/"+dsUID+"/loki/api/v1/query_range?"+params.Encode())
+		resp := getJSON(t, grafanaURL+"/api/datasources/proxy/uid/"+hybridUID+"/loki/api/v1/query_range?"+params.Encode())
 		if resp == nil || resp["status"] != "success" {
 			t.Fatalf("expected success for dotted field filter via Grafana datasource proxy, got %v", resp)
 		}

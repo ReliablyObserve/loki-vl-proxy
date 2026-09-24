@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (210), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (212), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -30,6 +30,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-label-values-index-startup-stale-threshold` | duration | `1m0s` | `extraArgs.label-values-index-startup-stale-threshold` | Treat on-disk label-values index snapshot older than this as stale and warm from peers before serving |
 | `-label-values-indexed-cache` | bool | `false` | `extraArgs.label-values-indexed-cache` | Enable indexed browse cache for /loki/api/v1/label/&#123;name&#125;/values (hot subset first for empty-query requests) |
 | `-labels-cache-ttl` | duration | `0` | `extraArgs.labels-cache-ttl` | Cache TTL for /labels and /label/&#123;name&#125;/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default. |
+| `-labels-cache-warm` | bool | `true` | `extraArgs.labels-cache-warm` | Warm the labels cache for the 1h/6h/24h/7d time-picker presets at startup and keep them warm in the background (every 75% of -labels-cache-ttl). Each refresh is a label-name scan of up to 7 days in VictoriaLogs; disable it on replicas that serve no interactive label pickers. |
 | `-query-range-adaptive-cooldown` | duration | `30s` | `extraArgs.query-range-adaptive-cooldown` | Minimum time between adaptive query_range parallelism adjustments |
 | `-query-range-adaptive-max-parallel` | int | `8` | `extraArgs.query-range-adaptive-max-parallel` | Maximum adaptive query_range window parallelism |
 | `-query-range-adaptive-min-parallel` | int | `2` | `extraArgs.query-range-adaptive-min-parallel` | Minimum adaptive query_range window parallelism |
@@ -119,6 +120,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-http-conn-overload-max-age` | duration | `1m30s` | `extraArgs.http-conn-overload-max-age` | Shorter downstream HTTP/1.x connection lifetime applied while query_range backpressure is active (0 disables overload shedding) |
 | `-http-max-body-bytes` | int64 | `10485760` | `extraArgs.http-max-body-bytes` | HTTP max request body size (default: 10MB) |
 | `-http-max-header-bytes` | int | `1048576` | `extraArgs.http-max-header-bytes` | HTTP max header size (default: 1MB) |
+| `-label-values-max-response-bytes` | int | `67108864` | `extraArgs.label-values-max-response-bytes` | Maximum bytes the proxy reads from one VictoriaLogs response of a /loki/api/v1/label/&#123;name&#125;/values request. Above it the request fails like Loki's querier above grpc_server_max_send_msg_size: HTTP 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` naming this flag, and nothing is cached. Per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 64 MiB |
 | `-manual-range-metric-row-limit` | int | `1000000` | `extraArgs.manual-range-metric-row-limit` | Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries. |
 | `-max-concurrent` | int | `100` | `extraArgs.max-concurrent` | Maximum concurrent requests allowed through the proxy (0 disables) |
 | `-max-entries-limit-per-query` | int | `10000` | `extraArgs.max-entries-limit-per-query` | Loki's max_entries_limit_per_query: a log query asking for more lines fails with Loki's 400 (see -max-entries-limit-per-query-cap); label values requests above it are capped. Per tenant through -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 10000 |

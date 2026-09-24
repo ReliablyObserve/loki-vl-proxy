@@ -176,6 +176,7 @@ extraArgs:
   # drilldown-max-stats-buckets: "120"                  # time buckets per Drilldown stats call; finer steps are coarsened
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
+  # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 502 (no truncated results)
 
@@ -299,6 +300,7 @@ extraArgs:
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
   # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache

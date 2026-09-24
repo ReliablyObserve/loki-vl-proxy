@@ -1,0 +1,36 @@
+id: profiles/parsed-fields-without-parser
+title: A log query without a parser stage returns no parsed labels (open gap)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki returns parsed labels only when the query runs a parser stage
+  (| json, | logfmt, | regexp, | pattern, | unpack). VictoriaLogs' Loki-push
+  endpoint unpacks a JSON line into stored fields at ingest, and the proxy's
+  categorize-labels encoding reports every stored field whose key also
+  appears in the JSON _msg as `parsed`, even for a plain selector. Measured
+  on the e2e stack (2026-09-24, generator stream `{app="otel-collector"}`,
+  15m, categorize-labels): Loki's first value carries structuredMetadata
+  only; the Loki-compatible proxy adds
+  `"parsed": {"dropped", "export_ms", "message", "pipeline", "received"}`,
+  which Grafana's log details list as parsed fields a Loki user never sees
+  without `| json`. Open: the fix drops body-derived fields when the query
+  has no parser stage, in the Loki-compatible profile, on both the fastjson
+  and the map classification paths.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="otel-collector"}'
+    start: now-15m
+    end: now
+    limit: "3"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: exact
+  fields: [metadata_categories]
+  expect: |
+    No `parsed` object on any value; the same structuredMetadata keys as Loki.

@@ -1,0 +1,30 @@
+id: profiles/grafana-shows-loki-error-text
+title: Grafana shows the proxy's query error with Loki's exact text
+proves:
+  - loki-compatible-profile
+  - status-400
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki answers a rejected query with its message as a text/plain body.
+  Grafana's Loki datasource (readLokiError / makeLokiError) displays the
+  "message" field of a JSON error body and falls back to the raw body. The
+  proxy's error envelope was {"status","errorType","error"}, so Explore
+  displayed the whole JSON object -
+  `{"error":"parse error at line 1, col 64: syntax error: unexpected .","errorType":"bad_data","status":"error"}`
+  - where Loki direct shows `parse error at line 1, col 64: syntax error:
+  unexpected .` (measured through /api/ds/query on Grafana 13.2.1). The
+  envelope now also carries "message" with the same text, so Grafana shows
+  Loki's message verbatim; API clients keep reading "error".
+request:
+  method: POST
+  path: /api/ds/query
+  params:
+    expr: "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s.namespace.name=`monitoring`"
+  headers: {}
+compare:
+  mode: exact
+  fields: [results.A.status, results.A.error]
+  expect: |
+    Through Grafana, the proxy datasource and Loki (direct) both answer 400
+    with the same results.A.error text.

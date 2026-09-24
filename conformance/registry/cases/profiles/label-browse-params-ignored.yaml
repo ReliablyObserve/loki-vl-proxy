@@ -1,0 +1,35 @@
+id: profiles/label-browse-params-ignored
+title: limit, offset and search on the label endpoints change nothing, as in Loki
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: api
+why: |
+  Loki's label handlers read start, end and query only
+  (loghttp.ParseLabelQuery), so `/label/service_name/values?limit=2` and
+  `?search=api` return every value, and `/labels?search=k8s` every name
+  (measured on Loki v3.7.7 on the e2e stack). The proxy applied its browse
+  window to any request carrying those parameters: limit=2 returned two
+  values, search=api one, and /labels?search=k8s an empty list. In the
+  Loki-compatible profile the parameters are ignored. The browse window is a
+  documented proxy extension of -label-values-indexed-cache (hot-set-first
+  browse of very high-cardinality labels); an operator who enables that flag
+  opts into it, and the hybrid and native modes keep it (profile-scoped,
+  owner-accepted deviation).
+request:
+  method: GET
+  path: /loki/api/v1/label/service_name/values
+  params:
+    start: now-1h
+    end: now
+    limit: "2"
+    search: api
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The same values as the request without limit and search, as Loki
+    returns them.

@@ -37,6 +37,7 @@ implementation:
   - internal/config/limits_json.go
   - internal/proxy/execution_limits.go
   - internal/proxy/label_handlers.go
+  - internal/proxy/backend_response_guard.go
   - cmd/proxy/main.go
 
 generated: conformance/registry/generated/proxy/limits.json
@@ -46,3 +47,4 @@ cases:
   - limits/label-values-not-truncated-by-default
   - limits/query-length-limit-is-configurable
   - limits/series-cap-and-byte-budget-interact
+  - limits/label-values-response-cap

@@ -689,6 +689,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
+	resp.Body = p.guardBackendBody(ctx, resp.Body, path, params, start)
 	return resp, nil
 }
 

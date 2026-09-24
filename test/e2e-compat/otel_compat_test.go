@@ -25,13 +25,21 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 var (
+	// proxyUnderscoreURL is the Loki-compatible profile (underscore labels,
+	// translated metadata) behind the Grafana "Loki (via VL proxy)"
+	// datasources.
 	proxyUnderscoreURL = envOrOtel("PROXY_UNDERSCORE_URL", "http://localhost:13102")
+	// proxyOTelHybridURL runs -metadata-field-mode=hybrid: metadata fields
+	// under both the dotted VictoriaLogs name and the Loki alias, dotted names
+	// accepted in queries (a documented extension, not Loki behaviour).
+	proxyOTelHybridURL = envOrOtel("PROXY_OTEL_HYBRID_URL", "http://localhost:13111")
 )
 
 func envOrOtel(key, def string) string {
@@ -811,20 +819,17 @@ func TestOTelDots_ProxyPassthrough(t *testing.T) {
 	})
 
 	t.Run("query_with_dotted_labels", func(t *testing.T) {
-		// In passthrough mode, dotted labels work in queries
-		// VL field names ARE dotted, so passthrough queries should match
-		streams := queryRange(t, proxyURL, `{service.name="otel-auth-service"}`)
-		if len(streams) == 0 {
-			// This might fail because LogQL doesn't support dots in stream selectors
-			// That's expected — dots are not valid Loki label syntax
-			t.Log("note: dotted label query returned no results (expected — dots not valid in LogQL)")
-		}
+		// The parity proxy runs the Loki-compatible profile: a dotted name is
+		// Loki's parse error, exactly as Loki answers it.
+		assertDottedQueryMatchesLokiParseError(t, proxyURL, `{service.name="otel-auth-service"}`)
 	})
 
 	t.Run("query_with_dotted_triplet_filter", func(t *testing.T) {
-		streams := queryRange(t, proxyURL, "{service.name=\"host-metadata-svc\"} | host.id = `i-0abc123def456`")
+		assertDottedQueryMatchesLokiParseError(t, proxyURL, "{service_name=\"host-metadata-svc\"} | host.id = `i-0abc123def456`")
+		// The OTel hybrid profile exposes the dotted names and accepts them.
+		streams := queryRange(t, proxyOTelHybridURL, "{service.name=\"host-metadata-svc\"} | host.id = `i-0abc123def456`")
 		if len(streams) == 0 {
-			t.Fatal("query with dotted host.id triplet filter should return results in passthrough mode")
+			t.Fatal("query with dotted host.id triplet filter should return results on the OTel hybrid proxy")
 		}
 	})
 }
@@ -1000,8 +1005,28 @@ func TestQueryDirection_UnderscoreProxy(t *testing.T) {
 func TestDetectedFields_UnderscoreProxy(t *testing.T) {
 	ensureOTelData(t)
 
-	t.Run("hybrid_fields_expose_aliases_and_native_names", func(t *testing.T) {
+	t.Run("loki_profile_fields_are_loki_names_only", func(t *testing.T) {
 		fields := getDetectedFields(t, proxyUnderscoreURL)
+		fieldSet := toSet(fields)
+		for _, want := range []string{"service_name", "detected_level", "k8s_pod_name", "deployment_environment"} {
+			if !fieldSet[want] {
+				t.Errorf("missing expected detected field %q", want)
+			}
+		}
+		// OTel resource attributes stored as VictoriaLogs stream or metadata
+		// fields appear under Loki's sanitized names only. Dotted keys of a
+		// JSON line body (otel-api-service logs {"k8s.pod.name": ...}) keep
+		// VictoriaLogs' dotted name in detected_fields: an owner-accepted
+		// deviation (2026-04-25), not asserted either way here.
+		for _, forbidden := range []string{"deployment.environment", "service.namespace", "k8s.container.name", "telemetry.sdk.language"} {
+			if fieldSet[forbidden] {
+				t.Errorf("Loki-compatible profile exposed dotted metadata field %q (Loki shows only sanitized names)", forbidden)
+			}
+		}
+	})
+
+	t.Run("hybrid_fields_expose_aliases_and_native_names", func(t *testing.T) {
+		fields := getDetectedFields(t, proxyOTelHybridURL)
 		fieldSet := toSet(fields)
 		mustHave := []string{
 			"service_name",
@@ -1041,7 +1066,7 @@ func TestDetectedFields_UnderscoreProxy(t *testing.T) {
 	})
 
 	t.Run("detected_field_values_service_dot_name", func(t *testing.T) {
-		values := getDetectedFieldValues(t, proxyUnderscoreURL, "service.name")
+		values := getDetectedFieldValues(t, proxyOTelHybridURL, "service.name")
 		if len(values) == 0 {
 			t.Log("note: detected_field values for service.name returned empty")
 			return
@@ -1251,6 +1276,33 @@ func TestGrafanaDrilldown_UnderscoreProxy(t *testing.T) {
 			field, _ := f.(map[string]interface{})
 			label, _ := field["label"].(string)
 			seen[label] = true
+		}
+		if !seen["service_name"] {
+			t.Errorf("Drilldown detected fields missing %q", "service_name")
+		}
+		for label := range seen {
+			if strings.Contains(label, ".") {
+				t.Errorf("Drilldown on the Loki-compatible profile exposed dotted detected field %q", label)
+			}
+		}
+	})
+
+	t.Run("drilldown_detected_fields_for_service_otel_hybrid", func(t *testing.T) {
+		params := url.Values{"query": {`{service_name="otel-auth-service"}`}}
+		resp, err := http.Get(proxyOTelHybridURL + "/loki/api/v1/detected_fields?" + params.Encode())
+		if err != nil {
+			t.Fatalf("detected_fields failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var result struct {
+			Fields []struct {
+				Label string `json:"label"`
+			} `json:"fields"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&result)
+		seen := map[string]bool{}
+		for _, f := range result.Fields {
+			seen[f.Label] = true
 		}
 		for _, want := range []string{"service.name", "service_name"} {
 			if !seen[want] {
@@ -1462,16 +1514,30 @@ func TestOTelCompatibilityScore(t *testing.T) {
 		}
 	}
 
-	// Detected fields. Note: service_name is intentionally suppressed from
-	// detected_fields (it's a stream label surfaced through the labels API).
-	// Hybrid mode exposes both service.name (native) and k8s_pod_name (translated alias).
+	// Detected fields. The Loki-compatible profile exposes Loki's sanitized
+	// names only; the OTel hybrid profile adds the dotted VictoriaLogs names.
 	fields := getDetectedFields(t, proxyUnderscoreURL)
 	fieldSet := toSet(fields)
-	for _, want := range []string{"service.name", "k8s.pod.name", "k8s_pod_name"} {
+	for _, want := range []string{"k8s_pod_name", "deployment_environment"} {
 		if fieldSet[want] {
 			score.pass("detected_fields/"+want, "present")
 		} else {
 			score.fail("detected_fields/"+want, "missing")
+		}
+	}
+	for _, forbidden := range []string{"deployment.environment", "service.namespace"} {
+		if fieldSet[forbidden] {
+			score.fail("detected_fields/no_dotted_metadata/"+forbidden, "dotted metadata name exposed")
+		} else {
+			score.pass("detected_fields/no_dotted_metadata/"+forbidden, "absent")
+		}
+	}
+	hybridFields := toSet(getDetectedFields(t, proxyOTelHybridURL))
+	for _, want := range []string{"service.name", "k8s.pod.name", "k8s_pod_name"} {
+		if hybridFields[want] {
+			score.pass("detected_fields_hybrid/"+want, "present")
+		} else {
+			score.fail("detected_fields_hybrid/"+want, "missing")
 		}
 	}
 
@@ -1542,4 +1608,26 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// assertDottedQueryMatchesLokiParseError checks that base answers a LogQL
+// query holding a dotted name with Loki's own 400 parse error.
+func assertDottedQueryMatchesLokiParseError(t *testing.T, base, query string) {
+	t.Helper()
+	params := url.Values{
+		"query": {query},
+		"start": {strconv.FormatInt(time.Now().Add(-time.Hour).UnixNano(), 10)},
+		"end":   {strconv.FormatInt(time.Now().UnixNano(), 10)},
+		"limit": {"10"},
+	}
+	lokiStatus, lokiBody := rejectedQueryGet(t, lokiURL, "/loki/api/v1/query_range", params, "0", nil)
+	lokiMsg := strings.TrimSpace(string(lokiBody))
+	if lokiStatus != http.StatusBadRequest || !strings.HasPrefix(lokiMsg, "parse error at line ") {
+		t.Fatalf("Loki fixture drifted: want a 400 parse error for %q, got %d %s", query, lokiStatus, lokiBody)
+	}
+	status, body := rejectedQueryGet(t, base, "/loki/api/v1/query_range", params, "0", nil)
+	var envelope struct{ Error string }
+	if status != http.StatusBadRequest || json.Unmarshal(body, &envelope) != nil || envelope.Error != lokiMsg {
+		t.Fatalf("%q: proxy %d %s, want 400 %q", query, status, body, lokiMsg)
+	}
 }
