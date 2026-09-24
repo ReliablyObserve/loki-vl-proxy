@@ -63,7 +63,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 11 | 2 | proven |
+| limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 12 | 4 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 4 | 1 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 4 | 0 | gap |
@@ -122,12 +122,12 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there |
 |---|---|---|---|
-| `explore-logs-volume-json` | 9 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
+| `explore-logs-volume-json` | 8 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `parser-error-and-label-collision` | 5 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `semantics/json-filter-pushdown-translated-label` | 2 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `semantics/json-filter-pushdown-underscore-label` | 6 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
 | `parser-logfmt` | 2 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
-| `severity-detected-level-derivation` | 12 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
+| `severity-detected-level-derivation` | 11 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
 | `semantics/label-filter-before-parser-pushdown` | 7 | 2.80s (DL6 explore volume, level filter before json, 24h) | 0.38s |
 | `parsed-label-series-identity` | 9 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
 | `semantics/json-label-spelling-probe` | 4 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
