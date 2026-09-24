@@ -450,7 +450,7 @@ func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
 		case "/select/logsql/stats_query_range":
 			statsCalled = true
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"info"},"values":[[1700000000,"2"]]},{"metric":{"level":"error"},"values":[[1700000000,"1"]]}]}}`))
+			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"info"},"values":[[%d,"2"]]},{"metric":{"level":"error"},"values":[[%d,"1"]]}]}}`, base.Unix(), base.Unix())
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}

@@ -255,20 +255,6 @@
       "sizing": "Each window is one VictoriaLogs call; raise it only when pattern coverage over long ranges matters more than fanout."
     },
     {
-      "flag": "drilldown-max-stats-buckets",
-      "helm_value": "extraArgs.drilldown-max-stats-buckets",
-      "type": "Int",
-      "default": "120",
-      "unit": "buckets",
-      "bounds": "time buckets one Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit",
-      "error": "none: the step is coarsened",
-      "metric": "none",
-      "alert": "none",
-      "loki_parity": "",
-      "per_tenant": false,
-      "sizing": "Raise it for finer Drilldown charts at the cost of VictoriaLogs memory (buckets x series are built in memory before the response); lower it to protect a small backend."
-    },
-    {
       "flag": "max-zero-fill-buckets",
       "helm_value": "extraArgs.max-zero-fill-buckets",
       "type": "Int",

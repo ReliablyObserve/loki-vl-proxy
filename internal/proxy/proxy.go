@@ -533,8 +533,6 @@ type Proxy struct {
 	backendHeavyQueryMinRange             time.Duration
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
-	drilldownFieldBatcher                 *drilldownFieldBatcher
-	drilldownCardCache                    *drilldownCardinalityCache
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -1131,7 +1129,6 @@ func New(cfg Config) (*Proxy, error) {
 		backendHeavyQueryMinRange:             resolveHeavyQueryMinRange(cfg.BackendHeavyQueryMinRange),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
-		drilldownCardCache:                    newDrilldownCardinalityCache(),
 		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
@@ -1228,13 +1225,6 @@ func New(cfg Config) (*Proxy, error) {
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
-	}
-	if cfg.DrilldownFieldBatchWindowMs > 0 {
-		maxFields := cfg.DrilldownFieldBatchMaxFields
-		if maxFields <= 0 {
-			maxFields = 6
-		}
-		p.drilldownFieldBatcher = newDrilldownFieldBatcher(p, time.Duration(cfg.DrilldownFieldBatchWindowMs)*time.Millisecond, maxFields)
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)

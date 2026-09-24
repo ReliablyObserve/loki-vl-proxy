@@ -26,5 +26,6 @@ implementation:
 cases:
   - limits/series-limit-error
   - limits/drilldown-partial-with-warning
+  - limits/drilldown-breakdown-exact
   - limits/resolution-limit-precedence
   - limits/top-n-ranking-not-silent

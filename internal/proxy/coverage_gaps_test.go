@@ -1981,15 +1981,15 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		})
 	}
 
-	// Grafana Logs Drilldown keeps the bucket-start axis of its grouped count
-	// panels; rate and ungrouped sums are relabelled as before.
+	// Grafana Logs Drilldown panels are relabelled onto Loki's evaluation
+	// timestamps like any other client's.
 	for _, tc := range []struct {
 		name   string
 		logql  string
 		wantOK bool
 	}{
-		{"drilldown_grouped_count", `sum by (pod) (count_over_time({app="x"} | detected_level="error" [1m]))`, false},
-		{"drilldown_bare_count", `count_over_time({app="x"}[1m])`, false},
+		{"drilldown_grouped_count", `sum by (pod) (count_over_time({app="x"} | detected_level="error" [1m]))`, true},
+		{"drilldown_bare_count", `count_over_time({app="x"}[1m])`, true},
 		{"drilldown_sum_count", `sum(count_over_time({app="x"}[1m]))`, true},
 		{"drilldown_rate", `sum by (pod) (rate({app="x"}[1m]))`, true},
 	} {

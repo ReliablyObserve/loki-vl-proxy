@@ -71,34 +71,52 @@ Because of that, version-specific behavior should be gated by:
 2. Grafana runtime family (`12.x`, `13.x`),
 3. compatibility matrix contract version bands (`1.0.x`, `2.x`), validated in CI.
 
-## Field Histogram Series Cap
+## Label And Field Breakdowns
 
-Grafana Logs Drilldown renders per-field histograms by sending `sum by (field) (count_over_time({...}|json|drop __error__,__error_details__|field!="" [...]))` queries to `query_range`. For high-cardinality fields (`trace_id`, `span_id`, `session_id`) over long time ranges, an unfiltered VL response can reach 50 MB+ (300k+ unique values). The proxy currently bounds this through two complementary mechanisms:
+Grafana Logs Drilldown draws its label and field breakdowns with one metric
+range query per label or field, for example
 
-1. **Primary path — `/select/logsql/hits` top-N**: Drilldown-shaped
-   single-field count queries (existence filter on the grouped field, with or
-   without parser stages) try VL's `/hits` endpoint first for every parseable
-   range. `/hits` computes the top-`drilldownHitsFieldsLimit` (20) field values
-   per request and returns a remainder bucket; the proxy emits one Loki series
-   per top-N value and drops the remainder. For ranges of 6h or more
-   (`hitsWindowSampleThreshold`) the range is split into 8 windows
-   (`hitsWindowCount`) queried in parallel, so the top-N values are sampled
-   across the whole timeline; the response carries
-   `X-Proxy-Drilldown-Hits-Sampling: windowed`.
-2. **Stats fallback** (only when `/hits` fails — older VL versions, parse
-   errors, or unique-value numeric fields where every value lands in the
-   remainder bucket, marked with `X-Proxy-Drilldown-Hits-Fallback: 1`): the
-   proxy combines `field_values` with a `stats_query_range` call that appends
-   `as _c | sort by (_c desc) | limit 500` (`maxDrilldownSeries`). The step is
-   coarsened to at most 120 buckets, 30 buckets for likely high-cardinality
-   fields, and relaxed back towards the requested step (floor of range / 1000)
-   when `field_values` shows 50 or fewer distinct values. Missing buckets of
-   this field-breakdown fallback are zero-filled. Two-phase fallback
-   (single-bucket Phase 1 + filtered Phase 2) handles high-cardinality cases
-   that overflow the direct path.
+```
+sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)
+sum by (user_id) (count_over_time({env="production"} | json user_id="[\"user_id\"]" | drop __error__, __error_details__ | user_id!="" [5m]))
+```
 
-Zero-fill is limited to those Drilldown field-breakdown call sites. Sliding
-range metrics (`count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with a
+with `step` equal to the range (`$__auto`). The plugin neither caps nor
+samples the series it receives; it sorts them. Loki answers these queries like
+any other: every series with exact values, and above `max_query_series` a
+partial result with the warning `maximum number of series (N) reached for a
+single query; returning partial results` for Drilldown and a `400` for every
+other client (`JoinSampleVector` in `pkg/logql/engine.go` and the
+`seriesLimiter` in `pkg/querier/queryrange/limits.go`, v3.7.7).
+
+The proxy answers them the same way, from VictoriaLogs `stats_query_range`
+buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `(t-range, t]`):
+
+- Every series up to the tenant's effective `max_query_series`
+  (`-tenant-limits` → `-tenant-default-limits` → `-max-stats-query-series` →
+  Loki's default of 500), with the same values Loki returns.
+- Under the limit that is one `stats_query_range` call, for Drilldown and
+  every other client alike.
+- Every other client gets Loki's `400` as soon as the response holds more
+  series than the limit.
+- A Drilldown single-field breakdown over the limit is asked again with an
+  `in()` subquery that ranks the field's values by line count in the request's
+  time range and keeps the `limit + 1` busiest. VictoriaLogs reads the lines
+  twice for that call (the ranking and the buckets), but its response holds at
+  most `limit + 1` series however many values the field has; the proxy
+  remembers the breakdown for five minutes and ranks straight away. Drilldown
+  gets the `limit` busiest series and Loki's warning. Loki keeps the first
+  series it meets instead of the busiest, so for series of equal volume the
+  kept set can differ; each kept series is exact. A breakdown that cannot be
+  ranked this way (the underscore label style's dotted fields, which group by
+  both spellings) is read whole and capped the same way.
+- Drilldown breakdowns share `-stats-query-range-concurrency` slots; a slot is
+  free again after `-stats-query-range-inter-query-delay-ms`, which does not
+  delay the answer.
+- A response larger than `-backend-max-buffered-response-bytes` returns `502`
+  naming that flag; nothing is truncated or sampled silently.
+
+Sliding range metrics (`count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with a
 range different from the step, plus `topk`/`bottomk` over them) follow Loki for
 every client, including Drilldown-tagged requests: a step whose window
 `(t-range, t]` holds no log line is absent, not `0`. Each window is summed from
@@ -114,19 +132,9 @@ argument at worst). On such older backends an
 epoch-aligned grid still uses buckets without the one-nanosecond shift, so a
 line exactly on a window edge counts in the neighbouring window.
 
-**Routing of Drilldown-shaped queries is source-agnostic** — Explore, Drilldown,
-dashboard panels, and direct API clients all reach the `/hits` fast path for the
-single-field shape above.
-
-Generic `count() by (field)` queries that are not Drilldown-shaped take the
-window-sampled `/hits` path only when the range is 2h or more **and** the
-request is Drilldown-tagged, or comes from another Grafana client and groups by
-a likely high-cardinality field (`trace_id`, `*_id`, `*_token`, …). All other
-callers get `stats_query_range` counts for the busiest `-max-stats-query-series`
-(default 500) series by total count. For ranges of 2h or more a two-phase query
-(global top-500 in one bucket, then a range query filtered to those values) is
-tried first; a direct response above 16 MB that cannot be rescued the same way
-returns an empty matrix.
+Routing does not depend on the client: Explore, Drilldown, dashboard panels
+and direct API clients reach the same exact stats path. Only the answer above
+the series limit differs, as it does in Loki.
 
 When VictoriaLogs fails the direct `stats_query_range` call for a Grafana-sourced
 request, the proxy mirrors Loki's partial-results behaviour: HTTP 200 with
@@ -158,44 +166,34 @@ Chunks are dispatched **newest-first** because `runSplitGroupedQueries` recurses
 
 Each chunk sub-request must produce a Loki matrix with:
 
-- A single shared timestamp axis whose first and last buckets fall on step
-  boundaries inside the chunk's `start..end` window.
-- ≤ `drilldownHitsFieldsLimit` (currently 20) named series, with all top-N values
-  spread across the chunk's full axis. **One-bucket series, where every top-N
-  value lands on the same timestamp, will be stacked by `mergeFrames` into a tall
-  right-edge spike** — the 2026-06 incident root cause.
+- Samples on Loki's evaluation timestamps inside the chunk's `start..end`
+  window, and nothing outside it.
+- The same series Loki returns for the chunk. **One-bucket series, where every
+  value lands on the same timestamp, are stacked by `mergeFrames` into a tall
+  edge spike** — the 2026-06 incident root cause.
 
 ### How the proxy enforces this
 
-- `proxyStatsQueryRangeDrilldown` routes every Drilldown-shaped single-field
-  count query through the `/hits` path regardless of range (the historical
-  "hybrid threshold" gate is gone). Mixing `/hits` with `stats_query_range |
-  limit 500` across chunks produced disjoint series sets that mergeFrames
-  unioned into a 500-series block at the chunk boundary.
 - The proxy returns an **empty Loki matrix** (with response header
   `X-Proxy-Drilldown-Path: hits-leftover-suppressed`) when the request is
   Drilldown-tagged (`X-Query-Tags: Source=grafana-lokiexplore-app`) AND
   `end - start < step` (`isQuerySplitResidual`). The check runs at the
   `query_range` entry for metric expressions (range/vector aggregations,
   binary, opaque metric and literal expressions; log queries are never
-  blanked) and again at the `/hits` leaf. The residual chunk from
+  blanked) and again at the stats entry. The residual chunk from
   `splitTimeRange` falls into this case and the chart loses less than one step
   of width at the edge instead of showing a spike.
 - Explore, dashboard panels and other Grafana clients are not suppressed. They
   rely on per-chunk axis trimming, which keeps every response inside the
   chunk's `start..end` window, so their merged frames stay spike-free without
   an empty chunk.
-- The bare-integer step Grafana sends (e.g. `step=120`) is normalised to a VL
-  duration (`120s`) before reaching `/hits`. Without the suffix VL's parser
-  rejects the request and the entire `/hits` fast path silently falls back to
-  legacy stats.
 
 ### Acceptable irreducible bump (25h–47h cases)
 
 For ranges like 25h the proxy cannot safely suppress the 1h leftover chunk
 because users genuinely query 1h ranges in Drilldown / Explore. The merged
 frame can therefore show a modest right-edge bump (≤ 65% of nonzero buckets
-fall into the rightmost bin) from the leftover chunk's chunk-only top-N.
+fall into the rightmost bin) from the leftover chunk's own series.
 This is the price of preserving short-range queries; e2e thresholds reflect
 the trade-off and document it explicitly.
 
@@ -205,27 +203,17 @@ The following invariants are pinned by `internal/proxy/drilldown_regression_lock
 and `test/e2e-compat/drilldown_chunked_merge_lock_test.go`. Each is named
 `TestLock_*` / `TestE2ELock_*` and breaking any of them fails CI:
 
-1. Routing is source-agnostic for stats-compat shapes — Explore, Drilldown,
-   dashboard panels, and raw API clients all reach the `/hits` fast paths.
-2. `/hits` runs for every range (no hybrid threshold gate).
-3. Residual chunks (`end - start < step`) from Drilldown-tagged requests are
+1. Drilldown label and field breakdowns hold every series up to the tenant's
+   series limit with Loki's values, from one `stats_query_range` call and no
+   `/hits` call; above the limit Drilldown gets the busiest series with Loki's
+   warning and other clients get Loki's `400`
+   (`internal/proxy/drilldown_breakdown_exact_test.go`).
+2. Residual chunks (`end - start < step`) from Drilldown-tagged requests are
    suppressed and the response carries `X-Proxy-Drilldown-Path: hits-leftover-suppressed`;
    other Grafana and non-Grafana callers with the same shape are served normally.
-4. Step normalisation appends `s` to bare-integer Grafana steps.
-5. The `/hits` remainder bucket (`fields:{}`) is dropped before emission.
-6. Every emitted series shares the same timestamp axis (the chart cannot
-   render distributed bars otherwise).
-7. `extractStreamSelectorOnly` handles both Loki-bracketed (`{namespace="prod"}`)
-   and VL-native (`namespace:="prod"`) selectors.
-8. `fieldHasExistenceFilter` matches both unquoted (`pod:!""`) and quoted
-   (`"k8s.pod.name":!""`) forms.
-9. Stats fallback (`stats_query_range`) only fires when `/hits` actually fails
-   — never as a parallel call that overwrites a successful `/hits` result.
-10. `maxStatsQueryRangeBytes` and `drilldownHitsFieldsLimit` stay within their
-    pinned windows (see the lock tests for the exact bounds).
-11. Grafana mergeFrames simulation on the live VL stack must produce a merged
-    frame whose rightmost bin holds < 65 % of nonzero timestamps for 24h, 25h,
-    2d, and 7d ranges, for both Drilldown and dashboard sources.
+3. Grafana mergeFrames simulation on the live VL stack must produce a merged
+   frame whose rightmost bin holds < 65 % of nonzero timestamps for 24h, 25h,
+   2d, and 7d ranges, for both Drilldown and dashboard sources.
 
 ## Drilldown Capability Profiles
 
