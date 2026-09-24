@@ -129,6 +129,11 @@ func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, 
 	}
 	p.finishBinaryOperandResponse(w)
 	if w.status < 400 {
+		// A Drilldown operand cut by the series limit carries Loki's warning on
+		// its own answer, cached or not; the combined answer must carry it too.
+		if limit := seriesLimitWarningLimit(w.body.Bytes()); limit > 0 && requestKeepsPartialSeries(r.Context()) {
+			_ = seriesLimitReached(r.Context(), limit)
+		}
 		p.restoreBinaryOperandResponse(w, expr, resultType)
 	}
 	return w
@@ -281,6 +286,14 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 	if err != nil {
 		p.writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if expr.Op == "or" {
+		// A union is the only operation that can hold more series than either
+		// operand, each of which the series limit already bounded.
+		if result, err = capSeriesToLimit(r.Context(), result, p.resolvedMaxStatsQuerySeries(r.Context())); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result)

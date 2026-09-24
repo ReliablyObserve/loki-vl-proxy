@@ -167,7 +167,8 @@ extraArgs:
   # binary-metric-max-arrays: "2000000"                 # JSON arrays one binary metric expression may allocate; HTTP 400 above it
   # multi-tenant-max-fanout: "64"                       # tenants per multi-tenant request; HTTP 400 above it
   # multi-tenant-max-merged-response-bytes: "33554432"  # 32 MiB merged multi-tenant response; HTTP 413 above it
-  # max-entries-limit-per-query: "10000"                # log lines or label values per request; larger client limits are capped
+  # max-entries-limit-per-query: "10000"                # Loki's max_entries_limit_per_query: a log query asking for more lines gets Loki's 400; label values requests are capped
+  # max-entries-limit-per-query-cap: "false"            # "true" lowers a larger log query limit instead of rejecting it (behaviour before per-tenant limits)
   # detected-fields-max-scan-lines: "2000"              # lines the detected_fields scan reads per request
   # patterns-max-backend-rows: "20000"                  # lines /patterns reads per request
   # patterns-second-pass-max-rows: "8000"               # lines the /patterns second pass reads
@@ -325,8 +326,8 @@ extraArgs:
   # tenant-map-file: ""                        # path to YAML/JSON tenant map file (hot-reloaded)
   # tenant-map-reload-interval: "30s"          # poll interval for tenant map file changes
   # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
-  # tenant-default-limits: ""                  # JSON map of default published limits overrides
-  # tenant-limits: ""                          # JSON map of per-tenant published limits overrides
+  # tenant-default-limits: ""                  # JSON map of Loki limits for every tenant, enforced and published: max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range, query_timeout
+  # tenant-limits: ""                          # JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above tenant-default-limits; enforced and published
   # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403. An explicit "*" tenant-map entry always wins
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"

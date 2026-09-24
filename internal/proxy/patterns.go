@@ -1296,28 +1296,21 @@ func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 	p.writeJSON(w, resp)
 }
 
+// publishedTenantLimits answers drilldown-limits. A multi-tenant header, which
+// Loki answers with 401, gets the limits the proxy enforces on such a request:
+// every tenant combined the way Loki combines them.
 func (p *Proxy) publishedTenantLimits(r *http.Request) map[string]any {
-	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
-	if strings.Contains(orgID, "|") {
-		orgID = ""
-	}
-	return p.publishedTenantLimitsForOrgID(orgID)
+	return p.publishedTenantLimitsForOrgID(strings.TrimSpace(r.Header.Get("X-Scope-OrgID")))
 }
 
 func (p *Proxy) publishedTenantLimitsForOrgID(orgID string) map[string]any {
 	patternPersistenceEnabled := p.patternsEnabled && strings.TrimSpace(p.patternsPersistPath) != ""
 	limits := map[string]any{
-		"discover_log_levels":         true,
-		"discover_service_name":       []string{"service", "app", "application", "app_name", "name", "app_kubernetes_io_name", "container", "container_name", "k8s_container_name", "component", "workload", "job", "k8s_job_name"},
-		"log_level_fields":            []string{"level", "LEVEL", "Level", "log.level", "severity", "SEVERITY", "Severity", "SeverityText", "lvl", "LVL", "Lvl", "severity_text", "Severity_Text", "SEVERITY_TEXT"},
-		"max_entries_limit_per_query": maxLimitValue,
-		"max_line_size_truncate":      false,
-		"max_query_bytes_read":        "0B",
-		"max_query_length":            "30d1h",
-		"max_query_lookback":          "0s",
-		"max_query_range":             "0s",
-		"max_query_series":            500,
-		"metric_aggregation_enabled":  false,
+		"discover_log_levels":        true,
+		"discover_service_name":      []string{"service", "app", "application", "app_name", "name", "app_kubernetes_io_name", "container", "container_name", "k8s_container_name", "component", "workload", "job", "k8s_job_name"},
+		"log_level_fields":           []string{"level", "LEVEL", "Level", "log.level", "severity", "SEVERITY", "Severity", "SeverityText", "lvl", "LVL", "Lvl", "severity_text", "Severity_Text", "SEVERITY_TEXT"},
+		"max_line_size_truncate":     false,
+		"metric_aggregation_enabled": false,
 		"otlp_config": map[string]any{
 			"resource_attributes": map[string]any{
 				"attributes_config": []map[string]any{
@@ -1329,14 +1322,9 @@ func (p *Proxy) publishedTenantLimitsForOrgID(orgID string) map[string]any {
 			},
 		},
 		"pattern_persistence_enabled": patternPersistenceEnabled,
-		"query_timeout":               p.client.Timeout.String(),
 		"retention_period":            "0s",
-		"retention_stream":            []any{},
-		"volume_enabled":              true,
-		"volume_max_series":           1000,
-	}
-	if p.client.Timeout <= 0 {
-		limits["query_timeout"] = "0s"
+		// retention_stream is left out when empty, as Loki's JSON omits it.
+		"volume_enabled": true,
 	}
 
 	p.configMu.RLock()
@@ -1351,13 +1339,17 @@ func (p *Proxy) publishedTenantLimitsForOrgID(orgID string) map[string]any {
 	if len(tenantOverrides) > 0 {
 		mergeStringAnyMap(limits, tenantOverrides)
 	}
+	// The limits the proxy enforces are published as enforced, from the same
+	// resolver the request path reads.
+	p.publishEnforcedLimits(limits, orgID)
 	return filterPublishedLimits(limits, allowlist)
 }
 
 func (p *Proxy) handleTenantLimitsConfig(w http.ResponseWriter, r *http.Request) {
 	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
 	if strings.Contains(orgID, "|") {
-		http.Error(w, "multi-tenant X-Scope-OrgID is not supported on this endpoint", http.StatusBadRequest)
+		// Loki's tenant.ExtractTenantIDFromHTTPRequest answer.
+		http.Error(w, "multiple org IDs present", http.StatusUnauthorized)
 		return
 	}
 	limits := p.publishedTenantLimitsForOrgID(orgID)

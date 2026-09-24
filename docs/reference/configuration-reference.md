@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (209), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (210), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -121,7 +121,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-http-max-header-bytes` | int | `1048576` | `extraArgs.http-max-header-bytes` | HTTP max header size (default: 1MB) |
 | `-manual-range-metric-row-limit` | int | `1000000` | `extraArgs.manual-range-metric-row-limit` | Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries. |
 | `-max-concurrent` | int | `100` | `extraArgs.max-concurrent` | Maximum concurrent requests allowed through the proxy (0 disables) |
-| `-max-entries-limit-per-query` | int | `10000` | `extraArgs.max-entries-limit-per-query` | Maximum log lines or label values one request may ask for; a larger client limit is capped to this value (Loki's max_entries_limit_per_query, which Loki rejects instead of capping). 0 uses the built-in default of 10000 |
+| `-max-entries-limit-per-query` | int | `10000` | `extraArgs.max-entries-limit-per-query` | Loki's max_entries_limit_per_query: a log query asking for more lines fails with Loki's 400 (see -max-entries-limit-per-query-cap); label values requests above it are capped. Per tenant through -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 10000 |
+| `-max-entries-limit-per-query-cap` | bool | `false` | `extraArgs.max-entries-limit-per-query-cap` | Lower a log query limit above max_entries_limit_per_query to that value instead of rejecting it with Loki's 400 (the proxy's behaviour before 1.93; Loki rejects) |
 | `-max-lines` | int | `1000` | `extraArgs.max-lines` | Default max lines per query |
 | `-max-query-length-bytes` | int | `131072` | `extraArgs.max-query-length-bytes` | Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default |
 | `-max-stats-query-series` | int | `0` | `extraArgs.max-stats-query-series` | Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 500, matching the Drilldown maxDrilldownSeries cap and the documented known-limit for high-cardinality fields (trace_id, *_id, churn-heavy pod naming) where each value appears only 1-2× in the window. The previous 5000 default returned 10× more sparse series than Drilldown can render and 10× more bytes for the same UX, while leaving the door open to VL OOMs on real workloads with 100k+ cardinality. |

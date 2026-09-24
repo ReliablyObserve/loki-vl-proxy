@@ -1,0 +1,31 @@
+id: tenant-query-limits
+state: proven
+reason: |
+  internal/proxy/tenant_query_limits_test.go resolves every enforced limit
+  through each configuration layer and tenant, combines multi-tenant headers,
+  rejects overrides the proxy would not enforce, and in
+  TestTenantQueryLimits_PublishedEqualsEnforced reads each value back from
+  both published endpoints and drives the request path exactly at it and just
+  past it, failing if a published value and the enforced one ever diverge.
+  test/e2e-compat/tenant_limits_published_test.go compares the published
+  limits of the stack proxies with the stack's Loki, value for value, and
+  checks max_entries_limit_per_query enforcement at the published value.
+owner_decision: |
+  The proxy's limits work like Loki's: per tenant, one source of truth, what is
+  published is what is enforced (2026-09-23). Loki's reject of a log query
+  above max_entries_limit_per_query is the default; -max-entries-limit-per-query-cap
+  keeps the earlier capping.
+waiver: |
+  Deliberate deviations: the flag defaults stay the proxy's (max_query_length 0
+  instead of Loki's 721h, max_entries_limit_per_query 10000 instead of 5000,
+  query_timeout -backend-timeout per VictoriaLogs call unless an override sets a
+  whole-request deadline); drilldown-limits answers a multi-tenant header with
+  the combined limits where Loki answers 401, so a multi-tenant Drilldown keeps
+  its bootstrap; max_query_series must be positive (Loki's 0 fails every metric
+  query); max_query_lookback empties a metadata request only when its end lies
+  before the lookback, as Loki, but a request without a start keeps the
+  handler's default window. Label values requests stay capped at the
+  -max-entries-limit-per-query flag value, a proxy protection Loki does not
+  have. discover_service_name, log_level_fields and the other
+  deployment-describing fields are published as configured without changing
+  the proxy's derivation.

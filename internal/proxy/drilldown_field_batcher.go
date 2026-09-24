@@ -220,7 +220,7 @@ func (batch *fieldBatch) fire() {
 				" | " + quoteLogsQLIdent(e.primaryVLField) + ":*" +
 				" | stats by (" + quoteLogsQLIdent(e.primaryVLField) + ") count() as _c" +
 				" | sort by (_c desc)" +
-				" | limit " + strconv.Itoa(b.proxy.drilldownSeriesLimit()+1)
+				" | limit " + strconv.Itoa(b.proxy.drilldownSeriesLimit(batch.ctx)+1)
 
 			params := buildStatsQueryRangeParams(perFieldQuery, batch.startRaw, batch.endRaw, batch.stepRaw)
 			resp, err := b.proxy.vlPost(ctx30s, "/select/logsql/stats_query_range", params)

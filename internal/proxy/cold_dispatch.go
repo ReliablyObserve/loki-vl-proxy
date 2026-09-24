@@ -60,7 +60,7 @@ func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Val
 	if limit == "" {
 		limit = "1000"
 	}
-	params.Set("limit", sanitizeLimit(limit, p.limits().EntriesPerQuery))
+	params.Set("limit", sanitizeLimit(limit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
 	return params
 }
 
@@ -90,7 +90,7 @@ func (p *Proxy) buildColdQueryParams(r *http.Request, logsqlQuery string) url.Va
 	if limit == "" {
 		limit = "1000"
 	}
-	params.Set("limit", sanitizeLimit(limit, p.limits().EntriesPerQuery))
+	params.Set("limit", sanitizeLimit(limit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery))
 	return params
 }
 
@@ -147,8 +147,8 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		if chunkLimit <= 0 {
 			break
 		}
-		if chunkLimit > p.limits().EntriesPerQuery {
-			chunkLimit = p.limits().EntriesPerQuery
+		if maxEntries := p.requestQueryLimits(ctx).MaxEntriesLimitPerQuery; maxEntries > 0 && chunkLimit > maxEntries {
+			chunkLimit = maxEntries
 		}
 
 		chunkParams := cloneURLValues(baseParams)

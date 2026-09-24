@@ -160,7 +160,6 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// top-K so the merged set spans the whole timeline (dense, time-distributed)
 	// AND suppresses Grafana's 24h residual-chunk right-edge spike. Falls through
 	// to the bounded two-phase, then the direct fetch, when not applicable.
-	// See memory [[drilldown-high-card-fields-known-limit]].
 	if p.tryHighCardCountByWindowedHits(w, r, logsqlQuery) {
 		return true
 	}
@@ -221,7 +220,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// holds more series than the limit allows.
 	counter := &seriesCountingReader{r: resp.Body}
 	if !isGrafanaDrilldownRequest(r) {
-		counter.limit = p.resolvedMaxStatsQuerySeries()
+		counter.limit = p.resolvedMaxStatsQuerySeries(r.Context())
 	}
 	body, bodyErr := readBodyLimited(counter, maxStatsQueryRangeBytes)
 	if errors.Is(bodyErr, errSeriesCountExceeded) {
@@ -273,9 +272,8 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// 16 MB body cap and floods Grafana with unrenderable scattered spikes.
 	// the series-limit cap ranks by total count so the busiest pods survive,
 	// not VL's alphabetical first-N (the count==1 noise floor).
-	// See memory [[drilldown-high-card-fields-known-limit]].
 	out := wrapAsLokiResponse(body, "matrix")
-	if limit := p.resolvedMaxStatsQuerySeries(); lokiResultSeriesCount(out) > limit {
+	if limit := p.resolvedMaxStatsQuerySeries(r.Context()); lokiResultSeriesCount(out) > limit {
 		if err := seriesLimitReached(r.Context(), limit); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
 			return false
@@ -303,12 +301,11 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 const maxDrilldownResponseBytes = 32 << 20 // 32 MB — triggers two-phase fallback if exceeded
 
 // drilldownSeriesLimit is the maximum series returned for Drilldown single-field
-// count queries: the operator's -max-stats-query-series (default 500, Loki's own
-// default max_query_series). Loki returns partial results with a series-limit
-// warning at this threshold for Drilldown rather than an error, so a Drilldown
-// panel still shows real per-value histogram data.
-func (p *Proxy) drilldownSeriesLimit() int {
-	return p.resolvedMaxStatsQuerySeries()
+// count queries: the request tenant's max_query_series. Loki returns partial
+// results with a series-limit warning at this threshold for Drilldown rather
+// than an error, so a Drilldown panel still shows real per-value histogram data.
+func (p *Proxy) drilldownSeriesLimit(ctx context.Context) int {
+	return p.resolvedMaxStatsQuerySeries(ctx)
 }
 
 // lokiResultSeriesCount returns the number of series in a Loki JSON response.
@@ -1274,7 +1271,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		}
 		orgID := r.Header.Get("X-Scope-OrgID")
 		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, field, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
-			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit())
+			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
 			if capErr != nil {
 				p.writeError(w, http.StatusBadRequest, capErr.Error())
 				return
@@ -1309,7 +1306,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		// Direct path: VL-side | limit 500 per bucket bounds the per-bucket result;
 		// the proxy caps the global matrix to the series limit. One over the
 		// limit is fetched so truncation is distinguishable from an exact fit.
-		limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit()+1)
+		limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit(r.Context())+1)
 		params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
 		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 		if err != nil {
@@ -1333,7 +1330,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 				keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 			}
 			body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit())
+			capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
 			if capErr != nil {
 				p.writeError(w, http.StatusBadRequest, capErr.Error())
 				return
@@ -1453,7 +1450,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 		}
 	}
 
-	limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit()+1)
+	limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, p.drilldownSeriesLimit(r.Context())+1)
 	params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
@@ -1491,7 +1488,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	}
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-	capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit())
+	capped, capErr := capSeriesToLimit(r.Context(), body, p.drilldownSeriesLimit(r.Context()))
 	if capErr != nil {
 		p.writeError(w, http.StatusBadRequest, capErr.Error())
 		return
@@ -1979,7 +1976,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	fvParams.Set("field", field)
 	fvParams.Set("start", nanosToVLTimestamp(startNs))
 	fvParams.Set("end", nanosToVLTimestamp(endNs))
-	fvParams.Set("limit", strconv.Itoa(p.drilldownSeriesLimit()))
+	fvParams.Set("limit", strconv.Itoa(p.drilldownSeriesLimit(r.Context())))
 
 	var fvEntries []drilldownFVEntry
 	if resp, err := p.vlGet(ctx, "/select/logsql/field_values", fvParams); err == nil {
@@ -2020,7 +2017,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	// the result set is small. Restore the original requested step (capped to
 	// drilldownLowCardStatsBuckets buckets as a safety floor) so the proxy
 	// matches Loki's per-bucket resolution at 2d/7d.
-	if relaxed, ok := relaxStepForLowCardinality(r.FormValue("step"), len(fvEntries), rangeNs, p.drilldownSeriesLimit()); ok {
+	if relaxed, ok := relaxStepForLowCardinality(r.FormValue("step"), len(fvEntries), rangeNs, p.drilldownSeriesLimit(r.Context())); ok {
 		effectiveStepRaw = relaxed
 	}
 
@@ -2045,7 +2042,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	// underscore-fallback variants (e.g. detected_level) added by addUnderscorefallbackByLabels,
 	// which would produce duplicate series (level + detected_level) confusing Grafana.
 	hybridStatsQuery := cleanBase + " | filter " + field + `:!"" | stats by (` + field + `) count()`
-	limitedQuery := appendDrilldownSeriesLimit(hybridStatsQuery, p.drilldownSeriesLimit()+1)
+	limitedQuery := appendDrilldownSeriesLimit(hybridStatsQuery, p.drilldownSeriesLimit(r.Context())+1)
 	statsParams := buildStatsQueryRangeParams(limitedQuery, histStartRaw, endRaw, effectiveStepRaw)
 
 	var statsBody []byte
@@ -2090,7 +2087,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 				if field != lokiField {
 					rawBody = renameStatsBodyMetricKey(rawBody, field, lokiField)
 				}
-				capped, capErr := capSeriesToLimit(r.Context(), rawBody, p.drilldownSeriesLimit())
+				capped, capErr := capSeriesToLimit(r.Context(), rawBody, p.drilldownSeriesLimit(r.Context()))
 				if capErr != nil {
 					p.writeError(w, http.StatusBadRequest, capErr.Error())
 					return
@@ -2300,7 +2297,7 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string, 
 
 	// Phase 1: fast single-bucket global top-N (unpack stripped → column index).
 	p1Base := stripUnpackStagesForTopN(spec.BaseQuery)
-	limit := p.resolvedMaxStatsQuerySeries()
+	limit := p.resolvedMaxStatsQuerySeries(r.Context())
 	p1Query := p1Base + " | stats by (" + quoteLogsQLIdent(field) + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(limit+1)
 	p1Params := url.Values{}
 	p1Params.Set("query", p1Query)
@@ -2397,7 +2394,7 @@ func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, fi
 	}
 
 	p1Params := url.Values{}
-	p1Params.Set("query", appendDrilldownSeriesLimit(effectiveQuery, p.drilldownSeriesLimit()+1))
+	p1Params.Set("query", appendDrilldownSeriesLimit(effectiveQuery, p.drilldownSeriesLimit(r.Context())+1))
 	p1Params.Set("start", nanosToVLTimestamp(startNs))
 	p1Params.Set("end", nanosToVLTimestamp(endNs))
 	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
@@ -2455,7 +2452,7 @@ func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, fi
 	// Drilldown-only path: capSeriesToLimit records the partial-result warning
 	// and never errors here. A plain client that somehow reaches it gets no body,
 	// so the caller falls through to a path that applies the limit itself.
-	capped, capErr := capSeriesToLimit(r.Context(), p2Body, p.drilldownSeriesLimit())
+	capped, capErr := capSeriesToLimit(r.Context(), p2Body, p.drilldownSeriesLimit(r.Context()))
 	if capErr != nil {
 		return nil
 	}
@@ -3577,7 +3574,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	// Loki applies max_query_series to instant queries as well: an error for a
 	// plain client, a partial vector with a warning for Logs Drilldown.
-	capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries())
+	capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if capErr != nil {
 		p.writeError(w, badRequestStatusOr(capErr, http.StatusBadRequest), capErr.Error())
 		return

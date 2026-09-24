@@ -5,7 +5,13 @@ reason: |
   and wired: a metric query above -max-stats-query-series fails with Loki's
   message and status on every metric path, range and instant, and a Logs
   Drilldown request gets a partial result with Loki's partial-result warning,
-  compared against live Loki by unit tests and an e2e case.
+  compared against live Loki by unit tests and an e2e case. Every metric route
+  (ordered `| json` raw evaluator and stats pushdown, stats buckets, sliding
+  windows, the raw-row evaluator, bare parser raw rows and stats/hits/unwrap
+  buckets, binary expressions, multi-tenant merges, range and instant) is held
+  to the same contract by TestSeriesLimit_EveryMetricRouteFollowsLoki and its
+  sliding-window, binary and multi-tenant siblings; the bare parser bucket
+  paths used to keep the busiest series silently for every client.
   limits/top-n-ranking-not-silent is written and wired: topk and bottomk over
   grouped counts now rank every series per step with bounded per-step heaps
   instead of the -max-stats-query-series busiest, proven by unit tests against a
@@ -16,6 +22,12 @@ reason: |
   Still open: limits/resolution-limit-precedence (the 11,000-point rejection
   ahead of parsing) is named but not written, and the Drilldown partial keeps the
   busiest series where Loki keeps the first it encounters, so the kept set can
-  differ from Loki's for equal-volume series.
+  differ from Loki's for equal-volume series. A binary operand is limited on its
+  own while Loki limits only the combined result, so `a and b` fails when `a`
+  alone is over the limit even if the intersection is not. A Drilldown
+  single-field breakdown with a `field!=""` filter answers from /hits top
+  values (X-Proxy-Drilldown-Path: hits, window-sampled from two hours on):
+  fewer series than the limit and no warning, where Loki returns up to the
+  limit with it.
 owner_decision: null
 waiver: null

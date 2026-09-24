@@ -21,6 +21,7 @@ implementation:
   - internal/proxy/metric_agg.go
   - internal/proxy/sliding_window_stats.go
   - internal/proxy/http_utils.go
+  - internal/proxy/manual_metric_budget.go
 
 cases:
   - limits/series-limit-error

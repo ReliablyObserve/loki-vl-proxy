@@ -1,0 +1,26 @@
+id: limits/max-entries-limit-rejects
+title: A log query asking for more lines than max_entries_limit_per_query gets Loki's 400
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki rejects a log query whose limit is above max_entries_limit_per_query
+  (pkg/querier/http.go validateMaxEntriesLimits); the proxy used to lower the
+  limit and answer, so a client could not tell it received fewer lines than it
+  asked for.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    400 "max entries limit per query exceeded, limit > max_entries_limit_per_query
+    (L > N)" for a log query (range or instant); metric queries carry no entry
+    limit; 0 is unlimited. -max-entries-limit-per-query-cap restores lowering the
+    limit instead.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

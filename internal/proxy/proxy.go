@@ -332,10 +332,18 @@ type Config struct {
 	// /config/tenant/v1/limits and /loki/api/v1/drilldown-limits.
 	// If empty, default Loki-compatible allowlist is used.
 	TenantLimitsAllowPublish []string
-	// TenantDefaultLimits applies global published limits overrides.
+	// TenantDefaultLimits overrides Loki limits for every tenant. The query
+	// limits it sets (max_query_series, max_entries_limit_per_query,
+	// max_query_length, max_query_lookback, max_query_range, query_timeout)
+	// are enforced as well as published.
 	TenantDefaultLimits map[string]any
-	// TenantLimits applies per-tenant published limits overrides keyed by X-Scope-OrgID.
+	// TenantLimits overrides Loki limits per tenant, keyed by X-Scope-OrgID,
+	// above TenantDefaultLimits; enforced like TenantDefaultLimits.
 	TenantLimits map[string]map[string]any
+	// MaxEntriesLimitCap lowers a log query limit above
+	// max_entries_limit_per_query to that value instead of rejecting it with
+	// Loki's 400 (the proxy's behaviour before per-tenant limits).
+	MaxEntriesLimitCap bool
 	// DefaultMaxQueryLength is the default maximum allowed query time range enforced
 	// for all tenants unless overridden by per-tenant limits. 0 means unlimited.
 	DefaultMaxQueryLength time.Duration
@@ -534,6 +542,7 @@ type Proxy struct {
 	tenantDefaultLimits                   map[string]any
 	tenantLimits                          map[string]map[string]any
 	defaultMaxQueryLength                 time.Duration // 0 = unlimited
+	maxEntriesLimitCap                    bool          // cap, rather than reject, a log limit above max_entries_limit_per_query
 	translationCache                      *cache.Cache
 	queryRangeWindowing                   bool
 	queryRangeSplitInterval               time.Duration
@@ -1072,6 +1081,9 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	tenantDefaultLimits := cloneStringAnyMap(cfg.TenantDefaultLimits)
 	tenantLimits := cloneTenantLimitsMap(cfg.TenantLimits)
+	if err := validateTenantLimitOverrides(tenantDefaultLimits, tenantLimits, backendTimeout); err != nil {
+		return nil, err
+	}
 	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
 	proxyMetrics := metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels)
 	if cfg.Cache != nil {
@@ -1159,6 +1171,7 @@ func New(cfg Config) (*Proxy, error) {
 		tenantDefaultLimits:                   tenantDefaultLimits,
 		tenantLimits:                          tenantLimits,
 		defaultMaxQueryLength:                 cfg.DefaultMaxQueryLength,
+		maxEntriesLimitCap:                    cfg.MaxEntriesLimitCap,
 		translationCache:                      cache.New(5*time.Minute, 5000),
 		streamFieldNamesCache:                 cache.New(30*time.Second, 500),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
@@ -1639,7 +1652,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
 					p.lokiQueryParamValidation(endpoint,
-						p.compatCacheMiddleware(endpoint, route, h))))))
+						p.tenantLimitsMiddleware(endpoint,
+							p.compatCacheMiddleware(endpoint, route, h)))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the

@@ -400,11 +400,12 @@ When multiple limits are configured, the most specific takes effect:
 
 ### Behavior
 
-- Enforced on `query_range` requests
+- Enforced, as in Loki's limits middleware, on `query_range`, `series`, `labels`, label values, `detected_labels` and `index/stats` requests
 - Independently of this flag, `query_range` requests where `(end - start) / step` exceeds 11,000 (integer division, as in Loki) return HTTP 400 with `exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter` before any backend call, for log and metric queries alike
 - Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
 - Tenant-limit values accept Loki duration units, including `d`, `w` and `y` (for example `"90d"`); the global flag does not
-- Rejected queries return HTTP 400 with `{"status":"error","errorType":"bad_data","error":"query length ... exceeds limit ..."}`
+- Rejected queries return HTTP 400 with Loki's message: `{"status":"error","errorType":"bad_data","error":"the query time range exceeds the limit (query length: 3h0m0s, limit: 1h)"}`
+- A multi-tenant request is held to the smallest non-zero limit of its tenants
 - Matches Loki's `max_query_length` semantics for client compatibility
 
 ### Examples
@@ -535,8 +536,8 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 | `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
-| `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of default published-limit overrides |
-| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
+| `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of Loki limits for every tenant, enforced and published; see [Published tenant limits](#published-tenant-limits-compatibility-surface) |
+| `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
 | `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
 | `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. Without it, unmapped `*` returns `403`; an explicit `"*"` tenant-map entry always takes precedence |
@@ -710,17 +711,40 @@ The proxy also exposes tenant-limit compatibility endpoints for Grafana and Logs
 - `GET /config/tenant/v1/limits` returns YAML
 - `GET /loki/api/v1/drilldown-limits` returns JSON
 
-The base payload is generated in-proxy and then filtered/overridden by:
+Both publish the tenant's own limits, and the Loki query limits among them are the values its queries run under: one resolver serves enforcement and publishing. Each value resolves, highest first:
 
-- `-tenant-limits-allow-publish`
-- `-tenant-default-limits`
-- `-tenant-limits`
+1. the tenant's entry in `-tenant-limits` (keyed by `X-Scope-OrgID`)
+2. `-tenant-default-limits`
+3. the proxy flag
+4. Loki's default (v3.7.7)
+
+| Loki limit | Flag | Loki default / proxy default | Enforcement |
+|---|---|---|---|
+| `max_query_series` | `-max-stats-query-series` | `500` / `500` | every metric route, range and instant: `400` `maximum number of series (N) reached for a single query; ...`, or for Logs Drilldown the busiest N series with Loki's partial-result warning |
+| `max_entries_limit_per_query` | `-max-entries-limit-per-query` | `5000` / `10000` | log queries: `400` `max entries limit per query exceeded, limit > max_entries_limit_per_query (L > N)` (`-max-entries-limit-per-query-cap` lowers the limit instead); `0` is unlimited |
+| `max_query_length` | `-default-max-query-length` | `721h` / `0` (unlimited) | query_range, series, labels, label values, detected labels, index stats: `400` `the query time range exceeds the limit (query length: X, limit: Y)` |
+| `max_query_lookback` | — | `0` / `0` | the same requests (an instant query only when it is a metric query, as Loki's frontend sends instant log queries past its limits): a start before now - lookback is moved to it; a request ending before it is answered empty without running |
+| `max_query_range` | — | `0` / `0` | metric queries: `400` `[interval] value exceeds limit: [R] > [M]` for a longer range selector |
+| `query_timeout` | `-backend-timeout` | `1m` / `2m` | set in a tenant limit, the requests Loki bounds by it (query, query_range, series, labels, label values, index stats, volume) run under it, never a live tail (`504` when it expires); it may not exceed `-backend-timeout`, which still bounds each VictoriaLogs call. Without one, `-backend-timeout` is the published value |
+
+A request for several tenants (`X-Scope-OrgID: a|b`) is held to them combined as Loki combines them: the smallest `max_query_series`, and the smallest non-zero value of every other limit. For `query_timeout`, a tenant without an override counts with `-backend-timeout`, so `a|b` runs under the smaller of the two as a whole-request deadline. `/loki/api/v1/drilldown-limits` publishes those combined limits for such a header (Loki answers it `401`, which would leave a multi-tenant Drilldown without its bootstrap); `/config/tenant/v1/limits` answers it with Loki's `401 multiple org IDs present`.
+
+`max_query_bytes_read`, `max_querier_bytes_read` and `volume_max_series` are published at Loki's disabled or default value (`0B`, `0B`, `1000`): VictoriaLogs reports no bytes read before a query runs, and the volume endpoints bound their answer by the request `limit`. Overriding them is rejected at startup, since nothing would apply the published value. The other published fields (`discover_log_levels`, `discover_service_name`, `log_level_fields`, `retention_period`, `otlp_config`, ...) are published as configured; they describe the deployment and do not change how the proxy derives `service_name` or `detected_level`. Label values requests are capped at the `-max-entries-limit-per-query` flag value, a proxy protection Loki does not have, whatever a tenant's `max_entries_limit_per_query`.
+
+Invalid values are rejected at startup with a message naming the tenant and the field: `max_query_series` must be a positive integer, `max_entries_limit_per_query` `0` or positive, durations Loki duration strings (`"5m"`, `"30d1h"`, `"0s"`), `query_timeout` positive and not above `-backend-timeout`.
+
+```bash
+# Every tenant: Loki's defaults for series and entries; team-a gets more series and a 7-day lookback
+loki-vl-proxy \
+  -tenant-default-limits='{"max_entries_limit_per_query":5000,"query_timeout":"1m"}' \
+  -tenant-limits='{"team-a":{"max_query_series":2000,"max_query_lookback":"7d"}}'
+```
 
 Operational notes:
 
-- multi-tenant `X-Scope-OrgID: a|b` is rejected on `/config/tenant/v1/limits`
-- `X-Scope-OrgID` omitted on these endpoints uses the default published limits surface
-- these flags only shape the published compatibility payload; they do not enforce backend quotas
+- published fields are filtered by `-tenant-limits-allow-publish`
+- `X-Scope-OrgID` omitted on these endpoints publishes the limits of the default tenant
+- an empty `retention_stream` is left out of the payload, as Loki does
 
 ## OTLP Telemetry
 
@@ -877,7 +901,8 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 
 | Flag | Default | What it bounds |
 |---|---|---|
-| `-max-entries-limit-per-query` | `0` (uses `10000`) | Log lines or label values one request may ask for. A larger client `limit` is capped to this value; Loki's `max_entries_limit_per_query` rejects the request instead of capping |
+| `-max-entries-limit-per-query` | `0` (uses `10000`) | Loki's `max_entries_limit_per_query` (Loki's default is `5000`). A log query (range or instant) asking for more lines gets Loki's `400` `max entries limit per query exceeded, limit > max_entries_limit_per_query (L > N)`; metric queries carry no entry limit; a label values request above it is capped. Per tenant through `-tenant-limits` / `-tenant-default-limits`, where `0` is unlimited |
+| `-max-entries-limit-per-query-cap` | `false` | Lower a log query `limit` above `max_entries_limit_per_query` to that value and answer, instead of Loki's `400` (the proxy's behaviour before per-tenant limits) |
 | `-max-query-length-bytes` | `0` (uses `131072`) | LogQL query string length. The default is Loki's `syntax.maxInputSize`, so the proxy rejects only what Loki rejects; lower it to reject long queries earlier |
 | `-backend-max-buffered-response-bytes` | `0` (uses `64 MiB`) | Bytes read from one VictoriaLogs response the proxy has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns `502` naming the flag rather than a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response |
 | `-binary-metric-max-operand-bytes` | `0` (uses `256 MiB`) | Operand-response bytes one binary metric expression may capture |

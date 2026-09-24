@@ -178,7 +178,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if queryLimit == "" {
 		queryLimit = strconv.Itoa(p.maxLines)
 	}
-	queryLimit = sanitizeLimit(queryLimit, p.limits().EntriesPerQuery)
+	queryLimit = sanitizeLimit(queryLimit, p.requestQueryLimits(r.Context()).MaxEntriesLimitPerQuery)
 	limitValue, err := strconv.Atoi(queryLimit)
 	if err != nil || limitValue <= 0 {
 		limitValue = 1000

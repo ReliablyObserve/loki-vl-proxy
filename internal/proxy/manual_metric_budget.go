@@ -275,6 +275,28 @@ func addSeriesLimitWarning(body []byte, scope *seriesLimitScope) []byte {
 	return bytes.Join([][]byte{[]byte(`{"warnings":`), warning, separator, body[1:]}, nil)
 }
 
+// seriesLimitWarningLimit returns N when a response carries Loki's Drilldown
+// partial-result warning "maximum number of series (N) reached for a single
+// query; returning partial results", and 0 otherwise. addSeriesLimitWarning
+// puts the warnings first, so a body that does not open with them is not
+// parsed.
+func seriesLimitWarningLimit(body []byte) int {
+	if !bytes.HasPrefix(body, []byte(`{"warnings":`)) {
+		return 0
+	}
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return 0
+	}
+	for _, warning := range v.GetArray("warnings") {
+		var limit int
+		if _, err := fmt.Sscanf(string(warning.GetStringBytes()), seriesLimitMessagePrefix+"%d) reached for a single query; returning partial results", &limit); err == nil && limit > 0 {
+			return limit
+		}
+	}
+	return 0
+}
+
 // hasTopLevelWarnings reports whether the response object already carries a
 // top-level "warnings" key. A log line inside data can hold the same bytes, so
 // the check parses instead of scanning.
@@ -303,6 +325,30 @@ func capSeriesToLimit(ctx context.Context, body []byte, limit int) ([]byte, erro
 		return nil, err
 	}
 	return limitLokiResultSeries(body, limit), nil
+}
+
+// capSeriesForRequest is capSeriesToLimit for a result still held as series:
+// Loki's error for a plain client, the busiest limit series with Loki's
+// warning for Logs Drilldown.
+func capSeriesForRequest(ctx context.Context, series map[string]manualSeriesSamples, limit int) (map[string]manualSeriesSamples, error) {
+	if limit <= 0 || len(series) <= limit {
+		return series, nil
+	}
+	if err := seriesLimitReached(ctx, limit); err != nil {
+		return nil, err
+	}
+	return capSeriesByTotalCount(series, limit), nil
+}
+
+// seriesLimitCollecting reports whether a collector that has seen n series
+// must stop with Loki's error: a plain client fails as soon as the limit is
+// passed, while a Drilldown request collects every series and keeps the
+// busiest at the end (capSeriesForRequest).
+func seriesLimitCollecting(ctx context.Context, n, limit int) error {
+	if limit <= 0 || n < limit || requestKeepsPartialSeries(ctx) {
+		return nil
+	}
+	return &seriesLimitError{limit: limit}
 }
 
 func (p *Proxy) manualMetricRowBudget() (int, error) {

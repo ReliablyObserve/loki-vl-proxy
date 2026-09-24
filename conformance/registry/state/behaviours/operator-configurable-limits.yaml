@@ -13,7 +13,7 @@ owner_decision: |
   itself a documented flag. Defaults are measured, not guessed, and a default
   never truncates where Loki answers in full.
 waiver: |
-  Per-tenant enforcement is published for max_query_series and max_query_length
-  through -tenant-limits; the remaining per-tenant overrides are not audited
-  yet, so `per_tenant` in the export is a statement about the flag, not proof of
-  a tested override for every limit.
+  Per-tenant enforcement of the Loki query limits (max_query_series,
+  max_entries_limit_per_query, max_query_length, max_query_lookback,
+  max_query_range, query_timeout) is proven under tenant-query-limits; the
+  proxy's own execution limits have no per-tenant layer.

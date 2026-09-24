@@ -201,11 +201,11 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
 		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
-		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(), start, step, p.limits().BufferedBackendBodyBytes)
+		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}
 	if err != nil {
 		status := http.StatusServiceUnavailable
-		if isCanceledErr(err) {
+		if isCanceledErr(err) || isSeriesLimitError(err) {
 			status = statusFromUpstreamErr(err)
 		}
 		p.writeError(w, status, err.Error())
@@ -419,8 +419,10 @@ func slidingWindowValue(withBytes bool, count, bytes float64) float64 {
 	return count
 }
 
-// encodeBusiest keeps the maxSeries series with the largest totals, matching
-// the stats fast path, and encodes their windows.
+// encodeBusiest encodes the windows of every series. Above maxSeries series it
+// returns Loki's series limit error, or for Logs Drilldown keeps the maxSeries
+// series with the largest totals, matching the stats fast path, and records
+// Loki's partial-result warning.
 func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale float64, steps, maxSeries int, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	offsets := s.bySeries()
 	selected := make([]int32, 0, len(s.keys))
@@ -428,6 +430,9 @@ func (s *slidingStats) encodeBusiest(ctx context.Context, withBytes bool, scale 
 		selected = append(selected, int32(series))
 	}
 	if maxSeries > 0 && len(selected) > maxSeries {
+		if err := seriesLimitReached(ctx, maxSeries); err != nil {
+			return nil, err
+		}
 		totals := make([]float64, len(s.keys))
 		for _, rec := range s.records {
 			if rec.grid != slidingGridC {

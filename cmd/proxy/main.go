@@ -214,6 +214,7 @@ type proxyRuntimeConfig struct {
 	multiTenantMaxFanout                int
 	multiTenantMaxMergedResponseBytes   int
 	maxEntriesLimitPerQuery             int
+	maxEntriesLimitPerQueryCap          bool
 	detectedFieldsMaxScanLines          int
 	patternsMaxBackendRows              int
 	patternsSecondPassMaxRows           int
@@ -453,8 +454,8 @@ func run(
 	tenantLabel := fs.String("tenant-label", "", "VL field name for label-based tenant routing. When set, X-Scope-OrgID values are injected as {<tenant-label>=\"<orgID>\"} into VL queries instead of AccountID/ProjectID headers. Use when all data is under VL default tenant (0:0). Explicit -tenant-map entries take priority. Env: TENANT_LABEL")
 	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
-	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of default published limits overrides (for example {"query_timeout":"2m","max_query_series":1000})`)
-	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant published limits overrides keyed by X-Scope-OrgID`)
+	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of Loki limits for every tenant, enforced and published (for example {"query_timeout":"2m","max_query_series":1000}); max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range and query_timeout are enforced`)
+	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above -tenant-default-limits; enforced and published like it`)
 
 	// OTLP telemetry flags
 	otlpEndpoint := fs.String("otlp-endpoint", "", "OTLP HTTP endpoint (e.g., http://otel-collector:4318/v1/metrics)")
@@ -508,7 +509,8 @@ func run(
 	binaryMetricMaxArrays := fs.Int("binary-metric-max-arrays", proxy.DefaultBinaryMetricMaxArrays, "Maximum JSON arrays one binary metric expression may allocate while joining operands. 0 uses the built-in default of 2000000")
 	multiTenantMaxFanout := fs.Int("multi-tenant-max-fanout", proxy.DefaultMultiTenantMaxFanout, "Maximum tenants one multi-tenant request may fan out to; more returns HTTP 400 naming this flag. 0 uses the built-in default of 64")
 	multiTenantMaxMergedResponseBytes := fs.Int("multi-tenant-max-merged-response-bytes", proxy.DefaultMultiTenantMaxMergedResponseBytes, "Maximum bytes of a merged multi-tenant response; more returns HTTP 413 naming this flag. 0 uses the built-in default of 32 MiB")
-	maxEntriesLimitPerQuery := fs.Int("max-entries-limit-per-query", proxy.DefaultMaxEntriesLimitPerQuery, "Maximum log lines or label values one request may ask for; a larger client limit is capped to this value (Loki's max_entries_limit_per_query, which Loki rejects instead of capping). 0 uses the built-in default of 10000")
+	maxEntriesLimitPerQuery := fs.Int("max-entries-limit-per-query", proxy.DefaultMaxEntriesLimitPerQuery, "Loki's max_entries_limit_per_query: a log query asking for more lines fails with Loki's 400 (see -max-entries-limit-per-query-cap); label values requests above it are capped. Per tenant through -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 10000")
+	maxEntriesLimitPerQueryCap := fs.Bool("max-entries-limit-per-query-cap", false, "Lower a log query limit above max_entries_limit_per_query to that value instead of rejecting it with Loki's 400 (the proxy's behaviour before 1.93; Loki rejects)")
 	detectedFieldsMaxScanLines := fs.Int("detected-fields-max-scan-lines", proxy.DefaultDetectedFieldsMaxScanLines, "Maximum log lines the detected_fields / detected_field values scan reads per request. 0 uses the built-in default of 2000")
 	patternsMaxBackendRows := fs.Int("patterns-max-backend-rows", proxy.DefaultPatternsMaxBackendRows, "Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000")
 	patternsSecondPassMaxRows := fs.Int("patterns-second-pass-max-rows", proxy.DefaultPatternsSecondPassMaxRows, "Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000")
@@ -928,6 +930,7 @@ func run(
 			multiTenantMaxFanout:                *multiTenantMaxFanout,
 			multiTenantMaxMergedResponseBytes:   *multiTenantMaxMergedResponseBytes,
 			maxEntriesLimitPerQuery:             *maxEntriesLimitPerQuery,
+			maxEntriesLimitPerQueryCap:          *maxEntriesLimitPerQueryCap,
 			detectedFieldsMaxScanLines:          *detectedFieldsMaxScanLines,
 			patternsMaxBackendRows:              *patternsMaxBackendRows,
 			patternsSecondPassMaxRows:           *patternsSecondPassMaxRows,
@@ -2098,6 +2101,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			Timeout:         cfg.coldBackendTimeout,
 		},
 		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
+		MaxEntriesLimitCap:               cfg.maxEntriesLimitPerQueryCap,
 		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
 		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
 		BackendMaxConcurrentHeavyQueries: cfg.backendMaxConcurrentHeavyQueries,

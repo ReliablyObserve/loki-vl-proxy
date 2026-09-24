@@ -1,0 +1,60 @@
+id: tenant-query-limits
+kind: limits
+title: Loki's per-tenant query limits, enforced as published
+
+loki: |
+  Loki's query limits are limits_config fields with a default, a global value
+  and per-tenant overrides (pkg/validation/limits.go, v3.7.7):
+  max_query_series (500), max_entries_limit_per_query (5000), max_query_length
+  (721h), max_query_lookback (0), max_query_range (0) and query_timeout (1m).
+  /config/tenant/v1/limits (YAML) and /loki/api/v1/drilldown-limits (JSON)
+  publish the tenant's own values, the ones its queries run under; a
+  multi-tenant X-Scope-OrgID is answered 401 "multiple org IDs present". A
+  request for several tenants is held to them combined: the smallest
+  max_query_series (validation.SmallestPositiveIntPerTenant) and the smallest
+  non-zero value of every other limit (SmallestPositiveNonZeroIntPerTenant,
+  SmallestPositiveNonZeroDurationPerTenant). Over a limit Loki answers 400 with
+  its own text: "max entries limit per query exceeded, limit >
+  max_entries_limit_per_query (L > N)", "the query time range exceeds the
+  limit (query length: X, limit: Y)", "[interval] value exceeds limit: [R] >
+  [M]"; a request before now - max_query_lookback is answered empty and an
+  earlier start is moved to it; query_timeout bounds the query (504).
+
+victorialogs: |
+  VictoriaLogs has server-wide flags (-search.maxQueryDuration,
+  -search.maxConcurrentRequests) and no per-tenant query limits, no published
+  limits surface and none of Loki's messages.
+
+proxy: |
+  One resolver answers both enforcement and the published limits, per tenant:
+  -tenant-limits[tenant] -> -tenant-default-limits -> the proxy flag
+  (-max-stats-query-series, -max-entries-limit-per-query,
+  -default-max-query-length, -backend-timeout) -> Loki's default. Every metric
+  route reads max_query_series from it; the request middleware applies
+  max_entries_limit_per_query, max_query_range, max_query_lookback,
+  max_query_length and a query_timeout override with the combined limits of a
+  multi-tenant request, in Loki's order: the resolution and parse checks of
+  decoding, max_entries_limit_per_query, lookback then length, and
+  max_query_range last. query_timeout applies to the endpoints Loki wraps with
+  it (never tail) and may not exceed -backend-timeout, which bounds each
+  VictoriaLogs call. Limits the proxy cannot enforce (max_query_bytes_read,
+  max_querier_bytes_read, volume_max_series) are published at Loki's disabled
+  or default value and an override of them is rejected at startup, so nothing
+  is published that is not applied.
+
+implementation:
+  - internal/proxy/limits_enforcement.go
+  - internal/proxy/patterns.go
+  - internal/proxy/proxy.go
+  - cmd/proxy/main.go
+
+cases:
+  - limits/effective-limit-resolution
+  - limits/published-equals-enforced
+  - limits/per-tenant-override
+  - limits/multi-tenant-limit-combination
+  - limits/max-entries-limit-rejects
+  - limits/max-query-length-error
+  - limits/max-query-lookback
+  - limits/max-query-range-interval
+  - limits/query-timeout-per-tenant

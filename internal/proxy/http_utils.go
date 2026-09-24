@@ -147,8 +147,8 @@ func rewriteQuantilePhiGT1(query string) string {
 	})
 }
 
-// sanitizeLimit caps and validates the limit parameter against
-// -max-entries-limit-per-query.
+// sanitizeLimit caps and validates the limit parameter against the request
+// tenant's max_entries_limit_per_query; 0 is unlimited, as in Loki.
 func sanitizeLimit(limitStr string, maxLimit int) string {
 	if limitStr == "" {
 		return "1000"
@@ -157,7 +157,7 @@ func sanitizeLimit(limitStr string, maxLimit int) string {
 	if err != nil || n <= 0 {
 		return "1000"
 	}
-	if n > maxLimit {
+	if maxLimit > 0 && n > maxLimit {
 		return strconv.Itoa(maxLimit)
 	}
 	return limitStr

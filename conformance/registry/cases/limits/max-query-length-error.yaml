@@ -1,0 +1,25 @@
+id: limits/max-query-length-error
+title: A range longer than max_query_length fails with Loki's message
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  The proxy enforced max_query_length with its own message ("query length X
+  exceeds limit Y") and only on query_range; Loki's limits middleware covers
+  query_range, series, labels, label values, detected labels and index stats
+  with validation.ErrQueryTooLong.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    400 "the query time range exceeds the limit (query length: 3h0m0s, limit:
+    1h)" - the length as a Go duration, the limit as a Prometheus
+    model.Duration - on every endpoint Loki's limits middleware covers.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

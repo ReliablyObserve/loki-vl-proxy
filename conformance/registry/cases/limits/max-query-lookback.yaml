@@ -1,0 +1,24 @@
+id: limits/max-query-lookback
+title: max_query_lookback moves an earlier start and empties a request before it
+proves:
+  - tenant-query-limits
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki does not fail a query that reaches past max_query_lookback: it moves
+  the start to now - lookback, and answers a request that ends before it with
+  an empty result, without running it.
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "tenant-a"
+compare:
+  mode: exact
+  expect: |
+    A start before now - lookback is moved to it; a request ending before it is
+    an empty result of the request's shape (streams, matrix, vector, labels,
+    series, index stats) with no VictoriaLogs call.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"
