@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.93.0] - 2026-09-23
+
 ### Added
 
 - **Saved A/B performance and parity reports.** `bench/ab` runs a named set of
