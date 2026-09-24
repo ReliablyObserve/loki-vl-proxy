@@ -78,17 +78,24 @@ services:
       - "-retentionPeriod=7d"
       - "-httpListenAddr=:9428"
       # Concurrency is what bounds VictoriaLogs' peak memory here: every
-      # in-flight scan holds its own working set on top of the caches. 100 was
-      # set for benchmark comparisons (the default 16 returned errors at
-      # c>=50), but on this 5 g container it let the kernel OOM-kill the
-      # process (docker "oom" event, exit 137) every few minutes -- 24 restarts
-      # in one session -- while ten proxy variants refreshed their label caches
-      # with full-scan stream_field_names queries at the same time. Capping it
-      # (32, then 16) did not stop the kills on the old 5 g limit -- a single
-      # 7d "| json" group-by holds several gigabytes on its own -- so the cap
-      # below was raised instead; 64 keeps headroom for the c=50 benchmark
-      # while halving the worst-case number of concurrent working sets.
-      - "-search.maxConcurrentRequests=64"
+      # in-flight scan holds its own working set on top of the caches, and
+      # v1.52.0 has no per-query memory bound (-memory.allowedBytes covers the
+      # caches only). Measured on this stack with a 7-day retention: one 7d
+      # stream_field_names scan holds 0.8 GiB for 8.8 s, three at once hold
+      # 2 GiB more and take 16 s each, and seven at once -- what the ten proxy
+      # variants sent when their label keep-warm ticks coincided -- took the
+      # container from 1.7 to 6.4 GiB in 18 s and OOM-killed it (docker "oom",
+      # exit 137) three times in seven minutes on 2026-09-23. 64 admitted all
+      # of them. The proxies now bound long-range metadata scans
+      # (-backend-max-concurrent-metadata-scans, 2 per replica) and heavy
+      # queries (-backend-max-concurrent-heavy-queries, 2 per replica), so the
+      # ten variants can put at most 40 expensive scans in flight; 16 admits
+      # the cheap short-range traffic (label pickers, sub-6h charts) freely
+      # and queues the rest for up to -search.maxQueueDuration instead of
+      # running it all at once: at 0.8 GiB per 7d scan that caps the worst
+      # case near the 8 g limit instead of six times over it. The benchmark
+      # stack overrides this in docker-compose.bench.yml (100).
+      - "-search.maxConcurrentRequests=16"
       # Increase queue wait time: at c=100 some requests will queue behind the
       # concurrency limit; give them up to 60s before returning 503.
       - "-search.maxQueueDuration=60s"
@@ -300,7 +307,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
@@ -369,7 +380,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=bench-pprof-token"
@@ -434,7 +449,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=bench-pprof-token"
@@ -492,7 +511,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -530,7 +553,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -584,7 +611,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -627,7 +658,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -670,7 +705,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -713,7 +752,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -756,7 +799,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
@@ -798,7 +845,11 @@ services:
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
-      - "-metadata-default-lookback=0"
+      # Loki's own default window for /labels, /label/{name}/values and
+      # /series without start/end is the last hour (pkg/loghttp/params.go
+      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
+      - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"

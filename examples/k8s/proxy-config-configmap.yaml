@@ -148,6 +148,7 @@ spec:
             # - -backend-max-concurrent-heavy-queries=2
             # - -backend-heavy-query-queue-wait=20s
             # - -backend-heavy-query-min-range=6h
+            # - -backend-max-concurrent-metadata-scans=2
 
             # Name | json / | logfmt metric series with the labels those
             # parsers extracted, as Loki does. Opt-in: such queries are then

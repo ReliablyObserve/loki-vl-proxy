@@ -153,6 +153,14 @@ extraArgs:
   # (with VictoriaLogs memory) for large fleets; the total across replicas is
   # replicas x this value. 0 disables the limiter.
   backend-max-concurrent-heavy-queries: "2"
+  # Long-range metadata listings (stream_field_names, stream_field_values,
+  # field_names, field_values, streams at or above backend-heavy-query-min-range:
+  # the /labels, /label/{name}/values and /series scans and the inventory
+  # warm-up) have their own limiter, so a 7-day label browser never waits behind
+  # 7-day charts. One 7-day stream_field_names scan holds about 0.8 GiB of
+  # VictoriaLogs memory for 9 s; seven replicas scanning at once OOM-killed an
+  # 8 GiB VictoriaLogs. The fleet total is replicas x this value. 0 disables it.
+  backend-max-concurrent-metadata-scans: "2"
   backend-heavy-query-queue-wait: "20s"
   # backend-heavy-query-min-range: "6h"     # time range from which stats, hits and unbounded raw calls count as heavy (> 0)
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window

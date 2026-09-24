@@ -33,6 +33,22 @@ const (
 	DefaultBackendHeavyQueryQueueWait = 20 * time.Second
 	// DefaultBackendHeavyQueryMinRange marks stats over a quarter day as heavy.
 	DefaultBackendHeavyQueryMinRange = 6 * time.Hour
+	// DefaultBackendMaxConcurrentMetadataScans bounds long-range metadata
+	// listings (stream field names and values, field names and values, stream
+	// listings) per replica. Measured on VictoriaLogs v1.52.0 over a 7-day
+	// retention: one stream_field_names scan holds about 0.8 GiB and takes
+	// 8.8 s; three at once hold 2 GiB more and each takes 16 s, so concurrency
+	// beyond two mostly buys memory, not throughput.
+	DefaultBackendMaxConcurrentMetadataScans = 2
+)
+
+// Flag names and the work each admission limiter bounds, as they appear in
+// the 429 message so an operator knows which flag to raise.
+const (
+	heavyQueryLimitFlag   = "-backend-max-concurrent-heavy-queries"
+	heavyQueryLimitWork   = "heavy VictoriaLogs queries"
+	metadataScanLimitFlag = "-backend-max-concurrent-metadata-scans"
+	metadataScanLimitWork = "long-range VictoriaLogs metadata scans"
 )
 
 const (
@@ -53,13 +69,19 @@ const lokiTooManyOutstandingRequests = "too many outstanding requests"
 // heavyQueryQueueFullError reports that a heavy backend call waited in the
 // admission queue for the full configured time.
 type heavyQueryQueueFullError struct {
+	limitFlag     string // the flag that bounds this kind of work
+	work          string // what the flag bounds, for the message
 	maxConcurrent int
 	queueWait     time.Duration
 }
 
 func (e *heavyQueryQueueFullError) Error() string {
-	return fmt.Sprintf("%s: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=%d per replica and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
-		lokiTooManyOutstandingRequests, e.maxConcurrent, e.queueWait)
+	flag, work := e.limitFlag, e.work
+	if flag == "" {
+		flag, work = heavyQueryLimitFlag, heavyQueryLimitWork
+	}
+	return fmt.Sprintf("%s: %s are limited to %s=%d per replica and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
+		lokiTooManyOutstandingRequests, work, flag, e.maxConcurrent, e.queueWait)
 }
 
 func isHeavyQueryQueueFull(err error) bool {
@@ -71,6 +93,8 @@ func isHeavyQueryQueueFull(err error) bool {
 // fairness: a released slot goes to the queued waiter whose tenant currently
 // holds the fewest slots, first-come first-served among equals.
 type heavyQueryLimiter struct {
+	limitFlag string // named in the 429 message
+	work      string
 	capacity  int
 	queueWait time.Duration
 
@@ -93,7 +117,17 @@ func newHeavyQueryLimiter(capacity int, queueWait time.Duration) *heavyQueryLimi
 	if queueWait < 0 {
 		queueWait = 0
 	}
-	return &heavyQueryLimiter{capacity: capacity, queueWait: queueWait, byTenant: make(map[string]int)}
+	return &heavyQueryLimiter{limitFlag: heavyQueryLimitFlag, work: heavyQueryLimitWork, capacity: capacity, queueWait: queueWait, byTenant: make(map[string]int)}
+}
+
+// newMetadataScanLimiter is the admission limiter for long-range metadata
+// listings; it shares the heavy queue wait and the range threshold.
+func newMetadataScanLimiter(capacity int, queueWait time.Duration) *heavyQueryLimiter {
+	l := newHeavyQueryLimiter(capacity, queueWait)
+	if l != nil {
+		l.limitFlag, l.work = metadataScanLimitFlag, metadataScanLimitWork
+	}
+	return l
 }
 
 // acquire blocks until a slot is granted, the queue wait elapses or ctx ends.
@@ -146,7 +180,7 @@ func (l *heavyQueryLimiter) acquireUntil(ctx context.Context, tenant string, dea
 		if l.abandon(w) {
 			return l.releaseFunc(tenant), nil
 		}
-		return nil, &heavyQueryQueueFullError{maxConcurrent: l.capacity, queueWait: l.queueWait}
+		return nil, &heavyQueryQueueFullError{limitFlag: l.limitFlag, work: l.work, maxConcurrent: l.capacity, queueWait: l.queueWait}
 	}
 }
 
@@ -218,9 +252,9 @@ var trailingLimitPipeRE = regexp.MustCompile(`\|\s*(?:limit|head)\s+(\d+)\s*$`)
 // isHeavyBackendRequest classifies a VictoriaLogs select call by the work it
 // can make VictoriaLogs do. Raw-row fetches above log-query sizes, and stats or
 // hits calls over long ranges or finer-than-Loki bucket grids, are heavy.
-// Metadata lookups (field names/values, streams) are bounded by their own
-// limits and stay outside the limiter so label browsing keeps working while
-// heavy queries queue.
+// Metadata listings (field names/values, streams) stay outside this limiter
+// so label browsing keeps working while heavy queries queue; long-range ones
+// have their own (isMetadataScanRequest).
 func isHeavyBackendRequest(path string, params url.Values, minRange time.Duration) bool {
 	switch path {
 	case "/select/logsql/query":
@@ -250,6 +284,39 @@ func isHeavyBackendRequest(path string, params url.Values, minRange time.Duratio
 	default:
 		return false
 	}
+}
+
+// isMetadataScanRequest classifies a VictoriaLogs metadata listing by its
+// time range. Stream field names and values, field names and values and
+// stream listings scan every partition in the range: on a 7-day retention one
+// stream_field_names call holds about 0.8 GiB of VictoriaLogs memory for 9 s,
+// and VictoriaLogs admits any number of them without accounting for the sum.
+// Listings at or above minRange, or without a time range, are bounded by
+// -backend-max-concurrent-metadata-scans; shorter ones stay unqueued so label
+// pickers keep answering while heavy work waits (limits/metadata-not-queued).
+func isMetadataScanRequest(path string, params url.Values, minRange time.Duration) bool {
+	switch path {
+	case "/select/logsql/stream_field_names", "/select/logsql/stream_field_values",
+		"/select/logsql/field_names", "/select/logsql/field_values", "/select/logsql/streams":
+		rng, ok := backendParamsRange(params)
+		return !ok || rng >= minRange
+	default:
+		return false
+	}
+}
+
+// backgroundInventoryKey marks a context as a background inventory refresh
+// (startup warm, keep-warm, stale-entry refresh). Such a call never queues for
+// an admission slot: when every slot is busy it is skipped and retried on the
+// next schedule, so background work cannot pile up behind user requests.
+type backgroundInventoryKey struct{}
+
+func withBackgroundInventory(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundInventoryKey{}, true)
+}
+
+func isBackgroundInventory(ctx context.Context) bool {
+	return ctx.Value(backgroundInventoryKey{}) != nil
 }
 
 // rawFetchRowBound returns the row bound of a /select/logsql/query call: the
@@ -314,12 +381,16 @@ func parseBackendStep(raw string) (time.Duration, bool) {
 // whose earlier heavy call was rejected fails fast, so fallbacks after a
 // rejected fast path do not queue a second time.
 func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url.Values) (func(), error) {
-	if p.heavyQueryLimiter == nil || !isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange) {
+	limiter, operation := p.backendAdmissionLimiter(path, params)
+	if limiter == nil {
 		return func() {}, nil
 	}
 	rt := getRequestTelemetry(ctx)
 	waitStart := time.Now()
-	deadline := waitStart.Add(p.heavyQueryLimiter.queueWait)
+	deadline := waitStart.Add(limiter.queueWait)
+	if isBackgroundInventory(ctx) {
+		deadline = waitStart
+	}
 	if rt != nil {
 		rt.mu.Lock()
 		rejected := rt.heavyAdmissionRejected
@@ -333,16 +404,20 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 			return nil, rejected
 		}
 	}
-	release, err := p.heavyQueryLimiter.acquireUntil(ctx, getOrgID(ctx), deadline)
+	release, err := limiter.acquireUntil(ctx, getOrgID(ctx), deadline)
 	outcome := "admitted"
 	switch {
 	case err == nil:
+	case isHeavyQueryQueueFull(err) && isBackgroundInventory(ctx):
+		// No client was refused: the background refresh is retried on its
+		// next schedule.
+		outcome = "skipped"
 	case isHeavyQueryQueueFull(err):
 		outcome = "rejected"
 	default:
 		outcome = "canceled"
 	}
-	p.observeInternalOperation(ctx, "backend_heavy_query_admission", outcome, time.Since(waitStart))
+	p.observeInternalOperation(ctx, operation, outcome, time.Since(waitStart))
 	if err != nil {
 		if isHeavyQueryQueueFull(err) {
 			if rt != nil {
@@ -354,6 +429,20 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 		return nil, err
 	}
 	return release, nil
+}
+
+// backendAdmissionLimiter picks the limiter a backend call must pass, if any:
+// heavy stats and raw-row work goes through the heavy-query limiter, long-range
+// metadata listings through the metadata-scan limiter. The two are separate so
+// a 7-day label browser never waits behind 7-day charts and vice versa.
+func (p *Proxy) backendAdmissionLimiter(path string, params url.Values) (*heavyQueryLimiter, string) {
+	if p.heavyQueryLimiter != nil && isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange) {
+		return p.heavyQueryLimiter, "backend_heavy_query_admission"
+	}
+	if p.metadataScanLimiter != nil && isMetadataScanRequest(path, params, p.backendHeavyQueryMinRange) {
+		return p.metadataScanLimiter, "backend_metadata_scan_admission"
+	}
+	return nil, ""
 }
 
 // attachRelease keeps a slot until the response body is consumed or closed.

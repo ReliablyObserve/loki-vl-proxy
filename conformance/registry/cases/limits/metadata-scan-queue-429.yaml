@@ -1,0 +1,46 @@
+id: limits/metadata-scan-queue-429
+title: A saturated metadata-scan limiter answers with Loki's 429, naming its flag
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  A 7-day /labels or /label/<name>/values is a full-partition scan in
+  VictoriaLogs (about 0.8 GiB and 9 s per call on the e2e stack), while Loki
+  answers it from its index in milliseconds. The proxy bounds such scans per
+  replica with -backend-max-concurrent-metadata-scans, a limiter separate from
+  the heavy-query one so a 7-day label browser never waits behind 7-day charts
+  and short-range label pickers are never queued (limits/metadata-not-queued).
+  When every slot stays busy for the whole -backend-heavy-query-queue-wait the
+  request must fail the way Loki's scheduler fails a full queue: HTTP 429,
+  "too many outstanding requests", naming the flag an operator would raise.
+  Background inventory work (startup warm-up, keep-warm, stale refreshes) is
+  never queued: it skips when the slots are busy and its preset window backs
+  off, so it can neither pile up behind users nor storm the backend on every
+  tick.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: '{env="production"}'
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    -backend-max-concurrent-metadata-scans slots are already held by other
+    long-range metadata listings for longer than -backend-heavy-query-queue-wait.
+compare:
+  mode: exact
+  fields: [status]
+  expect:
+    status: 429
+    body_contains:
+      - too many outstanding requests
+      - -backend-max-concurrent-metadata-scans
+      - -backend-heavy-query-queue-wait
+loki_parity: |
+  pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
+  Loki never needs this limiter for /labels because its index answers the
+  range without a scan; the message and status are its own.

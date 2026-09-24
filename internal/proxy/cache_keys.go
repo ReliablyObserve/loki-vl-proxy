@@ -393,6 +393,9 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			// Bypass inner detected-fields cache so this goroutine fetches fresh data
 			// from VL rather than re-using the stale result from the original request.
 			ctx = context.WithValue(ctx, detectedFieldsRefreshKey{}, true)
+			// Its field_names call over the requested range is background
+			// inventory work: skipped, not queued, when the scan slots are busy.
+			ctx = withBackgroundInventory(ctx)
 			fields, _, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
 			if detectErr != nil {
 				return nil, detectErr

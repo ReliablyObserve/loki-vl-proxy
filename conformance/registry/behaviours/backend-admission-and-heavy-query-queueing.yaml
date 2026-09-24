@@ -23,19 +23,29 @@ proxy: |
   VictoriaLogs calls per replica, queues the rest for at most
   -backend-heavy-query-queue-wait shared across all heavy calls of one request,
   and then answers with Loki's 429 and message, naming both flags. A released
-  slot goes to the waiting tenant holding the fewest slots. Metadata lookups
-  (labels, label values, series, detected fields) are never queued, so a chart
-  under backpressure does not take the label pickers with it. A rejection is
+  slot goes to the waiting tenant holding the fewest slots. Short-range
+  metadata lookups (labels, label values, series, detected fields) are never
+  queued, so a chart under backpressure does not take the label pickers with
+  it. A rejection is
   proxy backpressure, not evidence about the backend: it must not open the
   circuit breaker, must not be recorded as a VictoriaLogs response, and must
   keep its 429 even for Grafana-sourced stats queries that otherwise carry the
   Drilldown partial-result carve-out.
 
-  Known gap (limits/concurrent-full-retention-scans-exhaust-backend): the
-  stream-field inventory refresh scans the whole retention when
-  -metadata-default-lookback is 0 and, being a metadata lookup, is never
-  queued, so many replicas refreshing at once beside long-range raw-row
-  fetches have OOM-killed an 8 GiB VictoriaLogs three times in seven minutes.
+  Long-range metadata listings (stream_field_names, stream_field_values,
+  field_names, field_values and streams spanning at least
+  -backend-heavy-query-min-range, or without a time range) have a limiter of
+  their own, -backend-max-concurrent-metadata-scans: a 7-day
+  stream_field_names scan holds about 0.8 GiB of VictoriaLogs memory and
+  seven at once from seven replicas OOM-killed an 8 GiB VictoriaLogs
+  (limits/concurrent-full-retention-scans-exhaust-backend). The limiter is
+  separate from the heavy one so a 7-day label browser never waits behind
+  7-day charts, and short-range listings stay unqueued. A synchronous
+  request waits the shared queue wait and then gets the same 429, naming
+  -backend-max-concurrent-metadata-scans; background inventory work (startup
+  warm-up, keep-warm, stale refreshes) skips instead of waiting, a failed
+  preset warm-up backs off, and the keep-warm interval is jittered so
+  replicas started together drift apart.
 
 implementation:
   - internal/proxy/backend_heavy.go
@@ -51,3 +61,4 @@ cases:
   - limits/queue-rejection-not-a-backend-failure
   - limits/drilldown-stats-rejection-keeps-429
   - limits/concurrent-full-retention-scans-exhaust-backend
+  - limits/metadata-scan-queue-429

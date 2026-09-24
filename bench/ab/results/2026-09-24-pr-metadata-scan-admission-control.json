@@ -1,0 +1,1314 @@
+{
+ "label": "pr-metadata-scan-admission-control",
+ "date": "2026-09-24",
+ "set": "control",
+ "description": "Shapes a change must not slow down or alter. Run on every performance-relevant PR.",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "4",
+ "restart_after": "4",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 34,
+  "faster": 3
+ },
+ "result_differs_from_reference": 10,
+ "result_differs_preexisting": 10,
+ "stale_answers": {
+  "main": 5,
+  "branch": 7,
+  "loki": 2
+ },
+ "rows": [
+  {
+   "shape": "logs plain",
+   "range": "1h",
+   "p50": {
+    "main": 0.096,
+    "branch": 0.095,
+    "loki": 0.171
+   },
+   "p95": {
+    "main": 0.1,
+    "branch": 0.106,
+    "loki": 0.183
+   },
+   "cold": {
+    "main": 0.107,
+    "branch": 0.111,
+    "loki": 0.185
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 66.49,
+    "branch": 66.49,
+    "loki": 66.49
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.01
+  },
+  {
+   "shape": "logs plain",
+   "range": "24h",
+   "p50": {
+    "main": 0.194,
+    "branch": 0.064,
+    "loki": 0.151
+   },
+   "p95": {
+    "main": 0.194,
+    "branch": 0.106,
+    "loki": 0.163
+   },
+   "cold": {
+    "main": 0.194,
+    "branch": 0.197,
+    "loki": 0.169
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 57.03,
+    "branch": 118.79,
+    "loki": 118.79
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 3.03
+  },
+  {
+   "shape": "logs | json",
+   "range": "1h",
+   "p50": {
+    "main": 0.103,
+    "branch": 0.103,
+    "loki": 0.318
+   },
+   "p95": {
+    "main": 0.111,
+    "branch": 0.112,
+    "loki": 0.342
+   },
+   "cold": {
+    "main": 0.103,
+    "branch": 0.097,
+    "loki": 0.355
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 73.32,
+    "branch": 73.32,
+    "loki": 73.32
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "logs | json",
+   "range": "24h",
+   "p50": {
+    "main": 0.046,
+    "branch": 0.056,
+    "loki": 0.346
+   },
+   "p95": {
+    "main": 0.046,
+    "branch": 0.079,
+    "loki": 0.37
+   },
+   "cold": {
+    "main": 0.046,
+    "branch": 0.042,
+    "loki": 0.352
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 70.29,
+    "branch": 70.29,
+    "loki": 70.29
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.82
+  },
+  {
+   "shape": "logs | logfmt",
+   "range": "1h",
+   "p50": {
+    "main": 0.108,
+    "branch": 0.108,
+    "loki": 0.259
+   },
+   "p95": {
+    "main": 0.112,
+    "branch": 0.113,
+    "loki": 0.271
+   },
+   "cold": {
+    "main": 0.123,
+    "branch": 0.106,
+    "loki": 0.313
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 105.34,
+    "branch": 105.34,
+    "loki": 105.34
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "logs | logfmt",
+   "range": "24h",
+   "p50": {
+    "main": 0.071,
+    "branch": 0.061,
+    "loki": 0.256
+   },
+   "p95": {
+    "main": 0.071,
+    "branch": 0.095,
+    "loki": 0.283
+   },
+   "cold": {
+    "main": 0.071,
+    "branch": 0.051,
+    "loki": 0.29
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 91.56,
+    "branch": 91.56,
+    "loki": 28.66
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.16
+  },
+  {
+   "shape": "json volume no filters",
+   "range": "1h",
+   "p50": {
+    "main": 0.045,
+    "branch": 0.054,
+    "loki": 0.28
+   },
+   "p95": {
+    "main": 0.054,
+    "branch": 0.067,
+    "loki": 0.307
+   },
+   "cold": {
+    "main": 0.037,
+    "branch": 0.034,
+    "loki": 1.423
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 98.6,
+    "branch": 98.6,
+    "loki": 98.6
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.83
+  },
+  {
+   "shape": "json volume no filters",
+   "range": "24h",
+   "p50": {
+    "main": 0.338,
+    "branch": 0.411,
+    "loki": 0.149
+   },
+   "p95": {
+    "main": 0.338,
+    "branch": 0.592,
+    "loki": 0.169
+   },
+   "cold": {
+    "main": 0.338,
+    "branch": 0.315,
+    "loki": 19.332
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 554.18,
+    "branch": 978.42,
+    "loki": 1071.78
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.82
+  },
+  {
+   "shape": "logfmt volume",
+   "range": "1h",
+   "p50": {
+    "main": 0.064,
+    "branch": 0.061,
+    "loki": 0.175
+   },
+   "p95": {
+    "main": 0.108,
+    "branch": 0.109,
+    "loki": 0.177
+   },
+   "cold": {
+    "main": 0.06,
+    "branch": 0.064,
+    "loki": 1.647
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 523.72,
+    "branch": 523.72,
+    "loki": 260.67
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  },
+  {
+   "shape": "logfmt volume",
+   "range": "24h",
+   "p50": {
+    "main": 0.361,
+    "branch": 0.296,
+    "loki": 0.07
+   },
+   "p95": {
+    "main": 0.361,
+    "branch": 0.322,
+    "loki": 0.076
+   },
+   "cold": {
+    "main": 0.361,
+    "branch": 0.387,
+    "loki": 19.76
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 97.18,
+    "branch": 504.4,
+    "loki": 644.35
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.22
+  },
+  {
+   "shape": "plain volume",
+   "range": "1h",
+   "p50": {
+    "main": 0.019,
+    "branch": 0.018,
+    "loki": 0.176
+   },
+   "p95": {
+    "main": 0.023,
+    "branch": 0.024,
+    "loki": 0.201
+   },
+   "cold": {
+    "main": 0.021,
+    "branch": 0.017,
+    "loki": 1.371
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 24.31,
+    "branch": 24.31,
+    "loki": 28.79
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.06
+  },
+  {
+   "shape": "plain volume",
+   "range": "24h",
+   "p50": {
+    "main": 0.104,
+    "branch": 0.1,
+    "loki": 0.063
+   },
+   "p95": {
+    "main": 0.104,
+    "branch": 0.105,
+    "loki": 0.072
+   },
+   "cold": {
+    "main": 0.104,
+    "branch": 0.102,
+    "loki": 17.515
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 28.79,
+    "branch": 144.9,
+    "loki": 144.9
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.04
+  },
+  {
+   "shape": "stream-label count by app",
+   "range": "1h",
+   "p50": {
+    "main": 0.032,
+    "branch": 0.03,
+    "loki": 0.153
+   },
+   "p95": {
+    "main": 0.032,
+    "branch": 0.035,
+    "loki": 0.157
+   },
+   "cold": {
+    "main": 0.029,
+    "branch": 0.035,
+    "loki": 1.365
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 153.05,
+    "branch": 153.05,
+    "loki": 153.05
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.07
+  },
+  {
+   "shape": "stream-label count by app",
+   "range": "24h",
+   "p50": {
+    "main": 0.116,
+    "branch": 0.117,
+    "loki": 0.058
+   },
+   "p95": {
+    "main": 0.116,
+    "branch": 0.123,
+    "loki": 0.069
+   },
+   "cold": {
+    "main": 0.116,
+    "branch": 0.12,
+    "loki": 18.003
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 13.57,
+    "branch": 161.77,
+    "loki": 161.77
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.99
+  },
+  {
+   "shape": "ungrouped rate",
+   "range": "1h",
+   "p50": {
+    "main": 0.018,
+    "branch": 0.015,
+    "loki": 0.205
+   },
+   "p95": {
+    "main": 0.022,
+    "branch": 0.017,
+    "loki": 0.223
+   },
+   "cold": {
+    "main": 0.017,
+    "branch": 0.023,
+    "loki": 1.29
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 144.18,
+    "branch": 144.18,
+    "loki": 23.6
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.2
+  },
+  {
+   "shape": "ungrouped rate",
+   "range": "24h",
+   "p50": {
+    "main": 0.092,
+    "branch": 0.099,
+    "loki": 0.138
+   },
+   "p95": {
+    "main": 0.092,
+    "branch": 0.104,
+    "loki": 0.166
+   },
+   "cold": {
+    "main": 0.092,
+    "branch": 0.092,
+    "loki": 17.792
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 136.45,
+    "branch": 136.45,
+    "loki": 196.88
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.93
+  },
+  {
+   "shape": "bytes_over_time by app",
+   "range": "1h",
+   "p50": {
+    "main": 0.05,
+    "branch": 0.041,
+    "loki": 0.234
+   },
+   "p95": {
+    "main": 0.056,
+    "branch": 0.049,
+    "loki": 0.255
+   },
+   "cold": {
+    "main": 0.047,
+    "branch": 0.044,
+    "loki": 1.302
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 88.95,
+    "branch": 88.95,
+    "loki": 88.95
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.22
+  },
+  {
+   "shape": "bytes_over_time by app",
+   "range": "24h",
+   "p50": {
+    "main": 0.245,
+    "branch": 0.218,
+    "loki": 0.06
+   },
+   "p95": {
+    "main": 0.245,
+    "branch": 0.236,
+    "loki": 0.076
+   },
+   "cold": {
+    "main": 0.245,
+    "branch": 0.206,
+    "loki": 15.4
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 34.69,
+    "branch": 669.38,
+    "loki": 669.38
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.12
+  },
+  {
+   "shape": "topk rate by app",
+   "range": "1h",
+   "p50": {
+    "main": 0.057,
+    "branch": 0.061,
+    "loki": 0.215
+   },
+   "p95": {
+    "main": 0.066,
+    "branch": 0.063,
+    "loki": 0.227
+   },
+   "cold": {
+    "main": 0.049,
+    "branch": 0.048,
+    "loki": 0.765
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 496.05,
+    "branch": 47.81,
+    "loki": 47.81
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.93
+  },
+  {
+   "shape": "topk rate by app",
+   "range": "24h",
+   "p50": {
+    "main": 0.208,
+    "branch": 0.217,
+    "loki": 0.059
+   },
+   "p95": {
+    "main": 0.208,
+    "branch": 0.227,
+    "loki": 0.063
+   },
+   "cold": {
+    "main": 0.208,
+    "branch": 0.221,
+    "loki": 9.985
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 79.5,
+    "branch": 430.51,
+    "loki": 430.51
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "detected_level volume",
+   "range": "1h",
+   "p50": {
+    "main": 0.018,
+    "branch": 0.02,
+    "loki": 0.173
+   },
+   "p95": {
+    "main": 0.024,
+    "branch": 0.021,
+    "loki": 0.204
+   },
+   "cold": {
+    "main": 0.019,
+    "branch": 0.017,
+    "loki": 0.749
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 430.51,
+    "branch": 430.51,
+    "loki": 430.51
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "detected_level volume",
+   "range": "24h",
+   "p50": {
+    "main": 0.109,
+    "branch": 0.104,
+    "loki": 0.058
+   },
+   "p95": {
+    "main": 0.109,
+    "branch": 0.111,
+    "loki": 0.066
+   },
+   "cold": {
+    "main": 0.109,
+    "branch": 0.11,
+    "loki": 10.03
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 23.37,
+    "branch": 155.5,
+    "loki": 155.5
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  },
+  {
+   "shape": "by service_name",
+   "range": "1h",
+   "p50": {
+    "main": 0.028,
+    "branch": 0.028,
+    "loki": 0.161
+   },
+   "p95": {
+    "main": 0.034,
+    "branch": 0.036,
+    "loki": 0.173
+   },
+   "cold": {
+    "main": 0.029,
+    "branch": 0.029,
+    "loki": 0.702
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 139.91,
+    "branch": 139.91,
+    "loki": 27.52
+   },
+   "parity_vs_reference": "same series, sum \u00b10.11%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "by service_name",
+   "range": "24h",
+   "p50": {
+    "main": 0.153,
+    "branch": 0.144,
+    "loki": 0.064
+   },
+   "p95": {
+    "main": 0.153,
+    "branch": 1.332,
+    "loki": 0.069
+   },
+   "cold": {
+    "main": 0.153,
+    "branch": 0.133,
+    "loki": 9.548
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 27.52,
+    "branch": 1450.83,
+    "loki": 1450.83
+   },
+   "parity_vs_reference": "same series, sum \u00b10.44%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.06
+  },
+  {
+   "shape": "drilldown level volume",
+   "range": "1h",
+   "p50": {
+    "main": 0.019,
+    "branch": 0.025,
+    "loki": 0.207
+   },
+   "p95": {
+    "main": 0.024,
+    "branch": 0.029,
+    "loki": 0.277
+   },
+   "cold": {
+    "main": 1.064,
+    "branch": 1.555,
+    "loki": 1.377
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1450.83,
+    "branch": 1468.62,
+    "loki": 1434.27
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "same series, sum \u00b10.06%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.76
+  },
+  {
+   "shape": "drilldown level volume",
+   "range": "24h",
+   "p50": {
+    "main": 0.113,
+    "branch": 0.001,
+    "loki": 0.067
+   },
+   "p95": {
+    "main": 0.113,
+    "branch": 0.001,
+    "loki": 0.08
+   },
+   "cold": {
+    "main": 0.113,
+    "branch": 0.118,
+    "loki": 22.207
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 706.0,
+    "branch": 706.0,
+    "loki": 740.06
+   },
+   "stale": [
+    "branch"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 113.0
+  },
+  {
+   "shape": "drilldown service landing",
+   "range": "1h",
+   "p50": {
+    "main": 0.021,
+    "branch": 0.028,
+    "loki": 0.173
+   },
+   "p95": {
+    "main": 0.025,
+    "branch": 0.032,
+    "loki": 0.198
+   },
+   "cold": {
+    "main": 0.032,
+    "branch": 0.022,
+    "loki": 1.628
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 34.34,
+    "branch": 39.62,
+    "loki": 39.62
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "same series, sum \u00b10.06%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.75
+  },
+  {
+   "shape": "drilldown service landing",
+   "range": "24h",
+   "p50": {
+    "main": 0.118,
+    "branch": 0.001,
+    "loki": 0.07
+   },
+   "p95": {
+    "main": 0.118,
+    "branch": 0.001,
+    "loki": 0.076
+   },
+   "cold": {
+    "main": 0.118,
+    "branch": 0.103,
+    "loki": 18.779
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 18.74,
+    "branch": 18.74,
+    "loki": 158.79
+   },
+   "stale": [
+    "branch"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 118.0
+  },
+  {
+   "shape": "drilldown detected_level",
+   "range": "1h",
+   "p50": {
+    "main": 0.03,
+    "branch": 0.033,
+    "loki": 0.155
+   },
+   "p95": {
+    "main": 0.035,
+    "branch": 0.042,
+    "loki": 0.182
+   },
+   "cold": {
+    "main": 0.032,
+    "branch": 0.038,
+    "loki": 1.589
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 55.34,
+    "branch": 55.34,
+    "loki": 98.1
+   },
+   "stale": [
+    "main",
+    "branch"
+   ],
+   "parity_vs_reference": "same series, sum \u00b10.06%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.91
+  },
+  {
+   "shape": "drilldown detected_level",
+   "range": "24h",
+   "p50": {
+    "main": 0.333,
+    "branch": 0.305,
+    "loki": 0.061
+   },
+   "p95": {
+    "main": 0.333,
+    "branch": 0.327,
+    "loki": 0.074
+   },
+   "cold": {
+    "main": 0.333,
+    "branch": 0.287,
+    "loki": 18.974
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 84.92,
+    "branch": 466.33,
+    "loki": 466.33
+   },
+   "parity_vs_reference": "same series, sum \u00b10.58%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.09
+  },
+  {
+   "shape": "json rate by level (no filter, no drop)",
+   "range": "1h",
+   "p50": {
+    "main": 0.004,
+    "branch": 0.004,
+    "loki": 0.23
+   },
+   "p95": {
+    "main": 0.006,
+    "branch": 0.012,
+    "loki": 0.288
+   },
+   "cold": {
+    "main": 0.009,
+    "branch": 0.003,
+    "loki": 0.271
+   },
+   "status": {
+    "main": "400",
+    "branch": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "main": 466.33,
+    "branch": 466.33,
+    "loki": 466.33
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "json rate by level (no filter, no drop)",
+   "range": "24h",
+   "p50": {
+    "main": 0.005,
+    "branch": 0.005,
+    "loki": 0.47
+   },
+   "p95": {
+    "main": 0.005,
+    "branch": 0.005,
+    "loki": 0.513
+   },
+   "cold": {
+    "main": 0.005,
+    "branch": 0.005,
+    "loki": 0.653
+   },
+   "status": {
+    "main": "400",
+    "branch": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "main": 7.23,
+    "branch": 7.23,
+    "loki": 7.23
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "logfmt count by level, filter, drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.054,
+    "branch": 0.052,
+    "loki": 0.201
+   },
+   "p95": {
+    "main": 0.057,
+    "branch": 0.061,
+    "loki": 0.234
+   },
+   "cold": {
+    "main": 0.06,
+    "branch": 0.053,
+    "loki": 1.524
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 202.79,
+    "branch": 202.79,
+    "loki": 202.79
+   },
+   "parity_vs_reference": "same series, sum \u00b10.13%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.04
+  },
+  {
+   "shape": "logfmt count by level, filter, drop",
+   "range": "24h",
+   "p50": {
+    "main": 0.52,
+    "branch": 0.504,
+    "loki": 0.065
+   },
+   "p95": {
+    "main": 0.52,
+    "branch": 0.576,
+    "loki": 0.066
+   },
+   "cold": {
+    "main": 0.52,
+    "branch": 0.468,
+    "loki": 19.788
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 740.06,
+    "branch": 840.36,
+    "loki": 840.36
+   },
+   "parity_vs_reference": "same series, sum \u00b10.18%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.03
+  },
+  {
+   "shape": "instant ungrouped rate",
+   "range": "instant",
+   "p50": {
+    "main": 0.025,
+    "branch": 0.024,
+    "loki": 0.088
+   },
+   "p95": {
+    "main": 0.05,
+    "branch": 0.026,
+    "loki": 0.102
+   },
+   "cold": {
+    "main": 0.039,
+    "branch": 0.02,
+    "loki": 0.125
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 98.38,
+    "branch": 98.38,
+    "loki": 98.38
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.04
+  },
+  {
+   "shape": "instant json volume",
+   "range": "instant",
+   "p50": {
+    "main": 0.26,
+    "branch": 0.263,
+    "loki": 0.103
+   },
+   "p95": {
+    "main": 0.266,
+    "branch": 0.277,
+    "loki": 0.107
+   },
+   "cold": {
+    "main": 0.272,
+    "branch": 0.268,
+    "loki": 0.094
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 48.13,
+    "branch": 54.99,
+    "loki": 54.99
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.99
+  },
+  {
+   "shape": "instant json filtered",
+   "range": "instant",
+   "p50": {
+    "main": 0.234,
+    "branch": 0.229,
+    "loki": 0.076
+   },
+   "p95": {
+    "main": 0.249,
+    "branch": 0.23,
+    "loki": 0.082
+   },
+   "cold": {
+    "main": 0.226,
+    "branch": 0.227,
+    "loki": 0.114
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 143.81,
+    "branch": 143.81,
+    "loki": 143.81
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.02
+  }
+ ]
+}

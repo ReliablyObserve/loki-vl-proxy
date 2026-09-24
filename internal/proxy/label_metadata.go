@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
@@ -247,14 +248,7 @@ func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params ur
 }
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
-	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
-	// Include per-user auth fingerprint to prevent cross-user coalescing when
-	// forwarded auth headers/cookies are configured.
-	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
-			key += ":auth:" + fp
-		}
-	}
+	key := p.vlMetadataCoalesceKey(ctx, path, params)
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlGetInner(ctx, path, params)
 	})
@@ -265,6 +259,24 @@ func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params 
 		return 0, nil, err
 	}
 	return status, body, nil
+}
+
+// vlMetadataCoalesceKey identifies one metadata call for single-flighting.
+// It carries the tenant and the per-user auth fingerprint so users never share
+// a backend response, and a background marker so a background refresh that is
+// skipped by the metadata-scan limiter never becomes the leader a synchronous
+// request waits on: the user's own call must queue for its slot.
+func (p *Proxy) vlMetadataCoalesceKey(ctx context.Context, path string, params url.Values) string {
+	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
+	if isBackgroundInventory(ctx) {
+		key += ":bg"
+	}
+	return key
 }
 
 func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.Values) ([]string, error) {
@@ -661,6 +673,9 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			}
 			// Bypass the in-process field-names cache so VL is actually re-queried.
 			ctx = context.WithValue(ctx, labelCacheBypassKey{}, true)
+			// A refresh never queues for a metadata-scan slot: the stale entry
+			// keeps serving and the next hit schedules another refresh.
+			ctx = withBackgroundInventory(ctx)
 
 			labels, fetchErr := p.fetchScopedLabelNames(ctx, rawQuery, start, end, search, false)
 			if fetchErr != nil {
@@ -700,6 +715,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
+			ctx = withBackgroundInventory(ctx)
 
 			var (
 				values   []string
@@ -948,9 +964,13 @@ type labelWarmupWindow struct {
 func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Duration, scaleTTLByWindow bool) {
 	nowNs := time.Now().UnixNano()
 
-	// Build metadata for all windows and filter out locally-fresh entries.
+	// Build metadata for all windows and filter out locally-fresh entries and
+	// windows whose last warm failed and are still backing off.
 	stale := make([]labelWarmupWindow, 0, len(labelWarmupWindows))
 	for _, window := range labelWarmupWindows {
+		if !p.labelWarmBackoff.ready(window, time.Now()) {
+			continue
+		}
 		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
 		startStr := strconv.FormatInt(bs, 10)
 		endStr := strconv.FormatInt(be, 10)
@@ -986,14 +1006,28 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 
 		// Same budget as refreshLabelsCacheAsync: a full-range 7d scan may need more
-		// than a few seconds; ctx still bounds the whole warm pass.
-		fetchCtx, fetchCancel := context.WithTimeout(ctx, 60*time.Second)
+		// than a few seconds; ctx still bounds the whole warm pass. The scan is
+		// background inventory work: it is skipped, not queued, when every
+		// metadata-scan slot is busy.
+		fetchCtx, fetchCancel := context.WithTimeout(withBackgroundInventory(ctx), 60*time.Second)
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
-			p.log.Debug("label cache warmup failed", "window", w.window, "err", fetchErr)
+			if ctx.Err() != nil {
+				// The pass ran out of budget, which says nothing about this
+				// window; leave its schedule alone.
+				p.log.Debug("label cache warmup pass ended", "window", w.window, "err", fetchErr)
+				return
+			}
+			// A window that fails (timeout under contention, a busy slot) is
+			// not retried on every tick: with many replicas ticking in step,
+			// that was a synchronized storm of full-retention scans.
+			_, interval, _ := p.labelKeepWarmSchedule()
+			delay := p.labelWarmBackoff.failed(w.window, time.Now(), interval)
+			p.log.Debug("label cache warmup failed", "window", w.window, "retry_in", delay, "err", fetchErr)
 			continue
 		}
+		p.labelWarmBackoff.succeeded(w.window)
 		filtered := make([]string, 0, len(labels))
 		for _, v := range labels {
 			if isVLInternalField(v) {
@@ -1031,19 +1065,95 @@ func (p *Proxy) labelKeepWarmSchedule() (ttl, interval, skipIfRemaining time.Dur
 func (p *Proxy) startLabelCacheKeepWarmLoop() {
 	ttl, interval, skipIfRemaining := p.labelKeepWarmSchedule()
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		timer := time.NewTimer(labelKeepWarmDelay(interval))
+		defer timer.Stop()
 		for {
 			select {
 			case <-p.keepWarmStop:
 				return
-			case <-ticker.C:
+			case <-timer.C:
 				ctx, cancel := context.WithTimeout(context.Background(), interval)
 				p.warmLabelWindows(ctx, skipIfRemaining, ttl, true)
 				cancel()
+				timer.Reset(labelKeepWarmDelay(interval))
 			}
 		}
 	}()
+}
+
+// labelKeepWarmDelay jitters the keep-warm interval by up to a quarter either
+// way. Replicas started together would otherwise tick in step forever and send
+// their full-retention inventory scans to VictoriaLogs at the same moment.
+func labelKeepWarmDelay(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return interval
+	}
+	spread := interval / 2
+	if spread <= 0 {
+		return interval
+	}
+	return interval - interval/4 + time.Duration(rand.Int64N(int64(spread)))
+}
+
+// labelWarmBackoffMax caps how long a failing preset window waits between warm
+// attempts.
+const labelWarmBackoffMax = time.Hour
+
+// labelWarmBackoff delays the next warm attempt of a preset window after a
+// failure: the first retry waits one keep-warm interval, then twice that,
+// doubling up to labelWarmBackoffMax; a success resets the window.
+type labelWarmBackoff struct {
+	mu       sync.Mutex
+	failures map[time.Duration]int
+	nextTry  map[time.Duration]time.Time
+}
+
+func newLabelWarmBackoff() *labelWarmBackoff {
+	return &labelWarmBackoff{failures: map[time.Duration]int{}, nextTry: map[time.Duration]time.Time{}}
+}
+
+// ready reports whether window may be warmed at now.
+func (b *labelWarmBackoff) ready(window time.Duration, now time.Time) bool {
+	if b == nil {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return !now.Before(b.nextTry[window])
+}
+
+// failed records a failed warm of window and returns the delay before the
+// next attempt.
+func (b *labelWarmBackoff) failed(window time.Duration, now time.Time, base time.Duration) time.Duration {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.failures[window]++
+	delay := base
+	if delay <= 0 {
+		delay = time.Minute
+	}
+	for i := 1; i < b.failures[window] && delay < labelWarmBackoffMax; i++ {
+		delay *= 2
+	}
+	if delay > labelWarmBackoffMax {
+		delay = labelWarmBackoffMax
+	}
+	b.nextTry[window] = now.Add(delay)
+	return delay
+}
+
+// succeeded clears the backoff of window.
+func (b *labelWarmBackoff) succeeded(window time.Duration) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.failures, window)
+	delete(b.nextTry, window)
 }
 
 // mergeLabelsIntoCache unions newLabels with the current cached label set for

@@ -516,12 +516,20 @@ func (p *Proxy) probeBackendCapabilitiesFromEndpoints(ctx context.Context) {
 	if p == nil {
 		return
 	}
+	// The probes ask whether an endpoint exists (status below 400), not for
+	// data: a one-minute window keeps them from being full-retention scans on
+	// every replica start.
+	now := time.Now()
 	q := url.Values{}
 	q.Set("query", "*")
+	q.Set("start", strconv.FormatInt(now.Add(-time.Minute).UnixNano(), 10))
+	q.Set("end", strconv.FormatInt(now.UnixNano(), 10))
 	supportsStreamMetadata := p.probeBackendEndpointSupport(ctx, "/select/logsql/stream_field_names", q)
 
 	sub := url.Values{}
 	sub.Set("query", "*")
+	sub.Set("start", q.Get("start"))
+	sub.Set("end", q.Get("end"))
 	sub.Set("q", "a")
 	sub.Set("filter", "substring")
 	supportsMetadataSubstring := p.probeBackendEndpointSupport(ctx, "/select/logsql/field_names", sub)
