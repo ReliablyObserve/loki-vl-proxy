@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -47,7 +48,12 @@ type vlResponseAbortedError struct {
 	elapsed  time.Duration
 	budget   time.Duration // timeout argument sent to VictoriaLogs; 0 = none
 	timedOut bool
+	cause    error // the transport error the body read failed with
 }
+
+// Unwrap keeps the transport error visible to errors.Is, so callers that
+// retry or degrade on context.DeadlineExceeded still see it.
+func (e *vlResponseAbortedError) Unwrap() error { return e.cause }
 
 func (e *vlResponseAbortedError) Error() string {
 	if e.timedOut {
@@ -70,6 +76,16 @@ func withLabelValuesResponseCap(ctx context.Context, limit int) context.Context 
 		return ctx
 	}
 	return context.WithValue(ctx, metadataResponseCapKey{}, int64(limit))
+}
+
+// responseCapKeySuffix separates coalesced VictoriaLogs reads by their
+// response cap, so a capped request never shares an uncapped read (or the
+// reverse) and each sees the answer its own cap gives.
+func responseCapKeySuffix(ctx context.Context) string {
+	if limit, ok := ctx.Value(metadataResponseCapKey{}).(int64); ok {
+		return ":cap:" + strconv.FormatInt(limit, 10)
+	}
+	return ""
 }
 
 // guardBackendBody wraps a VictoriaLogs response body: a body that fails
@@ -138,7 +154,7 @@ func (g *backendBodyGuard) Read(b []byte) (int, error) {
 		return n, err
 	}
 	elapsed := time.Since(g.start)
-	aborted := &vlResponseAbortedError{elapsed: elapsed, budget: g.budget}
+	aborted := &vlResponseAbortedError{elapsed: elapsed, budget: g.budget, cause: err}
 	aborted.timedOut = g.ctx.Err() == context.DeadlineExceeded ||
 		(g.budget > 0 && elapsed >= g.budget-g.budget/20) ||
 		bytes.Contains(g.tail[:g.tailN], vlDeadlineMarker)

@@ -1016,8 +1016,9 @@ func TestDetectedFields_UnderscoreProxy(t *testing.T) {
 		// OTel resource attributes stored as VictoriaLogs stream or metadata
 		// fields appear under Loki's sanitized names only. Dotted keys of a
 		// JSON line body (otel-api-service logs {"k8s.pod.name": ...}) keep
-		// VictoriaLogs' dotted name in detected_fields: an owner-accepted
-		// deviation (2026-04-25), not asserted either way here.
+		// VictoriaLogs' dotted name in detected_fields (owner decision of
+		// 2026-04-25); that the profile's LogQL then rejects those names is
+		// the open case profiles/detected-fields-dotted-json-keys.
 		for _, forbidden := range []string{"deployment.environment", "service.namespace", "k8s.container.name", "telemetry.sdk.language"} {
 			if fieldSet[forbidden] {
 				t.Errorf("Loki-compatible profile exposed dotted metadata field %q (Loki shows only sanitized names)", forbidden)

@@ -238,6 +238,17 @@ func TestDottedNameError_AcceptsDotsLokiAccepts(t *testing.T) {
 		`sum by (k8s_namespace_name) (count_over_time({env="production"} | json [5m]))`,
 		`quantile_over_time(0.99, {app="x"} | unwrap latency [5m])`,
 		`vector(0.5)`,
+		// A keyword token right before ".5": Loki reads a NUMBER there.
+		`sum(rate({app="a"}[5m] offset.5h))`,
+		`count_over_time({app="a"}[5m]offset.5h)`,
+		`sum(rate({app="a"}[5m])) > bool.5`,
+		`sum(rate({app="a"}[5m])) >bool.5`,
+		`sum(rate({app="a"}[5m])) > BOOL.5`,
+		`sum(rate({app="a"}[5m])) == bool.25`,
+		`{app="a"} |= "x" # a.b
+| json`,
+		`{app="a"} | json a="b\".c"`,
+		`{app="a"} | x > 1e3 | y < 1.5e-3`,
 		`{env="production"}`,
 	} {
 		if got := DottedNameError(q); got != "" {
