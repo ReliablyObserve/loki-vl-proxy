@@ -103,6 +103,8 @@
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "loki-compatible-profile": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/stack_profiles_test.go"
     ],
     "loki_api_v1_drilldown_limits": [
@@ -157,14 +159,20 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
+    "profiles/detected-fields-dotted-json-keys": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go"
+    ],
     "profiles/dotted-name-parse-error": [
       "internal/logql/dotted_names_test.go",
       "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/loki_profile_parity_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
     ],
     "profiles/dotted-names-accepted-outside-loki-profile": [
       "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/loki_profile_parity_test.go"
     ],
     "profiles/grafana-shows-loki-error-text": [
@@ -173,9 +181,12 @@
     ],
     "profiles/label-browse-params-ignored": [
       "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/loki_profile_parity_test.go"
     ],
     "profiles/structured-metadata-keys-per-profile": [
+      "internal/proxy/loki_profile_test.go",
+      "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
     ],
     "quality/label-cache-warm": [
@@ -334,10 +345,13 @@
       "quality/label-cache-warm"
     ],
     "internal/proxy/loki_profile_test.go": [
+      "loki-compatible-profile",
+      "profiles/detected-fields-dotted-json-keys",
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
       "profiles/grafana-shows-loki-error-text",
-      "profiles/label-browse-params-ignored"
+      "profiles/label-browse-params-ignored",
+      "profiles/structured-metadata-keys-per-profile"
     ],
     "internal/proxy/metadata_query_validation_test.go": [
       "limits/query-length-limit-is-configurable",
@@ -422,6 +436,14 @@
     "internal/translator/series_aggregation_test.go": [
       "metric-series-identity"
     ],
+    "test/e2e-compat/compat_option_matrix_test.go": [
+      "loki-compatible-profile",
+      "profiles/detected-fields-dotted-json-keys",
+      "profiles/dotted-name-parse-error",
+      "profiles/dotted-names-accepted-outside-loki-profile",
+      "profiles/label-browse-params-ignored",
+      "profiles/structured-metadata-keys-per-profile"
+    ],
     "test/e2e-compat/detected_level_corpus_test.go": [
       "severity-detected-level-derivation",
       "severity/normalisation-table"
@@ -490,7 +512,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 38,
+  "tests_with_markers": 39,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -526,7 +548,6 @@
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
     "parsed-identity/regexp-partial-match-series-count",
-    "profiles/detected-fields-dotted-json-keys",
     "profiles/label-endpoints-window-and-data",
     "profiles/parsed-fields-without-parser",
     "profiles/structured-metadata-label-collision",
@@ -535,5 +556,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 66
+  "wired_items": 67
 }

@@ -32,20 +32,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already invalid before its dotted name still gets a 400 parse error, naming
   the dot where Loki names the earlier token. Dots inside
   strings, templates, numbers, durations, byte sizes, ranges and comments are
-  unaffected. The hybrid and native metadata modes and `-label-style=passthrough`
-  expose dotted names, so they keep accepting them (a documented extension of
-  those modes). Clients of the default profile that sent dotted names must
-  use the underscore spelling, which is also the one the log volume pushes
-  down to VictoriaLogs stats (1h 0.03 s, 24h 0.8 s warm on the e2e stack).
+  unaffected. The new `-logql-dotted-names` flag (`auto`, `reject`,
+  `accept`; Helm `logql-dotted-names`) makes this its own setting: `auto`
+  rejects in the Loki-compatible profile and keeps accepting dotted names in
+  the hybrid and native metadata modes and with `-label-style=passthrough`,
+  which expose them; `accept` restores the previous behaviour in any
+  profile. With dotted names rejected, `detected_fields` names a dotted JSON
+  key by Loki's sanitized label with the key in `jsonPath` (`http_method`,
+  `jsonPath: ["http.method"]`, as Loki answers), so Logs Drilldown builds
+  `| json http_method="[\"http.method\"]"` instead of a dotted filter; with
+  `accept` the dotted name stays. Clients of the default profile that sent
+  dotted names must use the underscore spelling (or set `accept`); it is also
+  the one the log volume pushes down to VictoriaLogs stats (1h 0.03 s, 24h
+  0.8 s warm on the e2e stack).
 - **The Loki-compatible profile ignores `limit`, `offset` and `search` on the
   label endpoints, as Loki does.** Loki reads only `start`, `end` and `query`
   on `/labels` and `/label/{name}/values` (`loghttp.ParseLabelQuery`), so
   `?limit=2` returns every value and `/labels?search=k8s` every name. The
   proxy applied its browse window to any request carrying them and forwarded
   `limit` to VictoriaLogs (`/label/service_name/values?limit=2` returned two
-  values). In the default profile these parameters are now ignored unless
-  `-label-values-indexed-cache=true` opts into the indexed browse window;
-  the hybrid and native modes keep them.
+  values). The new `-label-browse-extensions` flag (`auto`, `on`, `off`;
+  Helm `label-browse-extensions`) decides: `auto` ignores them in the
+  Loki-compatible profile unless `-label-values-indexed-cache=true`, and
+  keeps them in the hybrid and native modes; `on` restores the previous
+  behaviour in any profile.
 - **Label values requests over `-label-values-max-response-bytes` fail like
   Loki's.** `/loki/api/v1/label/{name}/values` requests whose VictoriaLogs
   response exceeds 64 MiB now fail with HTTP 500 (Loki's `ResourceExhausted`
@@ -69,6 +79,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   envelope (`{"error":"parse error ...","errorType":"bad_data",...}`). The
   envelope now also carries `message` with the same text, and Grafana shows
   exactly Loki's message; API clients keep reading `error`.
+  `-error-response-message-field=false` restores the previous body.
+- **Compatibility option matrix.** `docs/configuration.md` documents every
+  combination of `-label-style`, `-metadata-field-mode`,
+  `-emit-structured-metadata`, `-logql-dotted-names`,
+  `-label-browse-extensions`, `-label-values-indexed-cache` and
+  `-error-response-message-field`; a unit test walks all 216 combinations of
+  the first six and an e2e test runs them in-process against the stack's
+  VictoriaLogs and Loki, checking dotted-name handling, browse parameters,
+  structured-metadata keys and `detected_fields` names per combination.
 
 ### Changed
 
@@ -79,8 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hybrid metadata mode, which showed `k8s.namespace.name` beside
   `k8s_namespace_name`). The hybrid mode moved to a new, explicitly named
   `Loki (via VL proxy OTel hybrid)` datasource (`loki-vl-proxy-otel-hybrid`,
-  port 13111, replacing the duplicate `loki-vl-proxy-translated-metadata`);
-  `Loki (via VL proxy native metadata)` is unchanged. Datasource names and
+  port 13111), added next to every existing variant and datasource;
+  `Loki (via VL proxy native metadata)` and `loki-vl-proxy-translated-metadata`
+  are unchanged. Datasource names and
   UIDs are unchanged. `TestCompat_StackProfilesMatchDatasources` fails CI if
   a Grafana-facing or parity datasource leaves the Loki-compatible profile;
   the tests that verify hybrid behaviour moved to the hybrid variant, and new
@@ -90,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proxy variants each ran the label keep-warm loop against one VictoriaLogs,
   and coinciding 7d scans OOM-killed it. Only the parity proxy and the two
   Grafana-facing proxies warm now (`-labels-cache-warm=false` on the other
-  eight), and the benchmark-only peer ring (`loki-vl-proxy-peer-a/-b`,
+  nine), and the benchmark-only peer ring (`loki-vl-proxy-peer-a/-b`,
   `vmauth-ring`) starts only with `docker compose --profile peers up -d`.
 - The e2e fixture helper fails the setup when Loki or VictoriaLogs rejects a
   push instead of logging it: a fixture on one side only turned later parity
