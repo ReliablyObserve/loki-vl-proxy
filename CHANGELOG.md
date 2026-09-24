@@ -89,12 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `maximum number of series (N) reached for a single query; returning
   partial results` (`pkg/logql/engine.go` `JoinSampleVector`, v3.7.7), and
   every other client with HTTP 400. Several routes did not follow it. The
-  raw-row evaluators (ordered `| json` metrics such as the Drilldown labels
-  breakdown `sum(count_over_time({...} | detected_level="info" | json | drop
-  __error__, __error_details__ | pipeline="logs/loki" [60s])) by (pod)`,
-  `quantile_over_time` and other raw range metrics, bare parser metrics with
-  unwrap) answered Drilldown with the plain client's 400, so the panel failed
-  (Grafana logged `refID=LABEL_BREAKDOWN_VALUES ... status=400`). The bare
+  raw-row evaluators answered Drilldown with the plain client's 400, so the
+  panel failed (Grafana logged `refID=LABEL_BREAKDOWN_VALUES ... status=400`
+  for the labels breakdown `sum(count_over_time({...} | detected_level="info"
+  | json | drop __error__, __error_details__ | pipeline="logs/loki" [60s]))
+  by (pod)` before 1.93.0 moved that range query to the stats pushdown). They
+  still answer the ordered `| json` metrics the pushdown cannot take (instant
+  queries, a second parser, a line one of its probes flags), and
+  `quantile_over_time`, other raw range metrics and bare parser metrics with
+  unwrap. The bare
   parser bucket paths (`count_over_time({...} | logfmt [5m])` from stats or
   hits buckets, `sum_over_time(... | unwrap x [5m])`) and the grouped sliding
   window evaluator kept the busiest series silently for every client: no

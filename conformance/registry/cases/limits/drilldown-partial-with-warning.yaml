@@ -22,7 +22,9 @@ why: |
   one result, a tenant's warning kept), range and instant. A Drilldown
   labels breakdown such as
   `sum(count_over_time({env="production"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [60s])) by (pod)`
-  is evaluated from raw rows, not stats, and got the plain client's 400.
+  was evaluated from raw rows and got the plain client's 400; since the stats
+  pushdown takes it, the raw evaluator still answers its instant form and
+  the ordered `| json` metrics the pushdown cannot take.
 request:
   method: GET
   path: /loki/api/v1/query_range

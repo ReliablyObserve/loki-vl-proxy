@@ -716,7 +716,10 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.raw != 1 || len(fake.guards) != tc.guards {
+			// The probes run concurrently and the first one that finds a risky
+			// line cancels the others, so a sibling probe may not reach
+			// VictoriaLogs at all.
+			if fake.raw != 1 || len(fake.guards) == 0 || len(fake.guards) > tc.guards {
 				t.Fatalf("expected the probe to keep the raw evaluator: raw=%d guards=%q stats=%q", fake.raw, fake.guards, fake.stats)
 			}
 		})

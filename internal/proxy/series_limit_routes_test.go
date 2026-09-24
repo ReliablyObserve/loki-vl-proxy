@@ -326,9 +326,13 @@ func TestSeriesLimit_EveryMetricRouteFollowsLoki(t *testing.T) {
 		// route is the VictoriaLogs call that proves the route was taken.
 		route string
 	}{
-		{"ordered json raw evaluator range", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "raw"},
+		// A second parser keeps an ordered | json metric off the stats pushdown.
+		{"ordered json raw evaluator range", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | json | drop __error__, __error_details__ | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "raw"},
 		{"ordered json raw evaluator instant", "/loki/api/v1/query", instantParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`), nil, "raw"},
 		{"ordered json stats pushdown", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "stats_query_range"},
+		// The reported Drilldown labels breakdown: a label filter before the
+		// parser, pushed down with the stats query.
+		{"ordered json stats pushdown with a pre-parser filter", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "stats_query_range"},
 		{"stats buckets range", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"}[5m]))`, time.Minute), nil, "stats_query_range"},
 		{"manual raw-row evaluator range", "/loki/api/v1/query_range", rangeParams(`quantile_over_time(0.5, {app="top"} | unwrap latency [5m]) by (pod)`, time.Minute), nil, "raw"},
 		{"manual raw-row evaluator instant", "/loki/api/v1/query", instantParams(`quantile_over_time(0.5, {app="top"} | unwrap latency [5m]) by (pod)`), nil, "raw"},
