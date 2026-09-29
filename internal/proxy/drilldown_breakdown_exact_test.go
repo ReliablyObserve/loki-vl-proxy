@@ -111,6 +111,10 @@ func TestDrilldownBreakdown_UnderLimitIsExactLikeLoki(t *testing.T) {
 				if len(calls) != 1 || strings.Contains(calls[0].query, "__lvp_rank") || raw != 0 || len(other) != 0 {
 					t.Fatalf("drilldown=%v: expected one plain stats_query_range call, got %+v, %d raw scans and %v", drilldown, calls, raw, other)
 				}
+				// A field breakdown parses only the lines that can hold the field.
+				if parse := ` | filter (user_id:* or _msg:"user_id") | unpack_logfmt if (-user_id:*) fields (user_id) | filter user_id:!""`; shape.parsed && !strings.Contains(calls[0].query, parse) {
+					t.Fatalf("drilldown=%v: expected the field breakdown to parse only lines holding user_id, got %s", drilldown, calls[0].query)
+				}
 			}
 		})
 	}
@@ -238,6 +242,43 @@ func TestRelabelStatsQueryRange_DropsSeriesWithoutPoints(t *testing.T) {
 	want := `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[[1700000300,"1"],[1700000600,"2"]]}]}}`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// A parsed field breakdown asks VictoriaLogs to parse only the lines that can
+// hold the field (a stored value, the field's word in the line, or a JSON \u
+// escape that may spell its key) and to keep a stored value over the line's
+// key. Every other query is sent as the translator wrote it.
+//
+// conformance: limits/drilldown-breakdown-exact, parser-json, parser-logfmt
+func TestFieldBreakdownQuery(t *testing.T) {
+	cases := []struct{ query, want string }{
+		{`env:="production" | unpack_json | filter pipeline:!"" | stats by (pipeline) count()`,
+			`env:="production" | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if (-pipeline:*) fields (pipeline) | filter pipeline:!"" | stats by (pipeline) count()`},
+		{`app:="x" "err" | unpack_logfmt | filter user_id:!"" | stats by (user_id) count()`,
+			`app:="x" "err" | filter (user_id:* or _msg:"user_id") | unpack_logfmt if (-user_id:*) fields (user_id) | filter user_id:!"" | stats by (user_id) count()`},
+		// The pipes before the parser stay; the prefilter reads the line they leave.
+		{`app:="x" | filter level:="info" | unpack_json | filter batch_id:!"" | stats by (batch_id) count()`,
+			`app:="x" | filter level:="info" | filter (batch_id:* or _msg:"batch_id" or _msg:~"\\\\u") | unpack_json if (-batch_id:*) fields (batch_id) | filter batch_id:!"" | stats by (batch_id) count()`},
+		// Unchanged: another filter after the parser, a filter on another field,
+		// a quoted (dotted) field, an _extracted label, several fields, a rate,
+		// no parser.
+		{`app:="x" | unpack_json | filter a:!"" | filter b:="1" | stats by (a) count()`, ""},
+		{`app:="x" | unpack_json | filter b:!"" | stats by (a) count()`, ""},
+		{`app:="x" | unpack_json | filter "service.name":!"" | stats by ("service.name") count()`, ""},
+		{`app:="x" | unpack_json | filter path_extracted:!"" | stats by (path_extracted) count()`, ""},
+		{`app:="x" | unpack_json | filter a:!"" | stats by (a, b) count()`, ""},
+		{`app:="x" | unpack_json | filter a:!"" | stats by (a) count() as __lvp_inner | math __lvp_inner/60 as c`, ""},
+		{`app:="x" pod:!"" | stats by (pod) count()`, ""},
+	}
+	for _, tc := range cases {
+		want := tc.want
+		if want == "" {
+			want = tc.query
+		}
+		if got := fieldBreakdownQuery(tc.query); got != want {
+			t.Errorf("fieldBreakdownQuery(%q)\n got %q\nwant %q", tc.query, got, want)
+		}
 	}
 }
 

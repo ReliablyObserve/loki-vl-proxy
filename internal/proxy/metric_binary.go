@@ -152,7 +152,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// field. VL groups by whichever exists; the response translation coalesces the two
 	// fields into a single Loki label, preferring the non-empty value.
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
-	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+	logsqlQuery = fieldBreakdownQuery(p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy))
 
 	ctx := r.Context()
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
@@ -318,6 +318,48 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 	}
 	counter := &seriesCountingReader{r: resp.Body, limit: maxSeries}
 	return readBodyLimited(counter, int64(p.limits().BufferedBackendBodyBytes))
+}
+
+// fieldBreakdownParserRE matches the end of a parsed field breakdown's base
+// query as the translator writes it: the parser over every key, then the
+// grouped field's non-empty filter.
+var fieldBreakdownParserRE = regexp.MustCompile(`\s*\|\s*unpack_(json|logfmt)\s*\|\s*filter\s+([A-Za-z][A-Za-z0-9_]*):!""$`)
+
+// fieldBreakdownQuery rewrites a parsed single-field breakdown,
+// `<base> | unpack_json | filter f:!"" | stats by (f) count()` (Logs Drilldown's
+// field breakdown), so VictoriaLogs parses only the lines that can hold the
+// field. A line counts only with a non-empty f, which it has either as a
+// stored field (a stream label, structured metadata or a field VictoriaLogs
+// keeps from ingestion) or through a top-level key f in the line. Such a key
+// holds f as a word, which VictoriaLogs finds in its token index, unless it is
+// spelled with a \u escape (the only JSON escape that yields a letter, digit
+// or underscore), so JSON lines holding `\u` are parsed too. The parser runs
+// only on lines without a stored f and reads only f: a stored value wins over
+// the line's key, as a Loki stream label or structured metadata does (the
+// parsed key becomes f_extracted there), where the whole-line unpack let the
+// key overwrite it. Any other query is returned unchanged.
+func fieldBreakdownQuery(logsqlQuery string) string {
+	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
+	if !ok {
+		return logsqlQuery
+	}
+	m := fieldBreakdownParserRE.FindStringSubmatchIndex(spec.BaseQuery)
+	if m == nil {
+		return logsqlQuery
+	}
+	parser, field := spec.BaseQuery[m[2]:m[3]], spec.BaseQuery[m[4]:m[5]]
+	if field != spec.GroupBy[0] || strings.HasSuffix(field, "_extracted") {
+		return logsqlQuery
+	}
+	escaped := ""
+	if parser == "json" {
+		escaped = ` or _msg:~"\\\\u"`
+	}
+	return spec.BaseQuery[:m[0]] +
+		" | filter (" + field + ":* or _msg:" + strconv.Quote(field) + escaped + ")" +
+		" | unpack_" + parser + " if (-" + field + ":*) fields (" + field + ")" +
+		" | filter " + field + `:!""` +
+		logsqlQuery[strings.Index(logsqlQuery, spec.BaseQuery)+len(spec.BaseQuery):]
 }
 
 // rankedSingleFieldQuery restricts a single-field grouped count to the limit+1

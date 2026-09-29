@@ -22,7 +22,7 @@ import (
 // return all twenty.
 //
 // conformance: limits/drilldown-breakdown-exact
-func TestDrilldownRankedBreakdown_VictoriaLogsRanksOverTheWholeRange(t *testing.T) {
+func TestDrilldown_RankedBreakdownVictoriaLogsRanksOverTheWholeRange(t *testing.T) {
 	serviceName := fmt.Sprintf("drilldown-ranked-%d", time.Now().UnixNano())
 	step := time.Minute
 	start := time.Now().UTC().Add(-30 * time.Minute).Truncate(step)

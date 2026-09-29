@@ -39,6 +39,10 @@ proxyStatsQueryRange
   proxyStatsQueryRangeDirectAnchored
       limit = tenant's max_query_series
               (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
+      parsed field breakdown (fieldBreakdownQuery):
+          <base> | filter (f:* or _msg:"f" or _msg:~"\\\\u")
+                 | unpack_json if (-f:*) fields (f) | filter f:!""
+                 | stats by (f) count()
       Drilldown: take a -stats-query-range-concurrency slot
       one stats_query_range call, read until limit+1 series
       under the limit: every series (Drilldown and plain clients alike)
@@ -60,6 +64,24 @@ lines twice for the ranked call (the ranking, then the buckets). Each returned
 series is the exact per-step count. A breakdown that cannot be ranked (the
 underscore label style groups a dotted field by both spellings) is read whole
 and capped the same way, bounded by `-backend-max-buffered-response-bytes`.
+
+A field breakdown (`| json` or `| logfmt`, then `f!=""`) is translated to
+`unpack_json` over every key followed by the non-empty filter, which makes
+VictoriaLogs parse every line of the range. `fieldBreakdownQuery` sends instead
+a query that parses only the lines that can hold `f`: a line counts only with a
+non-empty `f`, which it has as a stored field (a stream label, structured
+metadata or a field VictoriaLogs keeps from ingestion, `f:*`), or through a
+top-level key `f` in the line, which holds `f` as a word VictoriaLogs finds in
+its token index (`_msg:"f"`), unless the key is spelled with a `\u` escape
+(the only JSON escape that yields a letter, digit or underscore), so JSON lines
+holding `\u` are parsed too. The parser runs only on lines without a stored
+`f` and reads only `f`, so a stored value wins over the line's key, as a Loki
+stream label or structured metadata does (Loki renames the parsed key to
+`f_extracted`). Where VictoriaLogs keeps the JSON keys as fields, as it does
+for the log generator's data, no line is parsed at all. On the A/B stack's
+seeded hour, with VictoriaLogs limited to 4 CPUs, the `pipeline`, `user_id`
+and `batch_id` breakdowns take VictoriaLogs 15 to 30 ms instead of 90 to
+100 ms.
 
 ### Deviation From Loki
 
@@ -95,7 +117,9 @@ fails CI.
 | `proxyStatsQueryRange` | `internal/proxy/metric_binary.go` | Entry: residual suppression, range == step relabel |
 | `proxyStatsQueryRangeDirectAnchored` | `internal/proxy/metric_binary.go` | One stats call, series limit, warning or 400 |
 | `rankedSingleFieldQuery` | `internal/proxy/metric_binary.go` | `in()` subquery keeping the `limit + 1` busiest values |
+| `fieldBreakdownQuery` | `internal/proxy/metric_binary.go` | Parse only the lines that can hold the field; a stored value wins |
 | `isQuerySplitResidual` | `internal/proxy/metric_binary.go` | Drilldown-tagged sub-step residual chunk detection |
 | `TestDrilldownBreakdown_*` | `internal/proxy/drilldown_breakdown_exact_test.go` | Loki parity under and over the series limit |
+| `TestRangeMetricCompatibilityDrilldownFieldBreakdown` | `test/e2e-compat/drilldown_field_breakdown_test.go` | Field breakdown parity with Loki: stored values, escaped keys |
 | `TestDrilldown_QualityMatrix` | `test/e2e-compat/drilldown_quality_report_test.go` | Quality measurement |
 | `TestDrilldown_LokiCompare_FieldQuality` | `test/e2e-compat/drilldown_loki_compare_test.go` | Loki parity assertions |

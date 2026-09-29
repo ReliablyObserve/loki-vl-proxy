@@ -19,6 +19,7 @@
     "limits/drilldown-breakdown-exact": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go"
     ],
     "limits/drilldown-partial-with-warning": [
@@ -136,6 +137,7 @@
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
@@ -158,6 +160,13 @@
       "internal/proxy/ordered_json_drilldown_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "parser-json": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go"
+    ],
+    "parser-logfmt": [
+      "internal/proxy/drilldown_breakdown_exact_test.go"
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
@@ -290,6 +299,8 @@
       "limits/per-tenant-override",
       "limits/series-limit-error",
       "loki_api_v1_query_range",
+      "parser-json",
+      "parser-logfmt",
       "series-limits-and-partial-results",
       "tenant-query-limits"
     ],
@@ -395,6 +406,11 @@
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
+    "test/e2e-compat/drilldown_field_breakdown_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "loki_api_v1_query_range",
+      "parser-json"
+    ],
     "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go": [
       "limits/drilldown-breakdown-exact"
     ],
@@ -444,7 +460,7 @@
       "tenant-query-limits"
     ]
   },
-  "tests_with_markers": 32,
+  "tests_with_markers": 33,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -484,5 +500,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 58
+  "wired_items": 60
 }

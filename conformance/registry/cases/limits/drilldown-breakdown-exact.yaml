@@ -15,7 +15,11 @@ why: |
   max_query_series the Drilldown partial result with its warning
   (pkg/logql/engine.go JoinSampleVector, v3.7.7). A breakdown answered from a
   sample of top values shows fewer series than Loki, wrong counts and no
-  warning, so the panel looks complete when it is not.
+  warning, so the panel looks complete when it is not. A field breakdown is
+  sent to VictoriaLogs parsing only the lines that can hold the field (a
+  stored value, the field's word in the line, or a JSON \u escape) and only
+  that key, so a stored value wins over the line's key as a Loki stream label
+  or structured metadata does (fieldBreakdownQuery).
 request:
   method: GET
   path: /loki/api/v1/query_range
