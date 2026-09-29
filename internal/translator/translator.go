@@ -609,6 +609,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	// Track whether we've seen a parser pipe (json, logfmt, pattern, regexp).
 	// After a parser, label filters must become VL `| filter` pipes.
 	afterParser := false
+	// afterKeyParser is set once a json or logfmt parser ran: label filters after
+	// it name sanitized keys (see parsedKeyVariants).
+	afterKeyParser := false
 	// Track canonical label-filter stages so repeated drilldown include/exclude
 	// clicks don't accumulate duplicate or contradictory filters.
 	labelFilterLatest := make(map[string]int)
@@ -765,7 +768,24 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
 		}
 
-		translated := translatePipelineStage(stage, pipelineLabelFn, caps)
+		if isKeyParserStage(stage) {
+			afterKeyParser = true
+		}
+		stageLabelFn := pipelineLabelFn
+		if afterKeyParser && isLabelFilterStage(stage) {
+			stageLabelFn = withParsedKeyVariants(pipelineLabelFn, func(label string) bool {
+				if captureLabels[label] {
+					return true
+				}
+				for alias, orig := range jsonAliases {
+					if label == alias || label == orig {
+						return true
+					}
+				}
+				return false
+			})
+		}
+		translated := translatePipelineStage(stage, stageLabelFn, caps)
 		if strings.HasPrefix(translated, errUnknownParser) {
 			parserName := strings.TrimPrefix(translated, errUnknownParser)
 			return "", fmt.Errorf("unknown pipeline stage %q — not a valid LogQL parser or label filter", parserName)
@@ -1203,7 +1223,11 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				label = "level"
 			}
 			if labelFn != nil {
-				label = sanitizeFieldIdentifier(labelFn(label))
+				translated := labelFn(label)
+				if strings.Contains(translated, parsedKeySep) {
+					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.entry, caps)
+				}
+				label = sanitizeFieldIdentifier(translated)
 				if label == "" {
 					return "", false
 				}
@@ -1227,7 +1251,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			// VL requires quoting for dotted field names (e.g. "service.name"):
 			// quote the label before passing it to FieldFilter so the output is
 			// "service.name":="foo" rather than service.name:="foo".
-			if strings.Contains(label, ".") {
+			if strings.ContainsAny(label, ".-") {
 				label = `"` + label + `"`
 			}
 

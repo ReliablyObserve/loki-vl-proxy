@@ -1,0 +1,50 @@
+id: profiles/sanitized-json-key-filter
+title: A label filter on a sanitized JSON key selects the lines Loki selects
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Loki's json and logfmt parsers sanitize every key they extract
+  (sanitizeLabelKey: each rune outside [A-Za-z0-9_] becomes an underscore), so
+  a log line {"http.method":"GET"} carries the label `http_method`, and
+  `| json | http_method="GET"` selects it. VictoriaLogs' unpack_json keeps the
+  original key, so the translated `| filter http_method:="GET"` matched
+  nothing: the proxy returned no lines where Loki returned the matching ones
+  whenever the sanitized name was not a stored VictoriaLogs field (a JSON line
+  ingested as a message, which is how Loki-shaped pushes arrive; a stored
+  field is resolved by the proxy's field-inventory aliases).
+
+  A label filter after a json or logfmt parser now accepts every original key
+  that sanitizes to its name: each underscore read as an underscore or as a
+  dot (nested objects and OTel attributes), and the all-hyphen spelling (HTTP
+  header style), up to 6 underscores per name. A parser yields one such key at
+  most, so a filter that rejects the empty value holds when any spelling
+  satisfies it, and one that accepts the empty value (!=, =~ with an empty
+  alternative, ="") holds when every spelling does. Names the translation maps
+  to a known field, names written with a dot or hyphen, regexp captures and
+  `| json a="b.c"` expressions keep their single key. The range-metric
+  pushdown already routes such filters through its spelling probe or the
+  raw-row evaluator and is unchanged; the e2e case pins both.
+
+  Not covered here, unchanged: `unwrap` of a sanitized key, and a label-filter
+  regexp is not anchored the way Loki's is (`| msg=~"a"` matches "cat").
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="compat-sanitized-<ts>"} | json | probe_verb="GET"'
+    start: now-10m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [streams.values]
+  expect: |
+    The same lines as Loki for equality, inequality, regexp, empty and
+    non-empty checks, numeric comparisons and and/or chains, and the same
+    sample totals for the range metrics built on them, through the parity
+    proxy, the Loki-compatible proxy, the Drilldown proxy and the
+    translated-metadata proxy (TestCompat_SanitizedJSONKeyFilterMatchesLoki).

@@ -102,7 +102,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "parsed field non empty filter",
 			logql: `{app="api"} | json | path_extracted!=""`,
-			want:  `app:="api" | unpack_json | filter path_extracted:!""`,
+			want:  `app:="api" | unpack_json | filter (path_extracted:!"" OR "path.extracted":!"" OR "path-extracted":!"")`,
 		},
 		{
 			name:  "service_name label filter after parser matches the derived service name",
@@ -147,22 +147,22 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "repeated include filter clicks are deduplicated after parser",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes = "89" | source_message_bytes = ` + "`89`",
-			want:  `app:="api" | unpack_json | filter source_message_bytes:="89"`,
+			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
 		},
 		{
 			name:  "repeated exclude filter clicks are deduplicated after parser",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes != "89"`,
-			want:  `app:="api" | unpack_json | filter -source_message_bytes:="89"`,
+			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
 		},
 		{
 			name:  "include then exclude same value keeps latest filter stage",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes!="89"`,
-			want:  `app:="api" | unpack_json | filter -source_message_bytes:="89"`,
+			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
 		},
 		{
 			name:  "exclude then include same value keeps latest filter stage",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes="89"`,
-			want:  `app:="api" | unpack_json | filter source_message_bytes:="89"`,
+			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
 		},
 		{
 			name:  "repeated include on same field with different values keeps latest value",
@@ -177,7 +177,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "range filters on same field are preserved",
 			logql: `{app="api"} | json | duration_ms > 100 | duration_ms < 500`,
-			want:  `app:="api" | unpack_json | filter duration_ms:>100 | filter duration_ms:<500`,
+			want:  `app:="api" | unpack_json | filter (duration_ms:>100 OR "duration.ms":>100 OR "duration-ms":>100) | filter (duration_ms:<500 OR "duration.ms":<500 OR "duration-ms":<500)`,
 		},
 		{
 			name:  "mixed include exclude on same field keeps latest action",

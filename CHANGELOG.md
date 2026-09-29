@@ -267,6 +267,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partial-result reply but lost the `Warning` and `X-Proxy-Upstream-*`
   headers.
 
+- **A label filter on a sanitized JSON key selects the lines Loki selects.**
+  Loki's `json` and `logfmt` parsers turn every key into a label name
+  (`http.method` becomes `http_method`), and `| json | http_method="GET"`
+  selects the line; VictoriaLogs' `unpack_json` keeps the original key, so the
+  translated filter matched nothing and the proxy returned no lines where Loki
+  returned them, whenever the sanitized name was not a stored VictoriaLogs
+  field (a JSON line ingested as a message, which is how Loki pushes arrive).
+  A label filter after a `json` or `logfmt` parser now accepts every original
+  key that sanitizes to its name: each underscore read as an underscore or a
+  dot (nested objects, OTel attributes) plus the all-hyphen spelling, up to 6
+  underscores per name. A parser yields one such key at most, so `=`, `=~`,
+  and comparisons hold when any spelling matches, and `!=`, `!~` and empty
+  checks hold when every spelling does. Names the label translation maps to a
+  known field, regexp captures and `| json a="b.c"` expressions keep their
+  single key. Range metrics already resolved these names through the pushdown
+  spelling probe and the raw-row evaluator and are unchanged. Not changed:
+  `unwrap` of a sanitized key, and the label-filter regexp that is not
+  anchored as Loki's is.
 - **Label values are bounded like Loki's instead of being read in full
   whatever their size.** `/loki/api/v1/label/{name}/values` read the whole
   VictoriaLogs answer (up to a hidden 256 MiB), then decoded, indexed and
