@@ -166,9 +166,19 @@ func TestCompat_StackProfilesMatchDatasources(t *testing.T) {
 			t.Errorf("%s: labels-cache-warm=%v, want %v (only the parity and Grafana-facing Loki-mode proxies warm)", name, warm, warmed[name])
 		}
 	}
-	for _, name := range []string{"loki-vl-proxy-peer-a", "loki-vl-proxy-peer-b", "vmauth-ring"} {
-		if profiles := compose.Services[name].Profiles; len(profiles) != 1 || profiles[0] != "peers" {
-			t.Errorf("%s must sit behind the benchmark-only \"peers\" compose profile, got %v", name, profiles)
+	// The parity proxy's static peer ring lists its members; a member that does
+	// not start with the stack fills the proxy's peer error metrics and skews
+	// its timing, so every listed member must start by default.
+	ring := proxyFlag(compose.Services["loki-vl-proxy"].Command, "peer-static", "")
+	for _, member := range strings.Split(ring, ",") {
+		name, _, _ := strings.Cut(strings.TrimSpace(member), ":")
+		svc, ok := compose.Services[name]
+		if !ok {
+			t.Errorf("peer ring member %q is not a compose service", name)
+			continue
+		}
+		if len(svc.Profiles) != 0 {
+			t.Errorf("peer ring member %s sits behind compose profile %v and is absent from a default stack", name, svc.Profiles)
 		}
 	}
 }
