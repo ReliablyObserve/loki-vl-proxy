@@ -196,6 +196,9 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		}
 	}
 
+	// read is the series bound of the call that answered: a response read
+	// within the limit needs no count below.
+	read := maxSeries
 	body, err := p.fetchStatsQueryRangeBody(r, logsqlQuery, tumblingWindow, maxSeries)
 	if errors.Is(err, errSeriesCountExceeded) && drilldown && rankable {
 		if p.cache != nil {
@@ -203,12 +206,13 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		}
 		// At most limit+1 series: the limit+1st says the limit was passed.
 		body, err = p.fetchStatsQueryRangeBody(r, ranked, tumblingWindow, limit+1)
-		logsqlQuery = ranked
+		logsqlQuery, read = ranked, limit+1
 	}
 	if errors.Is(err, errSeriesCountExceeded) && drilldown {
 		// Not rankable (or the ranking returned more than it should): read the
 		// whole response and keep the busiest series below.
 		body, err = p.fetchStatsQueryRangeBody(r, logsqlQuery, tumblingWindow, 0)
+		read = 0
 	}
 	var upstream *statsUpstreamError
 	switch {
@@ -255,7 +259,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// of a churning field) with Loki's warning; every other client has already
 	// stopped reading with Loki's error.
 	out := wrapAsLokiResponse(body, "matrix")
-	if lokiResultSeriesCount(out) > limit {
+	if (read <= 0 || read > limit) && lokiResultSeriesCount(out) > limit {
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
 			return
