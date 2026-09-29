@@ -40,10 +40,10 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `loki` (Loki 3.7.7) | 13101 | Reference implementation (ground truth) |
 | `victorialogs` (VictoriaLogs v1.52.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
-| `vmauth-ring` (vmauth v1.138.0, profile `peers`) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
+| `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
-| 10 proxy variants (+2 with profile `peers`) | 13100, 13102-13103, 13105-13111 (13150-13151 with `peers`) | See [Proxy Variants](#proxy-variants) |
+| 12 proxy variants | 13100, 13102-13103, 13105-13111, 13150-13151 | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
 | `grafana` (Grafana 13.2.1) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
@@ -111,7 +111,7 @@ VictoriaLogs, plus every variant above, and checks each against Loki.
 
 | Port | Service | Profile (label style / metadata mode) | Label warm-up | Purpose |
 |------|---------|---------------------------------------|---------------|---------|
-| 13100 | loki-vl-proxy | Loki (underscores / translated) | on | Parity proxy for the Go suites: indexed label-values cache, L2 disk cache, L3 static peer ring (peers only with profile `peers`) |
+| 13100 | loki-vl-proxy | Loki (underscores / translated) | on | Parity proxy for the Go suites: indexed label-values cache, L2 disk cache, L3 static peer ring (peer-a/peer-b) |
 | 13102 | loki-vl-proxy-underscore | Loki (underscores / translated) | on | Backs the Grafana `Loki (via VL proxy)` Explore datasource and its multi-tenant twin; OTel dot-to-underscore tests |
 | 13110 | loki-vl-proxy-patterns-autodetect | Loki (underscores / translated) | on | Grafana default datasource (Logs Drilldown); patterns autodetect from queries |
 | 13107 | loki-vl-proxy-translated-metadata | Loki (underscores / translated) | off | Dedicated translated-metadata variant for the structured-metadata and line-body tests |
@@ -121,17 +121,17 @@ VictoriaLogs, plus every variant above, and checks each against Loki.
 | 13103 | loki-vl-proxy-tail | Loki (default) | off | Synthetic tail mode, browser origin allowlist |
 | 13105 | loki-vl-proxy-tail-native | Loki (default) | off | Native VL tail mode |
 | 13109 | loki-vl-proxy-vmauth | Loki (underscores / translated) | off | Backend routed through vmauth; the one variant left at the default `-max-stats-query-series` (500), for the series-limit e2e cases (every other variant matches the stack Loki's `max_query_series: 1000000`) |
-| 13150 | loki-vl-proxy-peer-a (profile `peers`) | Loki | off | L3 peer ring member (zone-a), cache-tier benchmarks |
-| 13151 | loki-vl-proxy-peer-b (profile `peers`) | Loki | off | L3 peer ring member (zone-b), cache-tier benchmarks |
+| 13150 | loki-vl-proxy-peer-a | Loki | off | L3 peer ring member (zone-a), cache-tier benchmarks |
+| 13151 | loki-vl-proxy-peer-b | Loki | off | L3 peer ring member (zone-b), cache-tier benchmarks |
 
 Every proxy replica warms its labels cache for the 1h/6h/24h/7d presets at
 startup and every 75% of `-labels-cache-ttl`; each refresh is a label-name
 scan of up to 7 days in VictoriaLogs. Eleven variants doing that against one
 VictoriaLogs OOM-killed it, so only the parity proxy and the two
 Grafana-facing Loki-mode proxies warm; the others run
-`-labels-cache-warm=false`. Start the peer ring and its load balancer for
-`scripts/bench-cache-tiers.sh` and `bench/drilldown-*.sh` with
-`docker compose --profile peers up -d`.
+`-labels-cache-warm=false`. The peer ring members and the load balancer start
+with the stack because the parity proxy lists them in its static ring; a ring
+whose members are absent fills the proxy's peer error metrics.
 
 `tail-ingress` (nginx, port 13104) sits in front of `loki-vl-proxy-tail` for WebSocket ingress tests.
 

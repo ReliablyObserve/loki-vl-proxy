@@ -172,9 +172,6 @@ services:
   vmauth-ring:
     image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.138.0}
     container_name: e2e-vmauth-ring
-    # Benchmark-only (scripts/bench-cache-tiers.sh, bench/drilldown-*.sh):
-    # start with `docker compose --profile peers up -d`.
-    profiles: ["peers"]
     ports:
       - "13200:8427"
     command:
@@ -347,8 +344,6 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-a
-    # Benchmark-only peer: `docker compose --profile peers up -d`.
-    profiles: ["peers"]
     user: root
     ports:
       - "13150:3100"
@@ -427,8 +422,6 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-b
-    # Benchmark-only peer: `docker compose --profile peers up -d`.
-    profiles: ["peers"]
     user: root
     ports:
       - "13151:3100"

@@ -172,7 +172,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if labelName == "service_name" {
-		values, err := p.serviceNameValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+		values, err := p.serviceNameValues(withLabelValuesResponseCap(r.Context(), p.labelValuesMaxResponseBytes(orgID)), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
 		if err != nil {
 			if p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
 				return

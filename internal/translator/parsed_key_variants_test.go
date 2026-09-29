@@ -30,9 +30,10 @@ func TestParsedKeyFilterMatchesEverySpellingOfASanitizedLabel(t *testing.T) {
 			want:  []string{prefix + `(http_method:="" "http.method":="" "http-method":="")`},
 		},
 		{
-			name:  "non-empty check holds when any spelling has a value",
-			query: `{app="a"} | json | http_method!=""`,
-			want:  []string{prefix + `(http_method:!"" OR "http.method":!"" OR "http-method":!"")`},
+			name:    "an existence check keeps its single key for the Drilldown fast paths",
+			query:   `{app="a"} | json | http_method!=""`,
+			want:    []string{prefix + `http_method:!""`},
+			notWant: []string{" OR "},
 		},
 		{
 			name:  "a regexp that accepts the empty value needs every spelling to accept it",
@@ -76,6 +77,16 @@ func TestParsedKeyFilterMatchesEverySpellingOfASanitizedLabel(t *testing.T) {
 			notWant: []string{`"http.method"`},
 		},
 		{
+			name:    "pattern captures are query-local names",
+			query:   `{app="a"} | json | pattern "<dst_ip> <_>" | dst_ip="x"`,
+			notWant: []string{`"dst.ip"`, `"dst-ip"`},
+		},
+		{
+			name:    "label_format destinations are query-local names",
+			query:   `{app="a"} | json | label_format dst_ip="{{.a}}" | dst_ip="x"`,
+			notWant: []string{`"dst.ip"`, `"dst-ip"`},
+		},
+		{
 			name:    "the error labels are not keys",
 			query:   `{app="a"} | json | __error__=""`,
 			notWant: []string{`"_.error__"`, ` OR `},
@@ -113,6 +124,21 @@ func TestParsedKeyFilterKeepsMappedLabels(t *testing.T) {
 	}
 }
 
+func TestParsedKeyFilterQuotesFieldNamesInIPFilters(t *testing.T) {
+	got, err := TranslateLogQLWithLabels(`{app="a"} | json | client_addr=ip("10.0.0.0/8")`, func(s string) string { return s })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{` client.addr:`, `(client.addr:`, ` client-addr:`, `""client`} {
+		if strings.Contains(got, bad) {
+			t.Errorf("unquoted or double-quoted field name %q in %s", bad, got)
+		}
+	}
+	if !strings.Contains(got, `"client.addr":`) || !strings.Contains(got, `"client-addr":`) {
+		t.Errorf("missing quoted spellings in %s", got)
+	}
+}
+
 func TestParsedKeyVariantsAreBounded(t *testing.T) {
 	if got := parsedKeyVariants("a_b_c"); len(got) != 1<<2+1 { // 4 dot/underscore spellings + hyphens
 		t.Errorf("a_b_c: %d variants %v", len(got), got)
@@ -121,6 +147,15 @@ func TestParsedKeyVariantsAreBounded(t *testing.T) {
 	got := parsedKeyVariants(long)
 	if len(got) != 3 || got[0] != long || got[1] != "a.b.c.d.e.f.g.h" || got[2] != "a-b-c-d-e-f-g-h" {
 		t.Errorf("long name: %v", got)
+	}
+	// A candidate with adjacent, leading or trailing dots would sanitize to a
+	// different label, so it is not offered.
+	for _, label := range []string{"a__b", "status_", "a_b_"} {
+		for _, v := range parsedKeyVariants(label) {
+			if strings.Contains(v, "..") || strings.HasPrefix(v, ".") || strings.HasSuffix(v, ".") {
+				t.Errorf("%s: candidate %q", label, v)
+			}
+		}
 	}
 	if got := parsedKeyVariants("plain"); len(got) != 1 {
 		t.Errorf("plain: %v", got)

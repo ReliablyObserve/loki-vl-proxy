@@ -620,6 +620,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	// VL's unpack_json always uses original field names; aliases are not preserved.
 	jsonAliases := make(map[string]string)
 	captureLabels := make(map[string]bool)
+	// definedLabels are the names pattern and label_format stages create; they
+	// are query-local and never a sanitized parser key.
+	definedLabels := make(map[string]bool)
 	pipelineLabelFn := func(label string) string {
 		if captureLabels[label] || labelFn == nil {
 			return label
@@ -755,6 +758,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 				captureLabels[label] = true
 			}
 		}
+		for _, label := range stageDefinedLabels(stage) {
+			definedLabels[label] = true
+		}
 
 		// Populate json alias map when the stage uses alias="field" syntax.
 		if strings.HasPrefix(stage, "json ") {
@@ -774,7 +780,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		stageLabelFn := pipelineLabelFn
 		if afterKeyParser && isLabelFilterStage(stage) {
 			stageLabelFn = withParsedKeyVariants(pipelineLabelFn, func(label string) bool {
-				if captureLabels[label] {
+				if captureLabels[label] || definedLabels[label] {
 					return true
 				}
 				for alias, orig := range jsonAliases {
@@ -1233,6 +1239,14 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				}
 			}
 
+			// VL requires quoting for dotted or hyphenated field names (e.g.
+			// "service.name"): quote the label before passing it to FieldFilter
+			// (or the ip() range filter) so the output is "service.name":="foo"
+			// rather than service.name:="foo".
+			if strings.ContainsAny(label, ".-") {
+				label = `"` + label + `"`
+			}
+
 			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
 			// Detect calls before decoding a quoted exact value which may itself
 			// contain the literal text ip("...").
@@ -1247,13 +1261,6 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			}
 
 			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
-
-			// VL requires quoting for dotted field names (e.g. "service.name"):
-			// quote the label before passing it to FieldFilter so the output is
-			// "service.name":="foo" rather than service.name:="foo".
-			if strings.ContainsAny(label, ".-") {
-				label = `"` + label + `"`
-			}
 
 			if entry.entry.isComp {
 				// Comparison filters (>, >=, <, <=) do not quote the value.

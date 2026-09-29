@@ -20,15 +20,24 @@ why: |
   dot (nested objects and OTel attributes), and the all-hyphen spelling (HTTP
   header style), up to 6 underscores per name. A parser yields one such key at
   most, so a filter that rejects the empty value holds when any spelling
-  satisfies it, and one that accepts the empty value (!=, =~ with an empty
+  satisfies it, and one that accepts the empty value (!=, !~, =~ with an empty
   alternative, ="") holds when every spelling does. Names the translation maps
   to a known field, names written with a dot or hyphen, regexp captures and
   `| json a="b.c"` expressions keep their single key. The range-metric
   pushdown already routes such filters through its spelling probe or the
   raw-row evaluator and is unchanged; the e2e case pins both.
 
-  Not covered here, unchanged: `unwrap` of a sanitized key, and a label-filter
-  regexp is not anchored the way Loki's is (`| msg=~"a"` matches "cat").
+  Not covered here: an existence check (`| label!=""`) keeps its single key,
+  because the Drilldown single-field fast paths recognise that exact filter
+  shape (its labels come from detected_fields, which resolves them to stored
+  fields); `unwrap` of a sanitized key, unchanged; a label-filter regexp
+  is not anchored the way Loki's is (`| msg=~"a"` matches "cat"), unchanged;
+  and grouping by a name a json expression defines
+  (`sum by (probe_verb) (count_over_time(... | json probe_verb="[\"probe.verb\"]"
+  | ...))`, the form Logs Drilldown builds from detected_fields' jsonPath)
+  filters on the original key but still groups by the sanitized name, so a
+  dotted key that is not a stored field collapses into one unlabelled series;
+  the same answer as before this change, recorded as an open gap.
 request:
   method: GET
   path: /loki/api/v1/query_range

@@ -13,8 +13,7 @@
 #
 # Required: jq, curl, diff
 # Optional env:
-#   PROXY_URL          (default http://localhost:13200 — vmauth-ring LB;
-#                      start it with docker compose --profile peers up -d)
+#   PROXY_URL          (default http://localhost:13200 — vmauth-ring LB)
 #   QUERY_BASE         (default '{env="production"}')
 #   LOOKBACK_SECONDS   (default 86400 — 24h)
 #

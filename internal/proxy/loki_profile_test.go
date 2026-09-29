@@ -82,7 +82,7 @@ func (o compatOptions) wantBrowse() bool {
 	case CompatOff:
 		return false
 	}
-	return !(o.style == LabelStyleUnderscores && o.mode == MetadataFieldModeTranslated) || o.indexed
+	return o.style != LabelStyleUnderscores || o.mode != MetadataFieldModeTranslated || o.indexed
 }
 
 // wantMetadataKeys is the structured-metadata key set for stored fields.

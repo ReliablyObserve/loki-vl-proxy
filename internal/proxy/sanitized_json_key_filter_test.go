@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // A label filter after `| json` names Loki's sanitized label (http_method) while
@@ -50,5 +52,78 @@ func TestSanitizedJSONKeyFilterReachesVictoriaLogs(t *testing.T) {
 				t.Fatalf("no upstream query accepts the original keys of http_method: %q", queries)
 			}
 		})
+	}
+}
+
+// Loki's logfmt parser sanitizes keys like its json parser: detected_fields
+// must name a dotted or hyphenated logfmt key by the label a query can use.
+//
+// conformance: profiles/detected-fields-dotted-json-keys
+func TestDetectedFieldsSanitizeLogfmtKeys(t *testing.T) {
+	const row = `{"_time":"2026-04-04T17:18:49.971082Z","_msg":"msg=login http.method=GET user-agent=curl","_stream":"{app=\"svc\"}","app":"svc"}`
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(row + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer backend.Close()
+	for _, tc := range []struct {
+		dotted string
+		want   []string
+		absent []string
+	}{
+		{CompatReject, []string{"http_method", "user_agent"}, []string{"http.method", "user-agent"}},
+		{CompatAccept, []string{"http.method", "user-agent"}, []string{"http_method", "user_agent"}},
+	} {
+		t.Run(tc.dotted, func(t *testing.T) {
+			p := newCompatProxy(t, backend.URL, compatOptions{style: LabelStyleUnderscores, mode: MetadataFieldModeTranslated, emit: true, dotted: tc.dotted})
+			w := serve(p, http.MethodGet, "/loki/api/v1/detected_fields?start=1775322000000000000&end=1775325600000000000&query="+url.QueryEscape(`{app="svc"}`), nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("detected_fields: %d %s", w.Code, w.Body)
+			}
+			body := w.Body.String()
+			for _, name := range tc.want {
+				if !strings.Contains(body, `"label":"`+name+`"`) {
+					t.Errorf("no field %q: %s", name, body)
+				}
+			}
+			for _, name := range tc.absent {
+				if strings.Contains(body, `"label":"`+name+`"`) {
+					t.Errorf("unexpected field %q: %s", name, body)
+				}
+			}
+		})
+	}
+}
+
+// The service_name values are read through the same response cap as every
+// other label's values.
+//
+// conformance: operator-configurable-limits, limits/label-values-response-cap
+func TestLabelValuesResponseCap_ServiceNameValuesAreBounded(t *testing.T) {
+	values := make([]fieldHit, 2000)
+	for i := range values {
+		values[i] = fieldHit{Value: fmt.Sprintf("{service_name=\"svc-%06d\"}", i), Hits: 1}
+	}
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_values", "/select/logsql/stream_field_values", "/select/logsql/streams":
+			writeVLFieldValues(w, values)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(vl.Close)
+	p := newGuardTestProxy(t, Config{BackendURL: vl.URL, ExecutionLimits: ExecutionLimitsConfig{LabelValuesMaxResponseBytes: 4096}})
+	now := time.Now()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/label/service_name/values?start=%d&end=%d", now.Add(-time.Hour).UnixNano(), now.UnixNano()), nil)
+	req.Header.Set("X-Scope-OrgID", "0")
+	rec := httptest.NewRecorder()
+	p.handleLabelValues(rec, req)
+	if rec.Code != http.StatusInternalServerError || !resourceExhaustedRE.MatchString(lokiErrorText(t, rec)) {
+		t.Fatalf("status %d body %s, want Loki's ResourceExhausted 500", rec.Code, bodyHead(rec))
 	}
 }

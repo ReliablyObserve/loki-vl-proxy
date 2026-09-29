@@ -34,6 +34,11 @@ func parsedKeyVariants(label string) []string {
 	out := []string{label}
 	seen := map[string]struct{}{label: {}}
 	add := func(v string) {
+		// A key with adjacent, leading or trailing dots is not one the field
+		// identifier normalisation keeps, so it cannot be matched by name.
+		if strings.Contains(v, "..") || v[0] == '.' || v[len(v)-1] == '.' {
+			return
+		}
 		if _, ok := seen[v]; !ok {
 			seen[v] = struct{}{}
 			out = append(out, v)
@@ -62,6 +67,27 @@ func parsedKeyVariants(label string) []string {
 		add(string(b))
 	}
 	add(strings.ReplaceAll(label, "_", "-"))
+	return out
+}
+
+var patternCaptureRE = regexp.MustCompile(`<([A-Za-z][A-Za-z0-9_]*)>`)
+
+// stageDefinedLabels returns the label names a pattern or label_format stage
+// creates: pattern captures and label_format destinations.
+func stageDefinedLabels(stage string) []string {
+	var out []string
+	switch {
+	case strings.HasPrefix(stage, "pattern "):
+		for _, m := range patternCaptureRE.FindAllStringSubmatch(stage, -1) {
+			out = append(out, m[1])
+		}
+	case strings.HasPrefix(stage, "label_format "):
+		for _, assign := range splitLabelFormatAssignments(stage[len("label_format "):]) {
+			if name, _, ok := strings.Cut(assign, "="); ok {
+				out = append(out, strings.TrimSpace(name))
+			}
+		}
+	}
 	return out
 }
 
@@ -96,6 +122,13 @@ func isLabelFilterStage(stage string) bool {
 // a filter that rejects the empty value holds when any candidate satisfies it,
 // and one that accepts the empty value holds when every candidate does.
 func translateParsedKeyFilter(stage string, keys []string, value string, op logqlSingleFilterOp, caps logsql.Capabilities) (string, bool) {
+	// An existence check (label!="") keeps its single key: the Drilldown
+	// single-field fast paths recognise that exact `filter field:!""` shape, and
+	// the labels Drilldown checks come from detected_fields, which resolves them
+	// to stored fields.
+	if op.negate && !op.isRe && !op.isComp && streamMatcherValue(value, false) == "" {
+		keys = keys[:1]
+	}
 	filters := make([]string, 0, len(keys))
 	for _, key := range keys {
 		f, ok := translateSingleLabelFilter(stage, func(string) string { return key }, caps)

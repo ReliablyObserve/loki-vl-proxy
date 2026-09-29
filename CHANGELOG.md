@@ -281,10 +281,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and comparisons hold when any spelling matches, and `!=`, `!~` and empty
   checks hold when every spelling does. Names the label translation maps to a
   known field, regexp captures and `| json a="b.c"` expressions keep their
-  single key. Range metrics already resolved these names through the pushdown
-  spelling probe and the raw-row evaluator and are unchanged. Not changed:
-  `unwrap` of a sanitized key, and the label-filter regexp that is not
-  anchored as Loki's is.
+  single key, and so does an existence check (`label!=""`), which the Drilldown
+  single-field fast paths recognise by its exact shape. Range metrics take the
+  same filter (their parser-dependent shapes already fell back to the pushdown
+  spelling probe and the raw-row evaluator, which are unchanged) and return
+  the totals Loki returns on the e2e fixture. Not changed: `unwrap` of a
+  sanitized key, and the label-filter regexp that is not anchored as Loki's
+  is. `detected_fields` also names a dotted or hyphenated logfmt key by its
+  sanitized label, as it does a JSON key, and the `service_name` values
+  request honours `-label-values-max-response-bytes` like every other label.
 - **Label values are bounded like Loki's instead of being read in full
   whatever their size.** `/loki/api/v1/label/{name}/values` read the whole
   VictoriaLogs answer (up to a hidden 256 MiB), then decoded, indexed and
