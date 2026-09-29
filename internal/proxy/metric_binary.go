@@ -329,6 +329,11 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 // grouped field's non-empty filter.
 var fieldBreakdownParserRE = regexp.MustCompile(`\s*\|\s*unpack_(json|logfmt)\s*\|\s*filter\s+([A-Za-z][A-Za-z0-9_]*):!""$`)
 
+// logsQLPipeNameRE matches the name of each pipe in a LogsQL query (and of
+// anything after a `|` inside a quoted string, which only makes a caller more
+// cautious).
+var logsQLPipeNameRE = regexp.MustCompile(`\|\s*([A-Za-z_]+)`)
+
 // fieldBreakdownQuery rewrites a parsed single-field breakdown,
 // `<base> | unpack_json | filter f:!"" | stats by (f) count()` (Logs Drilldown's
 // field breakdown), so VictoriaLogs parses only the lines that can hold the
@@ -341,7 +346,9 @@ var fieldBreakdownParserRE = regexp.MustCompile(`\s*\|\s*unpack_(json|logfmt)\s*
 // only on lines without a stored f and reads only f: a stored value wins over
 // the line's key, as a Loki stream label or structured metadata does (the
 // parsed key becomes f_extracted there), where the whole-line unpack let the
-// key overwrite it. Any other query is returned unchanged.
+// key overwrite it. Only filter pipes may precede the parser: a pipe that sets
+// f there (label_format, pattern, another parser) would win over the key too.
+// Any other query is returned unchanged.
 func fieldBreakdownQuery(logsqlQuery string) string {
 	spec, ok := parseSingleFieldCountSpec(logsqlQuery)
 	if !ok {
@@ -355,15 +362,21 @@ func fieldBreakdownQuery(logsqlQuery string) string {
 	if field != spec.GroupBy[0] || strings.HasSuffix(field, "_extracted") {
 		return logsqlQuery
 	}
+	head := spec.BaseQuery[:m[0]]
+	for _, pipe := range logsQLPipeNameRE.FindAllStringSubmatch(head, -1) {
+		if pipe[1] != "filter" {
+			return logsqlQuery
+		}
+	}
 	escaped := ""
 	if parser == "json" {
 		escaped = ` or _msg:~"\\\\u"`
 	}
-	return spec.BaseQuery[:m[0]] +
+	return head +
 		" | filter (" + field + ":* or _msg:" + strconv.Quote(field) + escaped + ")" +
 		" | unpack_" + parser + " if (-" + field + ":*) fields (" + field + ")" +
 		" | filter " + field + `:!""` +
-		logsqlQuery[strings.Index(logsqlQuery, spec.BaseQuery)+len(spec.BaseQuery):]
+		logsqlQuery[len(spec.BaseQuery):]
 }
 
 // rankedSingleFieldQuery restricts a single-field grouped count to the limit+1

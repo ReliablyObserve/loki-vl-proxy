@@ -270,6 +270,10 @@ func TestFieldBreakdownQuery(t *testing.T) {
 		{`app:="x" | unpack_json | filter a:!"" | stats by (a, b) count()`, ""},
 		{`app:="x" | unpack_json | filter a:!"" | stats by (a) count() as __lvp_inner | math __lvp_inner/60 as c`, ""},
 		{`app:="x" pod:!"" | stats by (pod) count()`, ""},
+		// Unchanged: a pipe before the parser that may set the field itself.
+		{`app:="x" | format "<app>" as pipeline | unpack_json | filter pipeline:!"" | stats by (pipeline) count()`, ""},
+		{`app:="x" | extract "<pipeline> <_>" | unpack_json | filter pipeline:!"" | stats by (pipeline) count()`, ""},
+		{`app:="x" | unpack_logfmt | unpack_json | filter pipeline:!"" | stats by (pipeline) count()`, ""},
 	}
 	for _, tc := range cases {
 		want := tc.want

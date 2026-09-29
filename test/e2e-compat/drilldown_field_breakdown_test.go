@@ -32,7 +32,8 @@ func TestRangeMetricCompatibilityDrilldownFieldBreakdown(t *testing.T) {
 		}
 		lines = append(lines,
 			jsonVolumeStreamLine{ts: at(0), msg: fmt.Sprintf(`{"pipeline":"p-body","user_id":"u-body","n":%d}`, i)},
-			jsonVolumeStreamLine{ts: at(1), msg: fmt.Sprintf(`{"pipeline":"p-escaped","user_id":"u-escaped","n":%d}`, i)},
+			// The keys are spelled with \u escapes: pipe\u006cine, user\u005fid.
+			jsonVolumeStreamLine{ts: at(1), msg: fmt.Sprintf("{\"pipe\\u006cine\":\"p-escaped\",\"user\\u005fid\":\"u-escaped\",\"n\":%d}", i)},
 			jsonVolumeStreamLine{ts: at(2), msg: fmt.Sprintf(`{"msg":"stored only","n":%d}`, i), meta: meta("p-meta", "u-meta"), vlMeta: meta("p-meta", "u-meta")},
 			jsonVolumeStreamLine{ts: at(3), msg: fmt.Sprintf(`{"pipeline":"p-shadowed","user_id":"u-shadowed","n":%d}`, i), meta: meta("p-stored", "u-stored"), vlMeta: meta("p-stored", "u-stored")},
 			jsonVolumeStreamLine{ts: at(4), msg: fmt.Sprintf(`{"pipeline" : "p-spaced", "user_id" : "u-spaced", "n":%d}`, i)},

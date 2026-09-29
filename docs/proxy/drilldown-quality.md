@@ -37,12 +37,12 @@ proxyStatsQueryRange
   range == step: fetch from start - range on buckets anchored to the request
                  start, relabel each bucket onto Loki's evaluation timestamp
   proxyStatsQueryRangeDirectAnchored
-      limit = tenant's max_query_series
-              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
       parsed field breakdown (fieldBreakdownQuery):
           <base> | filter (f:* or _msg:"f" or _msg:~"\\\\u")
                  | unpack_json if (-f:*) fields (f) | filter f:!""
                  | stats by (f) count()
+      limit = tenant's max_query_series
+              (-tenant-limits → -tenant-default-limits → -max-stats-query-series → 500)
       Drilldown: take a -stats-query-range-concurrency slot
       one stats_query_range call, read until limit+1 series
       under the limit: every series (Drilldown and plain clients alike)
@@ -77,11 +77,20 @@ its token index (`_msg:"f"`), unless the key is spelled with a `\u` escape
 holding `\u` are parsed too. The parser runs only on lines without a stored
 `f` and reads only `f`, so a stored value wins over the line's key, as a Loki
 stream label or structured metadata does (Loki renames the parsed key to
-`f_extracted`). Where VictoriaLogs keeps the JSON keys as fields, as it does
-for the log generator's data, no line is parsed at all. On the A/B stack's
-seeded hour, with VictoriaLogs limited to 4 CPUs, the `pipeline`, `user_id`
-and `batch_id` breakdowns take VictoriaLogs 15 to 30 ms instead of 90 to
-100 ms.
+`f_extracted`). The rewrite applies only when filters alone precede the
+parser; a pipe that could set `f` there (`label_format`, `pattern`, another
+parser) keeps the translator's query.
+
+What it saves depends on how the lines are stored. Where the ingestion route
+keeps the JSON keys as fields (the log generator's data), a line holding `f`
+has it stored and is not parsed, and the other lines are skipped from the
+field's column: on the A/B stack's seeded hour, with VictoriaLogs limited to 4
+CPUs, the `pipeline`, `user_id` and `batch_id` breakdowns take VictoriaLogs 15
+to 30 ms instead of 90 to 100 ms. Where the line is kept only as `_msg`, the
+`\u` alternative makes VictoriaLogs read `_msg` of every line (it has no token
+to look up), so the saving is the JSON parse of the lines without the field's
+word: the same hour kept as `_msg` only takes VictoriaLogs 26, 67 and 49 ms
+instead of 85, 95 and 100 ms for the three breakdowns (no CPU limit).
 
 ### Deviation From Loki
 
@@ -90,6 +99,12 @@ proxy keeps the busiest. For series of equal volume the kept set can differ;
 the values of every kept series match Loki's. The residual-chunk suppression
 exists for Grafana's merge of split chunks (see
 [Drilldown compatibility](../compatibility-drilldown.md#long-range-histograms-and-grafana-querysplitting)).
+
+A breakdown counts a line whose stored `f` differs from its body key under the
+stored value, as Loki does. Other queries that filter on a parsed field, such
+as the value filter Drilldown adds on a click (`| json | f="v"`), still let the
+body key replace the stored value in VictoriaLogs, so on such lines they can
+disagree with the breakdown and with Loki.
 
 ## Loki Parity
 
