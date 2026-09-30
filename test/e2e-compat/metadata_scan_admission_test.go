@@ -130,11 +130,25 @@ func TestCompat_MetadataScanAdmission(t *testing.T) {
 
 	// The bound changes when a request is answered, never what it answers:
 	// the 7-day label list must still carry every label Loki reports.
+	//
+	// The window ends after the newest row (tests stamp rows a few seconds
+	// ahead) and the selector is one no other test sends: Loki answers from its
+	// index, which covers streams written seconds before the window ends, and
+	// the proxy's /labels response cache is keyed on the window in 6-hour
+	// steps and served for up to an hour, so an unfiltered or shared-selector
+	// request would compare against an answer cached before the group's later
+	// tests ingested their streams (the same on main).
 	t.Run("7d label list matches Loki", func(t *testing.T) {
-		lokiLabels := metadataList(t, lokiURL, "/loki/api/v1/labels?"+window(""))
+		probeEnd := time.Now().Add(time.Minute)
+		probe := url.Values{
+			"start": {strconv.FormatInt(probeEnd.Add(-7*24*time.Hour).UnixNano(), 10)},
+			"end":   {strconv.FormatInt(probeEnd.UnixNano(), 10)},
+			"query": {`{app=~".+", env!="metadata-scan-admission-probe"}`},
+		}.Encode()
+		lokiLabels := metadataList(t, lokiURL, "/loki/api/v1/labels?"+probe)
 		var proxyLabels []string
 		for attempt := 0; attempt < 6; attempt++ {
-			status, body, err := get(proxyURL, "/loki/api/v1/labels?"+window(""))
+			status, body, err := get(proxyURL, "/loki/api/v1/labels?"+probe)
 			if err == nil && status == http.StatusOK {
 				proxyLabels = decodeMetadataList(t, body)
 				break
