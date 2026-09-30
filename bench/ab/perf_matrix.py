@@ -183,6 +183,10 @@ def main():
                 # "end_offset" (seconds) ends the whole window that long before the
                 # run's end, e.g. a historical control next to near-now shapes.
                 run_end = end - int(shape.get("end_offset", 0)) - int(shift) * run
+                # "pause" (seconds) waits before every run after the first, e.g. to
+                # outlast a cache's max staleness so each run meets an aged entry.
+                if run and shape.get("pause"):
+                    time.sleep(float(shape["pause"]))
                 for tname, base in targets:
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue

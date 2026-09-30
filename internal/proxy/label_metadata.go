@@ -606,9 +606,21 @@ func (p *Proxy) nearNowWindow(endpoint string) (time.Duration, bool) {
 // TTL) only makes the entry look older, never younger, so a refetch is never
 // missed.
 func (p *Proxy) shouldBypassRecentTailCache(endpoint string, ttl, remaining time.Duration, r *http.Request) bool {
+	return p.shouldBypassStaleEntry(endpoint, ttl, remaining, -1, r)
+}
+
+// shouldBypassStaleEntry is shouldBypassRecentTailCache for an entry whose age
+// is known (age >= 0, from the time it was stored on this replica). A negative
+// age falls back to ttl minus remaining. The known age is what keeps an entry
+// stored with a shorter TTL than ttl (an empty answer, a non-owner shadow copy)
+// from looking old: it is refetched once per max-staleness, not on every hit.
+func (p *Proxy) shouldBypassStaleEntry(endpoint string, ttl, remaining, age time.Duration, r *http.Request) bool {
 	window, ok := p.nearNowWindow(endpoint)
 	if !ok || ttl <= 0 || remaining <= 0 {
 		return false
+	}
+	if age < 0 {
+		age = ttl - remaining
 	}
 	// The near-now freshness bypass must be able to fire BEFORE the cache entry
 	// expires, otherwise it never triggers and live-tail Explore refreshes serve
@@ -620,10 +632,32 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, ttl, remaining time
 	if maxStaleness >= ttl {
 		maxStaleness = ttl / 2
 	}
-	if ttl-remaining < maxStaleness {
+	if age < maxStaleness {
 		return false
 	}
 	return requestEndsWithin(r, window)
+}
+
+// metadataCacheLookup reads a /labels or /label/{name}/values entry and decides
+// what the request does with it. serve: the entry may be answered as is.
+// freshFetch: the request ends within max-metadata-cache-freshness of now and
+// has no entry or a stale one, so it is answered from the backend (through the
+// inventory) and skips the short exact-window caches and the hot values index,
+// like Loki reading the last 24h live. An entry is stale when it is older than
+// max-staleness; an empty answer is stored with the negative TTL, which only
+// matters when the entry's age is unknown.
+func (p *Proxy) metadataCacheLookup(endpoint, cacheKey string, ttl time.Duration, r *http.Request) (cached []byte, remaining time.Duration, serve, freshFetch bool) {
+	cached, remaining, age, _, hit := p.endpointReadCacheEntryAge(endpoint, cacheKey)
+	window, enabled := p.nearNowWindow(endpoint)
+	nearNow := enabled && requestEndsWithin(r, window)
+	stale := false
+	if hit {
+		if metadataListPayloadEmpty(cached) {
+			ttl = p.metadataNegativeTTL()
+		}
+		stale = p.shouldBypassStaleEntry(endpoint, ttl, remaining, age, r)
+	}
+	return cached, remaining, hit && !stale, nearNow && (!hit || stale)
 }
 
 // syncFetchStrings runs a synchronous label listing fetch so concurrent requests

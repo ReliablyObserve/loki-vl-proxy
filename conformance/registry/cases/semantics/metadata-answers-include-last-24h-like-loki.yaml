@@ -21,24 +21,39 @@ why: |
   is always read live.
 
   The proxy follows the same rule with -max-metadata-cache-freshness (default
-  24h, 0 keeps the previous caching). A request ending within that window of
-  now refetches a cached answer once the answer is older than
-  -recent-tail-refresh-max-staleness (2s, so bursts of refreshes share one
-  backend pass): the refetch reads the time-bucketed inventory, which serves
-  sealed buckets from its cache and asks VictoriaLogs for the last minute and
-  the unaligned edges only. A request ending before now minus the window keeps
-  the cached answer, its TTL and its background refresh. The compatibility edge
-  cache applies the same window to labels, label values and series. The rule
-  does not depend on -recent-tail-refresh-enabled.
+  24h, 0 keeps the previous caching; Loki's option is per tenant, the proxy's is
+  global). A request ending within that window of now refetches a cached answer
+  once the answer is older than -recent-tail-refresh-max-staleness (2s, so
+  bursts of refreshes share one backend pass): the refetch reads the
+  time-bucketed inventory, which serves sealed buckets from its cache and reads
+  the newest minute and buckets due for revalidation live. A request with no
+  cached answer is treated the same way, and so are the multi-tenant merged
+  answers, the detected_level values and the compatibility edge cache. A
+  request ending before now minus the window keeps the cached answer, its TTL
+  and its background refresh. An entry's age is the time since it was stored
+  on the replica, so a copy stored with a shorter TTL (an empty answer, a
+  non-owner shadow copy) is not refetched on every request; a copy read from
+  a peer or disk has no store time, and its age is derived from the owner's TTL. The rule does not
+  depend on -recent-tail-refresh-enabled.
 
   Implemented in internal/proxy/label_handlers.go (hit check and the shared
   refetch), internal/proxy/label_metadata.go (nearNowWindow,
   shouldBypassRecentTailCache) and internal/proxy/middleware.go (compatibility
   edge cache).
 
+  Empty hour and day buckets of a countable query (stream and field filters
+  only) that ended within the freshness window are rechecked at the negative
+  TTL with one row count per contiguous run of such buckets (a run that
+  received rows is halved to find the buckets to rescan), so rows backfilled
+  into cached empty hours appear within the negative TTL. Empty buckets that
+  cannot be counted (5m and 1m buckets, word, phrase or pipe filters) are
+  rechecked at the negative TTL for the last hour only; older ones follow the
+  age schedule.
+
   Accepted limit: a row that lands more than a minute late in an already
-  sealed inventory bucket appears after that bucket's revalidation, not at
-  once.
+  sealed, non-empty inventory bucket, or in an empty bucket that cannot be
+  counted and ended more than an hour ago, appears after that bucket's
+  revalidation, not at once.
 request:
   method: GET
   path: /loki/api/v1/labels

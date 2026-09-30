@@ -10,7 +10,6 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 12 | `/loki/api/v1/label/{name}/values` | explore, drilldown, datasource, api | native_vl | 0 | 0 | no test compares it against Loki |
 | 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 29 | 9 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 7 | `/loki/api/v1/detected_field/{name}/values` | drilldown, api | native_vl | 0 | 0 | no test compares it against Loki; no test wired to the registry |
-| 6 | `/loki/api/v1/series` | explore, datasource, api | hybrid | 29 | 8 | no test wired to the registry |
 | 6 | `/loki/api/v1/index/volume_range` | drilldown, api | proxy_side | 22 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/index/volume` | drilldown, api | proxy_side | 26 | 7 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/index/stats` | explore, datasource, api | native_vl | 19 | 5 | no test wired to the registry |

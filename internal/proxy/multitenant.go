@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string) bool {
@@ -37,7 +38,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
-		if cached, ok := p.cache.Get(cacheKey); ok {
+		if cached, remaining, age, ok := p.cache.GetWithAge(cacheKey); ok && !p.multiTenantMergeStale(endpoint, cached, remaining, age, filteredReq) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			return true
@@ -211,6 +212,20 @@ func (p *Proxy) writeMultiTenantMerged(w http.ResponseWriter, r *http.Request, e
 	if cacheKey, cacheable := p.multiTenantCacheKey(r, endpoint); cacheable {
 		p.setMultiTenantMergeCache(endpoint, cacheKey, body)
 	}
+}
+
+// multiTenantMergeStale reports whether a cached merged listing of a near-now
+// labels, label values or series request is older than max-staleness and must
+// be rebuilt from the tenants, like the single-tenant answers.
+func (p *Proxy) multiTenantMergeStale(endpoint string, cached []byte, remaining, age time.Duration, r *http.Request) bool {
+	if !isMetadataListEndpoint(endpoint) {
+		return false
+	}
+	ttl := CacheTTLs[endpoint]
+	if (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(cached) {
+		ttl = p.metadataNegativeTTL()
+	}
+	return p.shouldBypassStaleEntry(endpoint, ttl, remaining, age, r)
 }
 
 // setMultiTenantMergeCache stores a merged multi-tenant response through the

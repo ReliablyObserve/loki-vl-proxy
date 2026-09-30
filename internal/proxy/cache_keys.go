@@ -299,17 +299,24 @@ func (p *Proxy) setEndpointReadCacheWithTTL(endpoint, cacheKey string, value []b
 }
 
 func (p *Proxy) endpointReadCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
+	body, ttl, _, tier, ok := p.endpointReadCacheEntryAge(endpoint, cacheKey)
+	return body, ttl, tier, ok
+}
+
+// endpointReadCacheEntryAge is endpointReadCacheEntry plus the entry's age on
+// this replica (-1 when unknown), see cache.GetSharedWithAge.
+func (p *Proxy) endpointReadCacheEntryAge(endpoint, cacheKey string) ([]byte, time.Duration, time.Duration, string, bool) {
 	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
-		return nil, 0, "", false
+		return nil, 0, 0, "", false
 	}
 	if p.endpointUsesSharedReadCache(endpoint) {
-		return p.cache.GetSharedWithTTL(cacheKey)
+		return p.cache.GetSharedWithAge(cacheKey)
 	}
-	body, ttl, ok := p.cache.GetWithTTL(cacheKey)
+	body, ttl, age, ok := p.cache.GetWithAge(cacheKey)
 	if !ok {
-		return nil, 0, "", false
+		return nil, 0, 0, "", false
 	}
-	return body, ttl, "l1_memory", true
+	return body, ttl, age, "l1_memory", true
 }
 
 func (p *Proxy) staleEndpointCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {

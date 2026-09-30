@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Metadata freshness follow-ups: multi-tenant answers, cold requests and
+  `detected_level` values follow Loki's live window too, and entries stored
+  with a shorter TTL no longer add VictoriaLogs load.** With
+  `-max-metadata-cache-freshness` a request that ends within the window now
+  also refetches (instead of serving a stale answer) for a multi-tenant merged
+  `/labels`, `/label/{name}/values` or `/series`, for `/label/detected_level/values`,
+  and for a request with no cached answer, which used to read the five-minute
+  exact-window inventory and field-name caches (and, for a browse window, the
+  hot values index) filled before a stream was written. The compatibility edge
+  cache and the endpoint cache measure an entry's age from the time it was
+  stored on the replica, not as TTL minus remaining: an empty answer (stored for
+  the negative TTL) and a non-owner replica's 30s copy looked several minutes
+  old, so every near-now request refetched them. A copy of unknown age (read from disk, fetched from a peer or read ahead from the owner)
+  falls back to the age derived from the TTL, which is exact because the owner
+  stores with the same TTL. Empty hour and day buckets of a countable query
+  (stream and field filters only) that ended within
+  `-max-metadata-cache-freshness` are rechecked at the negative TTL with one row
+  count per contiguous run of such buckets, and a run that received rows is
+  halved to find the buckets to rescan, so rows backfilled into cached empty
+  hours appear within 30s for a few counts instead of one call per empty bucket;
+  older empty buckets follow the normal age schedule. Empty buckets that cannot
+  be counted (5m and 1m buckets, word, phrase or pipe filters) are rechecked at
+  the negative TTL only for the last hour, older ones on the age schedule.
+  The `-max-metadata-cache-freshness` description now states what is
+  read live: the newest minute and buckets due for revalidation, while sealed
+  buckets stay cached; Loki reads the last 24h plus the split that straddles the
+  boundary live, and its option is per tenant where the proxy's applies to all.
+
 ## [1.101.0] - 2026-09-30
 
 ### Fixed

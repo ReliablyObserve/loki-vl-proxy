@@ -50,7 +50,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | registry item | shapes | vs previous build | proxy cold / warm | Loki cold / warm | results vs Loki |
 |---|---|---|---|---|---|
 | `backend-admission-and-heavy-query-queueing` | 7 × 4 ranges | 28 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs; 2 slower than Loki cold |
-| `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.12s / 0.00s (7d) | 0.03s / 0.03s | same |
+| `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.04s / 0.01s (1h) | 0.01s / 0.01s | differs |
 | `drilldown-service-landing` | 2 × 3 ranges | 6 same | worst 0.11s / 0.12s (24h) | 0.86s / 0.02s | differs |
 | `explore-logs-volume-json` | 7 × 5 ranges | 6 faster, 2 fixed, 15 same, 1 slower | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | differs; 11 slower than Loki cold |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 14 faster, 18 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
@@ -85,7 +85,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 14 faster, 18 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 6 faster, 2 fixed | worst 2.80s / 0.72s (24h) | 0.38s / 0.00s | differs; 7 slower than Loki cold |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 14 faster, 34 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
-| `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.12s / 0.00s (7d) | 0.03s / 0.03s | same |
+| `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.04s / 0.01s (1h) | 0.01s / 0.01s | differs |
 | `series-limits-and-partial-results` | 4 × 4 ranges | 16 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
 | `service-name-derivation` | 2 × 3 ranges | 6 same | worst 0.11s / 0.12s (24h) | 0.86s / 0.02s | differs |
 | `severity-detected-level-derivation` | 12 × 5 ranges | 8 faster, 2 fixed, 29 same | worst 4.05s / 3.93s (24h) | 0.94s / 0.47s | differs; 12 slower than Loki cold |
