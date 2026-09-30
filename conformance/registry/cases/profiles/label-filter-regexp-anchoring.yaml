@@ -1,0 +1,37 @@
+id: profiles/label-filter-regexp-anchoring
+title: A label-filter regexp after a parser is not anchored the way Loki's is (open)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki matches a label-filter regexp against the whole label value
+  (`| json | msg=~"a"` selects a line whose msg is exactly "a", not "cat").
+  The proxy translates `label=~"re"` to VictoriaLogs' `field:~"re"`, a
+  substring match, so a pattern that is not anchored by itself also selects
+  values that merely contain a match, and an alternative that matches the empty
+  string (`=~"GET|"`) matches every value. Found while checking filters on
+  sanitized JSON keys (the filter is translated the same way for every label);
+  reproduced with no dotted key involved (`| json | other=~"no"` selected a
+  line whose value is "no dotted keys here"; Loki selected none).
+
+  Open and pre-existing: it is broader than this change (every label-filter
+  regexp, including stream-selector fallbacks) and selector matchers have an
+  open external change in this area, so it is recorded here and not fixed in
+  the sanitized-key work.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="compat-anchoring-<ts>"} | json | other=~"no"'
+    start: now-10m
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki returns no line for a value that only contains the pattern; the proxy
+    returns it. The expected end state is Loki's answer; until then this case
+    records the observed difference, not a passing assertion.

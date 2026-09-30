@@ -285,9 +285,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single-field fast paths recognise by its exact shape. Range metrics take the
   same filter (their parser-dependent shapes already fell back to the pushdown
   spelling probe and the raw-row evaluator, which are unchanged) and return
-  the totals Loki returns on the e2e fixture. Not changed: `unwrap` of a
-  sanitized key, and the label-filter regexp that is not anchored as Loki's
-  is. `detected_fields` also names a dotted or hyphenated logfmt key by its
+  the totals Loki returns on the e2e fixture. Grouping by a sanitized key or by a
+  json-expression label (`| json a="[\"x.y\"]" ... by (a)`, the form Logs
+  Drilldown builds from `detected_fields`' `jsonPath`) and `unwrap` of such a
+  label now read the value as a field (`copy` for an expression, one
+  `format if` per original spelling for a sanitized name), so VictoriaLogs
+  stats aggregate it and the series are Loki's for range and instant queries
+  and Drilldown-tagged requests, resolved in each stats clause on its own; a
+  parser-derived unwrap label also drops the lines without it, as Loki yields no sample for them. An instant
+  `sum(sum_over_time(... | json | unwrap x [r]))` also collapses its streams
+  into one unlabelled series, as Loki's bare sum does. Not changed: the
+  label-filter regexp that is not anchored as Loki's is (registered as an open
+  item). `detected_fields` also names a dotted or hyphenated logfmt key by its
   sanitized label, as it does a JSON key, and the `service_name` values
   request honours `-label-values-max-response-bytes` like every other label.
 - **Label values are bounded like Loki's instead of being read in full

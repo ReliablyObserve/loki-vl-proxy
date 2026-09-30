@@ -2,6 +2,8 @@ package translator
 
 import (
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -185,4 +187,99 @@ func withParsedKeyVariants(labelFn LabelTranslateFunc, exclude func(string) bool
 		}
 		return strings.Join(parsedKeyVariants(label), parsedKeySep)
 	}
+}
+
+// jsonAliasCopies returns the `| copy "x.y" as a` pipes that give the labels a
+// json expression defines (`| json a="x.y"`) their value as fields.
+func jsonAliasCopies(stage string) string {
+	aliases := parseJSONFieldAliases(stage)
+	names := make([]string, 0, len(aliases))
+	for alias, orig := range aliases {
+		if alias != orig {
+			names = append(names, alias)
+		}
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, alias := range names {
+		b.WriteString(" | copy " + strconv.Quote(aliases[alias]) + " as " + quoteFieldName(alias))
+	}
+	return b.String()
+}
+
+func quoteFieldName(name string) string {
+	if strings.ContainsAny(name, ".-") {
+		return strconv.Quote(name)
+	}
+	return name
+}
+
+var (
+	labelIdentRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	statsFuncArgRE = regexp.MustCompile(`^\s*[A-Za-z_]+\((?:[^,()]*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\)\s*$`)
+)
+
+// resolveStatsKeys prepares the pipeline of a stats clause that groups by or
+// aggregates a label a json or logfmt parser produced under its sanitized
+// name. VictoriaLogs' parsers keep the original key (http.method), so the
+// pipes that precede the stats give the label the value of each original
+// spelling (a line holds at most one), and a parser-derived unwrap label also
+// drops the lines without it, as Loki yields no sample for them. A label the
+// query defines itself (json expression copy, pattern capture, format) and a
+// label the line already stores keep their value. The pipes sit right before
+// the stats, after every stage that could define the label.
+func resolveStatsKeys(query, byLabels, statsExpr string) string {
+	if !strings.Contains(query, "| unpack_json") && !strings.Contains(query, "| unpack_logfmt") {
+		return query
+	}
+	var labels []string
+	seen := map[string]bool{}
+	add := func(l string) {
+		l = strings.TrimSpace(l)
+		if seen[l] || !resolvableLabel(query, l) {
+			return
+		}
+		seen[l] = true
+		labels = append(labels, l)
+	}
+	if byLabels != emptyByGrouping {
+		for _, l := range strings.Split(byLabels, ",") {
+			add(l)
+		}
+	}
+	unwrap := ""
+	if m := statsFuncArgRE.FindStringSubmatch(statsExpr); m != nil {
+		unwrap = m[1]
+		add(unwrap)
+	}
+	var pipes strings.Builder
+	for _, label := range labels {
+		for _, key := range parsedKeyVariants(label)[1:] {
+			pipes.WriteString(" | format if (" + strconv.Quote(key) + `:*) "<` + key + `>" as ` + label + " keep_original_fields")
+		}
+	}
+	// An existence check on a resolved label keeps its single key (the
+	// Drilldown fast paths match that shape), so it runs after the pipes that
+	// give the label its value.
+	for _, label := range labels {
+		if tok := " | filter " + label + `:!""`; strings.Contains(query, tok) {
+			query = strings.Replace(query, tok, "", 1)
+			pipes.WriteString(tok)
+		}
+	}
+	// A parser-derived unwrap label: resolved above, or copied from a json expression.
+	if unwrap != "" && (seen[unwrap] || strings.Contains(query, "| copy ") && strings.Contains(query, " as "+unwrap)) {
+		pipes.WriteString(" | filter " + unwrap + ":*")
+	}
+	return query + pipes.String()
+}
+
+// resolvableLabel reports whether label can be a sanitized parser key that the
+// query does not define itself.
+func resolvableLabel(query, label string) bool {
+	if !labelIdentRE.MatchString(label) || !strings.Contains(label, "_") || strings.HasPrefix(label, "_") ||
+		label == "service_name" || label == "detected_level" {
+		return false
+	}
+	return !strings.Contains(query, " as "+label) && !strings.Contains(query, "<"+label+">")
 }

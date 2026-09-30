@@ -505,6 +505,15 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
 		spec.ByExplicit = true
 	}
+	if !spec.ByExplicit && len(spec.GroupBy) > 0 && internalGroupingOnly(spec.GroupBy) &&
+		origSpec.Func == "sum_over_time" && outerAggregationIsSum(originalLogql) {
+		// An unwrap translates to `stats by (_stream, _msg)` before its outer
+		// sum: that identity is not a label of the result, and summing the
+		// per-stream sums is the sum of all values. Other outer operators
+		// (count, avg, max, topk ...) read one value per stream.
+		spec.GroupBy, spec.OrigGroupBy = nil, nil
+		spec.ByExplicit = true
+	}
 	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 }
 
@@ -2273,4 +2282,23 @@ func rateCounterWindow(values []float64, windowSeconds float64) float64 {
 		prev = current
 	}
 	return increase / windowSeconds
+}
+
+// outerAggregationIsSum reports whether logql is a bare `sum(...)` (no by or
+// without modifier).
+func outerAggregationIsSum(logql string) bool {
+	logql = stripOuterLabelReplace(strings.TrimSpace(logql))
+	rest, ok := strings.CutPrefix(logql, "sum")
+	return ok && hasOuterAggregationWithoutBy(logql) && strings.HasPrefix(strings.TrimSpace(rest), "(")
+}
+
+// internalGroupingOnly reports whether a translated stats grouping holds only
+// the proxy's own stream identity fields (or nothing).
+func internalGroupingOnly(groupBy []string) bool {
+	for _, g := range groupBy {
+		if g != "_stream" && g != "_msg" {
+			return false
+		}
+	}
+	return true
 }

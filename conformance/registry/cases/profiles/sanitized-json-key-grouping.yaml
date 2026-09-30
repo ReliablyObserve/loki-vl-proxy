@@ -1,0 +1,70 @@
+id: profiles/sanitized-json-key-grouping
+title: Grouping by or unwrapping a sanitized or json-expression JSON label gives Loki's series
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown's fields page asks detected_fields for the fields of a stream,
+  then draws one breakdown per field. For a dotted JSON key that VictoriaLogs
+  does not store as a field, detected_fields (Loki-compatible profile) names
+  the key by Loki's sanitized label with the original key in jsonPath, and the
+  breakdown query is `sum by (probe_verb) (count_over_time(... | json
+  probe_verb="[\"probe.verb\"]" | drop __error__,__error_details__ |
+  probe_verb!="" [1m]))`, tagged `X-Query-Tags: Source=grafana-lokiexplore-app`.
+  VictoriaLogs' unpack_json keeps the key `probe.verb`, so the translated
+  `stats by (probe_verb)` grouped every line into one unlabelled series
+  (filters were rewritten to the original key, the grouping was not), and the
+  same query on a sanitized name without an expression (`| json | ... by
+  (probe_verb)`) returned no series on the Drilldown route. `unwrap` of such a
+  label summed a field that does not exist (NaN).
+
+  The translation now makes the label a field, in each stats clause on its
+  own (so each operand of a binary expression resolves separately): a json
+  expression adds `| copy "probe.verb" as probe_verb` after the parser; a
+  sanitized by() or unwrap label of a json or logfmt query adds, right before
+  the stats and after every stage that could define the label, `| format if
+  ("probe.verb":*) "<probe.verb>" as probe_verb keep_original_fields` for each
+  original spelling (each underscore read as a dot, plus the all-hyphen
+  spelling; a line holds at most one, and a label the line or stream already
+  stores wins, as in Loki). `stats by (...)` and `sum(...)` then aggregate a
+  real field, pushed down to VictoriaLogs stats for range queries. A
+  parser-derived unwrap label also adds `| filter label:*` right before the
+  stats: Loki yields no sample for a line without it, VictoriaLogs otherwise
+  returned a NaN series. A label the query defines itself (json expression,
+  pattern or regexp capture, label_format) is never overwritten, and an
+  existence filter on a resolved label runs after the pipes that give it its
+  value.
+
+  Instant queries over a parser are evaluated on raw rows by design (bounded
+  by -manual-range-metric-row-limit); a bare instant `sum(sum_over_time(...|
+  unwrap x))` now collapses its streams into one unlabelled series like Loki's
+  sum, while count, avg, max, topk and the other outer operators keep one value
+  per stream as before.
+
+  Residual difference, unchanged: a label defined by a json expression is
+  always present in Loki, so a line without its path forms the series
+  {a=""}; the proxy drops empty labels and returns {} for such lines, which
+  only shows when no `a!=""` filter follows (Drilldown always adds one).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (gk_verb) (count_over_time({app="compat-grouping-<ts>"} | json gk_verb="[\"gk.verb\"]" | drop __error__,__error_details__ | gk_verb!="" [60s]))'
+    start: now-10m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: exact
+  fields: [series, values]
+  expect: |
+    The same series and totals as Loki for by() of a sanitized key, of a json
+    expression (bracket and nested-path forms, with and without a following
+    `a!=""`), and sum/by over unwrap of a sanitized key or expression label,
+    for range and instant queries, plain and Drilldown-tagged, through the
+    parity, Loki-compatible and Drilldown proxies, and for the fields-page
+    sequence detected_fields -> breakdown by the returned name and jsonPath
+    (TestCompat_SanitizedJSONKeyGroupingMatchesLoki).

@@ -792,6 +792,12 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			})
 		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		aliasCopies := ""
+		if translated == "| unpack_json" && strings.HasPrefix(stage, "json ") {
+			// `| json a="x.y"` defines the label a from the key x.y: make it a
+			// field, so grouping and unwrap on a read it as Loki does.
+			aliasCopies = strings.TrimPrefix(jsonAliasCopies(stage), " ")
+		}
 		if strings.HasPrefix(translated, errUnknownParser) {
 			parserName := strings.TrimPrefix(translated, errUnknownParser)
 			return "", fmt.Errorf("unknown pipeline stage %q — not a valid LogQL parser or label filter", parserName)
@@ -841,6 +847,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 				}
 			} else {
 				parts = append(parts, translated)
+			}
+			if aliasCopies != "" {
+				parts = append(parts, aliasCopies)
 			}
 		}
 	}
@@ -1916,6 +1925,7 @@ func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
 	if query == "" {
 		query = "*"
 	}
+	query = resolveStatsKeys(query, byLabels, statsExpr)
 	// emptyByGrouping requires explicit "by ()" — PipeStats can't represent
 	// an empty-but-explicit grouping without a dedicated struct field.
 	if byLabels == emptyByGrouping {
@@ -2569,7 +2579,12 @@ func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
 		return query + " | stats by (" + labels + ")"
 	}
 	statsStart := idx + len("| stats ")
-	return query[:statsStart] + "by (" + labels + ") " + query[statsStart:]
+	rest := query[statsStart:]
+	// The grouping may name sanitized parser keys: resolve them before the stats.
+	expr, _, _ := strings.Cut(rest, " as ")
+	expr, _, _ = strings.Cut(expr, " | ")
+	prefix := resolveStatsKeys(strings.TrimRight(query[:idx], " "), labels, expr)
+	return prefix + " | stats by (" + labels + ") " + rest
 }
 
 func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {

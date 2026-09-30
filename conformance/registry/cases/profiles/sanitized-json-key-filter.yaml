@@ -30,14 +30,9 @@ why: |
   Not covered here: an existence check (`| label!=""`) keeps its single key,
   because the Drilldown single-field fast paths recognise that exact filter
   shape (its labels come from detected_fields, which resolves them to stored
-  fields); `unwrap` of a sanitized key, unchanged; a label-filter regexp
-  is not anchored the way Loki's is (`| msg=~"a"` matches "cat"), unchanged;
-  and grouping by a name a json expression defines
-  (`sum by (probe_verb) (count_over_time(... | json probe_verb="[\"probe.verb\"]"
-  | ...))`, the form Logs Drilldown builds from detected_fields' jsonPath)
-  filters on the original key but still groups by the sanitized name, so a
-  dotted key that is not a stored field collapses into one unlabelled series;
-  the same answer as before this change, recorded as an open gap.
+  fields); grouping and unwrap are proven in profiles/sanitized-json-key-grouping;
+  and a label-filter regexp is not anchored the way Loki's is
+  (`| msg=~"a"` matches "cat"), an open item recorded separately and unchanged.
 request:
   method: GET
   path: /loki/api/v1/query_range
