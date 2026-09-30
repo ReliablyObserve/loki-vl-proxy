@@ -153,11 +153,21 @@ func TestParsedKeyGroupingAndUnwrapReadOriginalKeys(t *testing.T) {
 	}{
 		{
 			name:  "by() of a sanitized key",
-			query: `sum by (http_method) (count_over_time({app="a"} | json | http_method!="" [1m]))`,
+			query: `sum by (http_method) (count_over_time({app="a"} | json | drop other | http_method!="" [1m]))`,
 			want: []string{
 				`| format if ("http.method":*) "<http.method>" as http_method keep_original_fields | format if ("http-method":*) "<http-method>" as http_method keep_original_fields | filter http_method:!"" | stats by (http_method) count()`,
-				`stats by (http_method) count()`,
 			},
+		},
+		{
+			name:    "the single-field count breakdown shape keeps its exact key",
+			query:   `sum by (http_method) (count_over_time({app="a"} | json | http_method!="" [1m]))`,
+			want:    []string{`| unpack_json | filter http_method:!"" | stats by (http_method) count()`},
+			notWant: []string{`format if`},
+		},
+		{
+			name:    "Drilldown's field breakdown, with its error drop, keeps its exact key",
+			query:   `sum by (user_id) (count_over_time({app="a"} | logfmt | drop __error__, __error_details__ | user_id!="" [5m]))`,
+			notWant: []string{`format if`},
 		},
 		{
 			name:  "unwrap of a sanitized key",

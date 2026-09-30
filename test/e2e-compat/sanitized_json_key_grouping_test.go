@@ -114,8 +114,11 @@ func TestCompat_SanitizedJSONKeyGroupingMatchesLoki(t *testing.T) {
 	}
 
 	queries := []string{
-		`sum by (gk_verb) (count_over_time(` + sel + ` | json | gk_verb!="" [60s]))`,
-		`sum by (gk_verb) (count_over_time(` + sel + ` | json | drop __error__,__error_details__ | gk_verb!="" [60s]))`,
+		// The single-field count breakdown shape (`| json | f!=""`, optionally with the
+		// error drop) keeps its exact key, which Drilldown names through an
+		// expression; a stage between the parser and the filter resolves the name.
+		`sum by (gk_verb) (count_over_time(` + sel + ` | json | drop msg | gk_verb!="" [60s]))`,
+		`sum by (gk_verb) (count_over_time(` + sel + ` | json | gk_verb=~"GET|POST" [60s]))`,
 		`sum by (gk_verb) (count_over_time(` + sel + ` | json | gk_verb="GET" [60s]))`,
 		`sum by (v) (count_over_time(` + sel + ` | json v="[\"gk.verb\"]" | drop __error__,__error_details__ | v!="" [60s]))`,
 		`sum by (v) (count_over_time(` + sel + ` | json v="go.gi" | v!="" [60s]))`,

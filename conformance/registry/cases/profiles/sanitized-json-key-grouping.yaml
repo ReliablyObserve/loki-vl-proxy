@@ -42,6 +42,12 @@ why: |
   sum, while count, avg, max, topk and the other outer operators keep one value
   per stream as before.
 
+  Kept exact: a single-field count breakdown behind its existence check
+  (`| json | f!="" ` or logfmt, with the error drop, `by (f)`) is the shape
+  Drilldown's field breakdown rewrite recognises (parse only the lines that hold
+  the key f, stored or parsed); it keeps exact-key semantics, and Drilldown names
+  a dotted key through the json expression form instead.
+
   Residual difference, unchanged: a label defined by a json expression is
   always present in Loki, so a line without its path forms the series
   {a=""}; the proxy drops empty labels and returns {} for such lines, which

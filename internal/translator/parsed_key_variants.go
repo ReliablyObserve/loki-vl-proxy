@@ -214,6 +214,8 @@ func quoteFieldName(name string) string {
 	return name
 }
 
+var fieldBreakdownShapeRE = regexp.MustCompile(`\| unpack_(?:json|logfmt)(?: \| delete __error__(?:, ?__error_details__)?)? \| filter ([A-Za-z][A-Za-z0-9_]*):!""$`)
+
 var (
 	labelIdentRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	statsFuncArgRE = regexp.MustCompile(`^\s*[A-Za-z_]+\((?:[^,()]*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\)\s*$`)
@@ -230,6 +232,13 @@ var (
 // the stats, after every stage that could define the label.
 func resolveStatsKeys(query, byLabels, statsExpr string) string {
 	if !strings.Contains(query, "| unpack_json") && !strings.Contains(query, "| unpack_logfmt") {
+		return query
+	}
+	// A single-field count breakdown behind its existence check
+	// (`| unpack_json | filter f:!"" | stats by (f) count()`) keeps the exact-key
+	// semantics the Drilldown field breakdown rewrite relies on (the key f, stored
+	// or parsed); Drilldown names a dotted key through a json expression instead.
+	if m := fieldBreakdownShapeRE.FindStringSubmatch(query); m != nil && statsExpr == "count()" && strings.TrimSpace(byLabels) == m[1] {
 		return query
 	}
 	var labels []string
