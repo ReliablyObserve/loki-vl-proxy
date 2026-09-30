@@ -105,7 +105,11 @@ func TestLabelValuesResponseCap_OverLimitFailsWithLokiResourceExhausted(t *testi
 	vl := wideLabelVL(t, 2000, &calls)
 	p := newGuardTestProxy(t, Config{BackendURL: vl.URL, ExecutionLimits: ExecutionLimitsConfig{LabelValuesMaxResponseBytes: 4096}})
 
+	var afterFirst int64
 	for attempt := 1; attempt <= 2; attempt++ {
+		if attempt == 2 {
+			afterFirst = calls.Load()
+		}
 		rec := getLabelValues(p, "0")
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("attempt %d: status = %d, want 500; body %s", attempt, rec.Code, bodyHead(rec))
@@ -119,9 +123,10 @@ func TestLabelValuesResponseCap_OverLimitFailsWithLokiResourceExhausted(t *testi
 			t.Fatalf("attempt %d: sizes (%s vs. %s), want (4097 vs. 4096)", attempt, m[1], m[2])
 		}
 	}
-	// Not cached: the second request reached VictoriaLogs again.
-	if got := calls.Load(); got != 2 {
-		t.Fatalf("values calls = %d, want 2 (an over-limit answer must not be cached)", got)
+	// Not cached: the second request reached VictoriaLogs again (the inventory
+	// splits the window into several bucket calls, so count growth, not calls).
+	if got := calls.Load(); afterFirst < 1 || got <= afterFirst {
+		t.Fatalf("values calls = %d after %d, want the second request to reach VictoriaLogs again (an over-limit answer must not be cached)", got, afterFirst)
 	}
 	if n := labelValuesIndexSize(p); n != 0 {
 		t.Fatalf("label values index has %d entries, want 0 (an over-limit answer must not be indexed)", n)
@@ -269,7 +274,11 @@ func TestVLResponseAbortedAfterHeaders(t *testing.T) {
 			// -backend-compression=gzip so the proxy accepts the gzip body even
 			// though the fake backend is on loopback.
 			p := newGuardTestProxy(t, Config{BackendURL: srv.URL, BackendTimeout: tc.timeout, BackendCompression: "gzip"})
+			var afterFirst int64
 			for attempt := 1; attempt <= 2; attempt++ {
+				if attempt == 2 {
+					afterFirst = tc.vl.calls.Load()
+				}
 				rec := getLabelValues(p, "0")
 				if rec.Code != tc.wantStatus {
 					t.Fatalf("attempt %d: status = %d, want %d; body %s", attempt, rec.Code, tc.wantStatus, bodyHead(rec))
@@ -287,8 +296,8 @@ func TestVLResponseAbortedAfterHeaders(t *testing.T) {
 					}
 				}
 			}
-			if got := tc.vl.calls.Load(); got != 2 {
-				t.Fatalf("values calls = %d, want 2 (a partial body must not be cached)", got)
+			if got := tc.vl.calls.Load(); afterFirst < 1 || got <= afterFirst {
+				t.Fatalf("values calls = %d after %d, want the second request to reach VictoriaLogs again (a partial body must not be cached)", got, afterFirst)
 			}
 			if n := labelValuesIndexSize(p); n != 0 {
 				t.Fatalf("label values index has %d entries, want 0", n)
