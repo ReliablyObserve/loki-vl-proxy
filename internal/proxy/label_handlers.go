@@ -28,7 +28,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	cacheKey := p.canonicalReadCacheKey("labels", orgID, r)
 
 	labelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabels)
-	if cached, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
+	cached, remaining, _, hit := p.endpointReadCacheEntry("labels", cacheKey)
+	freshFetch := hit && p.shouldBypassRecentTailCache("labels", labelsTTL, remaining, r)
+	if hit && !freshFetch {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -43,7 +45,12 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	search := p.labelSearchParam(r)
 
-	labels, err := p.fetchScopedLabelNames(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, true)
+	// A near-now request past the freshness check also skips the short-lived
+	// exact-window field-name caches, so the refetch reads the inventory.
+	fetchCtx := freshFetchContext(r.Context(), freshFetch)
+	labels, err := p.syncFetchStrings(fetchCtx, cacheKey, func() ([]string, error) {
+		return p.fetchScopedLabelNames(fetchCtx, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, !freshFetch)
+	})
 	if err != nil {
 		// Last known-good full-range answer, if any; otherwise the error, never a
 		// capped partial list.
@@ -137,71 +144,35 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	labelValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues)
-	if cached, remaining, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
-		p.metrics.RecordCacheHit()
-		if !metadataListPayloadEmpty(cached) && p.shouldRefreshLabelsInBackground(remaining, labelValuesTTL) {
-			p.refreshLabelValuesCacheAsync(
-				orgID,
-				cacheKey,
-				labelName,
-				r.FormValue("query"),
-				r.FormValue("start"),
-				r.FormValue("end"),
-				rawLimit,
-				search,
-				p.snapshotForwardedAuth(r),
-			)
-		}
+	cached, remaining, _, hit := p.endpointReadCacheEntry("label_values", cacheKey)
+	freshFetch := hit && p.shouldBypassRecentTailCache("label_values", labelValuesTTL, remaining, r)
+	if hit && !freshFetch {
+		p.serveLabelValuesCacheHit(w, r, start, cached, remaining, labelValuesTTL, cacheKey, labelName, rawLimit, search)
 		return
 	}
 	p.metrics.RecordCacheMiss()
 	r = p.withRequestScope(r)
 
-	if browseWindow && p.labelValuesBrowseMode(rawQuery) {
-		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
-			result := lokiLabelsResponse(indexedValues)
-			p.setMetadataListCache("label_values", cacheKey, result, len(indexedValues), labelValuesTTL)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(result)
-			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
-			return
-		}
+	// A request that bypassed a stale near-now hit skips the hot index shortcut
+	// (the index only knows values an earlier fetch saw) and the short-lived
+	// exact-window field-name cache.
+	fetchCtx := freshFetchContext(r.Context(), freshFetch)
+	if !freshFetch && browseWindow && p.labelValuesBrowseMode(rawQuery) &&
+		p.serveIndexedLabelValues(w, start, p.scopedIndexOrg(r, orgID), cacheKey, labelName, search, offset, limit, labelValuesTTL) {
+		return
 	}
 
 	if labelName == "service_name" {
-		values, err := p.serviceNameValues(withLabelValuesResponseCap(r.Context(), p.labelValuesMaxResponseBytes(orgID)), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
-		if err != nil {
-			if p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
-				return
-			}
-			status := statusFromUpstreamErr(err)
-			p.writeError(w, status, err.Error())
-			p.metrics.RecordRequest("label_values", status, time.Since(start))
-			return
-		}
-		p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
-		if browseWindow && p.labelValuesBrowseMode(rawQuery) {
-			if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
-				values = indexedValues
-			} else {
-				values = selectLabelValuesWindow(values, search, offset, limit, p.limits().EntriesPerQuery)
-			}
-		}
-		result := lokiLabelsResponse(values)
-		p.setMetadataListCache("label_values", cacheKey, result, len(values), labelValuesTTL)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(result)
-		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+		p.serveServiceNameLabelValues(w, r, fetchCtx, start, cacheKey, rawQuery, search, offset, limit, browseWindow, labelValuesTTL)
 		return
 	}
 
 	// Loki's querier fails a response above grpc_server_max_send_msg_size; the
 	// proxy stops reading VictoriaLogs at -label-values-max-response-bytes.
-	valuesCtx := withLabelValuesResponseCap(r.Context(), p.labelValuesMaxResponseBytes(orgID))
-	values, err := p.fetchScopedLabelValues(valuesCtx, labelName, rawQuery, r.FormValue("start"), r.FormValue("end"), rawLimit, search)
+	valuesCtx := withLabelValuesResponseCap(fetchCtx, p.labelValuesMaxResponseBytes(orgID))
+	values, err := p.syncFetchStrings(valuesCtx, cacheKey, func() ([]string, error) {
+		return p.fetchScopedLabelValues(valuesCtx, labelName, rawQuery, r.FormValue("start"), r.FormValue("end"), rawLimit, search)
+	})
 	if err != nil {
 		// Last known-good full-range answer, if any; otherwise the error. A
 		// response over its size limit is answered with the limit error.
@@ -228,6 +199,84 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+}
+
+// serveServiceNameLabelValues answers /label/service_name/values from the
+// service_name discovery path instead of the generic label-values listing.
+func (p *Proxy) serveServiceNameLabelValues(w http.ResponseWriter, r *http.Request, fetchCtx context.Context, start time.Time, cacheKey, rawQuery, search string, offset, limit int, browseWindow bool, ttl time.Duration) {
+	const labelName = "service_name"
+	orgID := r.Header.Get("X-Scope-OrgID")
+	values, err := p.syncFetchStrings(fetchCtx, cacheKey, func() ([]string, error) {
+		return p.serviceNameValues(withLabelValuesResponseCap(fetchCtx, p.labelValuesMaxResponseBytes(orgID)), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+	})
+	if err != nil {
+		if p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
+			return
+		}
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("label_values", status, time.Since(start))
+		return
+	}
+	p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
+	if browseWindow && p.labelValuesBrowseMode(rawQuery) {
+		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
+			values = indexedValues
+		} else {
+			values = selectLabelValuesWindow(values, search, offset, limit, p.limits().EntriesPerQuery)
+		}
+	}
+	result := lokiLabelsResponse(values)
+	p.setMetadataListCache("label_values", cacheKey, result, len(values), ttl)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+}
+
+// freshFetchContext makes a refetch that replaces a stale near-now hit skip the
+// short-lived exact-window field-name caches.
+func freshFetchContext(ctx context.Context, fresh bool) context.Context {
+	if !fresh {
+		return ctx
+	}
+	return context.WithValue(ctx, labelCacheBypassKey{}, true)
+}
+
+// serveIndexedLabelValues answers a browse-window request from the hot values
+// index when it can, and reports whether it did.
+func (p *Proxy) serveIndexedLabelValues(w http.ResponseWriter, start time.Time, indexOrg, cacheKey, labelName, search string, offset, limit int, ttl time.Duration) bool {
+	indexedValues, ok := p.selectLabelValuesFromIndex(indexOrg, labelName, search, offset, limit)
+	if !ok {
+		return false
+	}
+	result := lokiLabelsResponse(indexedValues)
+	p.setMetadataListCache("label_values", cacheKey, result, len(indexedValues), ttl)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+	return true
+}
+
+// serveLabelValuesCacheHit writes a cached /label/{name}/values answer and, once
+// the entry is past the refresh threshold, schedules the background refresh.
+func (p *Proxy) serveLabelValuesCacheHit(w http.ResponseWriter, r *http.Request, start time.Time, cached []byte, remaining, ttl time.Duration, cacheKey, labelName, rawLimit, search string) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(cached)
+	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+	p.metrics.RecordCacheHit()
+	if !metadataListPayloadEmpty(cached) && p.shouldRefreshLabelsInBackground(remaining, ttl) {
+		p.refreshLabelValuesCacheAsync(
+			r.Header.Get("X-Scope-OrgID"),
+			cacheKey,
+			labelName,
+			r.FormValue("query"),
+			r.FormValue("start"),
+			r.FormValue("end"),
+			rawLimit,
+			search,
+			p.snapshotForwardedAuth(r),
+		)
+	}
 }
 
 // handleDetectedLevelLabelValues answers /label/detected_level/values like

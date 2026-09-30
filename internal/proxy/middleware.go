@@ -569,12 +569,12 @@ func patternsPayloadEmpty(body []byte) bool {
 // query_range for 5min (for chart stability), and the hit path has no freshness
 // check of its own; without this, near-now refreshes would serve up-to-5-min-stale
 // data (the reported "refresh doesn't add new logs"). Gated by recent-tail-refresh;
-// historical (not-near-now) queries keep the full cache for stability.
-func (p *Proxy) compatCacheShouldBypassForFreshness(r *http.Request, ttl, remaining time.Duration) bool {
-	if p == nil || !p.recentTailRefreshEnabled || ttl <= 0 || remaining <= 0 {
-		return false
-	}
-	if !p.requestEndsNearNow(r) {
+// historical (not-near-now) queries keep the full cache for stability. Labels,
+// label values and series follow Loki's max_metadata_cache_freshness instead
+// (see nearNowWindow).
+func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining time.Duration) bool {
+	window, ok := p.nearNowWindow(endpoint)
+	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, window) {
 		return false
 	}
 	return ttl-remaining >= p.recentTailRefreshMaxStaleness
@@ -602,7 +602,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(r, ttl, remainingTTL) {
+		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL) {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			body := cached

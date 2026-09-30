@@ -1,0 +1,60 @@
+id: semantics/metadata-answers-include-last-24h-like-loki
+title: Label, label-value and series answers include streams written in the last 24h, as Loki's do
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - loki_api_v1_series
+  - data-probing-and-freshness
+consumer: explore
+why: |
+  A 7-day /labels answer is cached by the proxy for up to an hour (5m for 1h
+  windows, 15m for 6h, 50m for 24h), and the cache key is bucketed to 5m, 1h
+  or 6h. A stream written a few minutes after the answer was cached, carrying
+  a label no earlier stream had, was missing from every later answer until the
+  entry expired. Loki lists it at once.
+
+  Loki v3.7.7 caches /labels, /label/{name}/values and /series results by
+  default (querier/queryrange/roundtrip.go), per split of
+  split_metadata_queries_by_interval (24h), and a split is cached only when its
+  end is older than now - max_metadata_cache_freshness (default 24h;
+  series_cache.go shouldCacheMetadataReq; validation/limits.go). The last 24h
+  is always read live.
+
+  The proxy follows the same rule with -max-metadata-cache-freshness (default
+  24h, 0 keeps the previous caching). A request ending within that window of
+  now refetches a cached answer once the answer is older than
+  -recent-tail-refresh-max-staleness (2s, so bursts of refreshes share one
+  backend pass): the refetch reads the time-bucketed inventory, which serves
+  sealed buckets from its cache and asks VictoriaLogs for the last minute and
+  the unaligned edges only. A request ending before now minus the window keeps
+  the cached answer, its TTL and its background refresh. The compatibility edge
+  cache applies the same window to labels, label values and series. The rule
+  does not depend on -recent-tail-refresh-enabled.
+
+  Implemented in internal/proxy/label_handlers.go (hit check and the shared
+  refetch), internal/proxy/label_metadata.go (nearNowWindow,
+  shouldBypassRecentTailCache) and internal/proxy/middleware.go (compatibility
+  edge cache).
+
+  Accepted limit: a row that lands more than a minute late in an already
+  sealed inventory bucket appears after that bucket's revalidation, not at
+  once.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The same request answered and cached, then a stream with a new label
+    written, then the request repeated more than 2s later (also the 24h and 6h
+    windows and /label/<name>/values).
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The repeated answer equals Loki's and lists the new label (and its value);
+    a window ending before now - 24h is still answered from the cache without a
+    backend call; with the flag at 0 the previous caching is unchanged.

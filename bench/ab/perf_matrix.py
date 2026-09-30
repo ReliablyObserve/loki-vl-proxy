@@ -180,7 +180,9 @@ def main():
                 shift = shape.get("shift", 60)
                 if isinstance(shift, dict):
                     shift = shift.get(rname, 60)
-                run_end = end - int(shift) * run
+                # "end_offset" (seconds) ends the whole window that long before the
+                # run's end, e.g. a historical control next to near-now shapes.
+                run_end = end - int(shape.get("end_offset", 0)) - int(shift) * run
                 for tname, base in targets:
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue

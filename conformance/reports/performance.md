@@ -7,7 +7,7 @@ Do not edit by hand. Timings are the candidate build's; Loki is compared on cold
 Loki's first run can still hit split-level caches warmed by earlier requests, so a Loki cold
 time near zero understates what a truly cold Loki takes.
 
-Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-metric-latency-gap (2026-09-23), pr622-control (2026-09-29), pr622-json-filter-pushdown (2026-09-29), pr617-adaptive-metadata-inventory (2026-09-30), pr624-final-control (2026-09-30), pr624-final-drilldown-breakdown-exact (2026-09-30), pr624-final-loki-profile-otel-metadata (2026-09-30).
+Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-metric-latency-gap (2026-09-23), pr622-control (2026-09-29), pr622-json-filter-pushdown (2026-09-29), metadata-freshness-set (2026-09-30), pr617-adaptive-metadata-inventory (2026-09-30), pr624-final-control (2026-09-30), pr624-final-drilldown-breakdown-exact (2026-09-30), pr624-final-loki-profile-otel-metadata (2026-09-30).
 
 ## Slower than Loki on first load
 
@@ -50,6 +50,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | registry item | shapes | vs previous build | proxy cold / warm | Loki cold / warm | results vs Loki |
 |---|---|---|---|---|---|
 | `backend-admission-and-heavy-query-queueing` | 7 × 4 ranges | 28 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs; 2 slower than Loki cold |
+| `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.12s / 0.00s (7d) | 0.03s / 0.03s | same |
 | `drilldown-service-landing` | 2 × 3 ranges | 6 same | worst 0.11s / 0.12s (24h) | 0.86s / 0.02s | differs |
 | `explore-logs-volume-json` | 7 × 5 ranges | 6 faster, 2 fixed, 15 same, 1 slower | worst 4.62s / 0.71s (24h) | 1.48s / 0.01s | differs; 11 slower than Loki cold |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 14 faster, 18 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
@@ -60,8 +61,8 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `loki_api_v1_detected_fields` | 1 × 4 ranges | 4 same | worst 1.06s / 0.00s (7d) | 0.12s / 0.05s | differs |
 | `loki_api_v1_detected_labels` | 1 × 4 ranges | 4 same | worst 0.02s / 0.00s (7d) | 36.91s / 24.45s | differs |
 | `loki_api_v1_index_volume` | 1 × 4 ranges | 4 same | worst 1.31s / 1.21s (7d) | 0.08s / 0.06s | differs; 2 slower than Loki cold |
-| `loki_api_v1_label_name_values` | 4 × 4 ranges | 6 faster, 10 same | worst 14.79s / 0.00s (7d) | 0.16s / 0.14s | differs |
-| `loki_api_v1_labels` | 4 × 4 ranges | 8 faster, 8 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
+| `loki_api_v1_label_name_values` | 6 × 4 ranges | 6 faster, 18 same | worst 14.79s / 0.00s (7d) | 0.16s / 0.14s | differs |
+| `loki_api_v1_labels` | 6 × 4 ranges | 8 faster, 16 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
 | `loki_api_v1_query` | 4 × 1 ranges | 4 same | worst 0.34s / 0.26s (instant) | 0.12s / 0.12s | same; 1 slower than Loki cold |
 | `loki_api_v1_query_range` | 38 × 5 ranges | 17 faster, 8 fixed, 108 same, 2 slower | worst 29.24s / 0.11s (1h) | 73.19s / 1.15s | differs; 26 slower than Loki cold |
 | `metric-series-identity` | 1 × 3 ranges | 3 same | worst 0.09s / 0.09s (24h) | 0.82s / 0.01s | differs |
@@ -83,7 +84,8 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/json-label-spelling-probe` | 2 × 4 ranges | 2 faster, 5 same, 1 slower | worst 2.42s / 0.38s (24h) | 1.28s / 0.01s | same; 5 slower than Loki cold |
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 14 faster, 18 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 6 faster, 2 fixed | worst 2.80s / 0.72s (24h) | 0.38s / 0.00s | differs; 7 slower than Loki cold |
-| `semantics/label-inventory-exact-and-incremental` | 8 × 4 ranges | 14 faster, 18 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
+| `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 14 faster, 34 same | worst 15.28s / 0.00s (7d) | 0.22s / 0.14s | differs |
+| `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.12s / 0.00s (7d) | 0.03s / 0.03s | same |
 | `series-limits-and-partial-results` | 4 × 4 ranges | 16 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
 | `service-name-derivation` | 2 × 3 ranges | 6 same | worst 0.11s / 0.12s (24h) | 0.86s / 0.02s | differs |
 | `severity-detected-level-derivation` | 12 × 5 ranges | 8 faster, 2 fixed, 29 same | worst 4.05s / 3.93s (24h) | 0.94s / 0.47s | differs; 12 slower than Loki cold |

@@ -557,13 +557,14 @@ func (p *Proxy) shouldRefreshLabelsInBackground(remaining, ttl time.Duration) bo
 	return remaining <= threshold
 }
 
-func (p *Proxy) requestEndsNearNow(r *http.Request) bool {
-	if p == nil || r == nil || p.recentTailRefreshWindow <= 0 {
+// requestEndsWithin reports whether the request's end is within window of now.
+// An omitted end means now, as in Loki.
+func requestEndsWithin(r *http.Request, window time.Duration) bool {
+	if r == nil || window <= 0 {
 		return false
 	}
 	endRaw := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	if endRaw == "" {
-		// Loki defaults to "now" when end is omitted.
 		return true
 	}
 	endNs, ok := parseLokiTimeToUnixNano(endRaw)
@@ -574,15 +575,39 @@ func (p *Proxy) requestEndsNearNow(r *http.Request) bool {
 	if endNs > nowNs {
 		endNs = nowNs
 	}
-	return nowNs-endNs <= p.recentTailRefreshWindow.Nanoseconds()
+	return nowNs-endNs <= window.Nanoseconds()
 }
 
-func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Duration, r *http.Request) bool {
-	if p == nil || !p.recentTailRefreshEnabled {
-		return false
+// isMetadataListEndpoint reports the endpoints Loki's results cache serves
+// only for splits older than max_metadata_cache_freshness.
+func isMetadataListEndpoint(endpoint string) bool {
+	return endpoint == "labels" || endpoint == "label_values" || endpoint == "series"
+}
+
+// nearNowWindow returns how close to now a request's end must be for a cached
+// answer to need a freshness check for endpoint, and whether the check applies.
+// Metadata listings follow Loki's max_metadata_cache_freshness and are a
+// correctness rule, independent of -recent-tail-refresh-enabled; the other
+// endpoints keep the recent-tail refresh window.
+func (p *Proxy) nearNowWindow(endpoint string) (time.Duration, bool) {
+	if p == nil {
+		return 0, false
 	}
-	ttl := CacheTTLs[endpoint]
-	if ttl <= 0 || remaining <= 0 {
+	if isMetadataListEndpoint(endpoint) {
+		return p.metadataCacheFreshness, p.metadataCacheFreshness > 0
+	}
+	return p.recentTailRefreshWindow, p.recentTailRefreshEnabled && p.recentTailRefreshWindow > 0
+}
+
+// shouldBypassRecentTailCache reports whether a cache hit for a near-now request
+// must be refetched. ttl is the TTL the entry was stored with (the endpoint TTL,
+// or the window-scaled TTL for label listings): the entry's age is ttl minus its
+// remaining TTL. A tier that shortens a TTL (non-owner shadow copy, negative
+// TTL) only makes the entry look older, never younger, so a refetch is never
+// missed.
+func (p *Proxy) shouldBypassRecentTailCache(endpoint string, ttl, remaining time.Duration, r *http.Request) bool {
+	window, ok := p.nearNowWindow(endpoint)
+	if !ok || ttl <= 0 || remaining <= 0 {
 		return false
 	}
 	// The near-now freshness bypass must be able to fire BEFORE the cache entry
@@ -595,11 +620,33 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Dura
 	if maxStaleness >= ttl {
 		maxStaleness = ttl / 2
 	}
-	cacheAge := ttl - remaining
-	if cacheAge < maxStaleness {
+	if ttl-remaining < maxStaleness {
 		return false
 	}
-	return p.requestEndsNearNow(r)
+	return requestEndsWithin(r, window)
+}
+
+// syncFetchStrings runs a synchronous label listing fetch so concurrent requests
+// for the same cache key share one backend pass (a near-now request refetches
+// a stale hit, so a burst of identical refreshes would otherwise each scan).
+// A leader whose own request went away fails its waiters with a cancellation;
+// a waiter that is still alive runs the fetch again.
+func (p *Proxy) syncFetchStrings(ctx context.Context, cacheKey string, fetch func() ([]string, error)) ([]string, error) {
+	for attempt := 0; ; attempt++ {
+		v, err, _ := p.labelRefreshGroup.Do("sync:"+cacheKey, func() (interface{}, error) { return fetch() })
+		if err != nil {
+			if attempt < 2 && ctx.Err() == nil && errors.Is(err, context.Canceled) {
+				continue
+			}
+			return nil, err
+		}
+		values, _ := v.([]string)
+		if values == nil {
+			return nil, nil
+		}
+		// Waiters get their own copy: callers sort and filter in place.
+		return append(make([]string, 0, len(values)), values...), nil
+	}
 }
 
 // snapshotForwardedAuth captures the configured forward headers and cookies from r into

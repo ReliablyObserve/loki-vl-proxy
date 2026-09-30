@@ -679,6 +679,59 @@
      ]
     }
    ]
+  },
+  "metadata-freshness": {
+   "description": "Label and label-value listings that end now, which Loki answers live (its results cache holds only splits older than max_metadata_cache_freshness, 24h): the proxy refetches a cached answer older than the recent-tail max-staleness instead of serving it for up to an hour. The historical controls end two days ago and must not change: their answers stay cached.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "labels ending now",
+     "path": "/loki/api/v1/labels",
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/metadata-answers-include-last-24h-like-loki",
+      "semantics/label-inventory-exact-and-incremental",
+      "data-probing-and-freshness"
+     ]
+    },
+    {
+     "name": "label values env ending now",
+     "path": "/loki/api/v1/label/env/values",
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/metadata-answers-include-last-24h-like-loki",
+      "semantics/label-inventory-exact-and-incremental",
+      "data-probing-and-freshness"
+     ]
+    },
+    {
+     "name": "labels ending two days ago (control)",
+     "path": "/loki/api/v1/labels",
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/metadata-answers-include-last-24h-like-loki",
+      "semantics/label-inventory-exact-and-incremental",
+      "data-probing-and-freshness"
+     ],
+     "end_offset": 172800
+    },
+    {
+     "name": "label values env ending two days ago (control)",
+     "path": "/loki/api/v1/label/env/values",
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/metadata-answers-include-last-24h-like-loki",
+      "semantics/label-inventory-exact-and-incremental",
+      "data-probing-and-freshness"
+     ],
+     "end_offset": 172800
+    }
+   ]
   }
  }
 }

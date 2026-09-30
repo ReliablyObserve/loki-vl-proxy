@@ -443,6 +443,12 @@ type Config struct {
 	// only. Default is false (redacted).
 	DebugLogRawQueries bool
 
+	// MetadataCacheFreshness is Loki's max_metadata_cache_freshness: a /labels,
+	// /label/{name}/values or /series request ending within it of now does not
+	// reuse a cached answer older than RecentTailRefreshMaxStaleness, so streams
+	// written in the window are listed as Loki lists them. 0 disables.
+	MetadataCacheFreshness time.Duration
+
 	// MetadataDefaultLookback is the default time window applied to /labels,
 	// /label/{name}/values, and /series when the client omits both start and
 	// end. 0 disables (unbounded scan, prior behavior).
@@ -682,6 +688,7 @@ type Proxy struct {
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 	metadataNegativeCacheTTL              time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	metadataCacheFreshness                time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
 	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
 	// detected_field_values request will spend scanning logs with a parser
@@ -1289,6 +1296,7 @@ func New(cfg Config) (*Proxy, error) {
 		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
+		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
 	p.metadataScanLimiter = newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, resolveMetadataScanFloor(cfg.BackendMinConcurrentMetadataScans),
@@ -2198,7 +2206,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
 		if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
-			if !p.shouldBypassRecentTailCache("query_range", remaining, r) {
+			if !p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], remaining, r) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(cached)
 				elapsed := time.Since(start)
