@@ -135,4 +135,6 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/json-label-spelling-probe` | 5 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `semantics/json-filter-pushdown-without-error-drop` | 4 | 1.43s (B grouped sum, filter, no drop, 24h) | 1.07s |
+| `loki-compatible-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
+| `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |

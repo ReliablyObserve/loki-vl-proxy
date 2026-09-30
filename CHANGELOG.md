@@ -7,106 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.99.0] - 2026-09-30
-
-### Added
-
-- **Label names and values come from a time-bucketed inventory, so a Grafana
-  refresh no longer rescans the whole range.** VictoriaLogs lists label names
-  and values by reading every row in the range, and every refresh that moved
-  the window past the response cache's time bucket was a new scan (on the
-  e2e stack `/labels` took 0.4 s over 1h, 2.9 s over 6h, 5.0 s over 24h and
-  20 s over 7 days on such a refresh; Loki answers from its index in
-  0.01-0.3 s). `stream_field_names`, `stream_field_values`, `field_names` and
-  `field_values` listings are now split into UTC-aligned day, hour, 5-minute
-  and minute buckets kept in the read cache (memory, disk and the owner peer),
-  merged (values unioned, hits summed, ordered as VictoriaLogs orders them, so
-  the answer equals one full-range call), and only the unaligned edges, the
-  last minute and missing buckets are read from VictoriaLogs; a missing hour
-  or day is merged from its cached children first. Buckets are revalidated on
-  a schedule that grows with their age; hour and day buckets of a query made
-  of stream and field filters carry their row count, so revalidating them is
-  a cheap count and rows written late show up. A bucket that fails lets the
-  listing's running scans finish and stay cached for the retry. A listing with
-  a `limit`, a query that is not row-local, or a bucket too large to cache
-  stays one full-range call. The startup warm-up and keep-warm run as the
-  `/labels` request of a client without a tenant header, so the buckets they
-  fill are the ones such clients read. New flag
-  `-metadata-inventory-parallelism` (default 4 bucket listings per request;
-  `0` turns the inventory off), Helm value and limits-registry entry. Label
-  semantics are unchanged. Measured on the e2e stack one request at a time,
-  answers identical to the previous release in every run: a refresh past the
-  cache bucket takes 0.09 s (1h), 0.09 s (6h), 0.05 s (24h) and 0.38 s (7d)
-  instead of 0.38, 2.9, 5.0 and 20.4 s; a never-queried window on a running
-  replica 0.55 s (1h), 0.11 s (6h) and 1.7 s (24h) instead of 1.1, 1.3 and
-  6.6 s. A replica's very first 7-day listing still reads the whole range
-  (19.9 s against 23.4 s).
-- **Long-range metadata scans are admitted by an adaptive limiter.**
-  `-backend-max-concurrent-metadata-scans` (default 8, the ceiling; `0`
-  disables it) and the new `-backend-min-concurrent-metadata-scans` (1),
-  `-backend-metadata-scan-memory-headroom` (0.4) and
-  `-backend-metadata-scan-latency-tolerance` (1.5) bound the long-range
-  `stream_field_names`, `stream_field_values`, `field_names`, `field_values`
-  and `streams` listings (and the inventory's day bucket scans of long
-  listings) per replica. The limit follows the backend, read from
-  VictoriaLogs' `/metrics`, instead of a count sized to one data set: the
-  selects VictoriaLogs runs for others count against it, so a fleet stays
-  near one replica's limit without coordination; a wave of scans slower than
-  the tolerance times their Vegas-style no-load duration shrinks it; a
-  transport failure, timeout, 5xx or VictoriaLogs queue timeout halves it,
-  once per wave; a scan starts only while VictoriaLogs' memory in use (its
-  anonymous resident set minus the Go heap it freed but still holds), plus
-  the learned cost of this scan and of the selects others run, stays inside
-  the headroom; a listing nobody has measured runs alone, or on a backend
-  that is never idle after a short randomised wait with more than half the
-  remaining room; and when memory in use passes a third of the way into the
-  headroom anyway, the replica stops its youngest scan. A request that waits
-  `-backend-heavy-query-queue-wait`, or whose scan was stopped, gets Loki's
-  `429 too many outstanding requests` naming the flags and the signal that
-  closed the door. Behind a vmauth, whose `/metrics` has no VictoriaLogs
-  select series, only the latency and failure feedback apply.
-
-### Fixed
-
-- **Concurrent label inventory scans can no longer OOM-kill VictoriaLogs.**
-  Seven proxy replicas sending a 7-day `stream_field_names` over the whole
-  retention at once (the keep-warm loop ticking in step, or seven users
-  opening a 7-day label browser) OOM-killed the e2e VictoriaLogs (8 GiB) three
-  times in seven minutes on 2026-09-23, eleven replicas warming their caches
-  at a static two scans each did it 53 s after they started, and the stack
-  kept restarting it under normal background load (27 times in five days);
-  metadata listings were outside every admission limit. Now long scans go
-  through the adaptive limiter above and the label inventory splits them
-  into buckets; background inventory work (startup warm-up, keep-warm, stale
-  refreshes) never waits for a slot and never takes the last one while a
-  request could use it; the startup warm-up covers only presets below
-  `-backend-heavy-query-min-range` and runs only while VictoriaLogs has memory
-  and select slots to spare; a preset window whose warm-up failed backs off
-  (one keep-warm interval, doubling to an hour); the keep-warm interval is
-  jittered by up to a quarter; background refreshes never become the
-  single-flight leader a request waits on; and the startup endpoint probes
-  ask about the last minute instead of the whole retention. A deterministic
-  simulation of the fleet admitting whole listings keeps a simulated
-  VictoriaLogs under its memory from the e2e data to 100 times it, where no
-  admission and a static limit kill it; on the e2e stack eleven replicas starting together with seven
-  users' cold 7-day `/labels` left VictoriaLogs' restart count unchanged. The
-  e2e compose stack's proxies run `-metadata-default-lookback=1h` and its
-  VictoriaLogs `-search.maxConcurrentRequests=16`.
-
-## [1.98.0] - 2026-09-30
-
 ### Breaking Changes
-
-- **A grouped count whose VictoriaLogs response is large is no longer
-  answered from a sample.** A `stats_query_range` response above 16 MB used to
-  be answered from a two-phase top-values query or, failing that, with an
-  empty matrix. The response is now read up to
-  `-backend-max-buffered-response-bytes` (64 MiB by default) and answered in
-  full, or with Loki's series-limit error or Drilldown partial result; above
-  that size the query fails with `502` naming the flag.
-- `-drilldown-max-stats-buckets`, `-drilldown-field-batch-window-ms` and
-  `-drilldown-field-batch-max-fields` are deprecated and have no effect; they
-  are still accepted so existing command lines keep working.
 
 - **The Loki-compatible profile rejects dotted names in LogQL with Loki's
   parse error.** In the default profile (`-label-style=underscores
@@ -222,51 +123,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-
-- **Logs Drilldown label and field breakdowns answer exactly like Loki.** A
-  breakdown such as `sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)`
-  or `sum by (user_id) (count_over_time({env="production"} | json ... | user_id!="" [5m]))`
-  was answered from VictoriaLogs `/hits` top values: 16 to 20 series sampled
-  in 8 windows from 2h on, the step coarsened to at most 120 buckets, missing
-  steps zero-filled, samples on bucket starts instead of Loki's evaluation
-  timestamps, and no warning, so a label with six values could show two and a
-  pod breakdown showed 16 of 50,000 pods with counts that matched none of
-  Loki's. The breakdown now takes the same exact path as any other client:
-  every series up to the tenant's `max_query_series` with Loki's values on
-  Loki's evaluation timestamps, from one `stats_query_range` call. Above the
-  limit the breakdown is asked again with VictoriaLogs ranking the field's
-  values (an `in()` subquery keeping the `limit + 1` busiest, remembered for
-  five minutes), so the response stays bounded however many values the field
-  has, and Drilldown gets the `limit` busiest series with Loki's
-  `maximum number of series (N) reached for a single query; returning partial
-  results` warning. Breakdowns share the `-stats-query-range-concurrency`
-  slots. Loki keeps the first series it meets rather than the
-  busiest, so for series of equal volume the kept set can differ; every kept
-  series has Loki's values.
-- **A field breakdown asks VictoriaLogs to parse only the lines that can hold
-  the field, and a stored value wins over the line's key as in Loki.** A
-  breakdown such as `sum by (f) (count_over_time({...} | json | drop __error__, __error_details__ | f!="" [5m]))`
-  (or `| json f="[\"f\"]"`, or `| logfmt`) was sent as `unpack_json` over
-  every key of every line, then the non-empty filter, so VictoriaLogs parsed
-  the whole range, and a line's key overwrote a stored `f` (a stream label or
-  structured metadata) where Loki keeps the stored value and renames the key
-  to `f_extracted`. When only filters precede the parser, the query now
-  parses only lines without a stored `f` that hold `f` as a word, or a JSON
-  `\u` escape that may spell the key, and reads only `f`:
-  `| filter (f:* or _msg:"f" or _msg:~"\\\\u") | unpack_json if (-f:*) fields (f)`.
-  Where the ingestion route keeps the JSON keys as fields, the lines holding
-  `f` are not parsed at all: on the A/B stack's hour of generator data the
-  `pipeline`, `user_id` and `batch_id` breakdowns take VictoriaLogs 15 to
-  30 ms instead of 90 to 100 ms (4 CPUs), and the proxy answers them in
-  Loki's range. Where lines are kept only as `_msg`, VictoriaLogs still reads
-  every line and saves the JSON parse of the lines without the field's word
-  (26 to 67 ms instead of 85 to 100 ms for the same three breakdowns).
-  Value filters on a parsed field (`| json | f="v"`) still let the body key
-  replace a stored `f`.
-- A Grafana-sourced stats failure on a range == step metric query kept its
-  partial-result reply but lost the `Warning` and `X-Proxy-Upstream-*`
-  headers.
-
 - **A label filter on a sanitized JSON key selects the lines Loki selects.**
   Loki's `json` and `logfmt` parsers turn every key into a label name
   (`http.method` becomes `http_method`), and `| json | http_method="GET"`
@@ -343,6 +199,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-search.maxQueryDuration`. A client disconnect still answers 499. The
   partial body is never decoded, indexed or cached. Each abort is counted in
   `loki_vl_proxy_internal_operation_total{operation="backend_response_aborted"}`
+
+## [1.99.0] - 2026-09-30
+
+### Added
+
+- **Label names and values come from a time-bucketed inventory, so a Grafana
+  refresh no longer rescans the whole range.** VictoriaLogs lists label names
+  and values by reading every row in the range, and every refresh that moved
+  the window past the response cache's time bucket was a new scan (on the
+  e2e stack `/labels` took 0.4 s over 1h, 2.9 s over 6h, 5.0 s over 24h and
+  20 s over 7 days on such a refresh; Loki answers from its index in
+  0.01-0.3 s). `stream_field_names`, `stream_field_values`, `field_names` and
+  `field_values` listings are now split into UTC-aligned day, hour, 5-minute
+  and minute buckets kept in the read cache (memory, disk and the owner peer),
+  merged (values unioned, hits summed, ordered as VictoriaLogs orders them, so
+  the answer equals one full-range call), and only the unaligned edges, the
+  last minute and missing buckets are read from VictoriaLogs; a missing hour
+  or day is merged from its cached children first. Buckets are revalidated on
+  a schedule that grows with their age; hour and day buckets of a query made
+  of stream and field filters carry their row count, so revalidating them is
+  a cheap count and rows written late show up. A bucket that fails lets the
+  listing's running scans finish and stay cached for the retry. A listing with
+  a `limit`, a query that is not row-local, or a bucket too large to cache
+  stays one full-range call. The startup warm-up and keep-warm run as the
+  `/labels` request of a client without a tenant header, so the buckets they
+  fill are the ones such clients read. New flag
+  `-metadata-inventory-parallelism` (default 4 bucket listings per request;
+  `0` turns the inventory off), Helm value and limits-registry entry. Label
+  semantics are unchanged. Measured on the e2e stack one request at a time,
+  answers identical to the previous release in every run: a refresh past the
+  cache bucket takes 0.09 s (1h), 0.09 s (6h), 0.05 s (24h) and 0.38 s (7d)
+  instead of 0.38, 2.9, 5.0 and 20.4 s; a never-queried window on a running
+  replica 0.55 s (1h), 0.11 s (6h) and 1.7 s (24h) instead of 1.1, 1.3 and
+  6.6 s. A replica's very first 7-day listing still reads the whole range
+  (19.9 s against 23.4 s).
+- **Long-range metadata scans are admitted by an adaptive limiter.**
+  `-backend-max-concurrent-metadata-scans` (default 8, the ceiling; `0`
+  disables it) and the new `-backend-min-concurrent-metadata-scans` (1),
+  `-backend-metadata-scan-memory-headroom` (0.4) and
+  `-backend-metadata-scan-latency-tolerance` (1.5) bound the long-range
+  `stream_field_names`, `stream_field_values`, `field_names`, `field_values`
+  and `streams` listings (and the inventory's day bucket scans of long
+  listings) per replica. The limit follows the backend, read from
+  VictoriaLogs' `/metrics`, instead of a count sized to one data set: the
+  selects VictoriaLogs runs for others count against it, so a fleet stays
+  near one replica's limit without coordination; a wave of scans slower than
+  the tolerance times their Vegas-style no-load duration shrinks it; a
+  transport failure, timeout, 5xx or VictoriaLogs queue timeout halves it,
+  once per wave; a scan starts only while VictoriaLogs' memory in use (its
+  anonymous resident set minus the Go heap it freed but still holds), plus
+  the learned cost of this scan and of the selects others run, stays inside
+  the headroom; a listing nobody has measured runs alone, or on a backend
+  that is never idle after a short randomised wait with more than half the
+  remaining room; and when memory in use passes a third of the way into the
+  headroom anyway, the replica stops its youngest scan. A request that waits
+  `-backend-heavy-query-queue-wait`, or whose scan was stopped, gets Loki's
+  `429 too many outstanding requests` naming the flags and the signal that
+  closed the door. Behind a vmauth, whose `/metrics` has no VictoriaLogs
+  select series, only the latency and failure feedback apply.
+
+### Fixed
+
+- **Concurrent label inventory scans can no longer OOM-kill VictoriaLogs.**
+  Seven proxy replicas sending a 7-day `stream_field_names` over the whole
+  retention at once (the keep-warm loop ticking in step, or seven users
+  opening a 7-day label browser) OOM-killed the e2e VictoriaLogs (8 GiB) three
+  times in seven minutes on 2026-09-23, eleven replicas warming their caches
+  at a static two scans each did it 53 s after they started, and the stack
+  kept restarting it under normal background load (27 times in five days);
+  metadata listings were outside every admission limit. Now long scans go
+  through the adaptive limiter above and the label inventory splits them
+  into buckets; background inventory work (startup warm-up, keep-warm, stale
+  refreshes) never waits for a slot and never takes the last one while a
+  request could use it; the startup warm-up covers only presets below
+  `-backend-heavy-query-min-range` and runs only while VictoriaLogs has memory
+  and select slots to spare; a preset window whose warm-up failed backs off
+  (one keep-warm interval, doubling to an hour); the keep-warm interval is
+  jittered by up to a quarter; background refreshes never become the
+  single-flight leader a request waits on; and the startup endpoint probes
+  ask about the last minute instead of the whole retention. A deterministic
+  simulation of the fleet admitting whole listings keeps a simulated
+  VictoriaLogs under its memory from the e2e data to 100 times it, where no
+  admission and a static limit kill it; on the e2e stack eleven replicas starting together with seven
+  users' cold 7-day `/labels` left VictoriaLogs' restart count unchanged. The
+  e2e compose stack's proxies run `-metadata-default-lookback=1h` and its
+  VictoriaLogs `-search.maxConcurrentRequests=16`.
+
+## [1.98.0] - 2026-09-30
+
+### Breaking Changes
+
+- **A grouped count whose VictoriaLogs response is large is no longer
+  answered from a sample.** A `stats_query_range` response above 16 MB used to
+  be answered from a two-phase top-values query or, failing that, with an
+  empty matrix. The response is now read up to
+  `-backend-max-buffered-response-bytes` (64 MiB by default) and answered in
+  full, or with Loki's series-limit error or Drilldown partial result; above
+  that size the query fails with `502` naming the flag.
+- `-drilldown-max-stats-buckets`, `-drilldown-field-batch-window-ms` and
+  `-drilldown-field-batch-max-fields` are deprecated and have no effect; they
+  are still accepted so existing command lines keep working.
+
+### Fixed
+
+- **Logs Drilldown label and field breakdowns answer exactly like Loki.** A
+  breakdown such as `sum(count_over_time({env="production" ,pod != ""} [5m])) by (pod)`
+  or `sum by (user_id) (count_over_time({env="production"} | json ... | user_id!="" [5m]))`
+  was answered from VictoriaLogs `/hits` top values: 16 to 20 series sampled
+  in 8 windows from 2h on, the step coarsened to at most 120 buckets, missing
+  steps zero-filled, samples on bucket starts instead of Loki's evaluation
+  timestamps, and no warning, so a label with six values could show two and a
+  pod breakdown showed 16 of 50,000 pods with counts that matched none of
+  Loki's. The breakdown now takes the same exact path as any other client:
+  every series up to the tenant's `max_query_series` with Loki's values on
+  Loki's evaluation timestamps, from one `stats_query_range` call. Above the
+  limit the breakdown is asked again with VictoriaLogs ranking the field's
+  values (an `in()` subquery keeping the `limit + 1` busiest, remembered for
+  five minutes), so the response stays bounded however many values the field
+  has, and Drilldown gets the `limit` busiest series with Loki's
+  `maximum number of series (N) reached for a single query; returning partial
+  results` warning. Breakdowns share the `-stats-query-range-concurrency`
+  slots. Loki keeps the first series it meets rather than the
+  busiest, so for series of equal volume the kept set can differ; every kept
+  series has Loki's values.
+- **A field breakdown asks VictoriaLogs to parse only the lines that can hold
+  the field, and a stored value wins over the line's key as in Loki.** A
+  breakdown such as `sum by (f) (count_over_time({...} | json | drop __error__, __error_details__ | f!="" [5m]))`
+  (or `| json f="[\"f\"]"`, or `| logfmt`) was sent as `unpack_json` over
+  every key of every line, then the non-empty filter, so VictoriaLogs parsed
+  the whole range, and a line's key overwrote a stored `f` (a stream label or
+  structured metadata) where Loki keeps the stored value and renames the key
+  to `f_extracted`. When only filters precede the parser, the query now
+  parses only lines without a stored `f` that hold `f` as a word, or a JSON
+  `\u` escape that may spell the key, and reads only `f`:
+  `| filter (f:* or _msg:"f" or _msg:~"\\\\u") | unpack_json if (-f:*) fields (f)`.
+  Where the ingestion route keeps the JSON keys as fields, the lines holding
+  `f` are not parsed at all: on the A/B stack's hour of generator data the
+  `pipeline`, `user_id` and `batch_id` breakdowns take VictoriaLogs 15 to
+  30 ms instead of 90 to 100 ms (4 CPUs), and the proxy answers them in
+  Loki's range. Where lines are kept only as `_msg`, VictoriaLogs still reads
+  every line and saves the JSON parse of the lines without the field's word
+  (26 to 67 ms instead of 85 to 100 ms for the same three breakdowns).
+  Value filters on a parsed field (`| json | f="v"`) still let the body key
+  replace a stored `f`.
+- A Grafana-sourced stats failure on a range == step metric query kept its
+  partial-result reply but lost the `Warning` and `X-Proxy-Upstream-*`
+  headers.
 
 ## [1.97.2] - 2026-09-30
 

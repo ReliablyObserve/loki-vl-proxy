@@ -537,7 +537,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -545,15 +544,6 @@
       "loki_cold": 1.058,
       "loki_warm_p50": 0.105,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.727,
-      "loki_warm_p50": 0.116,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "by service_name",
@@ -561,30 +551,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.024
-=======
-      "warm_p50": 0.031
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.146,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 15.057,
       "loki_warm_p50": 0.12,
-=======
-      "cold": 0.096,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.458,
-      "loki_warm_p50": 0.121,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -617,7 +594,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.023,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -625,15 +601,6 @@
       "loki_cold": 0.813,
       "loki_warm_p50": 0.081,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.025,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.901,
-      "loki_warm_p50": 0.081,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown service landing",
@@ -641,30 +608,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.023
-=======
-      "warm_p50": 0.022
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.075,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 11.902,
       "loki_warm_p50": 0.109,
-=======
-      "cold": 0.072,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.798,
-      "loki_warm_p50": 0.131,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -672,11 +626,7 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
-=======
-      "verdict_vs_baseline": "faster",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
@@ -931,7 +881,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.049,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -939,15 +888,6 @@
       "loki_cold": 0.841,
       "loki_warm_p50": 0.191,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.04,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.641,
-      "loki_warm_p50": 0.255,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "json volume no filters",
@@ -955,30 +895,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.043
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.289,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 23.746,
       "loki_warm_p50": 0.858,
-=======
-      "cold": 0.368,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 16.689,
-      "loki_warm_p50": 0.111,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -986,13 +913,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.575
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.203
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -1016,21 +938,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.265,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.118,
       "loki_warm_p50": 0.112,
-=======
-      "cold": 0.325,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.142,
-      "loki_warm_p50": 0.19,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -1039,11 +952,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.248
-=======
-      "warm_p50": 0.309
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -1120,82 +1029,6 @@
       "valid": true,
       "verdict_vs_baseline": "fixed",
       "warm_p50": 0.344
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.086,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 1.424,
-      "loki_warm_p50": 0.251,
-      "parity_vs_loki": "same series, sum \u00b10.01%",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.054
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.78,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 44.32,
-      "loki_warm_p50": 0.272,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.34
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.159,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 5.009,
-      "loki_warm_p50": 0.029,
-      "parity_vs_loki": "differs",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.197,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 3.454,
-      "loki_warm_p50": 0.037,
-      "parity_vs_loki": "differs",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.184
     }
   ],
   "limits/concurrent-full-retention-scans-exhaust-backend": [
@@ -2038,7 +1871,6 @@
       "warm_p50": 0.2
     }
   ],
-<<<<<<< HEAD
   "limits/metadata-scan-adaptive-limit": [
     {
       "baseline": "main",
@@ -2058,32 +1890,10 @@
       "valid": true,
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.024
-=======
-  "loki-compatible-profile": [
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.335,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.169,
-      "loki_warm_p50": 0.76,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.362
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.001,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -2175,28 +1985,10 @@
       "valid": true,
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.19
-=======
-      "cold": 0.243,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.042,
-      "loki_warm_p50": 1.381,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.249
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.001,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -2321,42 +2113,10 @@
       "range": "1h",
       "set": "metadata-inventory",
       "shape": "refresh label values service_name",
-=======
-      "cold": 0.98,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.709,
-      "loki_warm_p50": 0.6,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.183
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.21,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.663,
-      "loki_warm_p50": 0.489,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.005
     },
     {
@@ -2664,16 +2424,12 @@
       "valid": true,
       "verdict_vs_baseline": "same",
       "warm_p50": 0.001
-=======
-      "warm_p50": 0.144
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
       "cold": 0.086,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-metadata-inventory",
       "loki_cache_served": true,
       "loki_cold": 0.145,
@@ -2741,30 +2497,15 @@
       "range": "1h",
       "set": "metadata-inventory",
       "shape": "drilldown detected fields",
-=======
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 1.424,
-      "loki_warm_p50": 0.251,
-      "parity_vs_loki": "same series, sum \u00b10.01%",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.003
-=======
-      "warm_p50": 0.054
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.101,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -2780,28 +2521,10 @@
       "valid": true,
       "verdict_vs_baseline": "same",
       "warm_p50": 0.001
-=======
-      "cold": 0.78,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 44.32,
-      "loki_warm_p50": 0.272,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.34
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.03,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -2812,51 +2535,15 @@
       "range": "6h",
       "set": "metadata-inventory",
       "shape": "drilldown detected fields",
-=======
-      "cold": 0.159,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 5.009,
-      "loki_warm_p50": 0.029,
-      "parity_vs_loki": "differs",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.197,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 3.454,
-      "loki_warm_p50": 0.037,
-      "parity_vs_loki": "differs",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.001
-=======
-      "warm_p50": 0.184
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 1.063,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -2892,28 +2579,11 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-=======
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.011,
-      "loki_warm_p50": 0.013,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.013,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -3084,28 +2754,11 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-=======
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.048,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.215,
       "date": "2026-09-30",
       "label": "pr617-adaptive-metadata-inventory",
@@ -3541,30 +3194,12 @@
       "valid": true,
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.024
-=======
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.025,
-      "loki_warm_p50": 0.005,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
       "cold": 0.001,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-metadata-inventory",
       "loki_cache_served": true,
       "loki_cold": 0.007,
@@ -3673,28 +3308,12 @@
       "valid": true,
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.006
-=======
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.014,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
       "cold": 0.001,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-metadata-inventory",
       "loki_cache_served": true,
       "loki_cold": 0.127,
@@ -3708,99 +3327,18 @@
       "valid": true,
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.41
-=======
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.012,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200/502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.002,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     }
   ],
   "loki_api_v1_query": [
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.016,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.085,
       "loki_warm_p50": 0.188,
-=======
-      "cold": 0.012,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.082,
-      "loki_warm_p50": 0.092,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -3809,30 +3347,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.028
-=======
-      "warm_p50": 0.01
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.265,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.118,
       "loki_warm_p50": 0.112,
-=======
-      "cold": 0.325,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.142,
-      "loki_warm_p50": 0.19,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -3841,30 +3366,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.248
-=======
-      "warm_p50": 0.309
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.193,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.093,
       "loki_warm_p50": 0.084,
-=======
-      "cold": 0.169,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.077,
-      "loki_warm_p50": 0.082,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -3873,11 +3385,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.2
-=======
-      "warm_p50": 0.175
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -4587,21 +4095,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.039,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.367,
       "loki_warm_p50": 0.309,
-=======
-      "cold": 0.033,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 3.063,
-      "loki_warm_p50": 0.493,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -4610,30 +4109,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.042
-=======
-      "warm_p50": 0.04
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.129,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.302,
       "loki_warm_p50": 0.337,
-=======
-      "cold": 0.04,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.409,
-      "loki_warm_p50": 0.366,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -4642,11 +4128,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.046
-=======
-      "warm_p50": 0.041
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -4670,21 +4152,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.046,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.953,
       "loki_warm_p50": 0.719,
-=======
-      "cold": 0.048,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.712,
-      "loki_warm_p50": 0.855,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -4693,30 +4166,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.049
-=======
-      "warm_p50": 0.053
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.029,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.772,
       "loki_warm_p50": 0.72,
-=======
-      "cold": 0.028,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.775,
-      "loki_warm_p50": 0.764,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -4725,11 +4185,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.034
-=======
-      "warm_p50": 0.033
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -4753,21 +4209,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.101,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.918,
       "loki_warm_p50": 0.738,
-=======
-      "cold": 0.044,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.614,
-      "loki_warm_p50": 0.613,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -4776,30 +4223,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.057
-=======
-      "warm_p50": 0.049
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.038,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.667,
       "loki_warm_p50": 0.596,
-=======
-      "cold": 0.056,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.675,
-      "loki_warm_p50": 0.605,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -4808,11 +4242,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.034
-=======
-      "warm_p50": 0.048
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -4836,7 +4266,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.049,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -4844,15 +4273,6 @@
       "loki_cold": 0.841,
       "loki_warm_p50": 0.191,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.04,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.641,
-      "loki_warm_p50": 0.255,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "json volume no filters",
@@ -4860,30 +4280,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.043
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.289,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 23.746,
       "loki_warm_p50": 0.858,
-=======
-      "cold": 0.368,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 16.689,
-      "loki_warm_p50": 0.111,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -4891,13 +4298,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.575
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.203
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -4921,7 +4323,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.375,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -4929,47 +4330,24 @@
       "loki_cold": 8.665,
       "loki_warm_p50": 0.939,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.06,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.671,
-      "loki_warm_p50": 0.111,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "logfmt volume",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "slower",
       "warm_p50": 0.312
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.066
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.742,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 20.305,
       "loki_warm_p50": 0.292,
-=======
-      "cold": 0.245,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.496,
-      "loki_warm_p50": 0.118,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -4978,11 +4356,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-<<<<<<< HEAD
       "warm_p50": 0.354
-=======
-      "warm_p50": 0.197
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5006,7 +4380,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.018,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5014,15 +4387,6 @@
       "loki_cold": 1.655,
       "loki_warm_p50": 0.193,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.015,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.572,
-      "loki_warm_p50": 0.09,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "plain volume",
@@ -5030,30 +4394,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.016
-=======
-      "warm_p50": 0.018
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.147,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 21.354,
       "loki_warm_p50": 0.244,
-=======
-      "cold": 0.074,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 15.852,
-      "loki_warm_p50": 0.148,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5062,11 +4413,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.119
-=======
-      "warm_p50": 0.082
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5090,7 +4437,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5098,15 +4444,6 @@
       "loki_cold": 1.303,
       "loki_warm_p50": 0.126,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.783,
-      "loki_warm_p50": 0.104,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "stream-label count by app",
@@ -5114,30 +4451,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.025
-=======
-      "warm_p50": 0.026
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.09,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.303,
       "loki_warm_p50": 0.212,
-=======
-      "cold": 0.091,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.036,
-      "loki_warm_p50": 0.133,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5146,11 +4470,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.131
-=======
-      "warm_p50": 0.087
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5176,19 +4496,11 @@
       "baseline_status": "200",
       "cold": 0.014,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.807,
       "loki_warm_p50": 0.222,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.511,
-      "loki_warm_p50": 0.141,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "ungrouped rate",
@@ -5201,21 +4513,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.084,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.462,
       "loki_warm_p50": 0.271,
-=======
-      "cold": 0.069,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.649,
-      "loki_warm_p50": 0.138,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5224,11 +4527,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.097
-=======
-      "warm_p50": 0.079
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5254,19 +4553,11 @@
       "baseline_status": "200",
       "cold": 0.047,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.088,
       "loki_warm_p50": 0.171,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.46,
-      "loki_warm_p50": 0.161,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "bytes_over_time by app",
@@ -5274,30 +4565,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.045
-=======
-      "warm_p50": 0.041
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.172,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 18.467,
       "loki_warm_p50": 0.139,
-=======
-      "cold": 0.153,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.993,
-      "loki_warm_p50": 0.256,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5305,13 +4583,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.189
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.221
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5335,21 +4608,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.041,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.022,
       "loki_warm_p50": 0.157,
-=======
-      "cold": 0.046,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.873,
-      "loki_warm_p50": 0.164,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -5358,30 +4622,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.039
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.186,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 17.415,
       "loki_warm_p50": 0.168,
-=======
-      "cold": 0.17,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 17.232,
-      "loki_warm_p50": 0.312,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5389,13 +4640,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.21
-=======
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.23
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5419,7 +4665,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.017,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5427,15 +4672,6 @@
       "loki_cold": 0.843,
       "loki_warm_p50": 0.1,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.024,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 2.435,
-      "loki_warm_p50": 0.095,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "detected_level volume",
@@ -5443,30 +4679,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.014
-=======
-      "warm_p50": 0.017
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.094,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 15.46,
       "loki_warm_p50": 0.1,
-=======
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 14.365,
-      "loki_warm_p50": 0.12,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5475,11 +4698,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.087
-=======
-      "warm_p50": 0.079
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5503,7 +4722,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5511,15 +4729,6 @@
       "loki_cold": 1.058,
       "loki_warm_p50": 0.105,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.727,
-      "loki_warm_p50": 0.116,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "by service_name",
@@ -5527,30 +4736,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.024
-=======
-      "warm_p50": 0.031
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.146,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 15.057,
       "loki_warm_p50": 0.12,
-=======
-      "cold": 0.096,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.458,
-      "loki_warm_p50": 0.121,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5583,7 +4779,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.013,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5591,15 +4786,6 @@
       "loki_cold": 0.85,
       "loki_warm_p50": 0.141,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.014,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.402,
-      "loki_warm_p50": 0.101,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown level volume",
@@ -5607,30 +4793,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.013
-=======
-      "warm_p50": 0.014
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.068,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 14.986,
       "loki_warm_p50": 0.19,
-=======
-      "cold": 0.072,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 16.64,
-      "loki_warm_p50": 0.167,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5638,11 +4811,7 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
-=======
-      "verdict_vs_baseline": "faster",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
@@ -5667,7 +4836,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.023,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5675,15 +4843,6 @@
       "loki_cold": 0.813,
       "loki_warm_p50": 0.081,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.025,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.901,
-      "loki_warm_p50": 0.081,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown service landing",
@@ -5691,30 +4850,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.023
-=======
-      "warm_p50": 0.022
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.075,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 11.902,
       "loki_warm_p50": 0.109,
-=======
-      "cold": 0.072,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.798,
-      "loki_warm_p50": 0.131,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5722,11 +4868,7 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
-=======
-      "verdict_vs_baseline": "faster",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
@@ -5751,7 +4893,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.03,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5759,15 +4900,6 @@
       "loki_cold": 0.754,
       "loki_warm_p50": 0.073,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.034,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.998,
-      "loki_warm_p50": 0.143,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown detected_level",
@@ -5775,30 +4907,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.033
-=======
-      "warm_p50": 0.05
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.214,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 8.058,
       "loki_warm_p50": 0.097,
-=======
-      "cold": 0.948,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 20.739,
-      "loki_warm_p50": 0.258,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5806,13 +4925,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.242
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.436
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -5836,21 +4950,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.002,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.465,
       "loki_warm_p50": 0.794,
-=======
-      "cold": 0.003,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.615,
-      "loki_warm_p50": 0.393,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -5864,21 +4969,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.004,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.285,
       "loki_warm_p50": 0.708,
-=======
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.753,
-      "loki_warm_p50": 0.911,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "24h",
       "set": "control",
@@ -5911,7 +5007,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.046,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -5919,15 +5014,6 @@
       "loki_cold": 0.73,
       "loki_warm_p50": 0.099,
       "parity_vs_loki": "same series, sum \u00b10.88%",
-=======
-      "cold": 0.062,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 2.4,
-      "loki_warm_p50": 0.18,
-      "parity_vs_loki": "same series, sum \u00b10.44%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "logfmt count by level, filter, drop",
@@ -5935,30 +5021,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.053
-=======
-      "warm_p50": 0.067
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.577,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 8.379,
       "loki_warm_p50": 0.152,
-=======
-      "cold": 0.702,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 21.509,
-      "loki_warm_p50": 0.163,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -5966,13 +5039,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.396
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.408
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -6524,317 +5592,12 @@
       "valid": true,
       "verdict_vs_baseline": "slower",
       "warm_p50": 0.2
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.335,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.169,
-      "loki_warm_p50": 0.76,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.362
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.243,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.042,
-      "loki_warm_p50": 1.381,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.249
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.98,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.709,
-      "loki_warm_p50": 0.6,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.183
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.21,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.663,
-      "loki_warm_p50": 0.489,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.144
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.086,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 1.424,
-      "loki_warm_p50": 0.251,
-      "parity_vs_loki": "same series, sum \u00b10.01%",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.054
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.78,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 44.32,
-      "loki_warm_p50": 0.272,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.34
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.159,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 5.009,
-      "loki_warm_p50": 0.029,
-      "parity_vs_loki": "differs",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.197,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 3.454,
-      "loki_warm_p50": 0.037,
-      "parity_vs_loki": "differs",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.184
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.011,
-      "loki_warm_p50": 0.013,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.048,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.025,
-      "loki_warm_p50": 0.005,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.014,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.012,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200/502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.002,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
     }
   ],
   "metric-series-identity": [
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -6842,15 +5605,6 @@
       "loki_cold": 1.303,
       "loki_warm_p50": 0.126,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.783,
-      "loki_warm_p50": 0.104,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "stream-label count by app",
@@ -6858,30 +5612,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.025
-=======
-      "warm_p50": 0.026
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.09,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.303,
       "loki_warm_p50": 0.212,
-=======
-      "cold": 0.091,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.036,
-      "loki_warm_p50": 0.133,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -6890,11 +5631,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.131
-=======
-      "warm_p50": 0.087
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -6920,7 +5657,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -6928,15 +5664,6 @@
       "loki_cold": 1.303,
       "loki_warm_p50": 0.126,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.783,
-      "loki_warm_p50": 0.104,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "stream-label count by app",
@@ -6944,30 +5671,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.025
-=======
-      "warm_p50": 0.026
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.09,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.303,
       "loki_warm_p50": 0.212,
-=======
-      "cold": 0.091,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.036,
-      "loki_warm_p50": 0.133,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -6976,11 +5690,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.131
-=======
-      "warm_p50": 0.087
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -7006,19 +5716,11 @@
       "baseline_status": "200",
       "cold": 0.014,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.807,
       "loki_warm_p50": 0.222,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.511,
-      "loki_warm_p50": 0.141,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "ungrouped rate",
@@ -7031,21 +5733,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.084,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.462,
       "loki_warm_p50": 0.271,
-=======
-      "cold": 0.069,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.649,
-      "loki_warm_p50": 0.138,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -7054,11 +5747,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.097
-=======
-      "warm_p50": 0.079
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -7084,19 +5773,11 @@
       "baseline_status": "200",
       "cold": 0.047,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.088,
       "loki_warm_p50": 0.171,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.46,
-      "loki_warm_p50": 0.161,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "bytes_over_time by app",
@@ -7104,30 +5785,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.045
-=======
-      "warm_p50": 0.041
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.172,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 18.467,
       "loki_warm_p50": 0.139,
-=======
-      "cold": 0.153,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.993,
-      "loki_warm_p50": 0.256,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -7135,13 +5803,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.189
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.221
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -7167,21 +5830,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.041,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.022,
       "loki_warm_p50": 0.157,
-=======
-      "cold": 0.046,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.873,
-      "loki_warm_p50": 0.164,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -7190,30 +5844,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.039
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.186,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 17.415,
       "loki_warm_p50": 0.168,
-=======
-      "cold": 0.17,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 17.232,
-      "loki_warm_p50": 0.312,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -7221,13 +5862,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.21
-=======
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.23
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -7939,21 +6575,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.002,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.465,
       "loki_warm_p50": 0.794,
-=======
-      "cold": 0.003,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.615,
-      "loki_warm_p50": 0.393,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7967,21 +6594,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.004,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.285,
       "loki_warm_p50": 0.708,
-=======
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.753,
-      "loki_warm_p50": 0.911,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "24h",
       "set": "control",
@@ -8168,21 +6786,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.046,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.953,
       "loki_warm_p50": 0.719,
-=======
-      "cold": 0.048,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.712,
-      "loki_warm_p50": 0.855,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -8191,30 +6800,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.049
-=======
-      "warm_p50": 0.053
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.029,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.772,
       "loki_warm_p50": 0.72,
-=======
-      "cold": 0.028,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.775,
-      "loki_warm_p50": 0.764,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -8223,11 +6819,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.034
-=======
-      "warm_p50": 0.033
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -8251,21 +6843,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.002,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.465,
       "loki_warm_p50": 0.794,
-=======
-      "cold": 0.003,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.615,
-      "loki_warm_p50": 0.393,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -8279,21 +6862,12 @@
     {
       "baseline": "main",
       "baseline_status": "400",
-<<<<<<< HEAD
       "cold": 0.004,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.285,
       "loki_warm_p50": 0.708,
-=======
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.753,
-      "loki_warm_p50": 0.911,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "same",
       "range": "24h",
       "set": "control",
@@ -8537,21 +7111,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.101,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.918,
       "loki_warm_p50": 0.738,
-=======
-      "cold": 0.044,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.614,
-      "loki_warm_p50": 0.613,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -8560,30 +7125,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.057
-=======
-      "warm_p50": 0.049
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.038,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.667,
       "loki_warm_p50": 0.596,
-=======
-      "cold": 0.056,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.675,
-      "loki_warm_p50": 0.605,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -8592,11 +7144,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.034
-=======
-      "warm_p50": 0.048
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -8620,7 +7168,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.375,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -8628,47 +7175,24 @@
       "loki_cold": 8.665,
       "loki_warm_p50": 0.939,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.06,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.671,
-      "loki_warm_p50": 0.111,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "logfmt volume",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "slower",
       "warm_p50": 0.312
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.066
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.742,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 20.305,
       "loki_warm_p50": 0.292,
-=======
-      "cold": 0.245,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.496,
-      "loki_warm_p50": 0.118,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -8677,11 +7201,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-<<<<<<< HEAD
       "warm_p50": 0.354
-=======
-      "warm_p50": 0.197
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -8705,7 +7225,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.046,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -8713,15 +7232,6 @@
       "loki_cold": 0.73,
       "loki_warm_p50": 0.099,
       "parity_vs_loki": "same series, sum \u00b10.88%",
-=======
-      "cold": 0.062,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 2.4,
-      "loki_warm_p50": 0.18,
-      "parity_vs_loki": "same series, sum \u00b10.44%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "logfmt count by level, filter, drop",
@@ -8729,30 +7239,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.053
-=======
-      "warm_p50": 0.067
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.577,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 8.379,
       "loki_warm_p50": 0.152,
-=======
-      "cold": 0.702,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 21.509,
-      "loki_warm_p50": 0.163,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -8760,13 +7257,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.396
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.408
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -8883,333 +7375,17 @@
       "warm_p50": 0.084
     }
   ],
-  "profiles/dotted-name-parse-error": [
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.011,
-      "loki_warm_p50": 0.013,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.048,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.025,
-      "loki_warm_p50": 0.005,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.014,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O3 explore logs, dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.012,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.003,
-      "parity_vs_loki": "same",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200/502",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.001
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 0.002,
-      "loki_warm_p50": 0.002,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O4 explore log volume (Grafana form), dotted structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "400",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.001
-    }
-  ],
-  "profiles/structured-metadata-keys-per-profile": [
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.335,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.169,
-      "loki_warm_p50": 0.76,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.362
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.243,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 1.042,
-      "loki_warm_p50": 1.381,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.249
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.98,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.709,
-      "loki_warm_p50": 0.6,
-      "parity_vs_loki": "same",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.183
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.21,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": true,
-      "loki_cold": 0.663,
-      "loki_warm_p50": 0.489,
-      "parity_vs_loki": "same",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O1 explore logs, underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.144
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.086,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 1.424,
-      "loki_warm_p50": 0.251,
-      "parity_vs_loki": "same series, sum \u00b10.01%",
-      "range": "1h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.054
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.78,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 44.32,
-      "loki_warm_p50": 0.272,
-      "parity_vs_loki": "differs",
-      "range": "24h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.34
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.159,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 5.009,
-      "loki_warm_p50": 0.029,
-      "parity_vs_loki": "differs",
-      "range": "3h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
-    },
-    {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.197,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
-      "loki_cache_served": false,
-      "loki_cold": 3.454,
-      "loki_warm_p50": 0.037,
-      "parity_vs_loki": "differs",
-      "range": "6h",
-      "set": "loki-profile-otel-metadata",
-      "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.184
-    }
-  ],
   "range_function-bytes-over-time": [
     {
       "baseline": "main",
       "baseline_status": "200",
       "cold": 0.047,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 1.088,
       "loki_warm_p50": 0.171,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.46,
-      "loki_warm_p50": 0.161,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "bytes_over_time by app",
@@ -9217,30 +7393,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.045
-=======
-      "warm_p50": 0.041
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.172,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 18.467,
       "loki_warm_p50": 0.139,
-=======
-      "cold": 0.153,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.993,
-      "loki_warm_p50": 0.256,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -9248,13 +7411,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.189
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.221
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -9280,7 +7438,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -9288,15 +7445,6 @@
       "loki_cold": 1.303,
       "loki_warm_p50": 0.126,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.783,
-      "loki_warm_p50": 0.104,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "stream-label count by app",
@@ -9304,30 +7452,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.025
-=======
-      "warm_p50": 0.026
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.09,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.303,
       "loki_warm_p50": 0.212,
-=======
-      "cold": 0.091,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.036,
-      "loki_warm_p50": 0.133,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -9336,11 +7471,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.131
-=======
-      "warm_p50": 0.087
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -9368,19 +7499,11 @@
       "baseline_status": "200",
       "cold": 0.014,
       "date": "2026-09-30",
-<<<<<<< HEAD
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.807,
       "loki_warm_p50": 0.222,
       "parity_vs_loki": "same series, sum \u00b10.73%",
-=======
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.511,
-      "loki_warm_p50": 0.141,
-      "parity_vs_loki": "same series, sum \u00b10.47%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "ungrouped rate",
@@ -9393,21 +7516,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.084,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 19.462,
       "loki_warm_p50": 0.271,
-=======
-      "cold": 0.069,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.649,
-      "loki_warm_p50": 0.138,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -9416,11 +7530,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.097
-=======
-      "warm_p50": 0.079
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -9444,21 +7554,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.041,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 2.022,
       "loki_warm_p50": 0.157,
-=======
-      "cold": 0.046,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.873,
-      "loki_warm_p50": 0.164,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -9467,30 +7568,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.039
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.186,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 17.415,
       "loki_warm_p50": 0.168,
-=======
-      "cold": 0.17,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 17.232,
-      "loki_warm_p50": 0.312,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -9498,13 +7586,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "faster",
       "warm_p50": 0.21
-=======
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.23
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -9528,21 +7611,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.016,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.085,
       "loki_warm_p50": 0.188,
-=======
-      "cold": 0.012,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.082,
-      "loki_warm_p50": 0.092,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -9551,11 +7625,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.028
-=======
-      "warm_p50": 0.01
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     }
   ],
   "semantics/json-filter-pushdown-translated-label": [
@@ -10100,21 +8170,12 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.193,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 0.093,
       "loki_warm_p50": 0.084,
-=======
-      "cold": 0.169,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 0.077,
-      "loki_warm_p50": 0.082,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "instant",
       "set": "control",
@@ -10123,11 +8184,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.2
-=======
-      "warm_p50": 0.175
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     }
   ],
   "semantics/json-label-spelling-probe": [
@@ -11892,7 +9949,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.025,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -11900,15 +9956,6 @@
       "loki_cold": 1.058,
       "loki_warm_p50": 0.105,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.026,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.727,
-      "loki_warm_p50": 0.116,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "by service_name",
@@ -11916,30 +9963,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.024
-=======
-      "warm_p50": 0.031
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.146,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 15.057,
       "loki_warm_p50": 0.12,
-=======
-      "cold": 0.096,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 12.458,
-      "loki_warm_p50": 0.121,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -11972,7 +10006,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.023,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -11980,15 +10013,6 @@
       "loki_cold": 0.813,
       "loki_warm_p50": 0.081,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.025,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.901,
-      "loki_warm_p50": 0.081,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown service landing",
@@ -11996,30 +10020,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.023
-=======
-      "warm_p50": 0.022
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.075,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 11.902,
       "loki_warm_p50": 0.109,
-=======
-      "cold": 0.072,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 13.798,
-      "loki_warm_p50": 0.131,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12027,11 +10038,7 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
-=======
-      "verdict_vs_baseline": "faster",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
@@ -12134,7 +10141,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.049,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12142,15 +10148,6 @@
       "loki_cold": 0.841,
       "loki_warm_p50": 0.191,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.04,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.641,
-      "loki_warm_p50": 0.255,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "json volume no filters",
@@ -12158,30 +10155,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.043
-=======
-      "warm_p50": 0.051
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.289,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 23.746,
       "loki_warm_p50": 0.858,
-=======
-      "cold": 0.368,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 16.689,
-      "loki_warm_p50": 0.111,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12189,13 +10173,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.575
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.203
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -12219,7 +10198,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.375,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12227,47 +10205,24 @@
       "loki_cold": 8.665,
       "loki_warm_p50": 0.939,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.06,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.671,
-      "loki_warm_p50": 0.111,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "logfmt volume",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "slower",
       "warm_p50": 0.312
-=======
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.066
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.742,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 20.305,
       "loki_warm_p50": 0.292,
-=======
-      "cold": 0.245,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 11.496,
-      "loki_warm_p50": 0.118,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12276,11 +10231,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-<<<<<<< HEAD
       "warm_p50": 0.354
-=======
-      "warm_p50": 0.197
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -12304,7 +10255,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.018,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12312,15 +10262,6 @@
       "loki_cold": 1.655,
       "loki_warm_p50": 0.193,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.015,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.572,
-      "loki_warm_p50": 0.09,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "plain volume",
@@ -12328,30 +10269,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.016
-=======
-      "warm_p50": 0.018
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.147,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 21.354,
       "loki_warm_p50": 0.244,
-=======
-      "cold": 0.074,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 15.852,
-      "loki_warm_p50": 0.148,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12360,11 +10288,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.119
-=======
-      "warm_p50": 0.082
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -12388,7 +10312,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.017,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12396,15 +10319,6 @@
       "loki_cold": 0.843,
       "loki_warm_p50": 0.1,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.024,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 2.435,
-      "loki_warm_p50": 0.095,
-      "parity_vs_loki": "same series, sum \u00b10.75%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "detected_level volume",
@@ -12412,30 +10326,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.014
-=======
-      "warm_p50": 0.017
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.094,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 15.46,
       "loki_warm_p50": 0.1,
-=======
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 14.365,
-      "loki_warm_p50": 0.12,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12444,11 +10345,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.087
-=======
-      "warm_p50": 0.079
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
@@ -12472,7 +10369,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.013,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12480,15 +10376,6 @@
       "loki_cold": 0.85,
       "loki_warm_p50": 0.141,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.014,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.402,
-      "loki_warm_p50": 0.101,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown level volume",
@@ -12496,30 +10383,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.013
-=======
-      "warm_p50": 0.014
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.068,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 14.986,
       "loki_warm_p50": 0.19,
-=======
-      "cold": 0.072,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 16.64,
-      "loki_warm_p50": 0.167,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12527,11 +10401,7 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
-=======
-      "verdict_vs_baseline": "faster",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "warm_p50": 0.001
     },
     {
@@ -12556,7 +10426,6 @@
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.03,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
@@ -12564,15 +10433,6 @@
       "loki_cold": 0.754,
       "loki_warm_p50": 0.073,
       "parity_vs_loki": "differs",
-=======
-      "cold": 0.034,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 1.998,
-      "loki_warm_p50": 0.143,
-      "parity_vs_loki": "same series, sum \u00b10.93%",
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "range": "1h",
       "set": "control",
       "shape": "drilldown detected_level",
@@ -12580,30 +10440,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-<<<<<<< HEAD
       "warm_p50": 0.033
-=======
-      "warm_p50": 0.05
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
       "baseline_status": "200",
-<<<<<<< HEAD
       "cold": 0.214,
       "date": "2026-09-30",
       "label": "pr617-adaptive-control",
       "loki_cache_served": false,
       "loki_cold": 8.058,
       "loki_warm_p50": 0.097,
-=======
-      "cold": 0.948,
-      "date": "2026-09-30",
-      "label": "pr624-final-control",
-      "loki_cache_served": false,
-      "loki_cold": 20.739,
-      "loki_warm_p50": 0.258,
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
       "parity_vs_loki": "differs",
       "range": "24h",
       "set": "control",
@@ -12611,13 +10458,8 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-<<<<<<< HEAD
       "verdict_vs_baseline": "same",
       "warm_p50": 0.242
-=======
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.436
->>>>>>> a8c4564a (fix: a single-field count breakdown keeps the exact-key semantics of the Drilldown field-breakdown rewrite)
     },
     {
       "baseline": "main",
