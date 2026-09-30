@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Update the documentation build's `brace-expansion` from 1.1.18 to 1.1.21
+  (CVE-2026-102276 and CVE-2026-102278, HIGH; CVE-2026-102277, moderate) and
+  `fast-uri` from 3.1.7 to 3.1.8 (CVE-2026-86472, moderate), and
+  `webpack-dev-middleware` from 7.4.5 to 7.4.6 (CVE-2026-76844, HIGH: path
+  traversal information disclosure in the development server). All three are
+  transitive dependencies of the website only; the proxy binary and image are
+  unaffected. `npm audit` reports no vulnerabilities after the update.
+
 ## [1.97.1] - 2026-09-30
 
 ### Security
