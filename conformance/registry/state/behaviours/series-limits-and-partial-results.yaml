@@ -19,15 +19,17 @@ reason: |
   test/e2e-compat/heavy_query_protection_test.go.
   limits/drilldown-stats-rejection-keeps-429 pins the boundary of the Drilldown
   partial-result carve-out: it covers the series limit, not backpressure.
+  limits/drilldown-breakdown-exact is written and wired: Logs Drilldown label
+  and field breakdowns no longer answer from sampled /hits top values; they
+  hold every series up to the tenant's max_query_series with Loki's values on
+  Loki's evaluation timestamps, and over it the busiest series, ranked by
+  VictoriaLogs in a bounded second call, with Loki's warning, proven against a Loki
+  reference evaluator by internal/proxy/drilldown_breakdown_exact_test.go.
   Still open: limits/resolution-limit-precedence (the 11,000-point rejection
   ahead of parsing) is named but not written, and the Drilldown partial keeps the
   busiest series where Loki keeps the first it encounters, so the kept set can
   differ from Loki's for equal-volume series. A binary operand is limited on its
   own while Loki limits only the combined result, so `a and b` fails when `a`
-  alone is over the limit even if the intersection is not. A Drilldown
-  single-field breakdown with a `field!=""` filter answers from /hits top
-  values (X-Proxy-Drilldown-Path: hits, window-sampled from two hours on):
-  fewer series than the limit and no warning, where Loki returns up to the
-  limit with it.
+  alone is over the limit even if the intersection is not.
 owner_decision: null
 waiver: null

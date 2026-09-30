@@ -515,7 +515,7 @@ func run(
 	patternsMaxBackendRows := fs.Int("patterns-max-backend-rows", proxy.DefaultPatternsMaxBackendRows, "Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000")
 	patternsSecondPassMaxRows := fs.Int("patterns-second-pass-max-rows", proxy.DefaultPatternsSecondPassMaxRows, "Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000")
 	patternsSecondPassMaxWindows := fs.Int("patterns-second-pass-max-windows", proxy.DefaultPatternsSecondPassMaxWindows, "Maximum windows the /patterns second pass re-reads. 0 uses the built-in default of 8")
-	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Maximum time buckets a Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit. 0 uses the built-in default of 120")
+	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working")
 	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
 	maxQueryLengthBytes := fs.Int("max-query-length-bytes", proxy.DefaultMaxQueryLengthBytes, "Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries. Must be > 0")
@@ -577,12 +577,10 @@ func run(
 	drilldownBurstMaxFields := fs.Int("drilldown-burst-max-fields", 30,
 		"maximum fields per coalesced VL burst call; fields beyond this cap form a second call")
 	drilldownFieldBatchWindowMs := fs.Int("drilldown-field-batch-window-ms", 100,
-		"accumulation window in ms for the multi-field stats batcher: concurrent per-field "+
-			"stats_query_range calls within this window are folded into one multi-field VL query "+
-			"and the result marginalized back into per-field Loki matrix responses "+
-			"(0 disables batching)")
+		"Deprecated, no effect: Logs Drilldown field breakdowns are answered exactly, one "+
+			"stats_query_range call each. Accepted so existing command lines keep working")
 	drilldownFieldBatchMaxFields := fs.Int("drilldown-field-batch-max-fields", 6,
-		"maximum fields per batched VL call; excess fields form additional batches or fall back to individual calls")
+		"Deprecated, no effect: see -drilldown-field-batch-window-ms. Accepted so existing command lines keep working")
 	statsQueryRangeInterQueryDelayMs := fs.Int("stats-query-range-inter-query-delay-ms", 200,
 		"minimum pause in ms between consecutive individual VL stats_query_range calls: "+
 			"the semaphore slot is held for this duration after each call completes, "+

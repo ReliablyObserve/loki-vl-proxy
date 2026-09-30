@@ -1,42 +1,19 @@
 // Drilldown / Explore regression lock-in tests.
 //
-// Every TestLock_* in this file pins a behavior established during the
-// 2026-06 Drilldown quality fix work. If you find yourself updating one of
-// these tests, the question to ask is "am I making the chart worse for
-// someone querying 24h+ in Drilldown or Explore?" — if yes, don't.
-//
 // Background (do not delete this comment):
 //
 //	Grafana's Loki datasource splits metric range queries at the 24h
 //	boundary (oneDayMs in querySplitting.ts) and merges chunk responses via
-//	mergeFrames + closestIdx + splice in mergeResponses.ts. Two consequences:
+//	mergeFrames + closestIdx + splice in mergeResponses.ts. A residual chunk
+//	whose range is < step produces a one-bucket frame; mergeFrames glues its
+//	single-point series onto one edge of the merged chart. The proxy returns
+//	an empty matrix for that residual (Drilldown only), and trims every other
+//	chunk to its own start/end so the chunks merge cleanly.
 //
-//	1. A residual chunk whose range is < step produces axisLen=1; if the
-//	   proxy returns top-N values at that single timestamp, mergeFrames
-//	   glues them onto chunk-1's distributed series as a tall right-edge
-//	   spike. Reproduction is in TestLock_GrafanaMergedFrames_*.
-//
-//	2. If the proxy uses different code paths for different chunk sizes
-//	   (e.g. /hits for 24h, stats_query_range with | limit 500 for the
-//	   residual), the chunks return totally different series sets and
-//	   mergeFrames unions them — same right-edge spike, different cause.
-//	   Reproduction is in TestLock_HitsRunsForAllRanges.
-//
-//	The fixes covered here:
-//	  - Routing: every Drilldown-shape stats query from Grafana Logs
-//	    Drilldown goes through /hits, regardless of range. Removes the
-//	    historical 6h hybrid threshold.
-//	  - Routing: other sources (Explore, dashboards, API clients) get Loki's
-//	    window semantics for count_over_time: range == step is relabelled to
-//	    Loki's evaluation timestamps and range != step uses the anchored
-//	    window evaluator. Only Drilldown keeps the bucket-start /hits axis
-//	    that all of its panels share.
-//	  - Leftover suppression: ANY Grafana-sourced request with
-//	    end-start ≤ 2 × step gets an empty matrix from the /hits handler,
-//	    so mergeFrames has nothing to glue onto the right edge.
-//
-// The fixes interact, so each is locked independently AND a top-level
-// chunked-merge simulator validates the combined effect.
+//	Drilldown label and field breakdowns are answered exactly, as Loki
+//	answers them: every series from VictoriaLogs stats on the request grid,
+//	up to the tenant's max_query_series (drilldown_breakdown_exact_test.go).
+//	TestLock_GrafanaMergedFrames_* replays the chunked merge end to end.
 package proxy
 
 import (
@@ -50,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -84,12 +60,6 @@ func (b *recorderBackend) on(path string, h func(http.ResponseWriter, *http.Requ
 	b.handlers[path] = h
 }
 
-func (b *recorderBackend) callsFor(path string) int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.calls[path]
-}
-
 func (b *recorderBackend) server() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -106,38 +76,6 @@ func (b *recorderBackend) server() *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 	}))
-}
-
-// hitsResponse returns a valid /hits payload with the given (value, [(t,count)…]).
-func hitsResponse(field string, entries map[string][][2]any) string {
-	var b strings.Builder
-	b.WriteString(`{"hits":[`)
-	first := true
-	for v, points := range entries {
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		var ts strings.Builder
-		var vs strings.Builder
-		total := 0
-		for i, p := range points {
-			if i > 0 {
-				ts.WriteByte(',')
-				vs.WriteByte(',')
-			}
-			ts.WriteByte('"')
-			ts.WriteString(p[0].(string))
-			ts.WriteByte('"')
-			n, _ := p[1].(int)
-			vs.WriteString(strconv.Itoa(n))
-			total += n
-		}
-		fmt.Fprintf(&b, `{"fields":{%q:%q},"timestamps":[%s],"values":[%s],"total":%d}`,
-			field, v, ts.String(), vs.String(), total)
-	}
-	b.WriteString(`]}`)
-	return b.String()
 }
 
 // drilldownRequest builds an http.Request shaped like a Grafana stats query.
@@ -167,133 +105,23 @@ func drilldownRequest(t *testing.T, query string, startSec, endSec int64, step, 
 }
 
 // ---------------------------------------------------------------------------
-// Lock 1: Routing — the Drilldown shape goes through the /hits-enabled
-// drilldown handler for Drilldown; other sources get Loki's axis.
+// Leftover-chunk suppression for Drilldown source.
 // ---------------------------------------------------------------------------
 
-// TestLock_RoutingSourceAgnostic confirms a tumbling count_over_time({…} | X!="")
-// query reaches proxyStatsQueryRangeDrilldown (/hits) for
-// X-Query-Tags: Source=grafana-lokiexplore-app (Drilldown), and the relabelled
-// stats_query_range path, never /hits, for:
-//   - no source tag (Explore / direct API / curl)
-//   - User-Agent: Grafana/X.Y.Z (dashboard panel)
-//   - X-Grafana-Org-Id header (Explore backend-routed)
-func TestLock_RoutingSourceAgnostic(t *testing.T) {
-	for _, source := range []string{"", "drilldown", "grafana-ua", "grafana-hdr"} {
-		t.Run("source="+source, func(t *testing.T) {
-			backend := newRecorderBackend()
-			backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
-					"a": {{"2023-11-14T22:13:20Z", 3}, {"2023-11-14T22:14:20Z", 2}},
-				})))
-			})
-			vl := backend.server()
-			defer vl.Close()
-			p := newTestProxy(t, vl.URL)
-			p.storeBackendVersion("v1.50.0", "v1.50.0") // stats_query_range offset (v1.45+)
-
-			r := drilldownRequest(t,
-				`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
-				1700000000, 1700003600, "120", source)
-			w := httptest.NewRecorder()
-			p.proxyStatsQueryRange(w, r,
-				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-			hits, stats := backend.callsFor("/select/logsql/hits"), backend.callsFor("/select/logsql/stats_query_range")
-			if source == "drilldown" {
-				if hits == 0 {
-					t.Fatalf("source=%q: expected /select/logsql/hits to be called (Drilldown routing regression)", source)
-				}
-				return
-			}
-			if hits != 0 || stats == 0 {
-				t.Fatalf("source=%q: expected the relabelled stats_query_range path, got %d /hits and %d stats calls", source, hits, stats)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 2: /hits runs for ALL ranges (no hybrid threshold gate).
-// ---------------------------------------------------------------------------
-
-// TestLock_HitsRunsForAllRanges verifies the hybrid /hits path fires for every
-// range > 0, including the small Grafana querySplitting leftover. Historically
-// the proxy gated /hits behind drilldownHybridThreshold (6h) and the < 6h
-// leftover fell through to stats_query_range with | limit 500 — that 500-series
-// block was the right-edge spike. If a future PR re-introduces the threshold,
-// the < 6h subtests stop hitting /hits and this lock fails.
-func TestLock_HitsRunsForAllRanges(t *testing.T) {
-	ranges := []struct {
-		name      string
-		startSec  int64
-		endSec    int64
-		stepRaw   string
-		window    string
-		expectHit bool
-	}{
-		// The range vector window equals the step so handleStatsCompatRange
-		// falls through to the Drilldown router instead of the window evaluator.
-		{"5m", 1700000000, 1700000300, "120", "2m", true},
-		{"1h", 1700000000, 1700003600, "120", "2m", true},
-		{"6h", 1700000000, 1700021600, "120", "2m", true},
-		{"24h", 1700000000, 1700086400, "120", "2m", true},
-		{"7d", 1700000000, 1700604800, "600", "10m", true},
-	}
-	for _, tc := range ranges {
-		t.Run(tc.name, func(t *testing.T) {
-			backend := newRecorderBackend()
-			backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
-					"a": {{"2023-11-14T22:13:20Z", 3}},
-				})))
-			})
-			vl := backend.server()
-			defer vl.Close()
-			p := newTestProxy(t, vl.URL)
-			r := drilldownRequest(t,
-				`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [`+tc.window+`]))`,
-				tc.startSec, tc.endSec, tc.stepRaw, "drilldown")
-			p.proxyStatsQueryRange(httptest.NewRecorder(), r,
-				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-			gotHits := backend.callsFor("/select/logsql/hits") > 0
-			if gotHits != tc.expectHit {
-				t.Errorf("range=%s: /hits called=%v want %v (hybrid threshold regression?)",
-					tc.name, gotHits, tc.expectHit)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 3: Leftover-chunk suppression for Drilldown source.
-// ---------------------------------------------------------------------------
-
-// TestLock_LeftoverChunkSuppressed pins the rule:
+// TestLock_LeftoverChunkSuppressedInHits pins the rule:
 //
 //	end - start < step AND Drilldown source signal → empty matrix
 //
-// Why empty (not "best-effort distribute the few values"): the chunk is so
-// small that /hits can only produce a 1-bucket axis. Emitting the top-20
-// values at a single timestamp creates a 20-frame block that Grafana's
-// mergeFrames glues onto the previous 24h chunk as a tall right-edge spike.
-// Returning an empty matrix means mergeFrames has nothing to glue, so the
-// chart shows the 24h chunk's distributed series unaffected (losing ≤ 1 step
-// of width on the very right edge, which is invisible at typical render widths).
+// The Grafana 24h+ querySplitting residual is a sub-step chunk that can only
+// produce a one-bucket frame; Grafana's mergeFrames collapses its single-point
+// series onto one edge of the merged chart (a right-edge spike or a left-edge
+// cluster). Returning an empty matrix gives mergeFrames nothing to glue, and
+// the chart loses at most one step on its edge. The response header keeps its
+// historical value (X-Proxy-Drilldown-Path: hits-leftover-suppressed).
 //
-// Plain Grafana and non-Grafana requests with the same shape must NOT trigger
-// suppression — those callers legitimately want whatever VL has.
+// Plain Grafana, non-Grafana callers and any range >= one full step are served
+// normally.
 func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
-	// The Grafana 24h+ querySplitting residual is a sub-step chunk (range < step)
-	// that yields a single-bucket /hits frame; Grafana's mergeFrames collapses its
-	// N single-point series onto one edge of the merged chart (a right-edge spike
-	// or a left-edge "all data at the beginning" cluster). The /hits path suppresses
-	// it (X-Proxy-Drilldown-Path=hits-leftover-suppressed). Scope: ONLY Drilldown
-	// sub-step requests reaching the high-card /hits path — plain Grafana, a
-	// non-Grafana caller, and any range >= one full step are served normally.
 	cases := []struct {
 		name         string
 		startSec     int64
@@ -319,11 +147,8 @@ func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
 			backend := newRecorderBackend()
 			served := func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
-					"a": {{"2023-11-14T22:13:20Z", 3}},
-				})))
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[[1700000000,"3"]]}]}}`))
 			}
-			backend.on("/select/logsql/hits", served)
 			backend.on("/select/logsql/stats_query_range", served)
 			vl := backend.server()
 			defer vl.Close()
@@ -348,223 +173,7 @@ func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lock 4: Step normalization (bare integer → duration).
-// ---------------------------------------------------------------------------
-
-// TestLock_StepNormalizationBareIntegerToDuration verifies that Grafana's
-// bare-integer step (e.g. "120") is normalized to "120s" before being sent
-// to VL's /hits endpoint. Without the "s" suffix VL's parser rejects the
-// step and /hits returns an error — the historical regression that caused
-// the entire /hits path to silently fall back to legacy stats.
-func TestLock_StepNormalizationBareIntegerToDuration(t *testing.T) {
-	backend := newRecorderBackend()
-	backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
-			"a": {{"2023-11-14T22:13:20Z", 3}},
-		})))
-	})
-	vl := backend.server()
-	defer vl.Close()
-	p := newTestProxy(t, vl.URL)
-
-	r := drilldownRequest(t,
-		`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
-		1700000000, 1700003600, "120", "drilldown") // bare integer, no suffix
-	p.proxyStatsQueryRange(httptest.NewRecorder(), r,
-		`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-	if backend.callsFor("/select/logsql/hits") == 0 {
-		t.Fatalf("/hits was not called — step normalization regression?")
-	}
-	// Inspect the actual step VL received.
-	backend.mu.Lock()
-	steps := backend.steps["/select/logsql/hits"]
-	backend.mu.Unlock()
-	if len(steps) == 0 {
-		t.Fatalf("no /hits steps recorded")
-	}
-	for _, s := range steps {
-		if !strings.HasSuffix(s, "s") && !strings.HasSuffix(s, "m") && !strings.HasSuffix(s, "h") {
-			t.Errorf("step %q reached VL without duration suffix — regression on bare-integer step normalization", s)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 5: /hits drops the remainder bucket (fields:{}).
-// ---------------------------------------------------------------------------
-
-// TestLock_HitsDropsRemainderBucket verifies the proxy strips the
-// fields:{} catchall VL emits as the "everything not in top-N" bucket.
-// Including the remainder series would dominate Grafana's Y-axis and hide
-// individual top-N values for high-cardinality fields — exactly the
-// "__other__" symptom we fixed mid-2026-06.
-func TestLock_HitsDropsRemainderBucket(t *testing.T) {
-	backend := newRecorderBackend()
-	backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		// Three real top-N + one remainder (fields: {}). The remainder count
-		// uses a distinctive value (88812345) that cannot collide with any
-		// Unix timestamp in the request range, so substring matching detects
-		// it reliably without false positives.
-		_, _ = w.Write([]byte(`{"hits":[
-            {"fields":{"pod":"a"},"timestamps":["2023-11-14T22:13:20Z"],"values":[5],"total":5},
-            {"fields":{"pod":"b"},"timestamps":["2023-11-14T22:13:20Z"],"values":[3],"total":3},
-            {"fields":{"pod":"c"},"timestamps":["2023-11-14T22:13:20Z"],"values":[2],"total":2},
-            {"fields":{},"timestamps":["2023-11-14T22:13:20Z"],"values":[88812345],"total":88812345}
-        ]}`))
-	})
-	vl := backend.server()
-	defer vl.Close()
-	p := newTestProxy(t, vl.URL)
-
-	r := drilldownRequest(t,
-		`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
-		1700000000, 1700003600, "120", "drilldown")
-	w := httptest.NewRecorder()
-	p.proxyStatsQueryRange(w, r,
-		`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-	body := w.Body.String()
-	// The remainder bucket's distinctive 88812345 value must not surface in
-	// the response. Substring-matching is safe because 88812345 is too small
-	// to be a Unix timestamp and too distinctive to appear elsewhere.
-	if strings.Contains(body, "88812345") {
-		t.Errorf("response contains remainder bucket value 88812345 — regression on remainder-drop:\n%s", body)
-	}
-	if strings.Contains(body, `"pod":""`) {
-		t.Errorf("response contains empty-pod-label series (remainder) — regression on remainder-drop:\n%s", body)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 6: Shared timestamp axis across all series.
-// ---------------------------------------------------------------------------
-
-// TestLock_SharedAxisAcrossSeries verifies every emitted series carries
-// the same timestamps array spanning the full request range. Without a
-// shared axis Grafana renders all activity as a single cluster at one time
-// position instead of distributed across the timeline — the symptom that
-// drove the windowed-sampling axis-normalization rewrite mid-2026-06.
-func TestLock_SharedAxisAcrossSeries(t *testing.T) {
-	backend := newRecorderBackend()
-	backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		// Two series with DIFFERENT timestamps each.
-		_, _ = w.Write([]byte(`{"hits":[
-            {"fields":{"pod":"a"},"timestamps":["2023-11-14T22:13:20Z"],"values":[5],"total":5},
-            {"fields":{"pod":"b"},"timestamps":["2023-11-14T22:14:20Z","2023-11-14T22:15:20Z"],"values":[3,2],"total":5}
-        ]}`))
-	})
-	vl := backend.server()
-	defer vl.Close()
-	p := newTestProxy(t, vl.URL)
-
-	r := drilldownRequest(t,
-		`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
-		1700000000, 1700003600, "120", "drilldown")
-	w := httptest.NewRecorder()
-	p.proxyStatsQueryRange(w, r,
-		`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-	var resp struct {
-		Data struct {
-			Result []struct {
-				Metric map[string]string `json:"metric"`
-				Values [][2]any          `json:"values"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("parse response: %v", err)
-	}
-	if len(resp.Data.Result) < 2 {
-		t.Fatalf("expected ≥ 2 series, got %d", len(resp.Data.Result))
-	}
-	// Build the timestamps signature for series[0]; assert all others match.
-	signature := func(values [][2]any) string {
-		var b strings.Builder
-		for _, v := range values {
-			fmt.Fprintf(&b, "%v|", v[0])
-		}
-		return b.String()
-	}
-	want := signature(resp.Data.Result[0].Values)
-	for i, s := range resp.Data.Result[1:] {
-		got := signature(s.Values)
-		if got != want {
-			t.Errorf("series[%d] (%v) has a different timestamps axis than series[0] (%v) — shared-axis regression",
-				i+1, s.Metric, resp.Data.Result[0].Metric)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 7: extractStreamSelectorOnly handles VL-native form.
-// ---------------------------------------------------------------------------
-
-// TestLock_ExtractStreamSelectorOnly_VLNative confirms the helper used to
-// build /hits queries strips trailing pipes for BOTH Loki-bracketed
-// (`{namespace="prod"}`) and VL-native (`namespace:="prod"`) selectors.
-// Historical regression: extractStreamSelectorOnly only recognised the
-// Loki form, so VL-translated queries arrived with leftover pipes that
-// VL's /hits parser rejected before ignore_pipes=1 could strip them —
-// the entire /hits path failed silently.
-func TestLock_ExtractStreamSelectorOnly_VLNative(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"loki_bracketed", `{namespace="prod"} | filter pod:!""`, `{namespace="prod"}`},
-		{"vl_native", `namespace:="prod" | filter pod:!""`, `namespace:="prod"`},
-		{"vl_native_no_pipe", `namespace:="prod" pod:!=""`, `namespace:="prod" pod:!=""`},
-		{"vl_native_multi_filter", `namespace:="prod" env:="production" | parser`, `namespace:="prod" env:="production"`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := extractStreamSelectorOnly(tc.in)
-			if got != tc.want {
-				t.Errorf("extractStreamSelectorOnly(%q):\n  got  %q\n  want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 8: fieldHasExistenceFilter handles quoted dotted fields.
-// ---------------------------------------------------------------------------
-
-// TestLock_FieldHasExistenceFilter_QuotedDotted pins the rule that the
-// existence-filter detector matches BOTH unquoted (`pod:!=""`) and quoted
-// (`"k8s.pod.name":!""`) field names. The translator emits the quoted form
-// for OTel-style dotted attributes; if this detector breaks for them, the
-// router demotes those queries to slow paths.
-func TestLock_FieldHasExistenceFilter_QuotedDotted(t *testing.T) {
-	cases := []struct {
-		field string
-		query string
-		want  bool
-	}{
-		{"pod", `namespace:="prod" | filter pod:!""`, true},
-		{"k8s.pod.name", `namespace:="prod" | filter "k8s.pod.name":!""`, true},
-		{"service.name", `namespace:="prod" | filter "service.name":!""`, true},
-		{"pod", `namespace:="prod"`, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.field, func(t *testing.T) {
-			got := fieldHasExistenceFilter(tc.query, tc.field)
-			if got != tc.want {
-				t.Errorf("fieldHasExistenceFilter(%q, %q) = %v, want %v",
-					tc.query, tc.field, got, tc.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 9: isGrafanaSourcedRequest accepts Drilldown, Explore, dashboard.
+// isGrafanaSourcedRequest accepts Drilldown, Explore, dashboard.
 // ---------------------------------------------------------------------------
 
 // TestLock_IsGrafanaSourcedRequest pins which client signals count as
@@ -609,55 +218,7 @@ func TestLock_IsGrafanaSourcedRequest(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lock 10: Stats fallback only fires when /hits actually fails.
-// ---------------------------------------------------------------------------
-
-// TestLock_StatsFallbackOnlyOnHitsFailure proves that when /hits succeeds
-// (returns named-value hits), the proxy does NOT also call
-// stats_query_range. The historical bug was the hybrid path falling
-// through to the unconstrained stats path even after /hits succeeded,
-// returning a totally different 500-series set that overwrote the /hits
-// result. If a future refactor breaks the "return on success" early-exit,
-// this test fails because both endpoints get hit.
-func TestLock_StatsFallbackOnlyOnHitsFailure(t *testing.T) {
-	var hitsHits, statsHits atomic.Int32
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/hits":
-			hitsHits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
-				"a": {{"2023-11-14T22:13:20Z", 3}, {"2023-11-14T22:14:20Z", 2}},
-			})))
-		case "/select/logsql/stats_query_range":
-			statsHits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
-		}
-	}))
-	defer backend.Close()
-	p := newTestProxy(t, backend.URL)
-
-	r := drilldownRequest(t,
-		`sum by (pod) (count_over_time({namespace="prod"}|pod!=""`+` [2m]))`,
-		1700000000, 1700003600, "120", "drilldown")
-	p.proxyStatsQueryRange(httptest.NewRecorder(), r,
-		`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
-
-	if hitsHits.Load() == 0 {
-		t.Fatalf("/hits was not called — routing regression")
-	}
-	if statsHits.Load() > 0 {
-		t.Errorf("stats_query_range was called %d time(s) AFTER /hits succeeded — fallback regression",
-			statsHits.Load())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 11: Grafana mergeFrames simulator — full chunked-merge contract.
+// Grafana mergeFrames simulator — full chunked-merge contract.
 // ---------------------------------------------------------------------------
 
 // gfFrame is the simulator's mirror of @grafana/data DataFrame for the
@@ -812,7 +373,7 @@ func rightEdgePercent(f gfFrame, binCount int) float64 {
 }
 
 // runChunkSim simulates Grafana's querySplitting + mergeFrames flow against
-// a fake VL backend wired with realistic /hits responses per chunk. The
+// a fake VL backend wired with realistic stats_query_range responses per chunk. The
 // fake backend's behavior is intentionally pessimistic for the right edge:
 // each chunk's "top-N" includes some chunk-unique values that mergeFrames
 // would otherwise stack at the chunk boundary.
@@ -820,48 +381,14 @@ func rightEdgePercent(f gfFrame, binCount int) float64 {
 // Returns the merged frame so individual tests can assert on it.
 func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Duration) gfFrame {
 	t.Helper()
-	// Each chunk's /hits returns 16 series; some are chunk-shared, some unique.
-	// We simulate the "16 frames at single timestamp" leftover the user
-	// captured in their network response.
+	// Each chunk returns 16 chunk-unique series.
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		switch r.URL.Path {
-		case "/select/logsql/hits":
-			startStr := r.Form.Get("start")
-			endStr := r.Form.Get("end")
-			startSec, _ := strconv.ParseInt(startStr, 10, 64)
-			endSec, _ := strconv.ParseInt(endStr, 10, 64)
-			rangeSec := endSec - startSec
-			stepSec := int64(step.Seconds())
-			// Emit 16 hits — for a tiny axis (≤ 2 buckets), they're all at one timestamp.
-			n := int(rangeSec/stepSec) + 1
-			if n < 1 {
-				n = 1
-			}
-			if n > 30 {
-				n = 30
-			}
-			entries := map[string][][2]any{}
-			for i := 0; i < 16; i++ {
-				label := fmt.Sprintf("pod-c%d-i%d", startSec, i) // chunk-unique label
-				pts := [][2]any{}
-				// Place values distributed across the chunk's range.
-				for j := 0; j < n; j++ {
-					ts := time.Unix(startSec+int64(j)*stepSec, 0).UTC().Format(time.RFC3339)
-					if (i+j)%3 == 0 {
-						pts = append(pts, [2]any{ts, 20})
-					}
-				}
-				if len(pts) == 0 {
-					pts = append(pts, [2]any{time.Unix(endSec, 0).UTC().Format(time.RFC3339), 25})
-				}
-				entries[label] = pts
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(hitsResponse("pod", entries)))
 		case "/select/logsql/stats_query_range":
-			// Sources other than Drilldown read the same chunk-unique series from
-			// stats buckets spread over the whole requested range.
+			// Every source, Drilldown included, reads the chunk-unique series from
+			// stats buckets spread over the whole requested range. A request sent
+			// anywhere else gets an empty matrix and the merged frame stays empty.
 			startNs := parseFakeVLTime(t, r.Form.Get("start"))
 			endNs := parseFakeVLTime(t, r.Form.Get("end"))
 			bucket, err := time.ParseDuration(r.Form.Get("step"))
@@ -952,15 +479,13 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 // The non-Drilldown sources are kept on purpose even though residual suppression
 // is now scoped to Drilldown: they verify that per-chunk axis trimming alone
 // keeps Explore/dashboard metric ranges spike-free, so narrowing suppression to
-// Drilldown did not reintroduce the spike for the other sources. Those sources
-// take the relabelled stats_query_range path, not /hits.
+// Drilldown did not reintroduce the spike for the other sources. Every source
+// takes the same exact stats_query_range path.
 //
 // If a future PR regresses ANY of:
 //   - leftover-chunk suppression (Drilldown)
 //   - per-chunk axis trimming (all sources)
-//   - /hits-for-all-ranges routing
-//   - shared timestamp axis
-//   - source-tag routing
+//   - one exact stats path for every source
 //
 // at least one of these subtests fails because the chunk-unique series
 // stack at the right edge again.
@@ -1017,43 +542,7 @@ func TestLock_GrafanaMergedFrames_NoRightEdgeSpike(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lock 12: maxStatsQueryRangeBytes cap still in place.
-// ---------------------------------------------------------------------------
-
-// TestLock_StatsQueryRangeBodyCap pins the existence of a per-request body
-// cap on the direct stats_query_range path. Removing the cap (or raising
-// it past the current 16 MB) would re-allow OOM on high-card by() clauses,
-// which is the exact failure mode that motivated the /hits routing in the
-// first place.
-func TestLock_StatsQueryRangeBodyCap(t *testing.T) {
-	if maxStatsQueryRangeBytes < (1 << 20) {
-		t.Errorf("maxStatsQueryRangeBytes shrunk to %d (< 1 MB) — accidental cap reduction?", maxStatsQueryRangeBytes)
-	}
-	if maxStatsQueryRangeBytes > (64 << 20) {
-		t.Errorf("maxStatsQueryRangeBytes grew to %d (> 64 MB) — accidental cap removal/expansion?", maxStatsQueryRangeBytes)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 13: drilldownHitsFieldsLimit pinned.
-// ---------------------------------------------------------------------------
-
-// TestLock_DrilldownHitsFieldsLimit confirms the /hits top-N cap is bounded.
-// Raising it past 100 risks re-introducing the chunk-merge spike (too many
-// chunk-unique series); lowering it below 5 cripples chart variety. The
-// window is intentional and tightening it further requires deliberate
-// product judgment, not an opportunistic constant tweak.
-func TestLock_DrilldownHitsFieldsLimit(t *testing.T) {
-	if drilldownHitsFieldsLimit < 5 {
-		t.Errorf("drilldownHitsFieldsLimit=%d (< 5) — chart loses meaningful variety", drilldownHitsFieldsLimit)
-	}
-	if drilldownHitsFieldsLimit > 100 {
-		t.Errorf("drilldownHitsFieldsLimit=%d (> 100) — chunked-merge spike risk", drilldownHitsFieldsLimit)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Lock 14: VL upstream errors never leak through to Grafana clients.
+// VL upstream errors never leak through to Grafana clients.
 // ---------------------------------------------------------------------------
 
 // TestLock_VLErrorsConvertedToPartialResults pins the contract that VL 4xx/5xx

@@ -1,0 +1,645 @@
+{
+ "label": "pr622-json-filter-pushdown",
+ "date": "2026-09-29",
+ "set": "json-filter-pushdown",
+ "description": "| json / | logfmt range metrics with label filters on parsed fields (PR #611). Grafana Explore log volume and Logs Drilldown field breakdowns over a JSON stream.",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 18
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "main": 2,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "A explore volume, 2 filters, drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.027,
+    "branch": 0.042,
+    "loki": 0.028
+   },
+   "p95": {
+    "main": 0.029,
+    "branch": 0.054,
+    "loki": 0.033
+   },
+   "cold": {
+    "main": 0.161,
+    "branch": 0.184,
+    "loki": 0.289
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 163.45,
+    "branch": 163.45,
+    "loki": 163.45
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.64
+  },
+  {
+   "shape": "A explore volume, 2 filters, drop",
+   "range": "6h",
+   "p50": {
+    "main": 0.109,
+    "branch": 0.123,
+    "loki": 0.028
+   },
+   "p95": {
+    "main": 0.123,
+    "branch": 0.13,
+    "loki": 0.043
+   },
+   "cold": {
+    "main": 1.013,
+    "branch": 1.115,
+    "loki": 0.66
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 223.61,
+    "branch": 892.64,
+    "loki": 892.64
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.89
+  },
+  {
+   "shape": "B grouped sum, filter, no drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.028,
+    "branch": 0.037,
+    "loki": 0.028
+   },
+   "p95": {
+    "main": 0.032,
+    "branch": 0.039,
+    "loki": 0.03
+   },
+   "cold": {
+    "main": 0.034,
+    "branch": 0.036,
+    "loki": 0.264
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 331.2,
+    "branch": 331.2,
+    "loki": 331.2
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.76
+  },
+  {
+   "shape": "B grouped sum, filter, no drop",
+   "range": "6h",
+   "p50": {
+    "main": 0.08,
+    "branch": 0.1,
+    "loki": 0.028
+   },
+   "p95": {
+    "main": 0.085,
+    "branch": 0.105,
+    "loki": 0.032
+   },
+   "cold": {
+    "main": 0.132,
+    "branch": 0.166,
+    "loki": 0.435
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 308.01,
+    "branch": 308.01,
+    "loki": 308.01
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.8
+  },
+  {
+   "shape": "C ungrouped sum, filter, no drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.029,
+    "branch": 0.026,
+    "loki": 0.03
+   },
+   "p95": {
+    "main": 0.032,
+    "branch": 0.03,
+    "loki": 0.037
+   },
+   "cold": {
+    "main": 0.04,
+    "branch": 0.034,
+    "loki": 0.268
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 60.1,
+    "branch": 60.1,
+    "loki": 60.1
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.12
+  },
+  {
+   "shape": "C ungrouped sum, filter, no drop",
+   "range": "6h",
+   "p50": {
+    "main": 0.079,
+    "branch": 0.082,
+    "loki": 0.028
+   },
+   "p95": {
+    "main": 0.079,
+    "branch": 0.091,
+    "loki": 0.036
+   },
+   "cold": {
+    "main": 0.125,
+    "branch": 0.122,
+    "loki": 0.397
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 245.35,
+    "branch": 245.35,
+    "loki": 245.35
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "D volume, no filters",
+   "range": "1h",
+   "p50": {
+    "main": 0.024,
+    "branch": 0.024,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.027,
+    "branch": 0.027,
+    "loki": 0.003
+   },
+   "cold": {
+    "main": 0.022,
+    "branch": 0.019,
+    "loki": 0.002
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 126.54,
+    "branch": 126.54,
+    "loki": 126.54
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "D volume, no filters",
+   "range": "6h",
+   "p50": {
+    "main": 0.122,
+    "branch": 0.125,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.169,
+    "branch": 0.131,
+    "loki": 0.004
+   },
+   "cold": {
+    "main": 0.127,
+    "branch": 0.12,
+    "loki": 0.005
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 392.72,
+    "branch": 392.72,
+    "loki": 392.72
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.98
+  },
+  {
+   "shape": "E field breakdown pipeline (explore)",
+   "range": "1h",
+   "p50": {
+    "main": 0.036,
+    "branch": 0.025,
+    "loki": 0.027
+   },
+   "p95": {
+    "main": 0.039,
+    "branch": 0.032,
+    "loki": 0.03
+   },
+   "cold": {
+    "main": 0.032,
+    "branch": 0.029,
+    "loki": 0.278
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 298.67,
+    "branch": 69.12,
+    "loki": 69.12
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.44
+  },
+  {
+   "shape": "E field breakdown pipeline (explore)",
+   "range": "6h",
+   "p50": {
+    "main": 0.091,
+    "branch": 0.101,
+    "loki": 0.027
+   },
+   "p95": {
+    "main": 0.101,
+    "branch": 0.104,
+    "loki": 0.033
+   },
+   "cold": {
+    "main": 0.129,
+    "branch": 0.116,
+    "loki": 0.383
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 276.44,
+    "branch": 289.58,
+    "loki": 289.58
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "F field breakdown service_version (explore)",
+   "range": "1h",
+   "p50": {
+    "main": 0.034,
+    "branch": 0.034,
+    "loki": 0.029
+   },
+   "p95": {
+    "main": 0.037,
+    "branch": 0.039,
+    "loki": 0.033
+   },
+   "cold": {
+    "main": 0.157,
+    "branch": 0.135,
+    "loki": 0.297
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 289.58,
+    "branch": 289.58,
+    "loki": 289.58
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "F field breakdown service_version (explore)",
+   "range": "6h",
+   "p50": {
+    "main": 0.113,
+    "branch": 0.108,
+    "loki": 0.034
+   },
+   "p95": {
+    "main": 0.126,
+    "branch": 0.117,
+    "loki": 0.037
+   },
+   "cold": {
+    "main": 0.663,
+    "branch": 0.72,
+    "loki": 0.485
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1072.26,
+    "branch": 1072.26,
+    "loki": 1072.26
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  },
+  {
+   "shape": "G field breakdown pipeline (drilldown)",
+   "range": "1h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.014,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.02,
+    "loki": 0.007
+   },
+   "cold": {
+    "main": 0.009,
+    "branch": 0.011,
+    "loki": 0.125
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 14.93,
+    "branch": 14.93,
+    "loki": 14.93
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same series, sum \u00b10.00%",
+   "verdict": "same",
+   "speedup": 0.07
+  },
+  {
+   "shape": "G field breakdown pipeline (drilldown)",
+   "range": "6h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.043,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.045,
+    "loki": 0.003
+   },
+   "cold": {
+    "main": 0.029,
+    "branch": 0.042,
+    "loki": 0.128
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 52.51,
+    "branch": 52.51,
+    "loki": 52.51
+   },
+   "stale": [
+    "main"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.02
+  },
+  {
+   "shape": "H field breakdown service_version (drilldown)",
+   "range": "1h",
+   "p50": {
+    "main": 0.031,
+    "branch": 0.019,
+    "loki": 0.021
+   },
+   "p95": {
+    "main": 0.035,
+    "branch": 0.022,
+    "loki": 0.025
+   },
+   "cold": {
+    "main": 0.029,
+    "branch": 0.022,
+    "loki": 0.29
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 65.31,
+    "branch": 65.31,
+    "loki": 65.31
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.63
+  },
+  {
+   "shape": "H field breakdown service_version (drilldown)",
+   "range": "6h",
+   "p50": {
+    "main": 0.116,
+    "branch": 0.121,
+    "loki": 0.023
+   },
+   "p95": {
+    "main": 0.172,
+    "branch": 0.148,
+    "loki": 0.028
+   },
+   "cold": {
+    "main": 0.141,
+    "branch": 0.118,
+    "loki": 0.568
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 295.0,
+    "branch": 295.0,
+    "loki": 295.0
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "I grafana volume of B",
+   "range": "1h",
+   "p50": {
+    "main": 0.039,
+    "branch": 0.038,
+    "loki": 0.035
+   },
+   "p95": {
+    "main": 0.053,
+    "branch": 0.044,
+    "loki": 0.04
+   },
+   "cold": {
+    "main": 0.045,
+    "branch": 0.035,
+    "loki": 0.325
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 264.72,
+    "branch": 264.72,
+    "loki": 264.72
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.03
+  },
+  {
+   "shape": "I grafana volume of B",
+   "range": "6h",
+   "p50": {
+    "main": 0.101,
+    "branch": 0.133,
+    "loki": 0.03
+   },
+   "p95": {
+    "main": 0.108,
+    "branch": 0.154,
+    "loki": 0.033
+   },
+   "cold": {
+    "main": 0.14,
+    "branch": 0.162,
+    "loki": 0.542
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 280.29,
+    "branch": 286.82,
+    "loki": 286.82
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.76
+  }
+ ]
+}

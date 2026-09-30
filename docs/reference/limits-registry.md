@@ -26,7 +26,6 @@ Fleet arithmetic: per-replica limits multiply by the replica count, and every by
 | patterns max backend rows | `-patterns-max-backend-rows` | `extraArgs.patterns-max-backend-rows` | `20000` | rows | log lines /patterns reads from VictoriaLogs for one request | none: pattern mining works on the rows it read | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns second pass max rows | `-patterns-second-pass-max-rows` | `extraArgs.patterns-second-pass-max-rows` | `8000` | rows | log lines the /patterns second pass reads when the first pass mined too few patterns | none | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns second pass max windows | `-patterns-second-pass-max-windows` | `extraArgs.patterns-second-pass-max-windows` | `8` | windows | windows the /patterns second pass re-reads | none | none | none | no | proxy-specific |
-| drilldown max stats buckets | `-drilldown-max-stats-buckets` | `extraArgs.drilldown-max-stats-buckets` | `120` | buckets | time buckets one Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit | none: the step is coarsened | none | none | no | proxy-specific |
 | max zero fill buckets | `-max-zero-fill-buckets` | `extraArgs.max-zero-fill-buckets` | `32768` | buckets | buckets the proxy zero-fills in a metric response | none: a wider request is served without zero-fill | none | none | no | the 11,000-point resolution limit bounds a Loki response anyway |
 | stats query range concurrency | `-stats-query-range-concurrency` | `extraArgs.stats-query-range-concurrency` | `0` | concurrent calls | concurrent stats_query_range calls the proxy makes to VictoriaLogs | none: calls wait for a slot | loki_vl_proxy_upstream_requests_total&#123;route="/select/logsql/stats_query_range"&#125; | none | no | proxy-specific |
 | max concurrent | `-max-concurrent` | `extraArgs.max-concurrent` | `100` | requests | requests admitted per replica, and concurrent backend operations | 503 `too many concurrent queries` with `Retry-After: 5` | loki_vl_proxy_requests_total&#123;status="503"&#125; | LokiVLProxyHighErrorRate | no | proxy-specific |
@@ -105,10 +104,6 @@ Raise it with -patterns-max-backend-rows; the second pass doubles the scan for h
 ### `-patterns-second-pass-max-windows`
 
 Each window is one VictoriaLogs call; raise it only when pattern coverage over long ranges matters more than fanout.
-
-### `-drilldown-max-stats-buckets`
-
-Raise it for finer Drilldown charts at the cost of VictoriaLogs memory (buckets x series are built in memory before the response); lower it to protect a small backend.
 
 ### `-max-zero-fill-buckets`
 

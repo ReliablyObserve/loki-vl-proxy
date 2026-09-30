@@ -394,6 +394,67 @@
      ]
     }
    ]
+  },
+  "drilldown-breakdown-exact": {
+   "description": "Logs Drilldown label and field breakdowns as the plugin sends them, answered exactly (every series up to the tenant's max_query_series, the busiest with Loki's warning over it) instead of from sampled /hits top values. High-cardinality labels and fields (pod, user_id, batch_id) and a low-cardinality one (namespace).",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "DB1 label breakdown pod",
+     "query": "sum(count_over_time({env=\"production\" ,pod != \"\"} [$__auto])) by (pod)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "limits/drilldown-breakdown-exact",
+      "series-limits-and-partial-results",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DB2 label breakdown namespace",
+     "query": "sum(count_over_time({env=\"production\" ,namespace != \"\"} [$__auto])) by (namespace)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "limits/drilldown-breakdown-exact",
+      "series-limits-and-partial-results",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DB3 json field breakdown user_id",
+     "query": "sum by (user_id) (count_over_time({env=\"production\"} | json user_id=\"[\\\"user_id\\\"]\" | drop __error__, __error_details__ | user_id!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "limits/drilldown-breakdown-exact",
+      "series-limits-and-partial-results",
+      "loki_api_v1_query_range",
+      "parser-json"
+     ]
+    },
+    {
+     "name": "DB4 json field breakdown batch_id",
+     "query": "sum by (batch_id) (count_over_time({env=\"production\"} | json batch_id=\"[\\\"batch_id\\\"]\" | drop __error__, __error_details__ | batch_id!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "limits/drilldown-breakdown-exact",
+      "series-limits-and-partial-results",
+      "loki_api_v1_query_range",
+      "parser-json"
+     ]
+    }
+   ]
   }
  }
 }

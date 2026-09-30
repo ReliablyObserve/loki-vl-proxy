@@ -190,16 +190,6 @@ var Limits = []Limit{
 		Sizing:     "Each window is one VictoriaLogs call; raise it only when pattern coverage over long ranges matters more than fanout.",
 	},
 	{
-		Flag:       "drilldown-max-stats-buckets",
-		Unit:       "buckets",
-		Bounds:     "time buckets one Grafana Logs Drilldown stats call may request; finer steps are coarsened to fit",
-		Error:      "none: the step is coarsened",
-		Metric:     "none",
-		Alert:      "none",
-		LokiParity: "",
-		Sizing:     "Raise it for finer Drilldown charts at the cost of VictoriaLogs memory (buckets x series are built in memory before the response); lower it to protect a small backend.",
-	},
-	{
 		Flag:       "max-zero-fill-buckets",
 		Unit:       "buckets",
 		Bounds:     "buckets the proxy zero-fills in a metric response",

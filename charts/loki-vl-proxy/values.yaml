@@ -114,8 +114,9 @@ extraArgs:
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
   # drilldown-burst-max-fields: "30"
-  # drilldown-field-batch-window-ms: "100"               # window for coalescing per-field stats batch calls (ms); 0 disables batching
-  # drilldown-field-batch-max-fields: "6"                # max fields per batched stats call; limits fused query width
+  # drilldown-field-batch-window-ms: "100"               # deprecated, no effect: Drilldown field breakdowns are answered exactly
+  # drilldown-field-batch-max-fields: "6"                # deprecated, no effect
+  # drilldown-max-stats-buckets: "120"                   # deprecated, no effect: Drilldown breakdowns keep the requested step, as in Loki
   # drilldown-scan-timeout: "5s"                         # per-request timeout for the detected_fields / detected_field_values log-scan path; 0 disables the cap
   # stats-query-range-inter-query-delay-ms: "200"        # inter-query delay between sequential stats_query_range VL calls (ms); reduces CPU pressure
 
@@ -173,7 +174,6 @@ extraArgs:
   # patterns-max-backend-rows: "20000"                  # lines /patterns reads per request
   # patterns-second-pass-max-rows: "8000"               # lines the /patterns second pass reads
   # patterns-second-pass-max-windows: "8"               # windows the /patterns second pass re-reads
-  # drilldown-max-stats-buckets: "120"                  # time buckets per Drilldown stats call; finer steps are coarsened
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)

@@ -105,9 +105,9 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 }
 
 // parseSingleFieldCountSpec accepts only a translated query of the exact shape
-// `<base> | stats by (<field>) count()` — the shape the single-field count fast
-// paths (windowed /hits, two-phase top-N, Drilldown field paths) rebuild from
-// BaseQuery. parseStatsCompatSpec reads only the first stats pipe, so the rate
+// `<base> | stats by (<field>) count()` — the shape the single-field count
+// paths (the Drilldown ranked breakdown, the top-value rescue of the window path) rebuild
+// from BaseQuery. parseStatsCompatSpec reads only the first stats pipe, so the rate
 // translation `| stats by (f) count() as __lvp_inner | math __lvp_inner/<window>
 // ...` also reports Func "count"; rebuilding it as a bare count() drops the
 // per-second division and returns raw window counts where Loki returns rates.
@@ -1656,12 +1656,6 @@ const (
 	derivedLevelChainStart = `| format if (detected_level:*) "<detected_level>" as __dl_s`
 	derivedLevelChainEnd   = "| delete __dl, __dl_*, __j_*, __l_*"
 )
-
-// hasDerivedLevelChain reports whether query carries the detected_level
-// derivation.
-func hasDerivedLevelChain(query string) bool {
-	return strings.Contains(query, derivedLevelChainStart)
-}
 
 // withoutDerivedLevelChain returns query without those pipes, for the
 // heuristics that classify the shape of the query the client sent.

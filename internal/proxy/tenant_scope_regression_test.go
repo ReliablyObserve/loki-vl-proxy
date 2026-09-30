@@ -111,28 +111,6 @@ func TestTenantScoping_TenantReloadRetainsOldLabels(t *testing.T) {
 	}
 }
 
-func TestTenantScoping_FieldBatchDropsTenantAndCredentials(t *testing.T) {
-	type observed struct{ account, auth string }
-	seen := make(chan observed, 1)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen <- observed{r.Header.Get("AccountID"), r.Header.Get("Authorization")}
-		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"default-tenant-secret"},"values":[[1700000000,"1"]]}]}}`)
-	}))
-	defer backend.Close()
-	p := newCompatTestProxy(t, backend.URL)
-	p.forwardHeaders = []string{"Authorization"}
-	b := newDrilldownFieldBatcher(p, time.Millisecond, 1)
-	r := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
-	r.Header.Set("X-Scope-OrgID", "team-a")
-	r.Header.Set("Authorization", "Bearer user-a")
-	r = p.withRequestScope(r)
-	body := b.submit(r.Context(), "team-a", "*", "level", "level", []string{"level"}, "1700000000", "1700000060", "30s")
-	got := <-seen
-	if got.account != "10" || got.auth != "Bearer user-a" || !strings.Contains(string(body), "default-tenant-secret") {
-		t.Fatalf("isolation regression: %+v %s", got, body)
-	}
-}
-
 func TestTenantScoping_ColdRoutingDropsTenant(t *testing.T) {
 	seen := make(chan string, 1)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

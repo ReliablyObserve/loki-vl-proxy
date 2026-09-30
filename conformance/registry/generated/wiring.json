@@ -16,7 +16,15 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "limits/drilldown-breakdown-exact": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go"
+    ],
     "limits/drilldown-partial-with-warning": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -66,6 +74,7 @@
       "internal/proxy/tenant_query_limits_test.go"
     ],
     "limits/per-tenant-override": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/tenant_query_limits_test.go"
     ],
     "limits/published-equals-enforced": [
@@ -85,6 +94,8 @@
       "internal/proxy/backend_heavy_test.go"
     ],
     "limits/series-limit-error": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -119,11 +130,14 @@
     ],
     "loki_api_v1_query_range": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/translator/regexp_escaping_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
@@ -146,6 +160,13 @@
       "internal/proxy/ordered_json_drilldown_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
+    ],
+    "parser-json": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "test/e2e-compat/drilldown_field_breakdown_test.go"
+    ],
+    "parser-logfmt": [
+      "internal/proxy/drilldown_breakdown_exact_test.go"
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
@@ -197,6 +218,7 @@
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tenant_query_limits_test.go",
@@ -224,6 +246,7 @@
       "internal/proxy/volume_test.go"
     ],
     "tenant-query-limits": [
+      "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "test/e2e-compat/tenant_limits_published_test.go"
     ],
@@ -233,7 +256,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 184,
+  "registry_items": 185,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -269,6 +292,23 @@
     ],
     "internal/proxy/detected_level_test.go": [
       "severity-detected-level-derivation"
+    ],
+    "internal/proxy/drilldown_breakdown_exact_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "limits/drilldown-partial-with-warning",
+      "limits/per-tenant-override",
+      "limits/series-limit-error",
+      "loki_api_v1_query_range",
+      "parser-json",
+      "parser-logfmt",
+      "series-limits-and-partial-results",
+      "tenant-query-limits"
+    ],
+    "internal/proxy/drilldown_breakdown_matrix_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "limits/drilldown-partial-with-warning",
+      "limits/series-limit-error",
+      "loki_api_v1_query_range"
     ],
     "internal/proxy/label_surface_test.go": [
       "limits/label-values-not-truncated-by-default",
@@ -366,6 +406,14 @@
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
+    "test/e2e-compat/drilldown_field_breakdown_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "loki_api_v1_query_range",
+      "parser-json"
+    ],
+    "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go": [
+      "limits/drilldown-breakdown-exact"
+    ],
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
     ],
@@ -412,7 +460,7 @@
       "tenant-query-limits"
     ]
   },
-  "tests_with_markers": 29,
+  "tests_with_markers": 33,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -452,5 +500,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 57
+  "wired_items": 60
 }
