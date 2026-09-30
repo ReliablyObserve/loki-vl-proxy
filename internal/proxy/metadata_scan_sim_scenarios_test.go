@@ -17,6 +17,7 @@ import (
 //
 // conformance: backend-admission-and-heavy-query-queueing, limits/concurrent-full-retention-scans-exhaust-backend, limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_ReplicasStartingTogether(t *testing.T) {
+	skipSimulationUnderRace(t)
 	const replicas, users = 11, 7
 	keepWarm := 225 * time.Second
 	t.Run("no admission", func(t *testing.T) {
@@ -77,6 +78,7 @@ func TestMetadataScanSim_ReplicasStartingTogether(t *testing.T) {
 //
 // conformance: limits/concurrent-full-retention-scans-exhaust-backend, limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_DataVolumes(t *testing.T) {
+	skipSimulationUnderRace(t)
 	for _, tc := range []struct {
 		name            string
 		available, idle float64
@@ -115,6 +117,7 @@ func TestMetadataScanSim_DataVolumes(t *testing.T) {
 //
 // conformance: limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_SmallBackendIsNotStarved(t *testing.T) {
+	skipSimulationUnderRace(t)
 	cfg := simVLConfig{available: 2 * gib, idle: 0.2 * gib, capacity: 16, perQuery: 0.12, contention: 0.02,
 		maxQueue: time.Minute, timeout: time.Minute, retainedHalf: time.Minute}
 	f := newSimFleet(t, cfg, 7)
@@ -147,6 +150,7 @@ func TestMetadataScanSim_SmallBackendIsNotStarved(t *testing.T) {
 //
 // conformance: limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_LimitConverges(t *testing.T) {
+	skipSimulationUnderRace(t)
 	cfg := e2eVL()
 	cfg.available = 64 * gib // memory is not the constraint here
 	f := newSimFleet(t, cfg, 3)
@@ -186,6 +190,7 @@ func TestMetadataScanSim_LimitConverges(t *testing.T) {
 //
 // conformance: limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_ShortSelectsOfOthersDoNotStarveScans(t *testing.T) {
+	skipSimulationUnderRace(t)
 	f := newSimFleet(t, e2eVL(), 11)
 	f.adaptiveReplicas(3, DefaultBackendMaxConcurrentMetadataScans)
 	// Short selects of other clients all the time: 40 per second, 20 ms each
@@ -232,6 +237,7 @@ func steadyOthers(cost float64) func(time.Time, *rand.Rand) *simCall {
 //
 // conformance: limits/metadata-scan-adaptive-limit, limits/concurrent-full-retention-scans-exhaust-backend
 func TestMetadataScanSim_BusyBackendStillServesUnmeasuredListings(t *testing.T) {
+	skipSimulationUnderRace(t)
 	for _, tc := range []struct {
 		name            string
 		available, idle float64
@@ -281,6 +287,7 @@ func TestMetadataScanSim_BusyBackendStillServesUnmeasuredListings(t *testing.T) 
 //
 // conformance: limits/metadata-scan-adaptive-limit
 func TestMetadataScanSim_LatencyFeedbackWithoutSignals(t *testing.T) {
+	skipSimulationUnderRace(t)
 	cfg := e2eVL()
 	cfg.available = 64 * gib
 	f := newSimFleet(t, cfg, 5)
@@ -298,5 +305,15 @@ func TestMetadataScanSim_LatencyFeedbackWithoutSignals(t *testing.T) {
 	}
 	if o.served != 400 || o.failed > 0 {
 		t.Fatalf("served %d failed %d refused %d", o.served, o.failed, o.refused)
+	}
+}
+
+// skipSimulationUnderRace skips the fleet simulations in race-detector runs.
+// They are single-threaded and start no goroutines, so the detector has
+// nothing to check, and they cost about a minute of the race job's budget.
+func skipSimulationUnderRace(t *testing.T) {
+	t.Helper()
+	if raceDetectorEnabled {
+		t.Skip("single-threaded simulation; nothing for the race detector to check")
 	}
 }
