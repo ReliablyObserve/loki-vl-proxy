@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The `race-stress` CI gate runs the proxy race tests in two parallel
+- **The `race-stress` CI gate runs the proxy race tests in parallel
   shards.** `internal/proxy` alone took about 418 s of the 480 s race budget,
   so a PR adding about a minute of tests timed out with no bug. The job is now
-  a two-shard matrix (`race-stress-shard`) behind an aggregate `race-stress`
+  a four-entry matrix (`race-stress-shard`: three proxy shards plus the other packages) behind an aggregate `race-stress`
   check that keeps the required check name unchanged.
 
 ## [1.100.0] - 2026-09-30

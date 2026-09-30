@@ -189,15 +189,17 @@ jobs:
     # derivedFields + autodetect combination.
     #
     # internal/proxy alone takes ~7 minutes under -race, so its top-level tests
-    # are split into two deterministic shards (alternating index over the sorted
-    # `go test -list` output) that run in parallel, each with its own 8m budget.
-    name: race-stress-shard (${{ matrix.shard }}/2)
+    # are split into three deterministic shards (checksum of the test name over
+    # the sorted `go test -list` output) that run in parallel, each with its own 8m
+    # budget. The `other` entry carries the remaining packages and the verbose
+    # concurrent-regression step so no proxy shard does.
+    name: race-stress-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: [test]
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
@@ -207,21 +209,28 @@ jobs:
           cache: true
 
       - name: Select this shard's internal/proxy tests
+        if: matrix.shard != 'other'
         run: |
           set -euo pipefail
+          # Shard by a stable checksum of the test name (not the list index) so
+          # a shard keeps the same tests when unrelated tests are added. The
+          # "30:" salt was picked to balance measured -race test time across
+          # the shards and to keep the two heaviest sliding-window tests apart.
           go test -list '.*' ./internal/proxy/ | grep -E '^(Test|Fuzz)' | LC_ALL=C sort \
-            | awk -v shard="${{ matrix.shard }}" 'NR % 2 == shard % 2' > shard-tests.txt
+            | while read -r t; do printf '%s %s\n' "$(printf '30:%s' "$t" | cksum | cut -d' ' -f1)" "$t"; done \
+            | awk -v shard="${{ matrix.shard }}" '$1 % 3 == shard % 3 { print $2 }' > shard-tests.txt
           echo "shard ${{ matrix.shard }}: $(wc -l < shard-tests.txt) tests"
           test -s shard-tests.txt
           echo "^($(paste -sd'|' shard-tests.txt))\$" > shard-run.txt
 
       - name: Race-detector tests (internal/proxy shard)
+        if: matrix.shard != 'other'
         run: |
           set -euo pipefail
           go test -race -count=1 -timeout=8m -run "$(cat shard-run.txt)" ./internal/proxy/
 
       - name: Race-detector tests (cache, middleware, observability)
-        if: matrix.shard == 1
+        if: matrix.shard == 'other'
         run: |
           set -euo pipefail
           go test -race -count=1 -timeout=8m \
@@ -233,7 +242,7 @@ jobs:
           if [ "${#pkgs[@]}" -gt 0 ]; then go test -race -count=1 -timeout=8m "${pkgs[@]}"; fi
 
       - name: Concurrent regression tests (verbose, race)
-        if: matrix.shard == 1
+        if: matrix.shard == 'other'
         # Targeted re-run of the tests that specifically reproduce known races
         # so a failure points straight at the affected helper without grep.
         run: |
