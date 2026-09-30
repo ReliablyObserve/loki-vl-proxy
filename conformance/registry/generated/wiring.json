@@ -300,6 +300,12 @@
       "internal/proxy/label_values_cap_inventory_test.go",
       "internal/proxy/metadata_inventory_test.go"
     ],
+    "semantics/metadata-answers-include-last-24h-like-loki": [
+      "internal/proxy/compat_cache_freshness_test.go",
+      "internal/proxy/label_metadata_freshness_test.go",
+      "internal/proxy/recent_tail_bypass_clamp_test.go",
+      "test/e2e-compat/label_freshness_e2e_test.go"
+    ],
     "semantics/offset-sample-timestamps": [
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -358,7 +364,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 206,
+  "registry_items": 207,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -405,6 +411,9 @@
       "operator-configurable-limits",
       "semantics/backend-aborted-response"
     ],
+    "internal/proxy/compat_cache_freshness_test.go": [
+      "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
     "internal/proxy/detected_level_response_test.go": [
       "severity-exposure-surfaces"
     ],
@@ -430,6 +439,9 @@
     ],
     "internal/proxy/instant_unwrap_sum_test.go": [
       "profiles/sanitized-json-key-grouping"
+    ],
+    "internal/proxy/label_metadata_freshness_test.go": [
+      "semantics/metadata-answers-include-last-24h-like-loki"
     ],
     "internal/proxy/label_surface_test.go": [
       "limits/label-values-not-truncated-by-default",
@@ -507,6 +519,9 @@
     ],
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
+    ],
+    "internal/proxy/recent_tail_bypass_clamp_test.go": [
+      "semantics/metadata-answers-include-last-24h-like-loki"
     ],
     "internal/proxy/sanitized_json_key_filter_test.go": [
       "limits/label-values-response-cap",
@@ -620,6 +635,9 @@
       "semantics/json-filter-pushdown-without-error-drop",
       "semantics/json-label-spelling-probe"
     ],
+    "test/e2e-compat/label_freshness_e2e_test.go": [
+      "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -672,7 +690,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 54,
+  "tests_with_markers": 58,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -716,5 +734,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 77
+  "wired_items": 78
 }

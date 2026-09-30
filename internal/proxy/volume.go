@@ -216,7 +216,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 	}
 	cacheKey := p.canonicalReadCacheKey(endpoint, orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(endpoint, cacheKey); ok {
-		if !p.shouldBypassRecentTailCache(endpoint, remaining, r) {
+		if !p.shouldBypassRecentTailCache(endpoint, CacheTTLs[endpoint], remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))

@@ -1893,22 +1893,22 @@ func TestRecentTailCacheBypass_Decision(t *testing.T) {
 	p.recentTailRefreshMaxStaleness = 2 * time.Second
 
 	nearNow := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now", nil)
-	if !p.shouldBypassRecentTailCache("query_range", 5*time.Second, nearNow) {
+	if !p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], 5*time.Second, nearNow) {
 		t.Fatalf("expected near-now stale cache to be bypassed")
 	}
 
 	oldRange := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now-10m", nil)
-	if p.shouldBypassRecentTailCache("query_range", 5*time.Second, oldRange) {
+	if p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], 5*time.Second, oldRange) {
 		t.Fatalf("expected old-range cache hit to be retained")
 	}
 
 	fresh := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now", nil)
-	if p.shouldBypassRecentTailCache("query_range", 9*time.Second, fresh) {
+	if p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], 9*time.Second, fresh) {
 		t.Fatalf("expected fresh near-now cache hit to be retained")
 	}
 
 	p.recentTailRefreshEnabled = false
-	if p.shouldBypassRecentTailCache("query_range", 5*time.Second, nearNow) {
+	if p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], 5*time.Second, nearNow) {
 		t.Fatalf("expected disabled tail-refresh to retain cache")
 	}
 }

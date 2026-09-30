@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (220), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (221), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -133,6 +133,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-max-entries-limit-per-query` | int | `10000` | `extraArgs.max-entries-limit-per-query` | Loki's max_entries_limit_per_query: a log query asking for more lines fails with Loki's 400 (see -max-entries-limit-per-query-cap); label values requests above it are capped. Per tenant through -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 10000 |
 | `-max-entries-limit-per-query-cap` | bool | `false` | `extraArgs.max-entries-limit-per-query-cap` | Lower a log query limit above max_entries_limit_per_query to that value instead of rejecting it with Loki's 400 (the proxy's behaviour before 1.93; Loki rejects) |
 | `-max-lines` | int | `1000` | `extraArgs.max-lines` | Default max lines per query |
+| `-max-metadata-cache-freshness` | duration | `24h0m0s` | `extraArgs.max-metadata-cache-freshness` | Loki max_metadata_cache_freshness: /labels, /label/&#123;name&#125;/values and /series requests that end within this window of now are answered from the backend (the last minute live, older time buckets from the inventory cache) instead of the response cache once the cached answer is older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. 0 keeps the previous caching for every range. |
 | `-max-query-length-bytes` | int | `131072` | `extraArgs.max-query-length-bytes` | Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default |
 | `-max-stats-query-series` | int | `0` | `extraArgs.max-stats-query-series` | Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 500, matching the Drilldown maxDrilldownSeries cap and the documented known-limit for high-cardinality fields (trace_id, *_id, churn-heavy pod naming) where each value appears only 1-2× in the window. The previous 5000 default returned 10× more sparse series than Drilldown can render and 10× more bytes for the same UX, while leaving the door open to VL OOMs on real workloads with 100k+ cardinality. |
 | `-max-zero-fill-buckets` | int | `32768` | `extraArgs.max-zero-fill-buckets` | Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768 |

@@ -241,6 +241,7 @@ type proxyRuntimeConfig struct {
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
+	metadataCacheFreshness              time.Duration
 	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
 }
@@ -436,6 +437,7 @@ func run(
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
+	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness: /labels, /label/{name}/values and /series requests that end within this window of now are answered from the backend (the last minute live, older time buckets from the inventory cache) instead of the response cache once the cached answer is older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. 0 keeps the previous caching for every range.")
 	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
 	drilldownScanTimeout := fs.Duration("drilldown-scan-timeout", 5*time.Second, "Per-request timeout for the detected_fields / detected_field_values log scan path. Caps the time a single Drilldown panel can spend scanning logs with a parser filter. 0 disables the cap (use VL's natural response time).")
 
@@ -981,6 +983,7 @@ func run(
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
+			metadataCacheFreshness:              *metadataCacheFreshness,
 			drilldownScanTimeout:                *drilldownScanTimeout,
 		},
 		otlpCfg: otlpRuntimeConfig{
@@ -2173,6 +2176,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		StatsQueryRangeInterQueryDelayMs:    cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
+		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
 		DrilldownScanTimeout:                cfg.drilldownScanTimeout,
 	}, nil
 }

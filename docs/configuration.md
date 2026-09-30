@@ -390,6 +390,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-cache-max` | — | `10000` | Maximum cache entries |
 | `-cache-max-bytes` | — | `268435456` | Maximum in-memory L1 cache size in bytes (256 MiB by default) |
 | `-labels-cache-ttl` | — | `0` (uses `5m`) | Cache TTL for `/labels` and `/label/{name}/values` responses. `0` uses the built-in 5-minute default. The keep-warm loop runs at 75% of this TTL (the built-in 5 minutes when unset). A cache miss queries VictoriaLogs over the full requested `start`–`end` range, so the first response is complete; there is no reduced first scan. |
+| `-max-metadata-cache-freshness` | — | `24h` | Loki's `max_metadata_cache_freshness`. A `/labels`, `/label/{name}/values` or `/series` request ending within this window of now refetches a cached answer once it is older than `-recent-tail-refresh-max-staleness` (default `2s`), so streams written in the window appear at once, as in Loki (which caches these results only for splits older than this window). The refetch reads the time-bucketed inventory: sealed buckets come from its cache, only the last minute and the unaligned edges reach VictoriaLogs, and concurrent identical requests share one pass. Requests ending before the window keep the cached answer, its TTL and its background refresh. Independent of `-recent-tail-refresh-enabled`. `0` keeps the previous caching for every range. Rows that land more than a minute late in an already sealed bucket appear after that bucket's revalidation. |
 | `-labels-cache-warm` | — | `true` | Warm the labels cache for the 1h, 6h, 24h and 7d time-picker presets at startup and keep them warm in the background (every 75% of `-labels-cache-ttl`). Each refresh is a label-name scan of up to 7 days in VictoriaLogs, per replica. Set `false` on replicas that serve no interactive label pickers (batch/API-only replicas, test variants): label requests are still cached and answered, only the proactive scans stop. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
 | `-compat-cache-max-percent` | — | `10` | Percent of `-cache-max-bytes` reserved for Tier0 (`0` disables, max `50`) |
@@ -408,7 +409,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 
 | Endpoint | TTL |
 |---|---|
-| `labels`, `label_values` | 5m (`-labels-cache-ttl`) for request windows up to 1h; longer windows scale the TTL up (×3 up to 6h, ×10 up to 24h, ×20 up to 7d), capped at 1h. Background refreshes re-query the same full range and keep the scaled TTL |
+| `labels`, `label_values` | 5m (`-labels-cache-ttl`) for request windows up to 1h; longer windows scale the TTL up (×3 up to 6h, ×10 up to 24h, ×20 up to 7d), capped at 1h. Background refreshes re-query the same full range and keep the scaled TTL. Requests ending within `-max-metadata-cache-freshness` (default `24h`) of now refetch an entry older than `-recent-tail-refresh-max-staleness` instead of serving it |
 | `detected_fields`, `detected_field_values`, `detected_labels` | 90s, scaled for longer request windows the same way, capped at 1h |
 | `series` | 30s |
 | `patterns` | `100y` (effectively persistent; update-on-write) |

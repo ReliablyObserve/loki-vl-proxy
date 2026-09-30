@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/labels`, `/label/{name}/values` and `/series` include streams written in
+  the last 24h, like Loki.** A 7-day `/labels` answer was cached for up to an
+  hour (5 minutes for 1h windows, 15 minutes for 6h, 50 minutes for 24h), so a
+  stream ingested minutes after it, carrying a label no earlier stream had,
+  was missing from every later answer until the entry expired; Loki lists it
+  at once. Loki caches these results per 24h split and only for splits that
+  end before `now - max_metadata_cache_freshness` (default 24h), so the last
+  24h is always read live. The proxy now applies the same rule with
+  `-max-metadata-cache-freshness` (default `24h`; `0` keeps the previous
+  caching for every range). A request that ends within that window refetches
+  a cached answer once it is older than `-recent-tail-refresh-max-staleness`
+  (2s, so a burst of refreshes still shares one pass); the refetch reads the
+  time-bucketed inventory, which serves sealed buckets from its cache and asks
+  VictoriaLogs only for the last minute and the unaligned edges, and
+  concurrent identical refetches share one pass. Requests that end before the
+  window keep the cached answer, its TTL and its background refresh. The
+  compatibility edge cache applies the same window to labels, label values and
+  series, and the rule does not depend on `-recent-tail-refresh-enabled`. The
+  near-now check also stops comparing the age of label entries against the
+  endpoint's base TTL: entries stored with a window-scaled TTL showed a
+  negative age, so the existing freshness bypass never fired for them. Accepted
+  limit: a row that lands more than a minute late in an already sealed bucket
+  appears after that bucket's revalidation.
+
 ## [1.100.1] - 2026-09-30
 
 ### Changed
