@@ -455,6 +455,182 @@
      ]
     }
    ]
+  },
+  "metadata-inventory": {
+   "description": "Label, field and volume inventory calls Explore's label browser and Logs Drilldown make over 1h-7d. The metadata inventory answers them from time buckets; the refresh shapes move the window past the response cache's time bucket on every run (5 min up to 6h, 1h up to 48h, 6h beyond, plus 17 s), which is what a Grafana refresh does once per bucket, so runs after the first measure a shifted window",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "explore labels (label browser)",
+     "path": "/loki/api/v1/labels",
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-queue-429",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "explore labels with selector",
+     "path": "/loki/api/v1/labels",
+     "query": "{env=\"production\"}",
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-queue-429",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "explore label values env",
+     "path": "/loki/api/v1/label/env/values",
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-queue-429",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "explore label values service_name",
+     "path": "/loki/api/v1/label/service_name/values",
+     "query": "{env=\"production\"}",
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-queue-429",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "drilldown landing volume",
+     "path": "/loki/api/v1/index/volume",
+     "query": "{service_name=~\".+\"}",
+     "params": {
+      "limit": "5000"
+     },
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_index_volume",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "drilldown detected labels",
+     "path": "/loki/api/v1/detected_labels",
+     "query": "{service_name=\"api-gateway\"}",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_detected_labels",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "drilldown detected fields",
+     "path": "/loki/api/v1/detected_fields",
+     "query": "{service_name=\"api-gateway\"}",
+     "params": {
+      "limit": "1000"
+     },
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_detected_fields",
+      "backend-admission-and-heavy-query-queueing"
+     ]
+    },
+    {
+     "name": "refresh labels (label browser)",
+     "path": "/loki/api/v1/labels",
+     "shift": {
+      "1h": 317,
+      "6h": 317,
+      "24h": 3617,
+      "7d": 21617
+     },
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-adaptive-limit"
+     ]
+    },
+    {
+     "name": "refresh labels with selector",
+     "path": "/loki/api/v1/labels",
+     "query": "{env=\"production\"}",
+     "shift": {
+      "1h": 317,
+      "6h": 317,
+      "24h": 3617,
+      "7d": 21617
+     },
+     "covers": [
+      "loki_api_v1_labels",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-adaptive-limit"
+     ]
+    },
+    {
+     "name": "refresh label values env",
+     "path": "/loki/api/v1/label/env/values",
+     "shift": {
+      "1h": 317,
+      "6h": 317,
+      "24h": 3617,
+      "7d": 21617
+     },
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-adaptive-limit"
+     ]
+    },
+    {
+     "name": "refresh label values service_name",
+     "path": "/loki/api/v1/label/service_name/values",
+     "query": "{env=\"production\"}",
+     "shift": {
+      "1h": 317,
+      "6h": 317,
+      "24h": 3617,
+      "7d": 21617
+     },
+     "covers": [
+      "loki_api_v1_label_name_values",
+      "semantics/label-browser-latency-cold-and-refresh",
+      "semantics/label-inventory-exact-and-incremental",
+      "limits/concurrent-full-retention-scans-exhaust-backend",
+      "limits/metadata-scan-adaptive-limit"
+     ]
+    }
+   ]
   }
  }
 }
