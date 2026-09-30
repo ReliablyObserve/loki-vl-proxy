@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.97.1] - 2026-09-30
+
 ### Security
 
 - Upgrade the documentation build's `image-size` from 2.0.2 to 2.0.4, fixing
