@@ -146,8 +146,8 @@ func TestDecodeCompressedHTTPResponse_Variants(t *testing.T) {
 		if string(body) != string(original) {
 			t.Fatalf("unexpected gzip body %q", string(body))
 		}
-		if got := resp.Header.Get("Content-Encoding"); got != "" || resp.ContentLength != -1 || !resp.Uncompressed {
-			t.Fatalf("expected decoded response metadata to be cleared, got encoding=%q len=%d uncompressed=%v", got, resp.ContentLength, resp.Uncompressed)
+		if got := resp.Header.Get("Content-Encoding"); got != "" || resp.Header.Get("Content-Length") != "" {
+			t.Fatalf("expected decoded response headers to be cleared, got encoding=%q length=%q", got, resp.Header.Get("Content-Length"))
 		}
 	})
 

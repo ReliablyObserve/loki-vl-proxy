@@ -1096,8 +1096,10 @@ func decodeCompressedHTTPResponse(resp *http.Response) error {
 	}
 	resp.Header.Del("Content-Encoding")
 	resp.Header.Del("Content-Length")
-	resp.ContentLength = -1
-	resp.Uncompressed = true
+	// ContentLength and Uncompressed stay as the transport set them: its
+	// read loop reads ContentLength after the body is closed, from another
+	// goroutine, so writing either here is a data race. Nothing here reads
+	// them, and the header deletions above are not read after delivery.
 	return nil
 }
 

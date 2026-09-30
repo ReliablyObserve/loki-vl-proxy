@@ -123,6 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A compressed VictoriaLogs response no longer races the HTTP transport.**
+  The proxy rewrote `ContentLength` and `Uncompressed` of a gzip or zstd
+  response after decoding it, while the transport's read loop read
+  `ContentLength` from another goroutine once the body was closed (a failed
+  bucket of a label listing cancels its siblings), a data race under
+  `-race`. The response keeps the transport's values; only the
+  `Content-Encoding` and `Content-Length` headers are dropped, as before.
 - **A label filter on a sanitized JSON key selects the lines Loki selects.**
   Loki's `json` and `logfmt` parsers turn every key into a label name
   (`http.method` becomes `http_method`), and `| json | http_method="GET"`
