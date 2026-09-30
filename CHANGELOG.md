@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.100.0] - 2026-09-30
+
 ### Breaking Changes
 
 - **The Loki-compatible profile rejects dotted names in LogQL with Loki's
