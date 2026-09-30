@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.97.2] - 2026-09-30
+
 ### Security
 
 - Update the documentation build's `brace-expansion` from 1.1.18 to 1.1.21
