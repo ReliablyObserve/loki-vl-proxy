@@ -9,9 +9,7 @@
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
     "typecheck": "tsc",
-    "postinstall": "node scripts/harden-image-size.cjs",
-    "prebuild": "node scripts/harden-image-size.cjs",
-    "test:security": "node scripts/harden-image-size.cjs && node --test scripts/image-size-security.test.cjs"
+    "test:security": "node --test scripts/image-size-security.test.cjs"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",

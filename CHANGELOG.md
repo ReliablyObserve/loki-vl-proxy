@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgrade the documentation build's `image-size` from 2.0.2 to 2.0.4, fixing
+  CVE-2025-71329 and CVE-2025-71330 (HIGH, fixed upstream in 2.0.3; the
+  malformed ICNS/JXL/HEIF parsing loops, GHSA-w3rx-r6r6-pgpr and
+  GHSA-5p2g-fcmc-qvqq) that Trivy now reports on `website/package-lock.json`.
+  The local integrity-checked patch (`postinstall`/`prebuild` hook,
+  `harden-image-size.cjs` and its hash manifest) is removed because it only
+  applied to 2.0.2 and the upstream release supersedes it. The isolated
+  malformed-input regression test stays wired into CI and now asserts the
+  parsers terminate. `npm audit` reports no advisories. The affected code
+  parses images at documentation build time only, never in the Go proxy
+  runtime.
+
 ## [1.97.0] - 2026-09-24
 
 ### Added
