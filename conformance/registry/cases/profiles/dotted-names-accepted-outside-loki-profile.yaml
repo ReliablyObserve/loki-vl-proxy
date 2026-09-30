@@ -1,0 +1,34 @@
+id: profiles/dotted-names-accepted-outside-loki-profile
+title: Hybrid and native metadata modes accept the dotted names they expose (documented deviation)
+proves:
+  - loki-compatible-profile
+consumer: explore
+why: |
+  -metadata-field-mode=hybrid returns both k8s.namespace.name and
+  k8s_namespace_name in detected fields and structured metadata, and
+  -metadata-field-mode=native (or -label-style=passthrough) returns the stored
+  dotted names only. A user of those modes can only select what they see, so
+  those modes accept dotted names in LogQL and translate them to the
+  VictoriaLogs field of the same name. Loki has no such mode: this is a
+  profile-scoped extension, owner-accepted, and never active in the
+  Loki-compatible profile (-label-style=underscores
+  -metadata-field-mode=translated) unless -logql-dotted-names=accept asks for
+  it there too; -logql-dotted-names=reject turns it off in any mode. The e2e
+  stack keeps it on the separately
+  named "Loki (via VL proxy OTel hybrid)" and "Loki (via VL proxy native
+  metadata)" datasources.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "{service_name=\"otel-auth-service\"} | k8s.cluster.name = `my-cluster`"
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: status
+  fields: [status]
+  expect: |
+    Hybrid/native proxy: HTTP 200 with the same streams as the underscore
+    spelling. Loki and the Loki-compatible proxy: HTTP 400 parse error.

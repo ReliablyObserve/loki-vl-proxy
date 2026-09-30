@@ -137,7 +137,7 @@ func TestMetadataQueryValidation_AcceptsLikeLoki(t *testing.T) {
 		t.Run(tc.endpoint+"?"+tc.params.Encode(), func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/?"+tc.params.Encode(), nil)
 			rule := lokiQueryParamRules[tc.endpoint]
-			if msg := lokiQueryParamError(rule, r, DefaultMaxQueryLengthBytes); msg != "" {
+			if msg := lokiQueryParamError(rule, r, DefaultMaxQueryLengthBytes, nil); msg != "" {
 				t.Fatalf("rejected: %s", msg)
 			}
 		})

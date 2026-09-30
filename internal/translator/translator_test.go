@@ -1110,7 +1110,7 @@ func TestFieldFilterMigration(t *testing.T) {
 			// Fixed: TranslateLogQL maps aliased filter targets to their source fields.
 			name:  "json alias then filter on alias — rewrites to original field",
 			logql: `{app="api-gateway"} | json http_code="status" | http_code="200"`,
-			want:  `app:="api-gateway" | unpack_json | filter status:="200"`,
+			want:  `app:="api-gateway" | unpack_json | copy "status" as http_code | filter status:="200"`,
 		},
 	}
 	for _, tc := range tests {

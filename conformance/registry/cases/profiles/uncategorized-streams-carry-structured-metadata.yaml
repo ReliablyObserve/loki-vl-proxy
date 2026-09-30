@@ -1,0 +1,31 @@
+id: profiles/uncategorized-streams-carry-structured-metadata
+title: Without categorize-labels, structured metadata joins the stream labels (open gap)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  A client that does not send `X-Loki-Response-Encoding-Flags:
+  categorize-labels` (logcli, scripts, older clients) gets Loki's legacy
+  encoding: structured metadata is merged into each entry's label set, so
+  entries with different metadata values land in different streams. Measured
+  2026-09-24, `{app="otel-collector"}` over 15m, limit 20: Loki answered 20
+  streams whose labels include k8s_pod_name, trace_id, span_id and
+  service_name_extracted; the proxy answered 4 streams with the index labels
+  only. Grafana always sends the flag, so Explore and Drilldown are not
+  affected. Open.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="otel-collector"}'
+    start: now-15m
+    end: now
+    limit: "20"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [streams]
+  expect: |
+    The same stream label sets and stream count as Loki.

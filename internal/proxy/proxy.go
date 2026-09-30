@@ -247,6 +247,24 @@ type Config struct {
 	// wide-range stream_field_names queries hitting VL simultaneously.
 	// Default 0 (no jitter). Recommended: 5–15s for fleets of ≥3 instances.
 	WarmupMaxJitter time.Duration
+	// DisableLabelsCacheWarm turns off the startup warm-up and the background
+	// keep-warm refresh of the labels cache (-labels-cache-warm=false). Label
+	// requests are still cached and served; only the proactive scans stop.
+	DisableLabelsCacheWarm bool
+
+	// LogQLDottedNames is -logql-dotted-names: "auto" (default: reject in the
+	// Loki-compatible profile, accept otherwise), "reject" (Loki's parse error
+	// for a dotted name in LogQL) or "accept" (translate it to the dotted
+	// VictoriaLogs field). It also picks the detected_fields name of a dotted
+	// JSON key: Loki's sanitized name when rejected, the stored name otherwise.
+	LogQLDottedNames string
+	// LabelBrowseExtensions is -label-browse-extensions: "auto" (default: on
+	// outside the Loki-compatible profile or with LabelValuesIndexedCache),
+	// "on" or "off" for limit/offset/search on the label endpoints.
+	LabelBrowseExtensions string
+	// DisableErrorMessageField drops the "message" copy of the error text
+	// from JSON error bodies (-error-response-message-field=false).
+	DisableErrorMessageField bool
 
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
@@ -538,6 +556,9 @@ type Proxy struct {
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
+	rejectDottedNames                     bool             // -logql-dotted-names resolved; see loki_profile.go
+	labelBrowse                           bool             // -label-browse-extensions resolved
+	errorMessageField                     bool             // -error-response-message-field
 	streamFieldsMap                       map[string]bool  // known _stream_fields for VL stream selector optimization
 	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache // L3 fleet peer cache
@@ -604,6 +625,7 @@ type Proxy struct {
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
 	warmupMaxJitter                       time.Duration
+	labelsCacheWarm                       bool
 	labelRefreshGroup                     singleflight.Group
 	parserProbeGroup                      singleflight.Group
 	translationGroup                      singleflight.Group
@@ -949,6 +971,14 @@ func New(cfg Config) (*Proxy, error) {
 		tailAllowedOrigins[origin] = struct{}{}
 	}
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
+	rejectDottedNames, err := resolveDottedNames(cfg.LogQLDottedNames, cfg.LabelStyle, metadataFieldMode)
+	if err != nil {
+		return nil, err
+	}
+	labelBrowse, err := resolveLabelBrowse(cfg.LabelBrowseExtensions, cfg.LabelStyle, metadataFieldMode, cfg.LabelValuesIndexedCache)
+	if err != nil {
+		return nil, err
+	}
 	queryRangeMaxParallel := cfg.QueryRangeMaxParallel
 	if queryRangeMaxParallel <= 0 {
 		queryRangeMaxParallel = 2
@@ -1182,6 +1212,9 @@ func New(cfg Config) (*Proxy, error) {
 		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,
+		rejectDottedNames:                     rejectDottedNames,
+		labelBrowse:                           labelBrowse,
+		errorMessageField:                     !cfg.DisableErrorMessageField,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
 		declaredLabelFields:                   declaredLabelFields,
 		peerCache:                             cfg.PeerCache,
@@ -1230,6 +1263,7 @@ func New(cfg Config) (*Proxy, error) {
 		recentTailRefreshWindow:               recentTailRefreshWindow,
 		recentTailRefreshMaxStaleness:         recentTailRefreshMaxStaleness,
 		warmupMaxJitter:                       warmupMaxJitter,
+		labelsCacheWarm:                       !cfg.DisableLabelsCacheWarm,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
@@ -1326,6 +1360,9 @@ func New(cfg Config) (*Proxy, error) {
 			patternsAutodetectFromQueries:         p.patternsAutodetectFromQueries,
 			patternsCustom:                        p.patternsCustom,
 			metadataFieldMode:                     p.metadataFieldMode,
+			rejectDottedNames:                     p.rejectDottedNames,
+			labelBrowse:                           p.labelBrowse,
+			errorMessageField:                     p.errorMessageField,
 			streamFieldsMap:                       p.streamFieldsMap,
 			declaredLabelFields:                   p.declaredLabelFields,
 			registerInstrumentation:               p.registerInstrumentation,
@@ -1368,6 +1405,7 @@ func New(cfg Config) (*Proxy, error) {
 			recentTailRefreshWindow:               p.recentTailRefreshWindow,
 			recentTailRefreshMaxStaleness:         p.recentTailRefreshMaxStaleness,
 			warmupMaxJitter:                       p.warmupMaxJitter,
+			labelsCacheWarm:                       p.labelsCacheWarm,
 			labelValuesIndexedCache:               p.labelValuesIndexedCache,
 			labelValuesHotLimit:                   p.labelValuesHotLimit,
 			labelValuesIndexMaxEntries:            p.labelValuesIndexMaxEntries,
@@ -1591,8 +1629,10 @@ func (p *Proxy) Init() {
 	}
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
-	p.warmMetadataCacheOnStartup()
-	p.startLabelCacheKeepWarmLoop()
+	if p.labelsCacheWarm {
+		p.warmMetadataCacheOnStartup()
+		p.startLabelCacheKeepWarmLoop()
+	}
 	if p.coldRouter != nil {
 		p.coldRouter.Start(context.Background())
 		p.log.Info("cold storage routing enabled",

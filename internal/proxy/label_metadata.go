@@ -250,7 +250,7 @@ func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params 
 // skipped by the metadata-scan limiter never becomes the leader a synchronous
 // request waits on: the user's own call must queue for its slot.
 func (p *Proxy) vlMetadataCoalesceKey(ctx context.Context, path string, params url.Values) string {
-	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
+	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode() + responseCapKeySuffix(ctx)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -690,6 +690,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			ctx = withBackgroundInventory(ctx)
+			ctx = withLabelValuesResponseCap(ctx, p.labelValuesMaxResponseBytes(orgID))
 
 			var (
 				values   []string

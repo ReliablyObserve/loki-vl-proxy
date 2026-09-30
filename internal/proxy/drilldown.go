@@ -370,7 +370,11 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		// The response cap or an aborted response: never decode a partial list.
+		return nil, readErr
+	}
 	if resp.StatusCode >= http.StatusInternalServerError {
 		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
@@ -1409,10 +1413,13 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						if shouldSuppressDetectedField(key) {
 							return
 						}
-						if _, conflict := labelNames[string(keyBytes)]; conflict {
+						// Loki names a parsed key by its sanitized label and
+						// keeps the key itself in jsonPath (-logql-dotted-names).
+						label := p.detectedFieldName(key)
+						if _, conflict := labelNames[label]; conflict {
 							return
 						}
-						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+						addDetectedField(fields, label, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
 					})
 				}
 			}
@@ -1466,10 +1473,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			if shouldSuppressDetectedField(key) {
 				continue
 			}
-			if _, conflict := labelNames[key]; conflict {
+			// Loki's logfmt parser sanitizes keys like its json parser does.
+			label := p.detectedFieldName(key)
+			if _, conflict := labelNames[label]; conflict {
 				continue
 			}
-			addDetectedField(fields, key, "logfmt", inferDetectedType(value), nil, value)
+			addDetectedField(fields, label, "logfmt", inferDetectedType(value), nil, value)
 		}
 	}
 

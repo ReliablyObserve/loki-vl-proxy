@@ -116,8 +116,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 	}
 
 	// Keep translation profile matrix pinned in compose so CI always exercises:
+	// - translated + underscores + emit=true (the Loki-compatible profile the
+	//   Grafana-facing proxies run; TestCompat_StackProfilesMatchDatasources
+	//   checks the per-service wiring)
 	// - hybrid + underscores + emit=true
-	// - translated + underscores + emit=true
 	// - native + underscores + emit=true
 	// - translated + underscores + emit=false
 	profileExpectations := []string{
@@ -128,10 +130,11 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		`- "-label-values-index-persist-path=/cache/label-values-index.json"`,
 		`- "-label-values-index-persist-interval=5s"`,
 		"loki-vl-proxy-underscore:",
-		`- "-metadata-field-mode=hybrid"`,
+		`- "-metadata-field-mode=translated"`,
 		`- "-emit-structured-metadata=true"`,
 		"loki-vl-proxy-translated-metadata:",
-		`- "-metadata-field-mode=translated"`,
+		"loki-vl-proxy-otel-hybrid:",
+		`- "-metadata-field-mode=hybrid"`,
 		"loki-vl-proxy-native-metadata:",
 		`- "-metadata-field-mode=native"`,
 		"loki-vl-proxy-no-metadata:",
@@ -284,6 +287,26 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 	for name, track := range matrix.Tracks {
 		if track.Workflow == "" || track.ScoreTest == "" {
 			t.Fatalf("track %q must define workflow and score test", name)
+		}
+	}
+}
+
+// A proxy service started with -metadata-default-lookback=0 scans the whole
+// retention for every /labels, /label/{name}/values and /series request that
+// has no start/end, where Loki answers for the last hour; no compose service
+// may pass it.
+func TestComposeProxiesKeepTheLokiDefaultMetadataLookback(t *testing.T) {
+	composeBytes, err := os.ReadFile("docker-compose.yml")
+	if err != nil {
+		t.Fatalf("read docker-compose: %v", err)
+	}
+	service := ""
+	for n, line := range strings.Split(string(composeBytes), "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && strings.HasSuffix(line, ":") {
+			service = strings.TrimSpace(strings.TrimSuffix(line, ":"))
+		}
+		if strings.Contains(line, `-metadata-default-lookback=0"`) && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			t.Errorf("docker-compose.yml:%d: service %q passes -metadata-default-lookback=0; use 1h, Loki's own default window", n+1, service)
 		}
 	}
 }

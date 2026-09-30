@@ -1,0 +1,49 @@
+id: profiles/dotted-name-parse-error
+title: A dotted name in LogQL is Loki's 400 parse error in the Loki-compatible profile
+proves:
+  - loki-compatible-profile
+  - status-400
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Grafana shows OTel structured metadata under the names the datasource
+  returns. A proxy running the hybrid metadata mode showed
+  k8s.namespace.name beside k8s_namespace_name, so a user built
+
+      {env="production"} | json | pipeline=`metrics/prometheus` | k8s.namespace.name=`monitoring`
+
+  which Loki v3.7.7 rejects with `parse error at line 1, col 64: syntax
+  error: unexpected .`, while the proxy accepted it (200) and ran it on the
+  raw-row path: its log volume took 3.2 s at 1h against 0.05 s for the
+  underscore spelling and failed above ~3h with `manual range metric row
+  limit exceeded (1000000)`. Even the translated mode accepted the dotted
+  filter. In the Loki-compatible profile the proxy now answers every dotted
+  name with Loki's exact error - the dot's line and character column, and
+  the expected-token list Loki's parser prints in that position (", expecting
+  , or )" in a by/without/on list, ", expecting = or =~ or !~ or !=" for a
+  stream matcher, ", expecting =" for a label_format destination, ", expecting
+  RANGE or |" after an unwrap label, ", expecting )" inside an unwrap
+  conversion, none in label filters, keep/drop and parser parameters) - on
+  query, query_range, tail and every selector parameter (/labels,
+  /label/{name}/values, /series match[], /index/*, /patterns,
+  /detected_*), before any VictoriaLogs call. Dots inside strings, templates,
+  numbers, durations, byte sizes, ranges and comments are not names and pass.
+  A name followed directly by ".<digit>" is Loki's `unexpected NUMBER`.
+  Known edge: a query that already holds an earlier, unrelated syntax error
+  (`| unpack a.b`, `| unwrap a.b` outside a range aggregation) names the dot,
+  where Loki names the earlier token; both are 400 parse errors.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "{env=\"production\"} | json | pipeline=`metrics/prometheus` | k8s.namespace.name=`monitoring`"
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: |
+    HTTP 400 bad_data on both, the proxy's `error` equal to Loki's body
+    (`parse error at line 1, col 64: syntax error: unexpected .`).

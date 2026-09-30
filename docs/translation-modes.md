@@ -84,8 +84,10 @@ When Grafana Explore/Drilldown builds field filters from Event Details, it may e
 ```
 
 Compatibility behavior:
-- Dotted filters are accepted and translated to VL-native dotted field matching.
-- Underscore aliases for known OTel fields are also accepted (`k8s_cluster_name = ...`) and resolve to the same dotted VL field.
+- In the Loki-compatible profile (`-label-style=underscores -metadata-field-mode=translated`, the default) Grafana only ever sees underscore names, so it builds `k8s_cluster_name = ...`, and a dotted name typed into a query gets Loki's own parse error (`parse error at line 1, col 43: syntax error: unexpected .`), with the same line, column and expected-token list Loki reports in every LogQL position, on query, query_range, tail and every selector parameter, before any VictoriaLogs call.
+- With `-metadata-field-mode=hybrid` or `native` (or `-label-style=passthrough`) the proxy exposes dotted names, so dotted filters are accepted and translated to VL-native dotted field matching. That is an extension of those modes; Loki rejects dotted names.
+- `-logql-dotted-names=accept` or `=reject` overrides that choice in any mode (`auto`, the default, follows the profile), and also picks the `detected_fields` name of a dotted JSON key: Loki's sanitized label with the key in `jsonPath` when rejected, the stored dotted name when accepted. See the [option matrix](configuration.md#compatibility-option-matrix).
+- Underscore aliases for known OTel fields are accepted in every mode (`k8s_cluster_name = ...`) and resolve to the same dotted VL field, and a filtered log volume on them is pushed down to VictoriaLogs stats.
 - Stream label outputs remain Loki-safe (underscore keys) when `-label-style=underscores`.
 - Field-oriented and metadata surfaces follow `-metadata-field-mode` (`native`, `translated`, `hybrid`).
 - `-extra-label-fields` can be used to make custom dotted VL fields reliably visible/resolvable through `/labels`, `/label/<name>/values`, and `targetLabels` in volume APIs.
@@ -93,7 +95,7 @@ Compatibility behavior:
 Caveat for Grafana Loki datasource builder:
 - The builder UI can tokenize dotted keys (for example `host.id`) into `host` `.` `id` controls even when the generated LogQL query executes correctly.
 - For stable click-to-filter workflows from Event Details, prefer underscore aliases in the UI (`-label-style=underscores`, `-metadata-field-mode=translated`) while VL remains dotted internally.
-- Code mode remains valid for dotted expressions when your workflow requires native dotted fields.
+- Code mode accepts dotted expressions only in the hybrid and native modes.
 
 ## Mode Profiles
 
@@ -110,6 +112,8 @@ Use this when you want the most Loki-like label and field experience.
 Outcome:
 - label surfaces are underscore-only
 - field APIs and 3-tuple metadata expose underscore aliases only
+- LogQL follows Loki's grammar: a dotted name is Loki's 400 parse error
+- `/labels` and `/label/{name}/values` ignore `limit`, `offset` and `search` as Loki does, unless `-label-values-indexed-cache=true` opts into the indexed browse window
 
 ### Balanced Compatibility Profile (Recommended)
 
@@ -124,6 +128,7 @@ Use this when Loki label compatibility is required but OTel dotted correlation i
 Outcome:
 - label surfaces are underscore-only
 - field APIs and 3-tuple metadata expose both dotted and underscore keys
+- dotted names are accepted in queries (an extension of this mode; Loki rejects them)
 
 ### OTel-Native Field Profile
 

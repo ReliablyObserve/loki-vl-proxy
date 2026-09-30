@@ -20,12 +20,17 @@ proxy: |
   budget (the earlier of the request deadline and -backend-timeout), and the
   client's cancellation is propagated to the backend call, including the cold
   POST path. Neither a client disconnect nor an expired admission wait may be
-  recorded as a backend failure or open the circuit breaker.
+  recorded as a backend failure or open the circuit breaker. A response
+  VictoriaLogs aborts after its headers (a query past its deadline) is answered
+  with Loki's 504 timeout text when the budget ran out, a sanitized 502
+  otherwise, and its partial body is never decoded or cached.
 
 implementation:
   - internal/proxy/backend.go
   - internal/proxy/backend_heavy.go
+  - internal/proxy/backend_response_guard.go
 
 cases:
   - semantics/backend-timeout-argument
   - semantics/client-cancellation-propagates
+  - semantics/backend-aborted-response

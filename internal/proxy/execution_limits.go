@@ -20,6 +20,10 @@ const (
 	DefaultPatternsSecondPassMaxWindows      = 8         // -patterns-second-pass-max-windows
 	DefaultDrilldownMaxStatsBuckets          = 120       // -drilldown-max-stats-buckets
 	DefaultMaxZeroFillBuckets                = 32_768    // -max-zero-fill-buckets
+	// DefaultLabelValuesMaxResponseBytes matches the per-response budget of
+	// -backend-max-buffered-response-bytes: 16x Loki's default gRPC message
+	// limit (4 MiB), about 1.4 million values of a high-churn pod label.
+	DefaultLabelValuesMaxResponseBytes = 64 << 20 // -label-values-max-response-bytes
 	// DefaultMaxQueryLengthBytes is Loki's syntax.maxInputSize: Loki parses any
 	// shorter query, so the proxy must not reject one either.
 	DefaultMaxQueryLengthBytes = 128 << 10 // -max-query-length-bytes
@@ -40,6 +44,7 @@ type executionLimits struct {
 	DrilldownStatsBuckets     int
 	ZeroFillBuckets           int
 	QueryLengthBytes          int
+	LabelValuesResponseBytes  int
 }
 
 // ExecutionLimitsConfig holds the configured values; 0 selects the default.
@@ -57,6 +62,7 @@ type ExecutionLimitsConfig struct {
 	DrilldownMaxStatsBuckets          int
 	MaxZeroFillBuckets                int
 	MaxQueryLengthBytes               int
+	LabelValuesMaxResponseBytes       int
 }
 
 func defaultExecutionLimits() executionLimits {
@@ -74,6 +80,7 @@ func defaultExecutionLimits() executionLimits {
 		DrilldownStatsBuckets:     DefaultDrilldownMaxStatsBuckets,
 		ZeroFillBuckets:           DefaultMaxZeroFillBuckets,
 		QueryLengthBytes:          DefaultMaxQueryLengthBytes,
+		LabelValuesResponseBytes:  DefaultLabelValuesMaxResponseBytes,
 	}
 }
 
@@ -97,6 +104,7 @@ func resolveExecutionLimits(cfg ExecutionLimitsConfig) executionLimits {
 	set(&limits.DrilldownStatsBuckets, cfg.DrilldownMaxStatsBuckets)
 	set(&limits.ZeroFillBuckets, cfg.MaxZeroFillBuckets)
 	set(&limits.QueryLengthBytes, cfg.MaxQueryLengthBytes)
+	set(&limits.LabelValuesResponseBytes, cfg.LabelValuesMaxResponseBytes)
 	return limits
 }
 

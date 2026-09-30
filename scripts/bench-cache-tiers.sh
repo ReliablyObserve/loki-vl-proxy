@@ -4,6 +4,9 @@
 # index, L1 memory, L2 disk, L3 peer) against the e2e-compat compose stack and
 # print before/after counter deltas per tier.
 #
+# The peer ring (loki-vl-proxy-peer-a/-b) and vmauth-ring start with the
+# e2e stack (docker compose up -d).
+#
 # Modes:
 #   l1     Cold-vs-warm — same /label/{name}/values call N times against main
 #          proxy. Hits the unified per-key cache (L0 hot-index, L1 memory).

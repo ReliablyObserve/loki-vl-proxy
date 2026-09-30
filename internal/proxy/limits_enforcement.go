@@ -30,6 +30,12 @@ const (
 	limitQueryTimeout            = "query_timeout"
 )
 
+// limitLabelValuesMaxResponseBytes is the per-tenant form of
+// -label-values-max-response-bytes. Loki has no per-tenant equivalent (its
+// bound is the server's grpc_server_max_send_msg_size), so the key is accepted
+// in -tenant-limits and -tenant-default-limits but never published.
+const limitLabelValuesMaxResponseBytes = "label_values_max_response_bytes"
+
 // Loki limits the proxy publishes but cannot enforce: VictoriaLogs reports no
 // bytes read before a query runs, and the volume endpoints bound their answer
 // by the request limit instead of failing above a series count. An override
@@ -153,6 +159,46 @@ func smallestNonZero[T int | time.Duration](a, b T) T {
 	return b
 }
 
+// labelValuesMaxResponseBytes resolves -label-values-max-response-bytes for an
+// X-Scope-OrgID: the tenant's label_values_max_response_bytes, then
+// -tenant-default-limits, then the flag. A multi-tenant header is held to the
+// smallest value of its tenants.
+func (p *Proxy) labelValuesMaxResponseBytes(orgID string) int {
+	orgID = strings.TrimSpace(orgID)
+	tenants := []string{orgID}
+	if hasMultiTenantOrgID(orgID) {
+		tenants = splitMultiTenantOrgIDs(orgID)
+	}
+	limit := 0
+	for _, tenant := range tenants {
+		limit = smallestNonZero(limit, p.tenantLabelValuesMaxResponseBytes(tenant))
+	}
+	if limit <= 0 {
+		return p.limits().LabelValuesResponseBytes
+	}
+	return limit
+}
+
+func (p *Proxy) tenantLabelValuesMaxResponseBytes(orgID string) int {
+	limit := p.limits().LabelValuesResponseBytes
+	if p == nil {
+		return limit
+	}
+	p.configMu.RLock()
+	v, ok := p.tenantLimits[orgID][limitLabelValuesMaxResponseBytes]
+	if !ok {
+		v, ok = p.tenantDefaultLimits[limitLabelValuesMaxResponseBytes]
+	}
+	p.configMu.RUnlock()
+	if ok {
+		// Validated at startup (validateTenantLimitOverrides).
+		if n, err := tenantLimitInt(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	return limit
+}
+
 // requestQueryLimits returns the limits of the request's tenant.
 func (p *Proxy) requestQueryLimits(ctx context.Context) queryLimits {
 	return p.queryLimitsFor(getOrgID(ctx))
@@ -250,6 +296,8 @@ func (p *Proxy) publishEnforcedLimits(published map[string]any, orgID string) {
 	for key, value := range unenforcedTenantLimits {
 		published[key] = value
 	}
+	// Enforced, but not a Loki limit: never published.
+	delete(published, limitLabelValuesMaxResponseBytes)
 }
 
 // tenantLimitInt reads an integer limit from a JSON override.
@@ -314,6 +362,14 @@ func validateTenantLimitOverrides(defaults map[string]any, tenants map[string]ma
 					// Loki accepts 0 and then fails every metric query that
 					// returns a series.
 					return fmt.Errorf("%s %s: must be a positive integer, got %d", scope, key, n)
+				}
+			case limitLabelValuesMaxResponseBytes:
+				n, err := tenantLimitInt(value)
+				if err != nil {
+					return fmt.Errorf("%s %s: %v", scope, key, err)
+				}
+				if n <= 0 {
+					return fmt.Errorf("%s %s: must be a positive number of bytes, got %d", scope, key, n)
 				}
 			case limitMaxEntriesLimitPerQuery:
 				n, err := tenantLimitInt(value)

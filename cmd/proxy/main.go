@@ -157,6 +157,10 @@ type proxyRuntimeConfig struct {
 	logStatsInterval                    time.Duration
 	logRateThreshold                    int
 	labelCacheTTL                       time.Duration
+	labelsCacheWarm                     bool
+	logqlDottedNames                    string
+	labelBrowseExtensions               string
+	errorResponseMessageField           bool
 	warmupMaxJitter                     time.Duration
 	labelStyle                          string
 	metadataFieldMode                   string
@@ -222,6 +226,7 @@ type proxyRuntimeConfig struct {
 	drilldownMaxStatsBuckets            int
 	maxZeroFillBuckets                  int
 	maxQueryLengthBytes                 int
+	labelValuesMaxResponseBytes         int
 	backendHeavyQueryQueueWait          time.Duration
 	backendHeavyQueryMinRange           time.Duration
 	backendMaxConcurrentMetadataScans   int
@@ -437,6 +442,16 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	logqlDottedNames := fs.String("logql-dotted-names", "auto", `Dotted names in LogQL (k8s.namespace.name in a stream matcher, label filter, by/without list, keep/drop, label_format, json/logfmt parameters, unwrap):
+  auto   - reject in the Loki-compatible profile (-label-style=underscores -metadata-field-mode=translated), accept otherwise (default)
+  reject - answer Loki's 400 parse error, as Loki does; detected_fields names dotted JSON keys by Loki's sanitized name with the key in jsonPath
+  accept - translate them to the dotted VictoriaLogs field (a proxy extension); detected_fields keeps dotted JSON keys`)
+	labelBrowseExtensions := fs.String("label-browse-extensions", "auto", `limit, offset and search/q on /labels and /label/{name}/values (a proxy extension; Loki ignores them):
+  auto - on outside the Loki-compatible profile or with -label-values-indexed-cache, off otherwise (default)
+  on   - honour them
+  off  - ignore them, as Loki does`)
+	errorResponseMessageField := fs.Bool("error-response-message-field", true, "Add a message field with the error text to JSON error bodies. Grafana's Loki datasource displays that field (Loki itself answers errors as text/plain); false restores the previous {status, errorType, error} body.")
+	labelsCacheWarm := fs.Bool("labels-cache-warm", true, "Warm the labels cache for the 1h/6h/24h/7d time-picker presets at startup and keep them warm in the background (every 75% of -labels-cache-ttl). Each refresh is a label-name scan of up to 7 days in VictoriaLogs; disable it on replicas that serve no interactive label pickers.")
 	warmupMaxJitter := fs.Duration("warmup-max-jitter", 0, "Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart.")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
@@ -522,6 +537,7 @@ func run(
 	patternsSecondPassMaxWindows := fs.Int("patterns-second-pass-max-windows", proxy.DefaultPatternsSecondPassMaxWindows, "Maximum windows the /patterns second pass re-reads. 0 uses the built-in default of 8")
 	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working")
 	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
+	labelValuesMaxResponseBytes := fs.Int("label-values-max-response-bytes", proxy.DefaultLabelValuesMaxResponseBytes, "Maximum bytes of the VictoriaLogs answer to a /loki/api/v1/label/{name}/values request: one response, or the size the merged listing would have as one response when the metadata inventory lists it from time buckets. Above it the request fails like Loki's querier above grpc_server_max_send_msg_size: HTTP 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` naming this flag, and nothing is cached. Per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 64 MiB")
 	maxQueryLengthBytes := fs.Int("max-query-length-bytes", proxy.DefaultMaxQueryLengthBytes, "Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default")
 	backendMaxConcurrentMetadataScans := fs.Int("backend-max-concurrent-metadata-scans", proxy.DefaultBackendMaxConcurrentMetadataScans, "Ceiling of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range, and the day bucket scans of the label inventory for such listings. Selects VictoriaLogs runs for others (read from its /metrics) count against the limit; it starts at 2, grows while scans that used it stay within -backend-metadata-scan-latency-tolerance of their no-load duration, shrinks on slow scans or backend failures, and no scan starts while VictoriaLogs lacks -backend-metadata-scan-memory-headroom. Each scan waits at most -backend-heavy-query-queue-wait, then the request fails with 429; background inventory refreshes skip instead of waiting. 0 disables the limiter")
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
@@ -880,6 +896,10 @@ func run(
 			logStatsInterval:                    *logStatsInterval,
 			logRateThreshold:                    *logRateThreshold,
 			labelCacheTTL:                       *labelsCacheTTL,
+			labelsCacheWarm:                     *labelsCacheWarm,
+			logqlDottedNames:                    *logqlDottedNames,
+			labelBrowseExtensions:               *labelBrowseExtensions,
+			errorResponseMessageField:           *errorResponseMessageField,
 			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
@@ -946,6 +966,7 @@ func run(
 			drilldownMaxStatsBuckets:            *drilldownMaxStatsBuckets,
 			maxZeroFillBuckets:                  *maxZeroFillBuckets,
 			maxQueryLengthBytes:                 *maxQueryLengthBytes,
+			labelValuesMaxResponseBytes:         *labelValuesMaxResponseBytes,
 			backendHeavyQueryQueueWait:          *backendHeavyQueryQueueWait,
 			backendHeavyQueryMinRange:           *backendHeavyQueryMinRange,
 			backendMaxConcurrentMetadataScans:   *backendMaxConcurrentMetadataScans,
@@ -2085,6 +2106,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
+		DisableLabelsCacheWarm:             !cfg.labelsCacheWarm,
+		LogQLDottedNames:                   cfg.logqlDottedNames,
+		LabelBrowseExtensions:              cfg.labelBrowseExtensions,
+		DisableErrorMessageField:           !cfg.errorResponseMessageField,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
 		TranslateOTel:                      cfg.translateOTel,
@@ -2132,6 +2157,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			DrilldownMaxStatsBuckets:          cfg.drilldownMaxStatsBuckets,
 			MaxZeroFillBuckets:                cfg.maxZeroFillBuckets,
 			MaxQueryLengthBytes:               cfg.maxQueryLengthBytes,
+			LabelValuesMaxResponseBytes:       cfg.labelValuesMaxResponseBytes,
 		},
 		BackendHeavyQueryQueueWait:          cfg.backendHeavyQueryQueueWait,
 		BackendHeavyQueryMinRange:           cfg.backendHeavyQueryMinRange,
@@ -2172,6 +2198,7 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		{"-drilldown-max-stats-buckets", cfg.drilldownMaxStatsBuckets},
 		{"-max-zero-fill-buckets", cfg.maxZeroFillBuckets},
 		{"-max-query-length-bytes", cfg.maxQueryLengthBytes},
+		{"-label-values-max-response-bytes", cfg.labelValuesMaxResponseBytes},
 	} {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)

@@ -609,6 +609,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	// Track whether we've seen a parser pipe (json, logfmt, pattern, regexp).
 	// After a parser, label filters must become VL `| filter` pipes.
 	afterParser := false
+	// afterKeyParser is set once a json or logfmt parser ran: label filters after
+	// it name sanitized keys (see parsedKeyVariants).
+	afterKeyParser := false
 	// Track canonical label-filter stages so repeated drilldown include/exclude
 	// clicks don't accumulate duplicate or contradictory filters.
 	labelFilterLatest := make(map[string]int)
@@ -617,6 +620,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	// VL's unpack_json always uses original field names; aliases are not preserved.
 	jsonAliases := make(map[string]string)
 	captureLabels := make(map[string]bool)
+	// definedLabels are the names pattern and label_format stages create; they
+	// are query-local and never a sanitized parser key.
+	definedLabels := make(map[string]bool)
 	pipelineLabelFn := func(label string) string {
 		if captureLabels[label] || labelFn == nil {
 			return label
@@ -752,6 +758,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 				captureLabels[label] = true
 			}
 		}
+		for _, label := range stageDefinedLabels(stage) {
+			definedLabels[label] = true
+		}
 
 		// Populate json alias map when the stage uses alias="field" syntax.
 		if strings.HasPrefix(stage, "json ") {
@@ -765,7 +774,30 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
 		}
 
-		translated := translatePipelineStage(stage, pipelineLabelFn, caps)
+		if isKeyParserStage(stage) {
+			afterKeyParser = true
+		}
+		stageLabelFn := pipelineLabelFn
+		if afterKeyParser && isLabelFilterStage(stage) {
+			stageLabelFn = withParsedKeyVariants(pipelineLabelFn, func(label string) bool {
+				if captureLabels[label] || definedLabels[label] {
+					return true
+				}
+				for alias, orig := range jsonAliases {
+					if label == alias || label == orig {
+						return true
+					}
+				}
+				return false
+			})
+		}
+		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		aliasCopies := ""
+		if translated == "| unpack_json" && strings.HasPrefix(stage, "json ") {
+			// `| json a="x.y"` defines the label a from the key x.y: make it a
+			// field, so grouping and unwrap on a read it as Loki does.
+			aliasCopies = strings.TrimPrefix(jsonAliasCopies(stage), " ")
+		}
 		if strings.HasPrefix(translated, errUnknownParser) {
 			parserName := strings.TrimPrefix(translated, errUnknownParser)
 			return "", fmt.Errorf("unknown pipeline stage %q — not a valid LogQL parser or label filter", parserName)
@@ -815,6 +847,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 				}
 			} else {
 				parts = append(parts, translated)
+			}
+			if aliasCopies != "" {
+				parts = append(parts, aliasCopies)
 			}
 		}
 	}
@@ -1203,10 +1238,22 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				label = "level"
 			}
 			if labelFn != nil {
-				label = sanitizeFieldIdentifier(labelFn(label))
+				translated := labelFn(label)
+				if strings.Contains(translated, parsedKeySep) {
+					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.entry, caps)
+				}
+				label = sanitizeFieldIdentifier(translated)
 				if label == "" {
 					return "", false
 				}
+			}
+
+			// VL requires quoting for dotted or hyphenated field names (e.g.
+			// "service.name"): quote the label before passing it to FieldFilter
+			// (or the ip() range filter) so the output is "service.name":="foo"
+			// rather than service.name:="foo".
+			if strings.ContainsAny(label, ".-") {
+				label = `"` + label + `"`
 			}
 
 			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
@@ -1223,13 +1270,6 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			}
 
 			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
-
-			// VL requires quoting for dotted field names (e.g. "service.name"):
-			// quote the label before passing it to FieldFilter so the output is
-			// "service.name":="foo" rather than service.name:="foo".
-			if strings.Contains(label, ".") {
-				label = `"` + label + `"`
-			}
 
 			if entry.entry.isComp {
 				// Comparison filters (>, >=, <, <=) do not quote the value.
@@ -1885,6 +1925,7 @@ func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
 	if query == "" {
 		query = "*"
 	}
+	query = resolveStatsKeys(query, byLabels, statsExpr)
 	// emptyByGrouping requires explicit "by ()" — PipeStats can't represent
 	// an empty-but-explicit grouping without a dedicated struct field.
 	if byLabels == emptyByGrouping {
@@ -2538,7 +2579,12 @@ func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
 		return query + " | stats by (" + labels + ")"
 	}
 	statsStart := idx + len("| stats ")
-	return query[:statsStart] + "by (" + labels + ") " + query[statsStart:]
+	rest := query[statsStart:]
+	// The grouping may name sanitized parser keys: resolve them before the stats.
+	expr, _, _ := strings.Cut(rest, " as ")
+	expr, _, _ = strings.Cut(expr, " | ")
+	prefix := resolveStatsKeys(strings.TrimRight(query[:idx], " "), labels, expr)
+	return prefix + " | stats by (" + labels + ") " + rest
 }
 
 func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {

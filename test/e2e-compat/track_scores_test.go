@@ -5,6 +5,7 @@ package e2e_compat
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -190,12 +191,23 @@ func TestDrilldownTrackScore(t *testing.T) {
 	for _, field := range otelFields {
 		otelSeen[field.(map[string]interface{})["label"].(string)] = true
 	}
-	for _, want := range []string{"service.name", "service_name"} {
-		if otelSeen[want] {
-			score.pass("detected_fields", fmt.Sprintf("hybrid field %s present", want))
-		} else {
-			score.fail("detected_fields", fmt.Sprintf("hybrid field %s missing", want))
+	// The Drilldown datasource runs the Loki-compatible profile: Loki's
+	// sanitized names, no dotted duplicates.
+	if otelSeen["service_name"] {
+		score.pass("detected_fields", "OTel field service_name present")
+	} else {
+		score.fail("detected_fields", "OTel field service_name missing")
+	}
+	dotted := 0
+	for label := range otelSeen {
+		if strings.Contains(label, ".") {
+			dotted++
 		}
+	}
+	if dotted == 0 {
+		score.pass("detected_fields", "no dotted OTel field names (Loki shows sanitized names only)")
+	} else {
+		score.fail("detected_fields", fmt.Sprintf("%d dotted OTel field names leaked into the Loki-compatible profile", dotted))
 	}
 
 	clusterVals := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?query=%7Bservice_name%3D%22api-gateway%22%7D&start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end))
