@@ -176,11 +176,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `label-values-max-response-bytes`; per tenant as
   `label_values_max_response_bytes` in `-tenant-limits` /
   `-tenant-default-limits`, enforced but not published, since Loki has no
-  per-tenant equivalent) bounds the bytes read from each VictoriaLogs
-  response of a label values request. The proxy stops reading one byte past
-  it and answers HTTP 500 with Loki's text followed by `; raise
+  per-tenant equivalent) bounds the VictoriaLogs answer to a label values
+  request: the bytes of the response or, when the metadata inventory lists
+  the values from time buckets, the size the merged listing would have as
+  one response, so the inventory and a single call agree at the boundary.
+  The proxy stops reading one byte past it and answers HTTP 500 with Loki's text followed by `; raise
   -label-values-max-response-bytes or narrow the query` (N is the bytes read
-  when it stopped). The rejected response is never cached, indexed or masked
+  when it stopped, or the merged listing's size). The rejected response is never cached, indexed or masked
   by a stale cached answer. The VictoriaLogs response is about 1.7x the Loki
   JSON (it carries a hit count per value; 2.4 MB for the 1h example), so the
   64 MiB default - the per-response budget of

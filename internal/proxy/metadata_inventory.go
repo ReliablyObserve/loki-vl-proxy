@@ -570,7 +570,46 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		return nil, err
 	}
 	p.observeInternalOperation(ctx, "metadata_inventory", inventoryOutcome(scanned, revalidated, reused), time.Since(now))
-	return mergeVLValueHits(parts...), nil
+	merged := mergeVLValueHits(parts...)
+	if err := p.checkMergedListingCap(ctx, path, merged); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+// vlListingEncodedSize is the size of the response VictoriaLogs sends for a
+// listing of items from one call: {"values":[...]} with one
+// {"hits":N,"value":"..."} per item, the items comma separated, and a final
+// newline. It is the size the response cap sees on the one-call path.
+func vlListingEncodedSize(items []vlValueHits) int64 {
+	size := int64(len(`{"values":[]}`)) + 1
+	for i, item := range items {
+		quoted, _ := json.Marshal(item.Value)
+		size += int64(len(`{"hits":,"value":}`)) + int64(len(quoted)) + int64(len(strconv.FormatInt(item.Hits, 10)))
+		if i > 0 {
+			size++
+		}
+	}
+	return size
+}
+
+// checkMergedListingCap applies the label values response cap to the merged
+// inventory listing, so the cap bounds the answer the client would get from
+// one VictoriaLogs call over the whole range and not each bucket read, and
+// buckets another request filled without a cap count too.
+func (p *Proxy) checkMergedListingCap(ctx context.Context, path string, merged []vlValueHits) error {
+	limit, ok := ctx.Value(metadataResponseCapKey{}).(int64)
+	if !ok || limit <= 0 {
+		return nil
+	}
+	size := vlListingEncodedSize(merged)
+	if size <= limit {
+		return nil
+	}
+	p.observeInternalOperation(ctx, "label_values_response_cap", "rejected", 0)
+	p.log.Warn("label values response exceeds -label-values-max-response-bytes",
+		"backend.route", path, "bytes_read", size, "limit", limit, "limit_flag", "-label-values-max-response-bytes")
+	return &labelValuesResponseTooLargeError{read: size, limit: limit}
 }
 
 func inventoryOutcome(scanned, revalidated, reused int) string {
@@ -603,6 +642,9 @@ func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params u
 	if isBackgroundInventory(ctx) {
 		flightKey += ":bg"
 	}
+	// A capped fill fails where an uncapped one succeeds, so the two never
+	// share a flight.
+	flightKey += responseCapKeySuffix(ctx)
 	type result struct {
 		items   []vlValueHits
 		outcome string

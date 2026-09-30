@@ -103,7 +103,8 @@ var resourceExhaustedRE = regexp.MustCompile(`^rpc error: code = ResourceExhaust
 func TestLabelValuesResponseCap_OverLimitFailsWithLokiResourceExhausted(t *testing.T) {
 	var calls atomic.Int64
 	vl := wideLabelVL(t, 2000, &calls)
-	p := newGuardTestProxy(t, Config{BackendURL: vl.URL, ExecutionLimits: ExecutionLimitsConfig{LabelValuesMaxResponseBytes: 4096}})
+	// Inventory off: one VictoriaLogs call per request, so this tests the guard alone.
+	p := newGuardTestProxy(t, Config{BackendURL: vl.URL, MetadataInventoryParallelism: -1, ExecutionLimits: ExecutionLimitsConfig{LabelValuesMaxResponseBytes: 4096}})
 
 	var afterFirst int64
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -123,10 +124,9 @@ func TestLabelValuesResponseCap_OverLimitFailsWithLokiResourceExhausted(t *testi
 			t.Fatalf("attempt %d: sizes (%s vs. %s), want (4097 vs. 4096)", attempt, m[1], m[2])
 		}
 	}
-	// Not cached: the second request reached VictoriaLogs again (the inventory
-	// splits the window into several bucket calls, so count growth, not calls).
-	if got := calls.Load(); afterFirst < 1 || got <= afterFirst {
-		t.Fatalf("values calls = %d after %d, want the second request to reach VictoriaLogs again (an over-limit answer must not be cached)", got, afterFirst)
+	// Not cached: the second request reached VictoriaLogs again.
+	if got := calls.Load(); afterFirst != 1 || got != 2 {
+		t.Fatalf("values calls = %d after %d, want 2 after 1 (an over-limit answer must not be cached)", got, afterFirst)
 	}
 	if n := labelValuesIndexSize(p); n != 0 {
 		t.Fatalf("label values index has %d entries, want 0 (an over-limit answer must not be indexed)", n)
@@ -268,41 +268,60 @@ func TestVLResponseAbortedAfterHeaders(t *testing.T) {
 		{"abort at the timeout argument, identity", &abortingVL{abortAfter: func(d time.Duration) time.Duration { return d * 97 / 100 }}, 400 * time.Millisecond, http.StatusGatewayTimeout},
 		{"abort at the timeout argument, gzip", &abortingVL{gzip: true, deadlineText: true, abortAfter: func(d time.Duration) time.Duration { return d * 97 / 100 }}, 400 * time.Millisecond, http.StatusGatewayTimeout},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := tc.vl.server(t)
-			// -backend-compression=gzip so the proxy accepts the gzip body even
-			// though the fake backend is on loopback.
-			p := newGuardTestProxy(t, Config{BackendURL: srv.URL, BackendTimeout: tc.timeout, BackendCompression: "gzip"})
-			var afterFirst int64
-			for attempt := 1; attempt <= 2; attempt++ {
-				if attempt == 2 {
-					afterFirst = tc.vl.calls.Load()
-				}
-				rec := getLabelValues(p, "0")
-				if rec.Code != tc.wantStatus {
-					t.Fatalf("attempt %d: status = %d, want %d; body %s", attempt, rec.Code, tc.wantStatus, bodyHead(rec))
-				}
-				msg := lokiErrorText(t, rec)
-				if tc.wantStatus == http.StatusGatewayTimeout && msg != lokiErrDeadlineExceeded {
-					t.Fatalf("attempt %d: error %q, want Loki's %q", attempt, msg, lokiErrDeadlineExceeded)
-				}
-				if tc.wantStatus == http.StatusBadGateway && !strings.HasPrefix(msg, "VictoriaLogs aborted the response after ") {
-					t.Fatalf("attempt %d: error %q, want the sanitized abort message", attempt, msg)
-				}
-				for _, noise := range goTransportNoise {
-					if strings.Contains(msg, noise) {
-						t.Fatalf("attempt %d: error %q leaks transport detail %q", attempt, msg, noise)
-					}
-				}
+	// Inventory off tests the guard alone (one call per request); inventory on
+	// runs the bucket fan-out, where a failed bucket cancels its siblings.
+	for _, inventory := range []bool{false, true} {
+		for _, tc := range cases {
+			t.Run(fmt.Sprintf("%s/inventory=%v", tc.name, inventory), func(t *testing.T) {
+				runAbortedAfterHeadersCase(t, tc.vl, tc.timeout, tc.wantStatus, inventory)
+			})
+		}
+	}
+}
+
+func runAbortedAfterHeadersCase(t *testing.T, vl *abortingVL, timeout time.Duration, wantStatus int, inventory bool) {
+	vl.calls.Store(0)
+	srv := vl.server(t)
+	// -backend-compression=gzip so the proxy accepts the gzip body even
+	// though the fake backend is on loopback.
+	cfg := Config{BackendURL: srv.URL, BackendTimeout: timeout, BackendCompression: "gzip"}
+	if !inventory {
+		cfg.MetadataInventoryParallelism = -1
+	}
+	p := newGuardTestProxy(t, cfg)
+	var afterFirst int64
+	for attempt := 1; attempt <= 2; attempt++ {
+		if attempt == 2 {
+			afterFirst = vl.calls.Load()
+		}
+		rec := getLabelValues(p, "0")
+		if rec.Code != wantStatus {
+			t.Fatalf("attempt %d: status = %d, want %d; body %s", attempt, rec.Code, wantStatus, bodyHead(rec))
+		}
+		msg := lokiErrorText(t, rec)
+		if wantStatus == http.StatusGatewayTimeout && msg != lokiErrDeadlineExceeded {
+			t.Fatalf("attempt %d: error %q, want Loki's %q", attempt, msg, lokiErrDeadlineExceeded)
+		}
+		if wantStatus == http.StatusBadGateway && !strings.HasPrefix(msg, "VictoriaLogs aborted the response after ") {
+			t.Fatalf("attempt %d: error %q, want the sanitized abort message", attempt, msg)
+		}
+		for _, noise := range goTransportNoise {
+			if strings.Contains(msg, noise) {
+				t.Fatalf("attempt %d: error %q leaks transport detail %q", attempt, msg, noise)
 			}
-			if got := tc.vl.calls.Load(); afterFirst < 1 || got <= afterFirst {
-				t.Fatalf("values calls = %d after %d, want the second request to reach VictoriaLogs again (a partial body must not be cached)", got, afterFirst)
-			}
-			if n := labelValuesIndexSize(p); n != 0 {
-				t.Fatalf("label values index has %d entries, want 0", n)
-			}
-		})
+		}
+	}
+	got := vl.calls.Load()
+	if inventory {
+		// The inventory splits the window into bucket calls, so count growth, not calls.
+		if afterFirst < 1 || got <= afterFirst {
+			t.Fatalf("values calls = %d after %d, want the second request to reach VictoriaLogs again (a partial body must not be cached)", got, afterFirst)
+		}
+	} else if afterFirst != 1 || got != 2 {
+		t.Fatalf("values calls = %d after %d, want 2 after 1 (a partial body must not be cached)", got, afterFirst)
+	}
+	if n := labelValuesIndexSize(p); n != 0 {
+		t.Fatalf("label values index has %d entries, want 0", n)
 	}
 }
 
