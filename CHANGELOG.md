@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.100.1] - 2026-09-30
+
 ### Changed
 
 - **The `race-stress` CI gate runs the proxy race tests in parallel
