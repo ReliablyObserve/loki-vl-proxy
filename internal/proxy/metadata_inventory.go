@@ -528,6 +528,9 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	// running: they finish and are cached, so the retry that follows a 429
 	// continues where this request stopped instead of starting over. Only
 	// the request's own context cancels them.
+	if countable {
+		p.revalidateEmptyRuns(ctx, path, params, base, plan)
+	}
 	var group errgroup.Group
 	group.SetLimit(p.metadataInventoryParallelism)
 	var failed atomic.Bool
@@ -700,11 +703,98 @@ func inheritedFailure(err error, followed bool) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (followed && isHeavyQueryQueueFull(err))
 }
 
+// inventoryLiveWindow is how far back an empty, count-checkable bucket is
+// revalidated at the negative TTL: Loki's max_metadata_cache_freshness, or an
+// hour when it is off.
+func (p *Proxy) inventoryLiveWindow() time.Duration {
+	if p.metadataCacheFreshness > 0 {
+		return p.metadataCacheFreshness
+	}
+	return time.Hour
+}
+
+// emptyRunBucket is an empty, count-checkable bucket of a plan: the entry that
+// holds its confirmation and the bucket itself.
+type emptyRunBucket struct {
+	key   string
+	seg   inventorySegment
+	entry inventoryEntry
+}
+
+// revalidateEmptyRuns confirms the empty hour and day buckets of a plan that
+// are due, with one row count over each contiguous run of such buckets instead
+// of one count per bucket. A run that counts zero rows is unchanged: every
+// bucket in it is confirmed. A run that counts rows is halved until the
+// buckets that received rows are found; those are left unconfirmed, so the
+// per-bucket path rescans them, and the empty ones are confirmed. Dashboards
+// that cached empty hours during a shipper outage see the rows backfilled into
+// them after at most the negative TTL, for the cost of a few counts.
+func (p *Proxy) revalidateEmptyRuns(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment) {
+	now := cache.Now().UnixNano()
+	var run []emptyRunBucket
+	due := false
+	flush := func() {
+		if due && len(run) > 0 {
+			p.confirmEmptyRun(ctx, params.Get("query"), run)
+		}
+		run, due = nil, false
+	}
+	for _, seg := range plan {
+		var bucket emptyRunBucket
+		ok := false
+		if seg.level >= 0 && seg.level <= 1 {
+			key := inventoryBucketKey(base, seg)
+			if e, found := p.loadInventoryEntry(key); found && len(e.Values) == 0 && e.Rows == 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
+				bucket, ok = emptyRunBucket{key: key, seg: seg, entry: e}, true
+				if !p.inventoryEntryFresh(path, seg, e) {
+					due = true
+				}
+			}
+		}
+		if !ok || (len(run) > 0 && run[len(run)-1].seg.end != seg.start) {
+			flush()
+		}
+		if ok {
+			run = append(run, bucket)
+		}
+	}
+	flush()
+}
+
+// confirmEmptyRun counts the rows of a contiguous run of empty buckets and
+// confirms the buckets that are still empty, see revalidateEmptyRuns.
+func (p *Proxy) confirmEmptyRun(ctx context.Context, query string, run []emptyRunBucket) {
+	notBefore := int64(0)
+	for _, b := range run {
+		if b.entry.Checked+1 > notBefore {
+			notBefore = b.entry.Checked + 1
+		}
+	}
+	span := inventorySegment{start: run[0].seg.start, end: run[len(run)-1].seg.end, level: -1}
+	rows, at, err := p.countInventoryRows(ctx, query, span, notBefore)
+	if err != nil {
+		return // the per-bucket path counts or scans each bucket
+	}
+	if rows == 0 {
+		for _, b := range run {
+			b.entry.Checked = at
+			_ = p.storeInventoryEntry(b.key, b.entry)
+		}
+		return
+	}
+	if len(run) == 1 {
+		return // this bucket received rows: the per-bucket path rescans it
+	}
+	mid := len(run) / 2
+	p.confirmEmptyRun(ctx, query, run[:mid])
+	p.confirmEmptyRun(ctx, query, run[mid:])
+}
+
 // inventoryEntryFresh reports whether a bucket entry may be served without
 // revalidation. Ages are read on the cache clock, like the entry's expiry.
-// An empty listing is revalidated after the negative TTL, like every other
-// empty metadata answer: VictoriaLogs answers empty while data it has not
-// yet made searchable is on its way.
+// An empty listing of a bucket that ended within the last hour is revalidated
+// after the negative TTL, like every other empty metadata answer: VictoriaLogs
+// answers empty while data it has not yet made searchable is on its way.
 func (p *Proxy) inventoryEntryFresh(path string, seg inventorySegment, e inventoryEntry) bool {
 	now := cache.Now().UnixNano()
 	base := p.inventoryBaseTTL(path)
@@ -714,9 +804,26 @@ func (p *Proxy) inventoryEntryFresh(path string, seg inventorySegment, e invento
 		// written late into old hours show up within three labels TTLs.
 		after = 3 * base
 	}
+	// An empty bucket is revalidated after the negative TTL while it is recent:
+	// rows may not be searchable yet, or may be backfilled with old timestamps
+	// (a shipper outage). Loki reads the last max-metadata-cache-freshness
+	// live, so an hour or day bucket that carries a row count (countable
+	// query) keeps the negative TTL for that whole window: its revalidation is
+	// one count over the run of such buckets (revalidateEmptyRuns), not a scan
+	// each. Other empty buckets (5m and 1m buckets, word, phrase or pipe
+	// filters) keep it for the last hour only; older ones follow the age
+	// schedule.
 	if len(e.Values) == 0 {
-		if negative := p.metadataNegativeTTL(); negative < after {
-			after = negative
+		window := time.Hour
+		if e.Rows >= 0 && seg.level <= 1 {
+			if live := p.inventoryLiveWindow(); live > window {
+				window = live
+			}
+		}
+		if seg.end > now-int64(window) {
+			if negative := p.metadataNegativeTTL(); negative < after {
+				after = negative
+			}
 		}
 	}
 	return now-e.Checked < int64(after)

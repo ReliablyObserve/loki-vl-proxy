@@ -230,7 +230,8 @@ func TestLabelsFullRange_EmptyWindowHasNoSyntheticLabels(t *testing.T) {
 }
 
 // emptyThenDataVL answers every metadata call with nothing until hasData is set,
-// then with one label (app) and one value (late-app).
+// then, for ranges that reach the last few minutes (where late data lands), with
+// one label (app) and one value (late-app).
 func emptyThenDataVL(t *testing.T, hasData *atomic.Bool, calls *atomic.Int64) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,15 +240,17 @@ func emptyThenDataVL(t *testing.T, hasData *atomic.Bool, calls *atomic.Int64) *h
 			return
 		}
 		calls.Add(1)
+		endNs, ok := parseLokiTimeToUnixNano(r.URL.Query().Get("end"))
+		reachesNow := !ok || endNs >= time.Now().Add(-5*time.Minute).UnixNano()
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_values", "/select/logsql/field_values":
-			if hasData.Load() {
+			if hasData.Load() && reachesNow {
 				writeVLFieldValues(w, []fieldHit{{"late-app", 1}})
 				return
 			}
 			writeVLFieldValues(w, nil)
 		default:
-			if hasData.Load() {
+			if hasData.Load() && reachesNow {
 				writeVLFieldNames(w, []fieldHit{{"app", 1}})
 				return
 			}
@@ -279,8 +282,13 @@ func TestLabelsNegativeCache_EmptyListsExpireAndDataAppears(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
-	labelsPath := fullRangeWindowPath("/loki/api/v1/labels", 24*time.Hour)
-	valuesPath := fullRangeWindowPath("/loki/api/v1/label/app/values", 24*time.Hour) + "&query=" + "%7Bapp%3D~%22.%2B%22%7D"
+	// A window ending now: late data lands in its last minutes, the only buckets
+	// an empty answer is revalidated for after the negative TTL (an old empty
+	// bucket follows its age schedule).
+	nowNs := time.Now().UnixNano()
+	window := fmt.Sprintf("start=%d&end=%d", nowNs-int64(24*time.Hour), nowNs)
+	labelsPath := "/loki/api/v1/labels?" + window
+	valuesPath := "/loki/api/v1/label/app/values?" + window + "&query=" + "%7Bapp%3D~%22.%2B%22%7D"
 	if got := serveLokiStrings(t, mux, labelsPath); len(got) != 0 {
 		t.Fatalf("labels before data = %v, want empty", got)
 	}

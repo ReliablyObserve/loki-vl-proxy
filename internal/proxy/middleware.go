@@ -572,12 +572,20 @@ func patternsPayloadEmpty(body []byte) bool {
 // historical (not-near-now) queries keep the full cache for stability. Labels,
 // label values and series follow Loki's max_metadata_cache_freshness instead
 // (see nearNowWindow).
-func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining time.Duration) bool {
+//
+// age is the time since the entry was stored; a negative age falls back to ttl
+// minus remaining. The stored age matters for an entry stored with a shorter
+// TTL than ttl (an empty label list, stored for the negative TTL): derived from
+// ttl it would look old and be refetched on every request.
+func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Request, ttl, remaining, age time.Duration) bool {
 	window, ok := p.nearNowWindow(endpoint)
 	if !ok || ttl <= 0 || remaining <= 0 || !requestEndsWithin(r, window) {
 		return false
 	}
-	return ttl-remaining >= p.recentTailRefreshMaxStaleness
+	if age < 0 {
+		age = ttl - remaining
+	}
+	return age >= p.recentTailRefreshMaxStaleness
 }
 
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
@@ -602,7 +610,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL) {
+		if cached, remainingTTL, entryAge, ok := p.compatCache.GetWithAge(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			body := cached

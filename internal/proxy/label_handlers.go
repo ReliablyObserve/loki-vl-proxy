@@ -28,9 +28,8 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	cacheKey := p.canonicalReadCacheKey("labels", orgID, r)
 
 	labelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabels)
-	cached, remaining, _, hit := p.endpointReadCacheEntry("labels", cacheKey)
-	freshFetch := hit && p.shouldBypassRecentTailCache("labels", labelsTTL, remaining, r)
-	if hit && !freshFetch {
+	cached, remaining, serve, freshFetch := p.metadataCacheLookup("labels", cacheKey, labelsTTL, r)
+	if serve {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -144,9 +143,8 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	labelValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues)
-	cached, remaining, _, hit := p.endpointReadCacheEntry("label_values", cacheKey)
-	freshFetch := hit && p.shouldBypassRecentTailCache("label_values", labelValuesTTL, remaining, r)
-	if hit && !freshFetch {
+	cached, remaining, serve, freshFetch := p.metadataCacheLookup("label_values", cacheKey, labelValuesTTL, r)
+	if serve {
 		p.serveLabelValuesCacheHit(w, r, start, cached, remaining, labelValuesTTL, cacheKey, labelName, rawLimit, search)
 		return
 	}
@@ -286,7 +284,8 @@ func (p *Proxy) serveLabelValuesCacheHit(w http.ResponseWriter, r *http.Request,
 func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Request, start time.Time) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("label_values", orgID, r, detectedLevelLabel)
-	if cached, _, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
+	ttl := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues)
+	if cached, _, serve, _ := p.metadataCacheLookup("label_values", cacheKey, ttl, r); serve {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))

@@ -25,20 +25,20 @@ func TestCompatCacheFreshnessBypass(t *testing.T) {
 	old := httptest.NewRequest("GET", "/loki/api/v1/query_range?end="+strconv.FormatInt(nowNs-(10*time.Minute).Nanoseconds(), 10), nil)
 
 	// near-now, entry 1s old (< 2s staleness) -> serve cached.
-	if p.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-1*time.Second) {
+	if p.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-1*time.Second, -1) {
 		t.Error("1s-old near-now entry should still be served (below max-staleness)")
 	}
 	// near-now, entry 3s old (>= 2s) -> bypass (fetch fresh).
-	if !p.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-3*time.Second) {
+	if !p.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-3*time.Second, -1) {
 		t.Error("3s-old near-now entry should bypass for freshness")
 	}
 	// historical query: never bypass, even when very stale.
-	if p.compatCacheShouldBypassForFreshness("query_range", old, ttl, ttl-4*time.Minute) {
+	if p.compatCacheShouldBypassForFreshness("query_range", old, ttl, ttl-4*time.Minute, -1) {
 		t.Error("historical (not near-now) query must keep the cache")
 	}
 	// feature disabled -> never bypass.
 	pOff := &Proxy{recentTailRefreshEnabled: false, recentTailRefreshWindow: 2 * time.Minute, recentTailRefreshMaxStaleness: 2 * time.Second}
-	if pOff.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-3*time.Second) {
+	if pOff.compatCacheShouldBypassForFreshness("query_range", near, ttl, ttl-3*time.Second, -1) {
 		t.Error("disabled recent-tail-refresh must never bypass")
 	}
 }
@@ -52,21 +52,37 @@ func TestCompatCacheFreshnessBypass_MetadataEndpointsUseTheMetadataWindow(t *tes
 		return httptest.NewRequest("GET", "/x?end="+strconv.FormatInt(nowNs-ago.Nanoseconds(), 10), nil)
 	}
 	for _, endpoint := range []string{"labels", "label_values", "series"} {
-		if !p.compatCacheShouldBypassForFreshness(endpoint, at(10*time.Hour), ttl, ttl-3*time.Second) {
+		if !p.compatCacheShouldBypassForFreshness(endpoint, at(10*time.Hour), ttl, ttl-3*time.Second, -1) {
 			t.Errorf("%s: a request ending 10h ago is inside the 24h window and 3s old: bypass", endpoint)
 		}
-		if p.compatCacheShouldBypassForFreshness(endpoint, at(10*time.Hour), ttl, ttl-time.Second) {
+		if p.compatCacheShouldBypassForFreshness(endpoint, at(10*time.Hour), ttl, ttl-time.Second, -1) {
 			t.Errorf("%s: a 1s-old entry is below max-staleness", endpoint)
 		}
-		if p.compatCacheShouldBypassForFreshness(endpoint, at(25*time.Hour), ttl, ttl-4*time.Minute) {
+		if p.compatCacheShouldBypassForFreshness(endpoint, at(25*time.Hour), ttl, ttl-4*time.Minute, -1) {
 			t.Errorf("%s: a request ending 25h ago keeps the cache", endpoint)
 		}
 	}
-	if p.compatCacheShouldBypassForFreshness("query_range", at(10*time.Hour), ttl, ttl-3*time.Second) {
+	if p.compatCacheShouldBypassForFreshness("query_range", at(10*time.Hour), ttl, ttl-3*time.Second, -1) {
 		t.Error("query_range is not governed by the metadata window")
 	}
 	p.metadataCacheFreshness = 0
-	if p.compatCacheShouldBypassForFreshness("labels", at(0), ttl, ttl-3*time.Second) {
+	if p.compatCacheShouldBypassForFreshness("labels", at(0), ttl, ttl-3*time.Second, -1) {
 		t.Error("freshness 0 must keep the previous caching")
+	}
+}
+
+// An empty label list is stored in the compat cache for the negative TTL, far
+// below the endpoint TTL: judged by ttl minus remaining it always looked old.
+//
+// conformance: semantics/metadata-answers-include-last-24h-like-loki
+func TestCompatCacheFreshnessBypass_UsesTheStoredAgeOfShortTTLEntries(t *testing.T) {
+	p := &Proxy{metadataCacheFreshness: 24 * time.Hour, recentTailRefreshMaxStaleness: 2 * time.Second}
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil) // end omitted: now
+	const ttl = 5 * time.Minute
+	if p.compatCacheShouldBypassForFreshness("labels", r, ttl, 29*time.Second, 1*time.Second) {
+		t.Error("an empty answer stored 1s ago must be served")
+	}
+	if !p.compatCacheShouldBypassForFreshness("labels", r, ttl, 25*time.Second, 5*time.Second) {
+		t.Error("an empty answer stored 5s ago must be refetched")
 	}
 }

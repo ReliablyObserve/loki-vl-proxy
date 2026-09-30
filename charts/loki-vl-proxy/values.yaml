@@ -331,7 +331,7 @@ extraArgs:
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
   # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
-  # max-metadata-cache-freshness: "24h"       # Loki max_metadata_cache_freshness: /labels, /label/{name}/values and /series requests ending within this window of now refetch a cached answer older than recent-tail-refresh-max-staleness, so streams written in the window appear as in Loki; 0 keeps the previous caching
+  # max-metadata-cache-freshness: "24h"       # Loki max_metadata_cache_freshness, applied to all tenants: /labels, /label/{name}/values and /series requests ending within this window of now refetch a cached answer older than recent-tail-refresh-max-staleness, so streams written in the window appear as in Loki (the newest minute and due revalidations are read live; sealed buckets stay cached); 0 keeps the previous caching
   # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache

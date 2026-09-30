@@ -184,6 +184,9 @@
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
+    "loki_api_v1_series": [
+      "internal/proxy/label_metadata_freshness_test.go"
+    ],
     "metric-series-identity": [
       "internal/translator/series_aggregation_test.go",
       "test/e2e-compat/series_count_aggregation_test.go"
@@ -302,6 +305,7 @@
     ],
     "semantics/metadata-answers-include-last-24h-like-loki": [
       "internal/proxy/compat_cache_freshness_test.go",
+      "internal/proxy/label_empty_run_test.go",
       "internal/proxy/label_metadata_freshness_test.go",
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
@@ -440,7 +444,11 @@
     "internal/proxy/instant_unwrap_sum_test.go": [
       "profiles/sanitized-json-key-grouping"
     ],
+    "internal/proxy/label_empty_run_test.go": [
+      "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
     "internal/proxy/label_metadata_freshness_test.go": [
+      "loki_api_v1_series",
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
     "internal/proxy/label_surface_test.go": [
@@ -690,7 +698,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 58,
+  "tests_with_markers": 59,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -720,7 +728,6 @@
     "loki_api_v1_rules",
     "loki_api_v1_rules_namespace",
     "loki_api_v1_rules_namespace_groupname",
-    "loki_api_v1_series",
     "loki_api_v1_status_buildinfo",
     "loki_api_v1_tail",
     "numeric-and-response-formatting",
@@ -734,5 +741,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 78
+  "wired_items": 79
 }

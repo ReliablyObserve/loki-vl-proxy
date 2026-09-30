@@ -13,6 +13,9 @@ type entry struct {
 	value     []byte
 	expiresAt time.Time
 	sizeBytes int
+	// storedAt is when this replica stored the value, the zero time when the
+	// store time is unknown (a copy promoted from disk keeps only its expiry).
+	storedAt time.Time
 }
 
 type tierStats struct {
@@ -283,14 +286,25 @@ func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 // Lookup order is L1 memory -> L2 disk -> L3 peer. Hits from lower tiers are promoted
 // into local L1 only so read reuse improves without forcing extra disk or peer writes.
 func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	v, ttl, _, tier, ok := c.GetSharedWithAge(key)
+	return v, ttl, tier, ok
+}
+
+// GetSharedWithAge is GetSharedWithTTL plus the entry's age on this replica:
+// the time since it was stored in memory, or -1 when unknown (a disk copy
+// keeps only its expiry, and a peer's or read-ahead copy only what is left of
+// the owner's TTL). Callers that need freshness use the age instead of
+// deriving it from a TTL: an entry stored with a shorter TTL than the caller
+// assumes (an empty answer, a non-owner shadow copy) would look old.
+func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Duration, string, bool) {
 	if c == nil || c.disabled {
-		return nil, 0, "", false
+		return nil, 0, 0, "", false
 	}
-	if v, ttl, ok := c.getL1WithTTL(key); ok {
+	if v, ttl, age, ok := c.getL1WithAge(key); ok {
 		c.recordTierRequest("l1")
 		c.recordTierHit("l1")
 		c.Hits.Add(1)
-		return v, ttl, "l1_memory", true
+		return v, ttl, age, "l1_memory", true
 	}
 	c.recordTierRequest("l1")
 	c.recordTierMiss("l1")
@@ -298,10 +312,10 @@ func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, boo
 	if c.l2 != nil {
 		c.recordTierRequest("l2")
 		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
-			c.SetLocalOnlyWithTTL(key, v, ttl)
+			c.setLocalOnly(key, v, ttl, false)
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
-			return v, ttl, "l2_disk", true
+			return v, ttl, -1, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
 	}
@@ -313,17 +327,20 @@ func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, boo
 			if shadowTTL <= 0 {
 				shadowTTL = 30 * time.Second
 			}
-			c.SetLocalOnlyWithTTL(key, v, shadowTTL)
+			// The owner stored the value earlier and reports only what is left of
+			// its TTL: the age is unknown here (-1), so callers derive it from the
+			// TTL, which is exact because the owner stores with the same TTL.
+			c.setLocalOnly(key, v, shadowTTL, false)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
-			return v, shadowTTL, "l3_peer", true
+			return v, shadowTTL, -1, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
 	}
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
-	return nil, 0, "", false
+	return nil, 0, 0, "", false
 }
 
 // GetStaleWithTTL returns a locally retained value even if its TTL has expired.
@@ -430,12 +447,20 @@ func (c *Cache) SetShadowWithTTL(key string, value []byte, ttl time.Duration) {
 	if c == nil || c.disabled {
 		return
 	}
-	c.setWithTTL(key, value, ttl, false)
+	// The value is an owner's copy fetched by read-ahead: its real age is not
+	// known here, so it is not stamped (callers then derive the age from the TTL).
+	c.setWithTTL(key, value, ttl, false, false)
 }
 
 // SetLocalOnlyWithTTL stores a value only in local L1 memory.
 // It skips L2 disk writes, L3 peer propagation, and non-owner TTL clamping.
 func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration) {
+	c.setLocalOnly(key, value, ttl, true)
+}
+
+// setLocalOnly is SetLocalOnlyWithTTL; stamped false leaves the store time
+// unknown, for a copy whose real age is not known (promoted from disk).
+func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stamped bool) {
 	if c == nil || c.disabled {
 		return
 	}
@@ -456,11 +481,12 @@ func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration)
 
 	c.evictIfNeeded(size)
 
-	c.entries[key] = entry{
-		value:     value,
-		expiresAt: clockNow().Add(ttl),
-		sizeBytes: size,
+	now := clockNow()
+	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size}
+	if stamped {
+		e.storedAt = now
 	}
+	c.entries[key] = e
 	c.curBytes += size
 
 	if _, found := c.lruIndex[key]; !found {
@@ -484,7 +510,7 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.storeLocalLocked(key, value, ttl, size)
+	c.storeLocalLocked(key, value, ttl, size, true)
 	if c.l2 != nil && !skipL2WriteForKey(key) {
 		c.l2.Set(key, value, ttl)
 	}
@@ -495,10 +521,10 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	if c == nil || c.disabled {
 		return
 	}
-	c.setWithTTL(key, value, ttl, true)
+	c.setWithTTL(key, value, ttl, true, true)
 }
 
-func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagateL3 bool) {
+func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagateL3, stamped bool) {
 	size := len(value)
 	// Don't cache entries larger than 10% of max bytes
 	if size > c.maxBytes/10 {
@@ -520,7 +546,7 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.storeLocalLocked(key, value, ttl, size)
+	c.storeLocalLocked(key, value, ttl, size, stamped)
 
 	// Write-through to L2 (disk), except keys that already have dedicated
 	// persistence paths and would otherwise double-write to disk.
@@ -540,7 +566,7 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	}
 }
 
-func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, size int) {
+func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, size int, stamped bool) {
 	if old, ok := c.entries[key]; ok {
 		c.curBytes -= old.sizeBytes
 		if elem, found := c.lruIndex[key]; found {
@@ -550,11 +576,12 @@ func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, si
 
 	c.evictIfNeeded(size)
 
-	c.entries[key] = entry{
-		value:     value,
-		expiresAt: clockNow().Add(ttl),
-		sizeBytes: size,
+	now := clockNow()
+	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size}
+	if stamped {
+		e.storedAt = now
 	}
+	c.entries[key] = e
 	c.curBytes += size
 
 	if _, found := c.lruIndex[key]; !found {
@@ -784,23 +811,40 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 	return out
 }
 
-func (c *Cache) getL1WithTTL(key string) ([]byte, time.Duration, bool) {
+func (c *Cache) getL1WithAge(key string) ([]byte, time.Duration, time.Duration, bool) {
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
-		remaining := e.expiresAt.Sub(clockNow())
+		now := clockNow()
+		remaining := e.expiresAt.Sub(now)
 		if remaining > 0 {
 			v := e.value
+			age := time.Duration(-1)
+			if !e.storedAt.IsZero() {
+				age = now.Sub(e.storedAt)
+			}
 			c.mu.RUnlock()
 			select {
 			case c.promoteBuf <- key:
 			default:
 			}
-			return v, remaining, true
+			return v, remaining, age, true
 		}
 	}
 	c.mu.RUnlock()
-	return nil, 0, false
+	return nil, 0, 0, false
+}
+
+// GetWithAge is GetWithTTL plus the entry's age in memory (-1 when unknown).
+func (c *Cache) GetWithAge(key string) ([]byte, time.Duration, time.Duration, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, 0, false
+	}
+	v, remaining, age, ok := c.getL1WithAge(key)
+	if ok {
+		c.Hits.Add(1)
+	}
+	return v, remaining, age, ok
 }
 
 func (c *Cache) recordTierRequest(tier string) {

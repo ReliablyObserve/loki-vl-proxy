@@ -681,7 +681,7 @@
    ]
   },
   "metadata-freshness": {
-   "description": "Label and label-value listings that end now, which Loki answers live (its results cache holds only splits older than max_metadata_cache_freshness, 24h): the proxy refetches a cached answer older than the recent-tail max-staleness instead of serving it for up to an hour. The historical controls end two days ago and must not change: their answers stay cached.",
+   "description": "Label and label-value listings that end now, which Loki answers live (its results cache holds only splits older than max_metadata_cache_freshness, 24h): the proxy refetches a cached answer older than the recent-tail max-staleness instead of serving it for up to an hour. The historical controls end two days ago and must not change: their answers stay cached.. Runs are 3 s apart (\"pause\"), longer than the recent-tail max staleness, so each run after the first meets an aged cache entry and times the refetch.",
    "ranges": [
     "1h",
     "6h",
@@ -697,7 +697,8 @@
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
       "data-probing-and-freshness"
-     ]
+     ],
+     "pause": 3
     },
     {
      "name": "label values env ending now",
@@ -707,7 +708,8 @@
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
       "data-probing-and-freshness"
-     ]
+     ],
+     "pause": 3
     },
     {
      "name": "labels ending two days ago (control)",
@@ -718,7 +720,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "data-probing-and-freshness"
      ],
-     "end_offset": 172800
+     "end_offset": 172800,
+     "pause": 3
     },
     {
      "name": "label values env ending two days ago (control)",
@@ -729,7 +732,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "data-probing-and-freshness"
      ],
-     "end_offset": 172800
+     "end_offset": 172800,
+     "pause": 3
     }
    ]
   }
