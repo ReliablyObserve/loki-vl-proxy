@@ -181,14 +181,23 @@ jobs:
       - name: Fuzz smoke (rules migrate convert)
         run: go test ./internal/rulesmigrate -run '^$' -fuzz=FuzzConvertWithOptions -fuzztime=12s
 
-  race-stress:
+  race-stress-shard:
     # Dedicated race-detector gate for concurrency hot paths. Catches issues
     # like the v1.55.1 production race in extractLogPatternsFromWindowEntries
     # (postprocess.go:390 read vs stream_processing.go:319 write) that the
     # default unit-test pass missed because no test exercised the windowed +
     # derivedFields + autodetect combination.
+    #
+    # internal/proxy alone takes ~7 minutes under -race, so its top-level tests
+    # are split into two deterministic shards (alternating index over the sorted
+    # `go test -list` output) that run in parallel, each with its own 8m budget.
+    name: race-stress-shard (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
@@ -197,22 +206,51 @@ jobs:
           go-version: "1.27.1"
           cache: true
 
-      - name: Race-detector tests on concurrency-critical packages
+      - name: Select this shard's internal/proxy tests
+        run: |
+          set -euo pipefail
+          go test -list '.*' ./internal/proxy/ | grep -E '^(Test|Fuzz)' | LC_ALL=C sort \
+            | awk -v shard="${{ matrix.shard }}" 'NR % 2 == shard % 2' > shard-tests.txt
+          echo "shard ${{ matrix.shard }}: $(wc -l < shard-tests.txt) tests"
+          test -s shard-tests.txt
+          echo "^($(paste -sd'|' shard-tests.txt))\$" > shard-run.txt
+
+      - name: Race-detector tests (internal/proxy shard)
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -timeout=8m -run "$(cat shard-run.txt)" ./internal/proxy/
+
+      - name: Race-detector tests (cache, middleware, observability)
+        if: matrix.shard == 1
         run: |
           set -euo pipefail
           go test -race -count=1 -timeout=8m \
-            ./internal/proxy/... \
             ./internal/cache/... \
             ./internal/middleware/... \
             ./internal/observability/...
+          # internal/proxy subpackages, if any
+          mapfile -t pkgs < <(go list ./internal/proxy/... | grep -v '/internal/proxy$' || true)
+          if [ "${#pkgs[@]}" -gt 0 ]; then go test -race -count=1 -timeout=8m "${pkgs[@]}"; fi
 
       - name: Concurrent regression tests (verbose, race)
+        if: matrix.shard == 1
         # Targeted re-run of the tests that specifically reproduce known races
         # so a failure points straight at the affected helper without grep.
         run: |
           go test -race -count=1 -v -timeout=2m \
             -run '^Test(SnapshotEntriesForPatterns_|RequestSampler_ConcurrentShouldLogIsRaceFree|AsyncHandler_|DetectFieldSummariesStream_Concurrent|HandleSeries_Concurrent)' \
             ./internal/proxy/ ./internal/observability/
+
+  race-stress:
+    # Aggregate gate keeping the original `race-stress` check name stable for
+    # branch protection; fails unless every shard succeeded.
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [race-stress-shard]
+    steps:
+      - name: Require all race-stress shards to pass
+        run: |
+          test "${{ needs.race-stress-shard.result }}" = "success"
 
   tuple-smoke:
     runs-on: ubuntu-latest

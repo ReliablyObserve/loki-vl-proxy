@@ -155,7 +155,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `ci.yaml` | `tuple-contract` | `go test ./internal/proxy -run '^TestTupleContract_'` |
 | `ci.yaml` | `tuple-smoke` | compose stack, `TestSetup_IngestLogs`, then `scripts/smoke-test.sh` |
 | `ci.yaml` | `fuzz-smoke` | short (12-20s) fuzz runs for `internal/proxy`, `internal/translator`, `internal/cache` and `internal/rulesmigrate` targets |
-| `ci.yaml` | `race-stress` | `-race -count=1` over `internal/proxy`, `internal/cache`, `internal/middleware`, `internal/observability`, plus targeted concurrency regressions |
+| `ci.yaml` | `race-stress` (aggregates 2 `race-stress-shard` jobs) | `-race -count=1` over `internal/proxy`, `internal/cache`, `internal/middleware`, `internal/observability`, plus targeted concurrency regressions |
 | `ci.yaml` | `stress-tests` | `-tags=stress -race` translation, coalescer and range-metric tests in `internal/proxy` |
 | `ci.yaml` | `memory-leak-tests` | `-tags=memleak -race -run 'TestMemLeak_'` in `internal/proxy` |
 | `ci.yaml` | `bench` | `internal/proxy` benchmarks (`-count=3`), label/field, patterns, cache and stats-translation scale benchmarks with regression thresholds, `TestLoad*` load tests |
