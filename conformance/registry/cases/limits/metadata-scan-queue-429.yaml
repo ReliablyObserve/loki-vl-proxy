@@ -1,0 +1,62 @@
+id: limits/metadata-scan-queue-429
+title: A saturated metadata-scan limiter answers with Loki's 429, naming its flag
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  A 7-day /labels or /label/<name>/values is a scan of every row in the range
+  in VictoriaLogs (0.8 GiB and 9-35 s per 7-day stream_field_names call on the
+  e2e stack), while Loki answers it from its index in milliseconds. The proxy
+  answers most of it from its time-bucketed inventory
+  (semantics/label-inventory-exact-and-incremental) and admits the long scans
+  that remain through an adaptive limiter (limits/metadata-scan-adaptive-limit;
+  ceiling -backend-max-concurrent-metadata-scans, floor
+  -backend-min-concurrent-metadata-scans, driven by VictoriaLogs' running
+  selects, scan latency, backend failures and its memory headroom
+  -backend-metadata-scan-memory-headroom), separate from the heavy-query one
+  so a 7-day label browser never waits behind 7-day charts; short-range label
+  pickers and inventory edges are never queued (limits/metadata-not-queued).
+  When no slot opens for a scan within -backend-heavy-query-queue-wait (each
+  bucket scan of a listing waits at most that long for its own slot) the
+  request must fail the way Loki's scheduler fails a full queue: HTTP 429,
+  "too many outstanding requests", naming the flags an operator would look at
+  and the signal that closed the door (the adaptive limit, VictoriaLogs'
+  running selects, or its memory use against the headroom). A scan the
+  limiter stops because VictoriaLogs' memory in use passed the brake mark
+  (limits/metadata-scan-adaptive-limit) answers the same 429, saying the scan
+  was stopped to keep VictoriaLogs' memory inside the headroom; a bucket
+  refused or stopped does not cancel the listing's scans already running,
+  which finish and stay cached for the retry.
+  Background inventory work (startup warm-up, keep-warm, stale refreshes) is
+  never queued: it skips when the limiter is closed, never takes the last slot
+  while a request could use it, and its preset window backs off, so it can
+  neither pile up behind users nor storm the backend on every tick.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: '{env="production"}'
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The adaptive limit is fully used by other long-range metadata scans (on
+    this replica or, through VictoriaLogs' running selects, anywhere), or
+    VictoriaLogs' resident set leaves less than the headroom free, for longer
+    than -backend-heavy-query-queue-wait.
+compare:
+  mode: exact
+  fields: [status]
+  expect:
+    status: 429
+    body_contains:
+      - too many outstanding requests
+      - -backend-max-concurrent-metadata-scans
+      - -backend-heavy-query-queue-wait
+loki_parity: |
+  pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
+  Loki never needs this limiter for /labels because its index answers the
+  range without a scan; the message and status are its own.

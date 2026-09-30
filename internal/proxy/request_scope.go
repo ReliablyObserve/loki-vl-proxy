@@ -165,14 +165,15 @@ func (p *Proxy) coldPost(ctx context.Context, path string, params url.Values) (*
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	// Cold-tier fetches read the same shapes from another VictoriaLogs node and
 	// go through the same heavy-query admission.
-	release, err := p.admitBackendRequest(ctx, path, params)
+	admission, err := p.admitBackendRequest(ctx, path, params)
 	if err != nil {
 		return nil, err
 	}
 	resp, err := p.coldRouter.coldRequest(ctx, http.MethodPost, path, params, func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRequest)
+	admission.observe(ctx, resp, err)
 	if err != nil {
-		release()
+		admission.Release()
 		return nil, err
 	}
-	return attachRelease(resp, release), nil
+	return attachRelease(resp, admission.Release), nil
 }

@@ -9,7 +9,10 @@ why: |
   /label/<name>/values constantly. If admission queued those behind long-range
   charts, backpressure on one panel would make the whole Explore UI look broken,
   and an operator probing the proxy during an incident would get no answer.
-  These lookups are cheap and bounded in VictoriaLogs, so they are never queued.
+  These short-range lookups are cheap and bounded in VictoriaLogs, so they are
+  never queued; only listings spanning at least -backend-heavy-query-min-range
+  go through the separate metadata-scan limiter
+  (limits/metadata-scan-queue-429), never the heavy-query one.
 request:
   method: GET
   path: /loki/api/v1/labels

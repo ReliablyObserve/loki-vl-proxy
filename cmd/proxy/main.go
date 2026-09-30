@@ -224,6 +224,11 @@ type proxyRuntimeConfig struct {
 	maxQueryLengthBytes                 int
 	backendHeavyQueryQueueWait          time.Duration
 	backendHeavyQueryMinRange           time.Duration
+	backendMaxConcurrentMetadataScans   int
+	backendMinConcurrentMetadataScans   int
+	backendMetadataScanMemoryHeadroom   float64
+	backendMetadataScanLatencyTolerance float64
+	metadataInventoryParallelism        int
 	drilldownBurstWindowMs              int
 	drilldownBurstMaxFields             int
 	drilldownFieldBatchWindowMs         int
@@ -503,7 +508,7 @@ func run(
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend. The remaining budget is also passed to VictoriaLogs as its per-query timeout argument, so VictoriaLogs stops work the proxy has given up on")
 	backendMaxConcurrentHeavyQueries := fs.Int("backend-max-concurrent-heavy-queries", proxy.DefaultBackendMaxConcurrentHeavyQueries, "Maximum concurrent heavy VictoriaLogs calls per replica: raw-row metric fetches (any /select/logsql/query bound above 10000 rows, which includes a log query whose limit is higher), and stats or hits calls spanning at least -backend-heavy-query-min-range or finer than 11000 buckets. Further heavy calls queue for -backend-heavy-query-queue-wait, then fail with 429 \"too many outstanding requests\". VictoriaLogs lets each stats pipe use up to 40% of its allowed memory, so the default of 2 keeps concurrent stats state within its memory budget. 0 disables the limiter")
-	backendHeavyQueryQueueWait := fs.Duration("backend-heavy-query-queue-wait", proxy.DefaultBackendHeavyQueryQueueWait, "How long a heavy VictoriaLogs call waits for a -backend-max-concurrent-heavy-queries slot before the request fails with 429. 0 rejects immediately when all slots are busy")
+	backendHeavyQueryQueueWait := fs.Duration("backend-heavy-query-queue-wait", proxy.DefaultBackendHeavyQueryQueueWait, "How long the heavy VictoriaLogs calls of one request wait, together, for -backend-max-concurrent-heavy-queries slots, and how long each long-range metadata scan waits for a -backend-max-concurrent-metadata-scans slot, before the request fails with 429. 0 rejects immediately when all slots are busy")
 	backendMaxBufferedResponseBytes := fs.Int("backend-max-buffered-response-bytes", proxy.DefaultBackendMaxBufferedResponseBytes, "Maximum bytes the proxy reads from one VictoriaLogs response it has to evaluate itself (buffered stats, volume and binary-operand responses, and the encoded metric result). Exceeding it returns HTTP 502 naming this flag instead of a truncated result. Proxy memory grows with this value times the concurrent requests that buffer a response. 0 uses the built-in default of 64 MiB")
 	binaryMetricMaxOperandBytes := fs.Int("binary-metric-max-operand-bytes", proxy.DefaultBinaryMetricMaxOperandBytes, "Maximum bytes of operand responses one binary metric expression may capture. 0 uses the built-in default of 256 MiB")
 	binaryMetricMaxArrays := fs.Int("binary-metric-max-arrays", proxy.DefaultBinaryMetricMaxArrays, "Maximum JSON arrays one binary metric expression may allocate while joining operands. 0 uses the built-in default of 2000000")
@@ -518,7 +523,12 @@ func run(
 	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working")
 	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
 	maxQueryLengthBytes := fs.Int("max-query-length-bytes", proxy.DefaultMaxQueryLengthBytes, "Maximum LogQL query string length in bytes. The default matches Loki's syntax.maxInputSize (131072), so the proxy rejects only what Loki rejects; lower it to reject long queries earlier. 0 uses the built-in default")
-	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries. Must be > 0")
+	backendMaxConcurrentMetadataScans := fs.Int("backend-max-concurrent-metadata-scans", proxy.DefaultBackendMaxConcurrentMetadataScans, "Ceiling of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: stream_field_names, stream_field_values, field_names, field_values and streams calls spanning at least -backend-heavy-query-min-range or without a time range, and the day bucket scans of the label inventory for such listings. Selects VictoriaLogs runs for others (read from its /metrics) count against the limit; it starts at 2, grows while scans that used it stay within -backend-metadata-scan-latency-tolerance of their no-load duration, shrinks on slow scans or backend failures, and no scan starts while VictoriaLogs lacks -backend-metadata-scan-memory-headroom. Each scan waits at most -backend-heavy-query-queue-wait, then the request fails with 429; background inventory refreshes skip instead of waiting. 0 disables the limiter")
+	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
+	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
+	backendMetadataScanLatencyTolerance := fs.Float64("backend-metadata-scan-latency-tolerance", proxy.DefaultBackendMetadataScanLatencyTolerance, "How many times its no-load duration (per row when the rows are known) a long-range metadata scan that ran beside others may take before the adaptive limit shrinks by 20%. Must be >= 1; 0 uses the default")
+	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight. 0 turns the inventory off, making every listing one VictoriaLogs call over the whole range")
+	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
 	cbWindowDuration := fs.Duration("cb-window-duration", 30*time.Second, "Circuit breaker: sliding window for failure counting; failures older than this are discarded")
@@ -938,6 +948,11 @@ func run(
 			maxQueryLengthBytes:                 *maxQueryLengthBytes,
 			backendHeavyQueryQueueWait:          *backendHeavyQueryQueueWait,
 			backendHeavyQueryMinRange:           *backendHeavyQueryMinRange,
+			backendMaxConcurrentMetadataScans:   *backendMaxConcurrentMetadataScans,
+			backendMinConcurrentMetadataScans:   *backendMinConcurrentMetadataScans,
+			backendMetadataScanMemoryHeadroom:   *backendMetadataScanMemoryHeadroom,
+			backendMetadataScanLatencyTolerance: *backendMetadataScanLatencyTolerance,
+			metadataInventoryParallelism:        *metadataInventoryParallelism,
 			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
 			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
 			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
@@ -2118,16 +2133,21 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			MaxZeroFillBuckets:                cfg.maxZeroFillBuckets,
 			MaxQueryLengthBytes:               cfg.maxQueryLengthBytes,
 		},
-		BackendHeavyQueryQueueWait:       cfg.backendHeavyQueryQueueWait,
-		BackendHeavyQueryMinRange:        cfg.backendHeavyQueryMinRange,
-		DrilldownBurstWindowMs:           cfg.drilldownBurstWindowMs,
-		DrilldownBurstMaxFields:          cfg.drilldownBurstMaxFields,
-		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
-		DrilldownFieldBatchMaxFields:     cfg.drilldownFieldBatchMaxFields,
-		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
-		DebugLogRawQueries:               cfg.debugLogRawQueries,
-		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
-		DrilldownScanTimeout:             cfg.drilldownScanTimeout,
+		BackendHeavyQueryQueueWait:          cfg.backendHeavyQueryQueueWait,
+		BackendHeavyQueryMinRange:           cfg.backendHeavyQueryMinRange,
+		BackendMaxConcurrentMetadataScans:   cfg.backendMaxConcurrentMetadataScans,
+		BackendMinConcurrentMetadataScans:   cfg.backendMinConcurrentMetadataScans,
+		BackendMetadataScanMemoryHeadroom:   cfg.backendMetadataScanMemoryHeadroom,
+		BackendMetadataScanLatencyTolerance: cfg.backendMetadataScanLatencyTolerance,
+		MetadataInventoryParallelism:        inventoryParallelismConfig(cfg.metadataInventoryParallelism),
+		DrilldownBurstWindowMs:              cfg.drilldownBurstWindowMs,
+		DrilldownBurstMaxFields:             cfg.drilldownBurstMaxFields,
+		DrilldownFieldBatchWindowMs:         cfg.drilldownFieldBatchWindowMs,
+		DrilldownFieldBatchMaxFields:        cfg.drilldownFieldBatchMaxFields,
+		StatsQueryRangeInterQueryDelayMs:    cfg.statsQueryRangeInterQueryDelayMs,
+		DebugLogRawQueries:                  cfg.debugLogRawQueries,
+		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
+		DrilldownScanTimeout:                cfg.drilldownScanTimeout,
 	}, nil
 }
 
@@ -2160,6 +2180,15 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 	return nil
 }
 
+// inventoryParallelismConfig maps the flag (0 = off) to proxy.Config, where 0
+// selects the default and a negative value turns the inventory off.
+func inventoryParallelismConfig(flagValue int) int {
+	if flagValue == 0 {
+		return -1
+	}
+	return flagValue
+}
+
 func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	if cfg.backendMaxConcurrentHeavyQueries < 0 {
 		return fmt.Errorf("invalid -backend-max-concurrent-heavy-queries: %d (must be >= 0; 0 disables the limiter)", cfg.backendMaxConcurrentHeavyQueries)
@@ -2167,7 +2196,27 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	if cfg.backendHeavyQueryQueueWait < 0 {
 		return fmt.Errorf("invalid -backend-heavy-query-queue-wait: %s (must be >= 0)", cfg.backendHeavyQueryQueueWait)
 	}
-	if cfg.backendMaxConcurrentHeavyQueries > 0 && cfg.backendHeavyQueryMinRange <= 0 {
+	if cfg.backendMaxConcurrentMetadataScans < 0 {
+		return fmt.Errorf("invalid -backend-max-concurrent-metadata-scans: %d (must be >= 0; 0 disables the limiter)", cfg.backendMaxConcurrentMetadataScans)
+	}
+	// 0 means "built-in default" for the floor and the tolerance, as for the
+	// other adaptive knobs; only explicit nonsense is refused.
+	if cfg.backendMinConcurrentMetadataScans < 0 {
+		return fmt.Errorf("invalid -backend-min-concurrent-metadata-scans: %d (must be >= 1; 0 uses the default)", cfg.backendMinConcurrentMetadataScans)
+	}
+	if cfg.backendMaxConcurrentMetadataScans > 0 && cfg.backendMinConcurrentMetadataScans > cfg.backendMaxConcurrentMetadataScans {
+		return fmt.Errorf("invalid -backend-min-concurrent-metadata-scans: %d (must be <= -backend-max-concurrent-metadata-scans=%d)", cfg.backendMinConcurrentMetadataScans, cfg.backendMaxConcurrentMetadataScans)
+	}
+	if cfg.backendMetadataScanMemoryHeadroom < 0 || cfg.backendMetadataScanMemoryHeadroom >= 1 {
+		return fmt.Errorf("invalid -backend-metadata-scan-memory-headroom: %g (must be >= 0 and < 1; 0 disables the memory gate)", cfg.backendMetadataScanMemoryHeadroom)
+	}
+	if cfg.metadataInventoryParallelism < 0 {
+		return fmt.Errorf("invalid -metadata-inventory-parallelism: %d (must be >= 0; 0 turns the inventory off)", cfg.metadataInventoryParallelism)
+	}
+	if t := cfg.backendMetadataScanLatencyTolerance; t < 0 || (t > 0 && t < 1) {
+		return fmt.Errorf("invalid -backend-metadata-scan-latency-tolerance: %g (must be >= 1; 0 uses the default)", cfg.backendMetadataScanLatencyTolerance)
+	}
+	if (cfg.backendMaxConcurrentHeavyQueries > 0 || cfg.backendMaxConcurrentMetadataScans > 0) && cfg.backendHeavyQueryMinRange <= 0 {
 		return fmt.Errorf("invalid -backend-heavy-query-min-range: %s (must be > 0)", cfg.backendHeavyQueryMinRange)
 	}
 	return nil

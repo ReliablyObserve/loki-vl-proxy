@@ -370,6 +370,31 @@ type Config struct {
 	// BackendHeavyQueryMinRange is the time range from which stats, hits and
 	// unbounded raw calls count as heavy. 0 uses the built-in default (6h).
 	BackendHeavyQueryMinRange time.Duration
+	// BackendMaxConcurrentMetadataScans is the ceiling of the adaptive limit
+	// on concurrent long-range metadata listings (stream field names and
+	// values, field names and values, stream listings spanning at least
+	// BackendHeavyQueryMinRange) per replica. They queue for
+	// BackendHeavyQueryQueueWait like heavy calls but on their own limiter.
+	// 0 disables the limiter.
+	BackendMaxConcurrentMetadataScans int
+	// BackendMinConcurrentMetadataScans is the floor of that adaptive limit.
+	// 0 uses the built-in default (1).
+	BackendMinConcurrentMetadataScans int
+	// BackendMetadataScanMemoryHeadroom is the fraction of the memory
+	// available to VictoriaLogs that long-range scans must leave free, read
+	// from its /metrics. 0 disables the memory gate; a negative value uses the
+	// built-in default (0.4).
+	BackendMetadataScanMemoryHeadroom float64
+	// BackendMetadataScanLatencyTolerance is how many times its no-load
+	// baseline a concurrent scan may take before the adaptive limit shrinks.
+	// 0 uses the built-in default (1.5).
+	BackendMetadataScanLatencyTolerance float64
+	// MetadataInventoryParallelism is how many time-bucket listings one
+	// /labels, /label/{name}/values or field listing may have in flight while
+	// it is assembled from the bucketed metadata inventory. 0 uses the
+	// built-in default (4); a negative value turns the inventory off, so every
+	// listing is one VictoriaLogs call over the whole range.
+	MetadataInventoryParallelism int
 	// DrilldownBurstWindowMs is the time window in milliseconds during which
 	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
 	// are coalesced into a single fused VL conditional-stats call.
@@ -529,6 +554,11 @@ type Proxy struct {
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
+	metadataScanLimiter                   *metadataScanLimiter
+	labelWarmBackoff                      *labelWarmBackoff  // per preset window retry delay after a failed warm
+	metadataInventoryParallelism          int                // bucket listings in flight per request; 0 = inventory off
+	inventoryGroup                        singleflight.Group // one fill per inventory bucket
+	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight
 	execLimits                            executionLimits
 	backendHeavyQueryMinRange             time.Duration
 	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
@@ -1125,6 +1155,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),
+		labelWarmBackoff:                      newLabelWarmBackoff(),
 		execLimits:                            resolveExecutionLimits(cfg.ExecutionLimits),
 		backendHeavyQueryMinRange:             resolveHeavyQueryMinRange(cfg.BackendHeavyQueryMinRange),
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
@@ -1226,6 +1257,13 @@ func New(cfg Config) (*Proxy, error) {
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
+	p.metadataScanLimiter = newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, resolveMetadataScanFloor(cfg.BackendMinConcurrentMetadataScans),
+		cfg.BackendHeavyQueryQueueWait, resolveMetadataScanHeadroom(cfg.BackendMetadataScanMemoryHeadroom),
+		resolveMetadataScanTolerance(cfg.BackendMetadataScanLatencyTolerance), p.sampleBackendSignals)
+	if p.metadataScanLimiter != nil {
+		p.metadataScanLimiter.localCalls = func() int { return int(p.selectCallsInFlight.Load()) }
+	}
+	p.metadataInventoryParallelism = resolveMetadataInventoryParallelism(cfg.MetadataInventoryParallelism)
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)
 	}

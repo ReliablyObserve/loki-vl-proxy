@@ -22,3 +22,9 @@ func AdvanceClockForTesting(d time.Duration) (restore func()) {
 	clockOffsetNs.Add(int64(d))
 	return func() { clockOffsetNs.Add(-int64(d)) }
 }
+
+// Now returns the current time as seen by cache expiry, so code that keeps
+// its own freshness stamps inside cached values ages them on the same clock.
+func Now() time.Time {
+	return clockNow()
+}

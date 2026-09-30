@@ -148,6 +148,11 @@ spec:
             # - -backend-max-concurrent-heavy-queries=2
             # - -backend-heavy-query-queue-wait=20s
             # - -backend-heavy-query-min-range=6h
+            # - -backend-max-concurrent-metadata-scans=8      # ceiling of the adaptive limit
+            # - -backend-min-concurrent-metadata-scans=1      # floor
+            # - -backend-metadata-scan-memory-headroom=0.4    # VictoriaLogs memory to leave free
+            # - -backend-metadata-scan-latency-tolerance=1.5
+            # - -metadata-inventory-parallelism=4             # bucket listings per label request; 0 = inventory off
 
             # Name | json / | logfmt metric series with the labels those
             # parsers extracted, as Loki does. Opt-in: such queries are then

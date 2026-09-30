@@ -1,0 +1,96 @@
+id: limits/metadata-scan-adaptive-limit
+title: The metadata-scan limit adapts to the backend, not to a fixed count
+proves:
+  - backend-admission-and-heavy-query-queueing
+  - operator-configurable-limits
+consumer: any
+why: |
+  What a long-range metadata scan costs VictoriaLogs depends on its data: on
+  the e2e stack a 7-day stream_field_names scan held 0.8 GiB and took 9 s one
+  day and 35 s the next, a large deployment scans many times that, a small
+  one a few megabytes. A fixed per-replica count is too many for the first
+  (eleven replicas at two each OOM-killed the e2e VictoriaLogs) and too few
+  for the last, and it multiplies with the replica count. So each replica
+  learns its limit from what every replica can see on its own, VictoriaLogs'
+  /metrics:
+
+  - Fleet share: the selects VictoriaLogs runs for others
+    (vl_concurrent_select_current minus this replica's own calls) count
+    against this replica's limit; a scan that has waited counts only what
+    stayed running through its wait, and below the floor a replica may start
+    one while others' long work uses less than a quarter of the select slots.
+  - Latency: per endpoint, range bucket and tenant, a Vegas-style no-load
+    baseline (per row when the rows are known); a wave of scans slower than
+    -backend-metadata-scan-latency-tolerance times it shrinks the limit by a
+    fifth, a scan that used the whole limit within it grows it by 1/limit.
+  - Distress: a transport error, timeout or 5xx halves the limit, once per
+    wave of scans that failed together, as does a rise of VictoriaLogs'
+    queue-timeout counter; a scan whose client went away or that
+    VictoriaLogs refused with a 4xx teaches nothing. While VictoriaLogs runs
+    all its select slots, or stops answering /metrics after having answered
+    it (up to 10 s), nothing new is admitted.
+  - Memory: memory in use is the anonymous resident set minus the Go heap
+    VictoriaLogs freed but has not returned (the next scans reuse it). A scan
+    is admitted while memory in use, plus this replica's reservations not yet
+    shown, plus the selects of others counted at this scan's cost, plus its
+    own cost stays under 1 - -backend-metadata-scan-memory-headroom (0.4) of
+    the available memory. Costs are learned per class from the peak growth
+    while scans ran (an upper bound when measured beside other work); a
+    tenant's first scan of a range borrows the same listing's cost over
+    another range (scaled up from a shorter one) or twice another tenant's;
+    a listing nobody has measured runs alone on VictoriaLogs, one per
+    replica. The only scan on an idle VictoriaLogs may use the headroom.
+  - Busy backends: where some select always runs, nothing is ever measured
+    alone, so a synchronous request whose listing has no cost of its own
+    measured alone escapes after 2-4 s (randomised), on a fresh reading,
+    once memory in use held steady for 5 s and no select started during its
+    wait, reserving more than half of the room left: escapes go one at a
+    time on a replica and, as far as each replica can see, across them.
+  - Brake: whatever the estimates, when memory in use passes a third of the
+    way into the headroom (73% of the available memory by default) a replica
+    stops its youngest scan, one per 500 ms, and that request gets the 429;
+    what the stopped scan had grown to is kept as its class's cost, so the
+    class is not started again for an hour unless it fits below the mark.
+    A scan alone may use the headroom only up to that mark.
+
+  The flags are the operator's bounds: -backend-max-concurrent-metadata-scans
+  is the ceiling (0 disables the limiter), -backend-min-concurrent-metadata-scans
+  the floor, the headroom 0 turns the memory gate and the brake off. A
+  backend without VictoriaLogs' select series on /metrics (a vmauth in front)
+  turns the memory and fleet signals off by itself: that process's memory
+  says nothing about VictoriaLogs.
+request:
+  scope: internal
+  entry: (*metadataScanLimiter).acquire
+  setup: |
+    A deterministic, single-threaded simulation (virtual clock, seeded
+    randomness): a VictoriaLogs whose scans share its CPU and slow each other
+    down, build their memory up over the first third of their run, and kill
+    it past its memory; one to eleven limiters (replicas) that see only its
+    /metrics; other clients' short or steady long selects.
+compare:
+  mode: exact
+  expect: |
+    Eleven replicas warming the 6h/24h/7d presets while seven users open a
+    7-day label browser at once: no admission and a static two per replica
+    kill the simulated 8 GiB backend; the adaptive limiter keeps it at
+    3.9-4.7 GiB over ten seeds, with or without the heap series (the warm-ups
+    all complete on later ticks; 2-4 of the 7 users are served within the
+    20 s queue wait, the rest get the 429: seven cold 7-day scans are more
+    work than one VictoriaLogs does in 20 s). The same fleet over 10x the
+    data on the same node, 10x on 64 GiB and 100x on 256 GiB never exceeds
+    the memory. A backend with cheap scans runs at the ceiling; six
+    closed-loop users settle the limit between 2 and 3; short selects of
+    other clients do not starve label scans (30 of 30 served); beside other
+    clients' steady long work 14-16 of 16 requests are served on e2e-sized
+    data, and on heavier data the brake stops the escapes that would pass its
+    mark (those requests get the 429, the backend stays up); without
+    signals, latency alone holds concurrency near what the backend serves
+    within the tolerance; the 429 names the flags and the signal that closed
+    the door. The simulation admits whole listings; the label inventory's
+    bucket fan-out (day buckets admitted, shorter buckets not) is covered by
+    the inventory unit tests and the live runs.
+loki_parity: |
+  Loki has no equivalent: its index answers /labels without a scan. The 429
+  and its message are Loki's scheduler's (pkg/queue/queue.go
+  ErrTooManyRequests).

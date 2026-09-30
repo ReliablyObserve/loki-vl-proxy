@@ -1,5 +1,5 @@
 id: limits/concurrent-full-retention-scans-exhaust-backend
-title: Concurrent full-retention metadata scans and raw-row fetches OOM-kill VictoriaLogs
+title: Concurrent full-retention metadata scans stay bounded instead of OOM-killing VictoriaLogs
 proves:
   - backend-admission-and-heavy-query-queueing
 consumer: any
@@ -8,49 +8,59 @@ why: |
   `-memory.allowedBytes=3GiB`, `-search.maxConcurrentRequests=64`) was
   OOM-killed three times in seven minutes (docker `oom` + `die exit=137` at
   20:09:57Z, 20:12:32Z and 20:16:36Z) while ten proxy replicas, two A/B
-  sessions and an owner's Drilldown session queried it. Its own slow-query
-  log names what was running: before every kill, several concurrent
-  `/select/logsql/stream_field_names?query=*` calls over the whole 7-day
-  retention (63-96 s each, then queue timeouts) from seven proxy
-  containers, and 3 h-24 h raw-row fetches (`env:="production" | limit
-  1000001`, the raw-row evaluator's fetch on v1.92.0 for a `| json` metric
-  with a label filter before the parser, 862 MB per 3 h). Memory sat at
-  6.4-6.6 GiB before the first and third kills and rose 2.8 -> 6.9 GiB in
-  21 s before the second, while a raw fetch, a 7-day inventory scan and a
-  3 h stats query with `unpack_logfmt` ran back to back.
+  sessions and an owner's Drilldown session queried it. Its slow-query log
+  names what ran before every kill: seven proxy containers sent
+  `/select/logsql/stream_field_names?query=*` over the whole 7-day retention
+  at the same moment (63-96 s each, then queue timeouts). Measured one at a
+  time on the same data: one 7-day `stream_field_names` scan holds 0.8 GiB
+  for 8.8 s; three at once hold 2 GiB more and take 16 s each; a 24 h scan is
+  3.3 s, 6 h is 1.2 s. Its cost is the set of distinct streams in the range
+  (VictoriaLogs lists every stream, then its fields), so it grows with the
+  data: a day later the same 7-day scan took 35 s alone, 6 hours held more
+  than 100 000 distinct streams, and seven at once from seven replicas each
+  ran past VictoriaLogs' 60 s query limit and OOM-killed it again (08:34:58Z,
+  2026-09-24). No single query reaches the limit: the kill is the sum of the
+  scans VictoriaLogs admits, and v1.52.0 has no per-query memory bound
+  (`-memory.allowedBytes` covers caches only). Loki answers the same requests
+  from its index: /labels over 7 days in 12 ms.
 
-  Reproduced one at a time with a memory watchdog, on the same data: one
-  7-day `stream_field_names` takes 8.5 s with flat memory; one 3 h raw
-  fetch (862 MB) takes 3.9 s and +0.9 GiB transient with a fast reader,
-  flat with a reader that consumes rows at the proxy's pace. No single
-  query reaches the limit: the kill is the sum of concurrent scans that
-  VictoriaLogs admits (64) without accounting for their memory, which its
-  documentation of `-search.maxConcurrentRequests` warns about ("many
-  concurrently executed requests may require high amounts of memory").
-  Loki direct answers the same LogQL without distress: `/labels` over 7
-  days in 12 ms, the metric shapes in 0.5-21 s.
+  A static per-replica count is not a bound either: when the e2e stack was
+  recreated with eleven replicas at a static limit of two each, their startup
+  warm-ups took VictoriaLogs from 0 to 7.6 GiB in 40 s and OOM-killed it 55 s
+  after start (07:17:08Z, 2026-09-24).
 
-  Two of the proxy's own choices feed it. The stream-field inventory
-  (`stream_field_names`) is fetched over the whole retention when
-  `-metadata-default-lookback=0`, as the e2e stack runs, and once per
-  replica; and metadata lookups are deliberately outside the heavy-query
-  limiter (limits/metadata-not-queued), so nothing bounds how many
-  full-retention scans reach VictoriaLogs at once. The raw-row fetch is
-  bounded (it counts as heavy: at most -backend-max-concurrent-heavy-queries
-  per replica), but the bound is per replica.
+  The proxy therefore (1) answers label names and values from a time-bucketed
+  inventory (semantics/label-inventory-exact-and-incremental), so a request
+  scans at most the buckets nobody has cached, a day at a time, and a Grafana
+  refresh scans only its edges; (2) admits the long scans that remain (day
+  buckets of long listings, full-range listings the inventory cannot
+  split) through an adaptive limiter (limits/metadata-scan-adaptive-limit)
+  that counts the selects VictoriaLogs runs for everyone else against its
+  limit, so replicas that never talk to each other hold VictoriaLogs near one
+  replica's limit, and that admits a scan only while VictoriaLogs' memory
+  (read from its /metrics) keeps the configured headroom; (3) warms only the
+  presets below -backend-heavy-query-min-range at startup, and only when
+  VictoriaLogs has memory and select slots to spare; the long presets follow
+  through the jittered keep-warm loop, whose background scans never wait for
+  or take the last slot, and a preset that fails backs off.
 
-  Mitigations, in order of leverage: (1) VictoriaLogs-side, lower
-  `-search.maxConcurrentRequests` from 64 to a number the memory limit can
-  carry (v1.52.0 has no per-query memory bound; `-memory.allowedBytes`
-  covers caches only); (2) proxy-side, count `stream_field_names` and
-  `field_names` over at least -backend-heavy-query-min-range as heavy, or
-  serve the inventory refresh from one replica-wide singleflight with a
-  bounded lookback instead of the whole retention; (3) stack-side, set
-  `-metadata-default-lookback` above 0. This case records the finding and
-  the proposal; the pushdown work in the same change removes the raw-row
-  fetch for label filters before the parser
-  (semantics/label-filter-before-parser-pushdown), which was one of the
-  scans in flight.
+  Evidence. A deterministic, single-threaded simulation (virtual clock,
+  seeded randomness; internal/proxy/metadata_scan_sim_test.go) of eleven
+  replicas warming the 6 h, 24 h and 7 d presets while seven users open a
+  7-day label browser at once kills the simulated 8 GiB backend without
+  admission and with a static two per replica, as the real one was killed;
+  through the adaptive limiter it peaks at 3.9-4.7 GiB over ten seeds. The
+  same fleet over 10x the data on the same 8 GiB node (one 7-day scan holds
+  47% of it), 10x on 64 GiB and 100x on 256 GiB never exceeds the memory,
+  also beside other clients' steady long work, where the memory brake stops
+  the scans that would pass it and their requests get the 429. On the live
+  e2e stack, eleven replicas of the fixed build started together and seven
+  users each sent a cold 7-day /labels at the same moment, in three rounds a
+  minute apart, three times: VictoriaLogs' RestartCount did not change, its
+  memory in use stayed at or under the 4.8 GiB budget while scans ran, and
+  the requests that could not be served got the documented 429 (a cold
+  7-day listing is about 20 s of VictoriaLogs' work, so seven at once cannot
+  all finish inside the 20 s queue wait on one VictoriaLogs).
 request:
   method: GET
   path: /loki/api/v1/labels
@@ -61,10 +71,14 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     Several proxy replicas refresh their stream-field inventory over the
-    whole retention at once while long-range raw-row fetches run.
+    whole retention at once, or several users open a 7-day label browser at
+    the same moment.
 compare:
   mode: exact
   fields: [status]
   expect: |
-    VictoriaLogs must stay up (RestartCount unchanged) and /labels must
-    answer 200; today the backend is OOM-killed under this concurrency.
+    VictoriaLogs stays up (RestartCount unchanged) whatever the data volume,
+    a short-range /labels keeps answering 200 throughout, every long-range
+    request is answered with 200 or the documented 429 naming
+    -backend-max-concurrent-metadata-scans and the adaptive state, and the
+    7-day label list is the list one full-range call returns.

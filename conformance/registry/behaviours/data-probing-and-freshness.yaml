@@ -21,3 +21,5 @@ cases:
   - quality/parse-risk-probe-scope
   - quality/parse-risk-cache-window
   - quality/label-cache-warm
+  - semantics/label-inventory-exact-and-incremental
+  - semantics/label-browser-latency-cold-and-refresh

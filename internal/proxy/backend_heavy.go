@@ -35,6 +35,15 @@ const (
 	DefaultBackendHeavyQueryMinRange = 6 * time.Hour
 )
 
+// Flag names and the work each admission limiter bounds, as they appear in
+// the 429 message so an operator knows which flag to raise.
+const (
+	heavyQueryLimitFlag   = "-backend-max-concurrent-heavy-queries"
+	heavyQueryLimitWork   = "heavy VictoriaLogs queries"
+	metadataScanLimitFlag = "-backend-max-concurrent-metadata-scans"
+	metadataScanLimitWork = "long-range VictoriaLogs metadata scans"
+)
+
 const (
 	// heavyQueryRowThreshold separates log-line fetches, bounded by Loki's
 	// max_entries_limit_per_query (5000 by default), from raw-row metric
@@ -53,13 +62,24 @@ const lokiTooManyOutstandingRequests = "too many outstanding requests"
 // heavyQueryQueueFullError reports that a heavy backend call waited in the
 // admission queue for the full configured time.
 type heavyQueryQueueFullError struct {
+	limitFlag     string // the flag that bounds this kind of work
+	work          string // what the flag bounds, for the message
 	maxConcurrent int
 	queueWait     time.Duration
+	adaptive      string // the adaptive limiter's state, when one closed the door
 }
 
 func (e *heavyQueryQueueFullError) Error() string {
-	return fmt.Sprintf("%s: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=%d per replica and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
-		lokiTooManyOutstandingRequests, e.maxConcurrent, e.queueWait)
+	flag, work := e.limitFlag, e.work
+	if flag == "" {
+		flag, work = heavyQueryLimitFlag, heavyQueryLimitWork
+	}
+	bound := fmt.Sprintf("%s=%d per replica", flag, e.maxConcurrent)
+	if e.adaptive != "" {
+		bound = fmt.Sprintf("at most %s=%d per replica (%s)", flag, e.maxConcurrent, e.adaptive)
+	}
+	return fmt.Sprintf("%s: %s are limited to %s and this query waited -backend-heavy-query-queue-wait=%s; retry later, narrow the time range, or raise these limits",
+		lokiTooManyOutstandingRequests, work, bound, e.queueWait)
 }
 
 func isHeavyQueryQueueFull(err error) bool {
@@ -71,6 +91,8 @@ func isHeavyQueryQueueFull(err error) bool {
 // fairness: a released slot goes to the queued waiter whose tenant currently
 // holds the fewest slots, first-come first-served among equals.
 type heavyQueryLimiter struct {
+	limitFlag string // named in the 429 message
+	work      string
 	capacity  int
 	queueWait time.Duration
 
@@ -93,7 +115,7 @@ func newHeavyQueryLimiter(capacity int, queueWait time.Duration) *heavyQueryLimi
 	if queueWait < 0 {
 		queueWait = 0
 	}
-	return &heavyQueryLimiter{capacity: capacity, queueWait: queueWait, byTenant: make(map[string]int)}
+	return &heavyQueryLimiter{limitFlag: heavyQueryLimitFlag, work: heavyQueryLimitWork, capacity: capacity, queueWait: queueWait, byTenant: make(map[string]int)}
 }
 
 // acquire blocks until a slot is granted, the queue wait elapses or ctx ends.
@@ -146,7 +168,7 @@ func (l *heavyQueryLimiter) acquireUntil(ctx context.Context, tenant string, dea
 		if l.abandon(w) {
 			return l.releaseFunc(tenant), nil
 		}
-		return nil, &heavyQueryQueueFullError{maxConcurrent: l.capacity, queueWait: l.queueWait}
+		return nil, &heavyQueryQueueFullError{limitFlag: l.limitFlag, work: l.work, maxConcurrent: l.capacity, queueWait: l.queueWait}
 	}
 }
 
@@ -218,9 +240,9 @@ var trailingLimitPipeRE = regexp.MustCompile(`\|\s*(?:limit|head)\s+(\d+)\s*$`)
 // isHeavyBackendRequest classifies a VictoriaLogs select call by the work it
 // can make VictoriaLogs do. Raw-row fetches above log-query sizes, and stats or
 // hits calls over long ranges or finer-than-Loki bucket grids, are heavy.
-// Metadata lookups (field names/values, streams) are bounded by their own
-// limits and stay outside the limiter so label browsing keeps working while
-// heavy queries queue.
+// Metadata listings (field names/values, streams) stay outside this limiter
+// so label browsing keeps working while heavy queries queue; long-range ones
+// have their own (isMetadataScanRequest).
 func isHeavyBackendRequest(path string, params url.Values, minRange time.Duration) bool {
 	switch path {
 	case "/select/logsql/query":
@@ -250,6 +272,39 @@ func isHeavyBackendRequest(path string, params url.Values, minRange time.Duratio
 	default:
 		return false
 	}
+}
+
+// isMetadataScanRequest classifies a VictoriaLogs metadata listing by its
+// time range. Stream field names and values, field names and values and
+// stream listings scan every partition in the range: on a 7-day retention one
+// stream_field_names call holds about 0.8 GiB of VictoriaLogs memory for 9 s,
+// and VictoriaLogs admits any number of them without accounting for the sum.
+// Listings at or above minRange, or without a time range, are bounded by
+// -backend-max-concurrent-metadata-scans; shorter ones stay unqueued so label
+// pickers keep answering while heavy work waits (limits/metadata-not-queued).
+func isMetadataScanRequest(path string, params url.Values, minRange time.Duration) bool {
+	switch path {
+	case "/select/logsql/stream_field_names", "/select/logsql/stream_field_values",
+		"/select/logsql/field_names", "/select/logsql/field_values", "/select/logsql/streams":
+		rng, ok := backendParamsRange(params)
+		return !ok || rng >= minRange
+	default:
+		return false
+	}
+}
+
+// backgroundInventoryKey marks a context as a background inventory refresh
+// (startup warm, keep-warm, stale-entry refresh). Such a call never queues for
+// an admission slot: when every slot is busy it is skipped and retried on the
+// next schedule, so background work cannot pile up behind user requests.
+type backgroundInventoryKey struct{}
+
+func withBackgroundInventory(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundInventoryKey{}, true)
+}
+
+func isBackgroundInventory(ctx context.Context) bool {
+	return ctx.Value(backgroundInventoryKey{}) != nil
 }
 
 // rawFetchRowBound returns the row bound of a /select/logsql/query call: the
@@ -310,22 +365,101 @@ func parseBackendStep(raw string) (time.Duration, bool) {
 	return 0, false
 }
 
-// admitBackendRequest acquires a heavy-query slot for heavy calls. A request
-// whose earlier heavy call was rejected fails fast, so fallbacks after a
-// rejected fast path do not queue a second time.
-func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url.Values) (func(), error) {
-	if p.heavyQueryLimiter == nil || !isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange) {
-		return func() {}, nil
+// backendAdmission is the outcome of admitting one backend call: release
+// must be called when the response body is done (attachRelease does it), and
+// observe feeds the call's result back to an adaptive limiter.
+type backendAdmission struct {
+	release func()
+	scan    *scanToken
+}
+
+func (a *backendAdmission) Release() {
+	if a != nil && a.release != nil {
+		a.release()
+	}
+}
+
+// observe records the backend's answer for the adaptive limiter: a transport
+// failure, a timeout or a 5xx on a long-range scan is backend distress; a
+// call abandoned because its client went away, or refused with a 4xx, is
+// neither distress nor a sample to learn the listing's cost from.
+func (a *backendAdmission) observe(ctx context.Context, resp *http.Response, err error) {
+	if a == nil || a.scan == nil {
+		return
+	}
+	switch {
+	case a.scan.shed.Load():
+		// Stopped by the limiter (shedLocked), which counted it as distress.
+	case err != nil && isClientCancel(ctx, err):
+		// Its duration and memory say nothing about the listing.
+		a.scan.markAborted()
+	case err != nil || (resp != nil && resp.StatusCode >= http.StatusInternalServerError):
+		a.scan.markDistress()
+	case resp != nil && resp.StatusCode >= http.StatusBadRequest:
+		// VictoriaLogs refused the request without scanning.
+		a.scan.markAborted()
+	}
+}
+
+var noAdmission = &backendAdmission{release: func() {}}
+
+// inventoryScanKey marks a day bucket scan of a long-range
+// inventory listing. Such a scan is admitted through the metadata-scan
+// limiter whatever the threshold, and it holds its slot only while its own
+// VictoriaLogs call runs: a listing never holds a slot while it waits for
+// anything else (its other buckets, another listing's fill of a shared
+// bucket), so listings cannot wait on each other. Each such scan waits at most
+// the queue wait for its slot, not the request's shared admission deadline: a
+// cold 7-day listing is several day scans, and a shared deadline would reject
+// its later buckets although each waited briefly. A rejection still fails
+// the rest of the request at once.
+type inventoryScanKey struct{}
+
+// admitBackendRequest acquires a heavy-query slot for heavy calls and an
+// adaptive metadata-scan slot for long-range metadata listings. A request
+// whose earlier call was rejected fails fast, so fallbacks after a rejected
+// fast path do not queue a second time.
+func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url.Values) (*backendAdmission, error) {
+	var (
+		limiter   *heavyQueryLimiter
+		operation string
+		queueWait time.Duration
+	)
+	inventoryScan := ctx.Value(inventoryScanKey{}) != nil
+	switch {
+	case isInventoryCount(ctx):
+		// A bucket row count reads less than the listing it stands in for
+		// (metadata_inventory.go).
+		return noAdmission, nil
+	case p.heavyQueryLimiter != nil && isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange):
+		limiter, operation, queueWait = p.heavyQueryLimiter, "backend_heavy_query_admission", p.heavyQueryLimiter.queueWait
+	case p.metadataScanLimiter != nil && (inventoryScan || isMetadataScanRequest(path, params, p.backendHeavyQueryMinRange)):
+		operation, queueWait = "backend_metadata_scan_admission", p.metadataScanLimiter.queueWait
+	default:
+		return noAdmission, nil
 	}
 	rt := getRequestTelemetry(ctx)
 	waitStart := time.Now()
-	deadline := waitStart.Add(p.heavyQueryLimiter.queueWait)
+	deadline := waitStart.Add(queueWait)
+	if isBackgroundInventory(ctx) {
+		deadline = waitStart
+	}
 	if rt != nil {
 		rt.mu.Lock()
 		rejected := rt.heavyAdmissionRejected
-		if rt.heavyAdmissionDeadline.IsZero() {
+		switch {
+		case inventoryScan && rt.inventoryAdmissionDeadline.IsZero():
+			// Its own queue wait (inventoryScanKey), and all of a request's
+			// bucket scans together wait at most twice that, so a cold
+			// listing answers with the 429 before the server's write timeout.
+			rt.inventoryAdmissionDeadline = waitStart.Add(2 * queueWait)
+		case inventoryScan:
+			if rt.inventoryAdmissionDeadline.Before(deadline) {
+				deadline = rt.inventoryAdmissionDeadline
+			}
+		case rt.heavyAdmissionDeadline.IsZero():
 			rt.heavyAdmissionDeadline = deadline
-		} else {
+		default:
 			deadline = rt.heavyAdmissionDeadline
 		}
 		rt.mu.Unlock()
@@ -333,16 +467,39 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 			return nil, rejected
 		}
 	}
-	release, err := p.heavyQueryLimiter.acquireUntil(ctx, getOrgID(ctx), deadline)
+	var (
+		release func()
+		token   *scanToken
+		err     error
+	)
+	if limiter != nil {
+		release, err = limiter.acquireUntil(ctx, getOrgID(ctx), deadline)
+	} else {
+		token, err = p.metadataScanLimiter.acquire(ctx, path, params, deadline, isBackgroundInventory(ctx))
+		if err == nil {
+			scan := token
+			release = func() {
+				if ctx.Err() != nil {
+					// The caller went away while the answer was read.
+					scan.markAborted()
+				}
+				p.metadataScanLimiter.release(scan)
+			}
+		}
+	}
 	outcome := "admitted"
 	switch {
 	case err == nil:
+	case isHeavyQueryQueueFull(err) && isBackgroundInventory(ctx):
+		// No client was refused: the background refresh is retried on its
+		// next schedule.
+		outcome = "skipped"
 	case isHeavyQueryQueueFull(err):
 		outcome = "rejected"
 	default:
 		outcome = "canceled"
 	}
-	p.observeInternalOperation(ctx, "backend_heavy_query_admission", outcome, time.Since(waitStart))
+	p.observeInternalOperation(ctx, operation, outcome, time.Since(waitStart))
 	if err != nil {
 		if isHeavyQueryQueueFull(err) {
 			if rt != nil {
@@ -353,7 +510,38 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 		}
 		return nil, err
 	}
-	return release, nil
+	return &backendAdmission{release: release, scan: token}, nil
+}
+
+// sheddable gives an admitted metadata scan's call a context the limiter can
+// cancel to keep VictoriaLogs' memory inside the headroom (shedLocked), and
+// returns the release that also frees that context.
+func (p *Proxy) sheddable(req *http.Request, a *backendAdmission) (*http.Request, func()) {
+	if a == nil || a.scan == nil || p.metadataScanLimiter == nil {
+		return req, a.Release
+	}
+	ctx, cancel := context.WithCancel(req.Context())
+	p.metadataScanLimiter.attachCancel(a.scan, cancel)
+	return req.WithContext(ctx), func() {
+		a.Release()
+		cancel()
+	}
+}
+
+// trackSelectCall counts a VictoriaLogs select call as in flight until its
+// release runs (when its response body is closed), so the metadata-scan
+// limiter can tell this replica's calls from other clients' in VictoriaLogs'
+// running-select count.
+func (p *Proxy) trackSelectCall(path string, release func()) func() {
+	if !strings.HasPrefix(path, "/select/") {
+		return release
+	}
+	p.selectCallsInFlight.Add(1)
+	var once sync.Once
+	return func() {
+		release()
+		once.Do(func() { p.selectCallsInFlight.Add(-1) })
+	}
 }
 
 // attachRelease keeps a slot until the response body is consumed or closed.

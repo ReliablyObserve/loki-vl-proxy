@@ -4,8 +4,8 @@
 Runs every shape of a set (bench/ab/shapes.json) over each range against every
 target, interleaved per (shape, range, run) so data growth and cache state do
 not favour one target. All targets share the same pinned, step-aligned window
-per run; each run shifts the window by one minute so repeated runs are not
-response-cache hits. VictoriaLogs CPU is sampled with `docker stats` and the
+per run; each run shifts the window by one minute (or the shape's "shift") so
+repeated runs are not response-cache hits. VictoriaLogs CPU is sampled with `docker stats` and the
 container's RestartCount is recorded before and after: a run that spans a
 restart is marked invalid and stops.
 
@@ -21,6 +21,7 @@ Run each proxy build on a port you have verified you own and with a unique
 -admin-listen; see bench/ab/README.md.
 """
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -69,6 +70,11 @@ def request(url, headers, tenant, timeout):
     return status, body, time.time() - t0, t0
 
 
+def name_set_signature(kind, names):
+    names = sorted(names)
+    return f"{kind}={len(names)} set={hashlib.sha1(chr(10).join(names).encode()).hexdigest()[:12]}"
+
+
 def signature(status, body, logs):
     """A result fingerprint: equal signatures mean equal answers."""
     if status != 200:
@@ -77,9 +83,20 @@ def signature(status, body, logs):
         except (ValueError, AttributeError):
             return "ERR " + body[:90].decode(errors="replace")
     try:
-        data = json.loads(body)["data"]
+        parsed = json.loads(body)
+        # Loki answers detected_labels and detected_fields without a data wrapper.
+        data = parsed["data"] if isinstance(parsed, dict) and "data" in parsed else parsed
     except (ValueError, KeyError, TypeError):
         return "unparseable"
+    if isinstance(data, list):
+        # /labels, /label/<name>/values: the sorted set of names is the answer.
+        # detected_fields answers a list of objects: the field names are the
+        # answer (cardinalities come from a sample and vary between calls).
+        return name_set_signature("names", [str(v.get("label")) if isinstance(v, dict) else str(v) for v in data])
+    if isinstance(data, dict) and "detectedLabels" in data:
+        return name_set_signature("labels", [str(d.get("label")) for d in data.get("detectedLabels") or []])
+    if isinstance(data, dict) and "fields" in data:
+        return name_set_signature("fields", [str(d.get("label")) for d in data.get("fields") or []])
     result = data.get("result", [])
     if logs or data.get("resultType") == "streams":
         return f"streams={len(result)} lines={sum(len(s.get('values', [])) for s in result)}"
@@ -154,14 +171,29 @@ def main():
         shape_ranges = ["instant"] if shape.get("instant") else ranges
         for rname in shape_ranges:
             secs, step = range_defs.get(rname, (0, 0))
-            query = shape["query"].replace("$__auto", f"{step}s")
+            query = shape.get("query", "").replace("$__auto", f"{step}s")
             for run in range(args.runs):
-                run_end = end - 60 * run
+                # A shape may move its window by more than a minute per run,
+                # per range ("shift": {"7d": 21617}) or for all ranges, e.g.
+                # far enough to miss the response cache's time bucket the way
+                # a Grafana refresh eventually does.
+                shift = shape.get("shift", 60)
+                if isinstance(shift, dict):
+                    shift = shift.get(rname, 60)
+                run_end = end - int(shift) * run
                 for tname, base in targets:
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue
                     if shape.get("instant"):
                         url = f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
+                    elif shape.get("path"):
+                        # A metadata endpoint (labels, label values, detected labels or
+                        # fields, index volume) over the range; the shape's params are
+                        # passed through and its query, if any, becomes the selector.
+                        params = {"start": f"{run_end - secs}000000000", "end": f"{run_end}000000000", **shape.get("params", {})}
+                        if shape.get("query"):
+                            params["query"] = query
+                        url = f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
                     else:
                         params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
                                   "limit": 1000, "direction": "backward"}

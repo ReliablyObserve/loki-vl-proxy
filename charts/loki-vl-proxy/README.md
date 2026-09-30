@@ -22,7 +22,12 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `extraArgs.max-concurrent` | `64` | Per-replica in-flight request cap (excess gets `503`); also bounds concurrent backend operations. `0` = unlimited |
 | `extraArgs.backend-max-concurrent-heavy-queries` | `2` | Heavy VictoriaLogs queries (ranges at or above the threshold below) running at once, per replica. Excess requests wait, then get Loki's `429`. `0` = unlimited |
 | `extraArgs.backend-heavy-query-queue-wait` | `20s` | How long a heavy query waits for a slot before the `429` |
-| `extraArgs.backend-heavy-query-min-range` | `6h` | Query range from which a request counts as heavy |
+| `extraArgs.backend-heavy-query-min-range` | `6h` | Query range from which a request counts as heavy, and a metadata listing as a long-range scan |
+| `extraArgs.backend-max-concurrent-metadata-scans` | `8` | Ceiling of the adaptive limit on long-range VictoriaLogs metadata scans (`/labels`, `/label/{name}/values`, `/series`, `detected_fields` at or above the threshold above, and the label inventory's day buckets) running at once, per replica. Selects VictoriaLogs runs for others count against it, so a fleet stays near one replica's limit; it starts at 2 and adapts to scan latency, failures and VictoriaLogs memory; excess requests wait, then get Loki's `429`; background warm-ups skip instead. `0` disables it |
+| `extraArgs.backend-min-concurrent-metadata-scans` | `1` | Floor of that adaptive limit |
+| `extraArgs.backend-metadata-scan-memory-headroom` | `0.4` | Share of VictoriaLogs' available memory (from its `/metrics`) that long-range scans must leave free; `0` disables the memory gate |
+| `extraArgs.backend-metadata-scan-latency-tolerance` | `1.5` | How many times its no-load duration a concurrent scan may take before the limit shrinks |
+| `extraArgs.metadata-inventory-parallelism` | `4` | Label names and values are listed from a time-bucketed inventory (day, hour, 5-minute and minute buckets cached and shared with peers), so a refresh reads only its edges; bucket listings in flight per request. `0` turns it off |
 | `extraArgs.rate-limit-per-second` / `extraArgs.rate-limit-burst` | `50` / `100` | Per-client (source IP) token bucket; `rate-limit-per-second=0` disables it |
 | `extraArgs.server.register-instrumentation` | `true` | Serve `/metrics` (the binary default is `false`) |
 | `extraArgs.metrics-listen` | `:9091` | Dedicated `/metrics` listener, exposed as the `metrics` Service port |

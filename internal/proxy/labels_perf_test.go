@@ -80,46 +80,42 @@ func labelsPath(window time.Duration) string {
 // =============================================================================
 
 // TestPerf_Labels_BackendFullRange verifies that for every Grafana time-picker
-// preset the synchronous VL backend call covers the exact requested range, so the
+// preset the synchronous VL listing covers the exact requested range, so the
 // first /labels response lists every label with data in [start, end] like Loki.
+// The inventory may split the range into time buckets; together they must tile
+// it, never cap it.
 func TestPerf_Labels_BackendFullRange(t *testing.T) {
 	for _, tc := range labelsWindowCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// Capture only the FIRST non-health VL call: it is the synchronous one.
-			var firstStart, firstEnd atomic.Value
+			var mu sync.Mutex
+			var spans [][2]int64
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/health" {
 					w.WriteHeader(http.StatusOK)
 					return
 				}
-				q := r.URL.Query()
-				firstStart.CompareAndSwap(nil, q.Get("start"))
-				firstEnd.CompareAndSwap(nil, q.Get("end"))
+				if r.URL.Path == "/select/logsql/stream_field_names" {
+					q := r.URL.Query()
+					mu.Lock()
+					spans = append(spans, parseSpan(q.Get("start"), q.Get("end")))
+					mu.Unlock()
+				}
 				writeVLFieldNames(w, []fieldHit{{"app", 100}})
 			}))
 			t.Cleanup(srv.Close)
-			var receivedStart, receivedEnd string
 
 			mux := newPerfProxy(t, srv.URL)
 			req := httptest.NewRequest(http.MethodGet, labelsPath(tc.duration), nil)
 			mux.ServeHTTP(httptest.NewRecorder(), req)
 
-			receivedStart, _ = firstStart.Load().(string)
-			receivedEnd, _ = firstEnd.Load().(string)
-			if receivedStart == "" || receivedEnd == "" {
+			mu.Lock()
+			defer mu.Unlock()
+			if len(spans) == 0 {
 				t.Fatal("VL backend was not called")
 			}
-			gotStart, okS := parseLokiTimeToUnixNano(receivedStart)
-			gotEnd, okE := parseLokiTimeToUnixNano(receivedEnd)
-			if !okS || !okE {
-				t.Fatalf("could not parse VL params: start=%q end=%q", receivedStart, receivedEnd)
-			}
-			gotWindow := time.Duration(gotEnd - gotStart)
-
-			if gotWindow != tc.duration {
-				t.Errorf("window=%s: VL received %v window (want the full %v); start=%s end=%s",
-					tc.name, gotWindow, tc.duration, receivedStart, receivedEnd)
+			if !spansTile(spans, perfBaseTimeNs-int64(tc.duration), perfBaseTimeNs) {
+				t.Errorf("window=%s: VL listings %v do not tile the full window", tc.name, spans)
 			}
 		})
 	}
@@ -170,21 +166,24 @@ func TestPerf_Labels_ColdAndWarmLatency(t *testing.T) {
 	}
 }
 
-// TestPerf_Labels_OneFullRangeVLCallPerWindow confirms that each time-picker
-// preset issues exactly one VL call covering its own full window: no shared
-// capped window and no follow-up background refresh call.
-func TestPerf_Labels_OneFullRangeVLCallPerWindow(t *testing.T) {
+// TestPerf_Labels_EachWindowListsItsFullRange confirms that each time-picker
+// preset lists its own full window: no shared capped window and no follow-up
+// background refresh call. Windows share inventory buckets, so the listings of
+// every window asked so far cover the widest one.
+func TestPerf_Labels_EachWindowListsItsFullRange(t *testing.T) {
 	var mu sync.Mutex
-	var calls []string
+	var spans [][2]int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		q := r.URL.Query()
-		mu.Lock()
-		calls = append(calls, q.Get("start")+"/"+q.Get("end"))
-		mu.Unlock()
+		if r.URL.Path == "/select/logsql/stream_field_names" {
+			q := r.URL.Query()
+			mu.Lock()
+			spans = append(spans, parseSpan(q.Get("start"), q.Get("end")))
+			mu.Unlock()
+		}
 		writeVLFieldNames(w, []fieldHit{{"app", 100}})
 	}))
 	t.Cleanup(srv.Close)
@@ -192,22 +191,15 @@ func TestPerf_Labels_OneFullRangeVLCallPerWindow(t *testing.T) {
 	mux := newPerfProxy(t, srv.URL)
 
 	endNs := perfBaseTimeNs
-	want := make([]string, 0, len(labelsWindowCases))
 	for _, tc := range labelsWindowCases {
 		startNs := endNs - int64(tc.duration)
-		want = append(want, fmt.Sprintf("%d/%d", startNs, endNs))
 		path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", startNs, endNs)
 		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(calls) != len(want) {
-		t.Fatalf("want %d VL calls (one per window), got %d: %v", len(want), len(calls), calls)
-	}
-	for i := range want {
-		if calls[i] != want[i] {
-			t.Errorf("window %s: VL call %s, want full range %s", labelsWindowCases[i].name, calls[i], want[i])
+		mu.Lock()
+		ok := spansCover(spans, startNs, endNs)
+		mu.Unlock()
+		if !ok {
+			t.Fatalf("window %s: listings so far %v do not cover [%d, %d)", tc.name, spans, startNs, endNs)
 		}
 	}
 }
@@ -264,7 +256,7 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	// makes the warmup deterministic (all four windows are populated on return).
 	// The args mirror the startup wrapper's constants (warmupStaleThreshold=30s,
 	// startupWarmupTTL=warmupTTL).
-	p.warmLabelWindows(context.Background(), 30*time.Second, warmupTTL, false)
+	p.warmLabelWindows(context.Background(), 30*time.Second, warmupTTL, false, 0)
 
 	warmupCallCount := backendCalls.Load()
 	if warmupCallCount == 0 {

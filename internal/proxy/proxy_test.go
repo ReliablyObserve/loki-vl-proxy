@@ -58,19 +58,17 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// Loki returns every label with data in [start, end], so the requested range is
-	// forwarded unchanged and no background refresh call follows.
-	const (
-		wantStart = "1609459200"
-		wantEnd   = "1609545600"
-	)
-	type call struct{ start, end string }
+	// Loki returns every label with data in [start, end], so the listings sent
+	// to VictoriaLogs tile the requested range (in inventory buckets) and no
+	// background refresh call follows.
 	var mu sync.Mutex
-	var calls []call
+	var spans [][2]int64
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		calls = append(calls, call{r.URL.Query().Get("start"), r.URL.Query().Get("end")})
-		mu.Unlock()
+		if r.URL.Path == "/select/logsql/stream_field_names" {
+			mu.Lock()
+			spans = append(spans, parseSpan(r.URL.Query().Get("start"), r.URL.Query().Get("end")))
+			mu.Unlock()
+		}
 		writeVLFieldNames(w, nil)
 	}))
 	defer vlBackend.Close()
@@ -79,8 +77,8 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(calls) != 1 || calls[0].start != wantStart || calls[0].end != wantEnd {
-		t.Errorf("want exactly one VL call with start=%s end=%s; all calls: %v", wantStart, wantEnd, calls)
+	if !spansTile(spans, 1609459200*int64(time.Second), 1609545600*int64(time.Second)) {
+		t.Errorf("listings %v do not tile [1609459200s, 1609545600s)", spans)
 	}
 }
 
@@ -3465,15 +3463,16 @@ func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
-	if callCount.Load() != 1 {
-		t.Fatalf("first call: expected 1 backend call, got %d", callCount.Load())
+	first := callCount.Load()
+	if first == 0 {
+		t.Fatal("first call: expected backend calls")
 	}
 
 	// Shifted by 1 second inside the same bucket — must hit cache.
 	w2 := httptest.NewRecorder()
 	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
-	if callCount.Load() != 1 {
-		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount.Load())
+	if callCount.Load() != first {
+		t.Errorf("same-bucket shift: expected cache hit (%d calls), got %d — time-bucketing must collapse sliding window", first, callCount.Load())
 	}
 
 	// Next 5-minute bucket — must miss. Measure delta across only req3 because
