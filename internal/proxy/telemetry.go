@@ -39,6 +39,9 @@ type requestTelemetry struct {
 	// heavyAdmissionDeadline bounds the total time one request spends waiting
 	// for admission slots, however many heavy calls it makes.
 	heavyAdmissionDeadline time.Time
+	// inventoryAdmissionDeadline bounds the total time one request's inventory
+	// bucket scans wait for metadata-scan slots.
+	inventoryAdmissionDeadline time.Time
 }
 
 type requestTelemetrySnapshot struct {

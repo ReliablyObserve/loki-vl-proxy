@@ -253,7 +253,16 @@ func TestHandleLabels_UserQueryMergesIntoCache(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, mux := newBehaviorProxy(t, srv.URL, 5*time.Minute)
+	// The fake answers by call order, so the listing must be one call: the
+	// time-bucketed inventory is off here.
+	c := cache.New(60*time.Second, 10000)
+	first0, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", LabelCacheTTL: 5 * time.Minute, MetadataInventoryParallelism: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first0.Shutdown(context.Background()) })
+	mux := http.NewServeMux()
+	first0.RegisterRoutes(mux)
 
 	// First request — populates cache with app+env.
 	first := getLabels(t, mux, time.Hour)

@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -527,9 +528,10 @@ func TestMetadataRefresh_DetectedEndpointsWriteWindowScaledTTL(t *testing.T) {
 	}
 }
 
-// Only one backend round-trip per cold /labels request: the synchronous fetch
-// already covers the full range, so no follow-up refresh is scheduled.
-func TestLabelsFullRange_ColdMissMakesSingleFullRangeCall(t *testing.T) {
+// A cold /labels request lists the full range: its stream_field_names calls
+// (one per inventory bucket) tile [start, end) exactly, and no follow-up
+// refresh is scheduled.
+func TestLabelsFullRange_ColdMissListsTheFullRange(t *testing.T) {
 	fake := &fullRangeVL{}
 	srv := fake.server(t)
 	_, mux := newBehaviorProxy(t, srv.URL, 0)
@@ -541,10 +543,16 @@ func TestLabelsFullRange_ColdMissMakesSingleFullRangeCall(t *testing.T) {
 
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	want := fmt.Sprintf("/select/logsql/stream_field_names?field=&start=%d&end=%d", start, end)
-	calls := append([]string(nil), fake.calls...)
-	sort.Strings(calls)
-	if len(calls) != 1 || calls[0] != want {
-		t.Fatalf("expected exactly one full-range call %q, got %v", want, calls)
+	var spans [][2]int64
+	for _, call := range fake.calls {
+		path, query, _ := strings.Cut(call, "?")
+		if path != "/select/logsql/stream_field_names" {
+			continue
+		}
+		q, _ := url.ParseQuery(query)
+		spans = append(spans, parseSpan(q.Get("start"), q.Get("end")))
+	}
+	if !spansTile(spans, start, end) {
+		t.Fatalf("stream_field_names calls do not tile [%d, %d): %v", start, end, fake.calls)
 	}
 }

@@ -516,12 +516,20 @@ func (p *Proxy) probeBackendCapabilitiesFromEndpoints(ctx context.Context) {
 	if p == nil {
 		return
 	}
+	// The probes ask whether an endpoint exists (status below 400), not for
+	// data: a one-minute window keeps them from being full-retention scans on
+	// every replica start.
+	now := time.Now()
 	q := url.Values{}
 	q.Set("query", "*")
+	q.Set("start", strconv.FormatInt(now.Add(-time.Minute).UnixNano(), 10))
+	q.Set("end", strconv.FormatInt(now.UnixNano(), 10))
 	supportsStreamMetadata := p.probeBackendEndpointSupport(ctx, "/select/logsql/stream_field_names", q)
 
 	sub := url.Values{}
 	sub.Set("query", "*")
+	sub.Set("start", q.Get("start"))
+	sub.Set("end", q.Get("end"))
 	sub.Set("q", "a")
 	sub.Set("filter", "substring")
 	supportsMetadataSubstring := p.probeBackendEndpointSupport(ctx, "/select/logsql/field_names", sub)
@@ -661,16 +669,30 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
 	serverPort, _ := strconv.Atoi(u.Port())
-	release, err := p.admitBackendRequest(ctx, path, params)
+	admission, err := p.admitBackendRequest(ctx, path, params)
 	if err != nil {
 		// No request left the proxy: the admission outcome is recorded as an
 		// internal operation, not as a VictoriaLogs response.
 		return nil, err
 	}
+	req, release := p.sheddable(req, admission)
+	release = p.trackSelectCall(path, release)
 	start := time.Now()
 	resp, err := p.doBackendRequest(req, p.client)
+	p.metadataScanLimiter.detachCancel(admission.scan)
+	admission.observe(ctx, resp, err)
 	resp = attachRelease(resp, release)
 	duration := time.Since(start)
+	if p.metadataScanLimiter.wasShed(admission.scan) {
+		if resp != nil {
+			// Stopped after VictoriaLogs answered: the body is unreadable.
+			_ = resp.Body.Close()
+		}
+		// The limiter stopped the scan to keep VictoriaLogs' memory inside
+		// the headroom: Loki's 429, not a backend failure.
+		p.observeInternalOperation(ctx, "backend_metadata_scan_admission", "shed", time.Since(start))
+		return nil, p.metadataScanLimiter.shedError()
+	}
 	if err != nil {
 		err = p.sanitizeUpstreamError(err)
 		mappedStatus := upstreamErrorStatus(ctx, err)
@@ -739,12 +761,14 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
 	serverPort, _ := strconv.Atoi(u.Port())
-	release, err := p.admitBackendRequest(ctx, path, params)
+	admission, err := p.admitBackendRequest(ctx, path, params)
 	if err != nil {
 		return nil, err
 	}
+	release := p.trackSelectCall(path, admission.Release)
 	start := time.Now()
 	resp, err := p.doBackendRequest(req, p.client)
+	admission.observe(ctx, resp, err)
 	resp = attachRelease(resp, release)
 	duration := time.Since(start)
 	if err != nil {

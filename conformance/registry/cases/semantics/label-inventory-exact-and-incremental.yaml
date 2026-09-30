@@ -1,0 +1,66 @@
+id: semantics/label-inventory-exact-and-incremental
+title: Label names and values come from a time-bucketed inventory that equals one full-range scan
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - data-probing-and-freshness
+consumer: explore
+why: |
+  Grafana's label filter dropdown and Explore's label browser call /labels and
+  /label/<name>/values over the dashboard range, and ask again for a window
+  moved by a few seconds on every refresh. Loki answers from its index in
+  milliseconds. VictoriaLogs lists label names and values by scanning every
+  row in the range (stream_field_names lists every distinct stream first):
+  measured on never-queried windows of the e2e stack before this change,
+  /labels took 0.61 s over 1 h, 5.68 s over 6 h, 21.6 s over 24 h and 35 s
+  over 7 days (Loki 0.02-0.27 s), and a refresh moved by seconds still took
+  0.73 s over 1 h and 3.19 s over 6 h.
+
+  A listing over a range is the union of the listings of any partition of
+  it, and its hits are the sum (VictoriaLogs treats end as exclusive, so
+  adjacent buckets never share a row). The proxy splits each window into
+  UTC-aligned day, hour, 5-minute and minute buckets (the largest aligned
+  bucket that fits, from either side), caches each sealed bucket in the read
+  cache (memory, disk and the owner peer, so a fleet shares it), merges a
+  missing hour or day from its cached children before scanning, and asks
+  VictoriaLogs only for the unaligned edges, the last minute and the buckets
+  nobody has cached. The merged listing is ordered like VictoriaLogs' own
+  (hits descending, then natural order), so callers see exactly the answer of
+  one full-range call; the label endpoints' semantics are untouched. A
+  listing with a limit, or a query that is not row-local (stats, uniq, sort,
+  limit, subqueries, _time filters, query options), stays one full-range
+  call, as does a listing whose bucket is too large to cache.
+
+  Freshness: the last minute is never cached; a bucket is revalidated after a
+  delay that grows with its age (the labels TTL for the last hour, up to an
+  hour past a day), an empty one after the negative TTL, and an hour or day
+  bucket of a query without pipes carries its row count, read before its
+  scan, so revalidation is a count (0.03-0.2 s a day) and a changed count
+  forces a rescan; counted buckets are revalidated at least every three
+  labels TTLs. Only queries made of *, stream filters and field filters are
+  counted: a word or phrase filter's count reads every message. The startup
+  warm-up and keep-warm run as the /labels request of a client without a
+  tenant header, so the buckets they fill are the ones such requests read.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The same window, then the window moved by seconds and by past the
+    response cache's time bucket (what Grafana refreshes send).
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    Every answer equals the answer of the same build with the inventory off
+    (-metadata-inventory-parallelism=0), values, hits and order included, for
+    stream field names and values, field names and values, unfiltered and
+    selector queries, windows from 37 minutes to 50 hours ending at any time;
+    a window moved by seconds reads only its edges from VictoriaLogs; a row
+    written late into a revalidated hour appears; a failed bucket fails the
+    listing, never a partial answer; a request sharing a bucket with a
+    cancelled one still gets its answer.

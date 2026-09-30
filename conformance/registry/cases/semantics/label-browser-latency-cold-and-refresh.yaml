@@ -1,0 +1,56 @@
+id: semantics/label-browser-latency-cold-and-refresh
+title: Label browser answers stay fast on never-queried and refreshed windows
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Grafana's label filter dropdown and Explore's label browser call /labels
+  and /label/<name>/values over the dashboard range whenever they open, and
+  every refresh asks again for a window moved by a few seconds; once the
+  move crosses the response cache's time bucket (5 minutes up to 6 h, an
+  hour up to 48 h, 6 hours beyond) the answer is computed again. Loki
+  answers from its index in 0.01-0.3 s whatever the range. VictoriaLogs has
+  to list label names and values by reading the range: before the label
+  inventory (semantics/label-inventory-exact-and-incremental) a
+  never-queried /labels took 0.6 s over 1 h, 5.7 s over 6 h, 21.6 s over
+  24 h and 35 s over 7 days on the e2e stack, and every refresh past the
+  cache bucket paid it again (0.4 s over 1 h, 2.9 s over 6 h, 5 s over 24 h,
+  20 s over 7 days, measured on the same data).
+
+  Measured on the e2e stack on 2026-09-29 (one request at a time, answers of
+  both builds identical in every run): on a running replica, a
+  never-queried /labels takes 0.55 s over 1 h, 0.11 s over 6 h and 1.7 s
+  over 24 h instead of 1.1, 1.3 and 6.6 s; a refresh past the cache bucket
+  takes 0.09 s (1 h), 0.09 s (6 h), 0.05 s (24 h) and 0.38 s (7 d) instead of
+  0.38, 2.9, 5.0 and 20.4 s, and /label/env/values 0.16 s, 0.32 s, 0.16 s
+  instead of 0.81, 6.6 and 4.7 s. A replica's very first 7-day listing, with
+  nothing cached anywhere, still reads the whole range (19.9 s against
+  23.4 s): only its buckets make the next windows cheap, and the keep-warm
+  loop fills them for the 1 h to 7 d presets.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: now-7d
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A replica that has answered or warmed the 7-day preset once, then windows
+    moved past the response cache's time bucket (what Grafana refreshes
+    send) and windows no request asked for before.
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The same label names and values as one full-range listing; a window
+    moved by seconds or by minutes reads only its edges and the buckets
+    nobody has cached from VictoriaLogs (bench/ab set metadata-inventory:
+    refresh shapes over 1h-7d answer in well under a second, never-queried
+    windows inside the warmed range close to that).
+loki_parity: |
+  Loki's /labels and /label/{name}/values read the index (pkg/storage
+  label queries), so their latency does not depend on the range; the proxy
+  matches the answer exactly and gets the latency close for every window
+  inside what it has scanned once.

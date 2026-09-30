@@ -154,6 +154,30 @@ extraArgs:
   # (with VictoriaLogs memory) for large fleets; the total across replicas is
   # replicas x this value. 0 disables the limiter.
   backend-max-concurrent-heavy-queries: "2"
+  # Long-range metadata listings (stream_field_names, stream_field_values,
+  # field_names, field_values, streams at or above backend-heavy-query-min-range:
+  # the /labels, /label/{name}/values, /series and detected_fields scans, the
+  # inventory's hour and day buckets and warm-up) have an adaptive limiter of their own,
+  # so a 7-day label browser never waits behind 7-day charts. What one scan
+  # costs depends on the data (0.8 GiB and 9 s per 7-day scan on the e2e stack;
+  # seven at once OOM-killed an 8 GiB VictoriaLogs, and eleven replicas warming
+  # up at a static 2 each did the same in 55 s), so each replica learns its
+  # own limit, starting at 2: it grows while scans stay within the latency tolerance
+  # of their no-load duration, shrinks on slow scans or failures, and no scan
+  # starts while VictoriaLogs (read from its /metrics: memory and running
+  # selects of all its clients) lacks the memory headroom. The values below are
+  # the ceiling, the floor, the free-memory fraction and the tolerance; the
+  # ceiling at 0 disables the limiter.
+  backend-max-concurrent-metadata-scans: "8"
+  backend-min-concurrent-metadata-scans: "1"
+  backend-metadata-scan-memory-headroom: "0.4"
+  backend-metadata-scan-latency-tolerance: "1.5"
+  # Label names and values are listed from a time-bucketed inventory (day,
+  # hour, 5-minute and minute buckets in the read cache, shared with peers), so
+  # a Grafana refresh that moves the window by seconds reads only its edges
+  # from VictoriaLogs; answers equal one full-range call. Bucket listings in
+  # flight per request; 0 turns the inventory off.
+  metadata-inventory-parallelism: "4"
   backend-heavy-query-queue-wait: "20s"
   # backend-heavy-query-min-range: "6h"     # time range from which stats, hits and unbounded raw calls count as heavy (> 0)
   # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
