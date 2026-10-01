@@ -35,6 +35,17 @@ class GateTest(unittest.TestCase):
         p = p or plan(*[(r["page"], r["range"]) for r in rows])
         return comment.render(rows, px or {}, p, META, ARGS)
 
+    def test_history_dependent_patterns_difference_warns_not_fails(self):
+        nondet = ["resource /api/datasources/uid/*/resources/patterns?end=x: body: content differs (rows 6 vs 2)"]
+        text, v = self.verdict([row(main_pr_nondet=nondet)])
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("history-dependent", text)
+
+    def test_real_difference_next_to_patterns_still_fails(self):
+        nondet = ["resource /api/datasources/uid/*/resources/patterns?end=x: body: content differs (rows 6 vs 2)"]
+        _, v = self.verdict([row(main_pr_nondet=nondet, main_pr_diffs=["query A: value differs"], points_loki=0)])
+        self.assertEqual(v["exit"], 1)
+
     def test_clean_run_passes(self):
         text, v = self.verdict([row()])
         self.assertEqual(v["exit"], 0)

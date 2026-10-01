@@ -103,5 +103,13 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(compare.points({"k": [{"a": ("metric", {1: 0, 2: 5}, "sig"), "b": ("other", "h", 7), "c": ("error", "x")}]}), 8)
 
 
+class NondeterministicTest(unittest.TestCase):
+    def test_only_patterns_resources_are_history_dependent(self):
+        import compare
+        self.assertTrue(compare.nondeterministic("resource /api/datasources/uid/*/resources/patterns?x: body differs"))
+        self.assertFalse(compare.nondeterministic("query ('A', 'sum(...)'): value differs"))
+        self.assertFalse(compare.nondeterministic("resource /api/datasources/uid/*/resources/labels: body differs"))
+
+
 if __name__ == "__main__":
     unittest.main()

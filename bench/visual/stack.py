@@ -25,13 +25,16 @@ import threading
 import json
 import os
 import re
+import importlib.util
 import subprocess
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "ab"))
-import stack as ab  # noqa: E402
+_spec = importlib.util.spec_from_file_location("ab_stack", os.path.join(HERE, "..", "ab", "stack.py"))
+ab = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ab)
+sys.path.insert(0, HERE)
 from vio import dump_json, load_json, write_text  # noqa: E402
 
 # The profile of the datasource Logs Drilldown opens by default in the e2e stack.
@@ -178,7 +181,7 @@ def stop_proxies(state):
             try:
                 os.killpg(pid, 15)
             except ProcessLookupError:
-                pass
+                pass  # the process group already exited: nothing left to stop
 
 
 def live(a):
@@ -191,7 +194,7 @@ def live(a):
             try:
                 os.killpg(pid, 15)
             except ProcessLookupError:
-                pass
+                pass  # the process group already exited: nothing left to stop
     else:
         env = dict(os.environ, LOKI_URL=f"http://127.0.0.1:{PORTS['loki']}", VL_URL=f"http://127.0.0.1:{PORTS['vl']}",
                    LOG_INTERVAL="1", LOG_BATCH="30")

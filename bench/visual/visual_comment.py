@@ -108,6 +108,8 @@ def assess(row, pixel, expected=False, flipped=()):
         else:
             why = "no Loki data for this range" if kind == "no-loki" else "neither build matches Loki"
             fails.append(f"data differs base vs PR and {why}; label the pull request `{LABEL}` if intended {detail}")
+    if row.get("main_pr_nondet"):
+        warns.append(f"history-dependent difference, not gated ({len(row['main_pr_nondet'])}): {row['main_pr_nondet'][0][:160]}")
     if f"{row['page']} {row['range']}" in flipped:
         fails.append("non-deterministic: the difference between base and PR was gone on the recapture")
     fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {})

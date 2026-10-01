@@ -194,11 +194,9 @@ def main():
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))
         phase(meta, "compare", t0)
         ok = True
-    except BaseException as e:  # noqa: BLE001 - any failure must still produce a comment and tear down
+    except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and tear down
         traceback.print_exc()
         dump_json(os.path.join(out, "error.json"), {"error": f"{type(e).__name__}: {e}"[:300]})
-        if isinstance(e, KeyboardInterrupt):
-            raise
     finally:
         if plan["run"] and not a.keep_stack:
             t0 = time.time()
