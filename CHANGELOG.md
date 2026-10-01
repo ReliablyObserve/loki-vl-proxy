@@ -32,6 +32,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pr-visuals` branch as one parentless commit, written by a job that runs only
   base-branch code.
 
+### Fixed
+
+- **Labels and label values list rows written with old timestamps into time
+  buckets cached empty a moment before, like Loki.** A `/labels` or
+  `/label/{name}/values` request ending within `-max-metadata-cache-freshness`
+  (24h) is answered from the time-bucketed inventory, and an empty bucket
+  stayed cached after rows were written into it: an hour or day bucket for up
+  to the negative TTL (30s) after its last check, and a 5-minute or 1-minute
+  bucket that ended more than an hour ago for 15 minutes to an hour. Rows
+  backfilled after a shipper outage or replayed from an archive were missing
+  from Explore's label browser and from Logs Drilldown until then, while Loki,
+  which reads the last 24h live, listed them at once; the e2e fixture that
+  writes rows one to two hours old failed whenever the test before it had
+  cached those hours.
+  For a query of stream and field filters only, every empty bucket in the
+  window (day, hour, 5-minute or minute) is now confirmed on each listing by
+  one row count per contiguous run of empty buckets, which reads no data over
+  an empty range; a run that received rows is halved to find the buckets that
+  did, and those are rescanned at once. Empty buckets of queries with word,
+  phrase or pipe filters, and late rows in sealed non-empty buckets, keep the
+  revalidation schedule.
+
 ## [1.103.0] - 2026-10-01
 
 ### Performance

@@ -110,3 +110,61 @@ func TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegati
 		t.Fatalf("backfill refresh made %d counts", counts)
 	}
 }
+
+// Rows written with old timestamps into buckets that an earlier request cached
+// as empty a moment before are listed by the next near-now request, as Loki
+// reads the last max_metadata_cache_freshness live: an hour bucket (counted)
+// and a 5-minute bucket more than an hour old (not counted at scan time). The
+// earlier request is the same 6h window, so the plan reuses its buckets.
+//
+// conformance: semantics/metadata-answers-include-last-24h-like-loki
+func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNextRequest(t *testing.T) {
+	now := time.Now()
+	// The window starts 7m30s past an hour: an edge, 1m buckets to :10, 5m
+	// buckets to the hour, then hours.
+	start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
+	for _, tc := range []struct {
+		name string
+		ts   time.Time
+	}{
+		{name: "hour bucket", ts: now.Add(-3 * time.Hour).Truncate(time.Hour).Add(10 * time.Minute)},
+		{name: "5m bucket older than an hour", ts: start.Add(25 * time.Minute)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vl := &backfillVL{ts: tc.ts.UnixNano()}
+			_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
+			path := func() string {
+				return fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), time.Now().UnixNano())
+			}
+			if got := getMetadataList(t, mux, path()); contains(got, "backfill_label") {
+				t.Fatalf("before the backfill: %v", got)
+			}
+
+			// Unchanged data: the refresh confirms the cached empty buckets
+			// with about one count per run and rescans none of them.
+			time.Sleep(200 * time.Millisecond) // older than max-staleness
+			scans, counts := vl.scan.Load(), vl.counts.Load()
+			_ = getMetadataList(t, mux, path())
+			idleScans, idleCounts := vl.scan.Load()-scans, vl.counts.Load()-counts
+			t.Logf("unchanged refresh: %d scans, %d counts", idleScans, idleCounts)
+			if idleCounts > 2 {
+				t.Fatalf("unchanged refresh made %d counts, want about one per run of empty buckets", idleCounts)
+			}
+
+			vl.backfilled.Store(true)
+			time.Sleep(200 * time.Millisecond)
+			scans, counts = vl.scan.Load(), vl.counts.Load()
+			if got := getMetadataList(t, mux, path()); !contains(got, "backfill_label") {
+				t.Fatalf("rows backfilled into a bucket cached empty a moment before were not listed: %v", got)
+			}
+			scans, counts = vl.scan.Load()-scans, vl.counts.Load()-counts
+			t.Logf("backfill refresh: %d scans, %d counts", scans, counts)
+			if scans > idleScans+1 {
+				t.Fatalf("backfill refresh made %d scans (unchanged refresh %d): more than the one bucket that received rows", scans, idleScans)
+			}
+			if counts > 16 {
+				t.Fatalf("backfill refresh made %d counts", counts)
+			}
+		})
+	}
+}

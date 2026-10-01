@@ -34,7 +34,12 @@ func (f *freshnessVL) server(t *testing.T) *httptest.Server {
 		}
 		f.calls.Add(1)
 		if strings.Contains(r.URL.Query().Get("query"), "none:") {
-			// A selector that matches no stream: every listing is empty.
+			// A selector that matches no stream: every listing is empty and
+			// every row count is zero.
+			if strings.Contains(r.URL.Query().Get("query"), "count()") {
+				fmt.Fprintln(w, `{"rows":"0"}`)
+				return
+			}
 			writeVLFieldNames(w, nil)
 			return
 		}
