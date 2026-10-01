@@ -114,7 +114,8 @@ data for the range (15m and 1h):
 |---|---|
 | the PR matches Loki, the base did not | pass: "improved (closer to Loki)" |
 | the base matched Loki, the PR diverges | fail: "regressed vs Loki" (the label does not excuse it) |
-| neither matches Loki, or Loki has no data for the range (6h) | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
+| Loki has no data for the range (6h), and every difference matches one the same page proved closer to Loki at a shorter range (timestamps and ids ignored) | pass, "improved", with a note |
+| neither matches Loki, or Loki has no data for the range and a difference was not proven at a shorter range | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
 
 Adding or removing that label re-runs the workflow. Also failing, on the PR side:
 

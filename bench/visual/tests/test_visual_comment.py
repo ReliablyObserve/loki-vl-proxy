@@ -46,6 +46,30 @@ class GateTest(unittest.TestCase):
         _, v = self.verdict([row(main_pr_nondet=nondet, main_pr_diffs=["query A: value differs"], points_loki=0)])
         self.assertEqual(v["exit"], 1)
 
+    def test_no_loki_range_passes_when_the_same_differences_were_proven_at_a_shorter_range(self):
+        d1 = "query ('sum by (x) (count_over_time({a=\"b\"} [1m]))', 'range', '1790864400000', '1790868000000', 'abc123def4567890'): value differs"
+        d6 = "query ('sum by (x) (count_over_time({a=\"b\"} [1m]))', 'range', '1790846400000', '1790868000000', '0123456789abcdef'): value differs"
+        rows = [row(rng="1h", main_pr_diffs=[d1], loki_main_n=1, loki_diffs=[]),
+                row(rng="6h", main_pr_diffs=[d6], loki_compared=False, points_loki=0)]
+        text, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("shorter range", text)
+
+    def test_no_loki_range_with_an_unproven_difference_still_fails(self):
+        d1 = "query ('sum by (x) (count_over_time({a=\"b\"} [1m]))', 'range', '1790864400000', '1790868000000', 'aa'): value differs"
+        other = "resource /api/datasources/uid/*/resources/labels?end=2026-10-01T18%3A00%3A00Z: body: content differs (rows 3 vs 4)"
+        rows = [row(rng="1h", main_pr_diffs=[d1], loki_main_n=1, loki_diffs=[]),
+                row(rng="6h", main_pr_diffs=[d1, other], loki_compared=False, points_loki=0)]
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+
+    def test_a_regression_at_a_shorter_range_proves_nothing(self):
+        d = "query ('{a=\"b\"}', 'range', '1790864400000', '1790868000000', 'aa'): content differs"
+        rows = [row(rng="1h", main_pr_diffs=[d], loki_main_n=0, loki_diffs=["x"]),
+                row(rng="6h", main_pr_diffs=[d], loki_compared=False, points_loki=0)]
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+
     def test_clean_run_passes(self):
         text, v = self.verdict([row()])
         self.assertEqual(v["exit"], 0)
