@@ -1,0 +1,228 @@
+name: Visual smoke
+
+# Per-pull-request visual proof: Grafana (Explore and Logs Drilldown) through the
+# base build, the PR build and Loki on one fresh stack. A small fixed core set
+# runs on every relevant change; the pages near the code the change touches
+# (bench/visual/plan.py, from the conformance registry) run at 15m, 1h and 6h.
+# Posts one sticky comment and fails the `visual-smoke` check on a base-vs-PR
+# data difference, a panel that went empty, or an error banner only the PR
+# shows. See bench/visual/README.md ("In CI").
+#
+# Three jobs, so that no code of the pull request runs with a write token:
+#   visual-smoke    read-only: plan, stack, capture, compare, gate
+#   visual-publish  contents: write, same-repo PRs only: montages -> pr-visuals
+#   visual-comment  pull-requests: write, same-repo PRs only: the sticky comment
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-smoke-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  visual-smoke:
+    name: visual-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+    env:
+      OUT: /tmp/visual-smoke
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The base build comes from a worktree of the merge commit's first parent.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Plan the captures for this change
+        id: plan
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          # HEAD is the PR merged onto the base; its first parent is that base.
+          BASE="$(git rev-parse HEAD^1)"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          python3 bench/visual/plan.py --base "$BASE" --out "$OUT/plan.json" > /dev/null
+          echo "run=$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["run"]).lower())' "$OUT/plan.json")" >> "$GITHUB_OUTPUT"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["captures"], "capture(s):", {k: v["ranges"] for k, v in d["entries"].items()} or "nothing to run")' "$OUT/plan.json"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        if: steps.plan.outputs.run == 'true'
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7
+        if: steps.plan.outputs.run == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bench/visual/package-lock.json
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        if: steps.plan.outputs.run == 'true'
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-ms-playwright-visual-${{ hashFiles('bench/visual/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-ms-playwright-visual-
+
+      - name: Install the capture tooling
+        if: steps.plan.outputs.run == 'true'
+        working-directory: bench/visual
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet -r requirements.txt
+          npm ci --no-audit --no-fund
+          # The runner's Chrome, as the e2e-ui jobs use; Playwright's own build otherwise.
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -n "$CHROME_BIN" ]; then
+            echo "PLAYWRIGHT_EXECUTABLE_PATH=$CHROME_BIN" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Capture and compare
+        if: steps.plan.outputs.run == 'true'
+        env:
+          BASE: ${{ steps.plan.outputs.base }}
+        run: |
+          # A failure leaves error.json (or a missing capture): the verdict, not this step, decides.
+          python3 bench/visual/ci_run.py --base "$BASE" --plan "$OUT/plan.json" --out "$OUT" \
+            --head-label "$PR_HEAD" --project vs --workers 2 || true
+
+      - name: Upload montages and results
+        id: montage
+        if: always() && steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: visual-montage
+          path: |
+            ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+      - name: Render the comment and the verdict
+        id: verdict
+        if: always()
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ steps.montage.outputs.artifact-url }}
+          BASE: ${{ steps.plan.outputs.base }}
+        run: |
+          set -euo pipefail
+          [ -f "$OUT/meta.json" ] || printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$PR_HEAD" > "$OUT/meta.json"
+          for MODE in branch artifact; do
+            python3 bench/visual/comment.py --out "$OUT" --mode "$MODE" --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
+              --artifact-url "$ARTIFACT_URL" --md "$OUT/comment-$MODE.md" --verdict "$OUT/verdict.json" > /dev/null
+          done
+          echo "exit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json")" >> "$GITHUB_OUTPUT"
+          # Fork PRs have a read-only token and no comment: the step summary carries the table.
+          cat "$OUT/comment-artifact.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the comment
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: visual-comment
+          path: |
+            ${{ env.OUT }}/comment-*.md
+            ${{ env.OUT }}/verdict.json
+          if-no-files-found: ignore
+
+      - name: Fail on regression
+        if: steps.plan.outputs.run == 'true'
+        env:
+          CODE: ${{ steps.verdict.outputs.exit }}
+        run: |
+          case "$CODE" in
+            0) echo "no visual regression" ;;
+            1) echo "::error::Visual smoke: the PR changes the data Grafana receives, empties a panel or shows an error the base does not (see the PR comment)"; exit 1 ;;
+            *) echo "::error::Visual smoke did not complete (exit ${CODE:-none}); see the PR comment, the log and the uploaded artifacts"; exit 1 ;;
+          esac
+
+  visual-publish:
+    name: visual-publish
+    needs: visual-smoke
+    # Same-repo PRs only: a fork's token cannot write. This job runs repository
+    # code and git only, never the pull request's npm, Go or Docker dependencies.
+    if: always() && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        with:
+          name: visual-montage
+          path: /tmp/visual-montage
+
+      - name: Publish the montages to pr-visuals
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python3 bench/visual/publish.py --montage /tmp/visual-montage/montage --pr "$PR" \
+            --remote "https://github.com/${GITHUB_REPOSITORY}.git"
+
+  visual-comment:
+    name: visual-comment
+    needs: [visual-smoke, visual-publish]
+    # A comment even when the gate failed; none for a fork (read-only token) or a cancelled run.
+    if: always() && needs.visual-smoke.result != 'cancelled' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        continue-on-error: true
+        with:
+          name: visual-comment
+          path: /tmp/visual-comment
+
+      - name: Publish sticky PR comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          RAN: ${{ needs.visual-smoke.outputs.run }}
+          PUBLISHED: ${{ needs.visual-publish.result == 'success' }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- visual-smoke -->';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // Images are embedded only when the montages reached pr-visuals; otherwise the text-only
+            // variant links the artifact. No file means the job died before it could render one:
+            // never leave the previous commit's table standing as if it were this commit's.
+            const file = `/tmp/visual-comment/comment-${process.env.PUBLISHED === 'true' || process.env.RAN !== 'true' ? 'branch' : 'artifact'}.md`;
+            const body = fs.existsSync(file) ? fs.readFileSync(file, 'utf8')
+              : `${marker}\n### ⚠️ Visual smoke: did not complete\n\nThe run for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` stopped before it could report. See ${runUrl}.\n`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else if (process.env.RAN !== 'false') {
+              // A docs- or CI-only change gets no new comment; an existing one is updated to say it was skipped.
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

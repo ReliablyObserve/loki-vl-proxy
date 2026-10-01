@@ -1,6 +1,6 @@
 {
  "profile": "drilldown+explore",
- "description": "Explore (filtered json log view + volume, json-filter-pushdown metric shapes, logfmt metric, label browser) and Logs Drilldown (landing, service logs, labels, fields, field value breakdown, patterns). Query shapes come from bench/ab/shapes.json set json-filter-pushdown, with [1m] replaced by $__auto as Explore sends it.",
+ "description": "Explore (filtered json log view + volume, json-filter-pushdown metric shapes, logfmt metric, label browser) and Logs Drilldown (landing, service logs, labels, fields, field value breakdown, patterns). Query shapes come from bench/ab/shapes.json set json-filter-pushdown, with [1m] replaced by $__auto as Explore sends it. Entries with core:true form the small always-on set bench/visual/plan.py runs on every relevant PR (core_range only); the others run at ci_ranges when the PR touches code their covers (registry ids, as in bench/ab/shapes.json) point at.",
  "datasources": [
   {
    "id": "main",
@@ -35,101 +35,220 @@
  },
  "pages": [
   {
+   "id": "explore-logs-plain",
+   "kind": "explore",
+   "query": "{env=\"production\"}",
+   "covers": [
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ],
+   "core": true
+  },
+  {
+   "id": "explore-metric-plain",
+   "kind": "explore",
+   "query": "sum by (app) (count_over_time({env=\"production\"}[$__auto]))",
+   "covers": [
+    "range_function-count-over-time",
+    "operator-sum",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "core": true
+  },
+  {
    "id": "explore-A",
    "kind": "explore",
-   "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [$__auto]))"
+   "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [$__auto]))",
+   "covers": [
+    "semantics/json-filter-pushdown-underscore-label",
+    "semantics/json-filter-pushdown-translated-label",
+    "explore-logs-volume-json",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-B",
    "kind": "explore",
-   "query": "sum by (level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))"
+   "query": "sum by (level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))",
+   "covers": [
+    "semantics/json-filter-pushdown-without-error-drop",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-C",
    "kind": "explore",
-   "query": "sum(count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))"
+   "query": "sum(count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))",
+   "covers": [
+    "semantics/json-filter-pushdown-ungrouped-sum",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-E",
    "kind": "explore",
-   "query": "sum by (pipeline) (count_over_time({env=\"production\"} | json | drop __error__ | pipeline!=\"\" [$__auto]))"
+   "query": "sum by (pipeline) (count_over_time({env=\"production\"} | json | drop __error__ | pipeline!=\"\" [$__auto]))",
+   "covers": [
+    "parser-json",
+    "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-F",
    "kind": "explore",
-   "query": "sum by (service_version) (count_over_time({env=\"production\"} | json | drop __error__ | service_version!=\"\" [$__auto]))"
+   "query": "sum by (service_version) (count_over_time({env=\"production\"} | json | drop __error__ | service_version!=\"\" [$__auto]))",
+   "covers": [
+    "semantics/json-filter-pushdown-underscore-label",
+    "semantics/json-label-spelling-probe",
+    "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-logs-json",
    "kind": "explore",
-   "query": "{env=\"production\"} | json | pipeline=`logs/loki`"
+   "query": "{env=\"production\"} | json | pipeline=`logs/loki`",
+   "covers": [
+    "parser-json",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-logfmt-metric",
    "kind": "explore",
-   "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt | level!=\"\" [$__auto]))"
+   "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt | level!=\"\" [$__auto]))",
+   "covers": [
+    "parser-logfmt",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "explore-label-browser",
-   "kind": "label-browser"
+   "kind": "label-browser",
+   "covers": [
+    "loki_api_v1_labels",
+    "loki_api_v1_label_name_values",
+    "semantics/label-browser-latency-cold-and-refresh"
+   ]
   },
   {
    "id": "dd-landing",
    "kind": "drilldown",
-   "path": ""
+   "path": "",
+   "covers": [
+    "drilldown-service-landing",
+    "service-name-derivation",
+    "loki_api_v1_index_volume",
+    "loki_api_v1_query_range"
+   ],
+   "core": true
   },
   {
    "id": "dd-service-logs",
    "kind": "drilldown",
    "path": "service/{service}/logs",
-   "service": true
+   "service": true,
+   "covers": [
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ],
+   "core": true
   },
   {
    "id": "dd-labels",
    "kind": "drilldown",
    "path": "service/{service}/labels",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_detected_labels",
+    "loki_api_v1_labels"
+   ]
   },
   {
    "id": "dd-labels-namespace",
    "kind": "drilldown",
    "path": "service/{service}/label/namespace",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_label_name_values",
+    "limits/drilldown-breakdown-exact",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "dd-fields",
    "kind": "drilldown",
    "path": "service/{service}/fields",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_query_range"
+   ],
+   "core": true
   },
   {
    "id": "dd-field-service_version",
    "kind": "drilldown",
    "path": "service/{service}/field/service_version",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_detected_field_name_values",
+    "parser-json",
+    "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "dd-field-pipeline",
    "kind": "drilldown",
    "path": "service/{service}/field/pipeline",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_detected_field_name_values",
+    "parser-json",
+    "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ]
   },
   {
    "id": "dd-patterns",
    "kind": "drilldown",
    "path": "service/{service}/patterns",
-   "service": true
+   "service": true,
+   "covers": [
+    "loki_api_v1_patterns"
+   ]
   },
   {
    "id": "tail-env",
    "kind": "tail",
-   "query": "{env=\"production\"}"
+   "query": "{env=\"production\"}",
+   "covers": [
+    "loki_api_v1_tail"
+   ]
   },
   {
    "id": "tail-json-filter",
    "kind": "tail",
-   "query": "{env=\"production\"} | json | service_version!=\"\""
+   "query": "{env=\"production\"} | json | service_version!=\"\"",
+   "covers": [
+    "loki_api_v1_tail",
+    "parser-json"
+   ]
   }
  ],
- "loki_capture_max_s": 86400
+ "loki_capture_max_s": 86400,
+ "ci_ranges": [
+  "15m",
+  "1h",
+  "6h"
+ ],
+ "core_range": "1h",
+ "loki_hours_note": "Loki holds 1.5h of the seeded window; wider ranges compare base vs PR only."
 }

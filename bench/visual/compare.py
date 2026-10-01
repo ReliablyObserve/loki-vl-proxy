@@ -55,8 +55,27 @@ def records(path):
             if "/resources/patterns" in r["url"] and isinstance(body, dict):
                 # mined from a sample of the rows: compare the pattern set, not the sample counts
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
-            recs[key].append({"body": ("other", hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest(), 0)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
+            rows = len(body.get("data") or []) if isinstance(body, dict) and isinstance(body.get("data"), list) else (len(body) if isinstance(body, list) else 0)
+            recs[key].append({"body": ("other", hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     return d.get("settled", False), recs
+
+
+def points(recs):
+    """Non-zero metric points plus rows of the other frames: what the page has to draw."""
+    n = 0
+    for lst in recs.values():
+        for fr in lst:
+            for x in fr.values():
+                if x[0] == "metric":
+                    n += sum(1 for v in x[1].values() if v)
+                elif x[0] == "other":
+                    n += x[2]
+    return n
+
+
+def ui_of(d, name):
+    path = os.path.join(d, f"{name}.json")
+    return (load_json(path).get("ui") or {}) if os.path.exists(path) else {}
 
 
 def same(a, b):
@@ -159,7 +178,8 @@ def main():
         if rng == "live":
             n, diffs, lk = compare_tail(d)
             rows.append(dict(page=page, range=rng, requests=n, series=0, main_vs_pr="identical" if not diffs else "DIFFERS",
-                             pr_vs_loki="; ".join(lk), settled=True, main_pr_diffs=diffs, loki_diffs=[]))
+                             pr_vs_loki="; ".join(lk), settled=True, main_pr_diffs=diffs, loki_diffs=[], loki_new=[],
+                             loki_compared=True, points_main=n, points_pr=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr")))
             continue
         sm, m = records(os.path.join(d, "main.json"))
         sp, p = records(os.path.join(d, "pr.json"))
@@ -172,11 +192,14 @@ def main():
         if loki_ok:
             ln, lok, ldiffs, _, lmiss = compare(p, l)
             _, lok2, ldiffs2, _, _ = compare(p, l, lenient=True)
+            _, _, mdiffs, _, _ = compare(m, l, lenient=True)
             vs = f"{lok2}/{ln} identical" + (f" ({lok}/{ln} counting zero-filled points)" if lok != lok2 else "") + (f", {lmiss} request(s) on one side only" if lmiss else "")
         else:
-            ln, lok, ldiffs, ldiffs2, vs = 0, 0, [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
+            ln, lok, ldiffs, ldiffs2, mdiffs, vs = 0, 0, [], [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
-                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=diffs, loki_diffs=ldiffs2 if loki_ok else []))
+                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=diffs, loki_diffs=ldiffs2 if loki_ok else [],
+                         loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
+                         points_main=points(m), points_pr=points(p), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr")))
     md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
     for r in rows:
         md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")

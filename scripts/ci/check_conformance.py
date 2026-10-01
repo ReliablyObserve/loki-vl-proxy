@@ -9,6 +9,9 @@ Fails when:
     not match the shape sets (performance evidence);
   * a bench/ab shape outside `control` covers no registry item that names code,
     so no change could select it for the per-PR A/B run (bench/ab/selection.py);
+  * a bench/visual entry covers an unknown registry id, or (outside the core
+    set) covers nothing that names code, so no change could select it for the
+    per-PR visual smoke (bench/visual/plan.py);
   * a generated report is stale (performance, coverage map, gaps, translation map, roadmap,
     compatibility matrix),
   * a flag is missing from the places that list every flag,
@@ -67,6 +70,12 @@ def main():
     print(ab_selection.stdout.strip() or ab_selection.stderr.strip())
     if ab_selection.returncode:
         failures.append("A/B shape selection")
+
+    # The same for the visual-smoke entries (bench/visual/spec.json `covers`).
+    visual_plan = subprocess.run([sys.executable, "bench/visual/plan.py", "--check"], capture_output=True, text=True)
+    print(visual_plan.stdout.strip() or visual_plan.stderr.strip())
+    if visual_plan.returncode:
+        failures.append("visual-smoke entry selection")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

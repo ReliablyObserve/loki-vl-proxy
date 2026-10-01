@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   side-by-side before/after/Loki montages with a pixel-diff score. The Explore
   graph of a filtered `| json` metric is also an `@explore-core` Playwright test
   that compares its panel data with Loki's.
+  A `visual-smoke` pull-request job runs it automatically: a fixed core set of
+  five captures on every relevant change plus the pages near the code the change
+  touches (chosen from the conformance registry, like the A/B shape selection),
+  at 15m, 1h and 6h, for the base build, the PR build and Loki. One sticky comment
+  gives a per-capture table (data identical base vs PR, differences from Loki and
+  whether the base has them too, pixel diff) and embeds the montages only for rows
+  that are not clean; the check fails on a base-vs-PR data difference, a panel
+  that went empty or an error only the PR shows.
 
 ## [1.103.0] - 2026-10-01
 

@@ -34,6 +34,19 @@ def label(img, text):
     return out
 
 
+MAX_BYTES = 300_000  # a montage hosted on the pr-visuals branch stays at or below this
+
+
+def save_small(img, path, limit=MAX_BYTES):
+    """Palette PNG; fewer colours, then a smaller image, until the file fits `limit`."""
+    for scale in (1.0, 0.85, 0.7, 0.55):
+        im = img if scale == 1.0 else img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
+        for colors in (128, 64, 32):
+            im.quantize(colors=colors, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(path, optimize=True)
+            if os.path.getsize(path) <= limit:
+                return
+
+
 def score(a, b):
     if a.size != b.size:
         return 1.0
@@ -60,8 +73,7 @@ def main():
         m = Image.new("RGB", (W * 3 + 8, tiles[0].height), (255, 255, 255))
         for i, t in enumerate(tiles):
             m.paste(t, (i * (W + 4), 0))
-        m.quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
-            os.path.join(out, "montage", f"{page}-{rng}.png"), optimize=True)
+        save_small(m, os.path.join(out, "montage", f"{page}-{rng}.png"))
     dump_json(os.path.join(out, "pixeldiff.json"), scores)
     for k, v in scores.items():
         print(f"{k}: {v}")

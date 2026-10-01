@@ -15,5 +15,12 @@ export default defineConfig({
     timezoneId: "UTC",
     locale: "en-US",
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: [{
+    name: "chromium",
+    use: {
+      browserName: "chromium",
+      // CI uses the runner's Chrome, as the e2e-ui specs do.
+      launchOptions: process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {},
+    },
+  }],
 });

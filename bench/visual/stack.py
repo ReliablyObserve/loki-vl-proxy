@@ -38,6 +38,12 @@ SERVICE = "loki-vl-proxy-patterns-autodetect"
 PORTS = dict(loki=33101, vl=33428, main=33200, pr=33202, grafana=33002)
 
 
+def grafana_host_network():
+    """Linux Docker (CI) reaches the host-only listeners through the host network; Docker Desktop
+    publishes a port and reaches the host as host.docker.internal."""
+    return sys.platform.startswith("linux")
+
+
 def sh(*a, **kw):
     return subprocess.run(a, check=kw.pop("check", True), **kw)
 
@@ -51,7 +57,8 @@ def plugins_and_image(tree):
     return g["image"], env["GF_PLUGINS_PREINSTALL"], env.get("GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS", "")
 
 
-def datasources(host="host.docker.internal"):
+def datasources(host=None):
+    host = host or ("127.0.0.1" if grafana_host_network() else "host.docker.internal")
     def ds(name, uid, port):
         return (f"  - name: {name}\n    uid: {uid}\n    type: loki\n    access: proxy\n    url: http://{host}:{port}\n"
                 "    jsonData:\n      httpHeaderName1: X-Scope-OrgID\n      maxLines: 1000\n      timeout: 300\n"
@@ -139,7 +146,9 @@ def up(a):
     write_text(os.path.join(gdir, "datasources.yaml"), datasources())
     name = f"{a.project}-grafana"
     sh("docker", "rm", "-f", name, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{PORTS['grafana']}:3000",
+    net = (["--network", "host", "-e", f"GF_SERVER_HTTP_PORT={PORTS['grafana']}"] if grafana_host_network()
+           else ["-p", f"127.0.0.1:{PORTS['grafana']}:3000"])
+    sh("docker", "run", "-d", "--name", name, *net,
        "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin",
        "-e", "GF_AUTH_DISABLE_LOGIN_FORM=true", "-e", f"GF_PLUGINS_PREINSTALL={plugins}",
        "-e", f"GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS={unsigned}",
@@ -203,11 +212,14 @@ def main():
     ap.add_argument("cmd", choices=["up", "down", "live-start", "live-stop"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--project", default="vp")
+    ap.add_argument("--port-offset", type=int, default=0, help="shift every port (a second stack next to another)")
     ap.add_argument("--main-ref", default="origin/main")
     ap.add_argument("--hours", type=float, default=24, help="VictoriaLogs history (hours)")
     ap.add_argument("--skip-seed", action="store_true", help="reuse the data and end of an earlier up (state.json)")
     ap.add_argument("--loki-hours", type=float, default=1.5, help="Loki history (hours); longer backfills stall Loki")
     a = ap.parse_args()
+    for k in PORTS:
+        PORTS[k] += a.port_offset
     {"up": up, "down": down, "live-start": live, "live-stop": live}[a.cmd](a)
 
 
