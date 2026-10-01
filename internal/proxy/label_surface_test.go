@@ -62,6 +62,43 @@ func TestLabelSurface_LabelsIncludeConfiguredExtras(t *testing.T) {
 	}
 }
 
+// TestLabelSurface_LabelsSortedOnFirstAnswer: Loki answers /labels sorted.
+// VictoriaLogs lists stream field names by hits, and the proxy's first,
+// uncached answer kept that order while the cached one was sorted.
+//
+// conformance: loki_api_v1_labels, semantics/label-inventory-exact-and-incremental
+func TestLabelSurface_LabelsSortedOnFirstAnswer(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"values":[{"value":"pod","hits":90},{"value":"app","hits":50},{"value":"version","hits":40},{"value":"db_name","hits":3},{"value":"cluster","hits":2}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL:        vlBackend.URL,
+		Cache:             cache.New(60*time.Second, 1000),
+		LogLevel:          "error",
+		LabelStyle:        LabelStyleUnderscores,
+		MetadataFieldMode: MetadataFieldModeTranslated,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	for _, attempt := range []string{"first", "cached"} {
+		w := httptest.NewRecorder()
+		p.handleLabels(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels?start=1790871720000000000&end=1790875320000000000", nil))
+		var resp struct {
+			Data []string `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("%s: decode labels response: %v", attempt, err)
+		}
+		if want := []string{"app", "cluster", "db_name", "pod", "service_name", "version"}; !reflect.DeepEqual(resp.Data, want) {
+			t.Fatalf("%s answer: labels %v, want Loki's sorted %v", attempt, resp.Data, want)
+		}
+	}
+}
+
 func TestLabelSurface_LabelValuesResolveCustomAliasFromConfiguredExtras(t *testing.T) {
 	var requestedField string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

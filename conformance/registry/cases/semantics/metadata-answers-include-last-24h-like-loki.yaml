@@ -41,19 +41,28 @@ why: |
   shouldBypassRecentTailCache) and internal/proxy/middleware.go (compatibility
   edge cache).
 
-  Empty hour and day buckets of a countable query (stream and field filters
-  only) that ended within the freshness window are rechecked at the negative
-  TTL with one row count per contiguous run of such buckets (a run that
-  received rows is halved to find the buckets to rescan), so rows backfilled
-  into cached empty hours appear within the negative TTL. Empty buckets that
-  cannot be counted (5m and 1m buckets, word, phrase or pipe filters) are
-  rechecked at the negative TTL for the last hour only; older ones follow the
-  age schedule.
+  Empty buckets of every size (day, hour, 5m, 1m) of a countable query (stream
+  and field filters only) that ended within the freshness window are
+  confirmed on every listing with one row count per contiguous run of such
+  buckets (a count is cheap for * and stream filters, but with a field filter it
+  reads the filtered column of every row in the run's range, so it is not free
+  there; concurrent listings share a count taken recent enough for each; a run
+  that received rows
+  is halved to find the buckets to rescan, and those are rescanned at once),
+  so rows written with old timestamps into buckets cached empty a moment
+  before are listed by the next request, as Loki lists them. Empty buckets of
+  a query that cannot be counted (word, phrase or pipe filters) are rechecked
+  at the negative TTL for the last hour only; older ones follow the age
+  schedule.
 
   Accepted limit: a row that lands more than a minute late in an already
-  sealed, non-empty inventory bucket, or in an empty bucket that cannot be
-  counted and ended more than an hour ago, appears after that bucket's
-  revalidation, not at once.
+  sealed, non-empty inventory bucket, or in an empty bucket of a query that
+  cannot be counted and ended more than an hour ago, appears after that
+  bucket's revalidation, not at once.
+
+  Remaining gap: a bucket stored empty with rows that lack the listed field
+  is not part of an empty run and follows the normal schedule, so rows that
+  gain the field appear up to the negative TTL late.
 request:
   method: GET
   path: /loki/api/v1/labels

@@ -15,7 +15,7 @@ description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-
 | `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 5m (3) | 3 |
 | `GET /loki/api/v1/label/{name}/values` | Implemented | `field_names` (label alias resolution) → `stream_field_values` when the backend supports stream metadata endpoints, else `field_values` (also used when `stream_field_values` returns a 4xx) | 5m (3) | 3 |
 | `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
-| `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/hits` | 10s | 2 |
+| `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/query` (`stats count(), count_uniq_hash(_stream_id)`) | 10s | 2 |
 | `GET /loki/api/v1/index/volume` | Implemented (4) | `/select/logsql/stats_query` with `sum_len(_msg)` | 10s | 2 |
 | `GET /loki/api/v1/index/volume_range` | Implemented (4) | `/select/logsql/stats_query_range` with `sum_len(_msg)` | 10s | 2 |
 | `GET /loki/api/v1/detected_fields` | Implemented | `/select/logsql/field_names` | 90s (3) | 1 |

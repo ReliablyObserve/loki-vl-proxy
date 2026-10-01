@@ -1,0 +1,19 @@
+# Visual-proof stack overlay (bench/visual/stack.py), applied after
+# bench/ab/docker-compose.ab.yml: Loki keeps the flushed seed in its
+# ingesters, as a Loki ingesting live holds its recent streams.
+#
+# The seed is flushed (bench/ab/stack.py seed) because Loki's index/stats
+# counts flushed chunks only. Loki answers detected_labels from the streams
+# its ingesters hold (pkg/ingester/instance.go LabelsWithValues; its store
+# path returns nothing), and an ingester drops a stream once its chunks are
+# flushed, so a flushed seed answered `{}` while the proxy answered the
+# window's labels. Retaining flushed chunks keeps the streams for the length
+# of a run, and queries reach the ingesters over the whole window (Loki's
+# default 3h; the e2e config's 30m). Every other setting is the e2e config's
+# (flags override the file).
+services:
+  loki:
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+      - -querier.query-ingesters-within=3h
+      - -ingester.chunks-retain-period=3h

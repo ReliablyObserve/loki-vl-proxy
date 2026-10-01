@@ -72,7 +72,9 @@ def ui_problems(main, pr):
         out.append(f"new empty panel (\"No data\" {main.get('noData', 0)} on base, {pr.get('noData', 0)} on PR)")
     new = [b for b in pr.get("banners", []) if b not in main.get("banners", [])]
     if new:
-        out.append(f"error banner only on the PR: {new[0][:100]}")
+        # The error behind the banner (capture.spec.ts records the error boundary's "Details").
+        why = next((ln.strip() for ln in str(pr.get("details", "")).splitlines() if "Error" in ln), "")
+        out.append(f"error banner only on the PR: {new[0][:100]}" + (f" ({why[:160]})" if why else ""))
     if pr.get("panelErrors", 0) > main.get("panelErrors", 0):
         out.append(f"panel error ({main.get('panelErrors', 0)} on base, {pr.get('panelErrors', 0)} on PR)")
     return out
@@ -91,7 +93,24 @@ def classify(row):
     return "unsettled"
 
 
-def assess(row, pixel, expected=False, flipped=()):
+def signature(diff):
+    """A base-vs-PR difference with its window removed (timestamps, ids, hashes, counts), so the same
+    request shape at another range compares equal."""
+    s = re.sub(r"[0-9a-f]{12,}", "#", diff)
+    s = re.sub(r"\d{4}-\d\d-\d\dT[\d:.%A-Z]+", "#", s)
+    return re.sub(r"\d+", "#", s)
+
+
+def proven_improvements(rows):
+    """page -> signatures of base-vs-PR differences that Loki judged an improvement at some range."""
+    out = {}
+    for r in rows:
+        if r.get("main_pr_diffs") and classify(r) == "improved":
+            out.setdefault(r["page"], set()).update(signature(d) for d in r["main_pr_diffs"])
+    return out
+
+
+def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
     """(failures, warnings, status) of one capture; status is '', 'improved' or 'expected'."""
     fails, warns, status = [], [], ""
     diffs = row["main_pr_diffs"]
@@ -100,6 +119,11 @@ def assess(row, pixel, expected=False, flipped=()):
         detail = f"({len(diffs)}): {diffs[0][:160]}"
         if kind == "improved":
             status = "improved"
+        elif kind == "no-loki" and all(signature(d) in proven for d in diffs):
+            # Loki holds no data for this range, but the same page proved every one of these
+            # differences an improvement against Loki at a shorter range.
+            status = "improved"
+            warns.append(f"no Loki data at this range; the same differences match Loki at a shorter range {detail}")
         elif kind == "regressed":
             fails.append(f"regressed vs Loki: the base matched Loki, the PR diverges {detail}")
         elif expected:
@@ -138,10 +162,14 @@ def vs_loki(row):
     if not row.get("loki_compared"):
         return "n/a (beyond the Loki window)"
     n = len(row["loki_diffs"])
+    # By-design differences (documented deviations, Loki's own accounting) and history-dependent patterns are
+    # listed by compare.py and never counted as differences.
+    notes = ", ".join(f"{len(row[k])} {label}" for k, label in (("loki_explained", "explained"), ("loki_nondet", "history-dependent"))
+                      if row.get(k))
     if not n:
-        return "identical"
+        return "identical" + (f" ({notes})" if notes else "")
     new = len(row["loki_new"])
-    return f"{n} difference(s), {n - new} on base too" + (f", **{new} new**" if new else "")
+    return f"{n} difference(s), {n - new} on base too" + (f", **{new} new**" if new else "") + (f"; {notes}" if notes else "")
 
 
 def key(row):
@@ -156,13 +184,14 @@ def captures(plan):
 def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
     """Per-capture assessments and the verdict."""
     by = {(r["page"], r["range"]): r for r in rows}
+    proven = proven_improvements(rows)
     items, failed, missing = [], [], []
     for pid, rng in captures(plan):
         row = by.get((pid, rng))
         if row is None:
             missing.append(f"{pid} {rng}")
             continue
-        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped)
+        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid, frozenset()))
         items.append(dict(row=row, fails=fails, warns=warns, status=status, pixel=pixeldiff.get(key(row)),
                           core=plan["entries"][pid]["core"] and rng == plan.get("core_range", "1h"), why=plan["entries"][pid]["why"]))
         if fails:
@@ -247,7 +276,7 @@ def render(rows, pixeldiff, plan, meta, a):
         px = "" if i["pixel"] is None else f"{i['pixel']:.2%}"
         lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {'core' if i['core'] else 'detailed'} | {same} | {vs_loki(r)} | {px} | {result_cell(i)} |")
     lines += ["", "Gate: a base-vs-PR data difference passes when the PR is closer to Loki, and fails when the PR diverges from Loki "
-              f"or Loki cannot decide it (label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
+              f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved it closer to Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
               "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
               "settled, a difference that did not reproduce on the recapture. Pixel differences only warn."]
     if a.mode == "branch":
@@ -258,6 +287,7 @@ def render(rows, pixeldiff, plan, meta, a):
             lines += ["", f"<details open><summary><b>{esc_html(name)}</b>: {esc_html(first, 120)}</summary>", ""]
             lines += [f"- {esc(x)}" for x in i["fails"] + i["warns"]]
             lines += [f"- vs Loki: {esc(x)}" for x in i["row"]["loki_diffs"][:4]]
+            lines += [f"- vs Loki, explained: {esc(x)}" for x in (i["row"].get("loki_explained") or [])[:4]]
             lines += ["", image(a, name, meta), "", "</details>"]
         core = [i for i in items if i["core"] and not (i["fails"] or i["warns"])]
         if core:

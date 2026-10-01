@@ -59,7 +59,7 @@ func TestOPT2_ClassifyEntryFieldsWithFlags_ParityWithOriginal(t *testing.T) {
 			smBuf2 := make(map[string]string)
 			pfBuf2 := make(map[string]string)
 			cache2 := make(map[string][]metadataFieldExposure, 8)
-			labels2, sm2, pf2 := p.classifyEntryFieldsWithFlags(opt2TestEntry, streamLabels, classifyAsParsed, cache2, smBuf2, pfBuf2)
+			labels2, sm2, pf2 := p.classifyEntryFieldsWithFlags(opt2TestEntry, streamLabels, classifyAsParsed, p.hidesLineFields(q), cache2, smBuf2, pfBuf2)
 
 			if !reflect.DeepEqual(labels1, labels2) {
 				t.Errorf("labels mismatch\n  original: %v\n  withFlags: %v", labels1, labels2)
@@ -102,6 +102,6 @@ func BenchmarkOPT2_ClassifyEntryFieldsWithFlags_PreComputed(b *testing.B) {
 		smBuf := make(map[string]string)
 		pfBuf := make(map[string]string)
 		ec := make(map[string][]metadataFieldExposure, 8)
-		_, _, _ = p.classifyEntryFieldsWithFlags(opt2TestEntry, streamLabels, classifyAsParsed, ec, smBuf, pfBuf)
+		_, _, _ = p.classifyEntryFieldsWithFlags(opt2TestEntry, streamLabels, classifyAsParsed, false, ec, smBuf, pfBuf)
 	}
 }

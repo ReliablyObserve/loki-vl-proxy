@@ -103,6 +103,91 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(compare.points({"k": [{"a": ("metric", {1: 0, 2: 5}, "sig"), "b": ("other", "h", 7), "c": ("error", "x")}]}), 8)
 
 
+def resources(*answers, uid="vp-pr"):
+    """A capture of datasource resource answers: (path, body) pairs."""
+    recs = [{"url": f"/api/datasources/uid/{uid}/resources/{path}", "method": "GET", "status": 200, "request": None, "response": body}
+            for path, body in answers]
+    return {"settled": True, "settle_ms": 1000, "records": recs, "ui": {"noData": 0, "banners": [], "panelErrors": 0}}
+
+
+def log_capture(labels, types, uid="ds1"):
+    names = ["labels", "Time", "Line", "tsNs", "labelTypes", "id"]
+    frame = {"schema": {"name": "", "fields": [{"name": n, "type": "other" if n in ("labels", "labelTypes") else "string"} for n in names]},
+             "data": {"values": [[labels], [1], ["line"], ["1"], [types], [f"1_{hash(json.dumps(labels, sort_keys=True)) & 0xffff:x}"]]}}
+    rec = {"url": "/api/ds/query?ds_type=loki", "method": "POST", "status": 200,
+           "request": {"from": "1", "to": "2", "queries": [{"refId": "A", "expr": "{app=\"x\"} | json", "queryType": "range",
+                                                           "datasource": {"type": "loki", "uid": uid}}]},
+           "response": {"results": {"A": {"frames": [frame]}}}}
+    return {"settled": True, "settle_ms": 1000, "records": [rec], "ui": {"noData": 0, "banners": [], "panelErrors": 0}}
+
+
+class ExplainedVsLokiTest(unittest.TestCase):
+    """Differences from Loki by design are listed as explained, everything else stays a difference."""
+    run_compare = CompareTest.run_compare
+
+    def check(self, pr, loki):
+        _, row = self.run_compare(pr, pr, loki)
+        return row
+
+    def test_detected_fields_envelope_and_extracted_suffix_are_explained(self):
+        field = {"label": "pipeline", "type": "string", "cardinality": 3, "parsers": ["json"], "jsonPath": ["pipeline"]}
+        meta = {"label": "trace_id", "type": "string", "cardinality": 9, "parsers": None}
+        pr = resources(("detected_fields?q=1", {"status": "success", "data": [field, meta], "fields": [field, meta], "limit": 1000}))
+        loki = resources(("detected_fields?q=1", {"fields": [meta, field, {"label": "level_extracted", "type": "string", "cardinality": 2,
+                                                                       "parsers": ["json"], "jsonPath": ["level"]}], "limit": 1000}), uid="vp-loki")
+        row = self.check(pr, loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertEqual(len(row["loki_explained"]), 1)
+        self.assertIn("_extracted", row["loki_explained"][0])
+        # structured metadata listed as a JSON key is a real difference
+        bad = dict(meta, parsers=["json"], jsonPath=["trace_id"])
+        row = self.check(resources(("detected_fields?q=1", {"fields": [field, bad], "limit": 1000})),
+                         resources(("detected_fields?q=1", {"fields": [field, meta], "limit": 1000}), uid="vp-loki"))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertEqual(row["loki_explained"], [])
+
+    def test_detected_labels_cardinality_explained_but_not_an_empty_loki(self):
+        pr = resources(("detected_labels?q=1", {"detectedLabels": [{"label": "pod", "cardinality": 45}, {"label": "level", "cardinality": 2}]}))
+        loki = resources(("detected_labels?q=1", {"detectedLabels": [{"label": "level", "cardinality": 2}, {"label": "pod", "cardinality": 67}]}), uid="vp-loki")
+        row = self.check(pr, loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertIn("sampled cardinality", row["loki_explained"][0])
+        row = self.check(pr, resources(("detected_labels?q=1", {}), uid="vp-loki"))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+
+    def test_index_stats_bytes_explained_entries_not(self):
+        loki = resources(("index/stats?q=1", {"streams": 13513, "chunks": 13513, "bytes": 62091264, "entries": 289279}), uid="vp-loki")
+        row = self.check(resources(("index/stats?q=1", {"streams": 13513, "chunks": 13513, "bytes": 28927900, "entries": 289279})), loki)
+        self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
+        row = self.check(resources(("index/stats?q=1", {"streams": 1, "chunks": 1, "bytes": 39508700, "entries": 395087})), loki)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+
+    def test_patterns_are_history_dependent_not_counted(self):
+        pr = resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>"}]}))
+        row = self.check(pr, resources(("patterns?q=1", {"status": "success", "data": []}), uid="vp-loki"))
+        self.assertEqual((row["loki_diffs"], row["loki_new"]), ([], []))
+        self.assertEqual(len(row["loki_nondet"]), 1)
+
+    def test_log_labels_extracted_suffix_explained_parsed_extra_not(self):
+        loki = log_capture({"level": "info", "level_extracted": "info", "service_name": "svc", "service_name_extracted": "svc"},
+                           {"level": "I", "level_extracted": "P", "service_name": "I", "service_name_extracted": "S"}, uid="vp-loki")
+        pr = log_capture({"level": "info", "service_name": "svc"}, {"level": "I", "service_name": "S"}, uid="vp-pr")
+        row = self.check(pr, loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertIn("_extracted", row["loki_explained"][0])
+        pr = log_capture({"level": "info", "service_name": "svc", "method": "GET"}, {"level": "I", "service_name": "I", "method": "P"}, uid="vp-pr")
+        row = self.check(pr, log_capture({"level": "info", "service_name": "svc"}, {"level": "I", "service_name": "I"}, uid="vp-loki"))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+
+
+class OneSidedTest(unittest.TestCase):
+    def test_only_an_extracted_field_breakdown_is_explained(self):
+        key = ("query", "A", 'sum by (service_name_extracted) (count_over_time({service_name="x"} | service_name_extracted!="" [$__auto]))')
+        self.assertIn("_extracted", compare.explain_one_sided(key))
+        self.assertIsNone(compare.explain_one_sided(("query", "A", 'sum by (k8s_pod_name) (count_over_time({service_name="x"} [$__auto]))')))
+        self.assertIsNone(compare.explain_one_sided(("resource", "/api/datasources/uid/*/resources/labels")))
+
+
 class NondeterministicTest(unittest.TestCase):
     def test_only_patterns_resources_are_history_dependent(self):
         import compare

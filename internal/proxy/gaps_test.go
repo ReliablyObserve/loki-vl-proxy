@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,55 +16,86 @@ import (
 )
 
 // =============================================================================
-// Gap #1: /loki/api/v1/index/stats — real implementation via VL /select/logsql/hits
+// Gap #1: /loki/api/v1/index/stats — one VictoriaLogs stats row over the window
 // Loki response: {"streams":N, "chunks":N, "entries":N, "bytes":N}
 // =============================================================================
 
-func TestGap_IndexStats_QueriesVLHits(t *testing.T) {
+// TestGap_IndexStats_CountsTheRequestedWindow: Loki counts the entries and
+// streams of the requested window. The proxy asked /select/logsql/hits with a
+// 1h step, which widens the window to whole buckets (a 1h window off the hour
+// counted about 1.4x Loki's entries on the visual-proof stack) and has no
+// stream count, so streams was always 1.
+//
+// conformance: loki_api_v1_index_stats
+func TestGap_IndexStats_CountsTheRequestedWindow(t *testing.T) {
 	var receivedPath string
+	var form url.Values
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
-		// VL /select/logsql/hits returns hit counts
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{},
-					"timestamps": []int64{1705312200000},
-					"values":     []int{42},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		form = r.Form
+		_, _ = w.Write([]byte(`{"entries":"289279","streams":"13513"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/index/stats?query=%7Bapp%3D%22nginx%22%7D&start=1705312200000000000&end=1705312800000000000", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/stats?query=%7Bapp%3D%22nginx%22%7D&start=1790871720000000000&end=1790875320000000000", nil)
 	p.handleIndexStats(w, r)
 
-	// Should have queried VL
-	if receivedPath != "/select/logsql/hits" {
-		t.Errorf("expected VL path /select/logsql/hits, got %q", receivedPath)
+	if receivedPath != "/select/logsql/query" {
+		t.Fatalf("expected one stats query on /select/logsql/query, got %q", receivedPath)
 	}
-
-	var resp map[string]interface{}
-	mustUnmarshal(t, w.Body.Bytes(), &resp)
-
-	// Loki format requires these numeric fields
-	for _, field := range []string{"streams", "chunks", "entries", "bytes"} {
-		v, ok := resp[field]
-		if !ok {
-			t.Errorf("missing field %q", field)
-			continue
-		}
-		if _, ok := v.(float64); !ok {
-			t.Errorf("field %q must be number, got %T", field, v)
-		}
+	if q := form.Get("query"); !strings.HasSuffix(q, "| stats count() entries, count_uniq_hash(_stream_id) streams") {
+		t.Fatalf("stats query %q", q)
 	}
+	if form.Get("start") != "1790871720000000000" || form.Get("end") != "1790875320000000000" || form.Get("step") != "" {
+		t.Fatalf("window start=%q end=%q step=%q, want the requested window and no buckets", form.Get("start"), form.Get("end"), form.Get("step"))
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"streams":13513,"chunks":13513,"bytes":28927900,"entries":289279}`; got != want {
+		t.Fatalf("index stats %s, want %s", got, want)
+	}
+}
 
-	// entries should be 42 (from VL hits)
-	if entries, _ := resp["entries"].(float64); entries != 42 {
-		t.Errorf("expected entries=42, got %v", resp["entries"])
+// TestGap_IndexStats_ConcurrentIdenticalRequestsShareOneCall: identical index
+// stats requests in flight together cost VictoriaLogs one stats query.
+//
+// conformance: loki_api_v1_index_stats
+func TestGap_IndexStats_ConcurrentIdenticalRequestsShareOneCall(t *testing.T) {
+	const n = 8
+	var calls atomic.Int32
+	release := make(chan struct{})
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"entries":"10","streams":"2"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	var wg sync.WaitGroup
+	bodies := make([]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/loki/api/v1/index/stats?query=%7Bapp%3D%22nginx%22%7D&start=1790871720000000000&end=1790875320000000000", nil)
+			p.handleIndexStats(w, r)
+			bodies[i] = strings.TrimSpace(w.Body.String())
+		}(i)
+	}
+	time.Sleep(300 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("%d concurrent identical requests made %d VictoriaLogs calls, want 1", n, got)
+	}
+	for i, b := range bodies {
+		if b != `{"streams":2,"chunks":2,"bytes":1000,"entries":10}` {
+			t.Fatalf("response %d = %s", i, b)
+		}
 	}
 }
 

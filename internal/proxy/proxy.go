@@ -585,6 +585,7 @@ type Proxy struct {
 	labelWarmBackoff                      *labelWarmBackoff  // per preset window retry delay after a failed warm
 	metadataInventoryParallelism          int                // bucket listings in flight per request; 0 = inventory off
 	inventoryGroup                        singleflight.Group // one fill per inventory bucket
+	inventoryCountGroup                   singleflight.Group // one row count per tenant, query and range at a time
 	selectCallsInFlight                   atomic.Int64       // VictoriaLogs select calls this replica has in flight
 	execLimits                            executionLimits
 	backendHeavyQueryMinRange             time.Duration

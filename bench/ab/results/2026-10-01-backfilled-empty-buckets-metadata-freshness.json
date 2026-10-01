@@ -1,0 +1,651 @@
+{
+ "label": "backfilled-empty-buckets-metadata-freshness",
+ "date": "2026-10-01",
+ "set": "metadata-freshness",
+ "description": "Label and label-value listings that end now, which Loki answers live (its results cache holds only splits older than max_metadata_cache_freshness, 24h): the proxy refetches a cached answer older than the recent-tail max-staleness instead of serving it for up to an hour. The historical controls end two days ago and must not change: their answers stay cached.. Runs are 3 s apart (\"pause\"), longer than the recent-tail max staleness, so each run after the first meets an aged cache entry and times the refetch.",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 16
+ },
+ "result_differs_from_reference": 8,
+ "result_differs_preexisting": 8,
+ "stale_answers": {
+  "main": 16,
+  "branch": 16,
+  "loki": 16
+ },
+ "rows": [
+  {
+   "shape": "labels ending now",
+   "range": "1h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.003,
+    "branch": 0.002,
+    "loki": 0.003
+   },
+   "cold": {
+    "main": 0.011,
+    "branch": 0.002,
+    "loki": 0.002
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.03,
+    "branch": 1.03,
+    "loki": 1.03
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "labels ending now",
+   "range": "6h",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.007,
+    "branch": 0.005,
+    "loki": 0.004
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.006
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.94,
+    "branch": 0.94,
+    "loki": 0.94
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "labels ending now",
+   "range": "24h",
+   "p50": {
+    "main": 0.005,
+    "branch": 0.003,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.009,
+    "branch": 0.005,
+    "loki": 0.004
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.003
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.06,
+    "branch": 1.06,
+    "loki": 1.38
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.67
+  },
+  {
+   "shape": "labels ending now",
+   "range": "7d",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.005
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.01
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.005
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.97,
+    "branch": 0.97,
+    "loki": 0.97
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending now",
+   "range": "1h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.013
+   },
+   "p95": {
+    "main": 0.005,
+    "branch": 0.004,
+    "loki": 0.013
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.016
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.91,
+    "branch": 0.91,
+    "loki": 0.91
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending now",
+   "range": "6h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.002,
+    "loki": 0.013
+   },
+   "p95": {
+    "main": 0.01,
+    "branch": 0.006,
+    "loki": 0.014
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.015
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.87,
+    "branch": 0.87,
+    "loki": 1.96
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.5
+  },
+  {
+   "shape": "label values env ending now",
+   "range": "24h",
+   "p50": {
+    "main": 0.007,
+    "branch": 0.004,
+    "loki": 0.013
+   },
+   "p95": {
+    "main": 0.01,
+    "branch": 0.007,
+    "loki": 0.013
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.014
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.97,
+    "branch": 1.97,
+    "loki": 1.97
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.75
+  },
+  {
+   "shape": "label values env ending now",
+   "range": "7d",
+   "p50": {
+    "main": 0.005,
+    "branch": 0.007,
+    "loki": 0.014
+   },
+   "p95": {
+    "main": 0.011,
+    "branch": 0.032,
+    "loki": 0.02
+   },
+   "cold": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.012
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.33,
+    "branch": 1.33,
+    "loki": 1.33
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.71
+  },
+  {
+   "shape": "labels ending two days ago (control)",
+   "range": "1h",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.004,
+    "branch": 0.003,
+    "loki": 0.003
+   },
+   "cold": {
+    "main": 0.02,
+    "branch": 0.005,
+    "loki": 0.003
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.29,
+    "branch": 1.28,
+    "loki": 1.02
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "labels ending two days ago (control)",
+   "range": "6h",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.012
+   },
+   "cold": {
+    "main": 0.004,
+    "branch": 0.01,
+    "loki": 0.002
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 57.56,
+    "branch": 57.56,
+    "loki": 57.56
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "labels ending two days ago (control)",
+   "range": "24h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.001,
+    "loki": 0.006
+   },
+   "cold": {
+    "main": 0.011,
+    "branch": 0.012,
+    "loki": 0.006
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.13,
+    "branch": 1.13,
+    "loki": 1.13
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "labels ending two days ago (control)",
+   "range": "7d",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.007
+   },
+   "cold": {
+    "main": 0.015,
+    "branch": 0.013,
+    "loki": 0.005
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.3,
+    "branch": 1.3,
+    "loki": 3.16
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending two days ago (control)",
+   "range": "1h",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.004,
+    "branch": 0.003,
+    "loki": 0.006
+   },
+   "cold": {
+    "main": 0.014,
+    "branch": 0.017,
+    "loki": 0.004
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.92,
+    "branch": 1.4,
+    "loki": 1.4
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending two days ago (control)",
+   "range": "6h",
+   "p50": {
+    "main": 0.002,
+    "branch": 0.002,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.003,
+    "branch": 0.003,
+    "loki": 0.004
+   },
+   "cold": {
+    "main": 0.006,
+    "branch": 0.005,
+    "loki": 0.003
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.1,
+    "branch": 1.1,
+    "loki": 1.1
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending two days ago (control)",
+   "range": "24h",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.004
+   },
+   "p95": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.004
+   },
+   "cold": {
+    "main": 0.009,
+    "branch": 0.007,
+    "loki": 0.007
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 1.11,
+    "branch": 1.11,
+    "loki": 1.11
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "label values env ending two days ago (control)",
+   "range": "7d",
+   "p50": {
+    "main": 0.001,
+    "branch": 0.001,
+    "loki": 0.003
+   },
+   "p95": {
+    "main": 0.002,
+    "branch": 0.001,
+    "loki": 0.003
+   },
+   "cold": {
+    "main": 0.011,
+    "branch": 0.011,
+    "loki": 0.003
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 0.9,
+    "branch": 2.87,
+    "loki": 2.87
+   },
+   "stale": [
+    "main",
+    "branch",
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  }
+ ]
+}

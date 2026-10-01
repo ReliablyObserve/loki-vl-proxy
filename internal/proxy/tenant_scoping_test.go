@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -180,7 +181,7 @@ func TestTenantScoping_CacheIsolation_Labels(t *testing.T) {
 	data2, _ := resp2["data"].([]interface{})
 
 	if len(data1) > 0 && len(data2) > 0 {
-		if data1[0] == data2[0] {
+		if fmt.Sprint(data1) == fmt.Sprint(data2) {
 			t.Errorf("tenant A and B got same labels — cache not isolated: A=%v B=%v", data1, data2)
 		}
 	}

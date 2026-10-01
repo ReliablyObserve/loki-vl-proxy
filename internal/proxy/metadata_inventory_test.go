@@ -200,7 +200,9 @@ func (f *fakeVictoriaLogs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s, e := r.Form.Get("start"), r.Form.Get("end"); s != "" && e != "" {
 		a, _ := strconv.ParseInt(s, 10, 64)
 		b, _ := strconv.ParseInt(e, 10, 64)
-		f.spans = append(f.spans, time.Duration(b-a))
+		if r.URL.Path != "/select/logsql/query" { // row counts are not listing reads
+			f.spans = append(f.spans, time.Duration(b-a))
+		}
 		if time.Duration(b-a) >= time.Hour {
 			if f.long == nil {
 				f.long = map[string]int{}
@@ -378,6 +380,11 @@ func TestMetadataInventory_EqualsFullRangeScan(t *testing.T) {
 	}
 	if calls["/select/logsql/stream_field_names"] > 3 || scanned > 5*time.Minute {
 		t.Fatalf("shifted 7-day window scanned %s in %d calls (%v); want only its edges", scanned, calls["/select/logsql/stream_field_names"], spans)
+	}
+	// The row counts over the runs of empty buckets are separate calls: one
+	// per run, never one per bucket.
+	if calls["/select/logsql/query"] > 4 {
+		t.Fatalf("shifted 7-day window made %d row counts, want one per run of empty buckets", calls["/select/logsql/query"])
 	}
 	want, _ := full.fetchVLListing(ctx, "/select/logsql/stream_field_names", params(shifted))
 	if !reflect.DeepEqual(got, want) {

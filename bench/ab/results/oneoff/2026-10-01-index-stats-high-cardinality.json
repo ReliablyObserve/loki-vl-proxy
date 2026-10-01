@@ -1,0 +1,153 @@
+{
+ "label": "index-stats-high-cardinality",
+ "date": "2026-10-01",
+ "description": "GET /loki/api/v1/index/stats against one VictoriaLogs v1.52.0 holding 4.0M entries in 3.8M streams over 7 days (query {namespace=~\".+\"}); 32 calls at 8 concurrent per row, VictoriaLogs restarted before every row so peak RSS is per row. Direct rows call VictoriaLogs itself with the three candidate queries; proxy rows run the base build (hits), the PR head before this change (count_uniq(_stream_id)) and after it (count_uniq_hash(_stream_id) through the coalescing helper). Distinct = 32 windows shifted a minute apart; identical = one window 32 times. The identical 24h rows are answered from the proxy cache of the preceding scenario (0 VictoriaLogs calls).",
+ "streams": 3800000,
+ "entries": 4000000,
+ "vl_version": "v1.52.0",
+ "runs": 1,
+ "valid": true,
+ "direct_vl": [
+  {
+   "wall_s": 5.4,
+   "p50_ms": 1205,
+   "vl_cpu_s": 39.0,
+   "vl_peak_rss_mib": 1277,
+   "label": "direct-hits-7d"
+  },
+  {
+   "wall_s": 18.4,
+   "p50_ms": 4711,
+   "vl_cpu_s": 137.5,
+   "vl_peak_rss_mib": 6448,
+   "label": "direct-uniq-7d"
+  },
+  {
+   "wall_s": 10.6,
+   "p50_ms": 2589,
+   "vl_cpu_s": 79.0,
+   "vl_peak_rss_mib": 2365,
+   "label": "direct-hash-7d"
+  },
+  {
+   "wall_s": 1.5,
+   "p50_ms": 294,
+   "vl_cpu_s": 10.1,
+   "vl_peak_rss_mib": 960,
+   "label": "direct-hits-24h"
+  },
+  {
+   "wall_s": 2.3,
+   "p50_ms": 515,
+   "vl_cpu_s": 16.8,
+   "vl_peak_rss_mib": 1033,
+   "label": "direct-uniq-24h"
+  },
+  {
+   "wall_s": 1.7,
+   "p50_ms": 360,
+   "vl_cpu_s": 12.3,
+   "vl_peak_rss_mib": 866,
+   "label": "direct-hash-24h"
+  }
+ ],
+ "via_proxy": [
+  {
+   "vl_calls": 32,
+   "wall_s": 18.5,
+   "p50_ms": 4604,
+   "vl_cpu_s": 144.5,
+   "vl_peak_rss_mib": 660,
+   "label": "base-7d-distinct"
+  },
+  {
+   "vl_calls": 8,
+   "wall_s": 4.6,
+   "p50_ms": 0,
+   "vl_cpu_s": 36.3,
+   "vl_peak_rss_mib": 657,
+   "label": "base-7d-identical"
+  },
+  {
+   "vl_calls": 32,
+   "wall_s": 2.8,
+   "p50_ms": 688,
+   "vl_cpu_s": 21.5,
+   "vl_peak_rss_mib": 201,
+   "label": "base-24h-distinct"
+  },
+  {
+   "vl_calls": 0,
+   "wall_s": 0.8,
+   "p50_ms": 0,
+   "vl_cpu_s": 0.0,
+   "vl_peak_rss_mib": 18,
+   "label": "base-24h-identical"
+  },
+  {
+   "vl_calls": 32,
+   "wall_s": 25.1,
+   "p50_ms": 6137,
+   "vl_cpu_s": 195.0,
+   "vl_peak_rss_mib": 1928,
+   "label": "head-7d-distinct"
+  },
+  {
+   "vl_calls": 8,
+   "wall_s": 6.9,
+   "p50_ms": 0,
+   "vl_cpu_s": 54.1,
+   "vl_peak_rss_mib": 1881,
+   "label": "head-7d-identical"
+  },
+  {
+   "vl_calls": 32,
+   "wall_s": 3.8,
+   "p50_ms": 947,
+   "vl_cpu_s": 29.0,
+   "vl_peak_rss_mib": 430,
+   "label": "head-24h-distinct"
+  },
+  {
+   "vl_calls": 0,
+   "wall_s": 0.8,
+   "p50_ms": 0,
+   "vl_cpu_s": 0.0,
+   "vl_peak_rss_mib": 18,
+   "label": "head-24h-identical"
+  },
+  {
+   "vl_calls": 32,
+   "wall_s": 21.8,
+   "p50_ms": 5346,
+   "vl_cpu_s": 169.1,
+   "vl_peak_rss_mib": 1081,
+   "label": "after-7d-distinct"
+  },
+  {
+   "vl_calls": 1,
+   "wall_s": 2.4,
+   "p50_ms": 2,
+   "vl_cpu_s": 11.5,
+   "vl_peak_rss_mib": 932,
+   "label": "after-7d-identical"
+  },
+  {
+   "vl_calls": 32,
+   "wall_s": 3.6,
+   "p50_ms": 889,
+   "vl_cpu_s": 26.9,
+   "vl_peak_rss_mib": 288,
+   "label": "after-24h-distinct"
+  },
+  {
+   "vl_calls": 0,
+   "wall_s": 0.2,
+   "p50_ms": 2,
+   "vl_cpu_s": 0.0,
+   "vl_peak_rss_mib": 18,
+   "label": "after-24h-identical"
+  }
+ ],
+ "note": "count_uniq_hash is the approximate form (64-bit hash collisions): 3,804,858 streams against 3,804,992 for count_uniq on the same data (0.004%); Loki's own index stats stream count is a HyperLogLog estimate."
+}

@@ -51,7 +51,10 @@ import (
 // day buckets of a query without pipes carry the bucket's row count, read
 // before the scan; on revalidation a count (0.03-0.2 s per day for * on the
 // e2e stack, against 5-20 s for the scan) that still matches proves the
-// bucket unchanged, so its scan is not repeated.
+// bucket unchanged, so its scan is not repeated. Empty buckets of such a query
+// that ended within max-metadata-cache-freshness are confirmed on every
+// listing by one count per contiguous run (revalidateEmptyRuns), as Loki reads
+// that window live.
 // Rows in VictoriaLogs are append-only; retention drops whole days.
 
 const (
@@ -528,8 +531,9 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	// running: they finish and are cached, so the retry that follows a 429
 	// continues where this request stopped instead of starting over. Only
 	// the request's own context cancels them.
+	var rescan map[string]struct{}
 	if countable {
-		p.revalidateEmptyRuns(ctx, path, params, base, plan)
+		rescan = p.revalidateEmptyRuns(ctx, path, params, base, plan)
 	}
 	var group errgroup.Group
 	group.SetLimit(p.metadataInventoryParallelism)
@@ -544,7 +548,11 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			items, outcome, err := p.fetchInventorySegment(ctx, path, params, base, seg, countable, longListing)
+			forced := false
+			if seg.level >= 0 {
+				_, forced = rescan[inventoryBucketKey(base, seg)]
+			}
+			items, outcome, err := p.fetchInventorySegment(ctx, path, params, base, seg, countable, longListing, forced)
 			if err != nil {
 				failed.Store(true)
 				return err
@@ -630,15 +638,18 @@ func inventoryOutcome(scanned, revalidated, reused int) string {
 
 // fetchInventorySegment answers one planned segment: an edge from
 // VictoriaLogs, a bucket from the cache, its cached children, a confirming
-// row count, or a scan.
-func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params url.Values, base string, seg inventorySegment, countable, longListing bool) ([]vlValueHits, string, error) {
+// row count, or a scan. A forced bucket is one whose empty-run count found
+// rows during this listing: it is rescanned whatever its cached schedule says,
+// a decision kept in memory because another listing may rewrite the entry
+// between the count and this read.
+func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params url.Values, base string, seg inventorySegment, countable, longListing, forced bool) ([]vlValueHits, string, error) {
 	if seg.level < 0 {
 		items, err := p.fetchVLListingOnce(ctx, path, withTimeRange(params, seg.start, seg.end))
 		return items, "scanned", err
 	}
 	key := inventoryBucketKey(base, seg)
 	entry, ok := p.loadInventoryEntry(key)
-	if ok && p.inventoryEntryFresh(path, seg, entry) {
+	if ok && !forced && p.inventoryEntryFresh(path, seg, entry) {
 		return entry.items(), "cached", nil
 	}
 	flightKey := key
@@ -654,8 +665,10 @@ func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params u
 	}
 	fill := func() (interface{}, error) {
 		if ok {
-			if confirmed := p.revalidateInventoryEntry(ctx, key, entry, seg, params, countable); confirmed {
-				return result{entry.items(), "revalidated"}, nil
+			if !forced {
+				if confirmed := p.revalidateInventoryEntry(ctx, key, entry, seg, params, countable); confirmed {
+					return result{entry.items(), "revalidated"}, nil
+				}
 			}
 		} else if merged, composed := p.composeInventoryEntry(path, base, seg); composed {
 			if err := p.storeInventoryEntry(key, merged); err != nil {
@@ -663,7 +676,9 @@ func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params u
 			}
 			return result{merged.items(), "cached"}, nil
 		}
-		fresh, err := p.scanInventoryBucket(ctx, path, params, seg, countable && seg.level <= 1, longListing && seg.level == 0)
+		// An empty 5m or 1m bucket that an empty-run count found rows in is
+		// counted too (the run's count is cached), so it leaves the run.
+		fresh, err := p.scanInventoryBucket(ctx, path, params, seg, countable && (seg.level <= 1 || ok && len(entry.Values) == 0), longListing && seg.level == 0)
 		if err != nil {
 			return nil, err
 		}
@@ -713,42 +728,52 @@ func (p *Proxy) inventoryLiveWindow() time.Duration {
 	return time.Hour
 }
 
-// emptyRunBucket is an empty, count-checkable bucket of a plan: the entry that
-// holds its confirmation and the bucket itself.
+// emptyRunBucket is an empty bucket of a countable plan: the entry that holds
+// its confirmation and the bucket itself.
 type emptyRunBucket struct {
 	key   string
 	seg   inventorySegment
 	entry inventoryEntry
 }
 
-// revalidateEmptyRuns confirms the empty hour and day buckets of a plan that
-// are due, with one row count over each contiguous run of such buckets instead
-// of one count per bucket. A run that counts zero rows is unchanged: every
+// revalidateEmptyRuns confirms the empty buckets of a plan that ended within
+// the live window, with one row count over each contiguous run of such
+// buckets instead of one call per bucket, on every listing: Loki reads the
+// last max_metadata_cache_freshness live, and rows written with old timestamps
+// (a shipper outage, a replay) land in buckets cached empty a moment before.
+// A count is cheap for * (block headers) and for stream filters, but with a
+// field filter it reads the filtered column of every row in the run's range,
+// so it is not free there. A run that counts zero rows is unchanged: every
 // bucket in it is confirmed. A run that counts rows is halved until the
-// buckets that received rows are found; those are left unconfirmed, so the
-// per-bucket path rescans them, and the empty ones are confirmed. Dashboards
-// that cached empty hours during a shipper outage see the rows backfilled into
-// them after at most the negative TTL, for the cost of a few counts.
-func (p *Proxy) revalidateEmptyRuns(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment) {
+// buckets that received rows are found; those are returned, and the listing
+// rescans them now whatever their cached schedule says (the decision stays in
+// memory: another listing may rewrite the entries meanwhile), while the empty
+// ones are confirmed. Buckets
+// of every size take part: an empty 5m or 1m bucket carries no row count from
+// its scan, and one that holds rows its listing does not show (a values
+// listing of a field those rows lack) is rescanned once with its count and
+// leaves the run. The count must be taken during this listing; an entry is
+// rewritten only when its own schedule made it due, so a refresh adds one
+// count per run and no cache writes. A bucket stored empty with rows (rows
+// that lack the listed field) is not part of a run and follows the normal
+// schedule: rows that gain the field appear up to the negative TTL late.
+func (p *Proxy) revalidateEmptyRuns(ctx context.Context, path string, params url.Values, base string, plan []inventorySegment) map[string]struct{} {
 	now := cache.Now().UnixNano()
 	var run []emptyRunBucket
-	due := false
+	rescan := map[string]struct{}{}
 	flush := func() {
-		if due && len(run) > 0 {
-			p.confirmEmptyRun(ctx, params.Get("query"), run)
+		if len(run) > 0 {
+			p.confirmEmptyRun(ctx, path, params.Get("query"), run, now, rescan)
 		}
-		run, due = nil, false
+		run = nil
 	}
 	for _, seg := range plan {
 		var bucket emptyRunBucket
 		ok := false
-		if seg.level >= 0 && seg.level <= 1 {
+		if seg.level >= 0 {
 			key := inventoryBucketKey(base, seg)
-			if e, found := p.loadInventoryEntry(key); found && len(e.Values) == 0 && e.Rows == 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
+			if e, found := p.loadInventoryEntry(key); found && len(e.Values) == 0 && e.Rows <= 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
 				bucket, ok = emptyRunBucket{key: key, seg: seg, entry: e}, true
-				if !p.inventoryEntryFresh(path, seg, e) {
-					due = true
-				}
 			}
 		}
 		if !ok || (len(run) > 0 && run[len(run)-1].seg.end != seg.start) {
@@ -759,17 +784,13 @@ func (p *Proxy) revalidateEmptyRuns(ctx context.Context, path string, params url
 		}
 	}
 	flush()
+	return rescan
 }
 
-// confirmEmptyRun counts the rows of a contiguous run of empty buckets and
-// confirms the buckets that are still empty, see revalidateEmptyRuns.
-func (p *Proxy) confirmEmptyRun(ctx context.Context, query string, run []emptyRunBucket) {
-	notBefore := int64(0)
-	for _, b := range run {
-		if b.entry.Checked+1 > notBefore {
-			notBefore = b.entry.Checked + 1
-		}
-	}
+// confirmEmptyRun counts the rows of a contiguous run of empty buckets with a
+// count taken at or after notBefore (the start of the listing) and confirms
+// the buckets that are still empty, see revalidateEmptyRuns.
+func (p *Proxy) confirmEmptyRun(ctx context.Context, path, query string, run []emptyRunBucket, notBefore int64, rescan map[string]struct{}) {
 	span := inventorySegment{start: run[0].seg.start, end: run[len(run)-1].seg.end, level: -1}
 	rows, at, err := p.countInventoryRows(ctx, query, span, notBefore)
 	if err != nil {
@@ -777,17 +798,23 @@ func (p *Proxy) confirmEmptyRun(ctx context.Context, query string, run []emptyRu
 	}
 	if rows == 0 {
 		for _, b := range run {
-			b.entry.Checked = at
+			if b.entry.Rows == 0 && p.inventoryEntryFresh(path, b.seg, b.entry) {
+				continue // served as cached: nothing to rewrite
+			}
+			b.entry.Rows, b.entry.Checked = 0, at
 			_ = p.storeInventoryEntry(b.key, b.entry)
 		}
 		return
 	}
 	if len(run) == 1 {
-		return // this bucket received rows: the per-bucket path rescans it
+		// This bucket received rows: the per-bucket path rescans it now, even
+		// if it was confirmed a moment ago.
+		rescan[run[0].key] = struct{}{}
+		return
 	}
 	mid := len(run) / 2
-	p.confirmEmptyRun(ctx, query, run[:mid])
-	p.confirmEmptyRun(ctx, query, run[mid:])
+	p.confirmEmptyRun(ctx, path, query, run[:mid], notBefore, rescan)
+	p.confirmEmptyRun(ctx, path, query, run[mid:], notBefore, rescan)
 }
 
 // inventoryEntryFresh reports whether a bucket entry may be served without
@@ -807,12 +834,13 @@ func (p *Proxy) inventoryEntryFresh(path string, seg inventorySegment, e invento
 	// An empty bucket is revalidated after the negative TTL while it is recent:
 	// rows may not be searchable yet, or may be backfilled with old timestamps
 	// (a shipper outage). Loki reads the last max-metadata-cache-freshness
-	// live, so an hour or day bucket that carries a row count (countable
-	// query) keeps the negative TTL for that whole window: its revalidation is
-	// one count over the run of such buckets (revalidateEmptyRuns), not a scan
-	// each. Other empty buckets (5m and 1m buckets, word, phrase or pipe
-	// filters) keep it for the last hour only; older ones follow the age
-	// schedule.
+	// live: for a countable query every empty bucket in that window is
+	// confirmed on each listing by one count over its run
+	// (revalidateEmptyRuns), so this schedule applies only when that count
+	// fails. An hour or day bucket that carries a row count then keeps the
+	// negative TTL for the whole window; other empty buckets (5m and 1m
+	// buckets, word, phrase or pipe filters) keep it for the last hour only;
+	// older ones follow the age schedule.
 	if len(e.Values) == 0 {
 		window := time.Hour
 		if e.Rows >= 0 && seg.level <= 1 {
@@ -997,15 +1025,42 @@ func (p *Proxy) countInventoryRows(ctx context.Context, query string, seg invent
 			return c.Rows, c.At, nil
 		}
 	}
-	at := cache.Now().UnixNano()
-	rows, err := p.countInventoryRowsOnce(ctx, query, seg)
-	if err != nil {
-		return 0, 0, err
+	count := func() (inventoryCount, error) {
+		at := cache.Now().UnixNano()
+		rows, err := p.countInventoryRowsOnce(ctx, query, seg)
+		if err != nil {
+			return inventoryCount{}, err
+		}
+		c := inventoryCount{Rows: rows, At: at}
+		if raw, err := json.Marshal(c); err == nil {
+			p.cache.SetLocalOnlyWithTTL(key, raw, p.inventoryBaseTTL("/select/logsql/stream_field_names"))
+		}
+		return c, nil
 	}
-	if raw, err := json.Marshal(inventoryCount{Rows: rows, At: at}); err == nil {
-		p.cache.SetLocalOnlyWithTTL(key, raw, p.inventoryBaseTTL("/select/logsql/stream_field_names"))
+	// Listings that need the same count at the same moment share one call
+	// (Explore's label browser asks for every field's values at once). A
+	// follower takes the leader's count only when it was taken at or after the
+	// follower's notBefore; otherwise it joins the next flight (a later count
+	// serves every follower that started before it) and counts itself after
+	// three rounds, as it also does when the leader's request went away.
+	for attempt := 0; attempt < 3; attempt++ {
+		led := false
+		v, err, _ := p.inventoryCountGroup.Do(key, func() (interface{}, error) {
+			led = true
+			return count()
+		})
+		if err == nil {
+			if c := v.(inventoryCount); led || c.At >= notBefore {
+				return c.Rows, c.At, nil
+			}
+			continue // an older leader's count: join the next flight, started later
+		}
+		if led || ctx.Err() != nil || !errors.Is(err, context.Canceled) {
+			return 0, 0, err
+		}
 	}
-	return rows, at, nil
+	c, err := count()
+	return c.Rows, c.At, err
 }
 
 // countInventoryRowsOnce asks VictoriaLogs for the count.

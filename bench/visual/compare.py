@@ -8,8 +8,9 @@ responses of the main proxy, the PR proxy and Loki are matched by request
 (refId, expr, query type, or resource URL) and compared: series set, per-point
 values (relative tolerance 1e-9) and timestamps for metric frames, a content
 hash for everything else. main vs PR must be identical; vs Loki is compared
-only for ranges Loki holds (--loki-seconds). Writes OUT/compare.md and
-OUT/compare.json.
+only for ranges Loki holds (--loki-seconds), and a difference from Loki that is
+by design is listed as explained (explain_vs_loki) instead of counted. Writes
+OUT/compare.md and OUT/compare.json.
 """
 import argparse
 import glob
@@ -67,7 +68,8 @@ def frames_of(resp):
     return out
 
 
-def records(path):
+def records(path, raw=None):
+    """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order."""
     d = load_json(path)
     recs = defaultdict(list)
     for r in d["records"]:
@@ -76,13 +78,18 @@ def records(path):
                 key = ("query", q.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
                        digest(strip(q)))
                 recs[key].append(frames_of(r["response"]) if r["status"] == 200 else {("status", str(r["status"])): ("error", r["status"])})
+                if raw is not None:
+                    raw[key].append(((r["response"] or {}).get("results") or {}).get(q.get("refId")) if r["status"] == 200 else None)
         else:
             key = ("resource", re.sub(r"/api/datasources/uid/[^/]+", "/api/datasources/uid/*", r["url"].split("&_=")[0]))
             body = r["response"]
+            if raw is not None:
+                raw[key].append(body if r["status"] == 200 else None)
             if "/resources/patterns" in r["url"] and isinstance(body, dict):
                 # mined from a sample of the rows: compare the pattern set, not the sample counts
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
-            rows = len(body.get("data") or []) if isinstance(body, dict) and isinstance(body.get("data"), list) else (len(body) if isinstance(body, list) else 0)
+            lists = [body.get(k) for k in ("data", "fields", "detectedLabels")] if isinstance(body, dict) else [body]
+            rows = next((len(x) for x in lists if isinstance(x, list)), 0)
             recs[key].append({"body": ("other", hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     return d.get("settled", False), recs
 
@@ -150,23 +157,22 @@ def nonzero(fr):
 
 
 def pairs(a, b):
-    """Pair the answers of one request by content, then the leftovers in order; (x, y) with None for a missing side."""
-    left, right, out = list(a), list(b), []
-    seen = {}
-    for j, y in enumerate(right):
+    """Pair the answers of one request by content, then the leftovers in order; (i, j) indices, None for a missing side."""
+    out, seen = [], {}
+    for j, y in enumerate(b):
         seen.setdefault(digest(repr(sorted(y.items(), key=str))), []).append(j)
     taken, rest = set(), []
-    for x in left:
+    for i, x in enumerate(a):
         idx = seen.get(digest(repr(sorted(x.items(), key=str))))
         if idx:
             j = idx.pop(0)
             taken.add(j)
-            out.append((x, right[j]))
+            out.append((i, j))
         else:
-            rest.append(x)
-    rest_right = [y for j, y in enumerate(right) if j not in taken]
-    for i in range(max(len(rest), len(rest_right))):
-        out.append((rest[i] if i < len(rest) else None, rest_right[i] if i < len(rest_right) else None))
+            rest.append(i)
+    rest_right = [j for j in range(len(b)) if j not in taken]
+    for n in range(max(len(rest), len(rest_right))):
+        out.append((rest[n] if n < len(rest) else None, rest_right[n] if n < len(rest_right) else None))
     return out
 
 
@@ -181,25 +187,161 @@ def nondeterministic(diff):
     return any(s in diff for s in NONDETERMINISTIC)
 
 
-def compare(left, right, lenient=False):
+def compare(left, right, lenient=False, explain=None):
+    """(requests, identical, differences, series, one-sided, explained) of two sides' records.
+
+    explain: (raw left, raw right) of the records, to ask explain_vs_loki why a difference is by design; such a
+    difference goes to `explained` with its reason instead of the differences."""
     keys = sorted(set(left) | set(right), key=str)
     n = ok = missing = 0
-    diffs, series = [], 0
+    diffs, explained, series = [], [], 0
     for k in keys:
-        for xa, xb in pairs(left.get(k, []), right.get(k, [])):
-            if xa is None or xb is None:
+        la, lb = left.get(k, []), right.get(k, [])
+        for i, j in pairs(la, lb):
+            if i is None or j is None:
                 missing += 1
-                diffs.append(f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if xb is None else 'right'})")
+                text = f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if j is None else 'right'})"
+                reason = explain_one_sided(k) if explain else None
+                if reason:
+                    explained.append(f"{text} -- explained: {reason}")
+                else:
+                    diffs.append(text)
                 continue
             n += 1
+            xa, xb = la[i], lb[j]
             x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
             series += len(xa)
             why = same(x, y)
-            if why:
-                diffs.append(f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}")
-            else:
+            if not why:
                 ok += 1
-    return n, ok, diffs, series, missing
+                continue
+            text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
+            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain else None
+            if reason:
+                explained.append(f"{text} -- explained: {reason}")
+            else:
+                diffs.append(text)
+    return n, ok, diffs, series, missing, explained
+
+
+# Differences from Loki that are by design. Each rule takes the PR's and Loki's answer to one request, removes only
+# the documented difference from both and requires the rest to match exactly; it returns the reason, or None.
+EXTRACTED = ("Loki's _extracted suffix for a key named like a stream label (structured metadata: open, owner decision "
+             "pending, profiles/structured-metadata-label-collision; detected_fields: documented deviation)")
+
+
+def _extracted(label):
+    return str(label or "").endswith("_extracted")
+
+
+def _envelope(a, b):
+    """Keys only the proxy's answer carries (status and data mirrors), as a note."""
+    extra = sorted(set(a) - set(b)) if isinstance(a, dict) and isinstance(b, dict) else []
+    return f"the proxy also returns {', '.join(extra)}" if extra else ""
+
+
+def _join(*notes):
+    return "; ".join(x for x in notes if x) or None
+
+
+def _detected_fields(a, b):
+    def view(body):
+        fields = [json.dumps(f, sort_keys=True) for f in (body.get("fields") or []) if not _extracted(f.get("label"))]
+        return sorted(fields), body.get("limit")
+    if view(a) != view(b):
+        return None
+    loki_fields = [f.get("label") for f in (b.get("fields") or [])]
+    order = [f.get("label") for f in (a.get("fields") or [])] != loki_fields
+    return _join(EXTRACTED if any(_extracted(x) for x in loki_fields) else "", _envelope(a, b),
+                 "Loki lists fields in no fixed order" if order else "")
+
+
+def _detected_labels(a, b):
+    def labels(body):
+        return {x.get("label"): x.get("cardinality") for x in (body.get("detectedLabels") or [])}
+    pa, lb = labels(a), labels(b)
+    if not lb or sorted(pa) != sorted(lb):
+        return None
+    cardinality = "" if pa == lb else ("sampled cardinality: Loki counts every stream its ingesters hold, not the requested window "
+                                      "(pkg/ingester/instance.go LabelsWithValues), the proxy the window's last 5 minutes "
+                                      "(metadataMaxFieldNamesWindow); the label names match")
+    order = [x.get("label") for x in (a.get("detectedLabels") or [])] != [x.get("label") for x in (b.get("detectedLabels") or [])]
+    return _join(cardinality, _envelope(a, b), "Loki lists labels in no fixed order" if order else "")
+
+
+def _index_stats(a, b):
+    if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:
+        return None
+    return "bytes and chunks are Loki's chunk accounting, which VictoriaLogs has no equivalent of; streams and entries match"
+
+
+def _index_volume(a, b):
+    def series(body):
+        return sorted(json.dumps(x.get("metric"), sort_keys=True) for x in ((body.get("data") or {}).get("result") or []))
+    if not series(b) or series(a) != series(b):
+        return None
+    return ("volume bytes: VictoriaLogs sums stored line lengths, Loki its chunks' ingested bytes with structured metadata "
+            "(registry loki_api_v1_index_volume, vl_cannot); the series match")
+
+
+def _drilldown_limits(a, b):
+    if sorted((a.get("limits") or {})) != sorted((b.get("limits") or {})):
+        return None
+    return "configuration probe: each backend publishes its own limits, version and settings (the proxy's pattern persistence)"
+
+
+RESOURCE_RULES = (("/resources/detected_fields", _detected_fields), ("/resources/detected_labels", _detected_labels),
+                  ("/resources/index/stats", _index_stats), ("/resources/index/volume", _index_volume),
+                  ("/resources/drilldown-limits", _drilldown_limits))
+
+
+def _log_frames(a, b):
+    """Log frames that match once Loki's _extracted labels are set aside (and the row id, which Grafana derives from the labels)."""
+    fa, fb = a.get("frames") or [], b.get("frames") or []
+    if not fa or len(fa) != len(fb):
+        return None
+    changed = False
+    for x, y in zip(fa, fb):
+        names = [f.get("name") for f in x["schema"]["fields"]]
+        if names != [f.get("name") for f in y["schema"]["fields"]] or not {"labels", "labelTypes"} <= set(names):
+            return None
+        if signature(x["schema"]) != signature(y["schema"]):
+            return None
+        cx, cy = dict(zip(names, x["data"]["values"])), dict(zip(names, y["data"]["values"]))
+        if any(cx[name] != cy[name] for name in names if name not in ("labels", "labelTypes", "id")):
+            return None
+        for lx, tx, ly, ty in zip(cx["labels"], cx["labelTypes"], cy["labels"], cy["labelTypes"]):
+            lx, tx, ly, ty = dict(lx or {}), dict(tx or {}), dict(ly or {}), dict(ty or {})
+            for k in [k for k in ly if _extracted(k)]:
+                base = k[: -len("_extracted")]
+                ly.pop(k)
+                ty.pop(k, None)
+                if tx.get(base) == "S" and ty.get(base) == "I":
+                    tx[base] = "I"  # the proxy types the stream label as the metadata it collides with
+                changed = True
+            if (lx, tx) != (ly, ty):
+                return None
+    return EXTRACTED if changed else None
+
+
+def explain_one_sided(key):
+    """Why a request only one side issued is by design, or None. Logs Drilldown breaks a field down by the name
+    detected_fields gives it, so a field only Loki lists under its _extracted name is broken down on Loki only."""
+    if key[0] == "query" and re.search(r"\bby \(\w+_extracted\)", str(key[2] or "")):
+        return EXTRACTED
+    return None
+
+
+def explain_vs_loki(key, a, b):
+    """Why the PR's answer a differs from Loki's answer b by design, or None (a real difference)."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return None
+    if key[0] == "query":
+        return _log_frames(a, b)
+    for fragment, rule in RESOURCE_RULES:
+        if fragment in key[1]:
+            return rule(a, b)
+    return None
 
 
 def tail_entries(path):
@@ -256,22 +398,32 @@ def main():
                              loki_compared=True, points_main=n, points_pr=n, points_loki=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
                              settled_pr=True, errors_pr=[], errors_main=[], loki_missing=False))
             continue
-        sm, m = records(os.path.join(d, "main.json"))
-        sp, p = records(os.path.join(d, "pr.json"))
+        raw = {n: defaultdict(list) for n in ("main", "pr", "loki")}
+        sm, m = records(os.path.join(d, "main.json"), raw["main"])
+        sp, p = records(os.path.join(d, "pr.json"), raw["pr"])
         settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
-        sl, l = records(os.path.join(d, "loki.json")) if has_loki else (True, {})
-        n, ok, diffs, series, miss = compare(m, p)
+        sl, l = records(os.path.join(d, "loki.json"), raw["loki"]) if has_loki else (True, {})
+        n, ok, diffs, series, miss, _ = compare(m, p)
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
+        explained, lnondet = [], []
         if loki_ok:
-            ln, lok, ldiffs, _, lmiss = compare(p, l)
-            _, lok2, ldiffs2, _, _ = compare(p, l, lenient=True)
-            _, _, mdiffs, _, _ = compare(m, l, lenient=True)
-            vs = f"{lok2}/{ln} identical" + (f" ({lok}/{ln} counting zero-filled points)" if lok != lok2 else "") + (f", {lmiss} request(s) on one side only" if lmiss else "")
+            ln, lok, _, _, _, _ = compare(p, l)
+            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]))
+            _, _, mdiffs, _, _, _ = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]))
+            # Patterns are mined from the queries the proxy served (and this Loki has no pattern answer): reported, not counted.
+            lnondet = [x for x in ldiffs2 if nondeterministic(x)]
+            ldiffs2 = [x for x in ldiffs2 if not nondeterministic(x)]
+            mdiffs = [x for x in mdiffs if not nondeterministic(x)]
+            vs = (f"{lok2}/{ln} identical" + (f" ({lok}/{ln} counting zero-filled points)" if lok != lok2 else "")
+                  + (f", {len(explained)} explained" if explained else "") + (f", {len(lnondet)} history-dependent" if lnondet else "")
+                  + (f", {len(ldiffs2)} unexplained" if ldiffs2 else "")
+                  + (f", {lmiss} request(s) on one side only" if (lmiss := sum("on one side" in x for x in ldiffs2)) else ""))
         else:
-            ln, lok, ldiffs, ldiffs2, mdiffs, vs = 0, 0, [], [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
+            ln, lok, ldiffs2, mdiffs, vs = 0, 0, [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
                          settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=[x for x in diffs if not nondeterministic(x)], main_pr_nondet=[x for x in diffs if nondeterministic(x)], loki_diffs=ldiffs2 if loki_ok else [],
+                         loki_explained=explained, loki_nondet=lnondet,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
                          settled_pr=bool(sp), errors_pr=errors(p, allowed), errors_main=errors(m, allowed),
@@ -280,9 +432,10 @@ def main():
     for r in rows:
         md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")
     for r in rows:
-        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r["loki_diffs"]:
+        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
             md += ["", f"### {r['page']} {r['range']}"]
             md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
+            md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
     print("\n".join(md[:200]))

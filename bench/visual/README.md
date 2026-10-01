@@ -10,11 +10,11 @@ the e2e stack):
 | piece | what |
 |---|---|
 | `stack.py up` | Loki + VictoriaLogs in Docker (via `bench/ab/stack.py`), the **main** proxy (built from `--main-ref`, default `origin/main`) and the **PR** proxy (built from the working tree) as host processes with the flags of the e2e `loki-vl-proxy-patterns-autodetect` service (the profile Logs Drilldown opens by default), and Grafana with the pinned plugins of the e2e compose. Datasources: `vp-main` "Loki (via VL proxy main)", `vp-pr` "Loki (via VL proxy)", `vp-loki` "Loki (direct)". |
-| seeding | the e2e log generator's backfill, once, ending at a fixed minute (`state.json: end`); no live generator, so the data is static and all datasources see the same window. VictoriaLogs gets `--hours` (default 24; use 168 for 7d), Loki only the last `--loki-hours` (default 1.5: Loki on a laptop stalls on longer backfills), so ranges beyond that compare main vs PR only. |
+| seeding | the e2e log generator's backfill, once, ending at a fixed minute (`state.json: end`); no live generator, so the data is static and all datasources see the same window. VictoriaLogs gets `--hours` (default 24; use 168 for 7d), Loki only the last `--loki-hours` (default 1.5: Loki on a laptop stalls on longer backfills), so ranges beyond that compare main vs PR only. Loki runs with `docker-compose.visual.yml` on top of the e2e config: the seed is flushed (Loki's index/stats counts flushed chunks only) and the flushed chunks stay in its ingesters (`-ingester.chunks-retain-period`), because Loki answers detected_labels from the streams its ingesters hold and answered a flushed seed with `{}`. |
 | `spec.json` | the page list (profile `drilldown+explore`): Explore graphs and log view for the query shapes under test, the label browser, and the Logs Drilldown landing, service logs, labels, label values, fields, field values and patterns pages, and Explore Live tail (plain and `| json` filtered) through the proxies as Loki-type datasources. Edit `pages` for a PR; query shapes come from `bench/ab/shapes.json`. |
 | `capture.spec.ts` | Playwright: per page, range and datasource, opens the page with an absolute window, waits for the backend traffic to settle, saves a screenshot and every `/api/ds/query` body and response plus datasource resource calls (so Drilldown's internal queries are covered). |
 | `stack.py live-start` / `live-stop` | the e2e generator in live mode, writing every line to both Loki and VictoriaLogs (mirrored) so Live tail sees the same stream on all three datasources. Start it only around the tail capture; static ranges are unaffected (they end at the seed end). |
-| `compare.py` | matches the captured requests of main, PR and Loki and compares series sets, point values (rel. 1e-9) and timestamps; main vs PR must be identical. Loki is compared for the ranges it holds. Writes `compare.md` / `compare.json`. |
+| `compare.py` | matches the captured requests of main, PR and Loki and compares series sets, point values (rel. 1e-9) and timestamps; main vs PR must be identical. Loki is compared for the ranges it holds. A difference from Loki that is by design is listed as *explained* with its reason, never counted: each rule removes only that difference and the rest must match exactly (detected_fields and log labels: Loki's `_extracted` suffix and the proxy's `status`/`data` mirrors; detected_labels: sampled cardinality (Loki counts every stream its ingesters hold, the proxy samples the last 5 minutes), the names must match; index/stats: bytes and chunks, streams and entries must match; index/volume: byte values, the series must match; drilldown-limits: each backend's own configuration). Patterns are *history-dependent* (mined from the queries the proxy served) and listed apart. Writes `compare.md` / `compare.json`. |
 | `montage.py` | `montage/<page>-<range>.png` (main, PR, Loki side by side, downscaled, at most 300 KB each) and `pixeldiff.json` (share of pixels that differ main vs PR). |
 | `plan.py`, `ci_run.py`, `visual_comment.py`, `publish.py` | the per-PR CI run, see [In CI](#in-ci). |
 
@@ -54,6 +54,18 @@ are for the eye. A Grafana whose Loki plugin process dies under memory pressure
 (very large breakdowns over 7d) answers `plugin unavailable`; the capture
 repeats such a page load up to three times, and a request that still fails is
 listed by `compare.py` as one-sided.
+
+Logs Drilldown (2.5.2) crashes a breakdown page with Grafana's "Plugin failed to
+load" when a breakdown query is answered before the page's first time-series
+panel module has loaded (the app's legend sync calls the panel's field-config
+update while the panel plugin is still missing). A fresh browser context loads
+that module on every capture, so a fast answer, such as a proxy cache hit on a
+re-load, loses the race on any datasource, Loki direct included. The capture
+therefore lets the data queries of a Drilldown page wait for that module (at
+most 3 s each); the requests and answers are unchanged. A page that still shows
+a banner is loaded again in a fresh context, and the error behind the banner
+(the boundary's "Details") and the browser console errors are saved with the
+capture (`ui.details`, `errors`) and named in the comment.
 
 ## In CI
 
@@ -102,7 +114,8 @@ data for the range (15m and 1h):
 |---|---|
 | the PR matches Loki, the base did not | pass: "improved (closer to Loki)" |
 | the base matched Loki, the PR diverges | fail: "regressed vs Loki" (the label does not excuse it) |
-| neither matches Loki, or Loki has no data for the range (6h) | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
+| Loki has no data for the range (6h), and every difference matches one the same page proved closer to Loki at a shorter range (timestamps and ids ignored) | pass, "improved", with a note |
+| neither matches Loki, or Loki has no data for the range and a difference was not proven at a shorter range | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
 
 Adding or removing that label re-runs the workflow. Also failing, on the PR side:
 
@@ -121,7 +134,7 @@ Adding or removing that label re-runs the workflow. Also failing, on the PR side
 Warnings only: a pixel diff above 3% (header and time-picker noise stays below), a Loki
 or base side that did not settle, a missing Loki capture for a range Loki holds, a capture
 with no data on either side. Differences from Loki that the base has too are counted and
-never fail.
+never fail; explained (by-design) and history-dependent ones are listed, not counted.
 
 **Capture details.** Matching of requests is by the whole request body without its
 volatile fields (datasource uid, request id) so a changed query option is a different

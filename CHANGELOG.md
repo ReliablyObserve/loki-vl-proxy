@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Log queries without a parser no longer return the keys of a JSON line as
+  parsed labels, like Loki (visible change in the default profile).** When
+  VictoriaLogs keeps the original JSON line in `_msg` next to the stored
+  fields (producers that wrap the line, such as an OTel collector's `body`
+  or a JSON shipper that sets `_msg`), the Loki-compatible profile
+  (underscore labels, translated metadata) reported every stored field whose
+  key also appears in that line as a `parsed` label on a plain selector, which
+  Grafana's log details and Logs Drilldown showed as parsed fields Loki only
+  returns after `| json`; a nested line object (`{"service":{"name":...}}`,
+  stored as `service.name`) also turned the `service_name` stream label into
+  structured metadata. A query with no stage that adds labels (a parser of
+  any kind or `label_format`) now leaves those fields out, on the buffered,
+  streamed and windowed response paths; with `| json` they are parsed labels,
+  and structured metadata stays structured metadata on the streamed path too,
+  where it was reported as parsed. Dashboards or clients that read those
+  fields from a plain selector's response must add `| json` as against Loki.
+  Not changed yet: a plain Loki push of a JSON line, whose keys VictoriaLogs
+  unpacked into columns (`_msg` is "missing _msg field..."), still lists those
+  keys; and `line_format` and per-stage extraction (`json` with an expression
+  list, `regexp`, `pattern`, `label_format`, `logfmt` on a JSON line) still
+  expose every key of the line (both pre-existing; follow-up).
+
+### Fixed
+
+- **Labels and label values list rows written with old timestamps into time
+  buckets cached empty a moment before, like Loki.** A `/labels` or
+  `/label/{name}/values` request ending within `-max-metadata-cache-freshness`
+  (24h) is answered from the time-bucketed inventory, and an empty bucket
+  stayed cached after rows were written into it: an hour or day bucket for up
+  to the negative TTL (30s) after its last check, and a 5-minute or 1-minute
+  bucket that ended more than an hour ago for 15 minutes to an hour. Rows
+  backfilled after a shipper outage or replayed from an archive were missing
+  from Explore's label browser and from Logs Drilldown until then, while Loki,
+  which reads the last 24h live, listed them at once; the e2e fixture that
+  writes rows one to two hours old failed whenever the test before it had
+  cached those hours.
+  For a query of stream and field filters only, every empty bucket in the
+  window (day, hour, 5-minute or minute) is now confirmed on each listing by
+  one row count per contiguous run of empty buckets (cheap for `*` and stream
+  filters, but with a field filter it reads the filtered column of every row in
+  the run's range, so it is not free there); concurrent listings share a count
+  when it is recent enough for each of them; a run that received rows is halved
+  to find the buckets that did, and those are rescanned at once. Empty buckets of queries with word,
+  phrase or pipe filters, and late rows in sealed non-empty buckets, keep the
+  revalidation schedule. A bucket stored empty with rows that lack the listed
+  field is not part of a run: rows that gain the field appear up to the
+  negative TTL late.
+
+- **detected_fields lists structured metadata beside a JSON line with parsers
+  null, like Loki.** OTel metadata pushed with a JSON line (`trace_id`,
+  `k8s_pod_name`, `service_version`, ...) was listed with `parsers: ["json"]`
+  and a jsonPath, so Logs Drilldown's Fields tab built `| json k8s_pod_name=...`
+  breakdowns where Loki builds `| k8s_pod_name!=""`. A stored field beside a
+  JSON line that does not hold its key is now structured metadata; a field
+  seen beside a plain line keeps the JSON inference VictoriaLogs' own JSON
+  unpacking needs.
+- **`/labels` answers sorted on the first, uncached request, like Loki.**
+  VictoriaLogs lists stream field names by hits and the first answer kept that
+  order; the cached answer was already sorted.
+- **index/stats counts the entries and streams of the requested window, like
+  Loki.** It asked `/select/logsql/hits` with a 1h step, which widens the window
+  to whole hours (a 1h window off the hour counted 395,087 entries where Loki
+  and VictoriaLogs hold 289,279) and has no stream count, so `streams` was
+  always 1. One `stats count(), count_uniq_hash(_stream_id)` row over the
+  window now gives both (available on every supported VictoriaLogs version;
+  `count_uniq_hash` keeps one 64-bit hash per stream, where `count_uniq` cost
+  3x the CPU and 4.6x the peak memory of the old call at millions of streams
+  over a week), and identical concurrent requests share one call; `chunks`
+  is the stream count and `bytes` stays an estimate, since VictoriaLogs has no
+  chunks or ingested-bytes accounting.
+
 ## [1.104.0] - 2026-10-01
 
 ### Added
