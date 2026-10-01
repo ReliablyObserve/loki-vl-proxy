@@ -31,6 +31,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "ab"))
 import stack as ab  # noqa: E402
+from vio import dump_json, load_json, write_text  # noqa: E402
 
 # The profile of the datasource Logs Drilldown opens by default in the e2e stack.
 SERVICE = "loki-vl-proxy-patterns-autodetect"
@@ -95,9 +96,12 @@ def up(a):
     st = ab.Stack(a.project, PORTS["loki"], PORTS["vl"])
     state = dict(project=a.project, ports=PORTS, pids={})
     sp = os.path.join(a.out, "state.json")
-    old = json.load(open(sp)) if a.skip_seed and os.path.exists(sp) else {}
+    old = load_json(sp) if a.skip_seed and os.path.exists(sp) else {}
     stop_proxies(old)  # a re-run replaces the proxies the earlier one started
-    save = lambda: json.dump(state, open(sp, "w"), indent=1)  # noqa: E731
+
+    def save():
+        dump_json(sp, state)
+
     save()
     try:  # a stack that is already up (a retry after a slow Loki start) is reused
         ab.wait_http(f"{st.vl}/health", 3, "VictoriaLogs")
@@ -132,7 +136,7 @@ def up(a):
     image, plugins, unsigned = plugins_and_image(trees["pr"])
     gdir = os.path.join(os.path.abspath(a.out), "grafana")
     os.makedirs(gdir, exist_ok=True)
-    open(os.path.join(gdir, "datasources.yaml"), "w").write(datasources())
+    write_text(os.path.join(gdir, "datasources.yaml"), datasources())
     name = f"{a.project}-grafana"
     sh("docker", "rm", "-f", name, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     sh("docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{PORTS['grafana']}:3000",
@@ -161,7 +165,7 @@ def stop_proxies(state):
 def live(a):
     """start/stop the log generator in live mode: every line goes to Loki and VictoriaLogs (mirrored), for Live tail."""
     sp = os.path.join(a.out, "state.json")
-    state = json.load(open(sp))
+    state = load_json(sp)
     if a.cmd == "live-stop":
         pid = state.pop("live_pid", None)
         if pid:
@@ -176,12 +180,12 @@ def live(a):
             proc = subprocess.Popen([sys.executable, ab.GENERATOR], cwd=ab.ROOT, env=env, stdout=f,
                                     stderr=subprocess.STDOUT, start_new_session=True)
         state["live_pid"] = proc.pid
-    json.dump(state, open(sp, "w"), indent=1)
+    dump_json(sp, state)
 
 
 def down(a):
     sp = os.path.join(a.out, "state.json")
-    state = json.load(open(sp)) if os.path.exists(sp) else {}
+    state = load_json(sp) if os.path.exists(sp) else {}
     project = state.get("project", a.project)
     stop_proxies(state)
     if state.get("live_pid"):

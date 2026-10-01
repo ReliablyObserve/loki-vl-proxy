@@ -9,13 +9,20 @@ OUT/montage/<page>-<range>.png (downscaled, palette PNG) and OUT/pixeldiff.json
 small threshold; 0.0 = identical).
 """
 import glob
-import json
 import os
 import sys
 
 from PIL import Image, ImageChops, ImageDraw
 
+
+from vio import dump_json  # noqa: E402
+
 W = 640  # width of each panel in the montage
+
+
+def load_image(path):
+    with Image.open(path) as im:
+        return im.convert("RGB")
 
 
 def label(img, text):
@@ -40,7 +47,7 @@ def main():
     scores = {}
     for d in sorted(glob.glob(os.path.join(out, "shots", "*", "*"))):
         page, rng = d.split(os.sep)[-2:]
-        imgs = {n: Image.open(os.path.join(d, f"{n}.png")).convert("RGB") for n in ("main", "pr", "loki") if os.path.exists(os.path.join(d, f"{n}.png"))}
+        imgs = {n: load_image(os.path.join(d, f"{n}.png")) for n in ("main", "pr", "loki") if os.path.exists(os.path.join(d, f"{n}.png"))}
         if "main" not in imgs or "pr" not in imgs:
             continue
         if "loki" not in imgs:  # not captured for this range (more history than Loki holds)
@@ -55,7 +62,7 @@ def main():
             m.paste(t, (i * (W + 4), 0))
         m.quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(
             os.path.join(out, "montage", f"{page}-{rng}.png"), optimize=True)
-    json.dump(scores, open(os.path.join(out, "pixeldiff.json"), "w"), indent=1)
+    dump_json(os.path.join(out, "pixeldiff.json"), scores)
     for k, v in scores.items():
         print(f"{k}: {v}")
 

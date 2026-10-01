@@ -21,6 +21,8 @@ import re
 import sys
 from collections import defaultdict
 
+from vio import dump_json, load_json, write_text
+
 
 def frames_of(resp):
     out = {}
@@ -40,7 +42,7 @@ def frames_of(resp):
 
 
 def records(path):
-    d = json.load(open(path))
+    d = load_json(path)
     recs = defaultdict(list)
     for r in d["records"]:
         if "/api/ds/query" in r["url"]:
@@ -111,7 +113,7 @@ def compare(left, right, lenient=False):
 def tail_entries(path):
     """{(ts, line): label keys} of every entry the Live tail websockets delivered."""
     out = {}
-    for f in json.load(open(path)).get("frames", []):
+    for f in load_json(path).get("frames", []):
         if "/loki/api/v1/tail" not in f["url"]:
             continue
         try:
@@ -148,7 +150,7 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--loki-seconds", type=int, default=5400)
     a = ap.parse_args()
-    spec = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spec.json")))
+    spec = load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spec.json"))
     rows, report = [], []
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
         page, rng = d.split(os.sep)[-2:]
@@ -161,7 +163,7 @@ def main():
             continue
         sm, m = records(os.path.join(d, "main.json"))
         sp, p = records(os.path.join(d, "pr.json"))
-        settle = {n: round(json.load(open(os.path.join(d, f"{n}.json"))).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
+        settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
         sl, l = records(os.path.join(d, "loki.json")) if has_loki else (True, {})
         n, ok, diffs, series, miss = compare(m, p)
@@ -182,8 +184,8 @@ def main():
         if r["main_pr_diffs"] or r["loki_diffs"]:
             md += ["", f"### {r['page']} {r['range']}"]
             md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
-    open(os.path.join(a.out, "compare.md"), "w").write("\n".join(md) + "\n")
-    json.dump(rows, open(os.path.join(a.out, "compare.json"), "w"), indent=1)
+    write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
+    dump_json(os.path.join(a.out, "compare.json"), rows)
     print("\n".join(md[:200]))
     bad = [r for r in rows if r["main_pr_diffs"]]
     sys.exit(1 if bad else 0)

@@ -7,8 +7,9 @@ Reads OUT/compare.json, OUT/pixeldiff.json and OUT/montage/*.png; images are
 referenced from the pr-visuals branch (pr-<number>/<panel>-<range>.png).
 """
 import argparse
-import json
 import os
+
+from vio import load_json
 
 RAW = "https://raw.githubusercontent.com/ReliablyObserve/loki-vl-proxy/pr-visuals"
 
@@ -21,8 +22,8 @@ def main():
     ap.add_argument("--after", default="the PR")
     ap.add_argument("--raw", default=RAW)
     a = ap.parse_args()
-    rows = json.load(open(os.path.join(a.out, "compare.json")))
-    px = json.load(open(os.path.join(a.out, "pixeldiff.json")))
+    rows = load_json(os.path.join(a.out, "compare.json"))
+    px = load_json(os.path.join(a.out, "pixeldiff.json"))
     pages = {}
     for r in rows:
         pages.setdefault(r["page"], []).append(r)
