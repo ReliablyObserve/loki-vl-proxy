@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,7 +46,7 @@ func TestGap_IndexStats_CountsTheRequestedWindow(t *testing.T) {
 	if receivedPath != "/select/logsql/query" {
 		t.Fatalf("expected one stats query on /select/logsql/query, got %q", receivedPath)
 	}
-	if q := form.Get("query"); !strings.HasSuffix(q, "| stats count() entries, count_uniq(_stream_id) streams") {
+	if q := form.Get("query"); !strings.HasSuffix(q, "| stats count() entries, count_uniq_hash(_stream_id) streams") {
 		t.Fatalf("stats query %q", q)
 	}
 	if form.Get("start") != "1790871720000000000" || form.Get("end") != "1790875320000000000" || form.Get("step") != "" {
@@ -52,6 +54,48 @@ func TestGap_IndexStats_CountsTheRequestedWindow(t *testing.T) {
 	}
 	if got, want := strings.TrimSpace(w.Body.String()), `{"streams":13513,"chunks":13513,"bytes":28927900,"entries":289279}`; got != want {
 		t.Fatalf("index stats %s, want %s", got, want)
+	}
+}
+
+// TestGap_IndexStats_ConcurrentIdenticalRequestsShareOneCall: identical index
+// stats requests in flight together cost VictoriaLogs one stats query.
+//
+// conformance: loki_api_v1_index_stats
+func TestGap_IndexStats_ConcurrentIdenticalRequestsShareOneCall(t *testing.T) {
+	const n = 8
+	var calls atomic.Int32
+	release := make(chan struct{})
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"entries":"10","streams":"2"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	var wg sync.WaitGroup
+	bodies := make([]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/loki/api/v1/index/stats?query=%7Bapp%3D%22nginx%22%7D&start=1790871720000000000&end=1790875320000000000", nil)
+			p.handleIndexStats(w, r)
+			bodies[i] = strings.TrimSpace(w.Body.String())
+		}(i)
+	}
+	time.Sleep(300 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("%d concurrent identical requests made %d VictoriaLogs calls, want 1", n, got)
+	}
+	for i, b := range bodies {
+		if b != `{"streams":2,"chunks":2,"bytes":1000,"entries":10}` {
+			t.Fatalf("response %d = %s", i, b)
+		}
 	}
 }
 

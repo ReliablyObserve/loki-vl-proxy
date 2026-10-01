@@ -24,7 +24,12 @@ why: |
   classifyEntryMetadataFieldsFJ and classifyEntryFieldsWithFlags,
   internal/proxy/loki_profile.go hidesLineFields); with a parser they are
   parsed labels and the structured metadata stays structured metadata on
-  every path.
+  every path. Scope: it applies while VictoriaLogs keeps the original JSON
+  line in _msg (producers that wrap the line). A plain Loki push of a JSON
+  line whose keys VictoriaLogs unpacked into columns (_msg is "missing _msg
+  field...") is not covered yet, and line_format and per-stage extraction
+  (json with an expression list, regexp, pattern, label_format, logfmt on a
+  JSON line) still expose every key (pre-existing; follow-up).
 request:
   method: GET
   path: /loki/api/v1/query_range
