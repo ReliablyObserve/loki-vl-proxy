@@ -24,6 +24,7 @@ import http.server
 import threading
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -160,10 +161,19 @@ def up(a):
     ab.log(f"up. Grafana {state['grafana']}  end={end}  state={sp}")
 
 
+def port_owners(port):
+    """PIDs listening on a TCP port (lsof; on a host without it, the /proc table)."""
+    try:
+        return subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True).stdout.split()
+    except FileNotFoundError:
+        out = subprocess.run(["ss", "-ltnpH", f"sport = :{port}"], capture_output=True, text=True).stdout
+        return [m for m in re.findall(r"pid=(\d+)", out)]
+
+
 def stop_proxies(state):
     for name, pid in state.get("pids", {}).items():
         port = PORTS[name]
-        owner = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True).stdout.split()
+        owner = port_owners(port)
         if str(pid) in owner:  # only a process this stack started
             try:
                 os.killpg(pid, 15)

@@ -1,0 +1,54 @@
+name: Visual smoke cleanup
+
+# Removes the montages of closed pull requests from the pr-visuals branch: the
+# folder of a pull request when it closes, and weekly every folder whose pull
+# request is no longer open. Runs the publisher of the default branch (a sparse
+# checkout of bench/visual), never code of a pull request, because it holds a
+# write token. Each change is one parentless commit (see bench/visual/publish.py).
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-smoke-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: bench/visual
+          persist-credentials: false
+
+      - name: Remove the folders
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ ! -f bench/visual/publish.py ]; then echo "::notice::no bench/visual/publish.py on the default branch yet"; exit 0; fi
+          REMOTE="https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$EVENT" = "pull_request" ]; then
+            python3 bench/visual/publish.py remove --pr "$PR" --remote "$REMOTE"
+          else
+            KEEP="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq '.[].number' | paste -sd, -)"
+            python3 bench/visual/publish.py prune --keep "$KEEP" --remote "$REMOTE"
+          fi

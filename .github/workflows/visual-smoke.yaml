@@ -8,15 +8,27 @@ name: Visual smoke
 # data difference, a panel that went empty, or an error banner only the PR
 # shows. See bench/visual/README.md ("In CI").
 #
-# Three jobs, so that no code of the pull request runs with a write token:
+# Three jobs; only the first runs the pull request's code (its npm, Go and Docker
+# dependencies, its scripts), and it has a read-only token. The two jobs that hold
+# a write token run code of the BASE branch (a sparse checkout of bench/visual at the
+# base commit) and treat what the first job produced as untrusted data:
 #   visual-smoke    read-only: plan, stack, capture, compare, gate
-#   visual-publish  contents: write, same-repo PRs only: montages -> pr-visuals
-#   visual-comment  pull-requests: write, same-repo PRs only: the sticky comment
+#   visual-publish  contents: write, same-repo PRs: validates the montages and
+#                   replaces pr-<N>/ on pr-visuals (publish.py of the base)
+#   visual-comment  pull-requests: write, same-repo PRs: renders the sticky comment
+#                   with comment.py of the base, which escapes every string that
+#                   comes from the pull request
+# While the base branch has no publish.py or comment.py (the pull request that adds
+# them) nothing is published and the comment is a fixed text; the job summary has
+# the table.
+#
+# An intended change of what Grafana shows is accepted by labelling the pull
+# request `visual-change-expected` (adding or removing it re-runs this workflow).
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -28,12 +40,15 @@ concurrency:
 jobs:
   visual-smoke:
     name: visual-smoke
+    # A label other than the one the gate reads does not re-run it.
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
     outputs:
       run: ${{ steps.plan.outputs.run }}
+      artifact-url: ${{ steps.montage.outputs.artifact-url }}
     env:
       OUT: /tmp/visual-smoke
       PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -114,7 +129,7 @@ jobs:
             ${{ env.OUT }}/*.log
           if-no-files-found: ignore
 
-      - name: Render the comment and the verdict
+      - name: Render the summary and the verdict
         id: verdict
         if: always()
         env:
@@ -123,26 +138,15 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ARTIFACT_URL: ${{ steps.montage.outputs.artifact-url }}
           BASE: ${{ steps.plan.outputs.base }}
+          VISUAL_CHANGE_EXPECTED: ${{ contains(github.event.pull_request.labels.*.name, 'visual-change-expected') }}
         run: |
           set -euo pipefail
           [ -f "$OUT/meta.json" ] || printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$PR_HEAD" > "$OUT/meta.json"
-          for MODE in branch artifact; do
-            python3 bench/visual/comment.py --out "$OUT" --mode "$MODE" --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
-              --artifact-url "$ARTIFACT_URL" --md "$OUT/comment-$MODE.md" --verdict "$OUT/verdict.json" > /dev/null
-          done
+          python3 bench/visual/comment.py --out "$OUT" --mode artifact --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
+            --artifact-url "$ARTIFACT_URL" --md "$OUT/comment-summary.md" --verdict "$OUT/verdict.json" > /dev/null
           echo "exit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json")" >> "$GITHUB_OUTPUT"
-          # Fork PRs have a read-only token and no comment: the step summary carries the table.
-          cat "$OUT/comment-artifact.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload the comment
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: visual-comment
-          path: |
-            ${{ env.OUT }}/comment-*.md
-            ${{ env.OUT }}/verdict.json
-          if-no-files-found: ignore
+          # The step summary carries the table for every run, forks included (no comment there).
+          cat "$OUT/comment-summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail on regression
         if: steps.plan.outputs.run == 'true'
@@ -158,68 +162,110 @@ jobs:
   visual-publish:
     name: visual-publish
     needs: visual-smoke
-    # Same-repo PRs only: a fork's token cannot write. This job runs repository
-    # code and git only, never the pull request's npm, Go or Docker dependencies.
-    if: always() && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    # Same-repo PRs only: a fork's token cannot write. !cancelled(), not always(): a run
+    # that a newer push cancelled must not overwrite the folder with stale images.
+    if: "!cancelled() && needs.visual-smoke.result != 'skipped' && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      published: ${{ steps.publish.outcome == 'success' }}
     steps:
+      # The base branch's code, not the pull request's: this job holds a write token.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: bench/visual
           persist-credentials: false
 
+      - name: Is there a publisher on the base branch?
+        id: have
+        run: |
+          if [ -f bench/visual/publish.py ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "::notice::the base branch has no bench/visual/publish.py yet; montages stay in the run artifact"; echo "have=false" >> "$GITHUB_OUTPUT"; fi
+
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        if: steps.have.outputs.have == 'true'
         with:
           name: visual-montage
-          path: /tmp/visual-montage
+          path: /tmp/visual-data
 
       - name: Publish the montages to pr-visuals
+        id: publish
+        if: steps.have.outputs.have == 'true'
         env:
           PUBLISH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          python3 bench/visual/publish.py --montage /tmp/visual-montage/montage --pr "$PR" \
+          # publish.py re-validates every entry (regular PNG files, plain names, size, count) and
+          # replaces pr-<N>/ with one parentless commit.
+          python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
             --remote "https://github.com/${GITHUB_REPOSITORY}.git"
 
   visual-comment:
     name: visual-comment
     needs: [visual-smoke, visual-publish]
-    # A comment even when the gate failed; none for a fork (read-only token) or a cancelled run.
-    if: always() && needs.visual-smoke.result != 'cancelled' && github.event.pull_request.head.repo.full_name == github.repository
+    # A comment even when the gate failed; none for a fork (read-only token), a cancelled run
+    # or a label that is not the gate's.
+    if: "!cancelled() && needs.visual-smoke.result != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read
       pull-requests: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: bench/visual
+          persist-credentials: false
+
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
         continue-on-error: true
         with:
-          name: visual-comment
-          path: /tmp/visual-comment
+          name: visual-montage
+          path: /tmp/visual-data
+
+      - name: Render the comment with the base branch's renderer
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ needs.visual-smoke.outputs.artifact-url }}
+          PUBLISHED: ${{ needs.visual-publish.outputs.published }}
+          VISUAL_CHANGE_EXPECTED: ${{ contains(github.event.pull_request.labels.*.name, 'visual-change-expected') }}
+        run: |
+          # Images only when the montages reached pr-visuals. The data is untrusted; the renderer escapes it.
+          MODE=artifact; [ "$PUBLISHED" = "true" ] && MODE=branch
+          if [ -f bench/visual/comment.py ] && [ -d /tmp/visual-data ] && \
+             python3 bench/visual/comment.py --out /tmp/visual-data --mode "$MODE" --repo "$REPO" --pr "$PR" \
+               --run-url "$RUN_URL" --artifact-url "$ARTIFACT_URL" --md /tmp/comment.md --verdict /tmp/verdict.json > /dev/null; then
+            echo "rendered"
+          else
+            rm -f /tmp/comment.md
+            echo "::notice::no renderer on the base branch, or it failed: posting the fixed text"
+          fi
 
       - name: Publish sticky PR comment
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
           RAN: ${{ needs.visual-smoke.outputs.run }}
-          PUBLISHED: ${{ needs.visual-publish.result == 'success' }}
+          RESULT: ${{ needs.visual-smoke.result }}
         with:
           script: |
             const fs = require('fs');
             const marker = '<!-- visual-smoke -->';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            // Images are embedded only when the montages reached pr-visuals; otherwise the text-only
-            // variant links the artifact. No file means the job died before it could render one:
-            // never leave the previous commit's table standing as if it were this commit's.
-            const file = `/tmp/visual-comment/comment-${process.env.PUBLISHED === 'true' || process.env.RAN !== 'true' ? 'branch' : 'artifact'}.md`;
-            const body = fs.existsSync(file) ? fs.readFileSync(file, 'utf8')
-              : `${marker}\n### ⚠️ Visual smoke: did not complete\n\nThe run for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` stopped before it could report. See ${runUrl}.\n`;
+            // A rendered file is the base branch's renderer's output. Without one (the base has no renderer yet,
+            // or the job died) the comment is a fixed text that carries no data from the pull request;
+            // the job summary of the run has the table.
+            const body = fs.existsSync('/tmp/comment.md') ? fs.readFileSync('/tmp/comment.md', 'utf8')
+              : `${marker}\n### ⚠️ Visual smoke: ${process.env.RESULT === 'success' ? 'passed' : 'see the run'}\n\nThe table for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` is in the job summary of ${runUrl}.\n`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
-            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else if (process.env.RAN !== 'false') {

@@ -11,12 +11,14 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 import compare  # noqa: E402
 
 
-def capture(values, ui=None, settled=True):
-    frame = {"schema": {"name": "", "fields": [{"type": "time"}, {"type": "number", "labels": {"level": "info"}}]},
+def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, error=None):
+    frame = {"schema": {"name": "", "fields": fields or [{"type": "time"}, {"type": "number", "labels": {"level": "info"}}]},
              "data": {"values": [list(range(len(values))), values]}}
-    rec = {"url": "/api/ds/query?ds_type=loki", "method": "POST", "status": 200,
-           "request": {"from": "1", "to": "2", "queries": [{"refId": "A", "expr": "sum(x)", "queryType": "range"}]},
-           "response": {"results": {"A": {"frames": [frame]}}}}
+    result = {"error": error} if error else {"frames": [frame]}
+    rec = {"url": "/api/ds/query?ds_type=loki", "method": "POST", "status": status,
+           "request": {"from": "1", "to": "2", "requestId": uid + "-1", "queries": [
+               {"refId": "A", "expr": "sum(x)", "queryType": "range", "datasource": {"type": "loki", "uid": uid}, "maxLines": 1000}]},
+           "response": {"results": {"A": result}}}
     return {"settled": settled, "settle_ms": 1000, "records": [rec], "ui": ui or {"noData": 0, "banners": [], "panelErrors": 0}}
 
 
@@ -58,8 +60,47 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(row["ui_pr"], bad)
         self.assertEqual(row["ui_main"]["noData"], 0)
 
+    def test_datasource_uid_and_request_id_do_not_split_requests(self):
+        _, row = self.run_compare(capture([1, 2], uid="vp-main"), capture([1, 2], uid="vp-pr"))
+        self.assertEqual(row["main_pr_diffs"], [])
+        self.assertEqual(row["main_vs_pr"], "1/1")
+
+    def test_other_request_fields_make_a_different_request(self):
+        a, b = capture([1, 2]), capture([1, 2])
+        b["records"][0]["request"]["queries"][0]["maxLines"] = 5000
+        _, row = self.run_compare(a, b)
+        self.assertEqual(len(row["main_pr_diffs"]), 2)  # one request on each side only
+
+    def test_frame_schema_difference_is_a_difference(self):
+        other = [{"type": "time"}, {"type": "number", "labels": {"level": "info"}, "config": {"interval": 60000}}]
+        _, row = self.run_compare(capture([1, 2]), capture([1, 2], fields=other))
+        self.assertIn("schema", row["main_pr_diffs"][0])
+
+    def test_duplicate_answers_pair_by_content_not_arrival_order(self):
+        a, b = capture([1, 2]), capture([3, 4])
+        a["records"] = a["records"] + b["records"]
+        b2, a2 = capture([3, 4]), capture([1, 2])
+        b2["records"] = b2["records"] + a2["records"]  # same two answers, other order
+        _, row = self.run_compare(a, b2)
+        self.assertEqual(row["main_pr_diffs"], [])
+
+    def test_errors_are_listed_per_side_minus_the_allow_list(self):
+        bad = capture([1], error="plugin unavailable")
+        _, row = self.run_compare(bad, bad)
+        self.assertEqual(row["errors_pr"], ["plugin unavailable"])
+        self.assertEqual(row["main_pr_diffs"], [])  # equal on both sides, and still reported
+        self.assertEqual(compare.errors({"k": [{("A", "error"): ("error", "plugin unavailable")}]}, ["unavailable"]), [])
+        _, row = self.run_compare(capture([1]), capture([1], status=500))
+        self.assertTrue(row["errors_pr"])
+
+    def test_missing_loki_capture_within_its_window_is_flagged(self):
+        _, row = self.run_compare(capture([1]), capture([1]))
+        self.assertTrue(row["loki_missing"])
+        _, row = self.run_compare(capture([1]), capture([1]), capture([1]))
+        self.assertFalse(row["loki_missing"])
+
     def test_points(self):
-        self.assertEqual(compare.points({"k": [{"a": ("metric", {1: 0, 2: 5}), "b": ("other", "h", 7), "c": ("error", "x")}]}), 8)
+        self.assertEqual(compare.points({"k": [{"a": ("metric", {1: 0, 2: 5}, "sig"), "b": ("other", "h", 7), "c": ("error", "x")}]}), 8)
 
 
 if __name__ == "__main__":

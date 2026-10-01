@@ -180,7 +180,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `vl-ast-coverage.yml` | `check-coverage` | weekly, manual, and on PRs touching `internal/logsql/**` or its manifest: `scripts/check-vl-ast-coverage.py` |
 | `changelog-pr.yaml` | `changelog` | pull requests only: `scripts/ci/check_changelog_pr.py` changelog gate |
 | `pr-quality-report.yaml` | `report` | pull requests only: test count, coverage, compatibility, benchmark and load deltas against the base branch |
-| `visual-smoke.yaml` | `visual-smoke`, `visual-publish`, `visual-comment` | pull requests only: Grafana (Explore, Logs Drilldown) through the base build, the PR build and Loki; a fixed core set plus the pages near the changed code (`bench/visual/plan.py`), one sticky comment with the montages, fails on a base-vs-PR data difference, a panel that went empty or an error only the PR shows (see `bench/visual/README.md`) |
+| `visual-smoke.yaml`, `visual-smoke-cleanup.yaml` | `visual-smoke`, `visual-publish`, `visual-comment`, `cleanup` | pull requests only: Grafana (Explore, Logs Drilldown) through the base build, the PR build and Loki; a fixed core set plus the pages near the changed code (`bench/visual/plan.py`), one sticky comment with the montages, fails on a base-vs-PR data difference that Loki does not settle in the PR's favour (label `visual-change-expected` accepts an intended one), a panel that went empty or an error only the PR shows (see `bench/visual/README.md`) |
 
 ## Test Coverage by Category
 

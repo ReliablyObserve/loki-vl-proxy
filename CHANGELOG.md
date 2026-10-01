@@ -23,8 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at 15m, 1h and 6h, for the base build, the PR build and Loki. One sticky comment
   gives a per-capture table (data identical base vs PR, differences from Loki and
   whether the base has them too, pixel diff) and embeds the montages only for rows
-  that are not clean; the check fails on a base-vs-PR data difference, a panel
-  that went empty or an error only the PR shows.
+  that are not clean. A base-vs-PR data difference is judged against Loki (closer
+  to Loki passes, diverging fails, an undecidable intended change needs the
+  `visual-change-expected` label); an emptied panel, an error only the PR shows or
+  a difference that does not reproduce also fail the check. Montages live on the
+  `pr-visuals` branch as one parentless commit, written by a job that runs only
+  base-branch code.
 
 ## [1.103.0] - 2026-10-01
 

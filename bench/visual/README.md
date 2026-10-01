@@ -95,34 +95,61 @@ slowly), then the static captures, then, only when a Live tail entry was selecte
 the mirrored live generator and the tail captures. 24h and 7d stay out of PR CI
 (use the manual run).
 
-**Gate.** The `visual-smoke` check fails when, on the PR side and not on the base:
+**Gate.** A base-vs-PR data difference is classified against Loki, where Loki holds
+data for the range (15m and 1h):
 
-- the data Grafana receives differs from the base's (series, values, timestamps,
-  resource responses; patterns compared as a set), or a request exists on one side only;
-- a panel that showed data on the base is empty (no non-zero points or rows), or the
-  page shows more "No data" panels than the base;
+| base vs PR differs, and | result |
+|---|---|
+| the PR matches Loki, the base did not | pass: "improved (closer to Loki)" |
+| the base matched Loki, the PR diverges | fail: "regressed vs Loki" (the label does not excuse it) |
+| neither matches Loki, or Loki has no data for the range (6h) | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
+
+Adding or removing that label re-runs the workflow. Also failing, on the PR side:
+
+- a panel that showed data on the base is empty, or the page shows more "No data"
+  panels than the base;
 - an error banner (plugin unavailable, failed to load, something went wrong), a panel
-  error icon or an error boundary appears that the base does not show;
+  error icon or an error boundary the base does not show;
+- any error answer (an error in a result or a non-200 status), even when the base has the
+  same one, unless its text contains a substring of `allowed_errors` in `spec.json`
+  (empty today);
+- the PR side never settled;
+- a difference that was gone on the recapture (differing captures are loaded once more,
+  more patiently): the run is not deterministic, and the comment lists it;
 - a planned capture is missing, or the run died (exit 3, "did not complete").
 
-Warnings only: a pixel diff above 3% (header and time-picker noise stays below),
-a page that did not settle, a capture with no data on either side. Differences from
-Loki never fail by themselves: the comment counts them and says how many the base
-has too (pre-existing); a difference the base does not have would also be a base-vs-PR
-difference.
+Warnings only: a pixel diff above 3% (header and time-picker noise stays below), a Loki
+or base side that did not settle, a missing Loki capture for a range Loki holds, a capture
+with no data on either side. Differences from Loki that the base has too are counted and
+never fail.
 
-**Images.** Three jobs, so that no code of the pull request runs with a write token:
-`visual-smoke` (read-only: stack, capture, compare, gate), `visual-publish`
-(`contents: write`, same-repo PRs only, runs repository code and git only) and
-`visual-comment` (`pull-requests: write`, same-repo PRs only). The publish job
-replaces `pr-<number>/` on the orphan `pr-visuals` branch with the run's montages in
-one commit by the github-actions identity (CI cannot sign; every push-triggered
-workflow of the repository runs for `main` only, and a push with the workflow token
-starts none), refusing files that are not plain PNG names within 300 KB. The comment
-embeds an image only for a row that is not clean and for one collapsed block with the
-core montages; clean detailed rows are linked on the branch. A fork PR has no write
-token: the montages are an artifact, the comment text has no images, and the table is
-in the job summary.
+**Capture details.** Matching of requests is by the whole request body without its
+volatile fields (datasource uid, request id) so a changed query option is a different
+request; answers are compared with their frame schema (field names, types, labels,
+interval) and stable meta; duplicate answers pair by content, not arrival order. Before
+the warm-up the run waits until Loki answers a range metric query with data (it answers
+empty for a couple of minutes on a fresh stack).
+
+**Trust.** Three jobs; only `visual-smoke` runs the pull request's code and dependencies,
+with a read-only token. `visual-publish` (`contents: write`) and `visual-comment`
+(`pull-requests: write`) are same-repo only and run the scripts of the base commit (a
+sparse checkout of `bench/visual`), treating the artifact as untrusted data: `publish.py`
+accepts only regular PNG files with plain names within 300 KB (at most 80, no symlinks
+or directories), and `comment.py` escapes every string that comes from the pull request.
+While the base has no `publish.py` or `comment.py` (the pull request that adds them),
+nothing is published and the comment is a fixed text; the job summary has the table. A
+run cancelled by a newer push never publishes.
+
+**Images.** `publish.py` replaces `pr-<number>/` on the orphan `pr-visuals` branch with
+the run's montages as one commit with no parent (the previous tree plus the change),
+pushed with `--force-with-lease`, so the branch never keeps history; commits are by the
+github-actions identity (CI cannot sign; every push-triggered workflow of the repository
+runs for `main` only, and a push with the workflow token starts none).
+`visual-smoke-cleanup.yaml` removes the folder when the pull request closes and, weekly,
+every folder whose pull request is not open. The comment embeds an image only for a row
+that is not clean and for one collapsed block with the core montages; clean detailed rows
+are linked on the branch. A fork PR has no write token: the montages are an artifact, the
+comment text has no images, and the table is in the job summary.
 
 **Reproduce a comment locally** (next to another stack: its own project and ports):
 

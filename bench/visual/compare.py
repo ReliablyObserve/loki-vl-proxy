@@ -24,6 +24,32 @@ from collections import defaultdict
 from vio import dump_json, load_json, write_text
 
 
+# Request fields that differ between the three datasources or between page loads without changing the question.
+VOLATILE = {"datasource", "datasourceId", "requestId", "key", "uid", "queryCachingTTL"}
+# Frame meta that says how the answer was produced rather than what it is (stats, the executed query text).
+META_STABLE = ("type", "typeVersion", "preferredVisualisationType", "custom", "notices")
+
+
+def strip(obj):
+    """The request body without its volatile fields, at any depth."""
+    if isinstance(obj, dict):
+        return {k: strip(v) for k, v in obj.items() if k not in VOLATILE}
+    if isinstance(obj, list):
+        return [strip(v) for v in obj]
+    return obj
+
+
+def digest(obj):
+    return hashlib.sha1(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def signature(sch):
+    """Field names, types, labels and interval plus the stable parts of the frame meta: the shape a panel is built from."""
+    fields = [(f.get("name"), f.get("type"), f.get("labels") or {}, (f.get("config") or {}).get("interval")) for f in sch["fields"]]
+    meta = {k: (sch.get("meta") or {}).get(k) for k in META_STABLE if (sch.get("meta") or {}).get(k) is not None}
+    return digest([fields, meta])
+
+
 def frames_of(resp):
     out = {}
     for ref, res in (resp or {}).get("results", {}).items():
@@ -35,9 +61,9 @@ def frames_of(resp):
             labels = json.dumps((fields[1].get("labels") if len(fields) > 1 else None) or {}, sort_keys=True)
             ident = (ref, sch.get("name") or "", labels)
             if len(fields) == 2 and fields[0].get("type") == "time" and fields[1].get("type") == "number":
-                out[ident] = ("metric", dict(zip(data[0], data[1])))
+                out[ident] = ("metric", dict(zip(data[0], data[1])), signature(sch))
             else:
-                out[ident] = ("other", hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest(), len(data[0]) if data else 0)
+                out[ident] = ("other", digest([signature(sch), data]), len(data[0]) if data else 0)
     return out
 
 
@@ -47,7 +73,8 @@ def records(path):
     for r in d["records"]:
         if "/api/ds/query" in r["url"]:
             for q in (r["request"] or {}).get("queries", []):
-                key = ("query", q.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"))
+                key = ("query", q.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
+                       digest(strip(q)))
                 recs[key].append(frames_of(r["response"]) if r["status"] == 200 else {("status", str(r["status"])): ("error", r["status"])})
         else:
             key = ("resource", re.sub(r"/api/datasources/uid/[^/]+", "/api/datasources/uid/*", r["url"].split("&_=")[0]))
@@ -58,6 +85,19 @@ def records(path):
             rows = len(body.get("data") or []) if isinstance(body, dict) and isinstance(body.get("data"), list) else (len(body) if isinstance(body, list) else 0)
             recs[key].append({"body": ("other", hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     return d.get("settled", False), recs
+
+
+def errors(recs, allowed=()):
+    """Error answers (an error in a result, a non-200 status) minus the allow-listed ones, as short strings."""
+    out = []
+    for lst in recs.values():
+        for fr in lst:
+            for k, x in fr.items():
+                if x[0] == "error":
+                    text = str(x[1])[:120]
+                    if not any(a and a in text for a in allowed):
+                        out.append(text)
+    return out
 
 
 def points(recs):
@@ -88,6 +128,8 @@ def same(a, b):
         if x[0] != y[0]:
             return f"{k}: kind {x[0]} vs {y[0]}"
         if x[0] == "metric":
+            if x[2] != y[2]:
+                return f"{k[2]}: frame schema or meta differs"
             if set(x[1]) != set(y[1]):
                 return f"{k[2]}: timestamps differ ({len(x[1])} vs {len(y[1])} points)"
             for t in x[1]:
@@ -103,8 +145,29 @@ def same(a, b):
 
 
 def nonzero(fr):
-    return {k: ("metric", {t: v for t, v in x[1].items() if v}) if x[0] == "metric" and any(x[1].values()) else x
+    return {k: ("metric", {t: v for t, v in x[1].items() if v}, x[2]) if x[0] == "metric" and any(x[1].values()) else x
             for k, x in fr.items() if not (x[0] == "metric" and not any(x[1].values()))}
+
+
+def pairs(a, b):
+    """Pair the answers of one request by content, then the leftovers in order; (x, y) with None for a missing side."""
+    left, right, out = list(a), list(b), []
+    seen = {}
+    for j, y in enumerate(right):
+        seen.setdefault(digest(repr(sorted(y.items(), key=str))), []).append(j)
+    taken, rest = set(), []
+    for x in left:
+        idx = seen.get(digest(repr(sorted(x.items(), key=str))))
+        if idx:
+            j = idx.pop(0)
+            taken.add(j)
+            out.append((x, right[j]))
+        else:
+            rest.append(x)
+    rest_right = [y for j, y in enumerate(right) if j not in taken]
+    for i in range(max(len(rest), len(rest_right))):
+        out.append((rest[i] if i < len(rest) else None, rest_right[i] if i < len(rest_right) else None))
+    return out
 
 
 def compare(left, right, lenient=False):
@@ -112,15 +175,14 @@ def compare(left, right, lenient=False):
     n = ok = missing = 0
     diffs, series = [], 0
     for k in keys:
-        a, b = left.get(k, []), right.get(k, [])
-        for i in range(max(len(a), len(b))):
-            if i >= len(a) or i >= len(b):
+        for xa, xb in pairs(left.get(k, []), right.get(k, [])):
+            if xa is None or xb is None:
                 missing += 1
-                diffs.append(f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if i < len(a) else 'right'})")
+                diffs.append(f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if xb is None else 'right'})")
                 continue
             n += 1
-            x, y = (nonzero(a[i]), nonzero(b[i])) if lenient else (a[i], b[i])
-            series += len(a[i])
+            x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
+            series += len(xa)
             why = same(x, y)
             if why:
                 diffs.append(f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}")
@@ -171,6 +233,7 @@ def main():
     a = ap.parse_args()
     spec = load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)), "spec.json"))
     rows, report = [], []
+    allowed = spec.get("allowed_errors") or []  # substrings of error answers that are expected (documented in the README)
     for d in sorted(glob.glob(os.path.join(a.out, "data", "*", "*"))):
         page, rng = d.split(os.sep)[-2:]
         if not all(os.path.exists(os.path.join(d, f"{n}.json")) for n in ("main", "pr")):
@@ -179,7 +242,8 @@ def main():
             n, diffs, lk = compare_tail(d)
             rows.append(dict(page=page, range=rng, requests=n, series=0, main_vs_pr="identical" if not diffs else "DIFFERS",
                              pr_vs_loki="; ".join(lk), settled=True, main_pr_diffs=diffs, loki_diffs=[], loki_new=[],
-                             loki_compared=True, points_main=n, points_pr=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr")))
+                             loki_compared=True, points_main=n, points_pr=n, points_loki=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
+                             settled_pr=True, errors_pr=[], errors_main=[], loki_missing=False))
             continue
         sm, m = records(os.path.join(d, "main.json"))
         sp, p = records(os.path.join(d, "pr.json"))
@@ -199,7 +263,9 @@ def main():
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
                          settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=diffs, loki_diffs=ldiffs2 if loki_ok else [],
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
-                         points_main=points(m), points_pr=points(p), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr")))
+                         points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
+                         settled_pr=bool(sp), errors_pr=errors(p, allowed), errors_main=errors(m, allowed),
+                         loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
     md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
     for r in rows:
         md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")

@@ -250,5 +250,6 @@
   "6h"
  ],
  "core_range": "1h",
- "loki_hours_note": "Loki holds 1.5h of the seeded window; wider ranges compare base vs PR only."
+ "loki_hours_note": "Loki holds 1.5h of the seeded window; wider ranges compare base vs PR only.",
+ "allowed_errors": []
 }

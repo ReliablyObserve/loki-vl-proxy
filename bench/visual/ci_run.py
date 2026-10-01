@@ -23,11 +23,15 @@ montage/*.png, shots/ and data/ (the raw captures), error.json when the run
 died, and the logs. comment.py renders the comment and the verdict from them.
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
 import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -49,8 +53,36 @@ def git(*args):
     return subprocess.run(["git", *args], cwd=HERE, check=True, capture_output=True, text=True).stdout.strip()
 
 
+def wait_loki_metric(loki_port, end, deadline_s=360):
+    """Loki answers range METRIC queries with empty 200s for a couple of minutes after a fresh stack starts (the
+    query frontend has no shards yet): wait until it returns data before any capture compares with it."""
+    query = urllib.parse.urlencode({"query": 'sum(count_over_time({env="production"}[5m]))', "start": end - 3600, "end": end, "step": 300})
+    url = f"http://127.0.0.1:{loki_port}/loki/api/v1/query_range?{query}"
+    t0, last = time.time(), "no answer"
+    while time.time() - t0 < deadline_s:
+        try:
+            req = urllib.request.Request(url, headers={"X-Scope-OrgID": "0", "Cache-Control": "no-cache"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())["data"]["result"]
+            if any(float(v[1]) > 0 for series in result for v in series["values"]):
+                return round(time.time() - t0)
+            last = "empty metric answer"
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+            last = str(e)[:80]
+        time.sleep(5)
+    print(f"Loki metric data did not appear in {deadline_s}s ({last}); the Loki columns may be blank", flush=True)
+    return None
+
+
 def phase(meta, name, t0):
     meta.setdefault("phases_s", {})[name] = round(time.time() - t0)
+
+
+def differing(out):
+    """'page range' of the captures whose base-vs-PR data differs, from compare.json."""
+    path = os.path.join(out, "compare.json")
+    rows = load_json(path) if os.path.exists(path) else []
+    return {f"{r['page']} {r['range']}" for r in rows if r["main_pr_diffs"]}
 
 
 def recapture(a, out, plan, end, port, meta):
@@ -79,7 +111,7 @@ def recapture(a, out, plan, end, port, meta):
     return True
 
 
-def capture(a, out, plan, end, port, meta):
+def capture(a, out, plan, end, port, meta, loki_port):
     """Static captures, then the Live tail pass; a failed Playwright test leaves a capture missing, which the verdict reports."""
     entries = plan["entries"]
     static = [p for p, e in entries.items() if e["kind"] != "tail"]
@@ -90,6 +122,7 @@ def capture(a, out, plan, end, port, meta):
     if not os.path.isdir(os.path.join(HERE, "node_modules")):
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=HERE, log=log)
     t0 = time.time()
+    meta["loki_metric_wait_s"] = wait_loki_metric(loki_port, end)
     # The first drilldown load of a fresh Grafana is slow: load it once, unrecorded, before any capture.
     run(["npx", "playwright", "test"], cwd=HERE, env=dict(env, VP_WARMUP="1"), log=log, check=False)
     phase(meta, "warmup", t0)
@@ -149,12 +182,15 @@ def main():
                 run([*stack, "down"], log=os.path.join(out, "stack.log"), check=False)
         phase(meta, "stack_up", t0)
         state = load_json(os.path.join(out, "state.json"))
-        capture(a, out, plan, state["end"], state["ports"]["grafana"], meta)
+        capture(a, out, plan, state["end"], state["ports"]["grafana"], meta, state["ports"]["loki"])
         t0 = time.time()
         compare = [PY, os.path.join(HERE, "compare.py"), out]
         run(compare, log=os.path.join(out, "compare.log"), check=False)  # exit 1 = a difference; the verdict decides
+        differed = differing(out)
         if recapture(a, out, plan, state["end"], state["ports"]["grafana"], meta):
             run(compare, log=os.path.join(out, "compare.log"), check=False)
+            # A difference that was gone on the second look is not a difference of the PR: the run is not deterministic.
+            meta["flipped"] = sorted(differed - differing(out))
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))
         phase(meta, "compare", t0)
         ok = True
