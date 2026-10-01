@@ -1,4 +1,4 @@
-"""Unit tests for the comparison gate and the PR comment (bench/visual/comment.py)."""
+"""Unit tests for the comparison gate and the PR comment (bench/visual/visual_comment.py)."""
 import argparse
 import os
 import re
@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import comment  # noqa: E402
+import visual_comment as comment  # noqa: E402
 
 ARGS = argparse.Namespace(mode="branch", repo="o/r", pr="7", run_url="https://example.test/run/1", artifact_url="")
 META = {"base": "b" * 40, "head": "a" * 40}

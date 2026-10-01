@@ -7,7 +7,7 @@ locally to reproduce a comment:
   python3 bench/visual/plan.py --base origin/main --out /tmp/vs/plan.json
   python3 bench/visual/ci_run.py --base origin/main --plan /tmp/vs/plan.json --out /tmp/vs \\
       --project vs --port-offset 200          # next to another stack
-  python3 bench/visual/comment.py --out /tmp/vs --mode artifact --md /tmp/vs/comment.md
+  python3 bench/visual/visual_comment.py --out /tmp/vs --mode artifact --md /tmp/vs/comment.md
 
 Steps (stack.py does the stack, shared with the manual tooling):
   1. a fresh Loki + VictoriaLogs stack under its own compose project, seeded once
@@ -20,7 +20,7 @@ Steps (stack.py does the stack, shared with the manual tooling):
 
 Outputs in --out: plan.json, meta.json, compare.json/.md, pixeldiff.json,
 montage/*.png, shots/ and data/ (the raw captures), error.json when the run
-died, and the logs. comment.py renders the comment and the verdict from them.
+died, and the logs. visual_comment.py renders the comment and the verdict from them.
 """
 import argparse
 import json

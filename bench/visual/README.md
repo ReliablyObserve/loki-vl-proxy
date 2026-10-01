@@ -16,7 +16,7 @@ the e2e stack):
 | `stack.py live-start` / `live-stop` | the e2e generator in live mode, writing every line to both Loki and VictoriaLogs (mirrored) so Live tail sees the same stream on all three datasources. Start it only around the tail capture; static ranges are unaffected (they end at the seed end). |
 | `compare.py` | matches the captured requests of main, PR and Loki and compares series sets, point values (rel. 1e-9) and timestamps; main vs PR must be identical. Loki is compared for the ranges it holds. Writes `compare.md` / `compare.json`. |
 | `montage.py` | `montage/<page>-<range>.png` (main, PR, Loki side by side, downscaled, at most 300 KB each) and `pixeldiff.json` (share of pixels that differ main vs PR). |
-| `plan.py`, `ci_run.py`, `comment.py`, `publish.py` | the per-PR CI run, see [In CI](#in-ci). |
+| `plan.py`, `ci_run.py`, `visual_comment.py`, `publish.py` | the per-PR CI run, see [In CI](#in-ci). |
 
 ## Run
 
@@ -135,8 +135,8 @@ with a read-only token. `visual-publish` (`contents: write`) and `visual-comment
 (`pull-requests: write`) are same-repo only and run the scripts of the base commit (a
 sparse checkout of `bench/visual`), treating the artifact as untrusted data: `publish.py`
 accepts only regular PNG files with plain names within 300 KB (at most 80, no symlinks
-or directories), and `comment.py` escapes every string that comes from the pull request.
-While the base has no `publish.py` or `comment.py` (the pull request that adds them),
+or directories), and `visual_comment.py` escapes every string that comes from the pull request.
+While the base has no `publish.py` or `visual_comment.py` (the pull request that adds them),
 nothing is published and the comment is a fixed text; the job summary has the table. A
 run cancelled by a newer push never publishes.
 
@@ -156,7 +156,7 @@ comment text has no images, and the table is in the job summary.
 ```bash
 python3 bench/visual/plan.py --base origin/main --out /tmp/vs/plan.json
 python3 bench/visual/ci_run.py --base origin/main --plan /tmp/vs/plan.json --out /tmp/vs --project vs --port-offset 1000
-python3 bench/visual/comment.py --out /tmp/vs --mode artifact --md /tmp/vs/comment.md   # verdict in /tmp/vs/verdict.json
+python3 bench/visual/visual_comment.py --out /tmp/vs --mode artifact --md /tmp/vs/comment.md   # verdict in /tmp/vs/verdict.json
 python3 -m unittest discover -s bench/visual/tests
 ```
 

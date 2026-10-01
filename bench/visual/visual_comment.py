@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the sticky visual-smoke PR comment and decide the gate.
 
-  comment.py --out OUT --mode branch --repo OWNER/NAME --pr 123 --md comment.md [--expected-change]
+  visual_comment.py --out OUT --mode branch --repo OWNER/NAME --pr 123 --md comment.md [--expected-change]
 
 Reads OUT/plan.json, compare.json, pixeldiff.json, meta.json (and error.json
 when the run died); writes the markdown and OUT/verdict.json, whose "exit" is:

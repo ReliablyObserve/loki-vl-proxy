@@ -16,9 +16,9 @@ name: Visual smoke
 #   visual-publish  contents: write, same-repo PRs: validates the montages and
 #                   replaces pr-<N>/ on pr-visuals (publish.py of the base)
 #   visual-comment  pull-requests: write, same-repo PRs: renders the sticky comment
-#                   with comment.py of the base, which escapes every string that
+#                   with visual_comment.py of the base, which escapes every string that
 #                   comes from the pull request
-# While the base branch has no publish.py or comment.py (the pull request that adds
+# While the base branch has no publish.py or visual_comment.py (the pull request that adds
 # them) nothing is published and the comment is a fixed text; the job summary has
 # the table.
 #
@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -f "$OUT/meta.json" ] || printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$PR_HEAD" > "$OUT/meta.json"
-          python3 bench/visual/comment.py --out "$OUT" --mode artifact --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
+          python3 bench/visual/visual_comment.py --out "$OUT" --mode artifact --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
             --artifact-url "$ARTIFACT_URL" --md "$OUT/comment-summary.md" --verdict "$OUT/verdict.json" > /dev/null
           echo "exit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json")" >> "$GITHUB_OUTPUT"
           # The step summary carries the table for every run, forks included (no comment there).
@@ -238,8 +238,8 @@ jobs:
         run: |
           # Images only when the montages reached pr-visuals. The data is untrusted; the renderer escapes it.
           MODE=artifact; [ "$PUBLISHED" = "true" ] && MODE=branch
-          if [ -f bench/visual/comment.py ] && [ -d /tmp/visual-data ] && \
-             python3 bench/visual/comment.py --out /tmp/visual-data --mode "$MODE" --repo "$REPO" --pr "$PR" \
+          if [ -f bench/visual/visual_comment.py ] && [ -d /tmp/visual-data ] && \
+             python3 bench/visual/visual_comment.py --out /tmp/visual-data --mode "$MODE" --repo "$REPO" --pr "$PR" \
                --run-url "$RUN_URL" --artifact-url "$ARTIFACT_URL" --md /tmp/comment.md --verdict /tmp/verdict.json > /dev/null; then
             echo "rendered"
           else

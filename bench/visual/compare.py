@@ -251,7 +251,6 @@ def main():
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
         sl, l = records(os.path.join(d, "loki.json")) if has_loki else (True, {})
         n, ok, diffs, series, miss = compare(m, p)
-        ok_all = ok == n and miss == 0
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
         if loki_ok:
             ln, lok, ldiffs, _, lmiss = compare(p, l)
