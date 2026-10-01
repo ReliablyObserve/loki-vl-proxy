@@ -22,3 +22,5 @@ docker-compose.override.yml
 .claude/
 internal/translator/transdebug_test.go
 .worktrees/
+bench/visual/node_modules/
+bench/visual/test-results/

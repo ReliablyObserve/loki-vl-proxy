@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Visual proof tooling for pull requests (`bench/visual`).** One command brings
+  up an isolated stack (Loki, VictoriaLogs, a main and a PR proxy build, Grafana
+  with the three as datasources), captures the Explore graphs and log view,
+  Live tail and the Logs Drilldown pages for every datasource over 15m to 7d,
+  compares the panel data Grafana receives (series, values, steps) and renders
+  side-by-side before/after/Loki montages with a pixel-diff score. The Explore
+  graph of a filtered `| json` metric is also an `@explore-core` Playwright test
+  that compares its panel data with Loki's.
+
 ## [1.103.0] - 2026-10-01
 
 ### Performance

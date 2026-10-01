@@ -1,0 +1,135 @@
+{
+ "profile": "drilldown+explore",
+ "description": "Explore (filtered json log view + volume, json-filter-pushdown metric shapes, logfmt metric, label browser) and Logs Drilldown (landing, service logs, labels, fields, field value breakdown, patterns). Query shapes come from bench/ab/shapes.json set json-filter-pushdown, with [1m] replaced by $__auto as Explore sends it.",
+ "datasources": [
+  {
+   "id": "main",
+   "uid": "vp-main"
+  },
+  {
+   "id": "pr",
+   "uid": "vp-pr"
+  },
+  {
+   "id": "loki",
+   "uid": "vp-loki"
+  }
+ ],
+ "ranges": {
+  "15m": 900,
+  "1h": 3600,
+  "6h": 21600,
+  "24h": 86400,
+  "7d": 604800,
+  "live": 300
+ },
+ "default_ranges": [
+  "15m",
+  "1h",
+  "6h",
+  "24h",
+  "7d"
+ ],
+ "vars": {
+  "service": "otel-collector"
+ },
+ "pages": [
+  {
+   "id": "explore-A",
+   "kind": "explore",
+   "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [$__auto]))"
+  },
+  {
+   "id": "explore-B",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))"
+  },
+  {
+   "id": "explore-C",
+   "kind": "explore",
+   "query": "sum(count_over_time({env=\"production\"} | json | pipeline=`logs/loki` [$__auto]))"
+  },
+  {
+   "id": "explore-E",
+   "kind": "explore",
+   "query": "sum by (pipeline) (count_over_time({env=\"production\"} | json | drop __error__ | pipeline!=\"\" [$__auto]))"
+  },
+  {
+   "id": "explore-F",
+   "kind": "explore",
+   "query": "sum by (service_version) (count_over_time({env=\"production\"} | json | drop __error__ | service_version!=\"\" [$__auto]))"
+  },
+  {
+   "id": "explore-logs-json",
+   "kind": "explore",
+   "query": "{env=\"production\"} | json | pipeline=`logs/loki`"
+  },
+  {
+   "id": "explore-logfmt-metric",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt | level!=\"\" [$__auto]))"
+  },
+  {
+   "id": "explore-label-browser",
+   "kind": "label-browser"
+  },
+  {
+   "id": "dd-landing",
+   "kind": "drilldown",
+   "path": ""
+  },
+  {
+   "id": "dd-service-logs",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true
+  },
+  {
+   "id": "dd-labels",
+   "kind": "drilldown",
+   "path": "service/{service}/labels",
+   "service": true
+  },
+  {
+   "id": "dd-labels-namespace",
+   "kind": "drilldown",
+   "path": "service/{service}/label/namespace",
+   "service": true
+  },
+  {
+   "id": "dd-fields",
+   "kind": "drilldown",
+   "path": "service/{service}/fields",
+   "service": true
+  },
+  {
+   "id": "dd-field-service_version",
+   "kind": "drilldown",
+   "path": "service/{service}/field/service_version",
+   "service": true
+  },
+  {
+   "id": "dd-field-pipeline",
+   "kind": "drilldown",
+   "path": "service/{service}/field/pipeline",
+   "service": true
+  },
+  {
+   "id": "dd-patterns",
+   "kind": "drilldown",
+   "path": "service/{service}/patterns",
+   "service": true
+  },
+  {
+   "id": "tail-env",
+   "kind": "tail",
+   "query": "{env=\"production\"}"
+  },
+  {
+   "id": "tail-json-filter",
+   "kind": "tail",
+   "query": "{env=\"production\"} | json | service_version!=\"\""
+  }
+ ],
+ "loki_capture_max_s": 86400
+}
