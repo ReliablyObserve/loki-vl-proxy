@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.103.0] - 2026-10-01
+
 ### Performance
 
 - **A `| json` metric filtered on a parsed label parses only the lines that can
