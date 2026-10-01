@@ -864,7 +864,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	if plan.function == "bytes_rate" || plan.function == "bytes_over_time" {
 		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
 	}
-	query := base + orderedJSONUnpackPipes(plan.parser, unpack, stored)
+	query := base + orderedJSONUnpackPipes(plan.parser, unpack, stored, plan.requiredFields(base))
 	for _, filter := range plan.pushdownFilters {
 		query += logsQLLabelFilter(filter)
 	}
@@ -1001,15 +1001,51 @@ func storedFieldsAbsent(field string, stored map[string]string) string {
 	return condition
 }
 
+// requiredFields returns the parsed labels a line must hold to pass the
+// plan's label filters: the fields of filters that reject the empty value, so
+// a line without the label (stored or parsed) never counts. Nothing is
+// returned when a pipe other than a filter precedes the parser in base, which
+// could set the label under the parser's keep-original rule.
+func (plan *orderedJSONMetricPlan) requiredFields(base string) []string {
+	if plan.parser == "" || !onlyFilterPipes(base) {
+		return nil
+	}
+	var fields []string
+	for _, filter := range plan.pushdownFilters {
+		if !filter.Matches("") && !containsString(fields, filter.Field) {
+			fields = append(fields, filter.Field)
+		}
+	}
+	return fields
+}
+
 // orderedJSONUnpackPipes renders the pipes that give every unpacked label its
 // Loki value: the parser's unpack with stored fields kept, then, for a label
 // VictoriaLogs stores under another spelling, that stored value wherever the
 // line carries it, since Loki reads a stream label or structured metadata
 // before a parsed key of the same name (which it renames with _extracted).
-func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]string) string {
+// A label in required is held by every line that can count, so the other
+// lines are dropped before the parse (parsedFieldPrefilter), and the parser
+// runs only on lines that lack one of the labels as a stored field.
+func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]string, required []string) string {
 	var sb strings.Builder
 	if parser != "" {
-		sb.WriteString(" | unpack_" + parser + " fields (" + strings.Join(unpack, ", ") + ") keep_original_fields")
+		for _, field := range required {
+			var alias []string
+			if vl, ok := stored[field]; ok {
+				alias = append(alias, vl)
+			}
+			sb.WriteString(parsedFieldPrefilter(parser, field, alias...))
+		}
+		conditions := make([]string, len(unpack))
+		for i, field := range unpack {
+			conditions[i] = "(" + storedFieldsAbsent(field, stored) + ")"
+		}
+		sb.WriteString(" | unpack_" + parser)
+		if len(required) != 0 {
+			sb.WriteString(" if (" + strings.Join(conditions, " or ") + ")")
+		}
+		sb.WriteString(" fields (" + strings.Join(unpack, ", ") + ") keep_original_fields")
 	}
 	for _, field := range unpack {
 		if vl, ok := stored[field]; ok {

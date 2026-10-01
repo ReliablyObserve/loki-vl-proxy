@@ -299,6 +299,22 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			} else {
 				unpacked = slidingLogfmtFields(values["_msg"])
 			}
+			if i := strings.Index(pipe, " if ("); i >= 0 && i < strings.Index(pipe, "fields (") {
+				// unpack_json if (cond) ...: rows failing the condition are not parsed.
+				depth, end := 0, i+4
+				for ; end < len(pipe); end++ {
+					if pipe[end] == '(' {
+						depth++
+					} else if pipe[end] == ')' {
+						if depth--; depth == 0 {
+							break
+						}
+					}
+				}
+				if !fakeLogsQLMatch(t, pipe[i+5:end], values) {
+					continue
+				}
+			}
 			fields, keep, prefix := unpackOptions(pipe)
 			if fields == nil {
 				for field := range unpacked {
@@ -604,23 +620,23 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 	}{
 		// Explore's logs volume for `{...} | json | service_version=`0.96.0` | pipeline=`logs/loki``.
 		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2,
-			`unpack_json fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*) or (-pipeline:*)) fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
 		// A user's grouped sum: the filter excludes unparsed lines, so errors need not be dropped.
 		{`sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
-			`unpack_json fields (level, pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats by (level) count() as c`},
+			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-pipeline:*)) fields (level, pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats by (level) count() as c`},
 		// The same without grouping.
 		{`sum(count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
-			`unpack_json fields (pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats count() as c`},
+			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats count() as c`},
 		{`sum(rate({app="api"} | json | pipeline=~"logs/.*" [2m]))`, 2,
-			`unpack_json fields (pipeline) keep_original_fields | filter pipeline:~"^(?:logs/.*)$" | stats count() as c`},
+			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter pipeline:~"^(?:logs/.*)$" | stats count() as c`},
 		// A Drilldown field breakdown on a structured-metadata label.
 		{`sum by (service_version) (count_over_time({app="api"} | json | drop __error__ | service_version!="" [1m]))`, 2,
-			`unpack_json fields (service_version) keep_original_fields` + stored + ` | filter -service_version:="" | stats by (service_version) count() as c`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | unpack_json if ((-service_version:* -` + "`service.version`" + `:*)) fields (service_version) keep_original_fields` + stored + ` | filter -service_version:="" | stats by (service_version) count() as c`},
 		// A field breakdown on a body key without dropping errors: `!=""` rejects unparsed lines.
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
-			`unpack_json fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
+			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
 		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2,
-			`unpack_json fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*)) fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)

@@ -1,0 +1,163 @@
+{
+ "label": "ordered-json-drilldown-breakdown-exact-1h",
+ "date": "2026-10-01",
+ "set": "drilldown-breakdown-exact",
+ "description": "Logs Drilldown label and field breakdowns as the plugin sends them, answered exactly (every series up to the tenant's max_query_series, the busiest with Loki's warning over it) instead of from sampled /hits top values. High-cardinality labels and fields (pod, user_id, batch_id) and a low-cardinality one (namespace).",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 4
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "main": 0,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DB1 label breakdown pod",
+   "range": "1h",
+   "p50": {
+    "main": 0.052,
+    "branch": 0.048,
+    "loki": 0.067
+   },
+   "p95": {
+    "main": 0.055,
+    "branch": 0.051,
+    "loki": 0.078
+   },
+   "cold": {
+    "main": 0.065,
+    "branch": 0.068,
+    "loki": 0.457
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 11.29,
+    "branch": 25.94,
+    "loki": 25.94
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  },
+  {
+   "shape": "DB2 label breakdown namespace",
+   "range": "1h",
+   "p50": {
+    "main": 0.018,
+    "branch": 0.019,
+    "loki": 0.02
+   },
+   "p95": {
+    "main": 0.018,
+    "branch": 0.019,
+    "loki": 0.026
+   },
+   "cold": {
+    "main": 0.018,
+    "branch": 0.018,
+    "loki": 0.323
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 25.94,
+    "branch": 25.94,
+    "loki": 25.94
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "DB3 json field breakdown user_id",
+   "range": "1h",
+   "p50": {
+    "main": 0.02,
+    "branch": 0.021,
+    "loki": 0.017
+   },
+   "p95": {
+    "main": 0.023,
+    "branch": 0.03,
+    "loki": 0.02
+   },
+   "cold": {
+    "main": 0.028,
+    "branch": 0.021,
+    "loki": 0.279
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 46.41,
+    "branch": 46.41,
+    "loki": 46.41
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "DB4 json field breakdown batch_id",
+   "range": "1h",
+   "p50": {
+    "main": 0.046,
+    "branch": 0.044,
+    "loki": 0.038
+   },
+   "p95": {
+    "main": 0.052,
+    "branch": 0.048,
+    "loki": 0.043
+   },
+   "cold": {
+    "main": 0.045,
+    "branch": 0.051,
+    "loki": 0.289
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 41.92,
+    "branch": 41.92,
+    "loki": 41.92
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  }
+ ]
+}

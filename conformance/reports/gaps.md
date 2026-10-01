@@ -71,7 +71,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 4 | 2 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 7 | proven |
-| identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 4 | 3 | partial |
+| identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 4 | 4 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 14 | 3 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 9 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
@@ -123,18 +123,18 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there |
 |---|---|---|---|
-| `explore-logs-volume-json` | 11 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
-| `parser-error-and-label-collision` | 6 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
-| `semantics/json-filter-pushdown-translated-label` | 3 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
-| `semantics/json-filter-pushdown-underscore-label` | 8 | 4.62s (A explore volume, 2 filters, drop, 24h) | 1.48s |
-| `parser-logfmt` | 2 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
-| `severity-detected-level-derivation` | 12 | 4.05s (DL3 drilldown logfmt field breakdown, level filter, 24h) | 0.94s |
-| `semantics/label-filter-before-parser-pushdown` | 7 | 2.80s (DL6 explore volume, level filter before json, 24h) | 0.38s |
 | `backend-admission-and-heavy-query-queueing` | 2 | 1.31s (drilldown landing volume, 7d) | 0.08s |
-| `parsed-label-series-identity` | 10 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
-| `semantics/json-label-spelling-probe` | 5 | 2.42s (F field breakdown service_version (explore), 24h) | 1.28s |
+| `explore-logs-volume-json` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 4 | 1.43s (B grouped sum, filter, no drop, 24h) | 1.07s |
+| `parser-error-and-label-collision` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
+| `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
+| `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
+| `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
+| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
+| `parser-logfmt` | 2 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
 | `loki-compatible-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |

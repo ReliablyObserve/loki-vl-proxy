@@ -1,0 +1,197 @@
+{
+ "label": "ordered-json-metric-latency-gap-1h",
+ "date": "2026-10-01",
+ "set": "metric-latency-gap",
+ "description": "Shapes the metric latency work targets: the parse-risk probes of the | json stats pushdown (breakdowns and volumes by underscore labels), label filters before the parser (Logs Drilldown pages with a level filter selected) and Explore volumes with a level filter. Run with the json-filter-pushdown set.",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 5
+ },
+ "result_differs_from_reference": 1,
+ "result_differs_preexisting": 1,
+ "stale_answers": {
+  "main": 0,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DL6 explore volume, level filter before json",
+   "range": "1h",
+   "p50": {
+    "main": 0.058,
+    "branch": 0.058,
+    "loki": 0.021
+   },
+   "p95": {
+    "main": 0.085,
+    "branch": 0.064,
+    "loki": 0.03
+   },
+   "cold": {
+    "main": 0.223,
+    "branch": 0.172,
+    "loki": 0.348
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 157.83,
+    "branch": 157.83,
+    "loki": 157.83
+   },
+   "parity_vs_reference": "same series, sum \u00b10.22%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DL2 drilldown field breakdown, level + stream-label filter before json",
+   "range": "1h",
+   "p50": {
+    "main": 0.034,
+    "branch": 0.033,
+    "loki": 0.005
+   },
+   "p95": {
+    "main": 0.036,
+    "branch": 0.036,
+    "loki": 0.005
+   },
+   "cold": {
+    "main": 0.035,
+    "branch": 0.034,
+    "loki": 0.019
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 103.18,
+    "branch": 103.18,
+    "loki": 103.18
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.03
+  },
+  {
+   "shape": "DL1 drilldown field breakdown json-expr, level filter",
+   "range": "1h",
+   "p50": {
+    "main": 0.075,
+    "branch": 0.052,
+    "loki": 0.013
+   },
+   "p95": {
+    "main": 0.089,
+    "branch": 0.057,
+    "loki": 0.013
+   },
+   "cold": {
+    "main": 0.056,
+    "branch": 0.057,
+    "loki": 0.226
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 197.34,
+    "branch": 197.34,
+    "loki": 197.34
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.44
+  },
+  {
+   "shape": "DL3 drilldown logfmt field breakdown, level filter",
+   "range": "1h",
+   "p50": {
+    "main": 0.119,
+    "branch": 0.114,
+    "loki": 0.08
+   },
+   "p95": {
+    "main": 0.13,
+    "branch": 0.117,
+    "loki": 0.09
+   },
+   "cold": {
+    "main": 0.103,
+    "branch": 0.115,
+    "loki": 0.631
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 180.7,
+    "branch": 181.02,
+    "loki": 181.02
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.04
+  },
+  {
+   "shape": "DL4 instant count, level filter, json+logfmt, 1h",
+   "range": "instant",
+   "p50": {
+    "main": 0.124,
+    "branch": 0.115,
+    "loki": 0.597
+   },
+   "p95": {
+    "main": 0.174,
+    "branch": 0.131,
+    "loki": 0.62
+   },
+   "cold": {
+    "main": 0.141,
+    "branch": 0.138,
+    "loki": 0.606
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 181.02,
+    "branch": 181.02,
+    "loki": 90.81
+   },
+   "parity_vs_reference": "same series, sum \u00b10.22%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  }
+ ]
+}
