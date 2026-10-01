@@ -96,6 +96,10 @@ type detectedFieldSummary struct {
 	jsonPath    []string
 	cardinality int
 	nativeHits  int64 // hits from VL field_names index; 0 for scan-found fields
+	// metadataOnly: seen only as a stored field beside a JSON log line that
+	// does not hold it, which Loki reports as structured metadata.
+	metadataOnly bool
+	besidePlain  bool
 }
 
 type detectedLabelSummary struct {
@@ -1394,6 +1398,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		// Parse _msg JSON once: populate msgJSONKeys for the skip-guard below AND add
 		// detected fields with parser="json" in the same pass.
 		var msgJSONKeys map[string]struct{}
+		var msgObjectKeys map[string]bool
 		if len(msgBytes) >= 2 && msgBytes[0] == '{' {
 			fjParser2 := vlFJParserPool.Get()
 			if fjVal2, err2 := fjParser2.ParseBytes(msgBytes); err2 == nil {
@@ -1405,6 +1410,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 						}
 						// Skip nested objects and arrays before allocating key string.
 						vt := v.Type()
+						if vt == fj.TypeObject {
+							if msgObjectKeys == nil {
+								msgObjectKeys = make(map[string]bool)
+							}
+							msgObjectKeys[string(keyBytes)] = true
+						}
 						if vt == fj.TypeObject || vt == fj.TypeArray {
 							return
 						}
@@ -1445,11 +1456,22 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				if !ok {
 					return
 				}
+				// Beside a JSON line that does not hold the key, the field
+				// is structured metadata (Loki: parsers null); beside any
+				// other line it may be a key VictoriaLogs unpacked from it.
+				metadataOnly := msgJSONKeys != nil && !isJSONLineField(key, msgObjectKeys)
 				for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
 						continue
 					}
 					addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
+					if summary := fields[exposure.name]; summary != nil {
+						if metadataOnly {
+							summary.metadataOnly = true
+						} else {
+							summary.besidePlain = true
+						}
+					}
 				}
 			})
 		}
@@ -1539,6 +1561,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	for _, summary := range fields {
 		// detected_level is not parsed from the line: Loki lists it with
 		// parsers null.
+		if summary.metadataOnly && !summary.besidePlain {
+			continue
+		}
 		if len(summary.parsers) == 0 && !strings.ContainsAny(summary.label, ".") && summary.label != detectedLevelLabel && summary.label != detectedLevelExtractedLabel {
 			if _, isStreamLabel := labelNames[summary.label]; !isStreamLabel {
 				if summary.parsers == nil {

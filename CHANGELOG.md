@@ -33,6 +33,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field is not part of a run: rows that gain the field appear up to the
   negative TTL late.
 
+- **Log queries without a parser no longer return the keys of a JSON line as
+  parsed labels, like Loki.** VictoriaLogs' Loki push endpoint unpacks a JSON
+  line into stored fields, and the Loki-compatible profile (underscore labels,
+  translated metadata) reported every such field as a `parsed` label on a
+  plain selector, which Grafana's log details and Logs Drilldown showed as
+  parsed fields Loki only returns after `| json`; a nested line object
+  (`{"service":{"name":...}}`, stored as `service.name`) also turned the
+  `service_name` stream label into structured metadata. A query with no stage
+  that adds labels (a parser of any kind or `label_format`) now leaves those
+  fields out, on the buffered, streamed and windowed response paths; with
+  `| json` they are parsed labels, and structured metadata stays structured
+  metadata on the streamed path too, where it was reported as parsed.
+- **detected_fields lists structured metadata beside a JSON line with parsers
+  null, like Loki.** OTel metadata pushed with a JSON line (`trace_id`,
+  `k8s_pod_name`, `service_version`, ...) was listed with `parsers: ["json"]`
+  and a jsonPath, so Logs Drilldown's Fields tab built `| json k8s_pod_name=...`
+  breakdowns where Loki builds `| k8s_pod_name!=""`. A stored field beside a
+  JSON line that does not hold its key is now structured metadata; a field
+  seen beside a plain line keeps the JSON inference VictoriaLogs' own JSON
+  unpacking needs.
+- **`/labels` answers sorted on the first, uncached request, like Loki.**
+  VictoriaLogs lists stream field names by hits and the first answer kept that
+  order; the cached answer was already sorted.
+- **index/stats counts the entries and streams of the requested window, like
+  Loki.** It asked `/select/logsql/hits` with a 1h step, which widens the window
+  to whole hours (a 1h window off the hour counted 395,087 entries where Loki
+  and VictoriaLogs hold 289,279) and has no stream count, so `streams` was
+  always 1. One `stats count(), count_uniq(_stream_id)` row over the window
+  now gives both (available on every supported VictoriaLogs version); `chunks`
+  is the stream count and `bytes` stays an estimate, since VictoriaLogs has no
+  chunks or ingested-bytes accounting.
+
+
 ## [1.104.0] - 2026-10-01
 
 ### Added

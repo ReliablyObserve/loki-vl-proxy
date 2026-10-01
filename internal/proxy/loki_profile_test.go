@@ -191,7 +191,7 @@ func serve(p *Proxy, method, target string, headers map[string]string) *httptest
 // label browse parameters, structured-metadata keys and detected_fields names
 // of dotted JSON keys. No combination may silently change behaviour.
 //
-// conformance: loki-compatible-profile, profiles/dotted-name-parse-error, profiles/dotted-names-accepted-outside-loki-profile, profiles/label-browse-params-ignored, profiles/structured-metadata-keys-per-profile, profiles/detected-fields-dotted-json-keys
+// conformance: loki-compatible-profile, profiles/dotted-name-parse-error, profiles/dotted-names-accepted-outside-loki-profile, profiles/label-browse-params-ignored, profiles/structured-metadata-keys-per-profile, profiles/detected-fields-dotted-json-keys, profiles/parsed-fields-without-parser, profiles/detected-fields-structured-metadata-beside-json-line
 func TestCompatOptionMatrix(t *testing.T) {
 	var calls atomic.Int64
 	backend := matrixBackend(t, &calls)
@@ -249,6 +249,7 @@ func TestCompatOptionMatrix(t *testing.T) {
 			if v := qr.Data.Result[0].Values[0]; len(v) > 2 {
 				var meta struct {
 					StructuredMetadata map[string]string `json:"structuredMetadata"`
+					Parsed             map[string]string `json:"parsed"`
 				}
 				_ = json.Unmarshal(v[2], &meta)
 				for k := range meta.StructuredMetadata {
@@ -256,10 +257,22 @@ func TestCompatOptionMatrix(t *testing.T) {
 						gotKeys = append(gotKeys, k)
 					}
 				}
+				// Loki has no labels from the line without a parser stage.
+				if lokiProfile(o.style, o.mode) && len(meta.Parsed) > 0 {
+					t.Fatalf("plain selector returned parsed labels %v; Loki returns none without a parser stage", meta.Parsed)
+				}
 			}
 			sort.Strings(gotKeys)
 			if want := o.wantMetadataKeys("cloud.region", "http.target"); fmt.Sprint(gotKeys) != fmt.Sprint(want) {
 				t.Fatalf("structured metadata keys %v, want %v", gotKeys, want)
+			}
+			if lokiProfile(o.style, o.mode) {
+				// With | json the line's keys are parsed labels, as in Loki.
+				w = serve(p, http.MethodGet, "/loki/api/v1/query_range?"+window+"&limit=10&query="+url.QueryEscape(`{service_name="svc"} | json`),
+					map[string]string{"X-Loki-Response-Encoding-Flags": "categorize-labels"})
+				if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"http_method":"GET"`) || (o.emit && !strings.Contains(w.Body.String(), `"parsed":{`)) {
+					t.Fatalf("| json: parsed label http_method missing: %d %.500s", w.Code, w.Body)
+				}
 			}
 
 			// detected_fields name of a dotted JSON key.
@@ -286,6 +299,13 @@ func TestCompatOptionMatrix(t *testing.T) {
 			}
 			if !found {
 				t.Fatalf("detected_fields has no %q with jsonPath [http.method]: %.500s", wantLabel, w.Body)
+			}
+			// Stored fields beside a JSON line that does not hold them are
+			// structured metadata: Loki lists them with parsers null.
+			for _, f := range df.Fields {
+				if (f.Label == "http_target" || f.Label == "cloud_region") && (len(f.Parsers) > 0 || len(f.JSONPath) > 0) {
+					t.Fatalf("structured metadata %q listed with parsers %v jsonPath %v, want null", f.Label, f.Parsers, f.JSONPath)
+				}
 			}
 		})
 	}

@@ -39,7 +39,13 @@ from vio import dump_json, load_json, write_text  # noqa: E402
 
 # The profile of the datasource Logs Drilldown opens by default in the e2e stack.
 SERVICE = "loki-vl-proxy-patterns-autodetect"
+# Loki keeps the flushed seed in its ingesters too (see the file).
+LOKI_OVERLAY = "bench/visual/docker-compose.visual.yml"
 PORTS = dict(loki=33101, vl=33428, main=33200, pr=33202, grafana=33002)
+
+
+def stack(project):
+    return ab.Stack(project, PORTS["loki"], PORTS["vl"], overlays=[LOKI_OVERLAY])
 
 
 def grafana_host_network():
@@ -104,7 +110,7 @@ def seed_vl_only(st, start, end, out):
 
 def up(a):
     os.makedirs(a.out, exist_ok=True)
-    st = ab.Stack(a.project, PORTS["loki"], PORTS["vl"])
+    st = stack(a.project)
     state = dict(project=a.project, ports=PORTS, pids={})
     sp = os.path.join(a.out, "state.json")
     old = load_json(sp) if a.skip_seed and os.path.exists(sp) else {}
@@ -214,7 +220,7 @@ def down(a):
         a.cmd = "live-stop"
         live(a)
     sh("docker", "rm", "-f", f"{project}-grafana", check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    ab.Stack(project, PORTS["loki"], PORTS["vl"]).down()
+    stack(project).down()
     for tree in state.get("trees", {}).values():
         ab.remove_tree(tree)
     ab.log("down")

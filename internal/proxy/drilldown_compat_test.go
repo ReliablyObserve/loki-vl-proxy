@@ -2088,6 +2088,62 @@ func TestDetectFieldSummaries_VLAutoExtractedFieldsGetJSONParser(t *testing.T) {
 	}
 }
 
+// TestDetectFieldSummaries_MetadataBesideJSONLineKeepsNullParsers: a stored
+// field beside a JSON log line that does not hold the key is structured
+// metadata, which Loki lists with parsers null and no jsonPath. Logs Drilldown
+// builds a field's breakdown from that metadata (`| k8s_pod_name!=""` for
+// structured metadata, `| json k8s_pod_name="..."` for a parsed key), so a
+// json parser on OTel metadata made it issue different queries than on Loki.
+// Keys of the line keep parsers ["json"].
+//
+// conformance: profiles/detected-fields-structured-metadata-beside-json-line, loki_api_v1_detected_fields
+func TestDetectFieldSummaries_MetadataBesideJSONLineKeepsNullParsers(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(otelCollectorRow + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error",
+		LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	w := httptest.NewRecorder()
+	p.handleDetectedFields(w, httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22otel-collector%22%7D&start=1&end=2", nil))
+	var resp struct {
+		Fields []struct {
+			Label    string   `json:"label"`
+			Parsers  []string `json:"parsers"`
+			JSONPath []string `json:"jsonPath"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v: %s", err, w.Body.String())
+	}
+	got := map[string]string{}
+	for _, f := range resp.Fields {
+		got[f.Label] = fmt.Sprint(f.Parsers, f.JSONPath)
+	}
+	want := map[string]string{
+		"k8s_cluster_name": "[] []", "k8s_pod_name": "[] []", "trace_id": "[] []",
+		"pipeline": "[json] [pipeline]", "received": "[json] [received]", "export_ms": "[json] [export_ms]",
+	}
+	for label, w := range want {
+		if got[label] != w {
+			t.Errorf("%s: parsers/jsonPath %q, want %q (all fields: %v)", label, got[label], w, got)
+		}
+	}
+}
+
 // TestDetectFieldSummaries_DottedOTelFieldsKeepNullParsers guards that
 // OTel dotted-name fields (service.name, k8s.pod.name) are NOT inferred as
 // json-parser fields. They are structured metadata, not JSON body fields.

@@ -8,11 +8,10 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
 | 12 | `/loki/api/v1/label/{name}/values` | explore, drilldown, datasource, api | native_vl | 0 | 0 | no test compares it against Loki |
-| 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 29 | 9 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
+| 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 29 | 9 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 7 | `/loki/api/v1/detected_field/{name}/values` | drilldown, api | native_vl | 0 | 0 | no test compares it against Loki; no test wired to the registry |
 | 6 | `/loki/api/v1/index/volume_range` | drilldown, api | proxy_side | 22 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/index/volume` | drilldown, api | proxy_side | 26 | 7 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/loki/api/v1/index/stats` | explore, datasource, api | native_vl | 19 | 5 | no test wired to the registry |
 | 6 | `/loki/api/v1/format_query` | explore, api | proxy_side | 5 | 1 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/detected_labels` | drilldown, api | proxy_side | 16 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 4 | `/prometheus/api/v1/alerts` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
@@ -67,7 +66,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 6 | 0 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 9 | 3 | partial |
-| semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 7 | 3 | partial |
+| semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 7 | 4 | partial |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 4 | 2 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 7 | proven |

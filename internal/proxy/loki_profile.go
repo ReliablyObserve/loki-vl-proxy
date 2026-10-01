@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	fj "github.com/valyala/fastjson"
 )
 
 // Settings of -logql-dotted-names and -label-browse-extensions.
@@ -131,4 +132,71 @@ func (p *Proxy) labelLimitParam(r *http.Request) string {
 		return ""
 	}
 	return r.FormValue("limit")
+}
+
+// hidesLineFields reports whether a log query's response leaves out the
+// fields VictoriaLogs unpacked from a JSON log line at ingest. Loki has no
+// such labels unless a stage adds them (a parser of any kind or
+// label_format), so the Loki-compatible profile leaves them out of a query
+// without one (profiles/parsed-fields-without-parser). A query the parser
+// rejects keeps every field, as before.
+func (p *Proxy) hidesLineFields(query string) bool {
+	if !p.lokiCompatibleProfile() {
+		return false
+	}
+	lq, err := logqlpkg.ParseLogQuery(query)
+	return err == nil && !pipelineAddsLabels(lq.Pipeline)
+}
+
+// lokiCompatibleProfile reports whether this proxy runs the Loki-compatible
+// profile (see lokiProfile).
+func (p *Proxy) lokiCompatibleProfile() bool {
+	return p.labelTranslator != nil && lokiProfile(p.labelTranslator.style, p.metadataFieldMode)
+}
+
+// pipelineAddsLabels reports whether a log pipeline has a stage that adds
+// labels to an entry.
+func pipelineAddsLabels(pipeline []logqlpkg.Stage) bool {
+	for _, stage := range pipeline {
+		switch stage.(type) {
+		case *logqlpkg.ParserStage, *logqlpkg.LabelFormatStage:
+			return true
+		}
+	}
+	return false
+}
+
+// jsonLineKeys returns the top-level keys of a JSON-object log line, each
+// true when its value is an object, or nil when the line is not one.
+func jsonLineKeys(line []byte) map[string]bool {
+	if len(line) < 2 || line[0] != '{' {
+		return nil
+	}
+	var parser fj.Parser
+	value, err := parser.ParseBytes(line)
+	if err != nil {
+		return nil
+	}
+	obj, err := value.Object()
+	if err != nil {
+		return nil
+	}
+	keys := make(map[string]bool, obj.Len())
+	obj.Visit(func(key []byte, v *fj.Value) {
+		keys[string(key)] = v.Type() == fj.TypeObject
+	})
+	return keys
+}
+
+// isJSONLineField reports whether a stored VictoriaLogs field holds content
+// of the JSON log line: one of its top-level keys, or a dotted name under a
+// top-level object (VictoriaLogs flattens nested objects into dotted names).
+func isJSONLineField(field string, lineKeys map[string]bool) bool {
+	if _, ok := lineKeys[field]; ok {
+		return true
+	}
+	if i := strings.IndexByte(field, '.'); i > 0 {
+		return lineKeys[field[:i]]
+	}
+	return false
 }

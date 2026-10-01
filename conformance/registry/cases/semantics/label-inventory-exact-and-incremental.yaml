@@ -41,6 +41,10 @@ why: |
   counted: a word or phrase filter's count reads every message. The startup
   warm-up and keep-warm run as the /labels request of a client without a
   tenant header, so the buckets they fill are the ones such requests read.
+
+  Implemented in internal/proxy/metadata_inventory.go (bucket plan, merge,
+  revalidation, counted buckets) and internal/proxy/label_metadata.go
+  (fetchScopedLabelNames, fetchScopedLabelValues).
 request:
   method: GET
   path: /loki/api/v1/labels

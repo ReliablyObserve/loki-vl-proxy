@@ -1,0 +1,40 @@
+id: profiles/detected-fields-structured-metadata-beside-json-line
+title: detected_fields lists structured metadata beside a JSON line with parsers null
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  An OTel log pushed through the Loki push API carries a JSON line and
+  structured metadata (trace_id, k8s.pod.name, service.version, ...).
+  VictoriaLogs stores both as fields of the row. Loki's detected_fields
+  lists the metadata with parsers null and no jsonPath, and the line's keys
+  with parsers ["json"] and their jsonPath. The proxy inferred parsers
+  ["json"] and jsonPath [label] for every stored field that was not a stream
+  label (meant for rows whose JSON VictoriaLogs unpacked and replaced _msg
+  with the inner message), so the metadata was listed as JSON keys too.
+  Logs Drilldown builds a field's breakdown from that metadata: `| json
+  k8s_pod_name="[\"k8s_pod_name\"]" | drop __error__, __error_details__ |
+  k8s_pod_name!=""` on the proxy against `| k8s_pod_name!=""` on Loki, so
+  the Fields tab issued different queries on the two datasources (measured
+  on the visual-proof stack, generator service otel-collector, 2026-10-01).
+  A stored field beside a JSON line that does not hold its key (nor an
+  object it is nested in) is now structured metadata; a field seen beside a
+  plain line keeps the inference. Implemented in internal/proxy/drilldown.go
+  (detectFieldSummariesStream).
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{app="line-fields-<ts>"}'
+    start: now-5m
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [fields.label, fields.parsers, fields.jsonPath]
+  expect: |
+    The same parsers and jsonPath as Loki for every field Loki lists
+    (TestCompat_LokiPushLineFieldsLikeLoki): trace_id and k8s_pod_name with
+    parsers null, msg, user and status with parsers ["json"].

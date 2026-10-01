@@ -55,7 +55,7 @@ VictoriaLogs is intentionally broader than the Loki support window. We support `
 
 - Service name derived from labels when VictoriaLogs does not carry a native `service_name`
 - `detected_fields` and `detected_field/<name>/values` derived from VictoriaLogs field content
-- Loki `index/stats` backed by VictoriaLogs `hits`; `index/volume` and `index/volume_range` backed by VictoriaLogs `stats_query` / `stats_query_range` with `sum_len(_msg)` (bytes)
+- Loki `index/stats` backed by one VictoriaLogs `stats count(), count_uniq(_stream_id)` row over the window (entries and streams as Loki counts them; `bytes` is an estimate, VictoriaLogs has no chunk accounting); `index/volume` and `index/volume_range` backed by VictoriaLogs `stats_query` / `stats_query_range` with `sum_len(_msg)` (bytes)
 - Raw VictoriaLogs fields mapped into parsed fields or structured metadata without polluting stream labels
 
 ## Runtime Capability Profiles

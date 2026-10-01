@@ -28,6 +28,10 @@ why: |
   nothing cached anywhere, still reads the whole range (19.9 s against
   23.4 s): only its buckets make the next windows cheap, and the keep-warm
   loop fills them for the 1 h to 7 d presets.
+
+  Implemented in internal/proxy/metadata_inventory.go (the bucketed
+  inventory) and internal/proxy/label_metadata.go (warmMetadataCacheOnStartup,
+  warmLabelWindows, labelKeepWarmSchedule).
 request:
   method: GET
   path: /loki/api/v1/labels

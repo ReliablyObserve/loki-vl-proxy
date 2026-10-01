@@ -81,8 +81,9 @@ def port_free(port):
 
 
 class Stack:
-    def __init__(self, project, loki_port=23101, vl_port=29428, loki_mem=None, vl_mem=None, root=ROOT):
+    def __init__(self, project, loki_port=23101, vl_port=29428, loki_mem=None, vl_mem=None, root=ROOT, overlays=()):
         self.project, self.loki_port, self.vl_port, self.root = project, loki_port, vl_port, root
+        self.overlays = list(overlays)  # further compose files after OVERLAY (relative to root)
         self.env = dict(os.environ, AB_PROJECT=project, AB_LOKI_PORT=str(loki_port), AB_VL_PORT=str(vl_port))
         if loki_mem:
             # GOMEMLIMIT at ~80% of the cgroup limit, as the base stack sets it.
@@ -96,7 +97,8 @@ class Stack:
         self.loki_container = f"{project}-loki"
 
     def compose(self, *args, capture=False):
-        cmd = ["docker", "compose", "-p", self.project, "-f", BASE_COMPOSE, "-f", OVERLAY, *args]
+        files = [x for f in (BASE_COMPOSE, OVERLAY, *self.overlays) for x in ("-f", f)]
+        cmd = ["docker", "compose", "-p", self.project, *files, *args]
         if capture:
             return subprocess.run(cmd, cwd=self.root, env=self.env, check=True, capture_output=True, text=True).stdout
         subprocess.run(cmd, cwd=self.root, env=self.env, check=True)

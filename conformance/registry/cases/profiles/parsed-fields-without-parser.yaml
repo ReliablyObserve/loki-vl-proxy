@@ -1,23 +1,30 @@
 id: profiles/parsed-fields-without-parser
-title: A log query without a parser stage returns no parsed labels (open gap)
+title: A log query without a parser stage returns no parsed labels
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
 consumer: explore
 why: |
   Loki returns parsed labels only when the query runs a parser stage
-  (| json, | logfmt, | regexp, | pattern, | unpack). VictoriaLogs' Loki-push
-  endpoint unpacks a JSON line into stored fields at ingest, and the proxy's
-  categorize-labels encoding reports every stored field whose key also
-  appears in the JSON _msg as `parsed`, even for a plain selector. Measured
-  on the e2e stack (2026-09-24, generator stream `{app="otel-collector"}`,
-  15m, categorize-labels): Loki's first value carries structuredMetadata
-  only; the Loki-compatible proxy adds
+  (| json, | logfmt, | regexp, | pattern, | unpack) or label_format.
+  VictoriaLogs' Loki-push endpoint unpacks a JSON line into stored fields at
+  ingest, and the proxy's categorize-labels encoding reported every stored
+  field whose key also appears in the JSON _msg as `parsed`, even for a
+  plain selector. Measured on the e2e stack (2026-09-24, generator stream
+  `{app="otel-collector"}`, 15m, categorize-labels): Loki's first value
+  carries structuredMetadata only; the Loki-compatible proxy added
   `"parsed": {"dropped", "export_ms", "message", "pipeline", "received"}`,
   which Grafana's log details list as parsed fields a Loki user never sees
-  without `| json`. Open: the fix drops body-derived fields when the query
-  has no parser stage, in the Loki-compatible profile, on both the fastjson
-  and the map classification paths.
+  without `| json`. A nested line object counts as the line's content too
+  ({"service":{"name":...}} is stored as service.name), so it no longer
+  turns the service_name stream label into structured metadata either.
+  Fixed (2026-10-01): in the Loki-compatible profile a query without a stage
+  that adds labels leaves those fields out, on the buffered, streamed and
+  windowed response paths (internal/proxy/stream_processing.go
+  classifyEntryMetadataFieldsFJ and classifyEntryFieldsWithFlags,
+  internal/proxy/loki_profile.go hidesLineFields); with a parser they are
+  parsed labels and the structured metadata stays structured metadata on
+  every path.
 request:
   method: GET
   path: /loki/api/v1/query_range

@@ -1337,15 +1337,15 @@
       "warm_p50": 1.665
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.038,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 1.066,
-      "loki_warm_p50": 0.022,
-      "parity_vs_loki": "differs",
+      "loki_cold": 0.243,
+      "loki_warm_p50": 0.017,
+      "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
       "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
@@ -1353,7 +1353,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.062
+      "warm_p50": 0.021
     },
     {
       "baseline": "main",
@@ -2943,14 +2943,14 @@
   ],
   "loki-compatible-profile": [
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.516,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.093,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": true,
-      "loki_cold": 0.765,
-      "loki_warm_p50": 0.601,
+      "loki_cold": 0.197,
+      "loki_warm_p50": 0.148,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
@@ -2959,7 +2959,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.372
+      "warm_p50": 0.078
     },
     {
       "baseline": "main",
@@ -3019,15 +3019,15 @@
       "warm_p50": 0.261
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.038,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 1.066,
-      "loki_warm_p50": 0.022,
-      "parity_vs_loki": "differs",
+      "loki_cold": 0.243,
+      "loki_warm_p50": 0.017,
+      "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
       "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
@@ -3035,7 +3035,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.062
+      "warm_p50": 0.021
     },
     {
       "baseline": "main",
@@ -3095,13 +3095,13 @@
       "warm_p50": 0.097
     },
     {
-      "baseline": "main",
-      "baseline_status": "200",
+      "baseline": "base",
+      "baseline_status": "400",
       "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -3110,7 +3110,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -3171,13 +3171,13 @@
       "warm_p50": 0.001
     },
     {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "baseline": "base",
+      "baseline_status": "400",
+      "cold": 0.001,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -3186,7 +3186,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -6738,14 +6738,14 @@
       "warm_p50": 4.266
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.516,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.093,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": true,
-      "loki_cold": 0.765,
-      "loki_warm_p50": 0.601,
+      "loki_cold": 0.197,
+      "loki_warm_p50": 0.148,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
@@ -6754,7 +6754,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.372
+      "warm_p50": 0.078
     },
     {
       "baseline": "main",
@@ -6814,15 +6814,15 @@
       "warm_p50": 0.261
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.038,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 1.066,
-      "loki_warm_p50": 0.022,
-      "parity_vs_loki": "differs",
+      "loki_cold": 0.243,
+      "loki_warm_p50": 0.017,
+      "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
       "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
@@ -6830,7 +6830,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.062
+      "warm_p50": 0.021
     },
     {
       "baseline": "main",
@@ -6890,13 +6890,13 @@
       "warm_p50": 0.097
     },
     {
-      "baseline": "main",
-      "baseline_status": "200",
+      "baseline": "base",
+      "baseline_status": "400",
       "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -6905,7 +6905,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -6966,13 +6966,13 @@
       "warm_p50": 0.001
     },
     {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "baseline": "base",
+      "baseline_status": "400",
+      "cold": 0.001,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -6981,7 +6981,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -8863,13 +8863,13 @@
   ],
   "profiles/dotted-name-parse-error": [
     {
-      "baseline": "main",
-      "baseline_status": "200",
+      "baseline": "base",
+      "baseline_status": "400",
       "cold": 0.001,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -8878,7 +8878,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -8939,13 +8939,13 @@
       "warm_p50": 0.001
     },
     {
-      "baseline": "main",
-      "baseline_status": "200",
-      "cold": 0.002,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "baseline": "base",
+      "baseline_status": "400",
+      "cold": 0.001,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 0.003,
+      "loki_cold": 0.002,
       "loki_warm_p50": 0.002,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -8954,7 +8954,7 @@
       "slower_than_loki_cold": false,
       "status": "400",
       "valid": true,
-      "verdict_vs_baseline": "fixed",
+      "verdict_vs_baseline": "same",
       "warm_p50": 0.001
     },
     {
@@ -9017,14 +9017,14 @@
   ],
   "profiles/structured-metadata-keys-per-profile": [
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.516,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.093,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": true,
-      "loki_cold": 0.765,
-      "loki_warm_p50": 0.601,
+      "loki_cold": 0.197,
+      "loki_warm_p50": 0.148,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
@@ -9033,7 +9033,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.372
+      "warm_p50": 0.078
     },
     {
       "baseline": "main",
@@ -9093,15 +9093,15 @@
       "warm_p50": 0.261
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.075,
-      "date": "2026-09-30",
-      "label": "pr624-final-loki-profile-otel-metadata",
+      "cold": 0.038,
+      "date": "2026-10-01",
+      "label": "loki-parity-pages-loki-profile-otel-metadata",
       "loki_cache_served": false,
-      "loki_cold": 1.066,
-      "loki_warm_p50": 0.022,
-      "parity_vs_loki": "differs",
+      "loki_cold": 0.243,
+      "loki_warm_p50": 0.017,
+      "parity_vs_loki": "same",
       "range": "1h",
       "set": "loki-profile-otel-metadata",
       "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
@@ -9109,7 +9109,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.062
+      "warm_p50": 0.021
     },
     {
       "baseline": "main",

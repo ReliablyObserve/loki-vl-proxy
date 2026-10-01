@@ -138,10 +138,14 @@ def vs_loki(row):
     if not row.get("loki_compared"):
         return "n/a (beyond the Loki window)"
     n = len(row["loki_diffs"])
+    # By-design differences (documented deviations, Loki's own accounting) and history-dependent patterns are
+    # listed by compare.py and never counted as differences.
+    notes = ", ".join(f"{len(row[k])} {label}" for k, label in (("loki_explained", "explained"), ("loki_nondet", "history-dependent"))
+                      if row.get(k))
     if not n:
-        return "identical"
+        return "identical" + (f" ({notes})" if notes else "")
     new = len(row["loki_new"])
-    return f"{n} difference(s), {n - new} on base too" + (f", **{new} new**" if new else "")
+    return f"{n} difference(s), {n - new} on base too" + (f", **{new} new**" if new else "") + (f"; {notes}" if notes else "")
 
 
 def key(row):
@@ -258,6 +262,7 @@ def render(rows, pixeldiff, plan, meta, a):
             lines += ["", f"<details open><summary><b>{esc_html(name)}</b>: {esc_html(first, 120)}</summary>", ""]
             lines += [f"- {esc(x)}" for x in i["fails"] + i["warns"]]
             lines += [f"- vs Loki: {esc(x)}" for x in i["row"]["loki_diffs"][:4]]
+            lines += [f"- vs Loki, explained: {esc(x)}" for x in (i["row"].get("loki_explained") or [])[:4]]
             lines += ["", image(a, name, meta), "", "</details>"]
         core = [i for i in items if i["core"] and not (i["fails"] or i["warns"])]
         if core:

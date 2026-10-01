@@ -146,6 +146,11 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["exit"], 0)
         self.assertIn("1 difference(s), 1 on base too", text)
 
+    def test_explained_and_history_dependent_loki_differences_are_noted_not_counted(self):
+        text, v = self.verdict([row(loki_explained=["resource x: by design -- explained: y"], loki_nondet=["resource patterns: z"])])
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("identical (1 explained, 1 history-dependent)", text)
+
     def test_pixel_diff_only_warns(self):
         text, v = self.verdict([row()], {"explore-a-1h": 0.2})
         self.assertEqual(v["exit"], 0)

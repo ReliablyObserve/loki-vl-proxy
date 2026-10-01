@@ -134,7 +134,9 @@
    "covers": [
     "loki_api_v1_labels",
     "loki_api_v1_label_name_values",
-    "semantics/label-browser-latency-cold-and-refresh"
+    "semantics/label-browser-latency-cold-and-refresh",
+    "semantics/label-inventory-exact-and-incremental",
+    "semantics/metadata-answers-include-last-24h-like-loki"
    ]
   },
   {
@@ -167,7 +169,11 @@
    "service": true,
    "covers": [
     "loki_api_v1_detected_labels",
-    "loki_api_v1_labels"
+    "loki_api_v1_labels",
+    "loki_api_v1_label_name_values",
+    "semantics/label-inventory-exact-and-incremental",
+    "semantics/metadata-answers-include-last-24h-like-loki",
+    "semantics/label-browser-latency-cold-and-refresh"
    ]
   },
   {
@@ -178,7 +184,11 @@
    "covers": [
     "loki_api_v1_label_name_values",
     "limits/drilldown-breakdown-exact",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "loki_api_v1_labels",
+    "semantics/label-inventory-exact-and-incremental",
+    "semantics/metadata-answers-include-last-24h-like-loki",
+    "semantics/label-browser-latency-cold-and-refresh"
    ]
   },
   {
