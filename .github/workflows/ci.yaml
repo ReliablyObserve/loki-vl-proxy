@@ -665,6 +665,9 @@ jobs:
       - name: A/B harness unit tests (selection, PR comment, history)
         run: python3 -m unittest discover -s bench/ab/tests
 
+      - name: Visual-proof harness unit tests (plan, gate and comment, publish)
+        run: python3 -m unittest discover -s bench/visual/tests
+
       - name: Registry report for this change
         if: github.event_name == 'pull_request'
         run: |

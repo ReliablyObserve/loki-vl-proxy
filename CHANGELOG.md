@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Visual proof tooling for pull requests (`bench/visual`).** One command brings
+  up an isolated stack (Loki, VictoriaLogs, a main and a PR proxy build, Grafana
+  with the three as datasources), captures the Explore graphs and log view,
+  Live tail and the Logs Drilldown pages for every datasource over 15m to 7d,
+  compares the panel data Grafana receives (series, values, steps) and renders
+  side-by-side before/after/Loki montages with a pixel-diff score. The Explore
+  graph of a filtered `| json` metric is also an `@explore-core` Playwright test
+  that compares its panel data with Loki's.
+  A `visual-smoke` pull-request job runs it automatically: a fixed core set of
+  five captures on every relevant change plus the pages near the code the change
+  touches (chosen from the conformance registry, like the A/B shape selection),
+  at 15m, 1h and 6h, for the base build, the PR build and Loki. One sticky comment
+  gives a per-capture table (data identical base vs PR, differences from Loki and
+  whether the base has them too, pixel diff) and embeds the montages only for rows
+  that are not clean. A base-vs-PR data difference is judged against Loki (closer
+  to Loki passes, diverging fails, an undecidable intended change needs the
+  `visual-change-expected` label); an emptied panel, an error only the PR shows or
+  a difference that does not reproduce also fail the check. Montages live on the
+  `pr-visuals` branch as one parentless commit, written by a job that runs only
+  base-branch code.
+
 ## [1.103.0] - 2026-10-01
 
 ### Performance
