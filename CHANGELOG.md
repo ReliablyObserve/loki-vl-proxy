@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.105.0] - 2026-10-01
+
 ### Breaking Changes
 
 - **Log queries without a parser no longer return the keys of a JSON line as
