@@ -97,7 +97,7 @@ func TestOrderedJSONConditionalUnpackEqualsWholeLineUnpack(t *testing.T) {
 	msgs := []string{
 		`{"pipeline":"logs/loki","level":"info"}`,
 		`{"level":"info"}`,
-		`{"pipeline":"escaped","level":"warn"}`,
+		`{"\u0070ipeline":"escaped","level":"warn"}`,
 		`{"pipeline":""}`,
 		`{"pipeline":null}`,
 		`{"pipeline":["a"]}`,
