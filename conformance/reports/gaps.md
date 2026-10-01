@@ -123,7 +123,6 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there |
 |---|---|---|---|
-| `backend-admission-and-heavy-query-queueing` | 2 | 1.31s (drilldown landing volume, 7d) | 0.08s |
 | `explore-logs-volume-json` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
@@ -138,3 +137,4 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `loki-compatible-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
+| `backend-admission-and-heavy-query-queueing` | 2 | 0.12s (drilldown landing volume, 7d) | 0.03s |
