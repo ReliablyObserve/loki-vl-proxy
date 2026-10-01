@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **A `| json` metric filtered on a parsed label parses only the lines that can
+  hold it.** A Grafana Explore field breakdown (`sum by (pipeline)
+  (count_over_time({...} | json | drop __error__ | pipeline!="" [1m]))`), a
+  logs volume with query-builder filters and a grouped or ungrouped sum with a
+  `pipeline="..."` filter were answered from VictoriaLogs stats buckets, but
+  VictoriaLogs unpacked the JSON of every line in the range before the filter
+  dropped most of them. The query now keeps only lines that hold the filtered
+  label as a stored field (under its own name or its stored spelling) or as a
+  key of the line, found in VictoriaLogs' token index (plus JSON lines with a
+  `\u` escape, which can spell a key with a different byte sequence), and
+  unpacks only the lines that lack a stored value; the shared prefilter is the
+  one the Logs Drilldown field breakdown already uses. Only a filter that
+  rejects the empty value (`!=""`, `="x"`, a regexp that needs a character)
+  makes a label required, so a volume with no filter, a grouping alone, and a
+  filter such as `!="x"` that an absent label passes keep the whole-line
+  unpack, and so does a query with a pipe other than a filter before the
+  parser. Results are unchanged. Warm p50 over a 24h range on the A/B stack:
+  grouped sum with a filter 0.53s to 0.24s, ungrouped sum 0.45s to 0.20s,
+  field breakdowns 0.36s to 0.15s, the Grafana volume of the grouped sum 0.54s
+  to 0.21s (2.2 to 2.6x); 6h grouped and ungrouped sums 2.5x; 1h ranges were
+  already answered from the cache in 0.04s and stay equal to Loki's.
+
 ## [1.102.0] - 2026-09-30
 
 ### Fixed

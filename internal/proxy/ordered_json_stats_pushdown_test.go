@@ -596,7 +596,7 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 	for _, tc := range []struct {
 		query, op, stats string
 	}{
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", `unpack_json fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", ` | filter (level:* or _msg:"level" or _msg:~"\\\\u") | unpack_json if ((-level:*)) fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
 		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | level!="warn" [1m]))`, "!=", `unpack_json fields (level) keep_original_fields | filter -level:="warn" | stats by (level, detected_level) count() as c`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {

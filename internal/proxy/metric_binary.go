@@ -363,20 +363,47 @@ func fieldBreakdownQuery(logsqlQuery string) string {
 		return logsqlQuery
 	}
 	head := spec.BaseQuery[:m[0]]
+	if !onlyFilterPipes(head) {
+		return logsqlQuery
+	}
+	return head +
+		parsedFieldPrefilter(parser, field) +
+		" | unpack_" + parser + " if (-" + field + ":*) fields (" + field + ")" +
+		" | filter " + field + `:!""` +
+		logsqlQuery[len(spec.BaseQuery):]
+}
+
+// onlyFilterPipes reports whether every pipe of a LogsQL query head is a
+// filter: any other pipe (label_format, pattern, another parser) may set a
+// field the parser would otherwise fill.
+func onlyFilterPipes(head string) bool {
 	for _, pipe := range logsQLPipeNameRE.FindAllStringSubmatch(head, -1) {
 		if pipe[1] != "filter" {
-			return logsqlQuery
+			return false
 		}
 	}
+	return true
+}
+
+// parsedFieldPrefilter renders the filter pipe that keeps only the lines that
+// can hold a non-empty field after parser: lines with the field stored (under
+// the field name or one of stored, the spellings VictoriaLogs keeps it under)
+// and lines whose top-level key is the field. Such a key holds the field as a
+// word, which VictoriaLogs finds in its token index, unless a JSON key spells
+// it with a \u escape (the only JSON escape that yields a letter, digit or
+// underscore), so JSON lines holding `\u` are kept too.
+func parsedFieldPrefilter(parser, field string, stored ...string) string {
 	escaped := ""
 	if parser == "json" {
 		escaped = ` or _msg:~"\\\\u"`
 	}
-	return head +
-		" | filter (" + field + ":* or _msg:" + strconv.Quote(field) + escaped + ")" +
-		" | unpack_" + parser + " if (-" + field + ":*) fields (" + field + ")" +
-		" | filter " + field + `:!""` +
-		logsqlQuery[len(spec.BaseQuery):]
+	var sb strings.Builder
+	sb.WriteString(" | filter (" + quoteLogsQLIdent(field) + ":*")
+	for _, vl := range stored {
+		sb.WriteString(" or " + quoteLogsQLIdent(vl) + ":*")
+	}
+	sb.WriteString(" or _msg:" + strconv.Quote(field) + escaped + ")")
+	return sb.String()
 }
 
 // rankedSingleFieldQuery restricts a single-field grouped count to the limit+1

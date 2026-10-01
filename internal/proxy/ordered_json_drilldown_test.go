@@ -149,7 +149,7 @@ func TestOrderedJSONDrilldownKeepsTranslatedFieldGrouping(t *testing.T) {
 	if !p.handleOrderedJSONMetric(w, r, time.Now(), query, true) || w.Code != 200 || !strings.Contains(w.Body.String(), `"http_method":"GET"`) {
 		t.Fatalf("translated grouping lost: %d %s", w.Code, w.Body)
 	}
-	want := " | unpack_json fields (http_method) keep_original_fields | format if (`request.method`:*) \"<request.method>\" as http_method | filter -http_method:=\"\" | stats by (http_method) count() as c"
+	want := " | filter (http_method:* or `request.method`:* or _msg:\"http_method\" or _msg:~\"\\\\\\\\u\") | unpack_json if ((-http_method:* -`request.method`:*)) fields (http_method) keep_original_fields | format if (`request.method`:*) \"<request.method>\" as http_method | filter -http_method:=\"\" | stats by (http_method) count() as c"
 	if len(stats) != 1 || !strings.HasSuffix(stats[0], want) {
 		t.Fatalf("stats query %q does not end with %q", stats, want)
 	}

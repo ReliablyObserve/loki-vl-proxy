@@ -202,6 +202,7 @@
     ],
     "parsed-label-series-identity": [
       "internal/logql/parser_captures_test.go",
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/parser_capture_identity_test.go",
       "test/e2e-compat/parser_capture_identity_test.go"
     ],
@@ -212,10 +213,12 @@
     ],
     "parser-json": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go"
     ],
     "parser-logfmt": [
-      "internal/proxy/drilldown_breakdown_exact_test.go"
+      "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/ordered_json_conditional_unpack_test.go"
     ],
     "profiles/detected-fields-dotted-json-keys": [
       "internal/proxy/loki_profile_test.go",
@@ -273,11 +276,13 @@
       "internal/proxy/backend_heavy_test.go"
     ],
     "semantics/json-filter-pushdown-translated-label": [
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_drilldown_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-filter-pushdown-underscore-label": [
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
@@ -286,10 +291,12 @@
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-filter-pushdown-without-error-drop": [
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-label-spelling-probe": [
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
@@ -297,6 +304,7 @@
       "internal/proxy/metadata_inventory_test.go"
     ],
     "semantics/label-filter-before-parser-pushdown": [
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
     "semantics/label-inventory-exact-and-incremental": [
@@ -506,6 +514,16 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit"
     ],
+    "internal/proxy/ordered_json_conditional_unpack_test.go": [
+      "parsed-label-series-identity",
+      "parser-json",
+      "parser-logfmt",
+      "semantics/json-filter-pushdown-translated-label",
+      "semantics/json-filter-pushdown-underscore-label",
+      "semantics/json-filter-pushdown-without-error-drop",
+      "semantics/json-label-spelling-probe",
+      "semantics/label-filter-before-parser-pushdown"
+    ],
     "internal/proxy/ordered_json_drilldown_test.go": [
       "parser-error-and-label-collision",
       "semantics/json-filter-pushdown-translated-label"
@@ -698,7 +716,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 59,
+  "tests_with_markers": 60,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

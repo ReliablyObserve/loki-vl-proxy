@@ -1,0 +1,333 @@
+{
+ "label": "ordered-json-json-filter-pushdown-1h",
+ "date": "2026-10-01",
+ "set": "json-filter-pushdown",
+ "description": "| json / | logfmt range metrics with label filters on parsed fields (PR #611). Grafana Explore log volume and Logs Drilldown field breakdowns over a JSON stream.",
+ "baseline": "main",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 9
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "main": 0,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "A explore volume, 2 filters, drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.039,
+    "branch": 0.036,
+    "loki": 0.02
+   },
+   "p95": {
+    "main": 0.062,
+    "branch": 0.061,
+    "loki": 0.021
+   },
+   "cold": {
+    "main": 0.251,
+    "branch": 0.135,
+    "loki": 0.365
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 486.81,
+    "branch": 486.81,
+    "loki": 486.81
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  },
+  {
+   "shape": "B grouped sum, filter, no drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.041,
+    "branch": 0.034,
+    "loki": 0.018
+   },
+   "p95": {
+    "main": 0.062,
+    "branch": 0.059,
+    "loki": 0.018
+   },
+   "cold": {
+    "main": 0.047,
+    "branch": 0.043,
+    "loki": 0.258
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 53.71,
+    "branch": 53.71,
+    "loki": 53.71
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.21
+  },
+  {
+   "shape": "C ungrouped sum, filter, no drop",
+   "range": "1h",
+   "p50": {
+    "main": 0.042,
+    "branch": 0.033,
+    "loki": 0.018
+   },
+   "p95": {
+    "main": 0.062,
+    "branch": 0.059,
+    "loki": 0.019
+   },
+   "cold": {
+    "main": 0.057,
+    "branch": 0.037,
+    "loki": 0.249
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 80.38,
+    "branch": 80.38,
+    "loki": 80.38
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.27
+  },
+  {
+   "shape": "D volume, no filters",
+   "range": "1h",
+   "p50": {
+    "main": 0.041,
+    "branch": 0.043,
+    "loki": 0.029
+   },
+   "p95": {
+    "main": 0.065,
+    "branch": 0.073,
+    "loki": 0.032
+   },
+   "cold": {
+    "main": 0.035,
+    "branch": 0.037,
+    "loki": 0.37
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 64.44,
+    "branch": 65.96,
+    "loki": 65.96
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "E field breakdown pipeline (explore)",
+   "range": "1h",
+   "p50": {
+    "main": 0.037,
+    "branch": 0.037,
+    "loki": 0.018
+   },
+   "p95": {
+    "main": 0.059,
+    "branch": 0.067,
+    "loki": 0.022
+   },
+   "cold": {
+    "main": 0.041,
+    "branch": 0.035,
+    "loki": 0.263
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 65.96,
+    "branch": 65.96,
+    "loki": 65.96
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "F field breakdown service_version (explore)",
+   "range": "1h",
+   "p50": {
+    "main": 0.042,
+    "branch": 0.042,
+    "loki": 0.024
+   },
+   "p95": {
+    "main": 0.068,
+    "branch": 0.068,
+    "loki": 0.025
+   },
+   "cold": {
+    "main": 0.157,
+    "branch": 0.149,
+    "loki": 0.321
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 241.19,
+    "branch": 241.19,
+    "loki": 241.19
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "G field breakdown pipeline (drilldown)",
+   "range": "1h",
+   "p50": {
+    "main": 0.017,
+    "branch": 0.019,
+    "loki": 0.017
+   },
+   "p95": {
+    "main": 0.02,
+    "branch": 0.024,
+    "loki": 0.023
+   },
+   "cold": {
+    "main": 0.017,
+    "branch": 0.018,
+    "loki": 0.265
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 50.87,
+    "branch": 21.55,
+    "loki": 21.55
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.89
+  },
+  {
+   "shape": "H field breakdown service_version (drilldown)",
+   "range": "1h",
+   "p50": {
+    "main": 0.025,
+    "branch": 0.021,
+    "loki": 0.014
+   },
+   "p95": {
+    "main": 0.04,
+    "branch": 0.036,
+    "loki": 0.017
+   },
+   "cold": {
+    "main": 0.038,
+    "branch": 0.033,
+    "loki": 0.312
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 36.59,
+    "branch": 36.59,
+    "loki": 36.59
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.19
+  },
+  {
+   "shape": "I grafana volume of B",
+   "range": "1h",
+   "p50": {
+    "main": 0.038,
+    "branch": 0.036,
+    "loki": 0.02
+   },
+   "p95": {
+    "main": 0.043,
+    "branch": 0.036,
+    "loki": 0.023
+   },
+   "cold": {
+    "main": 0.043,
+    "branch": 0.044,
+    "loki": 0.318
+   },
+   "status": {
+    "main": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 75.38,
+    "branch": 75.38,
+    "loki": 75.38
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.06
+  }
+ ]
+}
