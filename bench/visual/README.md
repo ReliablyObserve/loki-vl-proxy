@@ -55,6 +55,18 @@ are for the eye. A Grafana whose Loki plugin process dies under memory pressure
 repeats such a page load up to three times, and a request that still fails is
 listed by `compare.py` as one-sided.
 
+Logs Drilldown (2.5.2) crashes a breakdown page with Grafana's "Plugin failed to
+load" when a breakdown query is answered before the page's first time-series
+panel module has loaded (the app's legend sync calls the panel's field-config
+update while the panel plugin is still missing). A fresh browser context loads
+that module on every capture, so a fast answer, such as a proxy cache hit on a
+re-load, loses the race on any datasource, Loki direct included. The capture
+therefore lets the data queries of a Drilldown page wait for that module (at
+most 3 s each); the requests and answers are unchanged. A page that still shows
+a banner is loaded again in a fresh context, and the error behind the banner
+(the boundary's "Details") and the browser console errors are saved with the
+capture (`ui.details`, `errors`) and named in the comment.
+
 ## In CI
 
 `.github/workflows/visual-smoke.yaml` runs this tooling on every pull request,

@@ -72,7 +72,9 @@ def ui_problems(main, pr):
         out.append(f"new empty panel (\"No data\" {main.get('noData', 0)} on base, {pr.get('noData', 0)} on PR)")
     new = [b for b in pr.get("banners", []) if b not in main.get("banners", [])]
     if new:
-        out.append(f"error banner only on the PR: {new[0][:100]}")
+        # The error behind the banner (capture.spec.ts records the error boundary's "Details").
+        why = next((ln.strip() for ln in str(pr.get("details", "")).splitlines() if "Error" in ln), "")
+        out.append(f"error banner only on the PR: {new[0][:100]}" + (f" ({why[:160]})" if why else ""))
     if pr.get("panelErrors", 0) > main.get("panelErrors", 0):
         out.append(f"panel error ({main.get('panelErrors', 0)} on base, {pr.get('panelErrors', 0)} on PR)")
     return out

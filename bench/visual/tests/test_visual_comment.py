@@ -200,6 +200,14 @@ class GateTest(unittest.TestCase):
         found = comment.ui_problems({"noData": 1}, {"noData": 3, "banners": ["Failed to load x"], "panelErrors": 1})
         self.assertEqual(len(found), 3)
 
+    def test_ui_problems_name_the_error_behind_a_banner(self):
+        details = "Details\nTypeError: Cannot read properties of undefined (reading 'defaults')\n    at a (x.js:2:1)"
+        found = comment.ui_problems({}, {"banners": ["Plugin failed to load"], "details": details})
+        self.assertEqual(found, ["error banner only on the PR: Plugin failed to load "
+                                 "(TypeError: Cannot read properties of undefined (reading 'defaults'))"])
+        self.assertEqual(comment.ui_problems({}, {"banners": ["Plugin failed to load"]}),
+                         ["error banner only on the PR: Plugin failed to load"])
+
 
 if __name__ == "__main__":
     unittest.main()
