@@ -190,7 +190,9 @@ for (const p of spec.pages as PageSpec[]) {
         const unavailable = records.some((x) => x.status === 500 && /plugin\.(unavailable|connectionUnavailable)/.test(JSON.stringify(x.response)));
         // A page that never settled and drew nothing was caught mid-start (or by a dying plugin process): load it again.
         const empty = !ok && !records.some((x) => x.status === 200);
-        if ((unavailable || empty) && attempt < 2) { await ctx.close(); await new Promise((res) => setTimeout(res, 5000)); continue; }
+        // Grafana failing to load the app plugin's frontend bundle (a CI-runner hiccup, not the proxy): load it again.
+        const pluginLoad = (await uiState(page)).banners.some((b) => /^Plugin (failed|unavailable|not found)/.test(b));
+        if ((unavailable || empty || pluginLoad) && attempt < 2) { await ctx.close(); await new Promise((res) => setTimeout(res, 5000)); continue; }
         const dir = path.join(OUT, "shots", p.id, r);
         const ddir = path.join(OUT, "data", p.id, r);
         fs.mkdirSync(dir, { recursive: true });
