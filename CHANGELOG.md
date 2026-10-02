@@ -70,9 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the filter exposes and the filter fails on an empty value; stream labels and
   structured metadata match as before. Rows dropped this way do not shorten
   the page: further pages past the oldest (backward) or newest (forward) row
-  read are fetched until the limit is filled or the window ends, at most 8
-  more requests of `limit` rows each, on the single-request and windowed
-  paths. Applies to filter stages of plain matchers. Metric queries still
+  read are fetched until the limit is filled or the window ends, on the
+  single-request and windowed paths. The new flag
+  `-label-filter-refill-max-pages` (Helm `extraArgs.label-filter-refill-max-pages`,
+  default 8) bounds the further requests of at most `limit` rows each; 0
+  reads no further page, so such a page can return fewer lines than the
+  limit. Applies to filter stages of plain matchers. Metric queries still
   count such rows, and a filter that matches an empty value (`user!="u1"`)
   still misses rows VictoriaLogs dropped (both pre-existing; telling a line
   key from structured metadata there means reading every row's message in

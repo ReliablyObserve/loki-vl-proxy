@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (221), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (222), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -127,6 +127,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-http-conn-overload-max-age` | duration | `1m30s` | `extraArgs.http-conn-overload-max-age` | Shorter downstream HTTP/1.x connection lifetime applied while query_range backpressure is active (0 disables overload shedding) |
 | `-http-max-body-bytes` | int64 | `10485760` | `extraArgs.http-max-body-bytes` | HTTP max request body size (default: 10MB) |
 | `-http-max-header-bytes` | int | `1048576` | `extraArgs.http-max-header-bytes` | HTTP max header size (default: 1MB) |
+| `-label-filter-refill-max-pages` | int | `8` | `extraArgs.label-filter-refill-max-pages` | Loki-compatible profile: more pages of at most limit rows a log query reads when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched, so the page still holds limit lines. A response reads at most (1 + N) x limit rows; 0 reads no further page, and such a page can return fewer lines than the limit. |
 | `-label-values-max-response-bytes` | int | `67108864` | `extraArgs.label-values-max-response-bytes` | Maximum bytes of the VictoriaLogs answer to a /loki/api/v1/label/&#123;name&#125;/values request: one response, or the size the merged listing would have as one response when the metadata inventory lists it from time buckets. Above it the request fails like Loki's querier above grpc_server_max_send_msg_size: HTTP 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` naming this flag, and nothing is cached. Per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 64 MiB |
 | `-manual-range-metric-row-limit` | int | `1000000` | `extraArgs.manual-range-metric-row-limit` | Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries. |
 | `-max-concurrent` | int | `100` | `extraArgs.max-concurrent` | Maximum concurrent requests allowed through the proxy (0 disables) |

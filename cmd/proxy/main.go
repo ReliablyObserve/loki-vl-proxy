@@ -86,6 +86,7 @@ type proxyRuntimeConfig struct {
 	maxLines                            int
 	rangeMetricRowLimit                 int
 	orderedJSONMetricMaxBytes           int64
+	labelFilterRefillMaxPages           int
 	backendTimeout                      time.Duration
 	cbFailThreshold                     int
 	cbOpenDuration                      time.Duration
@@ -522,6 +523,7 @@ func run(
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
 	orderedJSONMetricMaxBytes := fs.Int64("ordered-json-metric-max-bytes", 1<<30, "Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows.")
+	labelFilterRefillMaxPages := fs.Int("label-filter-refill-max-pages", proxy.DefaultLabelFilterRefillMaxPages, "Loki-compatible profile: more pages of at most limit rows a log query reads when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched, so the page still holds limit lines. A response reads at most (1 + N) x limit rows; 0 reads no further page, and such a page can return fewer lines than the limit.")
 	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend. The remaining budget is also passed to VictoriaLogs as its per-query timeout argument, so VictoriaLogs stops work the proxy has given up on")
 	backendMaxConcurrentHeavyQueries := fs.Int("backend-max-concurrent-heavy-queries", proxy.DefaultBackendMaxConcurrentHeavyQueries, "Maximum concurrent heavy VictoriaLogs calls per replica: raw-row metric fetches (any /select/logsql/query bound above 10000 rows, which includes a log query whose limit is higher), and stats or hits calls spanning at least -backend-heavy-query-min-range or finer than 11000 buckets. Further heavy calls queue for -backend-heavy-query-queue-wait, then fail with 429 \"too many outstanding requests\". VictoriaLogs lets each stats pipe use up to 40% of its allowed memory, so the default of 2 keeps concurrent stats state within its memory budget. 0 disables the limiter")
@@ -827,6 +829,7 @@ func run(
 			maxLines:                            *maxLines,
 			rangeMetricRowLimit:                 *rangeMetricRowLimit,
 			orderedJSONMetricMaxBytes:           *orderedJSONMetricMaxBytes,
+			labelFilterRefillMaxPages:           *labelFilterRefillMaxPages,
 			backendTimeout:                      *backendTimeout,
 			cbFailThreshold:                     *cbFailThreshold,
 			cbOpenDuration:                      *cbOpenDuration,
@@ -2038,6 +2041,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MaxLines:                           cfg.maxLines,
 		RangeMetricRowLimit:                cfg.rangeMetricRowLimit,
 		OrderedJSONMetricMaxBytes:          cfg.orderedJSONMetricMaxBytes,
+		LabelFilterRefillMaxPages:          cfg.labelFilterRefillMaxPages,
 		BackendTimeout:                     cfg.backendTimeout,
 		CBFailThreshold:                    cfg.cbFailThreshold,
 		CBOpenDuration:                     cfg.cbOpenDuration,
@@ -2221,6 +2225,9 @@ func inventoryParallelismConfig(flagValue int) int {
 }
 
 func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
+	if cfg.labelFilterRefillMaxPages < 0 {
+		return fmt.Errorf("invalid -label-filter-refill-max-pages: %d (must be >= 0; 0 reads no further page)", cfg.labelFilterRefillMaxPages)
+	}
 	if cfg.backendMaxConcurrentHeavyQueries < 0 {
 		return fmt.Errorf("invalid -backend-max-concurrent-heavy-queries: %d (must be >= 0; 0 disables the limiter)", cfg.backendMaxConcurrentHeavyQueries)
 	}

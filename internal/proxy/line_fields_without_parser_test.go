@@ -40,6 +40,7 @@ func lineFieldsProxy(t *testing.T, backendURL string, path string) *Proxy {
 		QueryRangeSplitInterval:    15 * time.Minute,
 		LabelStyle:                 LabelStyleUnderscores,
 		MetadataFieldMode:          MetadataFieldModeTranslated,
+		LabelFilterRefillMaxPages:  DefaultLabelFilterRefillMaxPages,
 	})
 	if err != nil {
 		t.Fatalf("failed to create proxy: %v", err)

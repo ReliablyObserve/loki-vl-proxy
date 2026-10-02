@@ -136,6 +136,11 @@ type Config struct {
 	// OrderedJSONMetricMaxBytes caps the raw rows response read and the response
 	// built by the ordered JSON metric evaluator. 0 means 1 GiB.
 	OrderedJSONMetricMaxBytes int64
+	// LabelFilterRefillMaxPages is how many more pages of rows a log query
+	// reads when a Loki label filter dropped rows VictoriaLogs matched
+	// (-label-filter-refill-max-pages). 0 reads none: such a page can come
+	// back with fewer lines than the limit.
+	LabelFilterRefillMaxPages int
 	ForwardHeaders            []string          // HTTP headers to forward from client to VL backend
 	ForwardCookies            []string          // Cookie names to forward from client to VL backend
 	BackendHeaders            map[string]string // static headers to add to all VL requests
@@ -578,6 +583,7 @@ type Proxy struct {
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	orderedJSONMaxBytes                   int64         // ordered JSON metric byte cap (0=1 GiB)
+	labelFilterRefillMaxPages             int           // extra pages read to fill a filtered log page (0=none)
 	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	heavyQueryLimiter                     *heavyQueryLimiter
@@ -1190,6 +1196,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		orderedJSONMaxBytes:                   cfg.OrderedJSONMetricMaxBytes,
+		labelFilterRefillMaxPages:             max(cfg.LabelFilterRefillMaxPages, 0),
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		heavyQueryLimiter:                     newHeavyQueryLimiter(cfg.BackendMaxConcurrentHeavyQueries, cfg.BackendHeavyQueryQueueWait),

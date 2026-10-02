@@ -670,13 +670,79 @@ func TestLogQuery_LabelFilterOnLineFieldFillsLimit(t *testing.T) {
 		// A page budget bounds the refetch: one row kept per page of one.
 		backend.requests.Store(0)
 		got := run(p, `{app="mix"} | user="u1"`, "1", "backward")
-		if fmt.Sprint(got) != "[plain line 2]" || backend.requests.Load() > 1+lineFieldRefillPages+2 {
+		if fmt.Sprint(got) != "[plain line 2]" || backend.requests.Load() > 1+DefaultLabelFilterRefillMaxPages+2 {
 			t.Errorf("%s limit 1: lines %v after %d requests", path, got, backend.requests.Load())
 		}
 		// Without a filter on a line key nothing is refetched.
 		backend.requests.Store(0)
 		if got := run(p, `{app="mix"} | user!="u1"`, "3", "backward"); len(got) != 3 || backend.requests.Load() > 2 {
 			t.Errorf("%s negative filter: %v after %d requests", path, got, backend.requests.Load())
+		}
+	}
+}
+
+// TestLabelFilterRefillMaxPages: -label-filter-refill-max-pages bounds the
+// further pages a filtered log page reads; 0 reads none, so the page keeps
+// only the rows the first page held. The three newest rows are JSON lines
+// the filter drops; a further page holds the rows read at its boundary plus
+// the limit, so two further pages reach the newest plain line.
+//
+// conformance: profiles/label-filter-on-line-field
+func TestLabelFilterRefillMaxPages(t *testing.T) {
+	base := time.Date(2026, 10, 1, 17, 21, 0, 0, time.UTC)
+	backend := &pagedRowsBackend{}
+	for i := 0; i < 6; i++ {
+		msg := fmt.Sprintf("plain line %d", i)
+		if i >= 3 {
+			msg = fmt.Sprintf(`{"msg":"json line %d","user":"u1"}`, i)
+		}
+		row, _ := json.Marshal(map[string]string{"_time": base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano),
+			"_msg": msg, "_stream": `{app="mix"}`, "app": "mix", "user": "u1"})
+		backend.rows = append(backend.rows, string(row))
+	}
+	srv := httptest.NewServer(backend)
+	defer srv.Close()
+	for _, tc := range []struct {
+		pages    int
+		want     string
+		requests int64
+	}{
+		{0, "[]", 1},
+		{1, "[]", 2},
+		{2, "[plain line 2]", 3},
+		{-1, "[]", 1}, // a negative value reads no further page, like 0
+	} {
+		p, err := New(Config{BackendURL: srv.URL, Cache: cache.NewDisabled(), LogLevel: "error", EmitStructuredMetadata: true,
+			LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated, LabelFilterRefillMaxPages: tc.pages})
+		if err != nil {
+			t.Fatal(err)
+		}
+		backend.requests.Store(0)
+		q := url.Values{}
+		q.Set("query", `{app="mix"} | user="u1"`)
+		q.Set("start", strconv.FormatInt(base.Add(-time.Minute).UnixNano(), 10))
+		q.Set("end", strconv.FormatInt(base.Add(time.Minute).UnixNano(), 10))
+		q.Set("limit", "1")
+		w := httptest.NewRecorder()
+		p.handleQueryRange(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+q.Encode(), nil))
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Values [][]string `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &resp) != nil {
+			t.Fatalf("pages %d: %d %s", tc.pages, w.Code, w.Body.String())
+		}
+		lines := []string{}
+		for _, r := range resp.Data.Result {
+			for _, v := range r.Values {
+				lines = append(lines, v[1])
+			}
+		}
+		if got := fmt.Sprint(lines); got != tc.want || backend.requests.Load() != tc.requests {
+			t.Errorf("pages %d: lines %s after %d requests, want %s after %d", tc.pages, got, backend.requests.Load(), tc.want, tc.requests)
 		}
 	}
 }

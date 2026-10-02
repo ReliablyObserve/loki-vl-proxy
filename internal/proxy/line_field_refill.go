@@ -14,13 +14,16 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// lineFieldRefillPages is how many more pages of rows a log query whose label
-// filters drop rows the backend matched (lineFieldExposure.dropsRow) reads
-// to fill its limit: each page is one more request of at most limit rows, so
-// a response reads at most (1 + lineFieldRefillPages) x limit rows. A window
-// that still has rows after that answers with fewer than limit lines, as
-// before this budget existed.
-const lineFieldRefillPages = 8
+// DefaultLabelFilterRefillMaxPages is the default of
+// -label-filter-refill-max-pages: how many more pages of rows a log query
+// whose label filters drop rows the backend matched (lineFieldExposure.dropsRow)
+// reads to fill its limit. Each page is one more request of at most limit
+// rows, so a response reads at most (1 + pages) x limit rows. A window that
+// still has rows after that answers with fewer than limit lines; 0 reads no
+// further page.
+const (
+	DefaultLabelFilterRefillMaxPages = 8
+)
 
 // vlRowFetch posts one VictoriaLogs log query with the given parameters.
 type vlRowFetch func(ctx context.Context, params url.Values) (*http.Response, error)
@@ -29,8 +32,8 @@ type vlRowFetch func(ctx context.Context, params url.Values) (*http.Response, er
 // params, drops the rows a Loki label filter would not match
 // (lineFieldExposure.dropsRow) and, while the limit is not filled and the
 // page was full, reads the next page: rows older than the oldest row read
-// (backward) or newer than the newest (forward), up to lineFieldRefillPages
-// more requests. It returns the kept rows as an NDJSON body in response
+// (backward) or newer than the newest (forward), up to
+// -label-filter-refill-max-pages more requests. It returns the kept rows as an NDJSON body in response
 // order. levelAsLabel mirrors the classification: the stored level field is
 // a stream label of the response unless levels go to structured metadata.
 func (p *Proxy) refillLineFieldRows(ctx context.Context, first io.Reader, params url.Values, limit int, forward bool, exposure *lineFieldExposure, levelAsLabel bool, fetch vlRowFetch) ([]byte, error) {
@@ -55,7 +58,7 @@ func (p *Proxy) refillLineFieldRows(ctx context.Context, first io.Reader, params
 		// Stop when the limit is filled, the window holds no more rows, the
 		// budget is spent, or a page brought nothing past the last boundary
 		// (more rows than the limit share one timestamp).
-		if kept >= limit || read < pageLimit || round >= lineFieldRefillPages || edge.IsZero() || (round > 0 && edge.Equal(boundary)) {
+		if kept >= limit || read < pageLimit || round >= p.labelFilterRefillMaxPages || edge.IsZero() || (round > 0 && edge.Equal(boundary)) {
 			return out.Bytes(), nil
 		}
 		next := url.Values{}

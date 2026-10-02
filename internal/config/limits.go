@@ -118,6 +118,16 @@ var Limits = []Limit{
 		Sizing:     "The default admits about one million rows of 1 KiB. Rows are streamed, so raising it costs VictoriaLogs scan work and network transfer rather than proxy memory; lower it to protect VictoriaLogs from long raw scans.",
 	},
 	{
+		Flag:       "label-filter-refill-max-pages",
+		Unit:       "requests",
+		Bounds:     "further VictoriaLogs pages of at most limit rows a log query reads, in the Loki-compatible profile, when a Loki label filter on a log line key no earlier stage exposes dropped rows VictoriaLogs matched: a response reads at most (1 + N) x limit rows",
+		Error:      "none: the page returns fewer lines than the limit when the budget is spent; 0 reads no further page",
+		Metric:     "none",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "Each page is one more VictoriaLogs request of at most limit rows. The default of 8 fills a page unless the newest 9 x limit rows of the window are almost all JSON lines holding the filtered key, the case Loki answers with fewer lines too. Raise it for streams where structured metadata named like a JSON key is rare; lower it, or set 0, to bound VictoriaLogs reads to one page per request.",
+	},
+	{
 		Flag:       "backend-max-buffered-response-bytes",
 		Unit:       "bytes",
 		Bounds:     "bytes read from one VictoriaLogs response the proxy evaluates itself: buffered stats, volume and binary-operand responses, and the encoded metric result",

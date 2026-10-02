@@ -2510,3 +2510,15 @@ func TestValidateExecutionLimits_RejectsNegativeAndRaisesFreely(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateLabelFilterRefillMaxPages(t *testing.T) {
+	for pages, ok := range map[int]bool{0: true, 8: true, 32: true, -1: false} {
+		err := validateHeavyQueryLimits(proxyRuntimeConfig{labelFilterRefillMaxPages: pages})
+		if (err == nil) != ok {
+			t.Errorf("pages %d: err %v, want ok %v", pages, err, ok)
+		}
+		if err != nil && !strings.Contains(err.Error(), "-label-filter-refill-max-pages") {
+			t.Errorf("pages %d: error %q does not name the flag", pages, err)
+		}
+	}
+}

@@ -202,6 +202,7 @@ extraArgs:
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
   # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it
   # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call; exceeding it returns HTTP 502 (no truncated results)
+  # label-filter-refill-max-pages: "8"   # more pages (of limit rows) a log query reads when a Loki label filter dropped rows VictoriaLogs matched; 0 reads none
   # ordered-json-metric-max-bytes: "1073741824"  # safety cap on raw rows bytes read by the ordered JSON metric evaluator (0 = 1 GiB default, no upper bound); exceeding it returns HTTP 502 (no truncated results)
 
   # --- Frontend/client-facing compression ---

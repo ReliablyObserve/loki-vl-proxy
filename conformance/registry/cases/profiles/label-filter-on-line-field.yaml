@@ -24,8 +24,9 @@ why: |
   `or` or parentheses is left to VictoriaLogs. Rows dropped this way are
   replaced from further pages (Proxy.refillLineFieldRows: rows older than the
   oldest read, backward, or newer than the newest, forward) until the limit
-  is filled or the window ends, at most 8 more requests of limit rows each,
-  on the single-request and windowed paths; measured on a stream with three
+  is filled or the window ends, at most -label-filter-refill-max-pages
+  (default 8; 0 reads no further page) more requests of limit rows each, on
+  the single-request and windowed paths; measured on a stream with three
   older plain lines holding user as structured metadata and three newer JSON
   lines holding it as a key, `| user="u1"` with limit 3 returned no lines
   before and Loki's three plain lines after.
