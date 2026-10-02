@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -148,9 +149,10 @@ func (p *Proxy) filterLineFieldPage(page io.Reader, seen map[string]struct{}, bo
 		if !isVLMissingMsgBytes(stored, p.defaultMsgValue()) {
 			stream := parseStreamLabels(string(value.GetStringBytes("_stream")))
 			if level := value.GetStringBytes("level"); levelAsLabel && len(bytes.TrimSpace(level)) > 0 {
-				withLevel := make(map[string]string, len(stream)+1)
-				for k, v := range stream {
-					withLevel[k] = v
+				// parseStreamLabels shares its map; copy before adding level.
+				withLevel := maps.Clone(stream)
+				if withLevel == nil {
+					withLevel = map[string]string{}
 				}
 				withLevel["level"] = string(level)
 				stream = withLevel

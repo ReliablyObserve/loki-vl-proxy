@@ -417,20 +417,6 @@ func dlLevel(e dlEntry, categorized bool) string {
 	return source["detected_level"]
 }
 
-// dlDefaultEncodingLabels drops the structured metadata keys that Loki merges
-// into the default-encoding stream labels and the proxy does not (it merges
-// only level and detected_level there).
-func dlDefaultEncodingLabels(labels map[string]string, c dlCase) map[string]string {
-	out := map[string]string{}
-	for k, v := range labels {
-		if _, isMetadata := c.sm[k]; isMetadata && k != "level" && k != "detected_level" {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 // conformance: severity-detected-level-derivation, severity-exposure-surfaces
 func TestCompat_DetectedLevelQueryRange(t *testing.T) {
 	f := ensureDetectedLevelFixture(t)
@@ -489,8 +475,10 @@ func TestCompat_DetectedLevelQueryRange(t *testing.T) {
 						}
 						continue
 					}
-					if got, wantLabels := pe.stream, dlDefaultEncodingLabels(le.stream, c); !reflect.DeepEqual(got, wantLabels) {
-						t.Errorf("%s: stream labels\n loki  %v\n proxy %v", c.name, wantLabels, got)
+					// The default encoding merges structured metadata into the
+					// stream labels, in Loki and the Loki-compatible proxy alike.
+					if !reflect.DeepEqual(pe.stream, le.stream) {
+						t.Errorf("%s: stream labels\n loki  %v\n proxy %v", c.name, le.stream, pe.stream)
 					}
 				}
 				// Entries of one stream with different levels: same grouping as Loki.
