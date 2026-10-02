@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Each LogQL stage exposes only the labels Loki's stage adds, as parsed
+  labels (visible change in the default profile).** VictoriaLogs holds the
+  keys of a JSON line as stored fields, and the Loki-compatible profile
+  (underscore labels, translated metadata) exposed every one of them as soon
+  as any parser or `label_format` ran. Against Loki 3.7.7 on the same pushed
+  data: `| json user` returned msg, status, svc_name and user (Loki: user);
+  `| json u="user", n="svc.name"` returned u and n as structured metadata
+  beside every key; `| logfmt` on a JSON line returned the JSON keys (Loki:
+  none); `| regexp` and `| pattern` returned every JSON key, with `| pattern`
+  captures as structured metadata and `| regexp` captures in the stream labels
+  of a categorize-labels answer; `| label_format x=...` returned x as
+  structured metadata and was missing from the stream labels of an
+  uncategorized answer; `| line_format "{{.msg}}"` returned the JSON keys as
+  structured metadata and rendered the line from them where Loki renders an
+  empty line (msg is not a label until a parser adds it); after `| logfmt` a
+  logfmt line's structured metadata came back as parsed labels; an array
+  value came back as a parsed label after `| json` (Loki's json parser gives
+  arrays none). Each row is now classified by what the stages expose, on the
+  buffered, streamed and windowed paths: `| json` / `| logfmt` without an
+  extraction list expose every key that parser reads from the line (no
+  arrays), an extraction list only its names (each with Loki's value read
+  from the line where VictoriaLogs left no field: empty for a missing key, a
+  nested object as its JSON text, a logfmt rename from the renamed key),
+  `| regexp` / `| pattern` their captures, `| label_format` its targets,
+  `| unpack` the keys of a packed (`_entry`) line, and `| line_format`
+  nothing. Exposed keys are parsed labels, keys of the line no stage exposes
+  are left out, other stored fields stay structured metadata. A
+  `label_format` that reads a key no earlier stage exposes renames nothing
+  and renders a `{{.label}}` template with an empty value, as Loki does. A
+  `line_format` whose output no later stage reads is rendered by the proxy
+  alone, so VictoriaLogs returns the stored line the classification needs;
+  one a later line filter, parser or `decolorize` reads stays, and
+  VictoriaLogs copies the stored line aside before it. Clients that read the
+  extra keys from such responses must add the parser Loki needs. The hybrid
+  and native metadata modes are unchanged. Not covered: a JSON line pushed
+  without `_msg` (VictoriaLogs stores the fields without the line; pushing
+  with `/insert/loki/api/v1/push?disable_message_parsing=1` keeps it), and
+  Loki's `__error__` labels for a parser that fails on the line.
+
+- **Without categorize-labels, structured metadata joins each entry's stream
+  labels, like Loki (visible change in the default profile).** A client that
+  does not send `X-Loki-Response-Encoding-Flags: categorize-labels` (logcli,
+  scripts, older clients) gets Loki's legacy encoding, where every label of an
+  entry (stream labels, structured metadata and parsed labels) is in its
+  stream, so entries with different metadata values land in different
+  streams. The Loki-compatible profile returned the stream and parsed labels
+  only. Grafana sends the flag, so Explore and Logs Drilldown are not
+  affected; a client that keys on the stream label set sees more, smaller
+  streams, as against Loki.
+
+### Fixed
+
+- **A label filter on a line key no earlier stage exposes no longer matches
+  in log queries, like Loki.** Loki evaluates `{app="x"} | user="u1"`,
+  `| status > 100` or `| json user | status="200"` on a label the entry does
+  not have and returns nothing; VictoriaLogs matched the stored field and the
+  proxy returned the rows. A row is now dropped when the filter names a key of
+  its JSON line (or of its logfmt line after `| logfmt`) that no stage before
+  the filter exposes and the filter fails on an empty value; stream labels and
+  structured metadata match as before. Rows dropped this way do not shorten
+  the page: further pages past the oldest (backward) or newest (forward) row
+  read are fetched until the limit is filled or the window ends, on the
+  single-request and windowed paths. The new flag
+  `-label-filter-refill-max-pages` (Helm `extraArgs.label-filter-refill-max-pages`,
+  default 8) bounds the further requests of at most `limit` rows each; 0
+  reads no further page, so such a page can return fewer lines than the
+  limit. Applies to filter stages of plain matchers. Metric queries still
+  count such rows, and a filter that matches an empty value (`user!="u1"`)
+  still misses rows VictoriaLogs dropped (both pre-existing; telling a line
+  key from structured metadata there means reading every row's message in
+  VictoriaLogs).
+
+- **detected_fields names a nested JSON key with Loki's path.** For
+  `{"svc":{"name":"api"}}` Loki lists `svc_name` with jsonPath
+  `["svc","name"]`; the proxy listed jsonPath `["svc_name"]`, which Logs
+  Drilldown turned into a `| json` expression for a key the line does not
+  have. With dotted names rejected (the Loki-compatible default), nested
+  objects are walked as Loki's json parser does.
+
+- **`| label_format dst=src` renames instead of writing the text "src".** The
+  rename form was translated to a LogsQL template without placeholders, so
+  dst held the literal source name. It now copies src into dst only when src
+  exists and removes src (`format if (src:*) "<src>" as dst
+  skip_empty_results | delete src`, which keeps dst on VictoriaLogs before
+  v1.35 too), so a missing src leaves dst as it was, as in Loki.
+
 ## [1.105.0] - 2026-10-01
 
 ### Breaking Changes

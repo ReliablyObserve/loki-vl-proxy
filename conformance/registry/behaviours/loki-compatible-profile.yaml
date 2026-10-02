@@ -42,6 +42,8 @@ proxy: |
 implementation:
   - "internal/logql/dotted_names.go DottedNameError"
   - "internal/proxy/loki_profile.go lokiProfile, resolveDottedNames, resolveLabelBrowse, Proxy.lokiNameError, Proxy.lokiNameCheck, Proxy.labelBrowseExtensions, Proxy.detectedFieldName, lokiJSONKeyLabel"
+  - "internal/proxy/loki_profile.go Proxy.lineFieldExposure, pipelineAddsLabels, Proxy.backendLogQuery"
+  - "internal/proxy/line_field_refill.go Proxy.refillLineFieldRows"
   - "internal/proxy/drilldown.go Proxy.detectFieldSummariesStream"
   - "internal/proxy/http_utils.go Proxy.validateQuery, Proxy.writeError"
 
@@ -52,7 +54,10 @@ cases:
   - profiles/label-browse-params-ignored
   - profiles/label-endpoints-window-and-data
   - profiles/grafana-shows-loki-error-text
-  - profiles/parsed-fields-without-parser                    # open gap
+  - profiles/parsed-fields-without-parser
+  - profiles/stage-field-exposure
+  - profiles/label-filter-on-line-field                      # metric queries open
+  - profiles/json-line-stored-without-line                   # open gap
   - profiles/structured-metadata-label-collision             # open gap, owner decision
-  - profiles/uncategorized-streams-carry-structured-metadata # open gap
+  - profiles/uncategorized-streams-carry-structured-metadata
   - profiles/detected-fields-dotted-json-keys

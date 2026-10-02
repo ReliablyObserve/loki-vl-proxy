@@ -180,6 +180,23 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual(len(row["loki_diffs"]), 1)
 
 
+    def test_log_labels_parse_error_and_parsed_collision_explained(self):
+        # A line | json rejects: Loki adds __error__ / __error_details__; a JSON key named like a stream label is
+        # Loki's <key>_extracted while the proxy types the stream label as parsed.
+        loki = log_capture({"app": "a", "__error__": "JSONParserErr", "__error_details__": "x", "service_name": "svc",
+                            "service_name_extracted": "svc"},
+                           {"app": "I", "__error__": "P", "__error_details__": "P", "service_name": "I",
+                            "service_name_extracted": "P"}, uid="vp-loki")
+        pr = log_capture({"app": "a", "service_name": "svc"}, {"app": "I", "service_name": "P"}, uid="vp-pr")
+        row = self.check(pr, loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertIn("__error__", row["loki_explained"][0])
+        self.assertIn("_extracted", row["loki_explained"][0])
+        # a different value under the collision stays a difference
+        pr = log_capture({"app": "a", "service_name": "other"}, {"app": "I", "service_name": "P"}, uid="vp-pr")
+        self.assertEqual(len(self.check(pr, loki)["loki_diffs"]), 1)
+
+
 class OneSidedTest(unittest.TestCase):
     def test_only_an_extracted_field_breakdown_is_explained(self):
         key = ("query", "A", 'sum by (service_name_extracted) (count_over_time({service_name="x"} | service_name_extracted!="" [$__auto]))')

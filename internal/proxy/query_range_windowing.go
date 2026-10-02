@@ -78,9 +78,11 @@ type queryRangeWindowCacheEntry struct {
 // and shared by every window fetch, background warm and window cache key.
 type logQueryShape struct {
 	classifyAsParsed bool
-	// addsLabels: the pipeline has a parser or label_format stage, without
-	// which the Loki-compatible profile leaves out fields of a JSON line.
-	addsLabels    bool
+	// exposure is what the pipeline's stages expose of a JSON line, used by
+	// the Loki-compatible profile; parsed is false when the parser rejected
+	// the query (every field is kept then, as before).
+	exposure      lineFieldExposure
+	parsed        bool
 	captureFields map[string]bool
 	// lineFields are the fields the pipeline writes, left out of rebuilt lines.
 	lineFields     map[string]bool
@@ -100,7 +102,6 @@ func newLogQueryShape(query string) logQueryShape {
 		// Each helper keeps its own fallback for queries the parser rejects.
 		shape := logQueryShape{
 			classifyAsParsed: hasLabelParserStage(query),
-			addsLabels:       true,
 			captureFields:    regexpCaptureFields(query),
 			lineFields:       logQueryLineFields(query),
 			fingerprint:      logQueryShapeFingerprint(query),
@@ -114,7 +115,8 @@ func newLogQueryShape(query string) logQueryShape {
 	}
 	shape := logQueryShape{
 		classifyAsParsed: pipelineHasParserStageOf(lq.Pipeline, true, true),
-		addsLabels:       pipelineAddsLabels(lq.Pipeline),
+		exposure:         pipelineAddsLabels(lq.Pipeline),
+		parsed:           true,
 		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
 		lineFields:       pipelineLineFields(lq.Pipeline),
 		fingerprint:      logQueryShapeFingerprint(strings.Join(stages, "\n")),
@@ -496,7 +498,21 @@ func (p *Proxy) fetchQueryRangeWindow(
 		if err == nil && resp.StatusCode < 400 {
 			p.breaker.RecordSuccess()
 			p.observeQueryRangeWindowFetch(fetchDuration, false)
-			entries := p.vlLogsToLokiWindowEntriesStream(resp.Body, shape, categorizedLabels, emitStructuredMetadata)
+			var body io.Reader = resp.Body
+			if shape.parsed && shape.exposure.filtersLineFields() && p.lokiCompatibleProfile() {
+				// Rows a Loki label filter would not match are dropped
+				// before the window's limit, reading further pages to fill it.
+				filled, err := p.refillLineFieldRows(fetchCtx, resp.Body, params, windowLimit, r.FormValue("direction") == "forward", &shape.exposure,
+					!categorizedLabels || !emitStructuredMetadata, func(ctx context.Context, next url.Values) (*http.Response, error) {
+						return p.vlPostHTTP(ctx, "/select/logsql/query", next)
+					})
+				if err != nil {
+					_ = resp.Body.Close()
+					return queryRangeWindowCacheEntry{}, err
+				}
+				body = bytes.NewReader(filled)
+			}
+			entries := p.vlLogsToLokiWindowEntriesStream(body, shape, categorizedLabels, emitStructuredMetadata)
 			_ = resp.Body.Close()
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
@@ -832,6 +848,8 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 // Uses fastjson (no map[string]interface{} allocation per line) and the same
 // stream descriptor cache as vlReaderToLokiStreams to amortize label parsing
 // and translation across entries from the same stream.
+//
+//nolint:gocyclo // line-by-line VL→Loki window entry conversion with categorized labels, structured metadata, the Loki-profile row filter and stream merging; branching is inherent to the conversion contract, as in vlReaderToLokiStreams.
 func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
 	entries := make([]queryRangeWindowEntry, 0, 64)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
@@ -851,14 +869,18 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	}()
 
 	classifyAsParsed := shape.classifyAsParsed
-	hideLineFields := !shape.addsLabels && p.lokiCompatibleProfile()
+	var exposure *lineFieldExposure
+	if shape.parsed && p.lokiCompatibleProfile() {
+		exposure = &shape.exposure
+	}
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := shape.captureFields
+	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	emitTupleMetadata := categorizedLabels && emitStructuredMetadata
 	// Entries keep SM/Parsed only when the tuple metadata is emitted or regexp
 	// captures need them; parser labels are otherwise folded into the stream.
 	keepEntryMetadata := emitTupleMetadata || len(captureFields) > 0
-	needsClassification := keepEntryMetadata || mergeParsed
+	needsClassification := keepEntryMetadata || mergeParsed || exposure.filtersLineFields()
 	dropConditions, keepConditions := shape.dropConditions, shape.keepConditions
 	bareDropFields, bareKeepFields := shape.bareDropFields, shape.bareKeepFields
 	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
@@ -914,7 +936,12 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
-			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, hideLineFields, exposureCache, smBuf, pfBuf)
+			var drop bool
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			if drop {
+				vlFJParserPool.Put(fjParser)
+				continue
+			}
 			if emitTupleMetadata {
 				structuredMetadata = setDetectedLevelMetadata(structuredMetadata, smBuf, rowStream.labels, detected, levelStages)
 			}
@@ -924,6 +951,9 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			}
 			if len(keepConditions) > 0 {
 				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+			}
+			if mergeMetadata {
+				parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf)
 			}
 		}
 

@@ -1415,6 +1415,24 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 								msgObjectKeys = make(map[string]bool)
 							}
 							msgObjectKeys[string(keyBytes)] = true
+							if nested, err := v.Object(); err == nil && p.rejectDottedNames {
+								// Loki's json parser names a nested key by its
+								// sanitized path joined with underscores and
+								// reports the path in jsonPath. VictoriaLogs
+								// stores it under the dotted path.
+								visitJSONLineLeaves(nested, []string{string(keyBytes)}, func(path []string, leaf *fj.Value) {
+									stored := strings.Join(path, ".")
+									msgJSONKeys[stored] = struct{}{}
+									label := lokiJSONPathLabel(path)
+									if shouldSuppressDetectedField(stored) {
+										return
+									}
+									if _, conflict := labelNames[label]; conflict {
+										return
+									}
+									addDetectedField(fields, label, "json", inferDetectedTypeFJ(leaf), path, formatDetectedValueFJ(leaf))
+								})
+							}
 						}
 						if vt == fj.TypeObject || vt == fj.TypeArray {
 							return

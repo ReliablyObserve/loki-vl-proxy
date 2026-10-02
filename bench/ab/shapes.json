@@ -736,6 +736,114 @@
      "pause": 3
     }
    ]
+  },
+  "stage-field-exposure": {
+   "description": "Log queries whose stages expose part of a JSON or logfmt line (json and logfmt extraction lists, line_format, regexp, label_format rename) and label filters on line keys and structured metadata, classified per row in the Loki-compatible profile; metric shapes over the same stages, whose LogsQL changes only for a label_format rename. Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "SF1 logs, json extraction list",
+     "query": "{env=\"production\"} | json pipeline, level",
+     "logs": true,
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF2 logs, logfmt extraction list",
+     "query": "{env=\"production\"} | logfmt level",
+     "logs": true,
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF3 logs, json then line_format",
+     "query": "{env=\"production\"} | json | line_format \"{{.message}}\"",
+     "logs": true,
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF4 logs, line_format without a parser",
+     "query": "{env=\"production\"} | line_format \"{{.message}}\"",
+     "logs": true,
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF5 logs, regexp capture",
+     "query": "{env=\"production\"} | regexp \"(?P<verb>GET|POST|PUT|DELETE)\"",
+     "logs": true,
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF6 logs, structured-metadata filter",
+     "query": "{env=\"production\"} | k8s_namespace_name=`monitoring`",
+     "logs": true,
+     "covers": [
+      "profiles/label-filter-on-line-field",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF7 logs, filter on a line key without a parser",
+     "query": "{env=\"production\"} | pipeline=`logs/loki`",
+     "logs": true,
+     "covers": [
+      "profiles/label-filter-on-line-field",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF8 volume, json extraction list",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | json pipeline, level | drop __error__, __error_details__ [1m]))",
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF9 volume, logfmt label_format rename",
+     "query": "sum by (lvl) (count_over_time({env=\"production\"} | logfmt | label_format lvl=level [1m]))",
+     "covers": [
+      "profiles/stage-field-exposure",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SF10 volume, structured-metadata filter",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | k8s_namespace_name=`monitoring` [1m]))",
+     "covers": [
+      "profiles/label-filter-on-line-field",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

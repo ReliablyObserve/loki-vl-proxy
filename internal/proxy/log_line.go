@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -52,7 +53,7 @@ func isVLMissingMsgBytes(msg []byte, defaultMsgValue string) bool {
 // Conversions inside comparisons and map lookups do not allocate.
 func skipLogLineField[T string | []byte](key T, streamLabels map[string]string, pipelineFields map[string]bool) bool {
 	switch string(key) {
-	case "_time", "_msg", "_stream", "_stream_id":
+	case "_time", "_msg", "_stream", "_stream_id", translator.StoredLineField:
 		return true
 	}
 	if _, ok := streamLabels[string(key)]; ok {

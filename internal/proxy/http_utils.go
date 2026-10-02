@@ -858,7 +858,7 @@ var trustedProxyForwardHeaders = []string{
 // isVLInternalField returns true for VictoriaLogs core internal field names
 // that should never be exposed in Loki-compatible responses.
 func isVLInternalField(name string) bool {
-	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id"
+	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id" || name == translator.StoredLineField
 }
 
 // appendJSONStringToBuilder writes s as a JSON-encoded string into a strings.Builder.

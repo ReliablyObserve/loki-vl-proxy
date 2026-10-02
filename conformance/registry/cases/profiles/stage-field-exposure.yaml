@@ -1,0 +1,78 @@
+id: profiles/stage-field-exposure
+title: Each LogQL stage exposes only the labels Loki's stage adds, as parsed labels
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki adds labels to an entry only through a stage, and each stage adds its
+  own (pkg/logql/log, v3.7.7): `| json` and `| logfmt` every key that parser
+  reads from the line, `| json a, b="x.y"` and `| logfmt a` only the named
+  labels (every one of them, empty when the line lacks the key; a nested
+  object as its JSON text), `| regexp` and `| pattern` their named captures,
+  `| label_format` its targets (a `dst=src` rename only when src exists),
+  `| unpack` the keys of a packed line (one with an _entry key), and
+  `| line_format` none; arrays give no label. A label_format reading a label
+  the entry does not have renames nothing and renders it empty. Every
+  label a stage adds is a parsed label; with categorize-labels the stream
+  labels stay the stream labels alone.
+
+  VictoriaLogs holds the keys of a JSON line as stored fields, so the proxy
+  exposed every key for any of these stages. Measured 2026-10-02 against
+  Loki 3.7.7 on pushed fixtures (VictoriaLogs v1.52.0 and v1.30.0 behave the
+  same): `| json user` returned msg, status, svc_name and user as parsed
+  (Loki: user); `| json u="user", n="svc.name"` returned u and n as
+  structured metadata beside every key; `| logfmt` on a JSON line returned
+  the JSON keys (Loki: none); `| regexp` and `| pattern` returned every JSON
+  key, `| pattern` captures as structured metadata, and `| regexp` captures
+  in the categorize-labels stream labels; `| label_format x=...` returned x
+  as structured metadata; `| line_format "{{.msg}}"` returned the JSON keys
+  as structured metadata and rendered "login ok" where Loki renders an empty
+  line (msg is not a label without a parser); a logfmt line's structured
+  metadata came back as parsed after `| logfmt`; `| label_format u=user`
+  set u to the literal text "user"; an extraction-list label for a missing
+  key, a nested object (`| json s="svc"`), an array index or a logfmt rename
+  (`| logfmt code="status"`) was missing, since VictoriaLogs leaves no field
+  for them.
+
+  Fixed: in the Loki-compatible profile each row is classified by what the
+  stages expose (internal/proxy/loki_profile.go lineFieldExposure on the
+  buffered, streamed and windowed paths): exposed keys are parsed, keys of
+  the line no stage exposes are left out, other stored fields stay
+  structured metadata, and an extraction-list label VictoriaLogs left no
+  field for gets the value Loki reads from the line; without categorize-labels the stage labels join the
+  stream labels as parsed labels do. A line_format whose output no later
+  stage reads is rendered by the proxy alone (Proxy.backendLogQuery), so
+  VictoriaLogs returns the stored line the classification needs and the
+  template sees only Loki's labels; one a later line filter, parser or
+  decolorize reads stays, and VictoriaLogs copies the stored line aside
+  before it (translator.TranslateLogQueryKeepingLine). A label_format target
+  that read a hidden key is corrected per row (fixLabelFormats), and an array
+  value is left out after | json. `dst=src` translates to a conditional copy
+  that keeps dst when src is missing.
+  Another profile keeps its classification. Not covered: a JSON line pushed
+  without _msg (profiles/json-line-stored-without-line), Loki's __error__
+  labels for a parser that fails on the line, the empty label Loki gives an
+  optional regexp group that did not take part in a match, and Loki's
+  _extracted suffix for a key named like a stream label or structured
+  metadata (profiles/structured-metadata-label-collision).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="stage-fields-<ts>-json"} | json user'
+    start: now-5m
+    end: now
+    limit: "100"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: exact
+  fields: [streams.values, metadata_categories]
+  expect: |
+    Entry by entry the same line, stream labels, structuredMetadata and
+    parsed keys as Loki for every stage shape, with and without
+    categorize-labels (structured metadata left out of the uncategorized
+    stream labels, see profiles/uncategorized-streams-carry-structured-metadata),
+    on VictoriaLogs v1.52.0 and v1.30.0 (TestCompat_StageFieldExposureLikeLoki).

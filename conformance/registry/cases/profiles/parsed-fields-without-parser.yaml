@@ -22,14 +22,15 @@ why: |
   that adds labels leaves those fields out, on the buffered, streamed and
   windowed response paths (internal/proxy/stream_processing.go
   classifyEntryMetadataFieldsFJ and classifyEntryFieldsWithFlags,
-  internal/proxy/loki_profile.go hidesLineFields); with a parser they are
+  internal/proxy/loki_profile.go lineFieldExposure); with a parser they are
   parsed labels and the structured metadata stays structured metadata on
   every path. Scope: it applies while VictoriaLogs keeps the original JSON
-  line in _msg (producers that wrap the line). A plain Loki push of a JSON
-  line whose keys VictoriaLogs unpacked into columns (_msg is "missing _msg
-  field...") is not covered yet, and line_format and per-stage extraction
-  (json with an expression list, regexp, pattern, label_format, logfmt on a
-  JSON line) still expose every key (pre-existing; follow-up).
+  line in _msg (producers that wrap the line). Since 2026-10-02 each stage
+  exposes only its own labels (profiles/stage-field-exposure) and a label
+  filter on a key no stage exposed drops the row in log queries
+  (profiles/label-filter-on-line-field). A plain Loki push of a JSON line
+  whose keys VictoriaLogs unpacked into fields (_msg is "missing _msg
+  field...") is not covered (profiles/json-line-stored-without-line).
 request:
   method: GET
   path: /loki/api/v1/query_range

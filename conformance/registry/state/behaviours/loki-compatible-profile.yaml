@@ -7,12 +7,15 @@ reason: |
   detected_fields names are checked for every option combination in unit and
   e2e tests. A query that already holds an earlier, unrelated syntax error
   before its dotted name is still a 400 parse error but names the dot rather
-  than Loki's earlier token. Parsed labels on a query without a parser and
-  structured metadata listed as JSON keys in detected_fields are fixed and
-  compared with Loki in e2e. Open gaps found by the Loki-compatibility stack:
-  the _extracted suffix for structured metadata named like a stream label
-  (owner decision pending), and structured metadata merged into stream labels
-  without categorize-labels.
+  than Loki's earlier token. Parsed labels on a query without a parser,
+  structured metadata listed as JSON keys in detected_fields, the labels each
+  LogQL stage exposes, nested JSON paths in detected_fields and log-query
+  label filters on line keys no stage exposed and structured metadata in the
+  stream labels of an uncategorized answer are fixed and compared with Loki
+  in e2e. Open gaps found by the Loki-compatibility stack: the _extracted
+  suffix for structured metadata named like a stream label (owner decision
+  pending), metric queries filtering or grouping on line keys no stage
+  exposed, and JSON lines pushed without _msg (stored without the line).
 owner_decision: |
   2026-09-24: every behaviour stays configurable - -logql-dotted-names,
   -label-browse-extensions and -error-response-message-field restore the
