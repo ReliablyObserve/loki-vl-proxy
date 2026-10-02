@@ -21,6 +21,15 @@ why: |
   -logql-dotted-names=accept) the stored dotted name stays, as before. The
   2026-04-25 decision on the _extracted suffix is unchanged (see
   profiles/structured-metadata-label-collision).
+
+  A nested key is named by its path: Loki's json parser joins the sanitized
+  keys with underscores and reports the whole path in jsonPath
+  ({"svc":{"name":"api"}} -> svc_name, ["svc","name"]). VictoriaLogs stores
+  it as svc.name, and the proxy reported jsonPath ["svc_name"], which
+  Drilldown turns into `| json svc_name="[\"svc_name\"]"` - a key the line
+  does not have. Fixed (2026-10-02) with dotted names rejected: detected_fields
+  walks the JSON line's nested objects as Loki does
+  (TestCompat_DetectedFieldsNestedJSONPathLikeLoki).
 request:
   method: GET
   path: /loki/api/v1/detected_fields
@@ -34,6 +43,8 @@ compare:
   mode: exact
   fields: [fields.label, fields.jsonPath]
   expect: |
-    Loki-compatible profile: `http_method` with jsonPath ["http.method"], as
-    Loki answers (checked against Loki in TestCompat_OptionMatrixAgainstStack).
+    Loki-compatible profile: `http_method` with jsonPath ["http.method"] and
+    `svc_name` with jsonPath ["svc","name"], as Loki answers (checked against
+    Loki in TestCompat_OptionMatrixAgainstStack and
+    TestCompat_DetectedFieldsNestedJSONPathLikeLoki).
     Dotted names accepted: `http.method` with jsonPath ["http.method"].

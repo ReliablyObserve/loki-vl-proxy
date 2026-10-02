@@ -1,11 +1,16 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 )
 
@@ -98,19 +103,148 @@ func (p *Proxy) detectedFieldName(key string) string {
 // surrounding space trimmed, a leading digit prefixed with an underscore, and
 // every rune outside [A-Za-z0-9_] replaced by an underscore (no collapsing).
 func lokiJSONKeyLabel(key string) string {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return key
-	}
-	if key[0] >= '0' && key[0] <= '9' {
-		key = "_" + key
-	}
-	return strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			return r
+	return lokiJSONPathLabel([]string{key})
+}
+
+// lokiJSONPathLabel is the label Loki's json parser gives a nested key: the
+// sanitized keys of its path joined by underscores, a leading digit of the
+// first one prefixed with an underscore (buildSanitizedPrefixFromBuffer).
+func lokiJSONPathLabel(path []string) string {
+	var b strings.Builder
+	for _, part := range path {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
 		}
-		return '_'
-	}, key)
+		if b.Len() > 0 {
+			b.WriteByte('_')
+		} else if part[0] >= '0' && part[0] <= '9' {
+			b.WriteByte('_')
+		}
+		for _, r := range part {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+				b.WriteRune(r)
+			} else {
+				b.WriteByte('_')
+			}
+		}
+	}
+	return b.String()
+}
+
+// visitJSONLineLeaves calls fn for every string, number and boolean value of
+// a JSON object, nested objects included, with its key path: the values
+// Loki's json parser turns into labels (arrays and nulls give none).
+func visitJSONLineLeaves(obj *fj.Object, path []string, fn func(path []string, v *fj.Value)) {
+	obj.Visit(func(key []byte, v *fj.Value) {
+		keyPath := append(path[:len(path):len(path)], string(key))
+		switch v.Type() {
+		case fj.TypeObject:
+			if nested, err := v.Object(); err == nil {
+				visitJSONLineLeaves(nested, keyPath, fn)
+			}
+		case fj.TypeString, fj.TypeNumber, fj.TypeTrue, fj.TypeFalse:
+			fn(keyPath, v)
+		}
+	})
+}
+
+// jsonLineLabels returns the labels Loki's json parser reads from a JSON
+// object line, or nil when the line is not one.
+func jsonLineLabels(line []byte) map[string]bool {
+	if len(line) < 2 || line[0] != '{' {
+		return nil
+	}
+	var parser fj.Parser
+	value, err := parser.ParseBytes(line)
+	if err != nil {
+		return nil
+	}
+	obj, err := value.Object()
+	if err != nil {
+		return nil
+	}
+	labels := make(map[string]bool, obj.Len())
+	visitJSONLineLeaves(obj, nil, func(path []string, _ *fj.Value) {
+		labels[lokiJSONPathLabel(path)] = true
+	})
+	return labels
+}
+
+// jsonLineMayHold reports whether a JSON line with these top-level keys may
+// hold the label name: a key named so, or an object key the name continues
+// (svc_name under {"svc":{...}}). It spares the full parse of lines that
+// cannot.
+func jsonLineMayHold(lineKeys map[string]bool, name string) bool {
+	for key, object := range lineKeys {
+		label := key
+		if !isLokiLabelName(key) {
+			label = lokiJSONKeyLabel(key)
+		}
+		if label == name || (object && strings.HasPrefix(name, label+"_")) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLokiLabelName reports whether s is already a label name Loki's json
+// parser keeps as is: [A-Za-z_][A-Za-z0-9_]*.
+func isLokiLabelName(s string) bool {
+	if s == "" || (s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// logfmtLineHasKey reports whether a logfmt line holds key, tokenizing as
+// parseLogfmtFields does (Loki's decoder ends a token at any whitespace byte
+// outside quotes).
+func logfmtLineHasKey(line []byte, key string) bool {
+	return logfmtLineHasKeyFunc(line, func(k []byte) bool { return string(k) == key })
+}
+
+// logfmtLineHasLabel reports whether Loki's logfmt parser reads the label
+// name from a line: a key that is the name, or sanitizes to it.
+func logfmtLineHasLabel(line []byte, name string) bool {
+	return logfmtLineHasKeyFunc(line, func(k []byte) bool {
+		if string(k) == name {
+			return true
+		}
+		return !isLokiLabelName(string(k)) && lokiJSONKeyLabel(string(k)) == name
+	})
+}
+
+func logfmtLineHasKeyFunc(line []byte, match func([]byte) bool) bool {
+	start := 0
+	inQuote := false
+	for i := 0; i <= len(line); i++ {
+		if i < len(line) {
+			c := line[i]
+			if c == '"' {
+				inQuote = !inQuote
+				continue
+			}
+			if c > ' ' || inQuote {
+				continue
+			}
+		}
+		if i > start {
+			tok := line[start:i]
+			if eq := bytes.IndexByte(tok, '='); eq > 0 && match(bytes.TrimSpace(tok[:eq])) {
+				return true
+			}
+		}
+		start = i + 1
+	}
+	return false
 }
 
 // labelSearchParam returns the browse search term (search, else q), or ""
@@ -134,18 +268,129 @@ func (p *Proxy) labelLimitParam(r *http.Request) string {
 	return r.FormValue("limit")
 }
 
-// hidesLineFields reports whether a log query's response leaves out the
-// fields VictoriaLogs unpacked from a JSON log line at ingest. Loki has no
-// such labels unless a stage adds them (a parser of any kind or
-// label_format), so the Loki-compatible profile leaves them out of a query
-// without one (profiles/parsed-fields-without-parser). A query the parser
-// rejects keeps every field, as before.
-func (p *Proxy) hidesLineFields(query string) bool {
+// lineFieldExposure is what a log query's pipeline exposes, as Loki labels,
+// of the fields VictoriaLogs unpacked from a JSON log line at ingest. Loki has
+// no labels from the line until a stage adds them, and each stage adds only
+// its own (pkg/logql/log: JSONParser, LogfmtParser, RegexpParser,
+// PatternParser, UnpackParser, LabelsFormatter; LineFormatter adds none):
+//   - | json and | logfmt without an extraction list: every key that parser
+//     reads from the line (a logfmt parse of a JSON line reads none);
+//   - | json a, b="x.y" and | logfmt a, b: only the named labels;
+//   - | regexp and | pattern: their named captures;
+//   - | label_format: its target labels;
+//   - | unpack: the keys of a packed line (one holding an _entry key).
+//
+// Every exposed label is a parsed label; fields the line does not hold stay
+// structured metadata. The Loki-compatible profile classifies every response
+// row with it (profiles/parsed-fields-without-parser).
+type lineFieldExposure struct {
+	jsonAll   bool
+	logfmtAll bool
+	// logfmt is set by any | logfmt stage: VictoriaLogs then holds the keys of
+	// a logfmt line as fields, which an extraction list does not expose.
+	logfmt bool
+	unpack bool
+	names  map[string]bool
+	// extractions are the entries of json and logfmt extraction lists. Loki
+	// gives every one of them a label, empty when the line lacks the key.
+	extractions []lineExtraction
+	// filters are the pipeline's label filters on a single label, each with
+	// what the stages before it expose (see dropsRow).
+	filters []lineFieldFilter
+}
+
+// lineExtraction is one entry of a | json or | logfmt extraction list: the
+// label and the key path it reads (Loki's jsonexpr path for | json, the key
+// for | logfmt).
+type lineExtraction struct {
+	name   string
+	path   []string
+	logfmt bool
+}
+
+// lineFieldFilter is a label filter stage on one label.
+type lineFieldFilter struct {
+	name string
+	// matchesEmpty is the filter's result on a label the entry does not have:
+	// Loki evaluates a string matcher on "" and fails a numeric, duration or
+	// bytes comparison (pkg/logql/log/label_filter.go).
+	matchesEmpty bool
+	before       lineFieldExposure
+}
+
+// lineFieldExposure returns the pipeline exposure of a log query in the
+// Loki-compatible profile, or nil for another profile or a query the parser
+// rejects (those keep every field, as before).
+func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 	if !p.lokiCompatibleProfile() {
-		return false
+		return nil
 	}
 	lq, err := logqlpkg.ParseLogQuery(query)
-	return err == nil && !pipelineAddsLabels(lq.Pipeline)
+	if err != nil {
+		return nil
+	}
+	exposure := pipelineAddsLabels(lq.Pipeline)
+	return &exposure
+}
+
+// backendLogQuery returns the query sent to VictoriaLogs for a log query. In
+// the Loki-compatible profile a line_format stage whose output no later stage
+// reads (no line filter, parser or decolorize follows it) is left out: the
+// proxy renders line_format on every response that has one
+// (applyLineFormatTemplate, from the labels the entry carries), and
+// VictoriaLogs then returns the stored line, which tells the fields of a JSON
+// line from structured metadata (lineFieldExposure). Another profile, a query
+// with more than one line_format, or one that is not a log query is sent as
+// is.
+func (p *Proxy) backendLogQuery(query string) string {
+	if !strings.Contains(query, "line_format") || !p.lokiCompatibleProfile() {
+		return query
+	}
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		return query
+	}
+	seen := false
+	kept := make([]string, 0, len(lq.Pipeline))
+	for _, stage := range lq.Pipeline {
+		if _, ok := stage.(*logqlpkg.LineFormatStage); !ok {
+			kept = append(kept, stage.String())
+		}
+		switch s := stage.(type) {
+		case *logqlpkg.LineFormatStage:
+			if seen {
+				return query
+			}
+			seen = true
+		case *logqlpkg.LineFilterStage, *logqlpkg.ParserStage, *logqlpkg.DecolorizeStage:
+			if seen {
+				return query
+			}
+		case *logqlpkg.LabelFormatStage:
+			if seen && strings.Contains(s.Raw, "__line__") {
+				return query
+			}
+		}
+	}
+	if !seen {
+		return query
+	}
+	loc := lineFormatTemplateRE.FindStringIndex(query)
+	if loc == nil {
+		return query
+	}
+	stripped := strings.TrimSpace(strings.TrimSpace(query[:loc[0]]) + " " + strings.TrimSpace(query[loc[1]:]))
+	// The text removed must be the line_format stage and nothing else.
+	check, err := logqlpkg.ParseLogQuery(stripped)
+	if err != nil || len(check.Pipeline) != len(kept) {
+		return query
+	}
+	for i, stage := range check.Pipeline {
+		if stage.String() != kept[i] {
+			return query
+		}
+	}
+	return stripped
 }
 
 // lokiCompatibleProfile reports whether this proxy runs the Loki-compatible
@@ -154,16 +399,290 @@ func (p *Proxy) lokiCompatibleProfile() bool {
 	return p.labelTranslator != nil && lokiProfile(p.labelTranslator.style, p.metadataFieldMode)
 }
 
-// pipelineAddsLabels reports whether a log pipeline has a stage that adds
-// labels to an entry.
-func pipelineAddsLabels(pipeline []logqlpkg.Stage) bool {
-	for _, stage := range pipeline {
-		switch stage.(type) {
-		case *logqlpkg.ParserStage, *logqlpkg.LabelFormatStage:
+// pipelineAddsLabels returns what the stages of a log pipeline expose (see
+// lineFieldExposure).
+func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
+	var exposure lineFieldExposure
+	for i, stage := range pipeline {
+		switch s := stage.(type) {
+		case *logqlpkg.ParserStage:
+			full := len(s.Fields) == 0
+			for _, f := range s.Fields {
+				x := lineExtraction{name: f.Name, path: []string{f.Expression}, logfmt: s.Type == logqlpkg.ParserLogfmt}
+				if !x.logfmt {
+					x.path = lokiJSONExpressionPath(f.Expression)
+				}
+				if x.path != nil {
+					exposure.extractions = append(exposure.extractions, x)
+				}
+			}
+			switch s.Type {
+			case logqlpkg.ParserJSON:
+				exposure.jsonAll = exposure.jsonAll || full
+			case logqlpkg.ParserLogfmt:
+				exposure.logfmtAll = exposure.logfmtAll || full
+				exposure.logfmt = true
+			case logqlpkg.ParserUnpack:
+				exposure.unpack = true
+			}
+		case *logqlpkg.LabelFilterStage:
+			before := pipelineAddsLabels(pipeline[:i])
+			before.filters = nil
+			exposure.filters = append(exposure.filters, labelFilterConditions(s.Raw, before)...)
+		}
+	}
+	exposure.names = pipelineLineFields(pipeline)
+	return exposure
+}
+
+// labelFilterConditions returns the conditions of a label filter stage that
+// names labels with plain matchers (a, b, ... are ANDed). A stage with "or",
+// parentheses or another form returns none, so it is left to VictoriaLogs.
+func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilter {
+	if m := numericLabelFilterRE.FindStringSubmatch(raw); m != nil {
+		return []lineFieldFilter{{name: m[1], before: before}}
+	}
+	parsed, err := logqlpkg.ParseLogQuery("{" + raw + "}")
+	if err != nil {
+		return nil
+	}
+	conditions := make([]lineFieldFilter, 0, len(parsed.Selector.Matchers))
+	for _, m := range parsed.Selector.Matchers {
+		op := [...]string{"=", "!=", "=~", "!~"}[m.Op]
+		condition, err := translator.NewDropCondition(m.Name, op, m.Value)
+		if err != nil {
+			return nil
+		}
+		conditions = append(conditions, lineFieldFilter{name: m.Name, matchesEmpty: condition.Matches(""), before: before})
+	}
+	return conditions
+}
+
+// numericLabelFilterRE matches a numeric, duration or bytes label filter
+// (an unquoted value), e.g. status >= 500 or latency > 250ms.
+var numericLabelFilterRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9][0-9A-Za-z.]*\s*$`)
+
+// exposesJSONLine reports whether the stages expose every key of a JSON line
+// with these top-level keys: a full | json, or | unpack on a packed line.
+func (e *lineFieldExposure) exposesJSONLine(lineKeys map[string]bool) bool {
+	if e.jsonAll {
+		return true
+	}
+	_, packed := lineKeys["_entry"]
+	return e.unpack && packed
+}
+
+// fieldCategory returns how a stored field of a row shows up in Loki: a
+// parsed label, structured metadata, or nothing (hidden). lineKeys are the
+// row's JSON line keys (jsonLineKeys), nil when the line is not a JSON
+// object; line is the row's stored line. A key of a logfmt line is a field
+// only after a | logfmt stage, and is parsed when that stage has no
+// extraction list. A row whose line VictoriaLogs did not keep (missing _msg,
+// the line rebuilt from its fields) cannot tell line keys from structured
+// metadata and keeps the earlier rule: parsed after a | json or | logfmt,
+// otherwise structured metadata.
+func (e *lineFieldExposure) fieldCategory(key string, lineKeys map[string]bool, line []byte, lineMissing, classifyAsParsed bool) (parsed, hidden bool) {
+	switch {
+	case e.names[key]:
+		return true, false
+	case lineKeys != nil:
+		if !isJSONLineField(key, lineKeys) {
+			return false, false
+		}
+		if e.exposesJSONLine(lineKeys) {
+			return true, false
+		}
+		return false, true
+	case lineMissing:
+		return classifyAsParsed, false
+	case e.logfmt && logfmtLineHasKey(line, key):
+		return e.logfmtAll, !e.logfmtAll
+	}
+	return false, false
+}
+
+// classifyLineField returns whether a stored field of a row is a parsed
+// label and whether it is left out: by the exposure in the Loki-compatible
+// profile (fieldCategory), otherwise parsed when it holds content of a JSON
+// line, or after a | json / | logfmt stage beside any other line.
+func classifyLineField(e *lineFieldExposure, key string, lineKeys map[string]bool, line []byte, lineMissing, classifyAsParsed bool) (parsed, hidden bool) {
+	if e != nil {
+		return e.fieldCategory(key, lineKeys, line, lineMissing, classifyAsParsed)
+	}
+	if lineKeys != nil {
+		return isJSONLineField(key, lineKeys), false
+	}
+	return classifyAsParsed, false
+}
+
+// dropsRow reports whether a label filter drops a row Loki would not see it
+// match: the filter names a key of the row's line (a JSON key, or a logfmt
+// key once a | logfmt stage made VictoriaLogs hold the line's keys as fields)
+// that no stage before the filter exposes, so Loki evaluates it on a label
+// the entry does not have. VictoriaLogs matched the stored field; the row is
+// kept when the filter matches an empty value. lineKeys are the row's JSON
+// line keys (jsonLineKeys), nil when the line is not a JSON object. A row
+// stored without its line is never dropped (fieldCategory).
+func (e *lineFieldExposure) dropsRow(line []byte, lineKeys map[string]bool, streamLabels map[string]string) bool {
+	jsonLine := lineKeys != nil
+	var labels map[string]bool // the JSON line's labels, walked once when a name needs it
+	for _, f := range e.filters {
+		if f.matchesEmpty || f.before.names[f.name] {
+			continue
+		}
+		if jsonLine && f.before.exposesJSONLine(lineKeys) {
+			continue
+		}
+		if !jsonLine && (!e.logfmt || f.before.logfmtAll) {
+			continue
+		}
+		if _, stream := streamLabels[f.name]; stream {
+			continue
+		}
+		var held bool
+		switch {
+		case !jsonLine:
+			held = logfmtLineHasLabel(line, f.name)
+		case lineKeys[f.name]:
+			// An object key names no label itself, only its nested keys.
+		default:
+			if _, top := lineKeys[f.name]; top {
+				held = true
+			} else if jsonLineMayHold(lineKeys, f.name) {
+				if labels == nil {
+					labels = jsonLineLabels(line)
+				}
+				held = labels[f.name]
+			}
+		}
+		if held {
 			return true
 		}
 	}
 	return false
+}
+
+// fillExtractions gives every extraction-list label the row lacks Loki's
+// value read from the line: the value at the key path (a nested object as
+// its JSON text), or empty when the line lacks the key
+// (JSONExpressionParser, LogfmtExpressionParser). VictoriaLogs leaves no
+// field for a missing key, a path into an array or a nested object, and does
+// not apply logfmt renames. | json gives no label for a line that does not
+// start like JSON (Loki reports a parse error there). A label a stream label
+// or structured metadata already holds is left as it is.
+func (e *lineFieldExposure) fillExtractions(line []byte, parsed, metadata, streamLabels map[string]string) {
+	for _, x := range e.extractions {
+		if _, ok := parsed[x.name]; ok {
+			continue
+		}
+		if _, ok := metadata[x.name]; ok {
+			continue
+		}
+		if _, ok := streamLabels[x.name]; ok {
+			continue
+		}
+		if x.logfmt {
+			parsed[x.name] = logfmtLineValue(line, x.path[0])
+			continue
+		}
+		if len(line) == 0 || (line[0] != '{' && line[0] != '[' && line[0] != '"') {
+			continue
+		}
+		parsed[x.name] = jsonLineValue(line, x.path)
+	}
+}
+
+// jsonLineValue returns the value Loki's json expression parser reads at a
+// key path: a string unescaped, null as empty, any other value (an object
+// included) as its JSON text, or empty when the path is missing.
+func jsonLineValue(line []byte, path []string) string {
+	value, typ, _, err := jsonparser.Get(line, path...)
+	if err != nil {
+		return ""
+	}
+	switch typ {
+	case jsonparser.String:
+		if s, err := jsonparser.ParseString(value); err == nil {
+			return s
+		}
+	case jsonparser.Null:
+		return ""
+	}
+	return string(value)
+}
+
+// lokiJSONExpressionPath turns a Loki json expression (`a.b`, `a[0]`,
+// `["a b"].c`) into a key path, array indexes as "[n]"; nil when it cannot
+// be read.
+func lokiJSONExpressionPath(expr string) []string {
+	var path []string
+	for i := 0; i < len(expr); {
+		switch c := expr[i]; c {
+		case '.':
+			i++
+		case '[':
+			end := strings.IndexByte(expr[i:], ']')
+			if end < 0 {
+				return nil
+			}
+			inner := strings.TrimSpace(expr[i+1 : i+end])
+			if key, err := strconv.Unquote(inner); err == nil {
+				path = append(path, key)
+			} else if _, err := strconv.Atoi(inner); err == nil {
+				path = append(path, "["+inner+"]")
+			} else {
+				return nil
+			}
+			i += end + 1
+		default:
+			j := i
+			for j < len(expr) && expr[j] != '.' && expr[j] != '[' {
+				j++
+			}
+			path = append(path, strings.TrimSpace(expr[i:j]))
+			i = j
+		}
+	}
+	return path
+}
+
+// logfmtLineValue returns the value of key in a logfmt line, its quotes
+// removed as parseLogfmtFields does, or empty when the line lacks it.
+func logfmtLineValue(line []byte, key string) string {
+	return parseLogfmtFields(string(line))[key]
+}
+
+// filtersLineFields reports whether a label filter may drop a row (dropsRow).
+func (e *lineFieldExposure) filtersLineFields() bool {
+	if e == nil {
+		return false
+	}
+	for _, f := range e.filters {
+		if !f.matchesEmpty {
+			return true
+		}
+	}
+	return false
+}
+
+// needsClassification reports whether rows must be classified even when the
+// response carries no categorized metadata: stage labels join the stream
+// labels, or a label filter may drop rows.
+func (e *lineFieldExposure) needsClassification() bool {
+	return e != nil && (len(e.names) > 0 || e.filtersLineFields())
+}
+
+// streamLabelMerge returns which extracted labels join a log entry's stream
+// labels in the Loki-compatible profile: every parsed label, stage labels
+// included, exactly when parsed | json labels do (mergesParsedStreamLabels),
+// so a categorize-labels response keys streams by the stream labels alone.
+// Another profile keeps mergeParsed and the regexp captures it merges.
+func (e *lineFieldExposure) streamLabelMerge(mergeParsed bool, captureFields map[string]bool, categorizedLabels, emitStructuredMetadata bool) (bool, map[string]bool) {
+	if e == nil {
+		return mergeParsed, captureFields
+	}
+	stageLabels := e.unpack || len(e.names) > 0
+	return mergeParsed || (stageLabels && (!categorizedLabels || !emitStructuredMetadata)), nil
 }
 
 // jsonLineKeys returns the top-level keys of a JSON-object log line, each

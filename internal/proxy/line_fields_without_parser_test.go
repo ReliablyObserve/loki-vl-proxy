@@ -160,35 +160,3 @@ func TestLogQuery_LineFieldsNeedAParserStage(t *testing.T) {
 		}
 	}
 }
-
-// TestHidesLineFields_StagesThatAddLabels: only a parser stage or label_format
-// adds labels to a Loki entry; line filters, label filters, drop, keep,
-// decolorize and line_format do not.
-//
-// conformance: profiles/parsed-fields-without-parser
-func TestHidesLineFields_StagesThatAddLabels(t *testing.T) {
-	p := lineFieldsProxy(t, "http://127.0.0.1:1", "buffered")
-	for query, want := range map[string]bool{
-		`{app="a"}`: true,
-		`{app="a"} |= "x" | level="info" | drop pod`:    true,
-		`{app="a"} | decolorize | line_format "{{.x}}"`: true,
-		`{app="a"} | json`:                 false,
-		`{app="a"} | logfmt`:               false,
-		`{app="a"} | regexp "(?P<m>\\w+)"`: false,
-		`{app="a"} | pattern "<m> <_>"`:    false,
-		`{app="a"} | unpack`:               false,
-		`{app="a"} | label_format x="y"`:   false,
-	} {
-		if got := p.hidesLineFields(query); got != want {
-			t.Errorf("hidesLineFields(%s) = %v, want %v", query, got, want)
-		}
-	}
-	other, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Second, 10), LogLevel: "error",
-		LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeHybrid})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if other.hidesLineFields(`{app="a"}`) {
-		t.Fatal("hybrid metadata mode is not the Loki-compatible profile and keeps line fields")
-	}
-}

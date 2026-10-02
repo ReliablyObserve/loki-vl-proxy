@@ -129,6 +129,25 @@
    ]
   },
   {
+   "id": "explore-logs-json-extraction",
+   "kind": "explore",
+   "query": "{env=\"production\"} | json pipeline, level",
+   "covers": [
+    "profiles/stage-field-exposure",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-logs-line-format",
+   "kind": "explore",
+   "query": "{env=\"production\"} | json | line_format \"{{.message}}\"",
+   "covers": [
+    "profiles/stage-field-exposure",
+    "profiles/parsed-fields-without-parser",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

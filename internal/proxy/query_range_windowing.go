@@ -78,9 +78,11 @@ type queryRangeWindowCacheEntry struct {
 // and shared by every window fetch, background warm and window cache key.
 type logQueryShape struct {
 	classifyAsParsed bool
-	// addsLabels: the pipeline has a parser or label_format stage, without
-	// which the Loki-compatible profile leaves out fields of a JSON line.
-	addsLabels    bool
+	// exposure is what the pipeline's stages expose of a JSON line, used by
+	// the Loki-compatible profile; parsed is false when the parser rejected
+	// the query (every field is kept then, as before).
+	exposure      lineFieldExposure
+	parsed        bool
 	captureFields map[string]bool
 	// lineFields are the fields the pipeline writes, left out of rebuilt lines.
 	lineFields     map[string]bool
@@ -100,7 +102,6 @@ func newLogQueryShape(query string) logQueryShape {
 		// Each helper keeps its own fallback for queries the parser rejects.
 		shape := logQueryShape{
 			classifyAsParsed: hasLabelParserStage(query),
-			addsLabels:       true,
 			captureFields:    regexpCaptureFields(query),
 			lineFields:       logQueryLineFields(query),
 			fingerprint:      logQueryShapeFingerprint(query),
@@ -114,7 +115,8 @@ func newLogQueryShape(query string) logQueryShape {
 	}
 	shape := logQueryShape{
 		classifyAsParsed: pipelineHasParserStageOf(lq.Pipeline, true, true),
-		addsLabels:       pipelineAddsLabels(lq.Pipeline),
+		exposure:         pipelineAddsLabels(lq.Pipeline),
+		parsed:           true,
 		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
 		lineFields:       pipelineLineFields(lq.Pipeline),
 		fingerprint:      logQueryShapeFingerprint(strings.Join(stages, "\n")),
@@ -851,14 +853,18 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	}()
 
 	classifyAsParsed := shape.classifyAsParsed
-	hideLineFields := !shape.addsLabels && p.lokiCompatibleProfile()
+	var exposure *lineFieldExposure
+	if shape.parsed && p.lokiCompatibleProfile() {
+		exposure = &shape.exposure
+	}
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := shape.captureFields
+	mergeParsed, captureFields = exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	emitTupleMetadata := categorizedLabels && emitStructuredMetadata
 	// Entries keep SM/Parsed only when the tuple metadata is emitted or regexp
 	// captures need them; parser labels are otherwise folded into the stream.
 	keepEntryMetadata := emitTupleMetadata || len(captureFields) > 0
-	needsClassification := keepEntryMetadata || mergeParsed
+	needsClassification := keepEntryMetadata || mergeParsed || exposure.filtersLineFields()
 	dropConditions, keepConditions := shape.dropConditions, shape.keepConditions
 	bareDropFields, bareKeepFields := shape.bareDropFields, shape.bareKeepFields
 	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
@@ -914,7 +920,12 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
-			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, hideLineFields, exposureCache, smBuf, pfBuf)
+			var drop bool
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			if drop {
+				vlFJParserPool.Put(fjParser)
+				continue
+			}
 			if emitTupleMetadata {
 				structuredMetadata = setDetectedLevelMetadata(structuredMetadata, smBuf, rowStream.labels, detected, levelStages)
 			}

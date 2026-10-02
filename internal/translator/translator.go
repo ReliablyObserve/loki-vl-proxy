@@ -1534,6 +1534,13 @@ func translateLabelFormat(expr string) string {
 		}
 		labelName := strings.TrimSpace(parts[0])
 		template := strings.TrimSpace(parts[1])
+		if template != "" && template[0] != '"' && template[0] != '`' {
+			// dst=src renames: Loki sets dst to src's value when src exists
+			// and removes src (LabelsFormatter.Process); rename does both
+			// and leaves dst unset for a missing src.
+			pipes = append(pipes, logsql.PipeRename{Pairs: [][2]string{{template, labelName}}}.String())
+			continue
+		}
 		// convertGoTemplate returns a quoted string like "<label>"; strip the
 		// outer quotes before passing to PipeFormat, which re-applies %q quoting.
 		converted := convertGoTemplate(template)

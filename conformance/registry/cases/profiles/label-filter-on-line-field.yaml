@@ -1,0 +1,53 @@
+id: profiles/label-filter-on-line-field
+title: A label filter on a line key no earlier stage exposes matches like Loki
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Before a stage exposes a key of the line, Loki's entry has no such label:
+  a string label filter is evaluated on an empty value and a numeric,
+  duration or bytes comparison fails (pkg/logql/log/label_filter.go), so
+  `{app="x"} | user="u1"` and `| json user | status="200"` return nothing.
+  VictoriaLogs holds the JSON line's keys as stored fields and matched them.
+  Measured 2026-10-02 against Loki 3.7.7 (VictoriaLogs v1.52.0 and v1.30.0
+  alike): `| user="u1"`, `| user=~"u.*"`, `| status > 100`,
+  `| json user | status="200"`, `| user="u1" | json` and, on logfmt lines,
+  `| logfmt user | status="200"`: Loki 0 entries, proxy 1-3.
+
+  Fixed for log queries: the proxy drops a row VictoriaLogs matched when the
+  filter names a key of the row's JSON line (or of its logfmt line after a
+  | logfmt stage) that no stage before the filter exposes, and the filter
+  fails on an empty value (lineFieldExposure.dropsRow, buffered, streamed and
+  windowed paths). Stream labels and structured metadata keep matching.
+  Applies to filter stages made of plain matchers (and/comma); a stage with
+  `or` or parentheses is left to VictoriaLogs.
+
+  Open gaps (unchanged, proven on main): a range or instant metric query
+  still counts the rows VictoriaLogs matched (`count_over_time({app="x"} |
+  user="u1" [5m])`: Loki empty, proxy 2), and so does `sum by (user)` over a
+  query with no stage exposing user. Telling a line key from structured
+  metadata needs the stored line, and reading it for every metric row
+  (unpack_json from _msg as a gate) would make VictoriaLogs read and parse
+  the message column of every row a structured-metadata filter selects - the
+  common Drilldown metadata filter - and VictoriaLogs v1.30's unpack_json
+  with fields and result_prefix deletes the unprefixed field. A filter that
+  matches an empty value (`user!="u1"`, `user=""`) keeps every Loki row only
+  where VictoriaLogs did not already drop it: rows whose stored key fails it
+  are missing (Loki keeps them).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="stage-fields-<ts>-json"} | user="u1"'
+    start: now-5m
+    end: now
+    limit: "100"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [streams.values]
+  expect: |
+    No entries, as Loki answers; the same entries as Loki once a stage
+    exposes the key (TestCompat_StageFieldExposureLikeLoki).

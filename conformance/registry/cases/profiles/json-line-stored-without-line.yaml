@@ -1,0 +1,44 @@
+id: profiles/json-line-stored-without-line
+title: A JSON line pushed without _msg is stored without its line (open gap)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A Promtail- or Alloy-style Loki push of a JSON line carries no _msg key.
+  VictoriaLogs' Loki push endpoint (v1.30.0 and v1.52.0 alike, measured
+  2026-10-02) parses the line, stores each key as a field (nested objects as
+  dotted names, numbers as strings) and sets _msg to "missing _msg field;
+  see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field".
+  Key order, value types and nesting are lost, and the fields of the line
+  cannot be told from the push's structured metadata. The proxy rebuilds the
+  line from every stored field (structured metadata included), reports them
+  as structured metadata without a parser and as parsed labels after
+  `| json` or `| logfmt`. Loki returns the original line and no labels from
+  it without a parser.
+
+  The proxy cannot recover the line on the read path. Loki-exact results
+  need VictoriaLogs to keep the line: push with
+  `/insert/loki/api/v1/push?disable_message_parsing=1` (stores the line in
+  _msg verbatim and only the structured metadata as fields; verified on
+  v1.30.0 and v1.52.0), after which every case in
+  profiles/stage-field-exposure applies. Open: whether to document that
+  client setting as the supported configuration, or to treat every field of
+  such a row as a line key (exact for pushes without structured metadata,
+  hides structured metadata otherwise).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="promtail-json-<ts>"}'
+    start: now-5m
+    end: now
+    limit: "10"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: exact
+  fields: [streams.values, metadata_categories]
+  expect: |
+    The original line and Loki's label categories (not met: see why).
