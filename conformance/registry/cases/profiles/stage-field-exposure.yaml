@@ -12,7 +12,8 @@ why: |
   object as its JSON text), `| regexp` and `| pattern` their named captures,
   `| label_format` its targets (a `dst=src` rename only when src exists),
   `| unpack` the keys of a packed line (one with an _entry key), and
-  `| line_format` none. Every
+  `| line_format` none; arrays give no label. A label_format reading a label
+  the entry does not have renames nothing and renders it empty. Every
   label a stage adds is a parsed label; with categorize-labels the stream
   labels stay the stream labels alone.
 
@@ -43,7 +44,12 @@ why: |
   stream labels as parsed labels do. A line_format whose output no later
   stage reads is rendered by the proxy alone (Proxy.backendLogQuery), so
   VictoriaLogs returns the stored line the classification needs and the
-  template sees only Loki's labels. `dst=src` translates to LogsQL rename.
+  template sees only Loki's labels; one a later line filter, parser or
+  decolorize reads stays, and VictoriaLogs copies the stored line aside
+  before it (translator.TranslateLogQueryKeepingLine). A label_format target
+  that read a hidden key is corrected per row (fixLabelFormats), and an array
+  value is left out after | json. `dst=src` translates to a conditional copy
+  that keeps dst when src is missing.
   Another profile keeps its classification. Not covered: a JSON line pushed
   without _msg (profiles/json-line-stored-without-line), Loki's __error__
   labels for a parser that fails on the line, the empty label Loki gives an

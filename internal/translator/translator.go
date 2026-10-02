@@ -554,10 +554,32 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 	return cleaned, labels
 }
 
+// StoredLineField is the field TranslateLogQueryKeepingLine copies the
+// stored line into before the query's first line_format.
+const StoredLineField = "_lvp_line"
+
+// TranslateLogQueryKeepingLine translates a log query (no metric wrapper)
+// like TranslateLogQLWithCapabilities, and has VictoriaLogs copy the stored
+// line into StoredLineField before the first line_format rewrites it, so the
+// response carries both the formatted and the stored line.
+func TranslateLogQueryKeepingLine(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
+	return translateLogQueryOpts(strings.TrimSpace(logql), labelFn, caps, sf0(streamFields), true)
+}
+
+func sf0(m map[string]bool) []map[string]bool {
+	if m == nil {
+		return nil
+	}
+	return []map[string]bool{m}
+}
+
 // translateLogQuery handles log queries (non-metric).
-//
-//nolint:gocyclo // staged LogQL→LogsQL pipeline parser: stream selector, line filters, parser stages, label filters, formatters; branching is inherent to LogQL grammar coverage.
 func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields ...map[string]bool) (string, error) {
+	return translateLogQueryOpts(logql, labelFn, caps, streamFields, false)
+}
+
+//nolint:gocyclo // staged LogQL→LogsQL pipeline parser: stream selector, line filters, parser stages, label filters, formatters; branching is inherent to LogQL grammar coverage.
+func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields []map[string]bool, keepLine bool) (string, error) {
 	var sf map[string]bool
 	if len(streamFields) > 0 {
 		sf = streamFields[0]
@@ -792,6 +814,10 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			})
 		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		if keepLine && strings.HasPrefix(stage, "line_format ") && strings.HasPrefix(translated, "| format ") {
+			translated = "| copy _msg as " + StoredLineField + " " + translated
+			keepLine = false
+		}
 		aliasCopies := ""
 		if translated == "| unpack_json" && strings.HasPrefix(stage, "json ") {
 			// `| json a="x.y"` defines the label a from the key x.y: make it a
@@ -1535,10 +1561,13 @@ func translateLabelFormat(expr string) string {
 		labelName := strings.TrimSpace(parts[0])
 		template := strings.TrimSpace(parts[1])
 		if template != "" && template[0] != '"' && template[0] != '`' {
-			// dst=src renames: Loki sets dst to src's value when src exists
-			// and removes src (LabelsFormatter.Process); rename does both
-			// and leaves dst unset for a missing src.
-			pipes = append(pipes, logsql.PipeRename{Pairs: [][2]string{{template, labelName}}}.String())
+			// dst=src renames: Loki sets dst to src's value only when src
+			// exists, keeping dst otherwise, and removes src
+			// (LabelsFormatter.Process). LogsQL rename would clear dst for a
+			// missing src, so the copy is conditional. skip_empty_results
+			// keeps dst where the condition fails on VictoriaLogs before
+			// v1.35, which otherwise writes an empty dst there.
+			pipes = append(pipes, fmt.Sprintf("| format if (%s:*) %q as %s skip_empty_results | delete %s", template, "<"+template+">", labelName, template))
 			continue
 		}
 		// convertGoTemplate returns a quoted string like "<label>"; strip the

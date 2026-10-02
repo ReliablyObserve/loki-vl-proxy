@@ -24,26 +24,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uncategorized answer; `| line_format "{{.msg}}"` returned the JSON keys as
   structured metadata and rendered the line from them where Loki renders an
   empty line (msg is not a label until a parser adds it); after `| logfmt` a
-  logfmt line's structured metadata came back as parsed labels. Each row is
-  now classified by what the stages expose, on the buffered, streamed and
-  windowed paths: `| json` / `| logfmt` without an extraction list expose
-  every key that parser reads from the line, an extraction list only its
-  names (each with Loki's value read from the line where VictoriaLogs left no
-  field: empty for a missing key, a nested object as its JSON text, a logfmt
-  rename from the renamed key), `| regexp` / `| pattern` their captures,
-  `| label_format` its targets, `| unpack` the keys of a packed (`_entry`) line, and `| line_format`
+  logfmt line's structured metadata came back as parsed labels; an array
+  value came back as a parsed label after `| json` (Loki's json parser gives
+  arrays none). Each row is now classified by what the stages expose, on the
+  buffered, streamed and windowed paths: `| json` / `| logfmt` without an
+  extraction list expose every key that parser reads from the line (no
+  arrays), an extraction list only its names (each with Loki's value read
+  from the line where VictoriaLogs left no field: empty for a missing key, a
+  nested object as its JSON text, a logfmt rename from the renamed key),
+  `| regexp` / `| pattern` their captures, `| label_format` its targets,
+  `| unpack` the keys of a packed (`_entry`) line, and `| line_format`
   nothing. Exposed keys are parsed labels, keys of the line no stage exposes
-  are left out, other stored fields stay structured metadata; without
-  categorize-labels the stage labels join the stream labels as parsed labels
-  do. A `line_format` whose output no later stage reads is rendered by the
-  proxy alone, so VictoriaLogs returns the stored line the classification
-  needs. Clients that read the extra keys from such responses must add the
-  parser Loki needs. The hybrid and native metadata modes are unchanged. Not
-  covered: a JSON line pushed without `_msg` (VictoriaLogs stores the fields
-  without the line; pushing with
-  `/insert/loki/api/v1/push?disable_message_parsing=1` keeps it), Loki's
-  `__error__` labels for a parser that fails on the line, and structured
-  metadata in the stream labels of an uncategorized answer (pre-existing).
+  are left out, other stored fields stay structured metadata. A
+  `label_format` that reads a key no earlier stage exposes renames nothing
+  and renders a `{{.label}}` template with an empty value, as Loki does. A
+  `line_format` whose output no later stage reads is rendered by the proxy
+  alone, so VictoriaLogs returns the stored line the classification needs;
+  one a later line filter, parser or `decolorize` reads stays, and
+  VictoriaLogs copies the stored line aside before it. Clients that read the
+  extra keys from such responses must add the parser Loki needs. The hybrid
+  and native metadata modes are unchanged. Not covered: a JSON line pushed
+  without `_msg` (VictoriaLogs stores the fields without the line; pushing
+  with `/insert/loki/api/v1/push?disable_message_parsing=1` keeps it), and
+  Loki's `__error__` labels for a parser that fails on the line.
+
+- **Without categorize-labels, structured metadata joins each entry's stream
+  labels, like Loki (visible change in the default profile).** A client that
+  does not send `X-Loki-Response-Encoding-Flags: categorize-labels` (logcli,
+  scripts, older clients) gets Loki's legacy encoding, where every label of an
+  entry (stream labels, structured metadata and parsed labels) is in its
+  stream, so entries with different metadata values land in different
+  streams. The Loki-compatible profile returned the stream and parsed labels
+  only. Grafana sends the flag, so Explore and Logs Drilldown are not
+  affected; a client that keys on the stream label set sees more, smaller
+  streams, as against Loki.
 
 ### Fixed
 
@@ -54,11 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proxy returned the rows. A row is now dropped when the filter names a key of
   its JSON line (or of its logfmt line after `| logfmt`) that no stage before
   the filter exposes and the filter fails on an empty value; stream labels and
-  structured metadata match as before. Applies to filter stages of plain
-  matchers. Metric queries still count such rows, and a filter that matches an
-  empty value (`user!="u1"`) still misses rows VictoriaLogs dropped (both
-  pre-existing; telling a line key from structured metadata there means
-  reading every row's message in VictoriaLogs).
+  structured metadata match as before. Rows dropped this way do not shorten
+  the page: further pages past the oldest (backward) or newest (forward) row
+  read are fetched until the limit is filled or the window ends, at most 8
+  more requests of `limit` rows each, on the single-request and windowed
+  paths. Applies to filter stages of plain matchers. Metric queries still
+  count such rows, and a filter that matches an empty value (`user!="u1"`)
+  still misses rows VictoriaLogs dropped (both pre-existing; telling a line
+  key from structured metadata there means reading every row's message in
+  VictoriaLogs).
 
 - **detected_fields names a nested JSON key with Loki's path.** For
   `{"svc":{"name":"api"}}` Loki lists `svc_name` with jsonPath
@@ -69,8 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`| label_format dst=src` renames instead of writing the text "src".** The
   rename form was translated to a LogsQL template without placeholders, so
-  dst held the literal source name. It now translates to `rename src as dst`:
-  dst takes src's value when src exists and src is removed, as in Loki.
+  dst held the literal source name. It now copies src into dst only when src
+  exists and removes src (`format if (src:*) "<src>" as dst
+  skip_empty_results | delete src`, which keeps dst on VictoriaLogs before
+  v1.35 too), so a missing src leaves dst as it was, as in Loki.
 
 ## [1.105.0] - 2026-10-01
 

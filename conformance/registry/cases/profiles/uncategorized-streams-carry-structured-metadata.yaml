@@ -1,5 +1,5 @@
 id: profiles/uncategorized-streams-carry-structured-metadata
-title: Without categorize-labels, structured metadata joins the stream labels (open gap)
+title: Without categorize-labels, structured metadata joins the stream labels
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
@@ -13,7 +13,13 @@ why: |
   streams whose labels include k8s_pod_name, trace_id, span_id and
   service_name_extracted; the proxy answered 4 streams with the index labels
   only. Grafana always sends the flag, so Explore and Drilldown are not
-  affected. Open.
+  affected. Fixed (2026-10-02) in the Loki-compatible profile: without
+  categorize-labels every entry's structured metadata joins its stream labels
+  with the parsed labels, on the buffered, streamed and windowed paths
+  (lineFieldExposure.streamLabelMerge); a metadata name a stream label holds
+  stays the stream label (Loki's _extracted suffix is the open
+  profiles/structured-metadata-label-collision). Other profiles are
+  unchanged.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -28,4 +34,6 @@ compare:
   mode: exact
   fields: [streams]
   expect: |
-    The same stream label sets and stream count as Loki.
+    The same stream label sets and stream count as Loki
+    (TestCompat_StageFieldExposureLikeLoki compares every stage shape without
+    categorize-labels).

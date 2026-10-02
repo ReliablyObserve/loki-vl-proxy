@@ -21,7 +21,14 @@ why: |
   fails on an empty value (lineFieldExposure.dropsRow, buffered, streamed and
   windowed paths). Stream labels and structured metadata keep matching.
   Applies to filter stages made of plain matchers (and/comma); a stage with
-  `or` or parentheses is left to VictoriaLogs.
+  `or` or parentheses is left to VictoriaLogs. Rows dropped this way are
+  replaced from further pages (Proxy.refillLineFieldRows: rows older than the
+  oldest read, backward, or newer than the newest, forward) until the limit
+  is filled or the window ends, at most 8 more requests of limit rows each,
+  on the single-request and windowed paths; measured on a stream with three
+  older plain lines holding user as structured metadata and three newer JSON
+  lines holding it as a key, `| user="u1"` with limit 3 returned no lines
+  before and Loki's three plain lines after.
 
   Open gaps (unchanged, proven on main): a range or instant metric query
   still counts the rows VictoriaLogs matched (`count_over_time({app="x"} |
@@ -50,4 +57,5 @@ compare:
   fields: [streams.values]
   expect: |
     No entries, as Loki answers; the same entries as Loki once a stage
-    exposes the key (TestCompat_StageFieldExposureLikeLoki).
+    exposes the key (TestCompat_StageFieldExposureLikeLoki), and the limit
+    filled from older rows (TestCompat_LabelFilterOnLineFieldFillsLimitLikeLoki).

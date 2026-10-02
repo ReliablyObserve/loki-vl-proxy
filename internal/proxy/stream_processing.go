@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -114,6 +115,20 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
+	// Rows a Loki label filter would not match are dropped before the limit
+	// is applied to the response, reading further pages to fill it.
+	if exposure := p.lineFieldExposure(r.FormValue("query")); exposure.filtersLineFields() {
+		limitValue, _ := strconv.Atoi(params.Get("limit"))
+		body, err := p.refillLineFieldRows(r.Context(), resp.Body, params, limitValue, direction == "forward", exposure,
+			!categorizedLabels || !emitStructuredMetadata, func(ctx context.Context, next url.Values) (*http.Response, error) {
+				return p.vlPost(ctx, "/select/logsql/query", next)
+			})
+		if err != nil {
+			p.writeError(w, statusFromUpstreamErr(err), err.Error())
+			return
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	// Formatting must run through the bounded template evaluator before writing
 	// a response. The streaming path otherwise skips Go template functions.
 	if p.streamResponse && !lineFormatTemplateRE.MatchString(r.FormValue("query")) {
@@ -207,7 +222,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	classifyAsParsed := hasLabelParserStage(originalQuery)
 	exposure := p.lineFieldExposure(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
-	mergeParsed, captureFields = exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
+	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
 	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
 	first := true
@@ -279,6 +294,9 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			}
 		}
 
+		if mergeMetadata {
+			parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf2)
+		}
 		translatedLabels, _ = mergeExtractedStreamLabels(translatedLabels, parsedFields, mergeParsed, captureFields)
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
@@ -563,11 +581,11 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	exposure := p.lineFieldExposure(originalQuery)
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := regexpCaptureFields(originalQuery)
-	mergeParsed, captureFields = exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
+	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	lineFields := logQueryLineFields(originalQuery)
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
-	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || exposure.needsClassification()
+	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || mergeMetadata || exposure.needsClassification()
 	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 	// Loki returns detected_level with the stream labels, or as structured
 	// metadata when the categorize-labels metadata is emitted.
@@ -665,6 +683,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			}
 			if len(keepConditions) > 0 {
 				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+			}
+			if mergeMetadata {
+				parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf)
 			}
 		}
 		streamKey, streamLabels := resolveLogQueryStream(
@@ -1145,11 +1166,15 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 	// Pass 1: collect non-stream fields and extract _msg raw bytes.
 	type pending struct{ key, value string }
 	var pendingFields []pending
-	var msgRaw []byte
+	var msgRaw, storedLine []byte
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
 		if key == "_msg" {
 			msgRaw = val.GetStringBytes()
+			return
+		}
+		if key == translator.StoredLineField {
+			storedLine = val.GetStringBytes()
 			return
 		}
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
@@ -1169,18 +1194,24 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 	// all other fields are "structured metadata" (pushed via OTel 3-tuple
 	// metadata). The Loki-compatible profile reports only the line fields the
 	// pipeline's stages expose (lineFieldExposure) and leaves out the rest.
+	// A line_format VictoriaLogs ran rewrote _msg; the stored line it copied
+	// aside first (translator.StoredLineField) is the line Loki parsed.
+	if storedLine != nil {
+		msgRaw = storedLine
+	}
 	msgKeys := jsonLineKeys(msgRaw)
+	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels}
 	var lineMissing bool
 	if exposure != nil {
 		lineMissing = isVLMissingMsgBytes(msgRaw, p.defaultMsgValue())
-		if !lineMissing && exposure.filtersLineFields() && exposure.dropsRow(msgRaw, msgKeys, streamLabels) {
+		if !lineMissing && exposure.filtersLineFields() && exposure.dropsRow(&row) {
 			return nil, nil, true
 		}
 	}
 
 	// Pass 2: classify each field.
 	for _, f := range pendingFields {
-		isParsed, hidden := classifyLineField(exposure, f.key, msgKeys, msgRaw, lineMissing, classifyAsParsed)
+		isParsed, hidden := classifyRowField(exposure, &row, f.key, f.value, lineMissing, classifyAsParsed)
 		if hidden {
 			continue
 		}
@@ -1196,9 +1227,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		}
 	}
 
-	if exposure != nil && !lineMissing && len(exposure.extractions) > 0 {
-		exposure.fillExtractions(msgRaw, pfBuf, smBuf, streamLabels)
-	}
+	exposure.finishRow(&row, lineMissing, pfBuf, smBuf)
 
 	var sm, pf map[string]string
 	if len(smBuf) > 0 {
@@ -1650,18 +1679,24 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	// As classifyEntryMetadataFieldsFJ: fields holding content of a JSON line
 	// are parsed (or left out when no stage exposes them), the others
 	// structured metadata.
-	var lineKeys map[string]bool
-	var line []byte // the line as bytes, converted once for the exposure checks
+	// lr.line is set only for the exposure checks, so the conversion is
+	// paid there alone.
+	lr := lineRow{stream: labels}
 	var lineMissing bool
 	if exposure != nil {
-		line = []byte(msg)
-		lineKeys = jsonLineKeys(line)
+		if stored, ok := entry[translator.StoredLineField].(string); ok {
+			msg = stored // the line before a line_format VictoriaLogs ran
+		}
+		lr.line = []byte(msg)
+		lr.keys = jsonLineKeys(lr.line)
+		lr.stream = streamLabels
 		lineMissing = isVLMissingMsg(msg, p.defaultMsgValue())
-		if !lineMissing && exposure.filtersLineFields() && exposure.dropsRow(line, lineKeys, streamLabels) {
+		if !lineMissing && exposure.filtersLineFields() && exposure.dropsRow(&lr) {
 			return labels, nil, nil, true
 		}
+		lr.stream = labels
 	} else if classifyAsParsed {
-		lineKeys = jsonLineKeys([]byte(msg))
+		lr.keys = jsonLineKeys([]byte(msg))
 	}
 
 	for key, value := range entry {
@@ -1671,12 +1706,12 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		if _, exists := labels[key]; exists {
 			continue
 		}
-		isParsed, hidden := classifyLineField(exposure, key, lineKeys, line, lineMissing, classifyAsParsed)
-		if hidden {
-			continue
-		}
 		stringValue, ok := stringifyEntryValue(value)
 		if !ok || strings.TrimSpace(stringValue) == "" {
+			continue
+		}
+		isParsed, hidden := classifyRowField(exposure, &lr, key, stringValue, lineMissing, classifyAsParsed)
+		if hidden {
 			continue
 		}
 		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
@@ -1691,9 +1726,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		}
 	}
 
-	if exposure != nil && !lineMissing && len(exposure.extractions) > 0 {
-		exposure.fillExtractions(line, pfBuf, smBuf, labels)
-	}
+	exposure.finishRow(&lr, lineMissing, pfBuf, smBuf)
 
 	var sm, pf map[string]string
 	if len(smBuf) > 0 {

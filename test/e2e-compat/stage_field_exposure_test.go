@@ -26,7 +26,9 @@ var (
 // object) with OTel structured metadata, the VictoriaLogs copy carrying the
 // line under _msg as the UI log generator sends it, so VictoriaLogs holds the
 // line and its keys as fields; <app>-logfmt holds logfmt lines with
-// structured metadata. Both backends are flushed and Loki's index must count
+// structured metadata; <app>-mix holds older plain lines with user as
+// structured metadata and newer JSON lines holding user as a key. Both
+// backends are flushed and Loki's index must count
 // every entry before a comparison runs.
 func ensureStageFixture(t *testing.T) (string, time.Time) {
 	t.Helper()
@@ -36,15 +38,40 @@ func ensureStageFixture(t *testing.T) (string, time.Time) {
 		meta := map[string]string{"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "k8s.pod.name": "stage-pod-1"}
 		streams := map[string][]string{
 			app + "-json": {
-				`{"msg":"login ok","user":"u1","status":200,"svc":{"name":"api"}}`,
-				`{"msg":"login failed","user":"u2","status":401,"svc":{"name":"api"}}`,
-				`{"msg":"logout","user":"u1","status":200,"svc":{"name":"web"}}`,
+				`{"msg":"login ok","user":"u1","status":200,"svc":{"name":"api"},"tags":["a","b"]}`,
+				`{"msg":"login failed","user":"u2","status":401,"svc":{"name":"api"},"tags":["a"]}`,
+				`{"msg":"logout","user":"u1","status":200,"svc":{"name":"web"},"tags":[]}`,
 			},
 			app + "-logfmt": {
 				`msg="login ok" user=u1 status=200`,
 				`msg="login failed" user=u2 status=401`,
 				`msg=logout user=u1 status=200`,
 			},
+		}
+		// <app>-mix: three older plain lines with user as structured metadata,
+		// three newer JSON lines holding user as a key.
+		mix := map[string][]interface{}{}
+		for i := 0; i < 6; i++ {
+			ts := strconv.FormatInt(base.Add(time.Duration(i)*time.Second).UnixNano(), 10)
+			if i < 3 {
+				v := []interface{}{ts, fmt.Sprintf("plain line %d", i), map[string]string{"user": "u1"}}
+				mix["loki"], mix["vl"] = append(mix["loki"], v), append(mix["vl"], v)
+				continue
+			}
+			line := fmt.Sprintf(`{"msg":"json line %d","user":"u1"}`, i)
+			mix["loki"] = append(mix["loki"], []interface{}{ts, line})
+			mix["vl"] = append(mix["vl"], []interface{}{ts, fmt.Sprintf(`{"msg":"json line %d","user":"u1","_msg":%q}`, i, line)})
+		}
+		for _, target := range []struct{ url, side string }{{lokiURL + "/loki/api/v1/push", "loki"}, {vlURL + "/insert/loki/api/v1/push", "vl"}} {
+			body, _ := json.Marshal(map[string]interface{}{"streams": []map[string]interface{}{{"stream": map[string]string{"app": app + "-mix", "env": "stage-fields"}, "values": mix[target.side]}}})
+			resp, err := http.Post(target.url, "application/json", strings.NewReader(string(body)))
+			if err != nil {
+				t.Fatalf("push %s: %v", target.url, err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				t.Fatalf("push %s: status %d", target.url, resp.StatusCode)
+			}
 		}
 		for name, lines := range streams {
 			var lokiValues, vlValues []interface{}
@@ -91,7 +118,7 @@ func ensureStageFixture(t *testing.T) (string, time.Time) {
 		for {
 			var stats struct{ Entries int }
 			status, body := rejectedQueryGet(t, lokiURL, "/loki/api/v1/index/stats", params, "0", nil)
-			if status == http.StatusOK && json.Unmarshal(body, &stats) == nil && stats.Entries == 6 {
+			if status == http.StatusOK && json.Unmarshal(body, &stats) == nil && stats.Entries == 12 {
 				break
 			}
 			if time.Now().After(deadline) {
@@ -176,38 +203,17 @@ func sameEntries(a, b []stageEntry) bool {
 	return (len(a) == 0 && len(b) == 0) || reflect.DeepEqual(a, b)
 }
 
-// withoutLabels returns the entries with the named labels left out of their
-// stream labels.
-func withoutLabels(entries []stageEntry, names []string) []stageEntry {
-	drop := map[string]bool{}
-	for _, n := range names {
-		drop[n] = true
-	}
-	out := make([]stageEntry, len(entries))
-	for i, e := range entries {
-		out[i] = e
-		out[i].Stream = nil
-		for _, l := range e.Stream {
-			if name, _, _ := strings.Cut(l, "="); !drop[name] {
-				out[i].Stream = append(out[i].Stream, l)
-			}
-		}
-	}
-	return out
-}
-
 // TestCompat_StageFieldExposureLikeLoki compares the Loki-compatible proxies
 // with Loki, entry by entry, for each LogQL stage that adds labels or not, on
 // data both hold identically: each entry's line, its stream labels, and with
 // categorize-labels (as Grafana sends it) its structured metadata and parsed
 // labels with their values; without categorize-labels the stream labels,
-// which hold the parsed labels in both. An extraction list gives each of its
-// labels a value, empty when the line lacks the key. Loki also merges structured metadata into those stream
-// labels and the proxy does not (it reports them in the metadata of a
-// categorize-labels answer only), so that comparison leaves the fixture's
-// structured metadata out.
+// which hold structured metadata and parsed labels in both. An extraction
+// list gives each of its labels a value, empty when the line lacks the key;
+// a line_format a later stage reads, and label_format reading a key no stage
+// exposed, are covered too.
 //
-// conformance: profiles/stage-field-exposure, profiles/parsed-fields-without-parser, profiles/label-filter-on-line-field, loki_api_v1_query_range
+// conformance: profiles/stage-field-exposure, profiles/parsed-fields-without-parser, profiles/label-filter-on-line-field, profiles/uncategorized-streams-carry-structured-metadata, loki_api_v1_query_range
 func TestCompat_StageFieldExposureLikeLoki(t *testing.T) {
 	app, end := ensureStageFixture(t)
 	j := fmt.Sprintf(`{app="%s-json"}`, app)
@@ -229,6 +235,12 @@ func TestCompat_StageFieldExposureLikeLoki(t *testing.T) {
 		j + ` | json | line_format "{{.msg}}"`,
 		j + ` | json | user="u1"`,
 		j + ` | json | label_format who=user`,
+		j + ` | json | label_format user=nosuch`,
+		j + ` | label_format u=user`,
+		j + ` | label_format x="{{.user}}-{{.app}}"`,
+		j + ` | json | line_format "{{.user}}" |= "u"`,
+		j + ` | line_format "{{.msg}}" | decolorize`,
+		j + ` | json user | line_format "{{.user}}" |= "u" | label_format l="{{.user}}"`,
 		j + ` | user="u1"`,
 		j + ` | user=~"u.*"`,
 		j + ` | status > 100`,
@@ -260,7 +272,6 @@ func TestCompat_StageFieldExposureLikeLoki(t *testing.T) {
 			t.Fatalf("Loki fixture drifted: %s returned %d entries", query, len(got))
 		}
 	}
-	metadata := []string{"k8s_pod_name", "trace_id"}
 	for _, target := range []struct{ name, url string }{
 		{"parity (13100)", proxyURL},
 		{"drilldown default (13110)", patternsAutodetectProxyURL},
@@ -271,9 +282,9 @@ func TestCompat_StageFieldExposureLikeLoki(t *testing.T) {
 				if got := stageEntries(t, target.url, query, end, true); !sameEntries(got, loki) {
 					t.Errorf("%s (categorize-labels):\nproxy %+v\nloki  %+v", query, got, loki)
 				}
-				lokiPlain := withoutLabels(stageEntries(t, lokiURL, query, end, false), metadata)
+				lokiPlain := stageEntries(t, lokiURL, query, end, false)
 				if got := stageEntries(t, target.url, query, end, false); !sameEntries(got, lokiPlain) {
-					t.Errorf("%s:\nproxy %+v\nloki  %+v (structured metadata left out)", query, got, lokiPlain)
+					t.Errorf("%s:\nproxy %+v\nloki  %+v", query, got, lokiPlain)
 				}
 			}
 		})
@@ -303,6 +314,65 @@ func TestCompat_DetectedFieldsNestedJSONPathLikeLoki(t *testing.T) {
 			}
 			if g := got[label]; fmt.Sprint(g.Parsers, g.JSONPath) != fmt.Sprint(want.Parsers, want.JSONPath) {
 				t.Errorf("%s detected_fields %s: proxy %+v, loki %+v", target.name, label, g, want)
+			}
+		}
+	}
+}
+
+// TestCompat_LabelFilterOnLineFieldFillsLimitLikeLoki: a label filter whose
+// label is structured metadata on older plain lines and a key of newer JSON
+// lines returns Loki's lines up to the limit: the rows the proxy drops after
+// VictoriaLogs applied the limit are replaced from further pages, in both
+// directions.
+//
+// conformance: profiles/label-filter-on-line-field, loki_api_v1_query_range
+func TestCompat_LabelFilterOnLineFieldFillsLimitLikeLoki(t *testing.T) {
+	app, end := ensureStageFixture(t)
+	query := fmt.Sprintf(`{app="%s-mix"} | user="u1"`, app)
+	lines := func(base, direction string, categorize bool) []string {
+		params := lineFieldsWindow(end)
+		params.Set("query", query)
+		params.Set("limit", "3")
+		params.Set("direction", direction)
+		headers := map[string]string{}
+		if categorize {
+			headers["X-Loki-Response-Encoding-Flags"] = "categorize-labels"
+		}
+		status, body := rejectedQueryGet(t, base, "/loki/api/v1/query_range", params, "0", headers)
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Values [][]json.RawMessage `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if status != http.StatusOK || json.Unmarshal(body, &resp) != nil {
+			t.Fatalf("%s: %d %.300s", base, status, body)
+		}
+		var out []string
+		for _, r := range resp.Data.Result {
+			for _, v := range r.Values {
+				var line string
+				_ = json.Unmarshal(v[1], &line)
+				out = append(out, line)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	for _, direction := range []string{"backward", "forward"} {
+		want := lines(lokiURL, direction, true)
+		if fmt.Sprint(want) != "[plain line 0 plain line 1 plain line 2]" {
+			t.Fatalf("Loki fixture drifted: %s %v", direction, want)
+		}
+		for _, target := range []struct{ name, url string }{
+			{"parity (13100)", proxyURL},
+			{"drilldown default (13110)", patternsAutodetectProxyURL},
+		} {
+			for _, categorize := range []bool{true, false} {
+				if got := lines(target.url, direction, categorize); !reflect.DeepEqual(got, want) {
+					t.Errorf("%s %s categorize-labels=%v: %v, Loki %v", target.name, direction, categorize, got, want)
+				}
 			}
 		}
 	}

@@ -234,6 +234,13 @@ def _extracted(label):
     return str(label or "").endswith("_extracted")
 
 
+# Loki's parse-error labels: a parser stage that rejects a line (| json on a
+# logfmt line) adds them as parsed labels; the proxy does not report them.
+PARSE_ERROR = ("Loki's __error__ / __error_details__ labels for a line a parser stage rejects (not reported by the "
+               "proxy; open, profiles/stage-field-exposure)")
+PARSE_ERROR_LABELS = ("__error__", "__error_details__")
+
+
 def _envelope(a, b):
     """Keys only the proxy's answer carries (status and data mirrors), as a note."""
     extra = sorted(set(a) - set(b)) if isinstance(a, dict) and isinstance(b, dict) else []
@@ -296,11 +303,12 @@ RESOURCE_RULES = (("/resources/detected_fields", _detected_fields), ("/resources
 
 
 def _log_frames(a, b):
-    """Log frames that match once Loki's _extracted labels are set aside (and the row id, which Grafana derives from the labels)."""
+    """Log frames that match once Loki's _extracted and parse-error labels are set aside (and the row id, which Grafana
+    derives from the labels)."""
     fa, fb = a.get("frames") or [], b.get("frames") or []
     if not fa or len(fa) != len(fb):
         return None
-    changed = False
+    changed = errors = False
     for x, y in zip(fa, fb):
         names = [f.get("name") for f in x["schema"]["fields"]]
         if names != [f.get("name") for f in y["schema"]["fields"]] or not {"labels", "labelTypes"} <= set(names):
@@ -316,12 +324,16 @@ def _log_frames(a, b):
                 base = k[: -len("_extracted")]
                 ly.pop(k)
                 ty.pop(k, None)
-                if tx.get(base) == "S" and ty.get(base) == "I":
-                    tx[base] = "I"  # the proxy types the stream label as the metadata it collides with
+                if tx.get(base) in ("S", "P") and ty.get(base) == "I":
+                    tx[base] = "I"  # the proxy types the stream label as the metadata or parsed key it collides with
                 changed = True
+            for k in [k for k in ly if k in PARSE_ERROR_LABELS and k not in lx]:
+                ly.pop(k)
+                ty.pop(k, None)
+                errors = True
             if (lx, tx) != (ly, ty):
                 return None
-    return EXTRACTED if changed else None
+    return _join(EXTRACTED if changed else "", PARSE_ERROR if errors else "")
 
 
 def explain_one_sided(key):

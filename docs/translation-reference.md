@@ -57,10 +57,10 @@ After a parser stage, label filters are wrapped as `| filter <expr>`. For exampl
 
 | LogQL | LogsQL |
 |---|---|
-| `\| line_format "{{.x}}"` | `\| format "<x>"`; in the Loki-compatible profile a log query's `line_format` that no later line filter, parser or `decolorize` reads is not sent: the proxy renders it from the labels the entry carries, and VictoriaLogs returns the stored line |
+| `\| line_format "{{.x}}"` | `\| format "<x>"`; in the Loki-compatible profile a log query's `line_format` that no later line filter, parser or `decolorize` reads is not sent: the proxy renders it from the labels the entry carries, and VictoriaLogs returns the stored line; one that stays is preceded by `\| copy _msg as _lvp_line`, so the response carries the stored line too |
 | `\| label_format x="{{.y}}"` | `\| format "<y>" as x` |
 | `\| label_format a="{{.x}}", b="{{.y}}"` | `\| format "<x>" as a \| format "<y>" as b` |
-| `\| label_format dst=src` | `\| rename src as dst` |
+| `\| label_format dst=src` | `\| format if (src:*) "<src>" as dst skip_empty_results \| delete src` — dst is kept when src is missing, as in Loki |
 | `\| drop a, b` | `\| delete a, b` — bare field names, unconditional |
 | `\| drop level="debug"` | proxy post-processes each entry: removes `level` from stream labels, structured metadata and parsed fields when value matches |
 | `\| drop status=~"5.."` | proxy regex match: removes `status` when value matches regex |

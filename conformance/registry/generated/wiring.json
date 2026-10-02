@@ -302,6 +302,9 @@
       "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
     ],
+    "profiles/uncategorized-streams-carry-structured-metadata": [
+      "test/e2e-compat/stage_field_exposure_test.go"
+    ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
       "test/e2e-compat/stack_profiles_test.go"
@@ -788,7 +791,8 @@
       "profiles/detected-fields-dotted-json-keys",
       "profiles/label-filter-on-line-field",
       "profiles/parsed-fields-without-parser",
-      "profiles/stage-field-exposure"
+      "profiles/stage-field-exposure",
+      "profiles/uncategorized-streams-carry-structured-metadata"
     ],
     "test/e2e-compat/tenant_limits_published_test.go": [
       "limits/max-entries-limit-rejects",
@@ -838,10 +842,9 @@
     "profiles/label-endpoints-window-and-data",
     "profiles/label-filter-regexp-anchoring",
     "profiles/structured-metadata-label-collision",
-    "profiles/uncategorized-streams-carry-structured-metadata",
     "prometheus_api_v1_alerts",
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 85
+  "wired_items": 86
 }

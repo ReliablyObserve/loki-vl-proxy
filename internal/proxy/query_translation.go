@@ -398,7 +398,20 @@ func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (str
 	return p.translateQueryWithContext(ctx, expr.String())
 }
 
+// translateLogResponseQuery translates the query of a query or query_range
+// request: a log query goes through backendLogQuery first (see there).
+func (p *Proxy) translateLogResponseQuery(ctx context.Context, logql string) (string, error) {
+	query, keepLine := p.backendLogQuery(logql)
+	return p.translateQueryOpts(ctx, query, keepLine)
+}
+
 func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (string, error) {
+	return p.translateQueryOpts(ctx, logql, false)
+}
+
+// translateQueryOpts translates a query; keepLine translates a log query
+// with translator.TranslateLogQueryKeepingLine.
+func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine bool) (string, error) {
 	start := time.Now()
 	normalized := strings.TrimSpace(logql)
 	switch normalized {
@@ -406,8 +419,12 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		p.observeInternalOperation(ctx, "translate_query", "passthrough", time.Since(start))
 		return "*", nil
 	}
+	cacheKey := normalized
+	if keepLine {
+		cacheKey = "\x00keep-line\x00" + normalized
+	}
 	if p.translationCache != nil {
-		if cached, ok := p.translationCache.Get(normalized); ok {
+		if cached, ok := p.translationCache.Get(cacheKey); ok {
 			p.observeInternalOperation(ctx, "translate_query", "cache_hit", time.Since(start))
 			return string(cached), nil
 		}
@@ -417,9 +434,9 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		query string
 		err   error
 	}
-	v, _, _ := p.translationGroup.Do(normalized, func() (interface{}, error) {
+	v, _, _ := p.translationGroup.Do(cacheKey, func() (interface{}, error) {
 		if p.translationCache != nil {
-			if cached, ok := p.translationCache.Get(normalized); ok {
+			if cached, ok := p.translationCache.Get(cacheKey); ok {
 				return translationResult{query: string(cached)}, nil
 			}
 		}
@@ -431,7 +448,11 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 
 		caps := p.logsqlCapabilities()
 
-		translated, err := translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
+		translate := translator.TranslateLogQLWithCapabilities
+		if keepLine {
+			translate = translator.TranslateLogQueryKeepingLine
+		}
+		translated, err := translate(normalized, labelFn, streamFieldsMap, caps)
 		if err != nil {
 			return translationResult{err: err}, nil
 		}
@@ -440,7 +461,7 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 			translated = "* " + trimmed
 		}
 		if p.translationCache != nil {
-			p.translationCache.SetWithTTL(normalized, []byte(translated), 5*time.Minute)
+			p.translationCache.SetWithTTL(cacheKey, []byte(translated), 5*time.Minute)
 		}
 		return translationResult{query: translated}, nil
 	})

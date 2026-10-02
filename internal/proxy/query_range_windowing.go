@@ -498,7 +498,21 @@ func (p *Proxy) fetchQueryRangeWindow(
 		if err == nil && resp.StatusCode < 400 {
 			p.breaker.RecordSuccess()
 			p.observeQueryRangeWindowFetch(fetchDuration, false)
-			entries := p.vlLogsToLokiWindowEntriesStream(resp.Body, shape, categorizedLabels, emitStructuredMetadata)
+			var body io.Reader = resp.Body
+			if shape.parsed && shape.exposure.filtersLineFields() && p.lokiCompatibleProfile() {
+				// Rows a Loki label filter would not match are dropped
+				// before the window's limit, reading further pages to fill it.
+				filled, err := p.refillLineFieldRows(fetchCtx, resp.Body, params, windowLimit, r.FormValue("direction") == "forward", &shape.exposure,
+					!categorizedLabels || !emitStructuredMetadata, func(ctx context.Context, next url.Values) (*http.Response, error) {
+						return p.vlPostHTTP(ctx, "/select/logsql/query", next)
+					})
+				if err != nil {
+					_ = resp.Body.Close()
+					return queryRangeWindowCacheEntry{}, err
+				}
+				body = bytes.NewReader(filled)
+			}
+			entries := p.vlLogsToLokiWindowEntriesStream(body, shape, categorizedLabels, emitStructuredMetadata)
 			_ = resp.Body.Close()
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
@@ -834,6 +848,8 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 // Uses fastjson (no map[string]interface{} allocation per line) and the same
 // stream descriptor cache as vlReaderToLokiStreams to amortize label parsing
 // and translation across entries from the same stream.
+//
+//nolint:gocyclo // line-by-line VL→Loki window entry conversion with categorized labels, structured metadata, the Loki-profile row filter and stream merging; branching is inherent to the conversion contract, as in vlReaderToLokiStreams.
 func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
 	entries := make([]queryRangeWindowEntry, 0, 64)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
@@ -859,7 +875,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	}
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	captureFields := shape.captureFields
-	mergeParsed, captureFields = exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
+	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	emitTupleMetadata := categorizedLabels && emitStructuredMetadata
 	// Entries keep SM/Parsed only when the tuple metadata is emitted or regexp
 	// captures need them; parser labels are otherwise folded into the stream.
@@ -935,6 +951,9 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			}
 			if len(keepConditions) > 0 {
 				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+			}
+			if mergeMetadata {
+				parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf)
 			}
 		}
 

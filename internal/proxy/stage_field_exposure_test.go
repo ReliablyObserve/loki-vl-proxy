@@ -2,17 +2,23 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // Rows as VictoriaLogs stores three Loki pushes of the same events:
@@ -28,6 +34,8 @@ const (
 		`"k8s.pod.name":"pod-1","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
 	stageLogfmtRow = `{"_time":"2026-10-01T17:21:11Z","_msg":"msg=\"login ok\" user=u1 status=200",` +
 		`"_stream":"{app=\"lf\",env=\"ev\"}","app":"lf","env":"ev","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
+	stageArrayRow = `{"_time":"2026-10-01T17:21:13Z","_msg":"{\"msg\":\"tagged\",\"tags\":[\"a\",\"b\"],\"svc\":{\"zones\":[1,2]}}",` +
+		`"_stream":"{app=\"arr\",env=\"ev\"}","app":"arr","env":"ev","msg":"tagged","tags":"[\"a\",\"b\"]","svc.zones":"[1,2]","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
 	stageMissingLineRow = `{"_time":"2026-10-01T17:21:12Z","_msg":"missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",` +
 		`"_stream":"{app=\"pl\",env=\"ev\"}","app":"pl","env":"ev","msg":"login ok","user":"u1","status":"200","svc.name":"api","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
 )
@@ -40,37 +48,52 @@ type stageFieldsBackend struct{}
 func (stageFieldsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	q := r.Form.Get("query")
-	row := stageJSONRow
+	src := stageJSONRow
 	switch {
 	case strings.Contains(q, `"lf"`):
-		row = stageLogfmtRow
-		if strings.Contains(q, "unpack_logfmt") {
-			row += `,"msg":"login ok","user":"u1","status":"200"`
-		}
+		src = stageLogfmtRow
 	case strings.Contains(q, `"pl"`):
-		row = stageMissingLineRow
+		src = stageMissingLineRow
+	case strings.Contains(q, `"arr"`):
+		src = stageArrayRow
 	}
-	extra := map[string]string{
-		"extract_regexp":         `,"who":"u1"`,
-		"| extract ":             `,"m":"login ok"`,
-		`as x`:                   `,"x":"gen"`,
-		`copy "user" as u`:       `,"u":"u1"`,
-		`copy "svc.name" as n`:   `,"n":"api"`,
-		`format "<msg>"`:         ``,
-		`rename status as code`:  `,"code":"200"`,
-		`format "<user>" as who`: `,"who":"u1"`,
+	row := map[string]string{}
+	_ = json.Unmarshal([]byte(src+"}"), &row)
+	if src == stageLogfmtRow && strings.Contains(q, "unpack_logfmt") {
+		row["msg"], row["user"], row["status"] = "login ok", "u1", "200"
 	}
-	for marker, fields := range extra {
+	for marker, fields := range map[string][2]string{
+		"extract_regexp":                        {"who", "u1"},
+		"| extract ":                            {"m", "login ok"},
+		`as x`:                                  {"x", "gen"},
+		`" as l`:                                {"l", "{{ __line__ }}"},
+		`copy "user" as u`:                      {"u", "u1"},
+		`copy "svc.name" as n`:                  {"n", "api"},
+		`"<user>" as u skip_empty_results`:      {"u", "u1"},
+		`"<user>" as who skip_empty_results`:    {"who", "u1"},
+		`"<status>" as code skip_empty_results`: {"code", "200"},
+	} {
 		if strings.Contains(q, marker) {
-			row += fields
+			row[fields[0]] = fields[1]
 		}
 	}
-	if strings.Contains(q, `format "<msg>"`) && !strings.Contains(q, " as ") {
-		// line_format rewrites the stored line.
-		row = strings.Replace(row, `"_msg":"{\"msg\":\"login ok\",\"user\":\"u1\",\"status\":200,\"svc\":{\"name\":\"api\"}}"`, `"_msg":"login ok"`, 1)
+	for _, field := range []string{"user", "status"} {
+		if strings.Contains(q, "| delete "+field) {
+			delete(row, field)
+		}
 	}
+	if strings.Contains(q, "copy _msg as "+translator.StoredLineField) {
+		row[translator.StoredLineField] = row["_msg"]
+	}
+	if i := strings.Index(q, `| format "`); i >= 0 && !strings.Contains(q[i:], `" as `) {
+		// line_format rewrites the stored line: the first placeholder's value.
+		if m := regexp.MustCompile(`<([\w.]+)>`).FindStringSubmatch(q[i:]); m != nil {
+			row["_msg"] = row[m[1]]
+		}
+	}
+	body, _ := json.Marshal(row)
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	_, _ = w.Write([]byte(row + "}\n"))
+	_, _ = w.Write(append(body, '\n'))
 }
 
 type stageRow struct {
@@ -158,8 +181,8 @@ func TestLogQuery_StageFieldExposureLikeLoki(t *testing.T) {
 		line   string // "" keeps the stored line
 		sm     []string
 		parsed []string
-		// stream holds the label names of a response without categorize-labels
-		// (parsed labels join the stream labels; structured metadata does not).
+		// stream holds the stream and parsed label names of a response without
+		// categorize-labels; structured metadata joins them as well.
 		stream []string
 	}{
 		{`{app="gen"}`, "", sm, none, []string{"app", "service_name"}},
@@ -175,6 +198,18 @@ func TestLogQuery_StageFieldExposureLikeLoki(t *testing.T) {
 		{`{app="gen"} | line_format "{{.msg}}"`, "\x00", sm, none, []string{"app", "service_name"}},
 		{`{app="gen"} | json | line_format "{{.msg}}"`, "login ok", sm, []string{"msg", "status", "svc_name", "user"}, []string{"app", "msg", "service_name", "status", "svc_name", "user"}},
 		{`{app="gen"} | json | user="u1"`, "", sm, []string{"msg", "status", "svc_name", "user"}, []string{"app", "msg", "service_name", "status", "svc_name", "user"}},
+		// A line_format a later stage reads stays in the VictoriaLogs query,
+		// which copies the stored line aside first.
+		{`{app="gen"} | json | line_format "{{.user}}" |= "u"`, "u1", sm, []string{"msg", "status", "svc_name", "user"}, []string{"app", "msg", "service_name", "status", "svc_name", "user"}},
+		{`{app="gen"} | line_format "{{.msg}}" | decolorize`, "\x00", sm, none, []string{"app", "service_name"}},
+		{`{app="gen"} | json user | line_format "{{.user}}" | label_format l="{{ __line__ }}"`, "", sm, []string{"l", "user"}, []string{"app", "l", "service_name", "user"}},
+		// label_format reading a key no stage exposed: nothing to rename, an
+		// empty value in a template.
+		{`{app="gen"} | label_format u=user`, "", sm, none, []string{"app", "service_name"}},
+		{`{app="gen"} | label_format x="{{.user}}"`, "", sm, []string{"x"}, []string{"app", "service_name", "x"}},
+		{`{app="gen"} | json | label_format who=user`, "", sm, []string{"msg", "status", "svc_name", "who"}, []string{"app", "msg", "service_name", "status", "svc_name", "who"}},
+		// Arrays give no label.
+		{`{app="arr"} | json`, "", []string{"trace_id"}, []string{"msg"}, []string{"app", "msg", "service_name"}},
 		{`{app="gen"} | k8s_pod_name="pod-1"`, "", sm, none, []string{"app", "service_name"}},
 		{`{app="gen"} | user!="u1"`, "", sm, none, []string{"app", "service_name"}},
 		{`{app="lf"} | logfmt`, "", []string{"trace_id"}, []string{"msg", "status", "user"}, []string{"app", "msg", "service_name", "status", "user"}},
@@ -212,9 +247,14 @@ func TestLogQuery_StageFieldExposureLikeLoki(t *testing.T) {
 					t.Errorf("%s %s: line %q, want %q", path, tc.query, got.line, tc.line)
 				}
 			}
+			// Without categorize-labels Loki merges structured metadata into
+			// the stream labels too.
+			wantPlain := append(append([]string{}, tc.stream...), tc.sm...)
+			sort.Strings(wantPlain)
+			wantPlain = slices.Compact(wantPlain)
 			plain := stageRows(t, p, tc.query, false)
-			if len(plain) != 1 || !reflect.DeepEqual(plain[0].stream, tc.stream) {
-				t.Errorf("%s %s: stream labels without categorize-labels %+v, want %v", path, tc.query, plain, tc.stream)
+			if len(plain) != 1 || !reflect.DeepEqual(plain[0].stream, wantPlain) {
+				t.Errorf("%s %s: stream labels without categorize-labels %+v, want %v", path, tc.query, plain, wantPlain)
 			}
 		}
 	}
@@ -261,7 +301,8 @@ func TestLogQuery_LabelFilterOnLineFieldLikeLoki(t *testing.T) {
 
 // TestBackendLogQuery_LineFormatLeftToProxy: in the Loki-compatible profile
 // VictoriaLogs is not asked to rewrite the line for a line_format nothing
-// later reads; the proxy renders it from the labels Loki has.
+// later reads; the proxy renders it from the labels Loki has. A line_format
+// that stays makes VictoriaLogs return the stored line as well.
 //
 // conformance: profiles/stage-field-exposure
 func TestBackendLogQuery_LineFormatLeftToProxy(t *testing.T) {
@@ -278,12 +319,17 @@ func TestBackendLogQuery_LineFormatLeftToProxy(t *testing.T) {
 		// The first textual match is inside a raw string value: kept as is.
 		"{app=\"a\"} | msg=`| line_format \"x\"` | line_format \"{{.msg}}\"": "{app=\"a\"} | msg=`| line_format \"x\"` | line_format \"{{.msg}}\"",
 	} {
-		if got := p.backendLogQuery(query); got != want {
+		got, keepLine := p.backendLogQuery(query)
+		if got != want {
 			t.Errorf("backendLogQuery(%s) = %s, want %s", query, got, want)
+		}
+		// A line_format VictoriaLogs still runs needs the stored line too.
+		if wantKeep := got == query && !strings.HasPrefix(got, "count_over_time"); keepLine != wantKeep {
+			t.Errorf("backendLogQuery(%s) keeps the stored line %v, want %v", query, keepLine, wantKeep)
 		}
 	}
 	other := lineFieldsProxyWithMode(t, "http://127.0.0.1:1", MetadataFieldModeHybrid)
-	if q := `{app="a"} | line_format "{{.msg}}"`; other.backendLogQuery(q) != q {
+	if q := `{app="a"} | line_format "{{.msg}}"`; func() bool { got, keep := other.backendLogQuery(q); return got != q || keep }() {
 		t.Fatal("the hybrid metadata mode is not the Loki-compatible profile and sends line_format to VictoriaLogs")
 	}
 }
@@ -430,6 +476,8 @@ func TestLogQuery_ExtractionListValuesLikeLoki(t *testing.T) {
 			`{app="gen"} | json s="svc", nosuch, first="svc.name"`: `{"first":"api","nosuch":"","s":"{\"name\":\"api\"}"}`,
 			`{app="lf"} | logfmt code="status", nosuch`:            `{"code":"200","nosuch":""}`,
 			`{app="lf"} | json nosuch`:                             `null`,
+			`{app="gen"} | label_format x="{{.user}}-{{.app}}"`:    `{"x":"-gen"}`,
+			`{app="gen"} | json | label_format x="{{.user}}"`:      `{"msg":"login ok","status":"200","svc_name":"api","user":"u1","x":"gen"}`,
 		} {
 			q := url.Values{}
 			q.Set("query", query)
@@ -481,6 +529,154 @@ func TestLokiJSONExpressionPath(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("lokiJSONExpressionPath(%s) = %s, want %s", expr, got, want)
+		}
+	}
+}
+
+// TestLogfmtLineHasKey covers keys at the start, middle and end of a line,
+// quoted values with spaces, tab separators and keys that only sanitize to
+// the label name.
+//
+// conformance: profiles/stage-field-exposure
+func TestLogfmtLineHasKey(t *testing.T) {
+	line := []byte("level=info msg=\"a b=c\" user=u1\tstatus=200")
+	for key, want := range map[string]bool{"level": true, "msg": true, "user": true, "status": true, "b": false, "nosuch": false} {
+		if got := logfmtLineHasKey(line, key); got != want {
+			t.Errorf("logfmtLineHasKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+	if !logfmtLineHasKey([]byte("last=1"), "last") || logfmtLineHasKey([]byte(""), "x") || logfmtLineHasKey([]byte("bare"), "bare") {
+		t.Error("single-token and empty lines")
+	}
+	if !logfmtLineHasLabel([]byte("a=1 http.method=GET"), "http_method") || logfmtLineHasLabel([]byte("http.method"), "http_method") {
+		t.Error("sanitized key at the end of the line")
+	}
+}
+
+// pagedRowsBackend answers like VictoriaLogs for a fixed set of rows: the
+// start/end bounds (inclusive), the requested sort direction and the limit
+// are applied; filters are not. It counts the requests.
+type pagedRowsBackend struct {
+	rows     []string // NDJSON rows, oldest first
+	requests atomic.Int64
+}
+
+func (b *pagedRowsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	b.requests.Add(1)
+	bound := func(v string, def time.Time) time.Time {
+		if v == "" {
+			return def
+		}
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return t
+		}
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return time.Unix(0, n)
+		}
+		return def
+	}
+	start := bound(r.Form.Get("start"), time.Unix(0, 0))
+	end := bound(r.Form.Get("end"), time.Unix(1<<40, 0))
+	limit, _ := strconv.Atoi(r.Form.Get("limit"))
+	var picked []string
+	for _, row := range b.rows {
+		var v struct {
+			Time string `json:"_time"`
+		}
+		_ = json.Unmarshal([]byte(row), &v)
+		ts, _ := time.Parse(time.RFC3339Nano, v.Time)
+		if !ts.Before(start) && !ts.After(end) {
+			picked = append(picked, row)
+		}
+	}
+	if !strings.Contains(r.Form.Get("query"), "sort by (_time)") {
+		for i, j := 0, len(picked)-1; i < j; i, j = i+1, j-1 {
+			picked[i], picked[j] = picked[j], picked[i]
+		}
+	}
+	if limit > 0 && len(picked) > limit {
+		picked = picked[:limit]
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	for _, row := range picked {
+		_, _ = w.Write([]byte(row + "\n"))
+	}
+}
+
+// TestLogQuery_LabelFilterOnLineFieldFillsLimit: rows the proxy drops after
+// VictoriaLogs applied the limit are replaced by reading further pages, so a
+// filter on user (structured metadata on older plain lines, a key of newer
+// JSON lines) returns Loki's three plain lines, not an empty page; the
+// refetch stops at its page budget.
+//
+// conformance: profiles/label-filter-on-line-field, loki_api_v1_query_range
+func TestLogQuery_LabelFilterOnLineFieldFillsLimit(t *testing.T) {
+	base := time.Date(2026, 10, 1, 17, 21, 0, 0, time.UTC)
+	row := func(i int, msg string) string {
+		ts := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano)
+		b, _ := json.Marshal(map[string]string{"_time": ts, "_msg": msg, "_stream": `{app="mix"}`, "app": "mix", "user": "u1"})
+		return string(b)
+	}
+	backend := &pagedRowsBackend{}
+	for i := 0; i < 3; i++ {
+		backend.rows = append(backend.rows, row(i, fmt.Sprintf("plain line %d", i)))
+	}
+	for i := 3; i < 6; i++ {
+		backend.rows = append(backend.rows, row(i, fmt.Sprintf(`{"msg":"json line %d","user":"u1"}`, i)))
+	}
+	srv := httptest.NewServer(backend)
+	defer srv.Close()
+	run := func(p *Proxy, query, limit, direction string) []string {
+		q := url.Values{}
+		q.Set("query", query)
+		q.Set("start", strconv.FormatInt(base.Add(-time.Minute).UnixNano(), 10))
+		q.Set("end", strconv.FormatInt(base.Add(time.Minute).UnixNano(), 10))
+		q.Set("limit", limit)
+		q.Set("direction", direction)
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+q.Encode(), nil)
+		req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+		w := httptest.NewRecorder()
+		p.handleQueryRange(w, req)
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Values [][]json.RawMessage `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &resp) != nil {
+			t.Fatalf("%s: %d %s", query, w.Code, w.Body.String())
+		}
+		var lines []string
+		for _, r := range resp.Data.Result {
+			for _, v := range r.Values {
+				var line string
+				_ = json.Unmarshal(v[1], &line)
+				lines = append(lines, line)
+			}
+		}
+		sort.Strings(lines)
+		return lines
+	}
+	for _, path := range []string{"buffered", "streamed", "windowed"} {
+		p := lineFieldsProxy(t, srv.URL, path)
+		for _, direction := range []string{"backward", "forward"} {
+			got := run(p, `{app="mix"} | user="u1"`, "3", direction)
+			if want := "[plain line 0 plain line 1 plain line 2]"; fmt.Sprint(got) != want {
+				t.Errorf("%s %s: lines %v, want %s", path, direction, got, want)
+			}
+		}
+		// A page budget bounds the refetch: one row kept per page of one.
+		backend.requests.Store(0)
+		got := run(p, `{app="mix"} | user="u1"`, "1", "backward")
+		if fmt.Sprint(got) != "[plain line 2]" || backend.requests.Load() > 1+lineFieldRefillPages+2 {
+			t.Errorf("%s limit 1: lines %v after %d requests", path, got, backend.requests.Load())
+		}
+		// Without a filter on a line key nothing is refetched.
+		backend.requests.Store(0)
+		if got := run(p, `{app="mix"} | user!="u1"`, "3", "backward"); len(got) != 3 || backend.requests.Load() > 2 {
+			t.Errorf("%s negative filter: %v after %d requests", path, got, backend.requests.Load())
 		}
 	}
 }

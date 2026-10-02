@@ -2324,7 +2324,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), p.backendLogQuery(logqlQuery))
+	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
@@ -2576,7 +2576,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), p.backendLogQuery(logqlQuery))
+	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
