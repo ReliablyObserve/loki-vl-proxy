@@ -205,6 +205,10 @@
     "loki_api_v1_series": [
       "internal/proxy/label_metadata_freshness_test.go"
     ],
+    "loki_api_v1_tail": [
+      "internal/proxy/tail_pipeline_test.go",
+      "test/e2e-compat/tail_pipeline_test.go"
+    ],
     "metric-series-identity": [
       "internal/translator/series_aggregation_test.go",
       "test/e2e-compat/series_count_aggregation_test.go"
@@ -641,6 +645,9 @@
       "profiles/parsed-fields-without-parser",
       "profiles/stage-field-exposure"
     ],
+    "internal/proxy/tail_pipeline_test.go": [
+      "loki_api_v1_tail"
+    ],
     "internal/proxy/tenant_query_limits_test.go": [
       "limits/effective-limit-resolution",
       "limits/max-entries-limit-rejects",
@@ -794,6 +801,9 @@
       "profiles/stage-field-exposure",
       "profiles/uncategorized-streams-carry-structured-metadata"
     ],
+    "test/e2e-compat/tail_pipeline_test.go": [
+      "loki_api_v1_tail"
+    ],
     "test/e2e-compat/tenant_limits_published_test.go": [
       "limits/max-entries-limit-rejects",
       "limits/published-equals-enforced",
@@ -806,7 +816,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 67,
+  "tests_with_markers": 69,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -835,7 +845,6 @@
     "loki_api_v1_rules_namespace",
     "loki_api_v1_rules_namespace_groupname",
     "loki_api_v1_status_buildinfo",
-    "loki_api_v1_tail",
     "numeric-and-response-formatting",
     "parsed-identity/regexp-partial-match-series-count",
     "profiles/json-line-stored-without-line",
@@ -846,5 +855,5 @@
     "prometheus_api_v1_rules",
     "service-name-derivation"
   ],
-  "wired_items": 86
+  "wired_items": 87
 }

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Live tail frames follow Loki's tail encoding (visible change in every
+  profile).** A tail query with any pipeline stage now carries every label of
+  the entry in the stream of a default-encoded frame (structured metadata,
+  parsed labels, `detected_level`), as Loki's tail does, where the proxy sent
+  the index labels only; a query without stages still sends the index labels
+  only, as Loki does. With `categorize-labels`, parser labels now come back
+  under `parsed` instead of `structuredMetadata`. Frames hold up to 100
+  entries, one stream per entry in timestamp order (Loki's
+  `maxEntriesPerTailResponse`), instead of one entry per frame.
+
+### Fixed
+
+- **Live tail applies the query's pipeline like a query_range response.**
+  `/loki/api/v1/tail` translated the query without the proxy-side stages a
+  query_range response gets and built each frame from the stored row, so a
+  tail could keep rows Loki's pipeline drops, render `line_format` from
+  VictoriaLogs' `format` instead of Loki's template, and label entries
+  differently from Explore's query results. Tail rows (native
+  `/select/logsql/tail` and the synthetic poller alike) now go through the
+  query_range row conversion: the VictoriaLogs query of a query_range request,
+  the label filters VictoriaLogs cannot evaluate like Loki (a filter on a line
+  key no stage exposes matches nothing in Loki), Go-template `line_format`,
+  `decolorize`, derived fields, and the stream/metadata/parsed split.
+  Measured against Loki 3.7.7 on one pushed fixture, 15 queries (line
+  filters, `| json` / `| logfmt` with label filters, `line_format`,
+  `label_format`, `drop`, `decolorize`) x 2 encodings x 3 proxy variants
+  (Loki-compatible, default, synthetic tail): before, every query with a stage
+  differed in labels or lines (246 entry differences); after, every entry
+  matches. The large entry-count gap seen in a busy Live view (proxy 2133 vs
+  Loki 317 entries for `{env="production"} | json | service_version!=""`) is
+  Loki's own tail dropping entries under load: over the same window Loki's
+  query_range returned 1133 entries, exactly what the proxy's tail delivered,
+  while Loki's tail delivered 301 (11305 stored vs 8939 tailed for
+  `{env="production"}`). VictoriaLogs gets the same tail query as before; proxy
+  CPU is unchanged for a plain selector (0.6 CPU-s per 30 s, ~12,900
+  entries) and rises from about 0.17 to 0.23 CPU-s per 30 s (2,475 entries)
+  for `| json` with a label filter, the cost of building Loki's labels.
+- **`TestCompat_DetectedLevelTail` could hang until the e2e group's 5-minute
+  timeout.** The subscription wait shared one two-second `time.After` channel
+  between the Loki and the proxy tail: when the first tail consumed it, the
+  second tail's wait blocked until a frame arrived, which never happens when
+  that tail missed the sentinel. Every tail now gets its own timer, pushes
+  have a 15 s client timeout, and one 30 s deadline bounds reading both tails,
+  so the test fails in about a minute instead of consuming the group's budget.
+
 ## [1.106.0] - 2026-10-02
 
 ### Breaking Changes

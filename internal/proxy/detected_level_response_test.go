@@ -262,38 +262,33 @@ func TestDetectedLevelBodyScanDisabled(t *testing.T) {
 
 func TestDetectedLevelTailFrameEncoding(t *testing.T) {
 	p := newDetectedLevelTestProxy(t, LabelStyleUnderscores, false)
-	decodeRow := func(line string) map[string]interface{} {
-		var row map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &row); err != nil {
-			t.Fatal(err)
-		}
-		return row
-	}
 	rows := strings.Split(strings.TrimSpace(detectedLevelRows), "\n")
+	frame := func(row string, levelAsMetadata bool) string {
+		t.Helper()
+		frames, err := p.tailFrames(t.Context(), p.newTailPipeline(`{app="api"}`, levelAsMetadata), []byte(row+"\n"))
+		if err != nil || len(frames) != 1 {
+			t.Fatalf("tail frames: %d, %v", len(frames), err)
+		}
+		return string(frames[0])
+	}
 
 	// Loki's default tail frames carry the index labels only.
-	frame := p.vlLineToTailFrame(decodeRow(rows[2]), nil, false)
-	raw, _ := json.Marshal(frame)
 	want := `{"streams":[{"stream":{"app":"api","service_name":"checkout"},"values":[["1767225603000000000","hello"]]}]}`
-	if string(raw) != want {
-		t.Errorf("default tail frame\n got %s\nwant %s", raw, want)
+	if got := frame(rows[2], false); got != want {
+		t.Errorf("default tail frame\n got %s\nwant %s", got, want)
 	}
 
-	frame = p.vlLineToTailFrame(decodeRow(rows[2]), nil, true)
-	raw, _ = json.Marshal(frame)
 	want = `{"encodingFlags":["categorize-labels"],"streams":[{"stream":{"app":"api","service_name":"checkout"},"values":[["1767225603000000000","hello",{"structuredMetadata":{"detected_level":"warn","level":"Warning","trace_id":"t1"}}]]}]}`
-	if string(raw) != want {
-		t.Errorf("categorize-labels tail frame\n got %s\nwant %s", raw, want)
+	if got := frame(rows[2], true); got != want {
+		t.Errorf("categorize-labels tail frame\n got %s\nwant %s", got, want)
 	}
 
-	frame = p.vlLineToTailFrame(decodeRow(rows[3]), nil, true)
-	raw, _ = json.Marshal(frame)
 	// Loki's tail encoder keeps the derived detected_level in the metadata and
 	// leaves a detected_level stream label out of the frame, unlike its query
 	// encoder, which renames the derived value instead.
 	want = `{"encodingFlags":["categorize-labels"],"streams":[{"stream":{"app":"api","service_name":"api"},"values":[["1767225604000000000","hello",{"structuredMetadata":{"detected_level":"unknown"}}]]}]}`
-	if string(raw) != want {
-		t.Errorf("stored detected_level stream field\n got %s\nwant %s", raw, want)
+	if got := frame(rows[3], true); got != want {
+		t.Errorf("stored detected_level stream field\n got %s\nwant %s", got, want)
 	}
 }
 

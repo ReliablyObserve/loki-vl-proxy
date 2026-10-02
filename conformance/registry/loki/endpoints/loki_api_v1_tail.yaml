@@ -24,25 +24,49 @@ generated:
       []
 
 description: |
-  TODO: what this endpoint returns and the Loki behaviour a client depends on.
+  WebSocket live tail. Loki runs the query's whole pipeline on every pushed
+  entry (the ingester's tailer, pkg/ingester/tailer.go processStream) and
+  sends frames of at most 100 entries, one stream per entry, in timestamp
+  order. Stream labels follow the query encoder: without any pipeline stage
+  the frame carries the index labels only; once a stage runs it carries every
+  label of the entry (structured metadata, parsed labels, detected_level).
+  With categorize-labels the stream holds the index labels, each entry its
+  structuredMetadata and parsed labels, and the frame carries
+  encodingFlags ["categorize-labels"]; a stored detected_level stream label is
+  left out and the derived value keeps the detected_level name in the
+  metadata (the query encoder renames it detected_level_extracted instead).
+  Loki's tail is best effort: under load its ingester tailer drops entries
+  silently (5-slot send buffer), so Loki may deliver fewer entries than it
+  stores; the proxy delivers every stored entry the pipeline keeps.
 context:
   consumers:
     - explore
     - api
   notes: |
-    TODO: how each consumer calls it, and how their parameter combinations differ.
+    Grafana Explore's Live mode opens the websocket with the editor query;
+    API clients (logcli --tail) also pass start and limit. The
+    categorize-labels header switches the frame encoding as for query_range.
 examples:
   - consumer: api
     request: |
-      TODO: a real request, with the exact parameters a client sends.
+      GET /loki/api/v1/tail?query={env="production"} | json | service_version!=""&start=<now ns>
+      X-Scope-OrgID: 0
     expectation: |
-      TODO: Loki's response shape and the values that must match.
+      Frames {"streams":[{"stream":{...every label of the entry...},"values":[[ts, line]]}, ...]}
+      holding exactly the entries Loki's query_range returns for the same
+      query over the same window, with the same line and labels.
 victorialogs:
   # Confirmed by the differential runner at runtime; the generated block above
   # is a static approximation. Say what VictoriaLogs answers natively, what the
   # proxy has to compute, and why VictoriaLogs cannot do that part.
-  native: []
-  transformed: []
+  native:
+    - /select/logsql/tail streams the rows of the query_range LogsQL query (stream selector, line filters, parsers, label filters VictoriaLogs evaluates like Loki)
+  transformed:
+    - rows go through the query_range row conversion (stream labels, structured metadata, parsed labels, detected_level), the line-field label filter check, line_format, decolorize and derived fields, then Loki's tail frame batching
   vl_cannot: |
-    TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
+    VictoriaLogs' tail returns stored fields, not Loki labels: which fields a
+    stage exposes as labels, a label filter on a line key no stage exposes,
+    and Go-template line_format are evaluated on the proxy per row, as for a
+    query_range response. Without a working /select/logsql/tail (older
+    versions, forced synthetic mode) the proxy polls /select/logsql/query.
 edge_cases: []    # case ids under conformance/registry/cases/
