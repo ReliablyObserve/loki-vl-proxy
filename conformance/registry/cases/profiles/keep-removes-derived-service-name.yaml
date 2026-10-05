@@ -1,0 +1,42 @@
+id: profiles/keep-removes-derived-service-name
+title: `| keep` removes service_name the proxy derived for a stream without one (open)
+proves:
+  - service-name-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's keep stage deletes every non-special label not named in its list,
+  including service_name (pkg/logql/log/keep_labels.go). The proxy derives
+  service_name on the read path for rows whose stream has none and adds it
+  after the pipeline, so `| keep a, b` still shows service_name.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} | json | keep level'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.stream]
+  expect: |
+    Only the kept labels.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy service_name derivation after keep/drop'
+  loki: 'pkg/logql/log/keep_labels.go:15-44 KeepLabels.Process'
+  proxy: 'derived service_name re-added after keep'
+  planned_test: 'TestCompat_KeepRemovesDerivedServiceName (test/e2e-compat, group semantics)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 0acfebdb
+    - 3e6bb855
+    - 59ebda99
+    - 7af7ff7b
+    - 8ae09281

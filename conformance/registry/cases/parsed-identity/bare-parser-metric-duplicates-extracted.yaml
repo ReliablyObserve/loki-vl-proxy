@@ -1,0 +1,50 @@
+id: parsed-identity/bare-parser-metric-duplicates-extracted
+title: A bare `| json` metric labels each series with every parsed key twice, once with _extracted (open)
+proves:
+  - parsed-label-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `count_over_time({service_name="api-gateway"} | json [3m])` gives the same
+  series count on both sides, but every proxy series carries each parsed key
+  twice: `duration_ms` and `duration_ms_extracted`, `method` and
+  `method_extracted`, and so on. Loki adds the `_extracted` suffix only to a
+  parsed key that collides with a stream label or structured metadata name, so
+  its series have no such duplicates; Grafana's legend and series names
+  differ.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count_over_time({service_name="api-gateway"} | json [3m])'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    Loki's label sets.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy exact parser series identity (bare parser metric labels)'
+  loki: 'pkg/logql/log/parser.go:152 (suffix only on collision)'
+  proxy: 'every parsed key duplicated with _extracted'
+  planned_test: 'TestCompat_BareParserMetricLabels (test/e2e-compat, group semantics)'
+  clusters:
+    - 1173e4c5
+    - 5262a574
+    - 907c7acb
+    - 9148c234
+    - 9be22235
+    - 9f2d98ad
+    - ac8e75c3
+    - b6078924
+    - cab142d9
+    - cfff8628
+    - d088f040
+    - df222120
+    - eb1010a3
+    - fd91e575

@@ -1,0 +1,47 @@
+id: semantics/label-filter-expression-syntax
+title: Comma-joined and parenthesized label-filter expressions are rejected (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki accepts `| foo>=5,bar<25ms` (comma = and) and grouped expressions `| (
+  status_code < 500 and status_code > 200) or latency >= 250ms`. The proxy
+  fails them: VictoriaLogs parse errors from the translated filter (`cannot
+  parse ... probably, the whole string must be put into quotes`) or its own
+  `syntax error: unexpected |`.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | json | (status>=500 or duration_ms>1000), method="GET"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    200 with Loki's lines.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/logql parser (label filter grammar) + translator filter emission'
+  loki: 'pkg/logql/syntax/syntax.y labelFilter: labelFilter COMMA labelFilter, OPEN_PARENTHESIS labelFilter CLOSE_PARENTHESIS'
+  proxy: '400'
+  planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics)'
+  clusters:
+    - 163be53e
+    - 4e6094a0
+    - 7b225b99
+    - 7c27b83b
+    - 834735ce
+    - 967f3abc
+    - ac2c4509
+    - adb16001
+    - e67ce23c
+    - ed5ff2d9
+    - f59a58b3

@@ -1,0 +1,37 @@
+id: semantics/unwrap-conversion-error
+title: An unwrap over non-numeric values fails in Loki with a 400 SampleExtractionErr; the proxy answers 200 (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki fails `sum_over_time({app="a"} | logfmt | unwrap msg [5m])` over text
+  with HTTP 400 `pipeline error: 'SampleExtractionErr' for series ...` unless
+  `| __error__=""` drops those samples. VictoriaLogs' stats functions skip
+  non-numeric values, so the proxy returns 200 with the numeric samples only
+  (documented in KNOWN_ISSUES).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum_over_time({service_name="payment-service"} | logfmt | unwrap msg [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 pipeline error.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range metric unwrap path (one-lookup probe like pipeline-error-text-parity)'
+  loki: 'pkg/logql/log/metrics_extraction.go SampleExtractionErr; logqlmodel.PipelineError'
+  proxy: '200, non-numeric samples skipped'
+  planned_test: 'TestCompat_UnwrapConversionErrorParity (test/e2e-compat, group semantics)'
+  clusters: []

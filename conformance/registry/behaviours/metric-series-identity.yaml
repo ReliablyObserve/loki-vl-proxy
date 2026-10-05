@@ -36,3 +36,5 @@ cases:
   - metric-identity/sum-is-row-aggregation
   - metric-identity/structured-metadata-splits-series   # deviation, see state
   - metric-identity/dynamic-key-parser-labels           # deviation, see state
+  - semantics/non-sum-vector-aggregation-unreduced
+  - semantics/stddev-stdvar-grouped-values

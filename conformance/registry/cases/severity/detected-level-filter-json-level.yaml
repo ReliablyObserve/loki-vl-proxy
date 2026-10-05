@@ -1,0 +1,53 @@
+id: severity/detected-level-filter-json-level
+title: `| detected_level=` filters select different lines than Loki (JSON-level lines, stream level precedence) (open)
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Loki stores detected_level at ingest (structured metadata) from the stream,
+  metadata or line, so a filter on it selects every line of that level. The
+  proxy derives detected_level on the read path for the response, but
+  translates the filter to a stored-field predicate that misses rows whose
+  level is only inside the JSON line, so the Drilldown level filter shows
+  fewer lines than Loki.
+
+  Measured by the differential run: `sum by (level, detected_level)
+  (count_over_time({env="production"} | detected_level="info" | json | drop
+  __error__ [1m]))` is 3408 on Loki and 3418 on the proxy at one step, and
+  `{service_name="cache-redis"} | detected_level="info"` (stream label
+  level=debug, lines level=info) is empty on Loki, which takes the stream's
+  level, and 99 lines on the proxy, which reads the line.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} | detected_level="warn"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Every warn line, as Loki selects.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/translator/detected_level_logsql.go (filter predicate) vs internal/proxy/detected_level.go (response derivation)'
+  loki: 'pkg/distributor field detection (v3.7.7) stores detected_level as structured metadata; filter reads it'
+  proxy: 'filter predicate narrower than the read-path derivation'
+  planned_test: 'TestCompat_DetectedLevelFilterJSONLevel (test/e2e-compat, group drilldown)'
+  clusters:
+    - 337f7f5e
+    - 36eeb045
+    - 44bcb9d1
+    - 5e798d62
+    - 80fabfe0
+    - 9016b6b0
+    - ce40a9c8
+    - f248d966

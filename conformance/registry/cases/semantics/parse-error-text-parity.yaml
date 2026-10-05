@@ -1,0 +1,168 @@
+id: semantics/parse-error-text-parity
+title: Invalid queries fail on both sides, with different error text or status (open)
+proves:
+  - loki_api_v1_query_range
+  - loki-compatible-profile
+consumer: explore
+why: |
+  Both sides reject the query, but the proxy's message is its own parser's
+  (`parse error : logql: expected duration ...`, `unexpected token ...`), a
+  VictoriaLogs message (`cannot parse query arg ...`, `missing | stats pipe`,
+  422) or a proxy-specific one (`unsupported instant aggregation target`,
+  `sum() requires a range metric inside`) where Loki writes `parse error at
+  line N, col M: syntax error: unexpected ...`. Grafana shows the error text
+  to the user (cases profiles/grafana-shows-loki-error-text).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sort({app="api-gateway"})'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's status and text.
+gap:
+  status: open
+  impact: grafana-datasource
+  effort: L
+  area: 'internal/logql parser error messages (Loki''s goyacc messages and positions) + VictoriaLogs error mapping'
+  loki: 'pkg/logql/syntax/parser.go ParseError (line, col) and syntax.y'
+  proxy: 'own / VictoriaLogs text, 422 for some'
+  planned_test: 'TestCompat_ParseErrorText corpus (test/e2e-compat, bad_request_status_parity_test.go)'
+  clusters:
+    - 00c1351d
+    - 090d292e
+    - 0b43cabb
+    - 11e197ef
+    - 1216c87b
+    - 15273179
+    - 1597db8f
+    - 19bb4804
+    - 1bce60c7
+    - 1e15e3f7
+    - 235b2fd7
+    - 236be44b
+    - 2456a6d9
+    - 24b236fd
+    - 24d72116
+    - 25a45cb4
+    - 26a758d3
+    - 291568c8
+    - 2cb1c674
+    - 2fd5ec28
+    - 31ae1824
+    - 335a0063
+    - 337a1e15
+    - 3791711e
+    - 3801dc16
+    - 380bfbcd
+    - 3aea3c86
+    - 3b74360f
+    - 3cac4f43
+    - 4014589d
+    - 42cdded9
+    - 44e0a473
+    - 464672f3
+    - 479a3ac5
+    - 47be3455
+    - 4990705b
+    - 4a83670c
+    - 4b30f46e
+    - 4be578fa
+    - 4bef518e
+    - 4d13f90a
+    - 4e182695
+    - 4e7de2f4
+    - 4f0bd5da
+    - 4fb822da
+    - 5185e724
+    - 54a23828
+    - 5729447e
+    - 5a21650b
+    - 5b4749b3
+    - 5dd88485
+    - 60c7e720
+    - 60ec9fb1
+    - 61f5762d
+    - 702df3da
+    - 717fedc0
+    - 74505ee8
+    - 75acdfee
+    - 7705bcbf
+    - 799eb1d6
+    - 79e63a4f
+    - 7d93601c
+    - 7efa02ba
+    - 7f7a4d03
+    - 80af726a
+    - 80e2ee76
+    - 82283849
+    - 832022c8
+    - 83a0bbb4
+    - 8556e63f
+    - 85e26f96
+    - 884f4336
+    - 893f45f2
+    - 8cce5c63
+    - 8ebf872b
+    - 94fdc54f
+    - 952c4ced
+    - 95f2257a
+    - 97d18bb6
+    - 9e2e6496
+    - a2d0b3cb
+    - a57ca4cc
+    - a5b943b2
+    - a9930b3c
+    - acc8d4a9
+    - b0921dfc
+    - b1f0d548
+    - b7b8e6bb
+    - b864cc9d
+    - bd69d9b0
+    - bdc75f86
+    - bf2a7f15
+    - bfa1bb8f
+    - c30c82d7
+    - c44d6ae3
+    - c4c8efb7
+    - c8035a7e
+    - c9b6ea43
+    - ce1fc758
+    - ce4dd73f
+    - cebdc20e
+    - d1da0216
+    - d40e85ea
+    - d5db4f97
+    - dabfed68
+    - dae354de
+    - db738b79
+    - e17816bf
+    - e1d8fb09
+    - e37fdcc4
+    - e4fdf6d3
+    - e6255407
+    - e7cdda75
+    - e8b24a9b
+    - ea5fa199
+    - ead2b08b
+    - ec8a8fbf
+    - ed6ad12f
+    - f09d3262
+    - f2273e53
+    - f22ad939
+    - f5161c97
+    - f65563ce
+    - f7f991c9
+    - fa1c6399
+    - fcbdc6b4
+    - fd0ad64a
+    - fea1552d
+    - feee44bb

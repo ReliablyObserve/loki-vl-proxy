@@ -1,0 +1,46 @@
+id: semantics/proxy-accepts-invalid-logql
+title: Queries Loki rejects with 400 are answered by the proxy (open)
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki answers HTTP 400 parse errors for `absent_over_time(...) by (foo)`
+  (grouping not allowed), `rate({...}[5minutes])` (unknown unit), `| bytes <
+  0B`, `rate({...}[5m] @ 1000000000)` and others; the proxy answers 200 (or a
+  5xx), so a client learns of a broken query only from Loki.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'rate({namespace="prod"}[5minutes])'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 parse error.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/logql parser validation'
+  loki: 'pkg/logql/syntax/ast.go:1446,1579 grouping not allowed; duration parsing'
+  proxy: '200'
+  planned_test: 'TestCompat_InvalidLogQLRejected (test/e2e-compat, bad_request_status_parity_test.go)'
+  clusters:
+    - 16428cd1
+    - 354d31ed
+    - 44fa34f9
+    - 556649c4
+    - 649f8e6b
+    - 7980881e
+    - 7ba3e83b
+    - a987dc81
+    - b04a9c73
+    - b879c156
+    - cd64981a
+    - d4a26169
+    - e46391d4
+    - eec27d19

@@ -1,0 +1,39 @@
+id: quality/index-stats-streams-differ
+title: index/stats stream counts differ from Loki in both directions (open)
+proves:
+  - loki_api_v1_index_stats
+consumer: drilldown
+why: |
+  Over the last hour Loki's /index/stats counted 7104 streams for
+  `{env="production"}` and the proxy 13510; over the Drilldown landing's 15
+  minutes Loki counted 7104 and the proxy 3365. Entries agree with Loki's own
+  count_over_time, but the recorded run did not cross-check streams against
+  Loki's /series, so it is not known which side is right; the runner now
+  checks /series and marks the difference as Loki's chunk accounting only when
+  /series agrees with the proxy.
+request:
+  method: GET
+  path: /loki/api/v1/index/stats
+  params:
+    query: '{env="production"}'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams]
+  expect: |
+    Loki's stream count (or Loki's /series count where Loki's stats double-
+    count).
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/label_handlers.go handleIndexStats (stream counting per window)'
+  loki: 'pkg/storage index stats (streams from the index for the window)'
+  proxy: 'streams with lines in the window'
+  planned_test: 'bench/parity rerun with the /series cross-check, then TestCompat_IndexStatsStreams (test/e2e-compat, group drilldown)'
+  clusters:
+    - 2a68e26c
+    - aa98afb1

@@ -13,7 +13,9 @@ Fails when:
     set) covers nothing that names code, so no change could select it for the
     per-PR visual smoke (bench/visual/plan.py);
   * a generated report is stale (performance, coverage map, gaps, translation map, roadmap,
-    compatibility matrix),
+    compatibility matrix, ranked parity gaps),
+  * a cluster of the last differential run (bench/parity) is accounted for by
+    no registry case, or a case names a cluster the run does not hold,
   * a flag is missing from the places that list every flag,
   * a score or an item's state regressed against the committed baseline, or a
     waiver expired,
@@ -40,6 +42,7 @@ REPORTS = (
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),
     ("matrix_link.py", "conformance/reports/compatibility-matrix.md", None),
+    ("parity_gaps.py", "conformance/reports/parity-gaps.md", None),
 )
 
 
@@ -76,6 +79,12 @@ def main():
     print(visual_plan.stdout.strip() or visual_plan.stderr.strip())
     if visual_plan.returncode:
         failures.append("visual-smoke entry selection")
+
+    # Every difference the last differential run found is registered.
+    parity = run("parity_gaps.py", "--check")
+    print(parity.stdout.strip())
+    if parity.returncode:
+        failures.append("parity gap registration")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

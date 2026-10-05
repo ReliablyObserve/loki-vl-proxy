@@ -1,0 +1,40 @@
+id: semantics/pattern-line-filter
+title: An empty pattern line filter (`|> ""`, `!> ""`) selects the opposite lines (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's pattern filter keeps (`|>`) or drops (`!>`) the lines matching a
+  pattern. Only the empty pattern differs in the differential run:
+  `{namespace="prod"} |> ""` returns the page on the proxy where Loki returns
+  no line, and `!> ""` returns nothing where Loki returns the page. Non-empty
+  patterns (`|> "<_> GET <_>"`, `!> "<_> GET <_>"`, `!> "foo <_>"`) agree with
+  Loki; pattern alternatives with `or` are rejected (semantics/line-filter-or-
+  alternatives).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} |> ""'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator pattern line filter'
+  loki: 'pkg/logql/syntax/lex.go:26,29 (NPA, PIPE_PATTERN); pkg/logql/log/filter.go pattern filter'
+  proxy: 'empty pattern matches every line'
+  planned_test: 'TestCompat_PatternLineFilter (test/e2e-compat, group semantics)'
+  clusters:
+    - 90e7eb36
+    - f131187f

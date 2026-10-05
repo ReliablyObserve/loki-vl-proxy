@@ -1,0 +1,38 @@
+id: profiles/volume-detected-level-extension
+title: index/volume answers targetLabels=detected_level; Loki returns no volume for it (documented proxy extension)
+proves:
+  - loki_api_v1_index_volume
+  - loki-compatible-profile
+consumer: drilldown
+why: |
+  Loki keeps detected_level in structured metadata and its volume index has no
+  entry for it, so `targetLabels=detected_level` answers no series. The proxy
+  answers per-level volumes (lines without a level as detected_level="")
+  (KNOWN_ISSUES). A behaviour Loki does not have, served in the Loki-
+  compatible profile.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+    targetLabels: 'detected_level'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.result]
+  expect: |
+    Loki's answer (no detected_level series).
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/volume.go'
+  loki: 'pkg/storage volume index (stream labels only)'
+  proxy: 'per-level volumes'
+  planned_test: 'differential run row volume by detected_level'
+  clusters:
+    - 5e3fbf46
+    - b126c04b

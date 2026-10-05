@@ -1,0 +1,34 @@
+id: quality/index-stats-bytes-and-chunks
+title: index/stats bytes and chunks have no VictoriaLogs equivalent (documented)
+proves:
+  - loki_api_v1_index_stats
+consumer: drilldown
+why: |
+  Loki's /index/stats `bytes` and `chunks` are its chunk accounting
+  (compressed chunk sizes, chunk count). VictoriaLogs has neither; the proxy
+  reports `chunks` as the stream count and `bytes` as an estimate from the
+  stored line lengths. The differential run marks a bytes or chunks difference
+  with this case only; a streams or entries difference is never covered by it.
+request:
+  method: GET
+  path: /loki/api/v1/index/stats
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [bytes, chunks]
+  expect: |
+    streams and entries equal; bytes and chunks differ by design.
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: L
+  area: 'internal/proxy/label_handlers.go handleIndexStats; docs/KNOWN_ISSUES.md'
+  loki: 'pkg/storage index stats from chunk refs (bytes, chunks)'
+  proxy: 'chunks = streams, bytes estimated'
+  planned_test: 'bench/parity diff rule (documented facet)'
+  clusters: []

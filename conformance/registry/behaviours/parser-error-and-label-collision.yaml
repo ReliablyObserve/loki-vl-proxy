@@ -50,3 +50,7 @@ cases:
   - semantics/json-label-spelling-probe
   - semantics/label-filter-before-parser-pushdown
   - semantics/pipeline-error-text-parity
+  - semantics/parse-error-labels-on-log-lines
+  - semantics/unwrap-sample-validity
+  - semantics/unwrap-conversion-error
+  - semantics/logfmt-existence-filter-ungrouped-sum

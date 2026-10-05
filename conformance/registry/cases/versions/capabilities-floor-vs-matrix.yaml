@@ -1,0 +1,36 @@
+id: versions/capabilities-floor-vs-matrix
+title: logsql.Capabilities treats VictoriaLogs below v1.40 as unsupported while the matrix claims v1.30 (open)
+proves:
+  - loki-compatible-profile
+consumer: operator
+why: |
+  internal/logsql/capabilities.go returns the zero capability set for versions
+  before v1.40 (no pipe or stats function assumed), while
+  test/e2e-compat/compatibility-matrix.json lists v1.30.0 onwards as
+  supported. A v1.30-v1.39 backend therefore runs the conservative paths (or
+  none) for features the matrix calls supported.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, series]
+  expect: |
+    Same answers on every matrix version.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/logsql/capabilities.go:47 + test/e2e-compat/compatibility-matrix.json'
+  loki: 'n/a (backend capability)'
+  proxy: 'zero capability set below v1.40'
+  planned_test: 'capabilities unit table per matrix version + compat-vl matrix run'
+  clusters: []

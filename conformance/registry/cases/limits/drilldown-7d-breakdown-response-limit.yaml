@@ -1,0 +1,49 @@
+id: limits/drilldown-7d-breakdown-response-limit
+title: Metric queries fail on the 64 MiB buffered-response budget where Loki answers (open)
+proves:
+  - heavy-metric-fetch-bounds
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  High-cardinality breakdowns over 7d (pod, batch_id) produce stats responses
+  above the proxy's 64 MiB buffered-response budget (-backend-max-buffered-
+  response-bytes; range_metric_compat.go maxStatsBucketResponseBytes) and
+  fail, where Loki returns the series capped by max_query_series with its
+  partial-result warning.
+
+  The differential run hit the same budget over one hour of generator data:
+  `quantile_over_time(0.8, {namespace="prod"} | unwrap bytes [5m])`,
+  `rate_counter(...)` and `max(...)` over `| json` answer HTTP 502 `manual
+  metric response exceeds 67108864 bytes; narrow the query or increase
+  -backend-max-buffered-response-bytes` while Loki answers 200. The raw-row
+  paths buffer rows proportional to the data volume, which the no-raw-row rule
+  forbids by default.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'quantile_over_time(0.8, {namespace="prod"} | unwrap bytes [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with Loki's series (partial warning over max_query_series).
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/range_metric_compat.go:767, execution_limits.go:11 (raw-row metric paths buffer rows; push down or stream)'
+  loki: 'pkg/logql engine series limit (max_query_series) with partial result for Drilldown'
+  proxy: '502 over the 64 MiB budget'
+  planned_test: 'TestCompat_MetricBufferedBudget1h + TestE2E_Drilldown7dHighCardinalityBreakdown (test/e2e-compat, groups semantics and drilldown)'
+  clusters:
+    - 1e223d96
+    - 6d9fc70d
+    - 7b521e8a
+    - a644d4bb

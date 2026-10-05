@@ -1,0 +1,33 @@
+id: quality/label-cache-aged-labels-kept
+title: Labels that age out of the window are never dropped from the merged label cache (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  Loki's /labels lists the labels of the streams in the requested window only.
+  The proxy merges new label names into its cached list (mergeLabelsIntoCache)
+  and never removes one, so a label whose last stream left the window is still
+  listed by the label browser.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: 'now-5m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Only labels of streams in the window.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/label_metadata.go:1259 mergeLabelsIntoCache'
+  loki: 'pkg/querier/querier.go Label (window-bounded)'
+  proxy: 'union never shrinks'
+  planned_test: 'TestE2E_LabelsAgeOutOfWindow (test/e2e-compat, group core)'
+  clusters: []

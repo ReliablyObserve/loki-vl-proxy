@@ -1,0 +1,34 @@
+id: semantics/eager-pipeline-validation
+title: Invalid pipeline stages fail with 400 regardless of data; Loki answers 200 empty over a range with no data (documented)
+proves:
+  - loki-compatible-profile
+consumer: api
+why: |
+  Loki builds a pipeline (and reports invalid json/logfmt expressions,
+  line_format/label_format templates and ip() arguments) only for a range it
+  reads, so a range with no data answers 200 empty. The proxy validates at
+  parse time and answers Loki's 400 text over any range (KNOWN_ISSUES).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | line_format "{{.a"'
+    start: 'now-30d'
+    end: 'now-29d'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 empty over a range without data.
+gap:
+  status: documented
+  impact: edge
+  effort: S
+  area: 'internal/translator validation'
+  loki: 'pkg/logql/log/fmt.go template build at pipeline construction'
+  proxy: '400 at parse'
+  planned_test: 'TestCompat_EagerValidationEmptyRange (test/e2e-compat, group semantics)'
+  clusters: []

@@ -1,0 +1,44 @@
+id: profiles/existence-filter-on-sanitized-key
+title: An existence filter on a sanitized key reads the stored dotted field, not the JSON line key (open)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Loki's json parser sanitizes every key it extracts, so `| json |
+  service_version!=""` keeps a line whose JSON holds `service_version` (or
+  `service.version`, or `{"service":{"version":..}}`) and drops the rest. The
+  proxy translates the existence check on an OTel-shaped underscore name to
+  the stored structured-metadata field (`filter "service.version":!""`), so it
+  reads the push's metadata and ignores the key in the line: on the visual
+  stack Loki returned 15 entries and the proxy 0 for the Drilldown field page
+  of service_version.
+
+  profiles/sanitized-json-key-filter widened every other label filter to all
+  spellings of the key; the existence check was left on its single key because
+  the Drilldown single-field fast paths recognise that exact shape.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="otel-collector"} | json | service_version!=""'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's entries: every line whose parsed labels hold service_version.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/translator (label-filter key variants, parsed_key_variants.go); Drilldown single-field fast paths'
+  loki: 'pkg/logql/log/parser.go:141 sanitizeLabelKey on every extracted key; label filter reads the parsed label'
+  proxy: 'filter on the stored dotted field only'
+  planned_test: 'TestCompat_ExistenceFilterSanitizedKey (test/e2e-compat, group semantics)'
+  clusters: []

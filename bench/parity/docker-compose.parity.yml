@@ -1,0 +1,21 @@
+# Differential-run overlay (bench/parity), applied after
+# bench/visual/docker-compose.visual.yml: the same Loki, with gRPC message
+# limits large enough for a per-stream metric answer over the seeded window.
+#
+# The e2e config caps Loki's gRPC messages at 8 MiB. A metric query that
+# keeps one series per stream (`rate({env="production"}[5m])`, `sum without
+# (level) (...)`) over an hour of generator data answers 13-26 MiB between
+# Loki's querier and its frontend; the frontend drops the answer ("received
+# message larger than max") and the client waits for query_timeout (5m). That
+# is a property of the test configuration, not of Loki, so it would hide every
+# such query from the comparison. 100 MiB is the value Loki's own production
+# examples use. `command` replaces the visual overlay's list, so its flags are
+# repeated here.
+services:
+  loki:
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+      - -querier.query-ingesters-within=3h
+      - -ingester.chunks-retain-period=3h
+      - -server.grpc-max-recv-msg-size-bytes=104857600
+      - -server.grpc-max-send-msg-size-bytes=104857600

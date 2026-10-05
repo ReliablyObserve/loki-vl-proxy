@@ -1,0 +1,39 @@
+id: semantics/logfmt-existence-filter-ungrouped-sum
+title: An ungrouped sum over `| logfmt | key!=""` returns no series (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum(count_over_time({service_name="cache-redis"} | logfmt | op!="" [5m]))`
+  is 94170 lines on Loki and an empty matrix on the proxy; the same with `|
+  drop __error__`, and for every logfmt service and key tried (payment-service
+  amount). The grouped form (`sum by (op) (...)`), the equality filter
+  (`op="hget"`) and the `| json` form match Loki, so the ungrouped logfmt
+  stats pushdown with an existence filter loses every row.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({service_name="cache-redis"} | logfmt | op!="" [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series with Loki's counts.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/ordered_json_metric.go setStatsPushdown / pushdownLabelFilters (logfmt, ungrouped)'
+  loki: 'pkg/logql/log/parser.go:398-409 logfmt label extraction; label filter on the parsed label'
+  proxy: 'empty matrix'
+  planned_test: 'TestCompat_LogfmtExistenceFilterUngroupedSum (test/e2e-compat, group semantics), cases semantics/json-filter-pushdown-ungrouped-sum sibling'
+  clusters:
+    - 0a9f54e0

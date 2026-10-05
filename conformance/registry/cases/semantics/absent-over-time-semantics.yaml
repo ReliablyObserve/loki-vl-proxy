@@ -1,0 +1,43 @@
+id: semantics/absent-over-time-semantics
+title: absent_over_time answers when data exists and stays empty when it is absent, after a parser (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's absent_over_time returns one series (labelled from the selector's
+  equality matchers) only for steps without data. With a parser stage the
+  proxy inverts it: `absent_over_time({service_name="api-gateway"} | json
+  [1m])` (data present) returns 2026 series where Loki returns none, and
+  `absent_over_time({...} | json | nonexistant_field="foo" [1m])` (no line
+  matches) returns nothing where Loki returns `{service_name="api-gateway"}`.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'absent_over_time({service_name="api-gateway"} | json | nonexistant_field="foo" [1m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    One series {service_name="api-gateway"} at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator absent_over_time (parser pipelines)'
+  loki: 'pkg/logql/evaluator.go:647-664, :1320 absentLabels'
+  proxy: 'inverted with a parser'
+  planned_test: 'TestCompat_AbsentOverTimeWithParser (test/e2e-compat, group semantics)'
+  clusters:
+    - 2336e2a5
+    - 4dfd84f7
+    - 5eaf17b5
+    - aeebcc0d
+    - bd172c7d
+    - c4f74a0e

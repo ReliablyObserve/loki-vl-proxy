@@ -1,0 +1,34 @@
+id: profiles/json-extraction-list-missing-key
+title: A json extraction-list key absent from the line is dropped; Loki keeps it in the metric series (open)
+proves:
+  - parsed-label-series-identity
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `count_over_time({...} | json
+  layer7_something_specific="layer7_something_specific" [12m])` labels Loki's
+  series with the listed key; the proxy's series lack it.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count_over_time({service_name="api-gateway"} | json nokey="nokey" [5m])'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    Loki's label sets.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy stage-field exposure (extraction lists, metric path)'
+  loki: 'pkg/logql/log/parser.go:671-720 JSONExpressionParser.Process'
+  proxy: 'key missing'
+  planned_test: 'TestCompat_JSONExtractionListMissingKey (test/e2e-compat, group semantics)'
+  clusters:
+    - 3eddbf61
+    - fcc4cda7

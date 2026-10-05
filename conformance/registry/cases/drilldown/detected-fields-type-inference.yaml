@@ -1,0 +1,36 @@
+id: drilldown/detected-fields-type-inference
+title: detected_fields infers a different type for some fields (open)
+proves:
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  Loki types `size_bytes` (cache-redis) as int where the proxy says string,
+  and `retries` (worker-service) as int where the proxy says duration;
+  Drilldown offers different filter operators.
+
+  In the differential run the type difference is secondary on requests whose
+  primary difference is the `_extracted` collision (semantics/extracted-
+  suffix-collision owns those clusters), so this case claims none.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="cache-redis"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [fields.type]
+  expect: |
+    Loki's types.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy detected_fields type inference'
+  loki: 'pkg/querier detected fields type detection (v3.7.7): int before duration before string'
+  proxy: 'different type'
+  planned_test: 'TestCompat_DetectedFieldsTypes (test/e2e-compat, group drilldown)'
+  clusters: []

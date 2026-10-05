@@ -1,0 +1,41 @@
+id: severity/detected-level-stage-side-effects
+title: keep/drop detected_level and a detected_level filter change other labels (open)
+proves:
+  - severity-exposure-surfaces
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `| keep detected_level` leaves only detected_level on Loki; the proxy also
+  keeps level and service_name. `| drop detected_level` keeps the stream label
+  level on Loki; the proxy drops it too. `| detected_level!=""` without a
+  parser makes the proxy report the logfmt keys of the line (key, msg, op,
+  ...) as labels; Loki adds none.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | drop detected_level'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.stream]
+  expect: |
+    Loki's labels.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/detected_level.go (level/detected_level coupling in keep/drop/filter)'
+  loki: 'pkg/logql/log/keep_labels.go, drop_labels.go (detected_level is ordinary structured metadata)'
+  proxy: 'level coupled to detected_level; parsed fields leak'
+  planned_test: 'TestCompat_DetectedLevelKeepDrop (test/e2e-compat, group drilldown)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 89a7162d
+    - ab9cc1fc
+    - f737ddd5

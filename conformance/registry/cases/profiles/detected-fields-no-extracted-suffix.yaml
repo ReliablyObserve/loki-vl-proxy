@@ -1,0 +1,36 @@
+id: profiles/detected-fields-no-extracted-suffix
+title: detected_fields lists service / service.name without Loki's _extracted suffix (owner decision)
+proves:
+  - loki_api_v1_detected_fields
+  - loki-compatible-profile
+consumer: drilldown
+why: |
+  Where structured metadata service.name collides with the stream label
+  service_name, Loki's detected_fields lists service_name_extracted; the proxy
+  lists service / service.name. The owner stamped this as the intended
+  behaviour (2026-04-25). It covers only those service fields: every other
+  `_extracted` field Loki lists (level_extracted, version_extracted, ...) is
+  an ordinary difference (semantics/extracted-suffix-collision).
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="otel-collector"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [fields.label]
+  expect: |
+    service / service.name instead of service_name_extracted (kept).
+gap:
+  status: owner-kept
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/label_handlers.go handleDetectedFields'
+  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix'
+  proxy: 'service / service.name'
+  planned_test: 'bench/parity diff rule (documented facet, service fields only)'
+  clusters: []

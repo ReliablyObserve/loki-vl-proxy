@@ -1,0 +1,34 @@
+id: semantics/instant-result-type-missing
+title: Some instant binary/label_replace answers carry no resultType (open)
+proves:
+  - loki_api_v1_query
+consumer: grafana-datasource
+why: |
+  Loki answers every instant metric query with `resultType: vector`. For
+  `label_replace(avg by (app) (sum by (app) (rate(...)) + sum by (app)
+  (rate(...))), ...)` and `stdvar without (app) (...)` the proxy's 200 answer
+  has no resultType, which Grafana and API clients cannot decode.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'stdvar without (app) (count_over_time({namespace="prod"}[1m]))'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [resultType]
+  expect: |
+    vector.
+gap:
+  status: open
+  impact: grafana-datasource
+  effort: S
+  area: 'internal/proxy instant response assembly (binary/label_replace/without paths)'
+  loki: 'pkg/logqlmodel result types; pkg/util/marshal query response'
+  proxy: 'resultType missing'
+  planned_test: 'TestCompat_InstantResultTypeAlwaysSet (test/e2e-compat, group semantics)'
+  clusters:
+    - 307bbdd1
+    - f2066991

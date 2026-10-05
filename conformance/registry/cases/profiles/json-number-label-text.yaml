@@ -1,0 +1,45 @@
+id: profiles/json-number-label-text
+title: JSON numbers become label values in a different text form ("14.0" vs "14") (open)
+proves:
+  - parsed-label-series-identity
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Loki's json parser keeps a number's text from the line, so a value written
+  `14.0` is the label `14.0`. VictoriaLogs normalises numbers when it unpacks
+  them, so the proxy's `sum by (duration_s)
+  (count_over_time({service_name="batch-etl"} | json [5m]))` has series `14`
+  where Loki has `14.0` (and a different series count where both spellings
+  occur). Drilldown field breakdowns over such fields show different values.
+
+  Seen on batch-etl fields (throughput_rps, duration_s, confidence): `sum by
+  (throughput_rps) (...)` returns 5325 series on Loki and 5422 on the proxy
+  over an hour, with `1.0` on Loki and `1` on the proxy.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (duration_s) (count_over_time({service_name="batch-etl"} | json [5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    Loki's value text.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy JSON number rendering of unpacked values (VictoriaLogs unpack_json normalises)'
+  loki: 'pkg/logql/log/parser.go readValue (raw number bytes)'
+  proxy: 'normalised number text'
+  planned_test: 'TestCompat_JSONNumberLabelText (test/e2e-compat, group drilldown)'
+  clusters:
+    - 056ee345
+    - 7938c66e
+    - 8c3eca09
+    - a8228433
+    - bd84536f
+    - c2523a5e

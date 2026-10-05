@@ -35,3 +35,12 @@ compare:
     Loki returns no line for a value that only contains the pattern; the proxy
     returns it. The expected end state is Loki's answer; until then this case
     records the observed difference, not a passing assertion.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator label-filter regexp emission (anchor ^(?:re)$); external PR #572 open'
+  loki: 'pkg/logql/log/label_filter.go (regexp matcher on the whole value)'
+  proxy: 'substring match'
+  planned_test: 'TestCompat_LabelFilterRegexpAnchoring (test/e2e-compat, group semantics)'
+  clusters: []

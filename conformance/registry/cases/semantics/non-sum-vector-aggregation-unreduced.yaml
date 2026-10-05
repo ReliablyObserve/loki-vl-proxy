@@ -1,0 +1,70 @@
+id: semantics/non-sum-vector-aggregation-unreduced
+title: max, min, count and avg over a range function return one series per stream on query_range (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki folds a vector aggregation to one series per group at every step:
+  `max(count_over_time({service_name="api-gateway"}[5m]))` is one series, `max
+  by (level) (...)` one per level. On the range path the proxy returns the
+  inner per-stream series unreduced (2160 series for that selector over an
+  hour, label sets of the streams) for max, min, count and avg with or without
+  `by`, including a grouping on a label no stream has (`max by (baz) (...)`:
+  Loki 1 series, proxy 10656) and nested inside sum (`sum(max(rate(...)))`).
+  sum and stddev reduce correctly; the instant path reduces but folds over
+  streams (see metric-identity/structured-metadata-splits-series).
+
+  Found by the differential run (bench/parity) on origin/main; the registry's
+  metric-series-identity item records count/min/max/avg as fixed by #582, so
+  this is either a range-path regression or a path #582 did not reach.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'max(count_over_time({service_name="api-gateway"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series, Loki's maximum per step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator seriesLevelOuterAggregation (range path) + internal/proxy range stats folding'
+  loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next (fold per group per step)'
+  proxy: 'inner per-stream series returned unreduced on query_range'
+  planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group semantics) over max/min/count/avg x by/without/none'
+  note: 'Measured on main at fcaccfcc; verified still present on c4ebcd98.'
+  clusters:
+    - 099e8acf
+    - 0b8db994
+    - 0d361b0c
+    - 0e319b2f
+    - 20bb13d8
+    - 2bbe720f
+    - 2c7140a9
+    - 2ec3f6c0
+    - 543a2f07
+    - 77eeea84
+    - 864af0b3
+    - 86c51db9
+    - 91b7514f
+    - 9259c6c6
+    - bb04eea0
+    - be6066e1
+    - cf968b92
+    - d13dd24b
+    - da2a39ee
+    - da345f70
+    - db50c7bd
+    - ea157df5
+    - efb24a18
+    - feb671c2

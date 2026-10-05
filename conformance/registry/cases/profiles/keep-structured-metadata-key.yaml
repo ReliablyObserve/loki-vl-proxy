@@ -1,0 +1,37 @@
+id: profiles/keep-structured-metadata-key
+title: `| keep` of a structured-metadata key drops it (open)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `{service_name="checkout-svc"} | keep deployment_environment` keeps the
+  structured-metadata label on Loki; the proxy removes it (and keeps the
+  derived service_name instead, profiles/keep-removes-derived-service-name).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="checkout-svc"} | keep deployment_environment'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values, structuredMetadata]
+  expect: |
+    deployment_environment kept.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy keep stage over structured metadata (Loki-compatible profile names)'
+  loki: 'pkg/logql/log/keep_labels.go:15-44'
+  proxy: 'structured-metadata key dropped'
+  planned_test: 'TestCompat_KeepStructuredMetadataKey (test/e2e-compat, group otel-edge)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 4e8cf844

@@ -1,0 +1,35 @@
+id: profiles/grafana-stats-error-as-warning
+title: A failed stats query from Grafana answers 200 with warnings; Loki returns the error (documented)
+proves:
+  - loki-compatible-profile
+consumer: explore
+why: |
+  When VictoriaLogs fails a stats_query_range request from Grafana, the proxy
+  returns HTTP 200 with Loki-style `warnings` and a Warning header instead of
+  the upstream error (KNOWN_ISSUES); Loki returns the error status and Grafana
+  shows the error. Proxy-only behaviour in the Loki-compatible profile.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, warnings]
+  expect: |
+    The error status Loki returns.
+gap:
+  status: documented
+  impact: grafana-datasource
+  effort: S
+  area: 'internal/proxy Grafana-sourced stats error handling'
+  loki: 'pkg/querier/queryrange error propagation (no warnings conversion)'
+  proxy: '200 + warnings'
+  planned_test: 'TestCompat_GrafanaStatsErrorStatus (test/e2e-compat, fault injection)'
+  clusters: []

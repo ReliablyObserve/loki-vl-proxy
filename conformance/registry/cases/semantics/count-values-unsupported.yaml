@@ -1,0 +1,34 @@
+id: semantics/count-values-unsupported
+title: count_values() is rejected with 400 where Loki answers (documented)
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki supports `count_values("label", <vector>)`; VictoriaLogs has no stats
+  function that groups by metric value, so the proxy returns HTTP 400 bad_data
+  (KNOWN_ISSUES).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_values("v", sum by (level) (count_over_time({env="production"}[5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    Loki's series per distinct value.
+gap:
+  status: documented
+  impact: api-only
+  effort: M
+  area: 'internal/translator + proxy-side post-aggregation of a stats matrix'
+  loki: 'pkg/logql/syntax OpTypeCountValues; vector evaluator'
+  proxy: '400 bad_data'
+  planned_test: 'TestCompat_CountValues (test/e2e-compat, group semantics)'
+  clusters: []

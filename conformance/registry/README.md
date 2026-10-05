@@ -42,3 +42,29 @@ python3 conformance/scripts/report.py                       # state and coverage
 it), `hybrid` (the proxy reshapes or merges a VictoriaLogs answer) or `proxy_side` (the proxy
 computes the result). The differential runner confirms it per query shape at runtime in a later
 phase; a curated value in the file wins over the generated one.
+
+## Recording a difference from Loki
+
+A case that records a known difference carries a `gap:` block, which
+`conformance/scripts/parity_gaps.py` ranks into `conformance/reports/parity-gaps.md`:
+
+```yaml
+gap:
+  status: open          # open | owner-kept | documented | upstream | fixed
+  impact: explore-visible   # explore-visible | drilldown-visible | grafana-datasource | api-only | edge
+  effort: S             # S | M | L
+  area: 'internal/... (where the fix belongs)'
+  loki: 'pkg/logql/...:line (Loki v3.7.7 reference)'
+  proxy: 'what the proxy does instead'
+  planned_test: 'the test that will prove the fix and stay as its regression guard'
+  fixed_by: '#700'      # required with status fixed: the PR or commit that removed the difference
+  note: 'optional: when and on which code the difference was measured'
+  clusters:             # differential-run clusters (bench/parity) this difference accounts for
+    - 0a9f54e0
+```
+
+Every cluster in `generated/parity-discovery.json` is claimed by exactly one case: a
+cluster the diff marked as a recorded deviation by the case id it names (which must be a
+case with status documented, owner-kept, upstream or fixed), every other one by a case's
+`gap.clusters`. A fixed case keeps its clusters until the next recorded run no longer
+shows them. The conformance gate fails otherwise.

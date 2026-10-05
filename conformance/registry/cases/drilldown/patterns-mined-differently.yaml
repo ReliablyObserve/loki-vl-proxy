@@ -1,0 +1,38 @@
+id: drilldown/patterns-mined-differently
+title: Patterns come from different miners on each side (documented)
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  Loki's pattern ingester mines the lines pushed to it; the proxy (with
+  -patterns-autodetect-from-queries) mines the lines its queries returned. The
+  pattern sets differ by design and depend on history (bench/visual compares
+  them as history-dependent); on the seeded stack Loki had no patterns for
+  most services.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{service_name="cache-redis"}'
+    start: 'now-1h'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Comparable only in shape.
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: L
+  area: 'internal/proxy/patterns.go'
+  loki: 'pkg/pattern (ingester-side mining)'
+  proxy: 'query-side mining'
+  planned_test: 'bench/visual history-dependent comparison (exists)'
+  clusters:
+    - 2c8e8dca
+    - 556a81b7
+    - 7c1a4612

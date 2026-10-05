@@ -1,0 +1,43 @@
+id: semantics/topk-bottomk-range-series
+title: topk/bottomk on query_range return k series overall, not the per-step top k (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki ranks at every step, so a range topk(3, ...) returns the union of each
+  step's top 3 (8 series for `topk(3, sum by (app)
+  (count_over_time({env="production"}[5m])))` over an hour; 791 for `topk by
+  (container) (5, ...)`). The proxy returns 3 (5) series. Instant topk
+  matches.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(3, sum by (app) (count_over_time({env="production"}[5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    Loki's per-step union.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy topk/bottomk range ranking (cases limits/top-n-ranking-not-silent)'
+  loki: 'pkg/logql/evaluator.go:443-494 VectorAggEvaluator topk/bottomk per step'
+  proxy: 'global top k'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics)'
+  clusters:
+    - 23526b6c
+    - 4f7b982a
+    - 8bc2e155
+    - a6109627
+    - aa368887
+    - ab5f6f01
+    - f2d36009

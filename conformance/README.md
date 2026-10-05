@@ -32,6 +32,9 @@ conformance/
   depend on it, and what evidence exists. [reports/translation-map.md](reports/translation-map.md) shows, per feature, what Loki gives,
   what VictoriaLogs gives, and what the proxy adds between them.
   [reports/gaps.md](reports/gaps.md) ranks what is missing.
+  [reports/parity-gaps.md](reports/parity-gaps.md) ranks every known difference from Loki
+  (registry cases with a `gap:` block), with the corpus queries of the last differential run
+  (`bench/parity`) that hit each one.
   [reports/performance.md](reports/performance.md) joins the saved A/B runs in `bench/ab/results/`
   with the registry items each measured shape covers, and lists every item the proxy answers
   slower than Loki on first load.
@@ -46,7 +49,9 @@ conformance/
 - a test claims a registry id that does not exist, a proxy route has no registry
   item, or an item points at code that no longer exists;
 - a generated report is stale (performance, coverage map, gaps, translation map,
-  roadmap, compatibility matrix);
+  roadmap, compatibility matrix, ranked parity gaps);
+- a cluster of the last differential run (`registry/generated/parity-discovery.json`)
+  is accounted for by no registry case's `gap.clusters`;
 - a `bench/ab/shapes.json` shape covers a registry id that does not exist, covers
   nothing, or a saved A/B result does not match the shape sets;
 - a flag is missing from the places that list every flag;
@@ -114,4 +119,5 @@ python3 conformance/scripts/coverage_map.py
 python3 conformance/scripts/wire.py
 python3 conformance/scripts/translation_map.py
 python3 conformance/scripts/gaps.py
+python3 conformance/scripts/parity_gaps.py   # after bench/parity/publish.py records a run
 ```

@@ -1,0 +1,35 @@
+id: semantics/label-replace-new-label
+title: label_replace does not add a new destination label (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
+  "(.*)-.*")` adds `app_short` to every series on Loki; the proxy's series
+  lack the new label (also through nested label_replace).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(sum by (app) (rate({app="api-gateway"}[5m])), "app_short", "$1", "app", "(.*)-.*")'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    app_short on every series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy label_replace post-processing'
+  loki: 'pkg/logql/evaluator.go:387, :1253 label_replace evaluator'
+  proxy: 'destination label missing'
+  planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics)'
+  clusters:
+    - a9d4f85c

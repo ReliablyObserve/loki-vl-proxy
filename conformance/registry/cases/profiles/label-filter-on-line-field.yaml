@@ -60,3 +60,12 @@ compare:
     No entries, as Loki answers; the same entries as Loki once a stage
     exposes the key (TestCompat_StageFieldExposureLikeLoki), and the limit
     filled from older rows (TestCompat_LabelFilterOnLineFieldFillsLimitLikeLoki).
+gap:
+  status: owner-kept
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy label-filter refill (-label-filter-refill-max-pages); metric queries on keys no stage exposes'
+  loki: 'pkg/logql/log/label_filter.go (filter reads only labels the pipeline set)'
+  proxy: 'metric-query filters/grouping on keys no stage exposes read the stored field (documented, owner kept)'
+  planned_test: 'TestCompat_LabelFilterOnLineField (exists, profile tests)'
+  clusters: []

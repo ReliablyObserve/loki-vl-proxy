@@ -1,0 +1,104 @@
+id: semantics/unwrap-sample-validity
+title: unwrap emits samples Loki skips: a missing label gives "" values, a unit string is passed through (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki skips a line whose unwrapped label is absent
+  (pkg/logql/log/metrics_extraction.go:212-216, issue 6713) and marks a value
+  it cannot convert with SampleExtractionErr, which `| __error__=""` drops.
+  The proxy answers series for an absent label with empty-string sample values
+  (`[1791223680, ""]`, not a number; Grafana cannot plot it and API clients
+  fail to parse it), returns `"86282s"` verbatim for `| unwrap ttl` over a
+  duration string, and sums/max-es absent labels into a `{}` series where Loki
+  returns none.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'max_over_time({service_name="api-gateway"} | unwrap b [2s])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    No series (no line has b); numeric sample values only.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range-metric unwrap evaluation (stats pushdown over a missing/non-numeric field)'
+  loki: 'pkg/logql/log/metrics_extraction.go:202-231 streamLabelSampleExtractor.Process'
+  proxy: '"" sample values / raw unit strings / {} series'
+  planned_test: 'TestCompat_UnwrapMissingAndNonNumeric (test/e2e-compat, group semantics)'
+  clusters:
+    - 0adb5d8c
+    - 0b6060ea
+    - 0b885d9e
+    - 0ca5ac7a
+    - 0d7e7b08
+    - 0f62f4ec
+    - 13cecc6e
+    - 188a6f9f
+    - 1a24c9ee
+    - 1d449423
+    - 2eb02792
+    - 33e032b9
+    - 3cbd35cd
+    - 428bae72
+    - 46a11d9a
+    - 4f81c662
+    - 6843e15f
+    - 696cdca6
+    - 69766a56
+    - 6ff0a17b
+    - 7314ff41
+    - 756c99ae
+    - 764e0a1b
+    - 77c25773
+    - 77fcddef
+    - 78618043
+    - 7b61ac93
+    - 82790745
+    - 852ba006
+    - 8550f3db
+    - 866ac555
+    - 87352721
+    - 8bb55f62
+    - 8cc35d5b
+    - 8f56d9d0
+    - 9ac3197a
+    - 9eaa432d
+    - 9ecbc578
+    - a36064b5
+    - a5201e0b
+    - a5c073e4
+    - abb2d873
+    - abdf3fa3
+    - b15fbabc
+    - b499246a
+    - b58ffb68
+    - ba07c5dc
+    - baa868eb
+    - c16333ff
+    - c2316012
+    - c273ebd1
+    - d3077c47
+    - d5321d1c
+    - dc15e297
+    - ddbd51ef
+    - df52ecf7
+    - e78502df
+    - e924d60f
+    - ea2af38c
+    - ed1356bf
+    - ed470597
+    - ee497e5b
+    - f607c198
+    - fc1254b0

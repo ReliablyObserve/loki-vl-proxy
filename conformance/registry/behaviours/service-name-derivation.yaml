@@ -34,3 +34,4 @@ cases:
   - service-name/selector-exact-match
   - service-name/group-by-service-name
   - service-name/label-values-list
+  - profiles/keep-removes-derived-service-name

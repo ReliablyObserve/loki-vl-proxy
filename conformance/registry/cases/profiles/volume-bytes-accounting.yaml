@@ -1,0 +1,37 @@
+id: profiles/volume-bytes-accounting
+title: Volume values count line bytes; Loki counts chunk bytes with structured metadata (documented)
+proves:
+  - loki_api_v1_index_volume
+  - loki_api_v1_index_volume_range
+consumer: drilldown
+why: |
+  `/index/volume` and `/index/volume_range` report bytes like Loki, but the
+  proxy sums exact line bytes (VictoriaLogs `sum_len(_msg)`) while Loki's
+  volume is its chunk size estimate, which also counts structured metadata
+  (docs/KNOWN_ISSUES.md). The differential run marks only a value difference
+  of a matched series with this case: a missing or extra series or sample is
+  an ordinary difference.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+    targetLabels: 'service_name'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.result values]
+  expect: |
+    Same series and samples; byte values differ by design.
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: L
+  area: 'internal/proxy/volume.go; docs/KNOWN_ISSUES.md'
+  loki: 'pkg/storage volume index (chunk bytes incl. structured metadata)'
+  proxy: 'line bytes'
+  planned_test: 'bench/parity diff rule (documented facet)'
+  clusters: []

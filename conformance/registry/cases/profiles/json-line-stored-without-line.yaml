@@ -1,5 +1,5 @@
 id: profiles/json-line-stored-without-line
-title: A JSON line pushed without _msg is stored without its line (open gap)
+title: A JSON line pushed without _msg is stored without its line (documented)
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
@@ -42,3 +42,12 @@ compare:
   fields: [streams.values, metadata_categories]
   expect: |
     The original line and Loki's label categories (not met: see why).
+gap:
+  status: documented
+  impact: explore-visible
+  effort: L
+  area: 'client push configuration (disable_message_parsing=1); docs/KNOWN_ISSUES.md'
+  loki: 'pkg/distributor push keeps the line verbatim'
+  proxy: 'line rebuilt from stored fields'
+  planned_test: 'cases/profiles/stage-field-exposure with disable_message_parsing pushes'
+  clusters: []

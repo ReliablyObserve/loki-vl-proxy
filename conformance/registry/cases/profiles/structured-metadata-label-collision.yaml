@@ -34,3 +34,33 @@ compare:
   fields: [structured_metadata_keys]
   expect: |
     structuredMetadata carries service_name_extracted, not service_name.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy structured-metadata naming in log responses (collision with derived service_name)'
+  loki: 'pkg/logql/log/labels.go LabelsBuilder (structured metadata renamed with _extracted on a stream-label collision)'
+  proxy: 'structuredMetadata service_name beside the stream label'
+  planned_test: 'TestCompat_StructuredMetadataLabelCollision (test/e2e-compat, group otel-edge)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 0e676869
+    - 1802c76f
+    - 1de4e9f2
+    - 25b77e2f
+    - 265b2418
+    - 269ef189
+    - 343338a6
+    - 3df8d769
+    - 56dc3ddd
+    - 57ff8760
+    - 5aa8ef5c
+    - 6650ff42
+    - 6f3e6db5
+    - 6f88a869
+    - 829672cc
+    - b2133367
+    - b3a784df
+    - cb109373
+    - d32173c3
+    - e6dc2163
