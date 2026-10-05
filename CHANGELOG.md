@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.107.2] - 2026-10-05
+
 ### Changed
 
 - The e2e compose stack keeps 72 hours of data in both backends: Loki gets a
