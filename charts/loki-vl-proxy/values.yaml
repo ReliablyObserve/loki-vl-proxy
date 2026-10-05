@@ -135,7 +135,7 @@ extraArgs:
   # 120s matches the binary default; explicit here so operators can widen it for
   # very long-range log queries without hunting for the flag name.
   backend-timeout: "120s"
-  backend-min-version: "v1.30.0"
+  backend-min-version: "v1.40.0"
   backend-allow-unsupported-version: "false"
   backend-version-check-timeout: "5s"
   # Compression negotiation with VictoriaLogs backend.
@@ -338,7 +338,7 @@ extraArgs:
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
-  # backend-min-version: "v1.30.0"              # startup minimum supported VictoriaLogs version
+  # backend-min-version: "v1.40.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
   # backend-version-check-timeout: "5s"         # startup backend version check timeout
   # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version

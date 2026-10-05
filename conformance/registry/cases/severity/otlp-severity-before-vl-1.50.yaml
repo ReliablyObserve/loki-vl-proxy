@@ -1,0 +1,50 @@
+id: severity/otlp-severity-before-vl-1.50
+title: OTLP rows without text severity get detected_level "Unspecified" / "Info2" on VictoriaLogs, measured on v1.47 to v1.49 and likely v1.40 to v1.49 (open, version-gated)
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  TestCompat_DetectedLevelQueryRange pushes OTLP log records and compares the
+  proxy's detected_level per entry with Loki's. On VictoriaLogs v1.50.0,
+  v1.51.1, v1.52.0 and v1.53.0 every case matches. On v1.47.0, v1.48.0 and
+  v1.49.0 (supported and tested; v1.40 to v1.46 are supported, not run, and
+  likely behave the same) two cases differ, identically
+  on the three versions and with an unmodified origin/main proxy build:
+
+  - `otlp-unspecified` (OTLP record with no severity, line `request error`):
+    proxy detected_level = `Unspecified`, Loki = `error` (keyword scan of the
+    line).
+  - `otlp-number-fine` (severityNumber 10): proxy = `Info2`, Loki = `info`.
+
+  Those versions store the OTLP severity under a text name (`Unspecified`,
+  `Info2`) that the read-path derivation takes as the level instead of
+  normalising it (`Info2` to info) or ignoring it (`Unspecified`, so the
+  keyword scan runs). The coarse severity numbers and text values the test
+  also covers (otlp-number, otlp-number-text, otlp-text-only) pass.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="detected-level-fixture"}'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [detected_level]
+  expect: |
+    detected_level equal to Loki's for the OTLP fixture entries: `error` for
+    the severity-less `request error` line, `info` for severityNumber 10.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/detected_level.go detectedLevelName (normalisation of OTLP severity text) + test/e2e-compat/detected_level_test.go'
+  loki: 'detected_level from severity_text / line keyword scan (pkg/distributor/field_detection.go, v3.7.7)'
+  proxy: '`Unspecified` and `Info2` returned as the level on v1.47 to v1.49; correct from v1.50.0'
+  planned_test: 'TestCompat_DetectedLevelQueryRange per version in the compat-vl vl-matrix job (fails on v1.47 to v1.49 until fixed)'
+  clusters: []

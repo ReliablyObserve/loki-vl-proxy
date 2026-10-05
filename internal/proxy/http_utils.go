@@ -399,8 +399,9 @@ var vlQueryRejectedPrefixes = []string{
 	// "unexpected token" (lib/logstorage/pipe.go:130), "unexpected pipe"
 	// (pipe.go:164), "missing ')'" (parser.go:1891), "invalid regexp"
 	// (parser.go:2675), "cannot parse 'pattern'" (pipe_extract.go:244).
-	// VictoriaLogs v1.52.0 moved the query echo in front of the reason; see
-	// stripVLParseEcho, which normalizes that form to this prefix.
+	// VictoriaLogs v1.52.0 moved the query echo in front of the reason (v1.47.0
+	// words it "cannot parse query [<query>]: <reason>"); see stripVLParseEcho,
+	// which normalizes both forms to this prefix.
 	"cannot parse query arg:",
 	"query arg cannot be empty",          // logsql.go:110
 	"missing 'field' query arg",          // logsql.go:472, 554
@@ -465,11 +466,13 @@ func classifyVLError(status int, rawMsg string) vlErrorClass {
 
 // vlParseEchoPrefixes start VictoriaLogs' parse-error wrapper from v1.52.0:
 // "cannot parse `query` arg [<query>]: <reason>" (app/vlselect/logsql/logsql.go:117).
-// Up to v1.51.1 the query followed the reason as "; query=<query>".
-var vlParseEchoPrefixes = []string{"cannot parse `query` arg [", "cannot parse query arg ["}
+// Up to v1.51.1 the query followed the reason as "; query=<query>". VictoriaLogs
+// v1.47.0 (captured from the image; v1.48.0 and newer word it as above) writes
+// "cannot parse query [<query>]: <reason>" with the echo in front too.
+var vlParseEchoPrefixes = []string{"cannot parse `query` arg [", "cannot parse query arg [", "cannot parse query ["}
 
-// stripVLParseEcho removes the leading query echo of a VictoriaLogs v1.52+
-// parse error and returns the text after it: ": <reason>", with the parser
+// stripVLParseEcho removes the leading query echo of a VictoriaLogs v1.52+ (or
+// v1.47) parse error and returns the text after it: ": <reason>", with the parser
 // context still attached. ok is false for any other message.
 // The echoed LogsQL can hold "]: " inside quoted literals and the reason can
 // hold "[...]: " ("unexpected token after [fields a]: ..."), so the end of the

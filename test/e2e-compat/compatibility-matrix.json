@@ -42,65 +42,46 @@
       "image_repo": "victoriametrics/victoria-logs",
       "pinned_version": "v1.52.0",
       "support_window": {
-        "policy": "v1_3x_to_v1_5x_transition",
-        "description": "Support VictoriaLogs releases across v1.3x.x through v1.5x.x during migration windows. The current family is v1.5x.x, but we intentionally retain older bands to avoid backend upgrade lockstep.",
+        "policy": "latest_two_lines_three_releases_each",
+        "description": "Fully support the latest VictoriaLogs minor line and the previous one (today v1.5x and v1.4x); older lines are unsupported. Test at most the latest 3 releases of each supported line, using the latest patch of each minor. When a new line appears (for example v1.6x) it becomes current, the previous current line becomes previous, and the oldest line and its matrix_versions drop out. The pinned_version (PR CI image) must be one of the tested versions and moves separately, with its own parity proof. Moving the window also means: update the -backend-min-version default (Go fallback, flag and Helm value: first minor of the oldest supported line), logsql.MinSupportedMinor and, only if a capability boundary moves, the capability profiles below (their names describe where a capability starts, not the support floor).",
         "current_family": "v1.5x.x",
         "previous_family": "v1.4x.x",
-        "additional_families": [
-          "v1.3x.x"
-        ]
+        "max_versions_per_family": 3,
+        "minimum_supported_version": "v1.40.0"
       },
       "matrix_versions": [
-        "v1.30.0",
-        "v1.31.0",
-        "v1.32.0",
-        "v1.33.0",
-        "v1.34.0",
-        "v1.35.0",
-        "v1.36.0",
-        "v1.37.0",
-        "v1.38.0",
-        "v1.39.0",
-        "v1.40.0",
-        "v1.41.0",
-        "v1.42.0",
-        "v1.43.0",
-        "v1.44.0",
-        "v1.45.0",
-        "v1.46.0",
         "v1.47.0",
         "v1.48.0",
         "v1.49.0",
-        "v1.50.0",
-        "v1.51.0",
         "v1.51.1",
-        "v1.52.0"
+        "v1.52.0",
+        "v1.53.0"
       ],
-    "capability_profiles": [
-      {
-        "profile": "vl-v1.50-plus",
-        "version_range": ">= v1.50.0",
-        "capabilities": [
-          "stream_metadata_endpoints",
-          "dense_patterns_windowing",
-          "metadata_substring_filter"
-        ]
-      },
-      {
-        "profile": "vl-v1.49-plus",
-        "version_range": ">= v1.49.0 < v1.50.0",
-        "capabilities": [
-          "stream_metadata_endpoints",
-          "metadata_substring_filter"
-        ]
-      },
-      {
-        "profile": "vl-v1.30-plus",
-        "version_range": ">= v1.30.0 < v1.49.0",
-        "capabilities": [
-          "stream_metadata_endpoints"
-        ]
-      },
+      "capability_profiles": [
+        {
+          "profile": "vl-v1.50-plus",
+          "version_range": ">= v1.50.0",
+          "capabilities": [
+            "stream_metadata_endpoints",
+            "dense_patterns_windowing",
+            "metadata_substring_filter"
+          ]
+        },
+        {
+          "profile": "vl-v1.49-plus",
+          "version_range": ">= v1.49.0 < v1.50.0",
+          "capabilities": [
+            "stream_metadata_endpoints",
+            "metadata_substring_filter"
+          ]
+        },
+        {
+          "profile": "vl-v1.30-plus",
+          "version_range": ">= v1.30.0 < v1.49.0",
+          "capabilities": [
+            "stream_metadata_endpoints"
+          ]
+        },
         {
           "profile": "legacy-pre-v1.30",
           "version_range": "< v1.30.0",
@@ -391,41 +372,28 @@
       "edge_cases": [
         {
           "versions": [
-            "v1.30.x",
-            "v1.31.x",
-            "v1.32.x",
-            "v1.33.x",
-            "v1.34.x",
-            "v1.35.x",
-            "v1.36.x",
-            "v1.37.x",
-            "v1.38.x",
-            "v1.39.x"
-          ],
-          "focus": [
-            "_stream parsing and label synthesis",
-            "field_names and field_values behavior",
-            "hits-based volume endpoints"
-          ]
-        },
-        {
-          "versions": [
-            "v1.40.x",
-            "v1.41.x",
-            "v1.42.x",
-            "v1.43.x",
-            "v1.44.x",
-            "v1.45.x",
-            "v1.46.x",
             "v1.47.x",
             "v1.48.x",
-            "v1.49.x",
-            "v1.50.x"
+            "v1.49.x"
           ],
           "focus": [
             "stats_query_range shape",
             "structured metadata shaping",
-            "drilldown-derived labels and values"
+            "drilldown-derived labels and values",
+            "stats_query_range offset (v1.45+) and metadata substring filter (v1.49)"
+          ]
+        },
+        {
+          "versions": [
+            "v1.51.x",
+            "v1.52.x",
+            "v1.53.x"
+          ],
+          "focus": [
+            "stream fields in the column index (field_values fast path, v1.50+; v1.50.x stays supported through the capability profile)",
+            "dense pattern windowing",
+            "coalesce pipe (v1.51+) for service_name derivation",
+            "v1.53: /internal/* admin endpoints require POST (not used by the proxy)"
           ]
         }
       ]

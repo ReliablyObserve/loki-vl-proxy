@@ -525,7 +525,7 @@ The repo now keeps four separate compatibility tracks/contracts:
 | Loki | `TestLokiTrackScore` | Loki `3.6.x` and `3.7.x` |
 | Logs Drilldown | `TestDrilldownTrackScore` | Logs Drilldown `1.0.x` and `2.x` families |
 | Grafana Loki datasource | `TestGrafanaDatasourceCatalogAndHealth` | Grafana runtime `13.x` (current) and `12.x` (previous) families |
-| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.3x.x` through `v1.5x.x` transition band |
+| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.4x.x` and `v1.5x.x`, latest 3 releases of each |
 
 The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 
@@ -557,7 +557,7 @@ Support window policy:
 - Loki: current minor family plus one minor behind
 - Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, and pull requests also run smaller current-family and previous-family smoke profiles; the full runtime matrix stays on scheduled/manual coverage
 - Logs Drilldown: current family plus one family behind
-- VictoriaLogs: `v1.3x.x` through `v1.5x.x` (transition band)
+- VictoriaLogs: the latest line plus the previous one (`v1.5x.x` and `v1.4x.x`), tested on at most the latest 3 releases of each; `v1.3x.x` and older are unsupported (see [VictoriaLogs compatibility](compatibility-victorialogs.md#support-policy))
 
 Grafana runtime profiles from the manifest:
 

@@ -144,6 +144,7 @@
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/loki_profile_test.go",
       "internal/proxy/stage_field_exposure_test.go",
+      "test/e2e-compat/bad_request_status_parity_test.go",
       "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/stack_profiles_test.go"
     ],
@@ -706,6 +707,9 @@
     "internal/translator/series_aggregation_test.go": [
       "metric-series-identity"
     ],
+    "test/e2e-compat/bad_request_status_parity_test.go": [
+      "loki-compatible-profile"
+    ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
       "profiles/detected-fields-dotted-json-keys",
@@ -830,7 +834,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 71,
+  "tests_with_markers": 72,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -926,9 +930,9 @@
     "service-name-derivation",
     "severity/detected-level-filter-json-level",
     "severity/detected-level-stage-side-effects",
+    "severity/otlp-severity-before-vl-1.50",
     "versions/capabilities-floor-vs-matrix",
-    "versions/format-if-before-vl-1.35",
-    "versions/otlp-severity-before-vl-1.35"
+    "versions/rejected-stats-query-wording-vl-1.47"
   ],
   "wired_items": 89
 }

@@ -73,7 +73,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
 | `-backend-allow-unsupported-version` | bool | `false` | `extraArgs.backend-allow-unsupported-version` | Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true. |
-| `-backend-min-version` | string | `"v1.30.0"` | `extraArgs.backend-min-version` | Minimum VictoriaLogs version considered fully supported at startup |
+| `-backend-min-version` | string | `"v1.40.0"` | `extraArgs.backend-min-version` | Minimum VictoriaLogs version considered fully supported at startup (first minor of the oldest supported line; v1.4x and v1.5x are supported) |
 | `-backend-version-strict` | bool | `false` | `extraArgs.backend-version-strict` | When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set. |
 | `-derived-fields` | string | (empty) | `extraArgs.derived-fields` | name |
 | `-detected-level-body-scan` | bool | `true` | `extraArgs.detected-level-body-scan` | Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback |

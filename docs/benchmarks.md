@@ -453,7 +453,7 @@ Long-range columnar scans are I/O-bound and goroutine-heavy. The default `-defau
 | `-blockcache.missesBeforeCaching` | `1` | Cache from first miss (default 2) |
 | `-internStringCacheExpireDuration` | `15m` | Reduce GC pressure on label intern cache |
 
-These flags are applied by `test/e2e-compat/docker-compose.bench.yml`, layered on the base `docker-compose.yml` (which omits `-defaultParallelReaders` and `-fs.maxConcurrency` so the VictoriaLogs compatibility matrix can start versions older than v1.37). In production, the proxy cache further reduces effective VL concurrency — only cache-miss requests reach VL, so real VL concurrency is far lower than the client-facing rate.
+These flags are applied by `test/e2e-compat/docker-compose.bench.yml`, layered on the base `docker-compose.yml` (which omits `-defaultParallelReaders` and `-fs.maxConcurrency` so the compatibility matrix and the e2e stack measure VictoriaLogs defaults; both flags exist on every supported VictoriaLogs line, v1.37 and newer). In production, the proxy cache further reduces effective VL concurrency — only cache-miss requests reach VL, so real VL concurrency is far lower than the client-facing rate.
 
 ---
 

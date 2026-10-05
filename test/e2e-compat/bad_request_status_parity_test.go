@@ -20,6 +20,7 @@ import (
 // query_range cases carry the headers Grafana sends: VictoriaLogs rejects their
 // line-filter regex or pattern on stats_query_range (422), and Loki still
 // answers Grafana with 400 rather than a partial-results reply.
+// conformance: loki-compatible-profile
 func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 	end := time.Now()
 	start := end.Add(-time.Hour)
@@ -47,7 +48,10 @@ func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 	}
 	for _, logsql := range []string{`_msg:~"a{2,1}" | stats count() c`, `* | extract "<_>" | stats count() c`} {
 		vlStatus, vlBody := rejectedQueryGet(t, vlURL, "/select/logsql/stats_query_range", window(url.Values{"query": {logsql}, "step": {"60s"}}), "", nil)
-		if vlStatus != http.StatusUnprocessableEntity || !strings.Contains(string(vlBody), "cannot parse `query` arg") {
+		// The wording differs by version ("cannot parse `query` arg [...]" from
+		// v1.48, "cannot parse query [...]" on v1.47); the test checks that the
+		// proxy answers Loki's 400, not VictoriaLogs' text.
+		if vlStatus != http.StatusUnprocessableEntity || !(strings.Contains(string(vlBody), "cannot parse `query` arg") || strings.Contains(string(vlBody), "cannot parse query [")) {
 			t.Fatalf("VictoriaLogs no longer rejects the stats fixture %s with a parse error: %d %s", logsql, vlStatus, vlBody)
 		}
 	}

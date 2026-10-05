@@ -1242,7 +1242,7 @@ type Values struct {
 func (v Values) String() string { return fmt.Sprintf("values(%s, %d)", v.Field, v.Limit) }
 func (v Values) statsFunc()     {}
 
-// Histogram computes a histogram of a field (requires VL v1.31+).
+// Histogram computes a histogram of a field (available on every supported version).
 type Histogram struct{ Field string }
 
 func (h Histogram) String() string { return "histogram(" + h.Field + ")" }

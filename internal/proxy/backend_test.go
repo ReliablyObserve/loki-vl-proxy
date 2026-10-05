@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -239,5 +241,33 @@ func TestBackendVersionStrict_OverridesAllowUnsupported(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "(strict mode)") {
 		t.Fatalf("expected error to mention %q, got: %v", "(strict mode)", err)
+	}
+}
+
+// A detected backend below the supported VictoriaLogs lines (v1.40) is warned
+// about at startup whatever -backend-min-version says: Helm values or an
+// operator can still carry v1.30.0 explicitly.
+func TestBackendVersionBelowSupportedLinesWarns(t *testing.T) {
+	for _, tc := range []struct {
+		server   string
+		wantWarn bool
+	}{
+		{"VictoriaLogs/v1.35.0", true},
+		{"VictoriaLogs/v1.39.9", true},
+		{"VictoriaLogs/v1.40.0", false},
+		{"VictoriaLogs/v1.52.0", false},
+	} {
+		t.Run(tc.server, func(t *testing.T) {
+			p := newTestProxy(t, "http://unused")
+			var buf bytes.Buffer
+			p.log = slog.New(slog.NewTextHandler(&buf, nil))
+			h := http.Header{}
+			h.Set("Server", tc.server)
+			p.observeBackendVersionFromHeaders(h)
+			got := strings.Contains(buf.String(), "below the supported VictoriaLogs lines")
+			if got != tc.wantWarn {
+				t.Fatalf("warning=%v want %v; log: %s", got, tc.wantWarn, buf.String())
+			}
+		})
 	}
 }

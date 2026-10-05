@@ -11,7 +11,7 @@ why: |
   `{app="x"} | user="u1"` and `| json user | status="200"` return nothing.
   VictoriaLogs holds the JSON line's keys as stored fields and matched them.
   Measured 2026-10-02 against Loki 3.7.7 (VictoriaLogs v1.52.0 and v1.30.0
-  alike): `| user="u1"`, `| user=~"u.*"`, `| status > 100`,
+  alike; v1.30.0 measured before the support change): `| user="u1"`, `| user=~"u.*"`, `| status > 100`,
   `| json user | status="200"`, `| user="u1" | json` and, on logfmt lines,
   `| logfmt user | status="200"`: Loki 0 entries, proxy 1-3.
 

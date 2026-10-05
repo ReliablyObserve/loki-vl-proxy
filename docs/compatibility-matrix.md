@@ -77,11 +77,11 @@ Those cases belong in the proxy contract suite, not the strict Loki semantics pa
 The matrix is intentionally not open-ended. For every upstream we support a moving window that advances as new releases land:
 
 - Loki: current minor family plus one minor family behind, including patch releases in those two families
-- VictoriaLogs: transitional support across `v1.3x.x` through `v1.5x.x`
+- VictoriaLogs: the latest line plus the previous one (`v1.5x.x` and `v1.4x.x`), tested on at most the latest 3 releases of each line
 - Logs Drilldown: current release family plus one family behind, including patch releases in those two families
 - Grafana runtime (for built-in Loki datasource): current runtime family plus one family behind
 
-When a new upstream family becomes current, the oldest family drops out of the matrix. VictoriaLogs is the one exception right now: we intentionally keep the broader `v1.3x.x` through `v1.5x.x` band because backend upgrades lag more often during migrations. This keeps the compatibility budget focused on versions we can realistically support.
+When a new upstream family becomes current, the oldest family drops out of the matrix. For VictoriaLogs the same rule applies per minor line: when `v1.6x` appears, `v1.6x` and `v1.5x` are supported and `v1.4x` drops out. `TestVictoriaLogsSupportPolicy` keeps the manifest, the `-backend-min-version` default and the capability floor in step.
 
 ## Matrix Summary
 
@@ -90,7 +90,7 @@ When a new upstream family becomes current, the oldest family drops out of the m
 | Loki | `3.6.x` and `3.7.x` | Real runtime matrix in GitHub Actions |
 | Grafana Loki datasource runtime | `12.x` and `13.x` | Runtime contracts through Grafana datasource API in GitHub Actions |
 | Logs Drilldown | `1.0.x` and `2.x` (current pinned: `2.5.2`) | Pinned runtime e2e plus source-contract matrix |
-| VictoriaLogs | `v1.30.x` through `v1.52.x` | Real runtime matrix in GitHub Actions |
+| VictoriaLogs | `v1.47.x` to `v1.49.x` and `v1.51.x` to `v1.53.x` (latest 3 releases of `v1.4x` and `v1.5x`) | Real runtime matrix in GitHub Actions |
 
 ## Grafana Version Sensing Model
 

@@ -133,10 +133,12 @@ services:
       # concurrent scans, and the value does not move with the host.
       - "-memory.allowedBytes=3GiB"
       # NOTE: the benchmark-only reader/fs tuning (-defaultParallelReaders,
-      # -fs.maxConcurrency) lives in docker-compose.bench.yml. Those flags do not
-      # exist on VictoriaLogs < v1.34 / < v1.37 respectively, and an unknown flag
-      # makes the process exit at startup, which silently broke the weekly
-      # compatibility matrix for v1.30–v1.36.
+      # -fs.maxConcurrency) lives in docker-compose.bench.yml. Both flags exist
+      # on every supported VictoriaLogs line (v1.37+, supported is v1.4x and
+      # v1.5x), so keeping them out of the base stack is a choice (the base
+      # stack measures defaults), not a version constraint. An unknown flag
+      # makes the process exit at startup, so a flag newer than v1.40 must never
+      # be added here without a version gate in the matrix.
       # Flush in-memory ingest buffers to disk every 1 s (default 5 s). E2E tests
       # additionally call POST /internal/force_flush right after ingest for hard
       # determinism, but a tighter periodic flush keeps any non-flush-aware test
