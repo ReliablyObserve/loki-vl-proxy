@@ -70,6 +70,12 @@ class GateTest(unittest.TestCase):
         _, v = self.verdict(rows)
         self.assertEqual(v["exit"], 1)
 
+    def test_configuration_difference_warns_not_fails(self):
+        cfg = ["resource /api/datasources/uid/*/resources/drilldown-limits: body: content differs (rows 0 vs 0)"]
+        text, v = self.verdict([row(main_pr_config=cfg)])
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("deployment configuration", text)
+
     def test_clean_run_passes(self):
         text, v = self.verdict([row()])
         self.assertEqual(v["exit"], 0)

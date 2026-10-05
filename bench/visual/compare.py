@@ -181,6 +181,14 @@ def pairs(a, b):
 # answer differently depending on their request history, so a patterns difference
 # between base and PR is reported, never gated.
 NONDETERMINISTIC = ("/resources/patterns",)
+# Resources whose answer is the proxy's deployment configuration (its
+# -tenant-default-limits / -tenant-limits flags), not data: a base-vs-PR
+# difference there comes from the stack's flags, so it is reported, never gated.
+CONFIGURATION = ("/resources/drilldown-limits",)
+
+
+def configuration(diff):
+    return any(s in diff for s in CONFIGURATION)
 
 
 def nondeterministic(diff):
@@ -434,7 +442,7 @@ def main():
         else:
             ln, lok, ldiffs2, mdiffs, vs = 0, 0, [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
-                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=[x for x in diffs if not nondeterministic(x)], main_pr_nondet=[x for x in diffs if nondeterministic(x)], loki_diffs=ldiffs2 if loki_ok else [],
+                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=[x for x in diffs if not nondeterministic(x) and not configuration(x)], main_pr_nondet=[x for x in diffs if nondeterministic(x)], main_pr_config=[x for x in diffs if configuration(x)], loki_diffs=ldiffs2 if loki_ok else [],
                          loki_explained=explained, loki_nondet=lnondet,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
@@ -444,9 +452,9 @@ def main():
     for r in rows:
         md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")
     for r in rows:
-        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
+        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r.get("main_pr_config") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
             md += ["", f"### {r['page']} {r['range']}"]
-            md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
+            md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- main vs PR (deployment configuration, not gated): {x}" for x in r.get("main_pr_config", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
             md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)

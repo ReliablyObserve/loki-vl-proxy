@@ -132,6 +132,8 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
         else:
             why = "no Loki data for this range" if kind == "no-loki" else "neither build matches Loki"
             fails.append(f"data differs base vs PR and {why}; label the pull request `{LABEL}` if intended {detail}")
+    if row.get("main_pr_config"):
+        warns.append(f"deployment configuration difference, not gated ({len(row['main_pr_config'])}): {row['main_pr_config'][0][:160]}")
     if row.get("main_pr_nondet"):
         warns.append(f"history-dependent difference, not gated ({len(row['main_pr_nondet'])}): {row['main_pr_nondet'][0][:160]}")
     if f"{row['page']} {row['range']}" in flipped:
