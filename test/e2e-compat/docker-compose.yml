@@ -289,12 +289,13 @@ services:
       - "-backend=http://victorialogs:9428"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -375,12 +376,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -453,12 +455,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -528,7 +531,7 @@ services:
       # "patterns autodetect" datasource serves Logs Drilldown, which must
       # see the series Loki would return.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -645,12 +648,13 @@ services:
       - "-backend=http://victorialogs:9428"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -706,12 +710,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -762,12 +767,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -822,12 +828,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -878,12 +885,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -934,12 +942,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -989,12 +998,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
