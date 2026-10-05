@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"regexp"
 	"sort"
@@ -336,9 +337,9 @@ func (r *lineFormatRun) entryFailure(err error) bool {
 // errorLabels returns base with the error labels of a failed template that
 // no later stage removes.
 func (r *lineFormatRun) errorLabels(base map[string]string, err error) map[string]string {
-	withErr := make(map[string]string, len(base)+2)
-	for k, v := range base {
-		withErr[k] = v
+	withErr := maps.Clone(base)
+	if withErr == nil {
+		withErr = map[string]string{}
 	}
 	if !r.after.dropError {
 		withErr[errorLabel] = lineFormatErrorType
@@ -382,9 +383,9 @@ func (r *lineFormatRun) failedTuple(labels map[string]string, val []interface{},
 		// Categorized: the error labels are parsed labels. The metadata
 		// maps may be shared read-only values.
 		fields, _ := val[2].(map[string]interface{})
-		withErr := make(map[string]interface{}, len(fields)+1)
-		for k, v := range fields {
-			withErr[k] = v
+		withErr := maps.Clone(fields)
+		if withErr == nil {
+			withErr = map[string]interface{}{}
 		}
 		parsed, _ := fields["parsed"].(map[string]string)
 		withErr["parsed"] = r.errorLabels(parsed, err)
