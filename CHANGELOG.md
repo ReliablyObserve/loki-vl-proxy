@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.107.1] - 2026-10-05
+
+### Security
+
+- Update the documentation site's `dompurify` 3.4.15 → 3.4.16 and
+  `serialize-javascript` 7.1.1 → 7.1.2 (Dependabot `website-security` group,
+  #653). Only `website/package-lock.json` changed; the proxy binary, image and
+  chart behaviour are the same as 1.107.0.
+
 ## [1.107.0] - 2026-10-05
 
 ### Breaking Changes
