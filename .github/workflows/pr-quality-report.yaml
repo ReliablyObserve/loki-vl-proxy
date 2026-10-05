@@ -58,13 +58,6 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Restore cached base quality snapshot
-        id: base-quality-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
-        with:
-          path: .cache/pr-quality/base-quality.json
-          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}-perf-${{ steps.perf-scope.outputs.run_perf }}-schema-v3
-
       - name: Collect base and PR quality snapshots
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -74,21 +67,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p .cache/pr-quality
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
 
+          # Base and PR are measured in this job, on this runner, every time:
+          # throughput and CPU timings are only comparable on the same machine.
+          # (A base snapshot cached from another runner made unchanged code
+          # look 40% slower or faster depending on which machine measured it.)
           bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
-
-          if [ -f .cache/pr-quality/base-quality.json ]; then
-            cp .cache/pr-quality/base-quality.json /tmp/pr-base-quality.json
-          else
-            git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
-            (
-              cd /tmp/loki-vl-proxy-base
-              bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
-            )
-            cp /tmp/pr-base-quality.json .cache/pr-quality/base-quality.json
-          fi
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+          (
+            cd /tmp/loki-vl-proxy-base
+            bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
+          )
 
           bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
             /tmp/pr-base-quality.json \

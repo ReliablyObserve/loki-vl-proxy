@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The e2e compose stack keeps 72 hours of data in both backends: Loki gets a
+  compactor with `retention_period: 72h` (and `reject_old_samples_max_age:
+  72h`), and VictoriaLogs runs with `-retentionPeriod=3d` (was 7d), so both
+  hold the same history for proxy-versus-Loki comparisons. Without retention,
+  Loki's filesystem store kept one file per chunk; on a stack left running with
+  the UI log generator (about 1.3 million chunk files a day) that used up the
+  inodes of the Docker VM's disk in about four days and stopped the Docker
+  daemon. The benchmark compose files keep their longer windows.
+
 ## [1.107.1] - 2026-10-05
 
 ### Security

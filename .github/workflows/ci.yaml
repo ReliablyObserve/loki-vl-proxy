@@ -762,7 +762,10 @@ jobs:
         id: compat
         run: |
           set -euo pipefail
-          OUTPUT="$(go test -v -tags=e2e -timeout=300s -count=1 -run '${{ matrix.group.pattern }}' ./test/e2e-compat/ 2>&1)" || status=$?
+          # 10 min: parity tests wait up to 90 s each for a fresh Loki to answer
+          # range metric queries for their new streams (Loki's fresh-stack blank
+          # window); two such waits plus the rest of `core` overran 5 min.
+          OUTPUT="$(go test -v -tags=e2e -timeout=600s -count=1 -run '${{ matrix.group.pattern }}' ./test/e2e-compat/ 2>&1)" || status=$?
           status="${status:-0}"
           echo "$OUTPUT"
           # Extract all compatibility scores and compute overall

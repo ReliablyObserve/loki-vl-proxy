@@ -40,7 +40,21 @@ services:
       - GOMEMLIMIT=10GiB
       - GOGC=80
     restart: unless-stopped
-    command: -config.file=/etc/loki/local-config.yaml
+    # Retention for this long-running stack only (the benchmark compose keeps
+    # loki-bench-config.yaml's longer windows): 72h, the same window as
+    # VictoriaLogs' -retentionPeriod. Loki's filesystem store keeps one file
+    # per chunk; without retention the UI log generator's ~1.3M chunk files a
+    # day used up the inodes of the Docker VM disk in about four days and
+    # stopped the Docker daemon.
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+      - -compactor.retention-enabled=true
+      - -compactor.working-directory=/tmp/loki/compactor
+      - -compactor.delete-request-store=filesystem
+      - -compactor.compaction-interval=10m
+      - -compactor.retention-delete-delay=1h
+      - -store.retention=72h
+      - -validation.reject-old-samples.max-age=72h
     volumes:
       - ./loki-local-config.yaml:/etc/loki/local-config.yaml:ro
       # Persist chunks across container recreations. Without this the
@@ -75,7 +89,7 @@ services:
     command:
       - "-storageDataPath=/vlogs"
       # Keep enough history for long-range Drilldown regressions (>24h).
-      - "-retentionPeriod=7d"
+      - "-retentionPeriod=3d"  # same window as Loki's retention_period (loki-local-config.yaml)
       - "-httpListenAddr=:9428"
       # Concurrency is what bounds VictoriaLogs' peak memory here: every
       # in-flight scan holds its own working set on top of the caches, and
@@ -275,12 +289,13 @@ services:
       - "-backend=http://victorialogs:9428"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -312,7 +327,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
@@ -361,12 +376,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -394,7 +410,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -439,12 +455,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -472,7 +489,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -514,7 +531,7 @@ services:
       # "patterns autodetect" datasource serves Logs Drilldown, which must
       # see the series Loki would return.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -536,7 +553,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -590,7 +607,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -631,12 +648,13 @@ services:
       - "-backend=http://victorialogs:9428"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -655,7 +673,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -692,12 +710,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -711,7 +730,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -748,12 +767,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -767,7 +787,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -808,12 +828,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -827,7 +848,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -864,12 +885,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -883,7 +905,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -920,12 +942,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -939,7 +962,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"
@@ -975,12 +998,13 @@ services:
       - "-labels-cache-warm=false"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
-      # query_timeout 5m, and Loki's default max_query_length 721h): a
+      # query_timeout 5m, retention_period 3d (the Loki service's
+      # -store.retention) and Loki's default max_query_length 721h): a
       # query over a limit fails on both sides at the same point, parity
       # tests compare answers rather than two different limits, and
       # /loki/api/v1/drilldown-limits publishes what Loki publishes.
       - "-max-stats-query-series=1000000"
-      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m"}'
+      - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
@@ -994,7 +1018,7 @@ services:
       - "-max-concurrent=0"
       # Loki's own default window for /labels, /label/{name}/values and
       # /series without start/end is the last hour (pkg/loghttp/params.go
-      # defaultSince = 1h); 0 made the proxy scan the whole 7-day retention for
+      # defaultSince = 1h); 0 made the proxy scan the whole retention for
       # such requests, and every one of them is a 9 s, 0.8 GiB scan here.
       - "-metadata-default-lookback=1h"
       - "-server.enable-pprof"

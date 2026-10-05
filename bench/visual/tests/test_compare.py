@@ -212,6 +212,12 @@ class NondeterministicTest(unittest.TestCase):
         self.assertFalse(compare.nondeterministic("query ('A', 'sum(...)'): value differs"))
         self.assertFalse(compare.nondeterministic("resource /api/datasources/uid/*/resources/labels: body differs"))
 
+class ConfigurationTest(unittest.TestCase):
+    def test_only_drilldown_limits_is_configuration(self):
+        import compare
+        self.assertTrue(compare.configuration("resource /api/datasources/uid/*/resources/drilldown-limits: body differs"))
+        self.assertFalse(compare.configuration("resource /api/datasources/uid/*/resources/detected_fields?x: body differs"))
+
 
 if __name__ == "__main__":
     unittest.main()
