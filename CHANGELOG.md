@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.107.0] - 2026-10-05
+
 ### Breaking Changes
 
 - **Live tail frames follow Loki's tail encoding (visible change in every
