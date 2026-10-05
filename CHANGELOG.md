@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.108.0] - 2026-10-05
+
 ### Added
 
 - **Differential parity run against Loki (`bench/parity`) and a ranked list of
