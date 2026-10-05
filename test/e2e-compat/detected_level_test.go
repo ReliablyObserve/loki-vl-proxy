@@ -259,9 +259,13 @@ func dlJSON(v interface{}) []byte {
 	return b
 }
 
+// dlHTTP bounds every push: a stalled backend fails the test instead of
+// holding it until the group's timeout.
+var dlHTTP = &http.Client{Timeout: 15 * time.Second}
+
 func dlPost(t *testing.T, target, contentType string, body []byte) {
 	t.Helper()
-	resp, err := http.Post(target, contentType, bytes.NewReader(body))
+	resp, err := dlHTTP.Post(target, contentType, bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("push %s: %v", target, err)
 	}
@@ -562,8 +566,18 @@ func (s *dlTail) redial(t *testing.T) {
 	s.open(t)
 }
 
+// dlTailSubscribeWait and dlTailFramesWait bound the waits of one tail
+// subtest, so a tail that never delivers fails the test in about a minute
+// instead of using up the group's timeout.
+const (
+	dlTailSubscribeWait = 30 * time.Second
+	dlTailFramesWait    = 30 * time.Second
+)
+
 // dlTailWaitSubscribed pushes sentinel lines until every tail delivers one,
-// so the fixture is only pushed once all subscriptions are live.
+// so the fixture is only pushed once all subscriptions are live. Each attempt
+// waits up to two seconds for all pending tails together; every tail gets its
+// own timer, so one that never delivers cannot block the attempt.
 func dlTailWaitSubscribed(t *testing.T, app string, tails ...*dlTail) {
 	t.Helper()
 	readers := make([]<-chan []byte, len(tails))
@@ -574,10 +588,10 @@ func dlTailWaitSubscribed(t *testing.T, app string, tails ...*dlTail) {
 	for i := range readers {
 		pending[i] = true
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(dlTailSubscribeWait)
 	for attempt := 0; len(pending) > 0; attempt++ {
 		if time.Now().After(deadline) {
-			t.Fatalf("tail subscriptions not live after 30s (%d pending)", len(pending))
+			t.Fatalf("tail subscriptions not live after %s (%d pending)", dlTailSubscribeWait, len(pending))
 		}
 		line := fmt.Sprintf("tail sentinel %s %d", app, attempt)
 		payload := dlJSON(map[string]interface{}{"streams": []interface{}{map[string]interface{}{
@@ -586,11 +600,12 @@ func dlTailWaitSubscribed(t *testing.T, app string, tails ...*dlTail) {
 		}}})
 		dlPost(t, vlURL+"/insert/loki/api/v1/push?disable_message_parsing=1", "application/json", payload)
 		dlPost(t, lokiURL+"/loki/api/v1/push", "application/json", payload)
-		wait := time.After(2 * time.Second)
+		attemptEnd := time.Now().Add(2 * time.Second)
 		for i := range readers {
 			if !pending[i] {
 				continue
 			}
+			wait := time.NewTimer(time.Until(attemptEnd))
 		drain:
 			for {
 				select {
@@ -606,20 +621,22 @@ func dlTailWaitSubscribed(t *testing.T, app string, tails ...*dlTail) {
 						delete(pending, i)
 						break drain
 					}
-				case <-wait:
+				case <-wait.C:
 					break drain
 				}
 			}
+			wait.Stop()
 		}
 	}
 }
 
-// dlTailFrames reads tail frames until every fixture entry is seen; sentinel
-// entries are skipped.
-func dlTailFrames(t *testing.T, frames <-chan []byte, want int) map[string]dlEntry {
+// dlTailFrames reads tail frames until every fixture entry is seen or the
+// deadline passes; sentinel entries are skipped.
+func dlTailFrames(t *testing.T, frames <-chan []byte, want int, deadline time.Time) map[string]dlEntry {
 	t.Helper()
 	out := map[string]dlEntry{}
-	timeout := time.After(45 * time.Second)
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
 	for len(out) < want {
 		var msg []byte
 		select {
@@ -628,8 +645,8 @@ func dlTailFrames(t *testing.T, frames <-chan []byte, want int) map[string]dlEnt
 				t.Fatalf("tail connection closed after %d/%d entries", len(out), want)
 			}
 			msg = m
-		case <-timeout:
-			t.Fatalf("tail delivered %d/%d entries in 45s", len(out), want)
+		case <-timer.C:
+			t.Fatalf("tail delivered %d/%d entries in %s", len(out), want, dlTailFramesWait)
 		}
 		var frame struct {
 			Streams []struct {
@@ -704,8 +721,11 @@ func TestCompat_DetectedLevelTail(t *testing.T) {
 				time.Sleep(150 * time.Millisecond)
 			}
 
-			lokiEntries := dlTailFrames(t, lokiFrames, len(cases))
-			proxyEntries := dlTailFrames(t, proxyFrames, len(cases))
+			// Both tails were filled while the fixture was pushed; one deadline
+			// bounds reading them.
+			deadline := time.Now().Add(dlTailFramesWait)
+			lokiEntries := dlTailFrames(t, lokiFrames, len(cases), deadline)
+			proxyEntries := dlTailFrames(t, proxyFrames, len(cases), deadline)
 			for stamp, le := range lokiEntries {
 				c := byTS[stamp]
 				pe, ok := proxyEntries[stamp]

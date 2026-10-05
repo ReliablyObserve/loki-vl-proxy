@@ -346,11 +346,10 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if strings.Contains(originalQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if tmpl := extractLineFormatTemplate(originalQuery); tmpl != "" {
-		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			return true
-		}
+	streams, err = applyQueryLineFormat(r.Context(), streams, originalQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return true
 	}
 
 	w.Header().Set("Content-Type", "application/json")

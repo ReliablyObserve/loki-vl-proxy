@@ -1,0 +1,27 @@
+id: profiles/tail-line-format-parse-error-status
+title: Live tail answers an unparseable line_format with 400 before the upgrade (documented deviation)
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  Loki upgrades a tail websocket before it builds the pipeline: for
+  `| line_format "{{"` the upgrade succeeds, the ingester's tailer fails to
+  parse the template and the client receives no entries and no error. The
+  proxy parses the template first and answers HTTP 400 with Loki's own parse
+  error text (parse error : stage '| line_format "{{"' : invalid line
+  template: template: line:1: unclosed action), the answer Loki gives the
+  same query on query_range. A client sees why its tail is empty instead of
+  an idle socket; owner-accepted deviation.
+request:
+  method: GET
+  path: /loki/api/v1/tail
+  params:
+    query: "{app=\"api\"} | line_format \"{{\""
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: status
+  fields: [status]
+  expect: |
+    Proxy: HTTP 400 with Loki's parse error text. Loki: websocket upgraded,
+    no frames.

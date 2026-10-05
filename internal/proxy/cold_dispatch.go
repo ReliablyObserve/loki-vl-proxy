@@ -454,11 +454,10 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 	if strings.Contains(logqlQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
-		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	streams, err = applyQueryLineFormat(r.Context(), streams, logqlQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	p.writeJSON(w, map[string]interface{}{

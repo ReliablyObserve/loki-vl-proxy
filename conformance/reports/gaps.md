@@ -15,7 +15,6 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 6 | `/loki/api/v1/format_query` | explore, api | proxy_side | 5 | 1 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/detected_labels` | drilldown, api | proxy_side | 16 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 4 | `/prometheus/api/v1/alerts` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/loki/api/v1/tail` | explore, api | native_vl | 14 | 3 | no test wired to the registry |
 | 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/rules/{namespace}` | api | not_implemented | 2 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 22 | 3 | no test wired to the registry |

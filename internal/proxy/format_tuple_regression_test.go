@@ -50,7 +50,7 @@ func TestHardening_TemplateCategorizedFieldsPreserved(t *testing.T) {
 	metadata := map[string]interface{}{"parsed": map[string]string{"method": "GET"}, "structuredMetadata": map[string]string{"trace_id": "trace-visible"}}
 	tuple := []interface{}{"1000", "original", metadata}
 	streams := []map[string]interface{}{{"stream": map[string]string{"app": "web"}, "values": []interface{}{tuple}}}
-	if err := applyLineFormatTemplate(streams, `{{.app}} {{.method}} {{.trace_id}}`); err != nil {
+	if _, err := applyLineFormatTemplate(streams, `{{.app}} {{.method}} {{.trace_id}}`); err != nil {
 		t.Fatal(err)
 	}
 	if tuple[1] != "web GET trace-visible" {

@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"regexp"
 	"sort"
@@ -18,6 +20,8 @@ import (
 	"unicode"
 
 	fj "github.com/valyala/fastjson"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 var (
@@ -130,12 +134,98 @@ func parseIPFilter(query string) (label, cidr string, ok bool) {
 // applyLineFormatTemplate applies a Go text/template to log line values.
 // Implements Loki's `| line_format "{{.status}} {{.method | ToUpper}}"` with full template support.
 // TODO: Remove when VL adds equivalent template formatting.
-func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) error {
-	return applyLineFormatTemplateWithContext(context.Background(), streams, tmplStr)
+func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) ([]map[string]interface{}, error) {
+	return applyLineFormatTemplateWithContext(context.Background(), streams, tmplStr, lineFormatAfter{})
 }
 
-func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[string]interface{}, tmplStr string) error {
+// applyQueryLineFormat renders the line_format template of a log query into
+// the entries of streams (applyLineFormatTemplateWithContext), with what the
+// query's later stages do with the error labels of a failed template. A
+// query without line_format returns streams as they are.
+func applyQueryLineFormat(ctx context.Context, streams []map[string]interface{}, query string) ([]map[string]interface{}, error) {
+	tmpl := extractLineFormatTemplate(query)
+	if tmpl == "" {
+		return streams, nil
+	}
+	return applyLineFormatTemplateWithContext(ctx, streams, tmpl, lineFormatAfterStages(query))
+}
 
+// Loki's line_format on an entry its template fails on
+// (pkg/logql/log/fmt.go LineFormatter.Process): the line stays as it was
+// and the entry gets __error__="TemplateFormatErr" and __error_details__
+// with the template error, as parsed labels.
+const (
+	lineFormatErrorType = "TemplateFormatErr"
+	errorLabel          = "__error__"
+	errorDetailsLabel   = "__error_details__"
+)
+
+// lineFormatAfter is what the stages after a query's line_format do with
+// the error labels a failed template adds.
+type lineFormatAfter struct {
+	// dropFailed: a later | __error__="" drops the entry.
+	dropFailed bool
+	// dropError, dropDetails: a later | drop or | keep removes the label.
+	dropError, dropDetails bool
+}
+
+// lineFormatAfterStages reads the stages after the line_format of query, in
+// order: | __error__="" drops an entry that still carries __error__, and
+// | drop / | keep remove the error labels.
+func lineFormatAfterStages(query string) lineFormatAfter {
+	var after lineFormatAfter
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		return after
+	}
+	seen := false
+	for _, stage := range lq.Pipeline {
+		switch st := stage.(type) {
+		case *logqlpkg.LineFormatStage:
+			seen = true
+		case *logqlpkg.LabelFilterStage:
+			if seen && !after.dropError && strings.Join(strings.Fields(st.Raw), "") == errorLabel+`=""` {
+				after.dropFailed = true
+			}
+		case *logqlpkg.DropStage:
+			if !seen {
+				continue
+			}
+			for _, name := range st.Labels {
+				after.dropError = after.dropError || name == errorLabel
+				after.dropDetails = after.dropDetails || name == errorDetailsLabel
+			}
+		case *logqlpkg.KeepStage:
+			if !seen {
+				continue
+			}
+			kept := map[string]bool{}
+			for _, name := range st.Labels {
+				kept[name] = true
+			}
+			for _, m := range st.Matchers {
+				kept[m.Name] = true
+			}
+			after.dropError = after.dropError || !kept[errorLabel]
+			after.dropDetails = after.dropDetails || !kept[errorDetailsLabel]
+		}
+	}
+	return after
+}
+
+// lineFormatParseError is Loki's answer to a template its parser rejects.
+func lineFormatParseError(tmplStr string, err error) error {
+	return fmt.Errorf("parse error : stage '| line_format %s' : invalid line template: %w", strconv.Quote(tmplStr), err)
+}
+
+// applyLineFormatTemplateWithContext renders tmplStr into the line of every
+// entry of streams and returns the streams. An entry the template fails on
+// keeps its line and gets Loki's error labels: in the stream labels of an
+// uncategorized entry (it moves to a stream of its own) and in the parsed
+// labels of a categorized one; after says what later stages do with them.
+// A budget the proxy enforces (templateLimitError) or a canceled context
+// fails the call.
+func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[string]interface{}, tmplStr string, after lineFormatAfter) ([]map[string]interface{}, error) {
 	// Register Loki-compatible template functions
 	funcMap := template.FuncMap{
 		"printf": boundedTemplatePrintf,
@@ -170,88 +260,218 @@ func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[strin
 	// A LogQL `| line_format "..."` template is client input by definition, and
 	// Loki executes it the same way (text/template, not HTML). It runs sandboxed:
 	// only the functions in funcMap, missingkey=zero, and every execution bounded
-	// by instrumentTemplateBudget below.
-	tmpl, err := template.New("line_format").Option("missingkey=zero").Funcs(funcMap).Parse(tmplStr) // #nosec G708 -- LogQL line_format templates are client input by design; sandboxed and budgeted
+	// by instrumentTemplateBudget below. The template is named "line", as in
+	// Loki, so error details read the same.
+	tmpl, err := template.New("line").Option("missingkey=zero").Funcs(funcMap).Parse(tmplStr) // #nosec G708 -- LogQL line_format templates are client input by design; sandboxed and budgeted
 	if err != nil {
-		return fmt.Errorf("invalid line_format: %w", err)
+		return nil, lineFormatParseError(tmplStr, err)
 	}
 
 	if err := instrumentTemplateBudget(tmpl, ctx); err != nil {
-		return err
+		return nil, err
 	}
-	total := 0
+	run := &lineFormatRun{ctx: ctx, tmpl: tmpl, after: after, failedStreams: map[string]map[string]interface{}{}}
+	out := streams[:0:0]
 	for _, stream := range streams {
-		labels, _ := stream["stream"].(map[string]string)
-		if labels == nil {
-			labels = map[string]string{}
+		if err := run.applyStream(stream); err != nil {
+			return nil, err
 		}
+		if streamValueCount(stream) > 0 {
+			out = append(out, stream)
+		}
+	}
+	return append(out, run.failed...), nil
+}
 
-		formatLine := func(line string, metadata any) (string, error) {
-			data := make(map[string]string, safeAddCap(len(labels), 1))
-			for k, v := range labels {
-				data[k] = v
-			}
-			// Categorized tuples carry parsed fields outside the stream labels.
-			if fields, ok := metadata.(map[string]interface{}); ok {
-				for _, category := range []string{"structuredMetadata", "parsed"} {
-					if values, ok := fields[category].(map[string]string); ok {
-						for k, v := range values {
-							data[k] = v
-						}
-					}
-				}
-			}
-			inputBytes := len(line)
-			for k, v := range data {
-				inputBytes += len(k) + len(v)
-			}
-			if inputBytes > 1<<20 {
-				return "", fmt.Errorf("line_format input limit exceeded")
-			}
-			data["_line"] = line
-			buf := &templateOutput{remaining: min(maxFormattedLineBytes, maxFormattedResponseBytes-total)}
-			if err := tmpl.Execute(buf, data); err != nil {
-				return "", fmt.Errorf("line_format: %w", err)
-			}
-			total += buf.Len()
-			return buf.String(), nil
-		}
-		switch values := stream["values"].(type) {
-		case [][]string:
-			for _, val := range values {
-				if len(val) < 2 {
-					continue
-				}
-				line, err := formatLine(val[1], nil)
-				if err != nil {
-					return err
-				}
-				val[1] = line
-			}
-		case []interface{}:
-			for _, value := range values {
-				val, ok := value.([]interface{})
-				if !ok || len(val) < 2 {
-					return fmt.Errorf("invalid line_format tuple")
-				}
-				original, ok := val[1].(string)
-				if !ok {
-					return fmt.Errorf("invalid line_format line")
-				}
-				var metadata any
-				if len(val) > 2 {
-					metadata = val[2]
-				}
-				line, err := formatLine(original, metadata)
-				if err != nil {
-					return err
-				}
-				val[1] = line
-			}
-		}
+// lineFormatRun renders one template into the entries of a response.
+type lineFormatRun struct {
+	ctx   context.Context
+	tmpl  *template.Template
+	after lineFormatAfter
+	// total is the formatted bytes so far (maxFormattedResponseBytes).
+	total int
+	// failed are the streams uncategorized failed entries moved to, by key.
+	failed        []map[string]interface{}
+	failedStreams map[string]map[string]interface{}
+}
 
+// format renders the template for one entry of a stream with labels.
+func (r *lineFormatRun) format(labels map[string]string, line string, metadata any) (string, error) {
+	data := make(map[string]string, safeAddCap(len(labels), 1))
+	for k, v := range labels {
+		data[k] = v
+	}
+	// Categorized tuples carry parsed fields outside the stream labels.
+	if fields, ok := metadata.(map[string]interface{}); ok {
+		for _, category := range []string{"structuredMetadata", "parsed"} {
+			if values, ok := fields[category].(map[string]string); ok {
+				for k, v := range values {
+					data[k] = v
+				}
+			}
+		}
+	}
+	inputBytes := len(line)
+	for k, v := range data {
+		inputBytes += len(k) + len(v)
+	}
+	if inputBytes > 1<<20 {
+		return "", templateLimitError("line_format input limit exceeded")
+	}
+	data["_line"] = line
+	buf := &templateOutput{remaining: min(maxFormattedLineBytes, maxFormattedResponseBytes-r.total)}
+	if err := r.tmpl.Execute(buf, data); err != nil {
+		return "", err
+	}
+	r.total += buf.Len()
+	return buf.String(), nil
+}
+
+// entryFailure reports whether err is a template error Loki reports on the
+// entry, rather than a failure of the whole request.
+func (r *lineFormatRun) entryFailure(err error) bool {
+	var limit templateLimitError
+	return !errors.As(err, &limit) && r.ctx.Err() == nil
+}
+
+// errorLabels returns base with the error labels of a failed template that
+// no later stage removes.
+func (r *lineFormatRun) errorLabels(base map[string]string, err error) map[string]string {
+	withErr := maps.Clone(base)
+	if withErr == nil {
+		withErr = map[string]string{}
+	}
+	if !r.after.dropError {
+		withErr[errorLabel] = lineFormatErrorType
+	}
+	if !r.after.dropDetails {
+		withErr[errorDetailsLabel] = err.Error()
+	}
+	return withErr
+}
+
+// failedStream returns the stream an uncategorized failed entry of a stream
+// with labels moves to: its labels with the error labels.
+func (r *lineFormatRun) failedStream(labels map[string]string, err error, tuples bool) map[string]interface{} {
+	withErr := r.errorLabels(labels, err)
+	key := canonicalLabelsKey(withErr)
+	fs, ok := r.failedStreams[key]
+	if !ok {
+		fs = map[string]interface{}{"stream": withErr}
+		if tuples {
+			fs["values"] = [][]string{}
+		} else {
+			fs["values"] = []interface{}{}
+		}
+		r.failedStreams[key] = fs
+		r.failed = append(r.failed, fs)
+	}
+	return fs
+}
+
+// failedTuple returns the tuple an entry the template failed on keeps in
+// its stream: itself when the labels do not change, a copy with the error as
+// parsed labels when it is categorized, and nil when a later stage drops it
+// or it moved to a failed stream.
+func (r *lineFormatRun) failedTuple(labels map[string]string, val []interface{}, err error) []interface{} {
+	switch {
+	case r.after.dropFailed:
+		return nil
+	case r.after.dropError && r.after.dropDetails:
+		return val
+	case len(val) > 2:
+		// Categorized: the error labels are parsed labels. The metadata
+		// maps may be shared read-only values.
+		fields, _ := val[2].(map[string]interface{})
+		withErr := maps.Clone(fields)
+		if withErr == nil {
+			withErr = map[string]interface{}{}
+		}
+		parsed, _ := fields["parsed"].(map[string]string)
+		withErr["parsed"] = r.errorLabels(parsed, err)
+		return []interface{}{val[0], val[1], withErr}
+	}
+	fs := r.failedStream(labels, err, false)
+	fs["values"] = append(fs["values"].([]interface{}), val)
+	return nil
+}
+
+// applyStream formats the entries of one stream in place; failed entries
+// stay, move to a failed stream, or are dropped (failedTuple).
+func (r *lineFormatRun) applyStream(stream map[string]interface{}) error {
+	labels, _ := stream["stream"].(map[string]string)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	switch values := stream["values"].(type) {
+	case [][]string:
+		kept := values[:0]
+		for _, val := range values {
+			if len(val) < 2 {
+				kept = append(kept, val)
+				continue
+			}
+			line, err := r.format(labels, val[1], nil)
+			if err == nil {
+				val[1] = line
+				kept = append(kept, val)
+				continue
+			}
+			if !r.entryFailure(err) {
+				return err
+			}
+			switch {
+			case r.after.dropFailed:
+			case r.after.dropError && r.after.dropDetails:
+				kept = append(kept, val)
+			default:
+				fs := r.failedStream(labels, err, true)
+				fs["values"] = append(fs["values"].([][]string), val)
+			}
+		}
+		stream["values"] = kept
+	case []interface{}:
+		kept := values[:0]
+		for _, value := range values {
+			val, ok := value.([]interface{})
+			if !ok || len(val) < 2 {
+				return fmt.Errorf("invalid line_format tuple")
+			}
+			original, ok := val[1].(string)
+			if !ok {
+				return fmt.Errorf("invalid line_format line")
+			}
+			var metadata any
+			if len(val) > 2 {
+				metadata = val[2]
+			}
+			line, err := r.format(labels, original, metadata)
+			if err == nil {
+				val[1] = line
+				kept = append(kept, val)
+				continue
+			}
+			if !r.entryFailure(err) {
+				return err
+			}
+			if tuple := r.failedTuple(labels, val, err); tuple != nil {
+				kept = append(kept, tuple)
+			}
+		}
+		stream["values"] = kept
 	}
 	return nil
+}
+
+// streamValueCount is the number of entries of a converted stream.
+func streamValueCount(stream map[string]interface{}) int {
+	switch values := stream["values"].(type) {
+	case [][]string:
+		return len(values)
+	case []interface{}:
+		return len(values)
+	}
+	return 0
 }
 
 // extractLineFormatTemplate extracts the template string from a line_format query.
