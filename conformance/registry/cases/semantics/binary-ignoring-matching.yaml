@@ -1,0 +1,37 @@
+id: semantics/binary-ignoring-matching
+title: `+ ignoring(label)` between two sums joins the wrong series (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (cluster) (sum by (cluster) (rate({namespace="prod"}[5m])) +
+  ignoring(machine) sum by (cluster, machine) (rate({namespace="prod"}[5m])))`
+  is one series per cluster on Loki (2) with the sum of both sides; the proxy
+  returns 1 series with 150x Loki's value.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (cluster) (sum by (cluster) (rate({namespace="prod"}[5m])) + ignoring(machine) sum by (cluster, machine) (rate({namespace="prod"}[5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series and values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/vector_matching.go (ignoring with a label absent on both sides)'
+  loki: 'pkg/logql/evaluator.go binary vector matching (ignoring)'
+  proxy: 'wrong join'
+  planned_test: 'TestCompat_BinaryIgnoringAbsentLabel (test/e2e-compat, group semantics)'
+  clusters:
+    - 354c7d83
+    - 8fef8a78

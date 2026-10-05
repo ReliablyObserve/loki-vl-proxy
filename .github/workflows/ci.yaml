@@ -668,6 +668,9 @@ jobs:
       - name: Visual-proof harness unit tests (plan, gate and comment, publish)
         run: python3 -m unittest discover -s bench/visual/tests
 
+      - name: Differential parity harness unit tests (corpus, diff, clusters)
+        run: python3 -m unittest discover -s bench/parity/tests
+
       - name: Registry report for this change
         if: github.event_name == 'pull_request'
         run: |

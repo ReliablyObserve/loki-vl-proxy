@@ -1,0 +1,31 @@
+id: profiles/metadata-default-lookback
+title: Label endpoints without start/end default to a different lookback than Loki's 1h (documented)
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+  - loki_api_v1_series
+consumer: api
+why: |
+  Loki bounds /labels, /label/{name}/values and /series without start/end to
+  the last hour (pkg/loghttp/params.go defaultSince). The proxy's -metadata-
+  default-lookback defaults to 12h (KNOWN_ISSUES); the e2e stack sets 1h.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Labels of the last hour.
+gap:
+  status: documented
+  impact: api-only
+  effort: S
+  area: 'internal/config flag default -metadata-default-lookback'
+  loki: 'pkg/loghttp/params.go defaultSince = 1h'
+  proxy: '12h default'
+  planned_test: 'TestCompat_MetadataDefaultLookback (test/e2e-compat, group core)'
+  clusters: []

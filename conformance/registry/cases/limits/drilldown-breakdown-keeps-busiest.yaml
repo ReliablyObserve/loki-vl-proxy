@@ -1,0 +1,36 @@
+id: limits/drilldown-breakdown-keeps-busiest
+title: Over max_query_series a Drilldown breakdown keeps the busiest series; Loki keeps the first it meets (documented)
+proves:
+  - series-limits-and-partial-results
+consumer: drilldown
+why: |
+  Above max_query_series Loki returns the first series its evaluation meets
+  with a partial-result warning; the proxy keeps the busiest series ranked by
+  VictoriaLogs (KNOWN_ISSUES). Every kept series has Loki's values; the kept
+  set can differ for equal volumes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    Same kept set (unspecified in Loki).
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy series limit ranking'
+  loki: 'pkg/logql engine series limit'
+  proxy: 'busiest series kept'
+  planned_test: 'cases/limits/drilldown-partial-with-warning (exists)'
+  clusters:
+    - b88d1f5c

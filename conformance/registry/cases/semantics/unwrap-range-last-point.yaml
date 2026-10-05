@@ -1,0 +1,42 @@
+id: semantics/unwrap-range-last-point
+title: A grouped unwrap range metric misses the sample at `end` (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap
+  status | __error__="" [5m]))` over an hour at 60s has 61 samples on Loki
+  (start..end inclusive) and 60 on the proxy, which drops the sample at end;
+  the same for sum_over_time and avg_over_time by app over `| json | unwrap
+  duration_ms`.
+
+  In the differential run this shows only as a secondary difference of
+  requests whose primary difference is the parser series identity, so those
+  clusters are owned by parsed-identity/dynamic-key-parsers; this case claims
+  none and was measured by hand.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap status | __error__="" [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [timestamps]
+  expect: |
+    61 samples including end.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy range-metric unwrap path (end bucket)'
+  loki: 'pkg/logql/range_vector.go step iteration start..end inclusive'
+  proxy: 'last step missing'
+  planned_test: 'TestCompat_UnwrapRangeEndSample (test/e2e-compat, group semantics)'
+  clusters: []

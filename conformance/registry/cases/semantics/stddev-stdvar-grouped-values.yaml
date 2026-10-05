@@ -1,0 +1,42 @@
+id: semantics/stddev-stdvar-grouped-values
+title: stddev and stdvar by a label compute different values (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `stddev by (app) (count_over_time({env="production"}[5m]))` folds the per-
+  stream counts of each app: Loki 28.0 for auth-service, the proxy 1829 (and
+  stdvar alike), on range and instant queries. The ungrouped form matches.
+  Some instant forms answer without a resultType (`stdvar without (app)
+  (...)`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'stddev by (app) (count_over_time({env="production"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator stddev/stdvar outer aggregation (by-group fold)'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator stddev/stdvar'
+  proxy: 'different values'
+  planned_test: 'TestCompat_StddevStdvarBy (test/e2e-compat, group semantics)'
+  clusters:
+    - 44bf1425
+    - 4b67fb14
+    - 65210f05
+    - 6864165c
+    - ce65447e

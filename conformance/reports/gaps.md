@@ -63,20 +63,20 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 7 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 6 | 2 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
-| data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 6 | 0 | gap |
-| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 9 | 3 | partial |
-| semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 10 | 5 | partial |
-| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 4 | 2 | partial |
+| data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 9 | 0 | gap |
+| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 3 | partial |
+| semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 13 | 5 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 2 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 7 | proven |
-| identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 4 | 4 | partial |
-| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 14 | 3 | partial |
+| identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
+| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 18 | 3 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 9 | partial |
-| identity | `service-name-derivation` — service_name follows Loki's discovery order | 8 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 8 | 4 | partial |
-| severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 6 | 3 | partial |
+| identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 4 | partial |
+| severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 7 | 3 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 3 | partial |
 
 ## LogQL surface (v3.7.7)
 

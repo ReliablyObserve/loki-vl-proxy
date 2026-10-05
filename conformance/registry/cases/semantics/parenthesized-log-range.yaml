@@ -1,0 +1,79 @@
+id: semantics/parenthesized-log-range
+title: A parenthesized log expression under a range function fails translation (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  LogQL allows `rate(({namespace="prod"} |= "error")[5m])` and
+  `count_over_time(({...} |~ "x")[1m])`; Loki answers them like the
+  unparenthesized form. The proxy sends VictoriaLogs a query it cannot parse
+  (`cannot parse query arg ... missing whitespace or ':'`, HTTP 400) on range
+  queries and answers instant ones with `log queries are not supported as an
+  instant query type`.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time(({namespace="prod"} |~ ".+bar")[5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with Loki's series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/logql parser / internal/translator (LogRangeExpr with parenthesized left side)'
+  loki: 'pkg/logql/syntax/syntax.y logRangeExpr: OPEN_PARENTHESIS logExpr CLOSE_PARENTHESIS RANGE'
+  proxy: '400 (VictoriaLogs parse error) / instant 400'
+  planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group semantics)'
+  clusters:
+    - 0e5f1b8d
+    - 154f3c5e
+    - 25b1f798
+    - 26eda2af
+    - 2731385f
+    - 27527d05
+    - 2ec911a8
+    - 2fe5e780
+    - 34fd43a7
+    - 35c82cd3
+    - 361b1ce4
+    - 3f290148
+    - 40bbb685
+    - 4fc1fe7c
+    - 585e4266
+    - 5d3d5b11
+    - 5ea3232b
+    - 6813c1b2
+    - 68fcec74
+    - 74815f5f
+    - 75e5bc38
+    - 87216ff6
+    - 98078324
+    - 9ef01b8a
+    - a97fb38d
+    - b31a48a7
+    - b5e0e1c5
+    - b871c258
+    - bc81e845
+    - c04abdc5
+    - c37f606b
+    - c77525e2
+    - d0dfe746
+    - d3d0631c
+    - d517894b
+    - d8b61530
+    - e0a75c1d
+    - e3b4a851
+    - f7b13aae
+    - f982bf27
+    - fb38c36f

@@ -1,0 +1,37 @@
+id: semantics/tail-history-start-limit
+title: Native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines (open)
+proves:
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  Loki's tail request takes `start` and `limit` (pkg/loghttp/tail.go:70-94)
+  and sends the entries since start, up to limit, before live lines, so
+  Grafana Live shows the last 100 entries at once. The proxy's native tail
+  path streams VictoriaLogs' live tail from now and ignores both, so a quiet
+  stream shows nothing until new lines arrive.
+request:
+  method: GET
+  path: /loki/api/v1/tail
+  params:
+    query: '{service_name="api-gateway"}'
+    start: 'now-1h'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    The last 100 entries since start, then live entries.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/tail.go openNativeTailStream (history replay before the live stream)'
+  loki: 'pkg/loghttp/tail.go:70-94 ParseTailQuery (limit, start); querier tailer sends history first'
+  proxy: 'live entries only'
+  planned_test: 'TestCompat_TailHistoryStartLimit (test/e2e-compat, group tail-multitenancy) + @explore-tail Playwright'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail conversion; verified still present on c4ebcd98 (after #652).'
+  clusters:
+    - e02ddf41

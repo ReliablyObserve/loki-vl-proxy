@@ -1,0 +1,37 @@
+id: semantics/unpack-non-string-values
+title: `| unpack` extracts non-string JSON values that Loki ignores (open)
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's unpack adds only the string values of a JSON object as labels
+  (pkg/logql/log/parser.go:791-794), so `| unpack | status >= 400` over a line
+  with a numeric status selects nothing. The proxy unpacks numbers too and
+  counts 12195 lines where Loki counts none.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({service_name="api-gateway"} | unpack | status >= 400 [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    No series.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/translator unpack (string values only)'
+  loki: 'pkg/logql/log/parser.go:789-820 UnpackParser.unpack'
+  proxy: 'numeric values unpacked'
+  planned_test: 'TestCompat_UnpackStringValuesOnly (test/e2e-compat, group semantics)'
+  clusters:
+    - 2b0fb55a
+    - 511ab651

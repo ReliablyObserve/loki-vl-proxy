@@ -1,0 +1,40 @@
+id: semantics/line-filter-or-alternatives
+title: Line filters with `or` alternatives are rejected (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki 3 accepts `|= "a" or "b"` and `!= "foo" or "bar"` (and `or ip(...)`) as
+  one line filter with alternatives. The proxy's parser stops at the second
+  string (`unexpected token STRING`) and returns 400.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} |= "error" or "timeout"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Lines holding either string.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/logql parser (line filter alternatives) + translator'
+  loki: 'pkg/logql/syntax/ast.go:473 newOrLineFilterExpr'
+  proxy: '400 parse error'
+  planned_test: 'TestCompat_LineFilterOrAlternatives (test/e2e-compat, group semantics)'
+  clusters:
+    - 147e07fb
+    - 435e2f3c
+    - 9d69befe
+    - b349505b
+    - c061fca0
+    - dfe987e7

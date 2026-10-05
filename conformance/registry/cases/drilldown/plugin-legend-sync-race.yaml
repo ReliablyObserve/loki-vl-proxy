@@ -1,0 +1,37 @@
+id: drilldown/plugin-legend-sync-race
+title: Logs Drilldown crashes a breakdown page when a query answers before the panel module loads (upstream, not the proxy)
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown 2.5.x shows "Plugin failed to load" when a breakdown query is
+  answered before the page's first time-series panel module has loaded (legend
+  sync calls the panel's field-config update while the panel plugin is
+  missing). It happens on any datasource, Loki direct included, and only more
+  often with fast answers (proxy cache hits). Recorded so it is never mistaken
+  for a proxy difference; bench/visual's capture waits for the module.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({service_name="api-gateway"}[$__auto]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '5'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [ui]
+  expect: |
+    No proxy action; upstream plugin issue.
+gap:
+  status: upstream
+  impact: drilldown-visible
+  effort: S
+  area: 'none (grafana-lokiexplore-app)'
+  loki: 'n/a (client race)'
+  proxy: 'n/a'
+  planned_test: 'bench/visual capture waits for the panel module (already)'
+  clusters: []

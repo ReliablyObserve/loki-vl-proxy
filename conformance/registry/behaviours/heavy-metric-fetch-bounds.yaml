@@ -42,3 +42,4 @@ cases:
   - limits/top-n-ranking-not-silent
   - semantics/sliding-window-recurrence-exact
   - semantics/tumbling-window-single-grid
+  - limits/drilldown-7d-breakdown-response-limit

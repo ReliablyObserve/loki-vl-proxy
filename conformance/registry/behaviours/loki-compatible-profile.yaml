@@ -61,3 +61,6 @@ cases:
   - profiles/structured-metadata-label-collision             # open gap, owner decision
   - profiles/uncategorized-streams-carry-structured-metadata
   - profiles/detected-fields-dotted-json-keys
+  - profiles/existence-filter-on-sanitized-key
+  - profiles/keep-structured-metadata-key
+  - profiles/json-extraction-list-exposes-only-listed

@@ -1,0 +1,43 @@
+id: semantics/parse-error-labels-on-log-lines
+title: A line a parser rejects carries __error__ and __error_details__ in Loki's log answer (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's json parser adds `__error__=JSONParserErr` and
+  `__error_details__=<parser message>` to a line it cannot parse (a logfmt or
+  plain line under `| json`), and logfmt adds `LogfmtParserErr`; Explore shows
+  both labels on the row and `| __error__=""` / `!=""` select by them.
+  VictoriaLogs' unpack_json adds nothing for such a line and has no error
+  marker, so the proxy returns the row without either label and a filter on
+  `__error__` cannot select the rows Loki selects.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} | json | __error__!=""'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values, parsed labels]
+  expect: |
+    The rows Loki rejects, with __error__ and __error_details__ as parsed
+    labels.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy log-row assembly (stage-field exposure) + translator parse-error predicate'
+  loki: 'pkg/logql/log/parser.go:97 addErrLabel(errJSON, err) -> :777-787 SetErr/SetErrorDetails; pkg/logql/log/error.go:5 errJSON'
+  proxy: 'no __error__ / __error_details__ on log rows'
+  planned_test: 'TestCompat_ParseErrorLabelsOnLogLines (test/e2e-compat, group semantics)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 9a63f6e2
+    - b50e5ea5

@@ -1,0 +1,66 @@
+id: parsed-identity/dynamic-key-parsers
+title: `| json` and `| logfmt` metric series keep the stream identity by default (owner-accepted deviation, opt-in flag)
+proves:
+  - parsed-label-series-identity
+consumer: explore
+why: |
+  Loki names a metric series by every label `| json` / `| logfmt` extracted,
+  so `count_over_time({app="payment-service"} | logfmt [1m])` is 22279 series
+  on Loki and 1091 on the proxy, and sums of per-series max/avg differ (sum by
+  (level) (max_over_time(... | unwrap status ...)): Loki 82683, proxy 503).
+  Accepted deviation with -exact-parser-series-identity as the opt-in (state
+  parsed-label-series-identity, waiver parsed-identity-dynamic-keys).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({service_name="payment-service"} | logfmt [1m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    Loki's series (deviation accepted by default).
+gap:
+  status: owner-kept
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator parser series identity; -exact-parser-series-identity'
+  loki: 'pkg/logql/log/parser.go label extraction into the sample labels'
+  proxy: 'stream identity unless the flag is set'
+  planned_test: 'differential run cluster count (bench/parity)'
+  clusters:
+    - 03f3b6e5
+    - 0f386e36
+    - 0f49a837
+    - 1f333942
+    - 241fb900
+    - 273c6ca5
+    - 370c5620
+    - 375b5df6
+    - 37898b71
+    - 472453d0
+    - 4d52c5cb
+    - 5bd75aed
+    - 609c0d8a
+    - 6bc7202e
+    - 7cc910c2
+    - 833babd8
+    - 891109a9
+    - aa8cfdc8
+    - c0f15837
+    - c17c1437
+    - c434dd07
+    - c84cb5a1
+    - cd477d03
+    - d21214b2
+    - d31150a4
+    - dcf0f4ed
+    - e598f28d
+    - e6579e4c
+    - e7da85bf

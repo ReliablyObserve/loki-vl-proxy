@@ -1,0 +1,36 @@
+id: quality/detected-metadata-proxy-cache
+title: detected_labels and detected_fields are served from proxy caches; Loki answers each request fresh (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_detected_labels
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  Loki computes detected_labels from its ingesters and detected_fields from
+  the queried lines on every request (no results cache for them). The proxy
+  caches both (cache keys in internal/proxy/cache_keys.go), so a label or
+  field that appears after a cached answer is missing until the entry expires,
+  and Drilldown's label and field lists lag behind Loki's on live data.
+request:
+  method: GET
+  path: /loki/api/v1/detected_labels
+  params:
+    query: '{env="production"}'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [detectedLabels]
+  expect: |
+    A new label visible on the next request.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/cache_keys.go:48,130 (detected_* cache TTL) + recent-tail freshness bypass'
+  loki: 'pkg/querier detected labels/fields: no results cache in v3.7.7'
+  proxy: 'cached answers up to the cache TTL'
+  planned_test: 'TestE2E_DetectedMetadataFreshness (test/e2e-compat, group drilldown)'
+  clusters: []

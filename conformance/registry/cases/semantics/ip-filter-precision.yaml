@@ -1,0 +1,35 @@
+id: semantics/ip-filter-precision
+title: ip() filters are approximated with regular expressions (documented)
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki matches ip() line and label filters by parsing addresses, prefixes and
+  ranges. The proxy translates them to VictoriaLogs regular expressions; exact
+  matching of all IPv6, non-octet CIDR and range forms is not established and
+  label ip() filters need further work (KNOWN_ISSUES).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="nginx-ingress"} |= ip("10.0.0.0/9")'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines.
+gap:
+  status: documented
+  impact: edge
+  effort: M
+  area: 'internal/proxy/postprocess.go:84 ip filtering'
+  loki: 'pkg/logql/log/ip.go'
+  proxy: 'regexp approximation'
+  planned_test: 'TestCompat_IPFilterForms (test/e2e-compat, group semantics)'
+  clusters: []

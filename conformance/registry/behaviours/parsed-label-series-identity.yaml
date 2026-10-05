@@ -37,3 +37,5 @@ cases:
   - parsed-identity/unnamed-group-extracts-nothing
   - parsed-identity/dynamic-key-parsers   # deviation with an opt-in flag, see state
   - parsed-identity/regexp-partial-match-series-count   # unresolved pre-existing gap, see state
+  - parsed-identity/bare-parser-metric-duplicates-extracted
+  - profiles/json-number-label-text

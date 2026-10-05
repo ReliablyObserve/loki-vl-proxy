@@ -1,0 +1,73 @@
+id: metric-identity/structured-metadata-splits-series
+title: Loki splits a stream's metric series per structured-metadata set; the proxy keeps the stream (owner-accepted deviation)
+proves:
+  - metric-series-identity
+consumer: explore
+why: |
+  Loki's sample labels include the entry's structured metadata
+  (pkg/logql/log/metrics_extraction.go:102-120), so a stream whose lines carry
+  a per-line trace_id is many series: `rate({namespace="prod"}[1h])` is 49657
+  series on Loki and 10155 on the proxy, and every
+  count/min/max/avg/stddev/topk over such series folds different inputs (count
+  by (app) 911 vs 83). The owner accepted the stream identity (state metric-
+  series-identity, waiver metric-identity-metadata-and-dynamic-keys, expiry
+  2027-03-31).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count by (app) (count_over_time({env="production"}[5m]))'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series identity (deviation accepted).
+gap:
+  status: owner-kept
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator series identity (stats by stream); VictoriaLogs cannot group by a row''s remaining fields'
+  loki: 'pkg/logql/log/metrics_extraction.go:102-120 builder.Add(StructuredMetadataLabel) -> GroupedLabels'
+  proxy: 'stream identity'
+  planned_test: 'differential run cluster count (bench/parity)'
+  clusters:
+    - 02fdd315
+    - 05582624
+    - 13c8bdcd
+    - 1bd439f7
+    - 229e4f30
+    - 272583f4
+    - 2cd52d1c
+    - 46d8ea74
+    - 4bfe0c95
+    - 4c5d2b49
+    - 4e3297e0
+    - 51011993
+    - 528f5b7e
+    - 6069aa8c
+    - 6a4fb9d0
+    - 6d606bf1
+    - 6f105696
+    - 7af0e9f0
+    - 84eb302d
+    - 886cdc75
+    - 8b8db278
+    - 90729d32
+    - 9273ee61
+    - 9d1a4d17
+    - 9f19b596
+    - a274a06b
+    - a6b8ae84
+    - ac314fbf
+    - acdff84d
+    - b65ce096
+    - b8436a40
+    - b8f96844
+    - cf717de4
+    - dbd817af
+    - e9319bcf
+    - eb31f562
+    - f1aa2f22

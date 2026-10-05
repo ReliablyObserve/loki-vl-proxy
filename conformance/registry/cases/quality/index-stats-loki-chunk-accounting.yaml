@@ -1,0 +1,37 @@
+id: quality/index-stats-loki-chunk-accounting
+title: Loki's index/stats counts chunks it holds twice; the proxy's counts equal Loki's own count_over_time (upstream)
+proves:
+  - loki_api_v1_index_stats
+consumer: drilldown
+why: |
+  On a stack whose ingesters retain flushed chunks, Loki's /index/stats counts
+  a line once per chunk copy (entries 3x in one run) while its own
+  `sum(count_over_time(...))` over the window equals the proxy's entries. The
+  differential run marks an entries difference as Loki's chunk accounting only
+  when Loki's count_over_time equals the proxy's entries, and a streams
+  difference only when Loki's own /series count equals the proxy's streams
+  (checked from this change on; the recorded run did not check streams, see
+  quality/index-stats-streams-differ).
+request:
+  method: GET
+  path: /loki/api/v1/index/stats
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams, entries]
+  expect: |
+    Entries equal to Loki's count_over_time.
+gap:
+  status: upstream
+  impact: drilldown-visible
+  effort: S
+  area: 'none (Loki chunk index accounting)'
+  loki: 'pkg/storage stats from chunk refs (flushed and retained chunks both counted)'
+  proxy: 'exact counts'
+  planned_test: 'bench/parity cross-check (run.py loki_counts_itself)'
+  clusters: []

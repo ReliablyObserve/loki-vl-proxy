@@ -1,0 +1,38 @@
+id: semantics/log-entries-differ-same-count
+title: A log query returns the same number of lines with different entries (open, cause not isolated)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `{app="api-gateway",env="production"} | json | status != 200 | status !=
+  404` returned 100 lines on both sides, but not the same lines, and not only
+  at the limit's boundary timestamp (which the diff ignores). The run
+  reproduced it on a second request; the cause (ordering across streams at
+  equal timestamps, or a numeric label filter on a JSON number) is not
+  isolated yet.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway",env="production"} | json | status != 200 | status != 404'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'to be isolated (log query paging / numeric label filters)'
+  loki: 'pkg/logql/log/label_filter.go numeric filters; pkg/iter entry ordering'
+  proxy: 'different lines, same count'
+  planned_test: 'TestCompat_NumericLabelFilterLines (test/e2e-compat, group semantics)'
+  clusters:
+    - 5da321bc

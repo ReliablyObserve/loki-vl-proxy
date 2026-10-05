@@ -23,3 +23,6 @@ cases:
   - quality/label-cache-warm
   - semantics/label-inventory-exact-and-incremental
   - semantics/label-browser-latency-cold-and-refresh
+  - quality/detected-metadata-proxy-cache
+  - quality/stats-volume-freshness
+  - quality/label-cache-aged-labels-kept

@@ -1,0 +1,88 @@
+id: semantics/proxy-rejects-valid-logql
+title: The proxy rejects LogQL Loki accepts: comments, negative and compound offsets, filters after a range, logfmt flags, ip() label filters (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki v3.7.7 accepts and answers `# comments`, `offset -1s` and `offset
+  1h2m20s`, a line filter after the range (`count_over_time({...}[12h] |=
+  "error")`), `| logfmt --strict` / `--keep-empty`, `| addr=ip("1.2.3.4")`
+  label filters, `topk(k, sum by (a) (sum_over_time(... | unwrap value
+  [1s])))` as an instant query, and more. The proxy's parser or translator
+  rejects each with 400 (its own parse error, or `unsupported instant
+  aggregation target`). Each query family is a separate small parser fix; the
+  differential run lists them per cluster.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({namespace="prod"}[3s] offset -1s)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with Loki's answer.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/logql parser (lexer: comments, signed durations, flags) + translator'
+  loki: 'pkg/logql/syntax/lex.go:149 comments, :90-91 OpStrict/OpKeepEmpty; syntax.y offsetExpr; pkg/logql/log/ip.go'
+  proxy: '400'
+  planned_test: 'TestCompat_LogQLSurfaceAccepted (test/e2e-compat, group semantics), one subtest per family'
+  clusters:
+    - 02494ca7
+    - 02fa6772
+    - 048082ab
+    - 0c00485a
+    - 18f6c171
+    - 2137c2ba
+    - 23cbc9b3
+    - 27e68f5e
+    - 282fd2af
+    - 293abde9
+    - 2cda3276
+    - 306824bd
+    - 3c3ebb3b
+    - 4517a40b
+    - 46125976
+    - 461b1df0
+    - 4a1aab68
+    - 4dc99479
+    - 53933736
+    - 5a65069b
+    - 5c22832f
+    - 6553b1df
+    - 72db0446
+    - 75526081
+    - 807c5ade
+    - 815a3690
+    - 82240823
+    - 8275c76c
+    - 852cb577
+    - 892af37b
+    - 8dedc850
+    - 998b9e72
+    - 9be7d291
+    - 9c93bc66
+    - 9e36e9cd
+    - a5c93607
+    - b3444d76
+    - b81935ec
+    - bd531691
+    - c0ccfa2d
+    - c138dca8
+    - c559852c
+    - c59b5392
+    - d2f9deab
+    - d34c2dbd
+    - dbd01e9a
+    - e1af2a49
+    - ee3cf0bd

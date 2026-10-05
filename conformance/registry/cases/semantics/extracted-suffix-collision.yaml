@@ -1,0 +1,128 @@
+id: semantics/extracted-suffix-collision
+title: A parsed key named like a stream label is renamed with _extracted in query results (open; detected_fields decision unchanged)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's parsers rename a parsed key that equals a stream label or structured-
+  metadata name with the `_extracted` suffix, so the stored label keeps its
+  value (`| json` on a line holding `level` beside the stream label `level`
+  yields `level_extracted`). The proxy returns the parsed key under the stream
+  label's name (or not at all), so Explore shows one `level` where Loki shows
+  `level` and `level_extracted`, and grouping or filtering on
+  `level_extracted` finds nothing.
+
+  This is the query-result side only. The owner's stamped decision that
+  /detected_fields lists `service` / `service.name` without the suffix stays
+  (documented deviation detected-fields-no-extracted-suffix); structured
+  metadata named like a stream label is profiles/structured-metadata-label-
+  collision.
+
+  The same collision shows in /detected_fields: Loki lists level_extracted and
+  version_extracted for a JSON line holding level and version beside stream
+  labels of those names, and the proxy does not. Only service / service.name
+  is covered by the owner's detected_fields decision (profiles/detected-
+  fields-no-extracted-suffix); the other `_extracted` fields are this gap.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="otel-collector"} | json | logfmt | drop __error__, __error_details__'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values, parsed labels]
+  expect: |
+    Loki's parsed labels including level_extracted.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy stage-field exposure (parsed-label naming)'
+  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; :152 json, :342 logfmt, :696 json expression'
+  proxy: 'parsed key merged into the stream label''s name'
+  planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group semantics)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 05318ee0
+    - 087a214a
+    - 08fb5da3
+    - 0b0f1379
+    - 150024f9
+    - 15548dbd
+    - 15a876ba
+    - 16eaca6c
+    - 19e8f424
+    - 231b4102
+    - 29ad1639
+    - 31d74267
+    - 32f36208
+    - 3425b43c
+    - 35e2a101
+    - 37eca1b4
+    - 3f356b01
+    - 41586c11
+    - 422b5298
+    - 47dddcfb
+    - 4ec90d6a
+    - 58f21a34
+    - 5b2ec5e6
+    - 5d3adecc
+    - 5f23b125
+    - 60488a50
+    - 6188db87
+    - 66f96c46
+    - 6d79474c
+    - 6dfea202
+    - 7f750e4f
+    - 8c96e500
+    - 8cc9e97a
+    - 903323d1
+    - 93b5bb76
+    - 975e64c1
+    - 97e6ee39
+    - 99c8515b
+    - 9c527802
+    - 9f075b30
+    - a300565d
+    - a88e7ea7
+    - a9078b6e
+    - ab4ce12b
+    - ac4a8c52
+    - b0dd1495
+    - b166bfd3
+    - b680829d
+    - b68afb0d
+    - bc7f7413
+    - bfd206cd
+    - c7b6ed6a
+    - ce14ac99
+    - d04917ae
+    - d051cfff
+    - d41734a9
+    - d45a655e
+    - d4b04b0c
+    - d650bcfb
+    - d72d583b
+    - e9b099d2
+    - e9d4fcd8
+    - ea80f966
+    - eaaf14ca
+    - ee9ebbea
+    - ef144320
+    - ef9bfaad
+    - f056672a
+    - f1ad0a1b
+    - f455442d
+    - f809410d
+    - f87f7636
+    - f8fa9aa2
+    - fa6d53ad
+    - fbece7b0
+    - fe307701

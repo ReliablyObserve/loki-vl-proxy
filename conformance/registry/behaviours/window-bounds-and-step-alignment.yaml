@@ -26,3 +26,4 @@ cases:
   - semantics/offset-sample-timestamps
   - semantics/grafana-24h-split
   - semantics/resolution-limit-11000
+  - semantics/unwrap-range-last-point

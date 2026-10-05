@@ -36,3 +36,4 @@ cases:
   - severity/detected-fields-contains-level
   - severity/label-values-detected-level
   - severity/label-filter-reads-stored-field    # open gap, see state
+  - severity/detected-level-stage-side-effects

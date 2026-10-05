@@ -1,0 +1,38 @@
+id: quality/stats-volume-freshness
+title: index/stats and volume answers ending now are cached; Loki does not cache inside max_stats_cache_freshness (10m) (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_index_stats
+  - loki_api_v1_index_volume
+consumer: drilldown
+why: |
+  Loki's results cache skips stats and volume requests whose end lies within
+  max_stats_cache_freshness (default 10m, pkg/validation/limits.go:413), so
+  Drilldown's landing counts and volumes always include the last minutes. The
+  proxy caches these answers by time bucket regardless of how recent the end
+  is, so the landing page under-counts the newest lines until the entry
+  expires.
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{env="production"}'
+    start: 'now-15m'
+    end: 'now'
+    targetLabels: 'service_name'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.result]
+  expect: |
+    Volumes including lines from the last minute.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/volume.go handleVolume, label_handlers.go handleIndexStats (cache freshness)'
+  loki: 'pkg/validation/limits.go:413-414 max_stats_cache_freshness default 10m'
+  proxy: 'cached regardless of end'
+  planned_test: 'TestE2E_StatsVolumeFreshness (test/e2e-compat, group drilldown)'
+  clusters: []

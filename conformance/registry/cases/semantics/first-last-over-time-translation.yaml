@@ -1,0 +1,45 @@
+id: semantics/first-last-over-time-translation
+title: first_over_time and last_over_time with offset or a line filter fail in VictoriaLogs (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `first_over_time({...} | logfmt | unwrap value [1s] offset 2s) by (a)` and
+  `last_over_time({...} |~ ".+bar" | unwrap foo [1m])` answer 200 on Loki; the
+  proxy sends VictoriaLogs a query it rejects (HTTP 422 `cannot parse query
+  arg`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'last_over_time({service_name="payment-service"} | logfmt | unwrap latency_ms [1m] offset 2s) by (level)'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with Loki's series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator first/last_over_time emission (row_min/row_max with offset and filters)'
+  loki: 'pkg/logql/first_last_over_time.go'
+  proxy: '422 VictoriaLogs parse error'
+  planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics)'
+  clusters:
+    - 13f557ca
+    - 20680725
+    - 3c0a55f2
+    - 56b4c549
+    - 61ff16ca
+    - 83edd378
+    - 90a46cda
+    - a27681a7
+    - ae0d1b7b
+    - b91f5292

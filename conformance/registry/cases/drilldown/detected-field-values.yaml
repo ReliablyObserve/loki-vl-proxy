@@ -1,0 +1,37 @@
+id: drilldown/detected-field-values
+title: detected_field values differ: none for service_name, other values for numeric and id fields (open)
+proves:
+  - loki_api_v1_detected_field_name_values
+consumer: drilldown
+why: |
+  For `/detected_field/service_name/values?query={service_name="api-gateway"}`
+  Loki answers [api-gateway] and the proxy nothing; for numeric and high-
+  cardinality fields (duration_ms, trace ids) Loki answers the values of the
+  lines it sampled (the query's line limit) and the proxy another set.
+  Drilldown's field value picker shows different choices.
+request:
+  method: GET
+  path: /loki/api/v1/detected_field/service_name/values
+  params:
+    query: '{service_name="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's values.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy detected_field values (sampling window and stream-label fields)'
+  loki: 'pkg/querier detected field values (v3.7.7): values of the sampled lines'
+  proxy: 'empty for stream-label fields; different sample'
+  planned_test: 'TestCompat_DetectedFieldValues (test/e2e-compat, group drilldown)'
+  clusters:
+    - 0e9d9652
+    - 4a75b280
+    - 92699938

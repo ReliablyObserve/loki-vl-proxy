@@ -1,0 +1,34 @@
+id: drilldown/detected-labels-sampled-cardinality
+title: detected_labels cardinality is sampled from the window's last minutes; Loki counts every stream its ingesters hold (documented)
+proves:
+  - loki_api_v1_detected_labels
+consumer: drilldown
+why: |
+  Loki answers detected_labels from the streams its ingesters hold, whatever
+  the requested window (pkg/ingester/instance.go LabelsWithValues); the proxy
+  samples the window's last 5 minutes (metadataMaxFieldNamesWindow). The label
+  names must match; only the cardinality numbers are covered by this case
+  (bench/visual's compare rule says the same).
+request:
+  method: GET
+  path: /loki/api/v1/detected_labels
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [detectedLabels.cardinality]
+  expect: |
+    Same label names; cardinality differs by design.
+gap:
+  status: documented
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/patterns.go handleDetectedLabels'
+  loki: 'pkg/ingester/instance.go LabelsWithValues'
+  proxy: 'sampled cardinality'
+  planned_test: 'bench/parity diff rule (documented facet)'
+  clusters: []

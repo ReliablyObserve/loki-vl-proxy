@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Differential parity run against Loki (`bench/parity`) and a ranked list of
+  every known difference (`conformance/reports/parity-gaps.md`).** On an
+  isolated stack with identical data in Loki and VictoriaLogs (proven before
+  and after: equal line counts per 10-minute slice, Loki out of its
+  fresh-stack blank window, Loki and VictoriaLogs restart counts known and
+  unchanged, no VictoriaLogs failure in the proxy log), the runner sends a
+  corpus of 5,671 requests (10,886 with both encodings) to Loki and to the
+  proxy, query endpoints with and without `categorize-labels`: LogQL from Loki
+  v3.7.7's own test suites moved onto the seeded data, the repository's parity
+  cases, a sweep generated from what Loki reports for the window (every label
+  and value, every service's detected fields with the stages Explore and Logs
+  Drilldown build on them, index/stats, volume, detected_*, patterns,
+  format_query, tail), and every request Grafana Explore and Logs Drilldown
+  sent on the visual-proof pages, replayed through Grafana against both
+  datasources. It diffs the answers semantically (stats and execution metadata
+  ignored, stream and series order ignored where Loki leaves it unspecified,
+  entry order checked against the direction, ties at the line limit ignored),
+  asks again for samples of every difference so one Loki does not reproduce is
+  not counted, and clusters the rest by endpoint, query shape and kind of
+  difference. Every cluster of the recorded run is claimed by exactly one
+  registry case (a `gap:` block with the Loki reference, the proxy's
+  behaviour, user impact, effort, code area and the planned test; recorded
+  deviations by the case id the diff names); the conformance gate fails when a
+  cluster is unclaimed or a deviation names no recorded case, and a fix can
+  retire a gap with `status: fixed` and `fixed_by:`. The recorded run measured
+  main at fcaccfcc, before #652 rewrote the tail and log-row label conversion:
+  600 gap signatures and 5 recorded-deviation clusters in 5,243 differing
+  requests, claimed by 66 cases (47 open, 4 owner-accepted deviations, 13
+  documented, 2 Loki or plugin artifacts). Among the open ones:
+  max/min/count/avg over a range function returned unreduced on `query_range`
+  (still present after #652), `unwrap` samples with empty-string values, an
+  ungrouped `sum` over `| logfmt | key!=""` returning no series, `_extracted`
+  suffixes missing from query results, native tail without the start/limit
+  history (still present after #652), and parser gaps (`or` line filters,
+  parenthesized log ranges). Tooling and registry only; the proxy is
+  unchanged.
+
 ## [1.107.2] - 2026-10-05
 
 ### Changed

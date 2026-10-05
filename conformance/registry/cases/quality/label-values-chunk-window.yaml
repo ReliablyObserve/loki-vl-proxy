@@ -1,0 +1,35 @@
+id: quality/label-values-chunk-window
+title: Loki lists label values of streams whose chunks overlap the window; the proxy only of streams with lines in it (open)
+proves:
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Over the last hour Loki listed 20256 pod values and the proxy 13510, exactly
+  the streams with lines in the window (index/stats streams). Loki reads label
+  values from index entries of chunks that overlap the window, so streams
+  whose chunk started before it are listed too. Users of the label browser see
+  fewer values than on Loki.
+request:
+  method: GET
+  path: /loki/api/v1/label/pod/values
+  params:
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki's values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy label values window (chunk-overlap semantics)'
+  loki: 'pkg/querier/querier.go Label (index lookups by chunk overlap)'
+  proxy: 'streams with lines in the window'
+  planned_test: 'TestCompat_LabelValuesWindowEdge (test/e2e-compat, group core)'
+  clusters:
+    - 185c0010
+    - 76d3a547

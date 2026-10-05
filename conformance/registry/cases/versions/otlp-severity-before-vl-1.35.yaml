@@ -1,0 +1,35 @@
+id: versions/otlp-severity-before-vl-1.35
+title: OTLP severity is not read as detected_level on VictoriaLogs v1.30-v1.34 (open, version-gated)
+proves:
+  - severity-detected-level-derivation
+consumer: explore
+why: |
+  Loki derives detected_level from an OTLP record's severity. VictoriaLogs
+  before v1.35 stores OTLP severity under a different field shape, so the
+  proxy's read-path derivation returns `unknown` for such rows on v1.30-v1.34,
+  while the compatibility matrix claims those versions.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="otel-collector"}'
+    start: 'now-15m'
+    end: 'now'
+    limit: '10'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [detected_level]
+  expect: |
+    detected_level from severity on every matrix version.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy/detected_level.go + logsql capabilities'
+  loki: 'detected_level from OTLP severity (distributor field detection, v3.7.7)'
+  proxy: 'unknown on VictoriaLogs v1.30-v1.34'
+  planned_test: 'TestVLTrackScore version matrix row for OTLP severity (compat-vl workflow)'
+  clusters: []

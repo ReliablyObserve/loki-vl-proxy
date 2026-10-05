@@ -1,0 +1,42 @@
+id: profiles/json-extraction-list-exposes-only-listed
+title: Extraction lists (`| json msg="msg"`, `| logfmt op`) expose level from the line (open)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's JSON expression parser extracts only the listed keys
+  (JSONExpressionParser), so `| json msg="msg"` adds one parsed label. The
+  proxy also reports `level` from the line (the row's level reading for
+  detected_level leaks into the labels).
+
+  Measured by the differential run: `{service_name="cache-redis"} | logfmt op`
+  reports level=info (the line's) where Loki keeps the stream label
+  level=debug, on 20 queries.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | json msg="msg"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values, parsed labels]
+  expect: |
+    Parsed labels: msg only.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy stage-field exposure (extraction lists)'
+  loki: 'pkg/logql/log/parser.go:671-700 JSONExpressionParser.Process (listed ids only)'
+  proxy: 'extra parsed label level'
+  planned_test: 'TestCompat_JSONExtractionListExposesOnlyListed (test/e2e-compat, group semantics)'
+  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  clusters:
+    - 7dac2581

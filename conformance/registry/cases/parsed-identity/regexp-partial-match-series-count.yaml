@@ -62,3 +62,14 @@ compare:
     pattern matches every line: Loki 748 series all carrying mth, branch 739
     all carrying mth, main 739 carrying none. That contrast is the evidence
     that the gap is about non-matching lines.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/proxy regexp capture series identity (non-matching lines)'
+  loki: 'pkg/logql/log/parser.go RegexpParser (no capture label for a non-matching line)'
+  proxy: 'about 3x Loki''s series'
+  planned_test: 'TestCompat_RegexpPartialMatchSeries (test/e2e-compat, group semantics)'
+  clusters:
+    - 7ba35380
+    - 952bbb24
