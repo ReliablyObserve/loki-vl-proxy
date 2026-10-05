@@ -69,4 +69,6 @@ victorialogs:
     and Go-template line_format are evaluated on the proxy per row, as for a
     query_range response. Without a working /select/logsql/tail (older
     versions, forced synthetic mode) the proxy polls /select/logsql/query.
-edge_cases: []    # case ids under conformance/registry/cases/
+edge_cases:    # case ids under conformance/registry/cases/
+  - semantics/line-format-template-error-keeps-entry
+  - profiles/tail-line-format-parse-error-status

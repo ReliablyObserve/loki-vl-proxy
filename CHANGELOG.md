@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only, as Loki does. With `categorize-labels`, parser labels now come back
   under `parsed` instead of `structuredMetadata`. Frames hold up to 100
   entries, one stream per entry in timestamp order (Loki's
-  `maxEntriesPerTailResponse`), instead of one entry per frame.
+  `maxEntriesPerTailResponse`), instead of one entry per frame: a burst of
+  5,000 rows now arrives in frames of about 100 entries, where it came in
+  frames of 1-3.
 
 ### Fixed
 
@@ -46,6 +48,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CPU is unchanged for a plain selector (0.6 CPU-s per 30 s, ~12,900
   entries) and rises from about 0.17 to 0.23 CPU-s per 30 s (2,475 entries)
   for `| json` with a label filter, the cost of building Loki's labels.
+- **A `line_format` template that fails on an entry keeps the entry, with
+  Loki's error labels (visible change: query_range answered 400).** Loki
+  keeps the original line of an entry its template cannot execute (for
+  example `{{.a.b}}` where `a` is a string) and adds
+  `__error__="TemplateFormatErr"` and `__error_details__` with the template
+  error: stream labels in the default encoding, `parsed` labels with
+  `categorize-labels`; a later `| __error__=""` drops the entry and
+  `| drop __error__` removes the label. The proxy answered such a
+  query_range or query with HTTP 400 and its live tail skipped the whole
+  batch of up to 100 entries. query_range, query, windowed and cold-tier
+  responses and live tail now share one per-entry implementation; the
+  template is named `line` as in Loki, so `__error_details__` reads the
+  same. The budgets the proxy enforces on templates (output size, printf
+  width, execution steps) still fail the request with 400. A template the
+  parser rejects is answered with Loki's text (`parse error : stage
+  '| line_format "{{"' : invalid line template: ...`); on live tail that 400
+  comes before the websocket upgrade, where Loki upgrades and then sends
+  nothing (documented deviation).
 - **`TestCompat_DetectedLevelTail` could hang until the e2e group's 5-minute
   timeout.** The subscription wait shared one two-second `time.After` channel
   between the Loki and the proxy tail: when the first tail consumed it, the

@@ -61,12 +61,12 @@ func TestHardening_BackendBudgetCoversBodyAndCanceledWait(t *testing.T) {
 func TestHardening_TemplateBudgetsAndNormalFormatting(t *testing.T) {
 	for _, tmpl := range []string{`{{printf "%1048576s" "x"}}`, `{{printf "%*s" 1048576 "x"}}`, `{{Replace ._line "x" "large expansion" 100000}}`, `{{define "r"}}{{template "r" .}}{{end}}{{template "r" .}}`} {
 		streams := []map[string]any{{"stream": map[string]string{"app": "api"}, "values": [][]string{{"1", strings.Repeat("x", 65536)}}}}
-		if err := applyLineFormatTemplate(streams, tmpl); err == nil {
+		if _, err := applyLineFormatTemplate(streams, tmpl); err == nil {
 			t.Fatalf("unbounded template accepted: %s", tmpl)
 		}
 	}
 	streams := []map[string]any{{"stream": map[string]string{"app": "api"}, "values": [][]string{{"1", "hello"}}}}
-	if err := applyLineFormatTemplate(streams, `{{printf "20260101 %8s" (.app | ToUpper)}}`); err != nil {
+	if _, err := applyLineFormatTemplate(streams, `{{printf "20260101 %8s" (.app | ToUpper)}}`); err != nil {
 		t.Fatal(err)
 	}
 	if got := streams[0]["values"].([][]string)[0][1]; got != "20260101      API" {
@@ -74,7 +74,7 @@ func TestHardening_TemplateBudgetsAndNormalFormatting(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := applyLineFormatTemplateWithContext(ctx, streams, `{{.app}}`); err == nil {
+	if _, err := applyLineFormatTemplateWithContext(ctx, streams, `{{.app}}`, lineFormatAfter{}); err == nil {
 		t.Fatal("formatting ignored cancellation")
 	}
 }

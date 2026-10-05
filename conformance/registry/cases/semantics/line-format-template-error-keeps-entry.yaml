@@ -1,0 +1,33 @@
+id: semantics/line-format-template-error-keeps-entry
+title: A line_format template that fails on an entry keeps it with Loki's error labels
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_tail
+consumer: explore
+why: |
+  Loki's LineFormatter.Process (pkg/logql/log/fmt.go) keeps the original
+  line of an entry its template fails on and adds
+  __error__="TemplateFormatErr" and __error_details__ with the template
+  error, as parsed labels: stream labels in the default encoding, "parsed"
+  with categorize-labels. A later | __error__="" drops the entry and
+  | drop __error__ removes the label (measured on Loki v3.7.7). The proxy
+  answered such a query_range with HTTP 400 and its tail skipped the batch.
+  Both now go through applyQueryLineFormat: the template is named "line" as
+  in Loki, so __error_details__ reads the same. Budgets the proxy enforces on
+  templates (output, printf width, execution steps) still fail the request.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: "{app=\"api\"} | logfmt | line_format \"{{.a.b}}\""
+    start: now-1h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    HTTP 200; every entry keeps its line and carries
+    __error__="TemplateFormatErr" and __error_details__="template: line:1:4:
+    executing \"line\" at <.a.b>: can't evaluate field b in type string".

@@ -11,6 +11,13 @@ import (
 const maxFormattedLineBytes = 64 << 10
 const maxFormattedResponseBytes = 16 << 20
 
+// templateLimitError is a line_format budget the proxy enforces (Loki has
+// none): it fails the request, where a template error Loki reports per entry
+// keeps the entry with the __error__ label (applyLineFormatTemplateWithContext).
+type templateLimitError string
+
+func (e templateLimitError) Error() string { return string(e) }
+
 type templateOutput struct {
 	strings.Builder
 	remaining int
@@ -18,7 +25,7 @@ type templateOutput struct {
 
 func (b *templateOutput) Write(p []byte) (int, error) {
 	if len(p) > b.remaining {
-		return 0, fmt.Errorf("line_format output limit exceeded")
+		return 0, templateLimitError("line_format output limit exceeded")
 	}
 	b.remaining -= len(p)
 	return b.Builder.Write(p)
@@ -28,7 +35,7 @@ func (b *templateOutput) Write(p []byte) (int, error) {
 // late for printf widths, replacement expansion, or nested function pipelines.
 func boundedTemplatePrintf(format string, args ...any) (string, error) {
 	if len(format) > maxFormattedLineBytes || !templateArgsWithinBudget(args) {
-		return "", fmt.Errorf("line_format printf limit exceeded")
+		return "", templateLimitError("line_format printf limit exceeded")
 	}
 	// Bounds numeric widths/precisions and argument indexes before fmt allocates.
 	number := 0
@@ -48,7 +55,7 @@ func boundedTemplatePrintf(format string, args ...any) (string, error) {
 		if c >= '0' && c <= '9' {
 			number = number*10 + int(c-'0')
 			if number > maxFormattedLineBytes {
-				return "", fmt.Errorf("line_format printf width limit exceeded")
+				return "", templateLimitError("line_format printf width limit exceeded")
 			}
 		} else {
 			number = 0
@@ -56,7 +63,7 @@ func boundedTemplatePrintf(format string, args ...any) (string, error) {
 	}
 	for _, arg := range args {
 		if n, ok := arg.(int); ok && strings.Contains(format, "*") && (n > maxFormattedLineBytes || n < -maxFormattedLineBytes) {
-			return "", fmt.Errorf("line_format printf width limit exceeded")
+			return "", templateLimitError("line_format printf width limit exceeded")
 		}
 	}
 	w := &templateOutput{remaining: maxFormattedLineBytes}
@@ -94,7 +101,7 @@ func templateArgsWithinBudget(args []any) bool {
 
 func boundedTemplatePrint(newline bool, args ...any) (string, error) {
 	if !templateArgsWithinBudget(args) {
-		return "", fmt.Errorf("line_format print input limit exceeded")
+		return "", templateLimitError("line_format print input limit exceeded")
 	}
 	w := &templateOutput{remaining: maxFormattedLineBytes}
 	var err error
@@ -122,11 +129,11 @@ func boundedTemplateReplace(s, old, replacement string, n int) (string, error) {
 		count = n
 	}
 	if growth := len(replacement) - len(old); growth > 0 && count > (maxFormattedLineBytes-len(s))/growth {
-		return "", fmt.Errorf("line_format replacement limit exceeded")
+		return "", templateLimitError("line_format replacement limit exceeded")
 	}
 	result := strings.Replace(s, old, replacement, n)
 	if len(result) > maxFormattedLineBytes {
-		return "", fmt.Errorf("line_format replacement limit exceeded")
+		return "", templateLimitError("line_format replacement limit exceeded")
 	}
 	return result, nil
 }
@@ -134,11 +141,11 @@ func boundedTemplateReplace(s, old, replacement string, n int) (string, error) {
 func boundedTemplateString(fn func(string) string) func(string) (string, error) {
 	return func(s string) (string, error) {
 		if len(s) > maxFormattedLineBytes {
-			return "", fmt.Errorf("line_format function input limit exceeded")
+			return "", templateLimitError("line_format function input limit exceeded")
 		}
 		out := fn(s)
 		if len(out) > maxFormattedLineBytes {
-			return "", fmt.Errorf("line_format function output limit exceeded")
+			return "", templateLimitError("line_format function output limit exceeded")
 		}
 		return out, nil
 	}
@@ -151,7 +158,7 @@ func instrumentTemplateBudget(tmpl *template.Template, ctx context.Context) erro
 	check := func() (string, error) {
 		remaining--
 		if remaining < 0 {
-			return "", fmt.Errorf("line_format execution limit exceeded")
+			return "", templateLimitError("line_format execution limit exceeded")
 		}
 		return "", ctx.Err()
 	}
@@ -167,7 +174,7 @@ func instrumentTemplateBudget(tmpl *template.Template, ctx context.Context) erro
 			return nil
 		}
 		if depth > 64 {
-			return fmt.Errorf("line_format nesting limit exceeded")
+			return templateLimitError("line_format nesting limit exceeded")
 		}
 		original := list.Nodes
 		list.Nodes = make([]parse.Node, 0, 2*len(original)+1)
@@ -175,7 +182,7 @@ func instrumentTemplateBudget(tmpl *template.Template, ctx context.Context) erro
 		for _, node := range original {
 			nodes++
 			if nodes > 1024 {
-				return fmt.Errorf("line_format syntax limit exceeded")
+				return templateLimitError("line_format syntax limit exceeded")
 			}
 			var branch *parse.BranchNode
 			switch n := node.(type) {

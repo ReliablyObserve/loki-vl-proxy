@@ -66,6 +66,8 @@ var tailPipelineQueries = []string{
 	`|= "json" | json | label_format who=user`,
 	`|= "json" | json | drop user`,
 	`| decolorize`,
+	// A template that fails keeps the entry with Loki's error labels.
+	`| logfmt | line_format "{{.a.b}}"`,
 }
 
 type tailPipelineEntry struct {

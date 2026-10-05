@@ -44,8 +44,12 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	// categorize-labels flag.
 	tp := p.newTailPipeline(logqlQuery, p.shouldEmitStructuredMetadata(r))
 	if tp.lineFormat != "" {
-		// Reject a template Loki's parser rejects before the upgrade.
-		if err := applyLineFormatTemplateWithContext(r.Context(), nil, tp.lineFormat); err != nil {
+		// A template the parser rejects is answered with 400 and Loki's
+		// parse error before the upgrade. Loki itself upgrades the
+		// connection and its tailer fails, so the client gets nothing; the
+		// status is a deliberate, documented deviation (conformance case
+		// profiles/tail-line-format-parse-error-status).
+		if _, err := applyLineFormatTemplateWithContext(r.Context(), nil, tp.lineFormat, lineFormatAfter{}); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
 			p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
 			return
@@ -123,12 +127,22 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Read VL NDJSON stream and forward as Loki WebSocket frames
-	lineCh := make(chan []byte)
+	p.forwardNativeTail(wsCtx, conn, tp, resp.Body, pingTicker.C)
+}
+
+// forwardNativeTail reads VictoriaLogs' NDJSON tail stream and forwards it
+// as Loki tail frames until the stream ends, the client goes away or a
+// write fails.
+func (p *Proxy) forwardNativeTail(wsCtx context.Context, conn tailConn, tp *tailPipeline, body io.Reader, ping <-chan time.Time) {
+	// Read VL NDJSON stream and forward as Loki WebSocket frames. The
+	// channel holds one frame's worth of rows, so rows that arrive together
+	// are converted and sent together while a slow client still holds the
+	// reader back.
+	lineCh := make(chan []byte, maxTailFrameEntries)
 	errCh := make(chan error, 1)
 	go func() {
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB max line
+		scanner := bufio.NewScanner(body)
+		scanner.Buffer(make([]byte, 0, tailScanBufferInitial), 1024*1024) // 1MB max line
 		for scanner.Scan() {
 			line := append([]byte(nil), scanner.Bytes()...)
 			select {
@@ -144,12 +158,28 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-wsCtx.Done():
 			return
-		case <-pingTicker.C:
+		case <-ping:
 			if err := p.writeTailMessage(conn, websocket.PingMessage, nil); err != nil {
 				p.log.Debug("websocket ping failed, client disconnected", "error", err)
 				return
 			}
 		case err := <-errCh:
+			// Rows read before the stream ended are still sent.
+			var rest []byte
+		flush:
+			for {
+				select {
+				case more := <-lineCh:
+					rest = append(append(rest, more...), '\n')
+				default:
+					break flush
+				}
+			}
+			if len(rest) > 0 {
+				if werr := p.writeTailRows(wsCtx, conn, tp, rest); werr != nil {
+					return
+				}
+			}
 			if err != nil && wsCtx.Err() == nil {
 				p.log.Debug("tail stream ended with error", "error", err)
 			}
@@ -316,7 +346,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, tailScanBufferInitial), 1024*1024)
 	newest := *windowStart
 	var batch []byte
 	for scanner.Scan() {
@@ -428,6 +458,11 @@ type tailPipeline struct {
 // querier batches them (pkg/querier/tail/tail.go maxEntriesPerTailResponse).
 const maxTailFrameEntries = 100
 
+// tailScanBufferInitial is the first size of a tail row scanner's buffer;
+// it grows on demand up to the scanner's maximum line. A batch is converted
+// a few times a second, so a large fixed buffer would be allocated each time.
+const tailScanBufferInitial = 4 * 1024
+
 func (p *Proxy) newTailPipeline(query string, levelAsMetadata bool) *tailPipeline {
 	lq, err := logqlpkg.ParseLogQuery(query)
 	return &tailPipeline{
@@ -499,10 +534,8 @@ func (p *Proxy) tailEntries(ctx context.Context, tp *tailPipeline, rows []byte) 
 	if strings.Contains(tp.query, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if tp.lineFormat != "" {
-		if err := applyLineFormatTemplateWithContext(ctx, streams, tp.lineFormat); err != nil {
-			return nil, err
-		}
+	if streams, err = applyQueryLineFormat(ctx, streams, tp.query); err != nil {
+		return nil, err
 	}
 	var entries []tailEntry
 	for _, s := range streams {
@@ -568,7 +601,7 @@ func tailLevelMetadata(tuple []interface{}) []interface{} {
 func (p *Proxy) indexLabelTailEntries(rows []byte, lineFields map[string]bool) []tailEntry {
 	var entries []tailEntry
 	scanner := bufio.NewScanner(bytes.NewReader(rows))
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	scanner.Buffer(make([]byte, 0, tailScanBufferInitial), 8*1024*1024)
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {

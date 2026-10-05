@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -288,5 +289,94 @@ func TestTailPipeline_NativeTailAppliesPipeline(t *testing.T) {
 	// line the label filters are checked against.
 	if strings.Contains(tailQuery, "format") {
 		t.Errorf("VictoriaLogs tail query keeps line_format: %s", tailQuery)
+	}
+}
+
+func tailBenchRows(n int) []byte {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, `{"_time":%q,"_msg":"{\"level\":\"info\",\"msg\":\"request %d\",\"user\":\"u%d\"}","_stream":"{app=\"api\",env=\"prod\"}","app":"api","env":"prod","service.version":"1.2"}`+"\n",
+			base.Add(time.Duration(i)*time.Millisecond).Format(time.RFC3339Nano), i, i%10)
+	}
+	return []byte(b.String())
+}
+
+// BenchmarkTailFrames converts one batch of rows; ns/op and allocs/op are
+// per batch (1 or 100 rows), so the per-entry cost of a frame is visible.
+func BenchmarkTailFrames(b *testing.B) {
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.NewDisabled(), LogLevel: "error", LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated, EmitStructuredMetadata: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, bc := range []struct {
+		name  string
+		query string
+		rows  int
+	}{
+		{"plain/1", `{app="api"}`, 1},
+		{"plain/100", `{app="api"}`, 100},
+		{"json/1", `{app="api"} | json`, 1},
+		{"json/100", `{app="api"} | json`, 100},
+	} {
+		rows := tailBenchRows(bc.rows)
+		tp := p.newTailPipeline(bc.query, false)
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := p.tailFrames(context.Background(), tp, rows); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// A burst of rows from VictoriaLogs' tail goes out in full frames, not one
+// or two entries a frame: Loki batches up to 100 entries a frame, and the
+// per-entry cost of a frame drops with its size.
+// conformance: loki_api_v1_tail
+func TestTailPipeline_NativeTailBurstFillsFrames(t *testing.T) {
+	const burst = 5000
+	rows := tailBenchRows(burst)
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		case "/select/logsql/tail":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write(rows)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer vl.Close()
+	p := newLokiProfileTailProxy(t, vl.URL)
+	srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
+	defer srv.Close()
+
+	ws, _, err := (&websocket.Dialer{HandshakeTimeout: 3 * time.Second}).Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"?query="+url.QueryEscape(`{app="api"}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	_ = ws.SetReadDeadline(time.Now().Add(20 * time.Second))
+	entries, frames := 0, 0
+	for entries < burst {
+		_, msg, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("after %d entries in %d frames: %v", entries, frames, err)
+		}
+		got, _ := decodeTailFrame(t, msg)
+		if len(got) > maxTailFrameEntries {
+			t.Fatalf("frame holds %d entries, Loki's maximum is %d", len(got), maxTailFrameEntries)
+		}
+		entries += len(got)
+		frames++
+	}
+	if avg := entries / frames; avg < 50 {
+		t.Fatalf("%d entries in %d frames (%d a frame): the burst was not batched", entries, frames, avg)
 	}
 }

@@ -171,11 +171,10 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	if strings.Contains(logqlQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
-		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
-			p.writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	streams, err = applyQueryLineFormat(r.Context(), streams, logqlQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	writeLokiStreamQueryResponse(w, streams, categorizedLabels)
