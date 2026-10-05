@@ -110,6 +110,8 @@ func TestDetectedLevelWithoutBodyScan(t *testing.T) {
 	}{
 		{name: "stored level still normalised", fields: map[string]string{"level": "WARNING"}, msg: "error", want: "warn"},
 		{name: "severity number still mapped", fields: map[string]string{"severity_number": "17"}, msg: "info", want: "error"},
+		{name: "pre-1.50 Unspecified not line-scanned", fields: map[string]string{"severity": "Unspecified"}, msg: "request error", want: "unknown"},
+		{name: "pre-1.50 derived name still mapped", fields: map[string]string{"severity": "Info2"}, msg: "error", want: "info"},
 		{name: "body keyword ignored", msg: "request failed with error", want: "unknown"},
 		{name: "json body ignored", msg: `{"level":"error"}`, want: "unknown"},
 		{name: "stream label kept", stream: map[string]string{"lvl": "x"}, msg: "error", want: "x"},

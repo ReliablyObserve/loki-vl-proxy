@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`detected_level` of OTLP logs was wrong on VictoriaLogs before v1.50.**
+  Records pushed through OTLP showed `detected_level` `Info2` for severity
+  number 10 (Loki: `info`) and `Unspecified` for a record without a severity
+  (Loki: the level found in the line, for example `error`). VictoriaLogs before
+  v1.50.0 stores the OTLP severity as a single `severity` field (the text, or a
+  name derived from the number) and no `severity_number`, and the proxy only
+  understood the v1.50 shape. The proxy now maps those derived names through
+  their OTel severity number and scans the line for `Unspecified`, so Explore
+  and Logs Drilldown show Loki's levels on every supported VictoriaLogs
+  version. Results on v1.50.0 and newer are unchanged.
+
 ## [2.0.1] - 2026-10-06
 
 ### Fixed

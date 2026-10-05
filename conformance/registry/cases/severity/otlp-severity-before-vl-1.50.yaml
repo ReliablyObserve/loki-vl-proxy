@@ -1,5 +1,5 @@
 id: severity/otlp-severity-before-vl-1.50
-title: OTLP rows without text severity get detected_level "Unspecified" / "Info2" on VictoriaLogs, measured on v1.47 to v1.49 and likely v1.40 to v1.49 (open, version-gated)
+title: OTLP rows stored by VictoriaLogs before v1.50 (one `severity` field, no severity_number) get detected_level "Unspecified" / "Info2" (fixed)
 proves:
   - severity-detected-level-derivation
   - loki_api_v1_query_range
@@ -7,9 +7,8 @@ consumer: explore
 why: |
   TestCompat_DetectedLevelQueryRange pushes OTLP log records and compares the
   proxy's detected_level per entry with Loki's. On VictoriaLogs v1.50.0,
-  v1.51.1, v1.52.0 and v1.53.0 every case matches. On v1.47.0, v1.48.0 and
-  v1.49.0 (supported and tested; v1.40 to v1.46 are supported, not run, and
-  likely behave the same) two cases differ, identically
+  v1.51.1, v1.52.0 and v1.53.0 every case matches. On every version before v1.50 (v1.47.0, v1.48.0 and
+  v1.49.0 tested; v1.40 to v1.46 are supported and store the same shape, source-checked on v1.43.1) two cases differ, identically
   on the three versions and with an unmodified origin/main proxy build:
 
   - `otlp-unspecified` (OTLP record with no severity, line `request error`):
@@ -40,11 +39,12 @@ compare:
     detected_level equal to Loki's for the OTLP fixture entries: `error` for
     the severity-less `request error` line, `info` for severityNumber 10.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#666"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/detected_level.go detectedLevelName (normalisation of OTLP severity text) + test/e2e-compat/detected_level_test.go'
+  area: 'internal/proxy/detected_level.go deriveDetectedLevel (pre-1.50 `severity` field) + test/e2e-compat/detected_level_test.go'
   loki: 'detected_level from severity_text / line keyword scan (pkg/distributor/field_detection.go, v3.7.7)'
-  proxy: '`Unspecified` and `Info2` returned as the level on v1.47 to v1.49; correct from v1.50.0'
-  planned_test: 'TestCompat_DetectedLevelQueryRange per version in the compat-vl vl-matrix job (fails on v1.47 to v1.49 until fixed)'
+  proxy: 'derives the level from the pre-1.50 `severity` field like Loki; unchanged on v1.50.0+'
+  planned_test: 'TestCompat_DetectedLevelQueryRange per version in the compat-vl vl-matrix job (passes on v1.47 to v1.53)'
   clusters: []

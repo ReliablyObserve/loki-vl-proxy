@@ -2826,5 +2826,173 @@
   "source": "victorialogs",
   "want": "Weird",
   "note": "stored detected_level wins"
+ },
+ {
+  "name": "vl-pre-1.50/severity-info2",
+  "stream": {},
+  "fields": {
+   "severity": "Info2"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "info",
+  "note": "v1.47-v1.49 store the number-derived name as severity (captured on v1.49.0)"
+ },
+ {
+  "name": "vl-pre-1.50/severity-unspecified",
+  "stream": {},
+  "fields": {
+   "severity": "Unspecified"
+  },
+  "msg": "request error",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "v1.47-v1.49: no severity sent, keyword scan of the line"
+ },
+ {
+  "name": "vl-pre-1.50/severity-unspecified-plain",
+  "stream": {},
+  "fields": {
+   "severity": "Unspecified"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "unknown",
+  "note": "v1.47-v1.49: no severity sent"
+ },
+ {
+  "name": "vl-pre-1.50/severity-warn",
+  "stream": {},
+  "fields": {
+   "severity": "Warn"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "warn",
+  "note": "v1.47-v1.49"
+ },
+ {
+  "name": "vl-pre-1.50/severity-debug",
+  "stream": {},
+  "fields": {
+   "severity": "Debug"
+  },
+  "msg": "x",
+  "source": "victorialogs",
+  "want": "debug",
+  "note": "v1.47-v1.49, severityNumber 5 stored as Debug"
+ },
+ {
+  "name": "vl-pre-1.50/severity-text-notice",
+  "stream": {},
+  "fields": {
+   "severity": "notice"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "notice",
+  "note": "v1.47-v1.49: unknown text kept raw like Loki"
+ },
+ {
+  "name": "vl-1.50/severity-info2-with-number",
+  "stream": {},
+  "fields": {
+   "severity_number": "10",
+   "severity_text": "Info2"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "info",
+  "note": "v1.50+ shape"
+ },
+ {
+  "name": "vl-pre-1.50/severity-trace",
+  "stream": {},
+  "fields": {
+   "severity": "Trace"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "trace",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/severity-error",
+  "stream": {},
+  "fields": {
+   "severity": "Error"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "error",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/severity-fatal",
+  "stream": {},
+  "fields": {
+   "severity": "Fatal"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "fatal",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/severity-fatal4",
+  "stream": {},
+  "fields": {
+   "severity": "Fatal4"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "fatal",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/severity-debug4",
+  "stream": {},
+  "fields": {
+   "severity": "Debug4"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "debug",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/severity-warn3",
+  "stream": {},
+  "fields": {
+   "severity": "Warn3"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "warn",
+  "note": "v1.47-v1.49 derived name"
+ },
+ {
+  "name": "vl-pre-1.50/later-name-wins",
+  "stream": {},
+  "fields": {
+   "severity": "Info2",
+   "lvl": "debug"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "debug",
+  "note": "Loki stored no severity_text: lvl is checked before the number"
+ },
+ {
+  "name": "vl-pre-1.50/severity-with-number",
+  "stream": {},
+  "fields": {
+   "severity": "Info2",
+   "severity_number": "10"
+  },
+  "msg": "hello",
+  "source": "victorialogs",
+  "want": "Info2",
+  "note": "severity_number present: not the pre-1.50 shape, severity read as stored"
  }
 ]
