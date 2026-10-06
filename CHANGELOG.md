@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The scheduled heavy security scan's image job failed on every run since
+  2026-10-05.** `aquasecurity/trivy-action` drops the `HIGH,CRITICAL` severity
+  filter for SARIF output unless `limit-severities-for-sarif` is set, so the
+  job's `exit-code: 1` failed on an UNKNOWN-severity `tzdata` data update
+  (DLA-4792-1) in the distroless base image. The job now fails on HIGH and
+  CRITICAL findings only, as configured; the built image has none.
+
 ## [2.0.0] - 2026-10-06
 
 ### Breaking Changes
