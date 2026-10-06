@@ -23,6 +23,7 @@ import re
 import sys
 
 SIG_RE = re.compile(r"series=(\d+) points=(\d+) sum=(\S+)")
+NOT_NUMBERS_RE = re.compile(r"not_numbers=(\d+)")
 
 
 def load(path):
@@ -39,11 +40,20 @@ def pct(values, p):
     return values[lo] + (values[hi] - values[lo]) * (k - lo)
 
 
+def not_numbers(signature):
+    """The count of samples that were not numbers, "0" when the signature has none."""
+    found = NOT_NUMBERS_RE.search(signature or "")
+    return found.group(1) if found else "0"
+
+
 def parity(a, b, tolerance):
     """Compare two result signatures of the same window."""
     if a == b:
         return "same"
     ma, mb = SIG_RE.match(a or ""), SIG_RE.match(b or "")
+    # A sample that is not a number is a wrong answer whatever the sums say.
+    if not_numbers(a) != not_numbers(b):
+        return "differs"
     if ma and mb and ma.group(1) == mb.group(1):
         sa, sb = float(ma.group(3)), float(mb.group(3))
         rel = abs(sa - sb) / max(abs(sa), 1e-9)

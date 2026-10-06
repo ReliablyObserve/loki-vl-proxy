@@ -1,0 +1,51 @@
+id: semantics/unwrap-gate-parsefloat-divergences
+title: The unwrap sample gate drops a few values Loki's conversions accept or reject (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The translator gate (translator.UnwrapGateFor) keeps the rows whose value converts
+  in Loki's syntax, with a regular expression, because VictoriaLogs' stats parse
+  values their own way. The expressions match the syntax of strconv.ParseFloat,
+  time.ParseDuration and humanize.ParseBytes except for these values, which differ
+  from Loki:
+
+  - Loki makes a sample, the gate drops the row: hexadecimal floats (`0x1p4`),
+    `infinity`, `nan` / `NaN` (Loki's sum is NaN; VictoriaLogs' sum restarts at a
+    NaN), a plain exponent of 308 (`1e308`) or with digit separators (`1e1_0`);
+    for bytes(), a number that starts with a comma (`,5`), a comma after the point
+    (`1.5,0`, which Go reads as 1) and a no-break space before the unit.
+  - Loki makes no sample (overflow or range error, SampleExtractionErr), the gate
+    keeps the row: a plain value whose mantissa is large enough to overflow float64
+    with an exponent of at most 307 (`1000e307`), a duration beyond int64
+    nanoseconds (`2562048h`; VictoriaLogs saturates at 9.2e9 seconds), a byte size
+    at or above 2^64 (`19EB`; VictoriaLogs answers 1.9e19 or saturates).
+
+  Checked against Go's functions on VictoriaLogs v1.40.0 and v1.52.0: every other
+  form of the lists in internal/translator/unwrap_gate_test.go converts to Go's value
+  (including `5 kB`, `1PB`, `1EiB`, `5.s`, `.5s`, `-.5ms`, `100μs`, `1e-310`, `1e-400`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'max_over_time({service_name="api-gateway"} | json | unwrap latency [1m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    A line whose value is one of the listed forms makes the sample Loki makes.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator/unwrap_gate.go (UnwrapNumberPattern, UnwrapDurationPattern, UnwrapBytesPattern)'
+  loki: 'pkg/logql/log/metrics_extraction.go:316-338 convertFloat, convertDuration, convertBytes'
+  proxy: 'rows with these values are dropped (or kept, for an overflow) by the gate'
+  planned_test: 'TestUnwrapNumberPatternMatchesParseFloat (internal/translator) pins the known differences'
+  clusters: []

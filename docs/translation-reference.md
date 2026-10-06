@@ -102,17 +102,28 @@ Loki names the series of a metric query with the stream labels plus every label 
 | `count_over_time({...}[5m])` | `... \| stats count()` |
 | `bytes_over_time({...}[5m])` | `... \| stats sum_len(_msg)` |
 | `bytes_rate({...}[5m])` | `stats sum_len(_msg)` + `math` normalization by window seconds, then `stats sum(...)` per grouping |
-| `sum_over_time({...} \| unwrap f [5m])` | `... \| stats sum(f)` |
-| `avg_over_time({...} \| unwrap f [5m])` | `... \| stats avg(f)` |
-| `max_over_time({...} \| unwrap f [5m])` | `... \| stats max(f)` |
-| `min_over_time({...} \| unwrap f [5m])` | `... \| stats min(f)` |
-| `first_over_time({...} \| unwrap f [5m])` | `... \| stats first(f)` |
-| `last_over_time({...} \| unwrap f [5m])` | `... \| stats last(f)` |
-| `stddev_over_time({...} \| unwrap f [5m])` | `... \| stats stddev(f)` |
-| `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... \| stats stddev(f)) ^ 2` |
+| `rate({...} \| unwrap f [5m])` | the sum of `f` per second: `... <gate> \| stats sum(__lvp_v)` + `math` normalization by window seconds (not a line rate) |
+| `sum_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats sum(__lvp_v)` |
+| `avg_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats avg(__lvp_v)` |
+| `max_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats max(__lvp_v)` |
+| `min_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats min(__lvp_v)` |
+| `first_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats first(__lvp_v)` |
+| `last_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats last(__lvp_v)` |
+| `stddev_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats stddev(__lvp_v)` |
+| `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... <gate> \| stats stddev(__lvp_v)) ^ 2` |
 | `quantile_over_time(0.95, {...} \| unwrap f [5m])` | proxy exact raw-sample evaluator for instant and range queries (Loki interpolates between ranked samples; VL `quantile` uses a different rank selection and tumbling buckets). Grouping is preserved and samples at the evaluation timestamp are included |
-| `rate_counter({...} \| unwrap f [5m])` | `... \| stats __rate_counter__(f)` |
+| `rate_counter({...} \| unwrap f [5m])` | `... <gate> \| stats __rate_counter__(__lvp_v)` (answered by the proxy's raw-sample evaluator) |
 | `absent_over_time({...}[5m])` | `... \| stats count()` |
+
+#### Unwrap sample validity
+
+Loki makes a sample of a line only when its unwrapped label is present and converts (`pkg/logql/log/metrics_extraction.go`): a line without the label (or with it empty) makes no sample, and a value `strconv.ParseFloat` rejects is marked `__error__="SampleExtractionErr"`, which `| __error__=""` drops. VictoriaLogs' stats functions parse leniently (`sum` reads "86282s" as a number of nanoseconds and "1KiB" as 1024, `max` and `min` compare strings, a group without a value answers an empty string or `NaN`), so every stats pipe over a plain unwrapped label reads only the rows that make a sample. In the table above `<gate>` is, right before the stats pipe (after the pipes that resolve a parsed key),
+
+```
+| filter "f":~"<decimal number syntax of strconv.ParseFloat, plus inf>" | math "f" as __lvp_v
+```
+
+The filter keeps the rows whose value converts in Loki's syntax (a missing or empty label never matches), and the `math` pipe converts each kept row on its own, which the stats functions' value parsing does not do reliably (a group of one row reads `+5`, `.5` or `1e3` as `NaN`). The field is quoted because the `math` pipe reads a bare `max`, `abs` or `rand` as a function. The syntax is the one of `strconv.ParseFloat` for a plain value (digit separators, an exponent up to 307, `inf`), of `time.ParseDuration` for `unwrap duration(f)` (compound terms of `ns`, `us`, `µs`, `ms`, `s`, `m`, `h`, converted to seconds) and of `humanize.ParseBytes` for `unwrap bytes(f)` (case-insensitive SI and IEC units, an optional space, commas in the number, floored to whole bytes). Nothing is read row by row. Values the filter treats differently from Loki are registered in `semantics/unwrap-gate-parsefloat-divergences`: the filter drops hexadecimal floats, `infinity`, `nan`, a plain exponent of 308 and, for `bytes()`, a number that starts with a comma or a no-break space before the unit; it keeps a duration beyond int64 nanoseconds and a byte size at or above 2^64, which Loki rejects. A conversion error answers HTTP 400 in Loki; until the proxy matches that, the rows that do not convert are skipped as `| __error__=""` does. The functions VictoriaLogs has no exact stats for (`quantile_over_time`, `rate_counter`, `first_over_time`, `last_over_time`) are answered by the bounded raw-sample evaluator, which converts with the same Go functions.
 
 ### Outer Aggregations
 

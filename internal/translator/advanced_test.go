@@ -28,12 +28,12 @@ func TestAdvanced_MetricQueries(t *testing.T) {
 		{
 			name:  "avg_over_time with unwrap",
 			logql: `avg_over_time({app="api"} | json | unwrap duration [5m])`,
-			want:  `app:="api" | unpack_json | stats by (_stream, _msg) avg(duration)`,
+			want:  `app:="api" | unpack_json` + UnwrapGate("duration") + ` | stats by (_stream, _msg) avg(__lvp_v)`,
 		},
 		{
 			name:  "max_over_time with unwrap",
 			logql: `max_over_time({app="api"} | logfmt | unwrap response_size [5m])`,
-			want:  `app:="api" | unpack_logfmt | format if ("response.size":*) "<response.size>" as response_size keep_original_fields | format if ("response-size":*) "<response-size>" as response_size keep_original_fields | filter response_size:* | stats by (_stream, _msg) max(response_size)`,
+			want:  `app:="api" | unpack_logfmt | format if ("response.size":*) "<response.size>" as response_size keep_original_fields | format if ("response-size":*) "<response-size>" as response_size keep_original_fields | filter response_size:*` + UnwrapGate("response_size") + ` | stats by (_stream, _msg) max(__lvp_v)`,
 		},
 		{
 			name:  "sum by namespace of rate",

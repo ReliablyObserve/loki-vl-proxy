@@ -1153,6 +1153,143 @@
      ]
     }
    ]
+  },
+  "unwrap-validity": {
+   "description": "Unwrap range metrics over a numeric field, a unit string, a missing label and a conversion: only the rows that make a Loki sample are read, so a missing label or a unit string answers no series and the numeric shapes keep their time. Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h"
+   ],
+   "shapes": [
+    {
+     "name": "U1 json duration_ms sum by service",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U2 json duration_ms max by service",
+     "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U3 json duration_ms sliding sum",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U4 logfmt size_bytes sum by service",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"cache-redis\"} | logfmt | unwrap size_bytes | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U5 logfmt ttl unit string (no sample)",
+     "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap ttl | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U6 missing label, no parser",
+     "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | unwrap nosuch [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U7 missing label, ungrouped sum",
+     "query": "sum(sum_over_time({service_name=\"api-gateway\"} | unwrap nosuch [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U8 rate of an unwrapped label",
+     "query": "sum by (service_name) (rate({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U9 bytes() conversion",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"cache-redis\"} | logfmt | unwrap bytes(size_bytes) | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U12 json duration_ms over every service",
+     "query": "sum by (service_name) (sum_over_time({env=\"production\"} | json | unwrap duration_ms | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U13 logfmt latency_ms over every service",
+     "query": "max by (service_name) (max_over_time({env=\"production\"} | logfmt | unwrap latency_ms | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U14 duration() of a unit string",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) | __error__=\"\" [1m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U10 instant sum_over_time unwrap",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ],
+     "instant": true
+    },
+    {
+     "name": "U11 instant max_over_time missing label",
+     "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | unwrap nosuch [5m]))",
+     "covers": [
+      "semantics/unwrap-sample-validity",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }

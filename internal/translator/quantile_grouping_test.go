@@ -13,7 +13,7 @@ func TestQuantileRangeGrouping(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := `app:="api" | unpack_json | stats ` + tc.want + `quantile(0.95, latency)`
+			want := `app:="api" | unpack_json` + UnwrapGate("latency") + ` | stats ` + tc.want + `quantile(0.95, __lvp_v)`
 			if got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}

@@ -1,5 +1,5 @@
 id: semantics/unwrap-sample-validity
-title: unwrap emits samples Loki skips: a missing label gives "" values, a unit string is passed through (open)
+title: unwrap emits no sample for a missing label or a value that does not convert, and converts like Loki (fixed)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
@@ -13,6 +13,14 @@ why: |
   fail to parse it), returns `"86282s"` verbatim for `| unwrap ttl` over a
   duration string, and sums/max-es absent labels into a `{}` series where Loki
   returns none.
+
+  Fixed: a stats pipe over an unwrapped label reads only the rows whose value
+  converts in Loki's syntax, converted by the math pipe (translator.UnwrapGateFor:
+  strconv.ParseFloat's decimal syntax, time.ParseDuration's, humanize.ParseBytes's),
+  so a missing or empty label, a unit string and a non-numeric value make no
+  sample, `max` and `min` no longer compare strings, and an empty group answers no
+  series. `duration()` and `bytes()` stay VictoriaLogs stats (no raw rows), and
+  `rate` over an unwrapped label is the sum of the values per second.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -30,13 +38,15 @@ compare:
   expect: |
     No series (no line has b); numeric sample values only.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#680"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy range-metric unwrap evaluation (stats pushdown over a missing/non-numeric field)'
+  area: 'internal/translator unwrap gate (UnwrapGate) and internal/proxy raw conversions (unwrap_convert.go)'
   loki: 'pkg/logql/log/metrics_extraction.go:202-231 streamLabelSampleExtractor.Process'
-  proxy: '"" sample values / raw unit strings / {} series'
-  planned_test: 'TestCompat_UnwrapMissingAndNonNumeric (test/e2e-compat, group semantics)'
+  proxy: 'rows that make a Loki sample only; Go conversions for duration() and bytes()'
+  planned_test: 'TestCompat_UnwrapMissingAndNonNumeric and TestCompat_UnwrapRangeSamplesAreNumbers (test/e2e-compat, group core)'
+  note: 'Not changed: a value that does not convert is skipped where Loki fails the query with SampleExtractionErr (semantics/unwrap-conversion-error), and the window bounds and the sample at `end` of an unwrap range metric (semantics/unwrap-range-last-point). Gate divergences from ParseFloat, ParseDuration and ParseBytes: semantics/unwrap-gate-parsefloat-divergences.'
   clusters:
     - 0adb5d8c
     - 0b6060ea

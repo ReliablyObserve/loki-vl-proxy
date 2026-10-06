@@ -1925,7 +1925,15 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 		}
 
 		if funcName == "rate" || funcName == "bytes_rate" {
-			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, logsqlFunc, duration, outerAgg, byLabels, labelFn, hasWithout); ok {
+			rateExpr, rateGate, rateConv := logsqlFunc, "", ""
+			if field := extractUnwrapField(inner); funcName == "rate" && field != "" {
+				// rate over an unwrapped label is the sum of its values per
+				// second (pkg/logql/range_vector.go rateLogs with computeValues).
+				if gate, conv := unwrapGateField(inner, field); gate != "" {
+					rateExpr, rateGate, rateConv = "sum("+field+")", gate, conv
+				}
+			}
+			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, rateExpr, duration, outerAgg, byLabels, labelFn, hasWithout, rateGate, rateConv); ok {
 				if isGroup {
 					return rateResult + groupMarker, true
 				}
@@ -1946,34 +1954,38 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 				continue
 			}
 			statsExpr := logsqlFunc + "(" + unwrapField + ")"
+			// A plain unwrap keeps only the rows Loki makes samples of; a
+			// conversion (duration(), bytes()) is parsed by the proxy's raw
+			// evaluator, as VictoriaLogs reads the units differently.
+			gate, gateConv := unwrapGateField(inner, unwrapField)
 			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
 			if funcName == "stdvar_over_time" {
 				if outerAgg != "" && byLabels == "" {
-					innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+					innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 					withVariance := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String()
 					if outerResult, ok := applyOuterAggregation(withVariance, outerAgg, "__lvp_inner_var"); ok {
 						return outerResult, true
 					}
 				}
-				baseStddev := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+				baseStddev := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, baseStddev), true
 			}
 
 			if seriesAgg, ok := seriesLevelOuterAggregation(outerAgg); ok && byLabels != "" {
-				innerAliased := buildStatsQuery(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query)), "__lvp_inner")
+				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query)), "__lvp_inner", gate, gateConv)
 				result = addByClauseLast(innerAliased+" "+logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String(), byLabels, labelFn)
 				unwrapByLabelsEmbedded = true
 			} else if outerAgg != "" && byLabels == "" {
-				innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
 					result = outerResult
 				} else {
-					result = buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+					result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				}
 			} else {
-				result = buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+				result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				// buildStatsQuery already embedded byLabels via innerBy
 				unwrapByLabelsEmbedded = byLabels != ""
 			}
@@ -2043,7 +2055,7 @@ func defaultRateInnerGrouping(query string) string {
 	return "_stream, level"
 }
 
-func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc, hasWithout bool) (string, bool) {
+func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc, hasWithout bool, gateField, gateConv string) (string, bool) {
 	seconds := durationSeconds(duration)
 	if seconds <= 0 {
 		return "", false
@@ -2060,7 +2072,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 		innerBy = normalizeByLabels(byLabels, labelFn)
 	}
 
-	innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+	innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gateField, gateConv)
 	if seriesLevel && seriesAgg == "count()" {
 		// Counting series does not read the per-second value, so the rate
 		// division is left out.
@@ -2096,11 +2108,26 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 }
 
 func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
+	return buildStatsQueryGated(baseQuery, statsExpr, byLabels, alias, "", "")
+}
+
+// buildStatsQueryGated is buildStatsQuery over an unwrapped label: gateField is
+// the label statsExpr aggregates (empty for a stats function that reads no
+// label). The rows are first reduced to the ones that make a Loki sample, and
+// the label's value converted (UnwrapGate), once the pipes that resolve the label
+// have run, and statsExpr then aggregates the converted value.
+func buildStatsQueryGated(baseQuery, statsExpr, byLabels, alias, gateField, gateConv string) string {
 	query := strings.TrimSpace(baseQuery)
 	if query == "" {
 		query = "*"
 	}
 	query = resolveStatsKeys(query, byLabels, statsExpr)
+	if gateField != "" {
+		query += UnwrapGateFor(gateField, gateConv)
+		if i := strings.LastIndex(statsExpr, gateField+")"); i >= 0 {
+			statsExpr = statsExpr[:i] + UnwrapValueAlias + ")" + statsExpr[i+len(gateField)+1:]
+		}
+	}
 	// emptyByGrouping requires explicit "by ()" — PipeStats can't represent
 	// an empty-but-explicit grouping without a dedicated struct field.
 	if byLabels == emptyByGrouping {
@@ -2730,17 +2757,18 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	statsExpr := "quantile(" + phi + ", " + unwrapField + ")"
+	gate, gateConv := unwrapGateField(queryPart, unwrapField)
 	rangeByLabels, rangeByExplicit := extractRangeByClause(strings.TrimSpace(rest[end+1:]))
 	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 	if outerAgg != "" && byLabels == "" {
-		innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+		innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 		if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
 			return outerResult, true
 		}
 	}
 
-	return buildStatsQuery(logsqlQuery, statsExpr, innerBy, ""), true
+	return buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv), true
 }
 
 func addByClause(query, labels string, labelFn LabelTranslateFunc) string {

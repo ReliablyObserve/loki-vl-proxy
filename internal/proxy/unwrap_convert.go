@@ -1,111 +1,93 @@
 package proxy
 
 import (
-	"regexp"
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 )
 
-// parseDuration converts a Loki-style duration string to seconds.
-// Supports: ns, us, ms, s, m, h, d
-// Examples: "100ms" → 0.1, "1.5s" → 1.5, "2m30s" → 150, "1h" → 3600
-func parseDuration(s string) (float64, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, false
-	}
+// Loki v3.7.7 converts the unwrapped label with pkg/logql/log/metrics_extraction.go
+// convertFloat, convertDuration (time.ParseDuration, in seconds) and
+// convertBytes (humanize.ParseBytes). None of them trims the value: a value
+// the conversion rejects makes a sample carrying __error__="SampleExtractionErr"
+// (see unwrapConversionError), and a label that is absent or empty makes no
+// sample at all. These functions are the same conversions, so every raw-sample
+// path accepts exactly the inputs Loki does.
 
-	// Try simple numeric (already seconds)
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f, true
-	}
-
-	// Parse compound duration like "1h2m3s"
-	re := regexp.MustCompile(`(\d+\.?\d*)(ns|us|µs|ms|s|m|h|d)`)
-	matches := re.FindAllStringSubmatch(s, -1)
-	if len(matches) == 0 {
-		return 0, false
-	}
-
-	var total float64
-	for _, m := range matches {
-		val, _ := strconv.ParseFloat(m[1], 64)
-		switch m[2] {
-		case "ns":
-			total += val / 1e9
-		case "us", "µs":
-			total += val / 1e6
-		case "ms":
-			total += val / 1e3
-		case "s":
-			total += val
-		case "m":
-			total += val * 60
-		case "h":
-			total += val * 3600
-		case "d":
-			total += val * 86400
-		}
-	}
-	return total, true
-}
-
-// convertUnwrapValue applies the LogQL unwrap conversion function to a raw
-// field value: duration() and bytes() parse Loki-style units, an absent
-// conversion parses a plain number. Shared by every raw-sample path so all of
-// them accept the same inputs as Loki.
-func convertUnwrapValue(value, conv string) (float64, bool) {
+// convertUnwrap converts a raw label value with the LogQL unwrap conversion
+// function conv ("" plain number, "duration", "bytes"). The error text is the
+// one Loki puts in __error_details__.
+func convertUnwrap(value, conv string) (float64, error) {
 	switch conv {
 	case "duration":
-		return parseDuration(value)
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return 0, err
+		}
+		return d.Seconds(), nil
 	case "bytes":
-		return parseBytes(value)
+		b, err := parseHumanBytes(value)
+		if err != nil {
+			return 0, err
+		}
+		return float64(b), nil
 	default:
-		f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-		return f, err == nil
+		return strconv.ParseFloat(value, 64)
 	}
 }
 
-// parseBytes converts a Loki-style byte string to bytes.
-// Supports: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB
-// Examples: "1.5KiB" → 1536, "100MB" → 100000000
-func parseBytes(s string) (float64, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, false
-	}
+// convertUnwrapValue reports whether value converts, for the callers that skip
+// a sample Loki would mark with an error.
+func convertUnwrapValue(value, conv string) (float64, bool) {
+	f, err := convertUnwrap(value, conv)
+	return f, err == nil
+}
 
-	// Try simple numeric (already bytes)
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f, true
-	}
+// humanBytesTable is go-humanize's bytesSizeTable, the multipliers
+// humanize.ParseBytes accepts (case-insensitive unit names).
+var humanBytesTable = map[string]uint64{
+	"b": 1, "kib": 1 << 10, "kb": 1000, "mib": 1 << 20, "mb": 1000 * 1000,
+	"gib": 1 << 30, "gb": 1000 * 1000 * 1000, "tib": 1 << 40, "tb": 1000 * 1000 * 1000 * 1000,
+	"pib": 1 << 50, "pb": 1000 * 1000 * 1000 * 1000 * 1000,
+	"eib": 1 << 60, "eb": 1000 * 1000 * 1000 * 1000 * 1000 * 1000,
+	"": 1, "ki": 1 << 10, "k": 1000, "mi": 1 << 20, "m": 1000 * 1000,
+	"gi": 1 << 30, "g": 1000 * 1000 * 1000, "ti": 1 << 40, "t": 1000 * 1000 * 1000 * 1000,
+	"pi": 1 << 50, "p": 1000 * 1000 * 1000 * 1000 * 1000,
+	"ei": 1 << 60, "e": 1000 * 1000 * 1000 * 1000 * 1000 * 1000,
+}
 
-	re := regexp.MustCompile(`^(\d+\.?\d*)\s*(B|KB|KiB|MB|MiB|GB|GiB|TB|TiB)$`)
-	m := re.FindStringSubmatch(s)
-	if m == nil {
-		return 0, false
+// parseHumanBytes is humanize.ParseBytes (github.com/dustin/go-humanize
+// v1.0.1, the function Loki's convertBytes calls), including its error text.
+func parseHumanBytes(s string) (uint64, error) {
+	lastDigit := 0
+	hasComma := false
+	for _, r := range s {
+		if !unicode.IsDigit(r) && r != '.' && r != ',' {
+			break
+		}
+		if r == ',' {
+			hasComma = true
+		}
+		lastDigit++
 	}
-
-	val, _ := strconv.ParseFloat(m[1], 64)
-	switch m[2] {
-	case "B":
-		return val, true
-	case "KB":
-		return val * 1000, true
-	case "KiB":
-		return val * 1024, true
-	case "MB":
-		return val * 1e6, true
-	case "MiB":
-		return val * 1024 * 1024, true
-	case "GB":
-		return val * 1e9, true
-	case "GiB":
-		return val * 1024 * 1024 * 1024, true
-	case "TB":
-		return val * 1e12, true
-	case "TiB":
-		return val * 1024 * 1024 * 1024 * 1024, true
+	num := s[:lastDigit]
+	if hasComma {
+		num = strings.ReplaceAll(num, ",", "")
 	}
-	return val, true
+	f, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, err
+	}
+	extra := strings.ToLower(strings.TrimSpace(s[lastDigit:]))
+	if m, ok := humanBytesTable[extra]; ok {
+		f *= float64(m)
+		if f >= math.MaxUint64 {
+			return 0, fmt.Errorf("too large: %v", s)
+		}
+		return uint64(f), nil
+	}
+	return 0, fmt.Errorf("unhandled size name: %v", extra)
 }

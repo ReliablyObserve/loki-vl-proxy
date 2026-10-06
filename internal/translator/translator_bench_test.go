@@ -135,3 +135,17 @@ func BenchmarkPipeStatsString(b *testing.B) {
 		_ = pipe.String()
 	}
 }
+
+// Unwrap translation: the sample gate (filter, math) before the stats pipe, for
+// a parsed and a plain unwrapped label.
+func BenchmarkTranslate_UnwrapSumByJSON(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`sum by (service_name) (sum_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [1m]))`)
+	}
+}
+
+func BenchmarkTranslate_UnwrapMaxPlain(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`max_over_time({app="nginx"} | unwrap latency [5m])`)
+	}
+}

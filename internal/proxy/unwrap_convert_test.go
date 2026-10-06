@@ -2,70 +2,70 @@ package proxy
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
-func TestParseDuration(t *testing.T) {
+// TestConvertUnwrapMatchesLoki pins the conversions to Loki v3.7.7's
+// convertFloat / convertDuration / convertBytes: no trimming, Go duration
+// syntax (no "d", a bare number only as "0"), humanize byte units, and the
+// error text Loki puts in __error_details__.
+func TestConvertUnwrapMatchesLoki(t *testing.T) {
 	tests := []struct {
-		input string
-		want  float64
-		ok    bool
+		conv, input string
+		want        float64
+		errText     string // "" when the value converts
 	}{
-		{"100ms", 0.1, true},
-		{"1.5s", 1.5, true},
-		{"2m", 120, true},
-		{"1h", 3600, true},
-		{"1d", 86400, true},
-		{"100ns", 0.0000001, true},
-		{"500us", 0.0005, true},
-		{"1h30m", 5400, true}, // compound
-		{"2m30s", 150, true},  // compound
-		{"42", 42, true},      // plain number = seconds
-		{"3.14", 3.14, true},  // float = seconds
-		{"", 0, false},
-		{"abc", 0, false},
+		{"", "15", 15, ""},
+		{"", "-1.5", -1.5, ""},
+		{"", "1e3", 1000, ""},
+		{"", "+5", 5, ""},
+		{"", ".5", 0.5, ""},
+		{"", " 5", 0, `strconv.ParseFloat: parsing " 5": invalid syntax`},
+		{"", "86282s", 0, `strconv.ParseFloat: parsing "86282s": invalid syntax`},
+		{"", "abc", 0, `strconv.ParseFloat: parsing "abc": invalid syntax`},
+		{"duration", "100ms", 0.1, ""},
+		{"duration", "1h30m", 5400, ""},
+		{"duration", "86282s", 86282, ""},
+		{"duration", "100us", 0.0001, ""},
+		{"duration", "0", 0, ""},
+		{"duration", "42", 0, `time: missing unit in duration "42"`},
+		{"duration", "1d", 0, `time: unknown unit "d" in duration "1d"`},
+		{"duration", "", 0, `time: invalid duration ""`},
+		{"duration", "abc", 0, `time: invalid duration "abc"`},
+		{"bytes", "1024", 1024, ""},
+		{"bytes", "1KB", 1000, ""},
+		{"bytes", "1kib", 1024, ""},
+		{"bytes", "1.5KiB", 1536, ""},
+		{"bytes", "2048B", 2048, ""},
+		{"bytes", "1,000", 1000, ""},
+		{"bytes", "10 MB", 1e7, ""},
+		{"bytes", "1.5B", 1, ""},
+		{"bytes", "86282s", 0, "unhandled size name: s"},
+		{"bytes", "abc", 0, `strconv.ParseFloat: parsing "": invalid syntax`},
+		{"bytes", "", 0, `strconv.ParseFloat: parsing "": invalid syntax`},
 	}
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got, ok := parseDuration(tt.input)
-			if ok != tt.ok {
-				t.Fatalf("parseDuration(%q) ok=%v, want ok=%v", tt.input, ok, tt.ok)
+		t.Run(tt.conv+"/"+tt.input, func(t *testing.T) {
+			got, err := convertUnwrap(tt.input, tt.conv)
+			if tt.errText != "" {
+				if err == nil || err.Error() != tt.errText {
+					t.Fatalf("convertUnwrap(%q, %q) error = %v, want %q", tt.input, tt.conv, err, tt.errText)
+				}
+				if _, ok := convertUnwrapValue(tt.input, tt.conv); ok {
+					t.Fatalf("convertUnwrapValue(%q, %q) accepted a value Loki rejects", tt.input, tt.conv)
+				}
+				return
 			}
-			if ok && math.Abs(got-tt.want) > 0.001 {
-				t.Errorf("parseDuration(%q) = %f, want %f", tt.input, got, tt.want)
+			if err != nil {
+				t.Fatalf("convertUnwrap(%q, %q) error = %v", tt.input, tt.conv, err)
+			}
+			if math.Abs(got-tt.want) > 1e-9*math.Max(1, math.Abs(tt.want)) {
+				t.Errorf("convertUnwrap(%q, %q) = %v, want %v", tt.input, tt.conv, got, tt.want)
 			}
 		})
 	}
-}
-
-func TestParseBytes(t *testing.T) {
-	tests := []struct {
-		input string
-		want  float64
-		ok    bool
-	}{
-		{"1024", 1024, true}, // plain number = bytes
-		{"1B", 1, true},
-		{"1KB", 1000, true},
-		{"1KiB", 1024, true},
-		{"1.5KiB", 1536, true},
-		{"100MB", 1e8, true},
-		{"1MiB", 1048576, true},
-		{"1GB", 1e9, true},
-		{"1GiB", 1073741824, true},
-		{"1TB", 1e12, true},
-		{"", 0, false},
-		{"abc", 0, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got, ok := parseBytes(tt.input)
-			if ok != tt.ok {
-				t.Fatalf("parseBytes(%q) ok=%v, want ok=%v", tt.input, ok, tt.ok)
-			}
-			if ok && math.Abs(got-tt.want) > 1 {
-				t.Errorf("parseBytes(%q) = %f, want %f", tt.input, got, tt.want)
-			}
-		})
+	if _, err := convertUnwrap("1"+strings.Repeat("0", 30), "bytes"); err == nil || !strings.HasPrefix(err.Error(), "too large:") {
+		t.Errorf("bytes beyond uint64 must fail with humanize's text, got %v", err)
 	}
 }

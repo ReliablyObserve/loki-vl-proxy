@@ -829,6 +829,15 @@ func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpe
 
 	// Functions that require an unwrap stage.
 	var unwrapField, unwrapConv string
+	if ra.Op == logqlpkg.RangeRate {
+		// rate over an unwrapped label is its sum per second.
+		for _, s := range lq.Pipeline {
+			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
+				unwrapField, unwrapConv = uw.Label, uw.Converter
+				break
+			}
+		}
+	}
 	switch ra.Op {
 	case logqlpkg.RangeRateCounter,
 		logqlpkg.RangeSumOverTime,
@@ -932,6 +941,11 @@ func parseBareParserMetricCompatSpecRegex(query string) (bareParserMetricCompatS
 		return bareParserMetricCompatSpec{}, false
 	}
 	unwrapField, unwrapConv := "", ""
+	if matches[1] == "rate" {
+		// rate over an unwrapped label is its sum per second; without unwrap it
+		// counts lines.
+		unwrapField, unwrapConv = extractBareParserUnwrapExpr(baseQuery)
+	}
 	switch matches[1] {
 	case "rate_counter", "sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time":
 		unwrapField, unwrapConv = extractBareParserUnwrapExpr(baseQuery)
@@ -1309,7 +1323,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 func (p *Proxy) fetchBareParserStatsBuckets(
 	ctx context.Context,
 	spec bareParserMetricCompatSpec,
-	statsAggFunc string,
+	statsAggFunc, pre string,
 	evalStart, evalEnd, stepNs int64,
 ) (seriesMap map[string]manualSeriesSamples, ok bool, err error) {
 	bucket, ok := p.slidingStatsBucket(time.Unix(0, evalStart), time.Duration(stepNs), spec.rangeWindow)
@@ -1331,7 +1345,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 		group += ", " + quoteLogsQLIdent(label)
 	}
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | stats by ("+group+") "+statsAggFunc)
+	params.Set("query", logsqlQuery+pre+" | stats by ("+group+") "+statsAggFunc)
 	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
@@ -1990,8 +2004,8 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	}
 
 	// Stats fast path for unwrap aggregations that compose correctly from
-	// buckets: sum, max, min. Skip when unwrapConv is set
-	// (duration()/bytes()): VL operates on raw strings, not converted floats.
+	// buckets: sum, max, min. The bucket query converts the value itself
+	// (translator.UnwrapGateFor), duration() and bytes() included.
 	if p.tryUnwrapViaStatsFastPath(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
 		return
 	}
@@ -2046,7 +2060,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 			// A byte sum of zero cannot tell an absent bucket from empty lines.
 			statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
 		}
-		series, ok, err = p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+		series, ok, err = p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, "", startNanos, endNanos, stepNanos)
 		if !ok {
 			return false
 		}
@@ -2081,18 +2095,20 @@ func (p *Proxy) writeBareParserSeriesLimitError(w http.ResponseWriter, start tim
 // the VL stats endpoint (O(buckets) instead of O(log-entries)). Returns true if
 // the response was written, false if the caller should fall through to the slow path.
 func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec, startNanos, endNanos, stepNanos int64) bool {
-	if spec.unwrapField == "" || spec.unwrapConv != "" {
+	if spec.unwrapField == "" {
 		return false
 	}
 	vlField := p.labelTranslator.ToVL(spec.unwrapField)
+	// The bucket query reads only the rows that make a Loki sample, converted
+	// by the math pipe: VictoriaLogs' own stats parse units (unwrap_samples.go).
 	var statsAggFunc, aggFunc string
 	switch spec.funcName {
 	case "sum_over_time":
-		statsAggFunc, aggFunc = "sum("+vlField+") as c", "sum"
+		statsAggFunc, aggFunc = "sum("+translator.UnwrapValueAlias+") as c", "sum"
 	case "max_over_time":
-		statsAggFunc, aggFunc = "max("+vlField+") as c", "max"
+		statsAggFunc, aggFunc = "max("+translator.UnwrapValueAlias+") as c", "max"
 	case "min_over_time":
-		statsAggFunc, aggFunc = "min("+vlField+") as c", "min"
+		statsAggFunc, aggFunc = "min("+translator.UnwrapValueAlias+") as c", "min"
 	}
 	// first_over_time and last_over_time have no VictoriaLogs stats function
 	// (lib/logstorage/stats_*.go has no first/last); VictoriaLogs rejects them as
@@ -2100,7 +2116,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	if statsAggFunc == "" {
 		return false
 	}
-	uwSeries, ok, uwErr := p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+	uwSeries, ok, uwErr := p.fetchBareParserStatsBuckets(r.Context(), spec, statsAggFunc, translator.UnwrapGateFor(vlField, spec.unwrapConv), startNanos, endNanos, stepNanos)
 	if !ok {
 		return false
 	}
