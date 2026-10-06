@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-06
+
 ### Fixed
 
 - **A parsed key or structured metadata named like a stream label is exposed
