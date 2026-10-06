@@ -5,9 +5,9 @@
 #
 # `command` is replaced (not merged) by compose overrides, so this repeats the
 # base flag list and adds the reader/fs concurrency caps used for the published
-# benchmark numbers (see docs/benchmarks.md). Those two flags require
-# VictoriaLogs >= v1.37.0; the base compose omits them so the compatibility
-# matrix can start older versions.
+# benchmark numbers (see docs/benchmarks.md). Those two flags exist on every
+# supported VictoriaLogs line (v1.37+); the base compose omits them so the
+# compatibility matrix and the e2e stack measure VictoriaLogs defaults.
 services:
   loki:
     # Same config file as CI e2e (loki-local-config.yaml) plus benchmark-only

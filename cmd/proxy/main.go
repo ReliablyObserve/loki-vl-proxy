@@ -552,7 +552,7 @@ func run(
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
 	cbWindowDuration := fs.Duration("cb-window-duration", 30*time.Second, "Circuit breaker: sliding window for failure counting; failures older than this are discarded")
-	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
+	backendMinVersion := fs.String("backend-min-version", "v1.40.0", "Minimum VictoriaLogs version considered fully supported at startup (first minor of the oldest supported line; v1.4x and v1.5x are supported)")
 	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true.")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
 	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set.")

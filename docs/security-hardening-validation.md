@@ -32,7 +32,7 @@ Existing development containers and production deployments were not modified.
 
 | Stack/check | Observed result |
 | --- | --- |
-| VictoriaLogs v1.30.0, v1.50.0, v1.52.0 | Native and label tenants isolated across hot/cold reads with caches enabled and disabled; repeated requests return own data and exclude foreign/default data. Nine tests per version including subtests. |
+| VictoriaLogs v1.30.0 (measured before the support change), v1.50.0, v1.52.0 | Native and label tenants isolated across hot/cold reads with caches enabled and disabled; repeated requests return own data and exclude foreign/default data. Nine tests per version including subtests. |
 | Loki 3.6.0 and 3.7.1, VL v1.50.0 | Identical visible lines for disjoint one-second windows in the same former cache bucket, repeated requests, backtick formatting and escaped printf literals. Changing topk/bottomk winners match at each timestamp for rate and count_over_time. |
 | Grafana 13.0.1 / Logs Drilldown 2.0.4 | Three strict browser tests pass across direct Loki, normal proxy and native-metadata proxy: 18 page states verify exact marker presence/absence and formatted text. Plugin version verified through Grafana API. |
 | Grafana synthetic and ingress tail | Two tests require newly ingested markers in visible live log rows, beyond merely opening WebSockets. Both pass. |

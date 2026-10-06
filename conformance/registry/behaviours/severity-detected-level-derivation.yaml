@@ -43,4 +43,4 @@ cases:
   - severity/normalisation-table
   - severity/keyword-scan-fallback
   - severity/detected-level-filter-json-level
-  - versions/otlp-severity-before-vl-1.35
+  - severity/otlp-severity-before-vl-1.50

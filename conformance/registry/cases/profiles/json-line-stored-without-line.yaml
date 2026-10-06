@@ -6,7 +6,7 @@ proves:
 consumer: explore
 why: |
   A Promtail- or Alloy-style Loki push of a JSON line carries no _msg key.
-  VictoriaLogs' Loki push endpoint (v1.30.0 and v1.52.0 alike, measured
+  VictoriaLogs' Loki push endpoint (v1.30.0 (measured before the support change) and v1.52.0 alike, measured
   2026-10-02) parses the line, stores each key as a field (nested objects as
   dotted names, numbers as strings) and sets _msg to "missing _msg field;
   see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field".

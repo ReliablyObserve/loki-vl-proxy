@@ -303,6 +303,16 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 			"field_values.column_index", p.backendSupportsColumnFieldValues,
 			"service_name.derivation", serviceNameDerivationForm(logsql.CapabilitiesFor(semver)),
 		)
+		if !semverAtLeast(semver, logsql.MinSupportedMajor, logsql.MinSupportedMinor, 0) {
+			// Independent of -backend-min-version: Helm values or an operator
+			// may carry an older floor, but the supported lines start here.
+			p.log.Warn(
+				"backend version is below the supported VictoriaLogs lines",
+				"backend.version.semver", semver,
+				"minimum_supported_version", fmt.Sprintf("v%d.%d.0", logsql.MinSupportedMajor, logsql.MinSupportedMinor),
+				"note", "VictoriaLogs v1.4x and v1.5x are supported; this version is unsupported and untested",
+			)
+		}
 	}
 }
 

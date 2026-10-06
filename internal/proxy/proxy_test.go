@@ -297,7 +297,7 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_values":
-			// v1.48 supports stream_field_values (stream endpoints available since v1.30)
+			// v1.48 supports stream_field_values (stream endpoints exist on every supported version)
 			// but NOT the substring filter=substring param (added in v1.49).
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")

@@ -102,7 +102,10 @@ jobs:
       - name: Run VictoriaLogs compatibility score
         env:
           VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:${{ matrix.vl_version }}
-        run: go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
+        # The score plus the two checks whose outcome depends on how the
+        # VictoriaLogs version words or stores things: OTLP severity as
+        # detected_level, and the status of rejected queries (parse errors).
+        run: go test -v -tags=e2e -run '^(TestSetup_IngestLogs|TestVLTrackScore|TestCompat_DetectedLevelQueryRange|TestCompat_RejectedQueryStatusParity)$' ./test/e2e-compat/
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat

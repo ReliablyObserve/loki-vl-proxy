@@ -58,6 +58,7 @@ cases:
   - profiles/stage-field-exposure
   - profiles/label-filter-on-line-field                      # metric queries open
   - profiles/json-line-stored-without-line                   # open gap
+  - versions/rejected-stats-query-wording-vl-1.47
   - profiles/structured-metadata-label-collision             # open gap, owner decision
   - profiles/uncategorized-streams-carry-structured-metadata
   - profiles/detected-fields-dotted-json-keys

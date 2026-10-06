@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **VictoriaLogs 1.3x and older are no longer supported; the supported lines
+  are 1.4x and 1.5x.** The policy is now "the latest line and the previous one,
+  fully": today v1.5x and v1.4x (v1.40.0 and newer). The tested matrix is the
+  latest 3 releases of each line, using the latest patch of each minor:
+  v1.47.0, v1.48.0, v1.49.0, v1.51.1, v1.52.0 and v1.53.0 (the weekly and
+  manual `vl-matrix` job; pull requests still run the pinned v1.52.0).
+  v1.53.0 has not run in that job yet. The matrix no longer contains v1.30.0
+  through v1.46.0, v1.50.0 or v1.51.0. v1.40 to v1.46 and v1.50.x stay
+  supported through the capability gates (`ipv4_range`, the `stats_query_range`
+  offset, the metadata substring filter and the rest keep their fallbacks) but
+  are not run in CI. When a newer line appears the window shifts by one line;
+  the rule is encoded in `compatibility-matrix.json` (`support_window`) and
+  enforced by `TestVictoriaLogsSupportPolicy` (two adjacent lines, at most 3
+  versions per line, the pin one of the tested versions, and the minimum
+  version, the `-backend-min-version` default in the flag, the Go fallback and
+  the Helm value, `logsql.MinSupportedMinor` and the capability profiles all
+  agree).
+- **`-backend-min-version` now defaults to `v1.40.0` (was `v1.30.0`).** The
+  startup check already refused a detected older backend, so a deployment on
+  VictoriaLogs v1.30 to v1.39 now stops at startup with an error naming the
+  flag, instead of starting. With an explicit older `-backend-min-version` (a
+  Helm value may still carry `v1.30.0`) or
+  `-backend-allow-unsupported-version=true` it starts, and the proxy now logs a
+  warning, `backend version is below the supported VictoriaLogs lines`, on
+  every start for any detected version below v1.40.0 whatever the flag says;
+  such a version is unsupported and untested. A backend whose version cannot be
+  read still only warns (an error with `-backend-version-strict=true`). The
+  Helm default, the flag description and the generated configuration reference
+  are updated. Capability profile names and the capabilities each version gets
+  are unchanged (`vl-v1.30-plus` and `legacy-pre-v1.30` describe where a
+  capability starts, not the support floor).
+- **Removed:** the registry items that only described VictoriaLogs below v1.35
+  (`format if` dropping the destination field, OTLP severity shape on v1.30 to
+  v1.34), because those versions are unsupported. No proxy code path was
+  removed: the proxy has no branch that serves only VictoriaLogs below v1.40.
+  The conditional `label_format` copy still emits
+  `format if (...) ... skip_empty_results` for every version (kept unchanged),
+  and the stream-metadata fallback to generic `field_*` endpoints stays for
+  backends whose version is unknown and whose endpoint probe fails.
+
+### Fixed
+
+- **A rejected query on VictoriaLogs v1.47 is Loki's 400 again.** The proxy
+  recognises an invalid query from the text of VictoriaLogs' error. v1.47.0
+  words a parse error `cannot parse query [<query>]: <reason>`, a form the proxy
+  did not know, so Grafana's metric `query_range` with an invalid line-filter
+  regex went down the backend-failure path instead of answering Loki's 400, and
+  the echoed query was not redacted from the error text. The wrapper is now
+  recognised wherever the later `cannot parse `query` arg [<query>]: <reason>`
+  form is (classification, echo stripping, redaction), with unit tests on the
+  real v1.47.0 messages. Only v1.47.0 was run; v1.40 to v1.46 likely use the
+  same wording.
+
 ## [1.108.1] - 2026-10-06
 
 ### Security

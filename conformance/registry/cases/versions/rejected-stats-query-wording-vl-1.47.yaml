@@ -1,0 +1,54 @@
+id: versions/rejected-stats-query-wording-vl-1.47
+title: The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed)
+proves:
+  - loki-compatible-profile
+  - status-400
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The proxy classifies a VictoriaLogs error as "the query is invalid" (Loki:
+  400 bad_data) from the message text. It knew `cannot parse query arg:` (up
+  to v1.51) and `cannot parse `query` arg [<query>]: <reason>` (v1.52+), but
+  VictoriaLogs v1.47.0 writes `cannot parse query [<query>]: <reason>` (captured
+  from the image; 422 on stats_query_range, 400 elsewhere). That text was
+  unclassified, so Grafana's metric query_range with an invalid line-filter
+  regex went down the backend-failure path instead of answering Loki's 400, and
+  the redaction of the echoed query did not recognise the wrapper either.
+  Measured on a v1.47.0 stack with the pre-fix build: the proxy answered 422
+  (errorType execution) or 200 with a partial-results warning where Loki
+  answers 400. The
+  likely affected range is v1.40 to v1.47 (only v1.47.0 was run; v1.48.0 and
+  newer use the later wording).
+
+  Fixed: `cannot parse query [` is a parse-echo prefix in classifyVLError,
+  stripVLParseEcho and the redaction, with unit tests on the real v1.47 texts.
+  TestCompat_RejectedQueryStatusParity no longer insists on VictoriaLogs' own
+  wording and checks the proxy's status on v1.47.0.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({app="api-gateway"} |~ "a{2,1}" [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    User-Agent: Grafana/13.0.1
+    X-Grafana-Org-Id: "1"
+    X-Query-Tags: Source=grafana
+compare:
+  mode: exact
+  fields: [status]
+  expect: |
+    HTTP 400 on both Loki and the proxy, on every tested VictoriaLogs version.
+gap:
+  status: fixed
+  fixed_by: "#659"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/http_utils.go vlParseEchoPrefixes, classifyVLError, stripVLParseEcho'
+  loki: 'pkg/logql/syntax regexp validation: 400 bad_data'
+  proxy: 'v1.47 parse errors unclassified (backend-failure path) before the fix'
+  planned_test: 'TestCompat_RejectedQueryStatusParity + TestClassifyVLError_RealVictoriaLogsTexts (v147 cases), compat-vl matrix'
+  clusters: []
