@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The visual-smoke gate reads a PR that removes a difference from Loki as
+  improved even when another, pre-existing difference stays.** A page whose
+  query the PR fixes was reported as "neither build matches Loki" when the same
+  page also carried a difference both builds share (for example index/stats on
+  an open gap). The gate now passes a PR that adds no difference from Loki and
+  has fewer than the base; a new difference still fails.
+
 - **A filter, grouping, unwrap or label_format on the plain name of a stream
   label after a parser reads the stream value, as Loki does.** When a `| json`,
   `| logfmt`, `| regexp` or `| pattern` stage extracts a key named like a stream
@@ -61,13 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in 45 s with a 1.0 GB peak resident set, from 203 s and 2.0 GB.
 
 ### Fixed
-
-- **The visual-smoke gate reads a PR that removes a difference from Loki as
-  improved even when another, pre-existing difference stays.** A page whose
-  query the PR fixes was reported as "neither build matches Loki" when the same
-  page also carried a difference both builds share (for example index/stats on
-  an open gap). The gate now passes a PR that adds no difference from Loki and
-  has fewer than the base; a new difference still fails.
 
 - **Two unit tests waited out timeouts.**
   `TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker` took 120 s:
