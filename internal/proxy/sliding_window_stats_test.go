@@ -242,6 +242,9 @@ func decodeMatrix(t *testing.T, body []byte) map[string][][2]string {
 
 // conformance: heavy-metric-fetch-bounds, window-bounds-and-step-alignment, semantics/sliding-window-recurrence-exact
 func TestSlidingWindowStats_LongRangeIsExactWithStepSizedBuckets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name   string
@@ -305,6 +308,9 @@ func TestSlidingWindowStats_LongRangeIsExactWithStepSizedBuckets(t *testing.T) {
 
 // conformance: heavy-metric-fetch-bounds, series-limits-and-partial-results, limits/top-n-ranking-not-silent
 func TestSlidingWindowStats_TopKRanksExactWindowsWithoutRawFetch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
 	for _, rng := range []time.Duration{24 * time.Hour, 7 * 24 * time.Hour} {
 		t.Run(rng.String(), func(t *testing.T) {

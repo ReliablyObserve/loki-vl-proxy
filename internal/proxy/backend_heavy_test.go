@@ -428,7 +428,6 @@ func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
 	}
 
 	unblock := make(chan struct{})
-	defer close(unblock)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -442,6 +441,9 @@ func TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker(t *testing.T) {
 		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
 	defer backend.Close()
+	// Release the held request before backend.Close (defers run last first): Close waits for it, and the
+	// client's backend timeout would otherwise end the wait after two minutes.
+	defer close(unblock)
 	p, err2 := New(Config{
 		BackendURL:                       backend.URL,
 		Cache:                            cache.New(time.Millisecond, 10),

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A capped `-short` mode for local unit tests (`scripts/test-short.sh`).**
+  It runs `go test -short -count=1 -p 1` with `GOMEMLIMIT=3GiB` and
+  `GOMAXPROCS=4`; the five unit tests that take five seconds or more skip under
+  `-short` and still run in CI, which does not pass it. `internal/proxy` runs
+  in 45 s with a 1.0 GB peak resident set, from 203 s and 2.0 GB.
+
+### Fixed
+
+- **Two unit tests waited out timeouts.**
+  `TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker` took 120 s:
+  its deferred `close(unblock)` ran after `backend.Close`, which waits for the
+  held request, so the wait ended only at the client's backend timeout. The
+  tail hardening mock slept 10 s without watching the request context. Both
+  now release the request (0.06 s and 5.0 s).
+
+### Security
+
+- **Two alerts dismissed with a recorded reason.** Code scanning #604
+  (Semgrep `insecure-hash-algorithm-sha1`, `bench/parity/cluster.py`): false
+  positive; the SHA-1 there is a content identifier for parity clusters that
+  registry cases claim by id, called with `usedforsecurity=False` and
+  suppressed inline, and changing it would renumber every claim. Dependabot #87
+  (`braces` 3.0.3, CVE-2026-93687): tolerable risk; no fixed release exists and
+  it is reached only through the documentation site's build tooling
+  (chokidar, micromatch) at build time with patterns from this repository's
+  configuration, not from the proxy binary or image.
+
 ## [2.2.0] - 2026-10-06
 
 ### Fixed
