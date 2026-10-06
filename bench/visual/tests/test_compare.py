@@ -146,6 +146,42 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual(len(row["loki_diffs"]), 1)
         self.assertEqual(row["loki_explained"], [])
 
+    def test_base_that_needs_an_explanation_the_pr_does_not_is_not_a_loki_match(self):
+        # The base lacks Loki's level_extracted (explained by design), the PR returns it: improved, not unsettled.
+        import visual_comment
+        stream, types = {"app": "x", "level": "info"}, {"app": "I", "level": "I"}
+        loki = log_capture(dict(stream, level_extracted="debug"), dict(types, level_extracted="P"), uid="vp-loki")
+        pr = log_capture(dict(stream, level_extracted="debug"), dict(types, level_extracted="P"))
+        _, row = self.run_compare(log_capture(stream, types), pr, loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertEqual(row["loki_main_n"], 1)
+        self.assertEqual(visual_comment.classify(row), "improved")
+        # a parse error both lack plus the suffix only the base lacks: the base needs one more reason
+        loki_err = log_capture(dict(stream, level_extracted="debug", __error__="JSONParserErr"),
+                               dict(types, level_extracted="P", __error__="P"), uid="vp-loki")
+        _, row = self.run_compare(log_capture(stream, types), pr, loki_err)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertEqual(visual_comment.classify(row), "improved")
+        # both builds needing the same explanation still both match Loki
+        _, row = self.run_compare(log_capture(stream, types), log_capture(stream, types), loki)
+        self.assertEqual(row["loki_main_n"], 0)
+
+    def test_extracted_label_the_pr_returns_is_compared_not_set_aside(self):
+        # Loki adds level_extracted and a parse error the proxy does not report; a PR that returns level_extracted
+        # with Loki's value is explained only by the parse-error rule, a different value stays a difference.
+        stream = {"app": "x", "level": "info"}
+        loki = log_capture(dict(stream, level_extracted="debug", __error__="JSONParserErr"),
+                           {"app": "I", "level": "I", "level_extracted": "P", "__error__": "P"}, uid="vp-loki")
+        row = self.check(log_capture(dict(stream, level_extracted="debug"), {"app": "I", "level": "I", "level_extracted": "P"}), loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertNotIn("_extracted suffix", row["loki_explained"][0])
+        row = self.check(log_capture(dict(stream, level_extracted="warn"), {"app": "I", "level": "I", "level_extracted": "P"}), loki)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        # a base without the suffix is still explained by it
+        row = self.check(log_capture(stream, {"app": "I", "level": "I"}), loki)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertIn("_extracted suffix", row["loki_explained"][0])
+
     def test_detected_labels_cardinality_explained_but_not_an_empty_loki(self):
         pr = resources(("detected_labels?q=1", {"detectedLabels": [{"label": "pod", "cardinality": 45}, {"label": "level", "cardinality": 2}]}))
         loki = resources(("detected_labels?q=1", {"detectedLabels": [{"label": "level", "cardinality": 2}, {"label": "pod", "cardinality": 67}]}), uid="vp-loki")

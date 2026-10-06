@@ -69,3 +69,58 @@ func BenchmarkLogQueryStreams_LokiProfileStages(b *testing.B) {
 		})
 	}
 }
+
+// stageCollisionBenchBody returns 500 rows whose JSON line holds keys named
+// like three stream labels (app, level, service_name), as VictoriaLogs holds
+// them after unpack_json: the stored fields carry the line's values.
+func stageCollisionBenchBody() []byte {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var body []byte
+	for i := 0; i < 500; i++ {
+		user := "u" + strconv.Itoa(i%7)
+		line := `{"level":"debug","app":"inner","service_name":"inner","msg":"request served","user":"` + user + `","status":200}`
+		row := map[string]string{
+			"_time":        start.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano),
+			"_msg":         line,
+			"_stream":      `{app="api",env="production",level="info",service_name="api"}`,
+			"app":          "inner",
+			"env":          "production",
+			"level":        "debug",
+			"service_name": "inner",
+			"msg":          "request served",
+			"user":         user,
+			"status":       "200",
+			"k8s.pod.name": "api-" + strconv.Itoa(i%5),
+		}
+		encoded, _ := json.Marshal(row)
+		body = append(append(body, encoded...), '\n')
+	}
+	return body
+}
+
+// BenchmarkLogQueryStreams_ExtractedCollision converts rows whose parsed keys
+// collide with stream labels: with | json each collision is one more label
+// (name_extracted) in the response, which is the added work; without a parser
+// the stored fields are hidden and cost the repeated-label check only.
+func BenchmarkLogQueryStreams_ExtractedCollision(b *testing.B) {
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.NewDisabled(), LogLevel: "error",
+		EmitStructuredMetadata: true, LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated})
+	if err != nil {
+		b.Fatal(err)
+	}
+	body := stageCollisionBenchBody()
+	for _, bc := range []struct{ name, query string }{
+		{"plain", `{app="api"}`},
+		{"json", `{app="api"} | json`},
+		{"json_filter", `{app="api"} | json | user="u1"`},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, _, err := p.vlReaderToLokiStreams(bytes.NewReader(body), bc.query, "", true, true, false); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

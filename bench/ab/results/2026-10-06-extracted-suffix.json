@@ -1,0 +1,324 @@
+{
+ "label": "extracted-suffix",
+ "date": "2026-10-06",
+ "set": "extracted-suffix",
+ "description": "Parsed keys named like a stream label (level, service_name, app on the generator's streams) read as name_extracted: log entries over json and logfmt, label filters, drop and metric grouping on the renamed label. Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 8
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 5,
+  "pr": 5,
+  "loki": 5
+ },
+ "rows": [
+  {
+   "shape": "E1 logs, json parser over stream labels",
+   "range": "1h",
+   "p50": {
+    "base": 0.038,
+    "pr": 0.039,
+    "loki": 0.049
+   },
+   "p95": {
+    "base": 0.042,
+    "pr": 0.042,
+    "loki": 0.056
+   },
+   "cold": {
+    "base": 0.043,
+    "pr": 0.034,
+    "loki": 0.03
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 45.65,
+    "pr": 45.65,
+    "loki": 45.65
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.97
+  },
+  {
+   "shape": "E2 logs, logfmt parser over stream labels",
+   "range": "1h",
+   "p50": {
+    "base": 0.025,
+    "pr": 0.026,
+    "loki": 0.037
+   },
+   "p95": {
+    "base": 0.03,
+    "pr": 0.033,
+    "loki": 0.051
+   },
+   "cold": {
+    "base": 0.026,
+    "pr": 0.027,
+    "loki": 0.027
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 21.62,
+    "pr": 21.62,
+    "loki": 21.62
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "E3 logs, json, existence filter on level_extracted",
+   "range": "1h",
+   "p50": {
+    "base": 0.024,
+    "pr": 0.048,
+    "loki": 0.038
+   },
+   "p95": {
+    "base": 0.029,
+    "pr": 0.053,
+    "loki": 0.038
+   },
+   "cold": {
+    "base": 0.027,
+    "pr": 0.056,
+    "loki": 0.046
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 25.17,
+    "pr": 25.17,
+    "loki": 25.17
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.5
+  },
+  {
+   "shape": "E4 logs, logfmt, existence filter on level_extracted",
+   "range": "1h",
+   "p50": {
+    "base": 0.013,
+    "pr": 0.04,
+    "loki": 0.04
+   },
+   "p95": {
+    "base": 0.017,
+    "pr": 0.044,
+    "loki": 0.044
+   },
+   "cold": {
+    "base": 0.012,
+    "pr": 0.039,
+    "loki": 0.032
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 23.12,
+    "pr": 23.12,
+    "loki": 23.12
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.32
+  },
+  {
+   "shape": "E5 logs, json, drop level_extracted",
+   "range": "1h",
+   "p50": {
+    "base": 0.036,
+    "pr": 0.049,
+    "loki": 0.038
+   },
+   "p95": {
+    "base": 0.041,
+    "pr": 0.057,
+    "loki": 0.063
+   },
+   "cold": {
+    "base": 0.043,
+    "pr": 0.044,
+    "loki": 0.045
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 24.71,
+    "pr": 24.71,
+    "loki": 24.71
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.73
+  },
+  {
+   "shape": "E6 logfmt count by level_extracted",
+   "range": "1h",
+   "p50": {
+    "base": 0.011,
+    "pr": 0.01,
+    "loki": 0.005
+   },
+   "p95": {
+    "base": 0.015,
+    "pr": 0.014,
+    "loki": 0.006
+   },
+   "cold": {
+    "base": 0.012,
+    "pr": 0.025,
+    "loki": 0.03
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 20.85,
+    "pr": 20.85,
+    "loki": 20.85
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.1
+  },
+  {
+   "shape": "E7 json count by level_extracted",
+   "range": "1h",
+   "p50": {
+    "base": 0.526,
+    "pr": 0.52,
+    "loki": 0.009
+   },
+   "p95": {
+    "base": 0.544,
+    "pr": 0.53,
+    "loki": 0.012
+   },
+   "cold": {
+    "base": 0.525,
+    "pr": 0.52,
+    "loki": 0.09
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 33.08,
+    "pr": 33.08,
+    "loki": 33.08
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.01
+  },
+  {
+   "shape": "E8 instant logfmt by level_extracted",
+   "range": "instant",
+   "p50": {
+    "base": 0.007,
+    "pr": 0.005,
+    "loki": 0.005
+   },
+   "p95": {
+    "base": 0.008,
+    "pr": 0.008,
+    "loki": 0.009
+   },
+   "cold": {
+    "base": 0.006,
+    "pr": 0.008,
+    "loki": 0.014
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 27.14,
+    "pr": 27.14,
+    "loki": 3.01
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.4
+  }
+ ]
+}

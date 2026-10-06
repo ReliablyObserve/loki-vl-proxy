@@ -1,0 +1,43 @@
+id: semantics/two-parsers-keep-one
+title: A query with `| json` and `| logfmt` runs the one parser the data answers to (open)
+proves:
+  - parser-json
+  - parser-logfmt
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki runs both stages on every line: a logfmt line gets the JSON parse error
+  and then its logfmt keys, a JSON line its JSON keys (a key the first parser
+  extracted is skipped by the second, ParserHint.Extracted). The proxy probes
+  VictoriaLogs for recent rows and removes one of the two stages
+  (preferWorkingParser, internal/proxy/query_translation.go), so on a stream
+  holding both formats the lines of the removed parser carry no parsed labels
+  (measured 2026-10 on a stream of JSON and logfmt lines:
+  `{app="x"} | json | logfmt` returned the JSON lines parsed and the logfmt
+  lines with their stream labels only, where Loki parsed all of them). The
+  translation itself keeps both stages in order (`| unpack_json | unpack_logfmt`),
+  and the name_extracted rename follows the first parser that reads a key.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | json | logfmt'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values, parsed labels]
+  expect: |
+    Parsed labels for the lines of both formats.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/query_translation.go preferWorkingParser (probe-based removal of a parser stage)'
+  loki: 'pkg/logql/log/pipeline.go: every stage runs on every line; parser.go skips a key ParserHint.Extracted'
+  proxy: 'one of the two parser stages is removed from the query'
+  planned_test: 'TestCompat_TwoParsersOnMixedFormats (test/e2e-compat, group semantics)'

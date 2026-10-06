@@ -293,6 +293,9 @@ type lineFieldExposure struct {
 	// extractions are the entries of json and logfmt extraction lists. Loki
 	// gives every one of them a label, empty when the line lacks the key.
 	extractions []lineExtraction
+	// regexps are the | regexp stages' expressions, which read a named group
+	// of the line where VictoriaLogs leaves the stored field of that name.
+	regexps []*regexp.Regexp
 	// labelFormats are the label_format entries, each with what the stages
 	// before it expose (fixLabelFormats).
 	labelFormats []labelFormatTarget
@@ -446,6 +449,10 @@ func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
 				}
 			}
 			switch s.Type {
+			case logqlpkg.ParserRegexp:
+				if re, err := regexp.Compile(s.Param); err == nil {
+					exposure.regexps = append(exposure.regexps, re)
+				}
 			case logqlpkg.ParserJSON:
 				exposure.jsonAll = exposure.jsonAll || full
 			case logqlpkg.ParserLogfmt:
@@ -539,6 +546,127 @@ func (e *lineFieldExposure) fieldCategory(key string, lineKeys map[string]bool, 
 		return e.logfmtAll, !e.logfmtAll
 	}
 	return false, false
+}
+
+// extractedSuffix is what Loki appends to the name of a parsed label or
+// structured metadata key that shares its name with a stream label
+// (pkg/logql/log/parser.go duplicateSuffix): the stream label keeps its value
+// and the entry label is exposed as name_extracted.
+const extractedSuffix = "_extracted"
+
+// mayReadKey reports whether a stage may read key from the row's line: a
+// full parser reads every key of its format, the other stages name theirs.
+func (e *lineFieldExposure) mayReadKey(key string, lineKeys map[string]bool, line []byte) bool {
+	switch {
+	case e == nil:
+		return false
+	case e.names[key]:
+		return true
+	case lineKeys != nil:
+		return e.exposesJSONLine(lineKeys) && isJSONLineField(key, lineKeys)
+	}
+	return e.logfmtAll && len(line) > 0 && logfmtLineHasKey(line, key)
+}
+
+// skipsStreamKeyField reports whether a stored field named like a stream label
+// is no entry label: no stage reads the key from the line, and the field only
+// repeats the stream label's value (stream) or is content of the JSON line no
+// stage exposes (classifyRowField hides it).
+func (e *lineFieldExposure) skipsStreamKeyField(key string, value []byte, stream string, lineKeys map[string]bool, line []byte) bool {
+	return !e.mayReadKey(key, lineKeys, line) && (string(value) == stream || (lineKeys != nil && isJSONLineField(key, lineKeys)))
+}
+
+// readsLineKey reports whether a full parser stage reads key from the row's
+// line (a JSON key, or a logfmt key after a | logfmt stage).
+func (e *lineFieldExposure) readsLineKey(r *lineRow, key string) bool {
+	switch {
+	case r.keys != nil && e.exposesJSONLine(r.keys) && isJSONLineField(key, r.keys):
+		return true
+	case r.keys == nil && e.logfmtAll && !e.jsonAll && len(r.line) > 0 && logfmtLineHasKey(r.line, key):
+		// Beside a | json stage VictoriaLogs does not unpack the logfmt of a
+		// line, so the stored field is the stream label again.
+		return true
+	}
+	for _, x := range e.extractions {
+		if x.name == key && extractionReadsLine(x, r.line) {
+			return true
+		}
+	}
+	for _, re := range e.regexps {
+		if i := re.SubexpIndex(key); i > 0 {
+			if m := re.FindSubmatch(r.line); m != nil && len(m[i]) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// extractionReadsLine reports whether the line holds the key an extraction
+// list entry reads.
+func extractionReadsLine(x lineExtraction, line []byte) bool {
+	if x.logfmt {
+		return logfmtLineHasKey(line, x.path[0])
+	}
+	_, _, _, err := jsonparser.Get(line, x.path...)
+	return err == nil
+}
+
+// repeatsLabel reports whether a stored field only repeats a label of the
+// entry: a stream label's value, which no stage reads from the line, or any
+// label outside the Loki-compatible profile (entryLabelName).
+func (e *lineFieldExposure) repeatsLabel(key, value string, labels, streamOnly map[string]string, r *lineRow) bool {
+	if _, exists := labels[key]; !exists {
+		return false
+	}
+	stream, onStream := streamOnly[key]
+	return e == nil || (key == "level" && !onStream) || (onStream && value == stream && !e.mayReadKey(key, r.keys, r.line))
+}
+
+// extractedName returns the name_extracted label of a colliding field, unless
+// a stage of the query sets that label itself (a label_format target, a
+// capture, an extraction-list name): the label the query sets wins, in either
+// order, as the first parser does not overwrite a key an earlier stage
+// extracted.
+func (e *lineFieldExposure) extractedName(name string) (string, bool) {
+	renamed := name + extractedSuffix
+	return renamed, !e.names[renamed]
+}
+
+// entryLabelName returns the label a stored field is exposed as, and whether
+// it is exposed at all. A field named like a stream label is not an entry
+// label of its own when it only repeats the stream label (VictoriaLogs stores
+// stream labels as fields); when it holds a parsed value or structured
+// metadata of the entry, Loki keeps the stream label and names the entry
+// label name_extracted. A parsed key is told from the repeated stream label by
+// a full parser reading it from the line; another stage's capture (a regexp
+// or pattern name) and structured metadata by a value that differs from the
+// stream label's. A row stored without its line cannot tell structured
+// metadata from line content (profiles/json-line-stored-without-line), so its
+// differing fields are left out as before. streamOnly holds the labels of the
+// stored _stream; final the stream labels the response carries (derived
+// service_name included), which a field of another name may collide with
+// (OTel service.name against service_name).
+func (e *lineFieldExposure) entryLabelName(r *lineRow, key, value string, ex metadataFieldExposure, parsed, lineMissing bool, streamOnly, final map[string]string) (string, bool) {
+	stream, onStream := streamOnly[key]
+	if e == nil || (!onStream && (key == "level" || ex.name == "level")) || ex.name == detectedLevelLabel {
+		_, exists := final[ex.name]
+		return ex.name, !exists || ex.isAlias
+	}
+	if onStream {
+		collides := !lineMissing && value != stream
+		if parsed {
+			collides = value != stream || (!lineMissing && e.readsLineKey(r, key))
+		}
+		if !collides {
+			return "", false
+		}
+		return e.extractedName(ex.name)
+	}
+	if _, exists := final[ex.name]; exists {
+		return e.extractedName(ex.name)
+	}
+	return ex.name, true
 }
 
 // classifyLineField returns whether a stored field of a row is a parsed

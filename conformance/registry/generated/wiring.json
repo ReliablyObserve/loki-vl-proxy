@@ -141,6 +141,7 @@
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "loki-compatible-profile": [
+      "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/loki_profile_test.go",
       "internal/proxy/stage_field_exposure_test.go",
@@ -183,6 +184,7 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
@@ -190,14 +192,17 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "internal/translator/extracted_suffix_test.go",
       "internal/translator/regexp_escaping_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -207,6 +212,7 @@
       "internal/proxy/label_metadata_freshness_test.go"
     ],
     "loki_api_v1_tail": [
+      "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/tail_pipeline_test.go",
       "test/e2e-compat/tail_pipeline_test.go"
     ],
@@ -307,6 +313,10 @@
       "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
     ],
+    "profiles/structured-metadata-label-collision": [
+      "internal/proxy/extracted_suffix_collision_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go"
+    ],
     "profiles/tail-line-format-parse-error-status": [
       "internal/proxy/line_format_error_test.go"
     ],
@@ -326,6 +336,11 @@
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
+    ],
+    "semantics/extracted-suffix-collision": [
+      "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/translator/extracted_suffix_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go"
     ],
     "semantics/json-filter-pushdown-translated-label": [
       "internal/proxy/ordered_json_conditional_unpack_test.go",
@@ -433,7 +448,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 274,
+  "registry_items": 278,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -509,6 +524,13 @@
     "internal/proxy/drilldown_compat_test.go": [
       "loki_api_v1_detected_fields",
       "profiles/detected-fields-structured-metadata-beside-json-line"
+    ],
+    "internal/proxy/extracted_suffix_collision_test.go": [
+      "loki-compatible-profile",
+      "loki_api_v1_query_range",
+      "loki_api_v1_tail",
+      "profiles/structured-metadata-label-collision",
+      "semantics/extracted-suffix-collision"
     ],
     "internal/proxy/gaps_test.go": [
       "loki_api_v1_index_stats"
@@ -694,6 +716,10 @@
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
+    "internal/translator/extracted_suffix_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/extracted-suffix-collision"
+    ],
     "internal/translator/label_format_rename_test.go": [
       "profiles/stage-field-exposure"
     ],
@@ -736,6 +762,12 @@
     ],
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
+    ],
+    "test/e2e-compat/extracted_suffix_collision_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "profiles/structured-metadata-label-collision",
+      "semantics/extracted-suffix-collision"
     ],
     "test/e2e-compat/heavy_query_protection_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -834,7 +866,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 72,
+  "tests_with_markers": 75,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -888,7 +920,7 @@
     "profiles/label-filter-regexp-anchoring",
     "profiles/metadata-default-lookback",
     "profiles/multi-tenant-volume-merge",
-    "profiles/structured-metadata-label-collision",
+    "profiles/parsed-key-colliding-with-structured-metadata",
     "profiles/volume-bytes-accounting",
     "profiles/volume-detected-level-extension",
     "prometheus_api_v1_alerts",
@@ -903,8 +935,8 @@
     "semantics/absent-over-time-semantics",
     "semantics/binary-ignoring-matching",
     "semantics/count-values-unsupported",
+    "semantics/detected-fields-extracted-suffix",
     "semantics/eager-pipeline-validation",
-    "semantics/extracted-suffix-collision",
     "semantics/first-last-over-time-translation",
     "semantics/instant-result-type-missing",
     "semantics/ip-filter-precision",
@@ -918,11 +950,13 @@
     "semantics/parse-error-labels-on-log-lines",
     "semantics/parse-error-text-parity",
     "semantics/pattern-line-filter",
+    "semantics/plain-name-after-parser-reads-stream-label",
     "semantics/proxy-accepts-invalid-logql",
     "semantics/proxy-rejects-valid-logql",
     "semantics/stddev-stdvar-grouped-values",
     "semantics/tail-history-start-limit",
     "semantics/topk-bottomk-range-series",
+    "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",
     "semantics/unwrap-conversion-error",
     "semantics/unwrap-range-last-point",
@@ -934,5 +968,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 89
+  "wired_items": 91
 }

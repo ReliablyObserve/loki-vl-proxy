@@ -124,6 +124,18 @@ func isLabelFilterStage(stage string) bool {
 // a filter that rejects the empty value holds when any candidate satisfies it,
 // and one that accepts the empty value holds when every candidate does.
 func translateParsedKeyFilter(stage string, keys []string, value string, op logqlSingleFilterOp, caps logsql.Capabilities) (string, bool) {
+	// name_extracted: the parsed value of the key name where the stream has the
+	// label name (read from the scratch field extractedScratchPipes fills), the
+	// key name_extracted otherwise.
+	if base, ok := strings.CutPrefix(keys[0], extractedMarker); ok {
+		literal, ok := translateParsedKeyFilter(stage, keys[1:], value, op, caps)
+		parsed, pok := translateSingleLabelFilter(stage, func(string) string { return extractedScratch + "_" + base }, caps)
+		if !ok || !pok {
+			return "", false
+		}
+		collides := extractedCollides(base)
+		return "((" + collides + " " + parsed + ") OR (NOT (" + collides + ") (" + literal + ")))", true
+	}
 	// An existence check (label!="") keeps its single key: the Drilldown
 	// single-field fast paths recognise that exact `filter field:!""` shape, and
 	// the labels Drilldown checks come from detected_fields, which resolves them
@@ -173,7 +185,7 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 // its name. Names a parser cannot have produced keep their plain translation:
 // dotted names, names without an underscore, and the caller's exclusions
 // (regexp captures, json expressions that already name the original key).
-func withParsedKeyVariants(labelFn LabelTranslateFunc, exclude func(string) bool) LabelTranslateFunc {
+func withParsedKeyVariants(labelFn LabelTranslateFunc, exclude func(string) bool, extracted func(base string) bool) LabelTranslateFunc {
 	return func(label string) string {
 		translated := label
 		if labelFn != nil {
@@ -185,7 +197,11 @@ func withParsedKeyVariants(labelFn LabelTranslateFunc, exclude func(string) bool
 			strings.ContainsAny(label, ".-") || exclude(label) {
 			return translated
 		}
-		return strings.Join(parsedKeyVariants(label), parsedKeySep)
+		keys := parsedKeyVariants(label)
+		if base, ok := strings.CutSuffix(label, extractedSuffix); ok && isBareIdentifier(base) && extracted(base) {
+			keys = append([]string{extractedMarker + base}, keys...)
+		}
+		return strings.Join(keys, parsedKeySep)
 	}
 }
 
@@ -213,6 +229,8 @@ func quoteFieldName(name string) string {
 	}
 	return name
 }
+
+var unpackPipeRE = regexp.MustCompile(`\| (unpack_json|unpack_logfmt)\b`)
 
 var fieldBreakdownShapeRE = regexp.MustCompile(`\| unpack_(?:json|logfmt)(?: \| delete __error__(?:, ?__error_details__)?)? \| filter ([A-Za-z][A-Za-z0-9_]*):!""$`)
 
@@ -262,10 +280,43 @@ func resolveStatsKeys(query, byLabels, statsExpr string) string {
 		add(unwrap)
 	}
 	var pipes strings.Builder
+	var extractedBases, extractedLabels []string
 	for _, label := range labels {
 		for _, key := range parsedKeyVariants(label)[1:] {
 			pipes.WriteString(" | format if (" + strconv.Quote(key) + `:*) "<` + key + `>" as ` + label + " keep_original_fields")
 		}
+		if base, ok := strings.CutSuffix(label, extractedSuffix); ok && isBareIdentifier(base) {
+			extractedBases = append(extractedBases, base)
+			extractedLabels = append(extractedLabels, label)
+		}
+	}
+	if len(extractedBases) > 0 {
+		bare := bareUnpackPipes(query)
+		parsers := make([]extractedParser, len(bare))
+		for i, p := range bare {
+			parsers[i] = extractedParser{unpack: p.unpack}
+		}
+		// A filter on the same label already computed it behind the last
+		// parser: reuse it (and keep its scratch fields until here).
+		var need []string
+		reused := false
+		for _, base := range extractedBases {
+			idx := strings.LastIndex(query, " as "+extractedScratch+"_"+base)
+			if idx >= 0 && (len(bare) == 0 || bare[len(bare)-1].pos < idx) {
+				reused = true
+			} else {
+				need = append(need, base)
+			}
+		}
+		if reused {
+			query = strings.Replace(query, " | delete "+extractedScratch+"*", "", 1)
+		}
+		streamCopied := reused
+		pipes.WriteString(strings.Join(extractedUnpackPipes(parsers, need), "") + extractedCoalescePipes(parsers, need, &streamCopied))
+		for i, label := range extractedLabels {
+			pipes.WriteString(" | format if (" + extractedCollides(extractedBases[i]) + ") \"<" + extractedScratch + "_" + extractedBases[i] + ">\" as " + label)
+		}
+		pipes.WriteString(" | delete " + extractedScratch + "*")
 	}
 	// An existence check on a resolved label keeps its single key (the
 	// Drilldown fast paths match that shape), so it runs after the pipes that
@@ -291,4 +342,191 @@ func resolvableLabel(query, label string) bool {
 		return false
 	}
 	return !strings.Contains(query, " as "+label) && !strings.Contains(query, "<"+label+">")
+}
+
+// extractedSuffix is what Loki appends to a parsed label that shares its name
+// with a stream label (pkg/logql/log/parser.go duplicateSuffix). A parser
+// stage then leaves the stream label alone and exposes the parsed value as
+// name_extracted, where VictoriaLogs' unpack_json and unpack_logfmt overwrite
+// the stored field of that name. A later parser skips a key an earlier one
+// extracted (ParserHint.Extracted), so the first parser that reads the key
+// decides the value.
+const extractedSuffix = "_extracted"
+
+// extractedScratch prefixes the scratch fields the collision rename uses
+// (deleted again by the pipe that ends the query's use of them).
+const extractedScratch = "__lxp"
+
+// extractedMarker starts the first candidate key of a label name_extracted
+// that may be a collision rename; the rest are the key spellings.
+const extractedMarker = "\x01"
+
+// extractedParser is one json or logfmt stage of a query: its unpack pipe and
+// the labels it extracts, by the key each reads (nil: every key).
+type extractedParser struct {
+	unpack  string
+	targets map[string]string
+}
+
+// source returns the key the parser reads for label base, if it extracts it.
+func (p extractedParser) source(base string) (string, bool) {
+	if p.targets == nil {
+		return base, true
+	}
+	src, ok := p.targets[base]
+	return src, ok
+}
+
+// extractionTargets returns the labels a json or logfmt extraction list
+// extracts with the key each reads (`| json a, b="x.y"`, `| logfmt a, b="k"`),
+// nil for a stage without a list. A json path with an index or bracket is left
+// out: the label then keeps the plain translation.
+func extractionTargets(stage string) map[string]string {
+	name, rest, ok := strings.Cut(stage, " ")
+	if !ok || strings.TrimSpace(rest) == "" || (name != "json" && name != "logfmt") {
+		return nil
+	}
+	targets := map[string]string{}
+	for _, item := range splitCSV(rest) {
+		item = strings.TrimSpace(item)
+		label, expr, hasExpr := strings.Cut(item, "=")
+		label = strings.TrimSpace(label)
+		src := label
+		if hasExpr {
+			expr = strings.TrimSpace(expr)
+			if len(expr) < 2 || (expr[0] != '"' && expr[0] != '`') {
+				continue
+			}
+			src = resolveJSONBracketPath(expr[1 : len(expr)-1])
+		}
+		if isBareIdentifier(label) && src != "" && !strings.ContainsAny(src, `[]"'\ `) {
+			targets[label] = src
+		}
+	}
+	return targets
+}
+
+// extractedCollides is the condition under which the label base is a stream
+// label of the entry, so a parsed key base is renamed: every stream has
+// service_name in Loki; any other name is in _stream (a dotted spelling too).
+func extractedCollides(base string) string {
+	value := extractedScratch + "_" + base + ":*"
+	if base == "service_name" {
+		return value
+	}
+	return extractedScratch + "_stream:~" + strconv.Quote(`[{,]`+strings.ReplaceAll(base, "_", "[._]")+`="`) + " " + value
+}
+
+// extractedUnpackPipes returns, per parser, the pipe that unpacks the keys of
+// the labels bases it extracts into scratch fields (the stored fields were
+// overwritten by the first unpack).
+func extractedUnpackPipes(parsers []extractedParser, bases []string) []string {
+	after := make([]string, len(parsers))
+	for i, parser := range parsers {
+		var srcs []string
+		for _, base := range bases {
+			if src, ok := parser.source(base); ok && !containsStr(srcs, logsqlFieldName(src)) {
+				srcs = append(srcs, logsqlFieldName(src))
+			}
+		}
+		if len(srcs) > 0 {
+			after[i] = " | " + parser.unpack + " from _msg fields (" + strings.Join(srcs, ", ") + ") result_prefix " + strconv.Quote(extractedScratch+strconv.Itoa(i)+"_")
+		}
+	}
+	return after
+}
+
+// extractedCoalescePipes returns the pipes that give each base its Loki value
+// in __lxp_<base> from the scratch fields of parsers: the first parser's. It
+// copies _stream first (once: streamCopied) when a base needs it.
+func extractedCoalescePipes(parsers []extractedParser, bases []string, streamCopied *bool) string {
+	var fin strings.Builder
+	for _, base := range bases {
+		if base != "service_name" && !*streamCopied {
+			*streamCopied = true
+			fin.WriteString(" | copy _stream as " + extractedScratch + "_stream")
+		}
+	}
+	for _, base := range bases {
+		var fields []string
+		for i, parser := range parsers {
+			if src, ok := parser.source(base); ok {
+				fields = append(fields, logsqlFieldName(extractedScratch+strconv.Itoa(i)+"_"+src))
+			}
+		}
+		for j := len(fields) - 1; j >= 0; j-- {
+			if j == len(fields)-1 {
+				fin.WriteString(" | copy " + fields[j] + " as " + extractedScratch + "_" + base)
+			} else {
+				fin.WriteString(" | format if (" + fields[j] + `:*) "<` + strings.Trim(fields[j], `"`) + `>" as ` + extractedScratch + "_" + base)
+			}
+		}
+	}
+	return fin.String()
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// extractedStageMark brackets, in the translation of a label filter stage, the
+// name_extracted bases it reads (comma-joined); withExtractedScratch turns it
+// into the pipes that compute them.
+const extractedStageMark = "\x02"
+
+// withExtractedScratch adds the scratch pipes of the name_extracted labels a
+// query's filters name: each parser's unpack right behind its pipe (a later
+// line_format must not change the line it reads), before each filter the
+// first-parser values of the parsers that precede it, and the deletion of the
+// scratch fields at the end.
+func withExtractedScratch(parts []string, parsers []extractedParser, partIdx []int, bases []string) []string {
+	after := extractedUnpackPipes(parsers, bases)
+	out := make([]string, 0, len(parts)+len(parsers)+3)
+	seen, streamCopied := 0, false
+	for i, part := range parts {
+		if lo := strings.Index(part, extractedStageMark); lo >= 0 {
+			if n := strings.Index(part[lo+1:], extractedStageMark); n >= 0 {
+				hi := lo + 1 + n
+				out = append(out, extractedCoalescePipes(parsers[:seen], strings.Split(part[lo+1:hi], ","), &streamCopied))
+				part = part[:lo] + part[hi+1:]
+			}
+		}
+		out = append(out, part)
+		for j, idx := range partIdx {
+			if idx == i {
+				out = append(out, after[j])
+				seen = j + 1
+			}
+		}
+	}
+	cleaned := out[:0]
+	for _, part := range out {
+		if part = strings.TrimSpace(part); part != "" {
+			cleaned = append(cleaned, part)
+		}
+	}
+	return append(cleaned, "| delete "+extractedScratch+"*")
+}
+
+// bareUnpackPipe is a plain `| unpack_json` / `| unpack_logfmt` pipe of a
+// translated query at byte offset pos: a parser stage, not a scratch unpack
+// (`from _msg ...`) or a conditional one of the detected_level chain (`if (...)`).
+type bareUnpackPipe struct {
+	unpack string
+	pos    int
+}
+
+func bareUnpackPipes(query string) []bareUnpackPipe {
+	var pipes []bareUnpackPipe
+	for _, m := range unpackPipeRE.FindAllStringSubmatchIndex(query, -1) {
+		if rest := strings.TrimLeft(query[m[1]:], " "); rest == "" || rest[0] == '|' {
+			pipes = append(pipes, bareUnpackPipe{query[m[2]:m[3]], m[0]})
+		}
+	}
+	return pipes
 }
