@@ -1,5 +1,5 @@
 id: semantics/plain-name-after-parser-reads-stream-label
-title: A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (open)
+title: A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
@@ -14,20 +14,18 @@ why: |
   "level":"debug", Loki returns no line and the proxy returns that line (seen
   on the e2e fixture of TestCompat_ExtractedSuffixOnParsedCollision, 2026-10).
   Grouping by the plain name (`sum by (level) (... | logfmt ...)`) groups by
-  the parsed value where Loki has the stream label's. Reading the stream
-  label means a _stream lookup (copy _stream, a regexp or extract_regexp on it)
-  in front of every filter or grouping on any parsed name, and the fast paths
-  that recognise the plain `| unpack_json | filter f:!""` shape would stop
-  matching; the alternative, `unpack_json keep_original_fields` for every
-  parser, needs the parsed value of a collided key from the proxy (it has the
-  line) and changes every json and logfmt translation. Neither fits this
-  change; the choice needs its own measurement on the Drilldown paths.
+  the parsed value where Loki has the stream label's.
 
-  Cheaper option to measure first: rewrite a plain-name filter or grouping
-  after a parser only when the name is a known stream label name for the
-  tenant (the cached label names the proxy already keeps), and leave every
-  other name, and so the Drilldown fast paths, untouched. A stream label that
-  no cached list knows yet would keep today's behaviour until the cache has it.
+  Reading the stream label for every parsed name would put a _stream lookup in
+  front of every filter and grouping and stop the Drilldown fast paths that
+  recognise the plain `| unpack_json | filter f:!""` shape. The proxy instead
+  reads it only for a name that is a stream label of the tenant (the recent
+  stream_field_names listing, cached) and that the query names after a parser.
+  The stored value is copied aside before the first parser stage. A metric
+  query puts it back into the field after each parser stage (metric results
+  carry no entry labels); a log query filters a scratch field holding the
+  stored value, or the parsed one when the entry has none, and leaves the
+  stored field the parsed value the response exposes as name_extracted.
 
   Corpus evidence: differential run clusters 08fb5da3, 19e8f424, 35e2a101 and
   d650bcfb, 6 queries, all `sum by (level) (... | logfmt ...)` where Loki
@@ -49,14 +47,28 @@ compare:
   expect: |
     No line where only the parsed `level` is debug (the stream label's level is info).
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#676"
   impact: explore-visible
   effort: M
   area: 'internal/translator label filter and stats grouping after json / logfmt (stored field overwritten by unpack_*)'
   loki: 'pkg/logql/log/labels.go:293-307 LabelsBuilder.getWithCategory (stream label read once the parsed one was renamed)'
   proxy: 'the parsed value of a key named like a stream label'
-  planned_test: 'TestCompat_PlainNameAfterParserReadsStreamLabel (test/e2e-compat, group semantics)'
-  note: 'Loki groups by the stream label; the proxy by the parsed value that overwrote the stored field.'
+  planned_test: 'TestCompat_PlainNameAfterParserReadsStreamLabel (test/e2e-compat, group core); translator TestPlainStreamLabel_*; proxy TestPlainStreamLabel_*'
+  note: |
+    Fixed for filters (=, !=, =~, !~, !="", and/or chains) after json, logfmt, regexp and pattern, for
+    metric grouping (by, without), unwrap and the stages after the parser, for label_format sources and
+    {{.name}} templates and a line_format a later stage reads (log queries read a scratch field), and for
+    line_format the proxy renders from the entry's labels, over the buffered, streamed and windowed paths
+    in both encodings. The tenant's stream label names are the last known ones from a background refresh
+    that never delays a query: a query runs the plain translation until the first refresh has finished,
+    and a new stream label is picked up within a minute. Not changed: a stream label no listing of the
+    last hour has, a label VictoriaLogs stores under another name (dotted OTel attributes), service_name,
+    structured metadata named like the parsed key, a json extraction-list expression that targets the
+    name (`| json level="a.b"`), a second parser in a log query (semantics/two-parsers-keep-one), and
+    bare drop/keep of the plain name in a log query and the `delete level` of `label_format x=level` that
+    costs the entry its level_extracted (semantics/drop-keep-plain-name-after-parser), a same-stage
+    `label_format x="{{.level}}", level="z"` and template functions (`{{ .level | ToUpper }}`).
   clusters:
     - 08fb5da3
     - 19e8f424

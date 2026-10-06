@@ -344,7 +344,7 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 		selectorQuery = defaultFieldDetectionQuery(query)
 	}
 	detectionQuery := defaultQuery(selectorQuery)
-	logsqlQuery, err := p.translateQuery(detectionQuery)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, detectionQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,7 +1007,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	)
 
 	for _, candidate := range candidates {
-		logsqlQuery, err := p.translateQuery(candidate)
+		logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 		if err != nil {
 			lastErr = err
 			continue
@@ -1847,7 +1847,7 @@ const minNativeFieldHits = 10
 const maxNativeFieldsToPromote = 50
 
 func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) (map[string]int64, error) {
-	logsqlQuery, err := p.translateQuery(candidate)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 	if err != nil {
 		return nil, err
 	}
@@ -1925,7 +1925,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 	var lastErr error
 	candidates := fieldDetectionQueryCandidates(query)
 	for i, candidate := range candidates {
-		logsqlQuery, err := p.translateQuery(candidate)
+		logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 		if err != nil {
 			lastErr = err
 			if i+1 < len(candidates) {
@@ -2029,7 +2029,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 // VL-indexed (inside JSON or logfmt _msg). Used as a last-resort fallback
 // when neither native field_values nor log-line scanning produced values.
 func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
-	logsqlQuery, err := p.translateQuery(defaultQuery(query))
+	logsqlQuery, err := p.translateQueryWithContext(ctx, defaultQuery(query))
 	if err != nil {
 		return nil, err
 	}
@@ -2141,7 +2141,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 	var labelNames []string
 	var baseParams url.Values
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
-		logsqlQuery, err := p.translateQuery(candidate)
+		logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 		if err != nil {
 			continue
 		}
@@ -2215,7 +2215,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string) (*vlStreamsResponse, error) {
 	var lastErr error
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
-		logsqlQuery, err := p.translateQuery(candidate)
+		logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 		if err != nil {
 			lastErr = err
 			continue
@@ -2278,7 +2278,7 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 	candidates := fieldDetectionQueryCandidates(query)
 	var lastErr error
 	for i, candidate := range candidates {
-		logsqlQuery, err := p.translateQuery(candidate)
+		logsqlQuery, err := p.translateQueryWithContext(ctx, candidate)
 		if err != nil {
 			lastErr = err
 			if i+1 < len(candidates) {

@@ -564,7 +564,7 @@ const StoredLineField = "_lvp_line"
 // line into StoredLineField before the first line_format rewrites it, so the
 // response carries both the formatted and the stored line.
 func TranslateLogQueryKeepingLine(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
-	return translateLogQueryOpts(strings.TrimSpace(logql), labelFn, caps, sf0(streamFields), true)
+	return translateLogQueryOpts(strings.TrimSpace(logql), labelFn, caps, sf0(streamFields), true, false)
 }
 
 func sf0(m map[string]bool) []map[string]bool {
@@ -576,11 +576,16 @@ func sf0(m map[string]bool) []map[string]bool {
 
 // translateLogQuery handles log queries (non-metric).
 func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields ...map[string]bool) (string, error) {
-	return translateLogQueryOpts(logql, labelFn, caps, streamFields, false)
+	return translateLogQueryOpts(logql, labelFn, caps, streamFields, false, false)
+}
+
+// translateMetricInnerQuery translates the log query inside a range aggregation.
+func translateMetricInnerQuery(logql string, labelFn LabelTranslateFunc) (string, error) {
+	return translateLogQueryOpts(logql, labelFn, logsql.Capabilities{}, nil, false, true)
 }
 
 //nolint:gocyclo // staged LogQL→LogsQL pipeline parser: stream selector, line filters, parser stages, label filters, formatters; branching is inherent to LogQL grammar coverage.
-func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields []map[string]bool, keepLine bool) (string, error) {
+func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields []map[string]bool, keepLine, metric bool) (string, error) {
 	var sf map[string]bool
 	if len(streamFields) > 0 {
 		sf = streamFields[0]
@@ -650,6 +655,14 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// VL's unpack_json always uses original field names; aliases are not preserved.
 	jsonAliases := make(map[string]string)
 	captureLabels := make(map[string]bool)
+	// svNames are the stream label names read as stream values after a parser
+	// (see WithStreamLabels); formatLabels are the names label_format sets.
+	svNames := plainStreamLabels(labelFn)
+	if !metric && svNames != nil {
+		svNames = filteredNames(remaining, svNames)
+	}
+	svCopied := false
+	formatLabels := make(map[string]bool)
 	// definedLabels are the names pattern and label_format stages create; they
 	// are query-local and never a sanitized parser key.
 	definedLabels := make(map[string]bool)
@@ -837,6 +850,9 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		}
 		for _, label := range stageDefinedLabels(stage) {
 			definedLabels[label] = true
+			if strings.HasPrefix(stage, "label_format ") {
+				formatLabels[label] = true
+			}
 		}
 
 		// Populate json alias map when the stage uses alias="field" syntax.
@@ -851,6 +867,10 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
 		}
 
+		if svNames != nil && !svCopied && isPlainParserStage(stage) {
+			svCopied = true
+			parts = append(parts, svCopyPipes(svNames))
+		}
 		if isKeyParserStage(stage) {
 			afterKeyParser = true
 			var parser extractedParser
@@ -897,7 +917,19 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return false
 			})
 		}
+		if svCopied && !metric && isLabelFilterStage(stage) {
+			plain := stageLabelFn
+			stageLabelFn = func(label string) string {
+				if _, aliased := jsonAliases[label]; containsStr(svNames, label) && !formatLabels[label] && !aliased {
+					return svScratch + label
+				}
+				return plain(label)
+			}
+		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		if svCopied && !metric && (strings.HasPrefix(stage, "label_format ") || strings.HasPrefix(stage, "line_format ")) {
+			translated = svRewriteRefs(translated, svNamesNotFormatted(svNames, formatLabels))
+		}
 		if len(stageBases) > 0 {
 			if !strings.HasPrefix(translated, "|") {
 				translated = extractedStageMark + strings.Join(stageBases, ",") + extractedStageMark + translated
@@ -967,9 +999,15 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if aliasCopies != "" {
 				parts = append(parts, aliasCopies)
 			}
+			if svCopied && isPlainParserStage(stage) {
+				parts = append(parts, svFillPipes(svNames, metric))
+			}
 		}
 	}
 
+	if svCopied {
+		parts = append(parts, "| delete "+svScratch+"*")
+	}
 	if len(extractedBases) > 0 {
 		parts = withExtractedScratch(parts, keyParsers, keyParserParts, extractedBases)
 	}
@@ -1881,7 +1919,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 		}
 
 		// Translate the inner log query part
-		logsqlQuery, err := translateLogQuery(query, labelFn, logsql.Capabilities{})
+		logsqlQuery, err := translateMetricInnerQuery(query, labelFn)
 		if err != nil {
 			continue
 		}
@@ -2680,7 +2718,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	// Translate the inner log query
-	logsqlQuery, err := translateLogQuery(query, labelFn, logsql.Capabilities{})
+	logsqlQuery, err := translateMetricInnerQuery(query, labelFn)
 	if err != nil {
 		return "", false
 	}

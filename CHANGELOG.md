@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A filter, grouping, unwrap or label_format on the plain name of a stream
+  label after a parser reads the stream value, as Loki does.** When a `| json`,
+  `| logfmt`, `| regexp` or `| pattern` stage extracts a key named like a stream
+  label, Loki renames the parsed label `name_extracted` and the plain name still
+  reads the stream label (`pkg/logql/log/labels.go` `getWithCategory`,
+  `parser.go` `duplicateSuffix`), so `{app="x",level="info"} | json | level="debug"`
+  returns nothing for a line holding `"level":"debug"` and
+  `sum by (level) (count_over_time({...} | logfmt [5m]))` groups by the stream's
+  level. VictoriaLogs' `unpack_*` and `extract*` overwrite the stored field of
+  that name, so the proxy filtered and grouped by the parsed value (six
+  `sum by (level)` queries of the differential corpus). For a name that is a
+  stream label of the tenant and that the query names after a parser, the stored
+  value is now copied aside before the first parser stage: a metric query puts it
+  back into the field after each parser stage, so every later filter, grouping,
+  unwrap and `keep` reads Loki's value, and a log query reads a scratch field
+  holding the stored value (or the parsed one when the entry has none) in label
+  filters, `label_format` sources and `{{.name}}` templates, and leaves the stored
+  field to the entry's `name_extracted`. The tenant's stream label names come from
+  a `stream_field_names` listing of the last hour that never delays a query: the
+  last known names are used at once, and a single background refresh per tenant
+  (own one-second deadline, at most once a minute, retried after thirty seconds when
+  it fails) updates them, so a query runs the plain translation until the first
+  refresh has finished and a new stream label is picked up within a minute (the
+  `stream_label_names` internal operation counts cold fallbacks, stale serves,
+  refreshes and refresh errors; the listing's sealed inventory buckets are shared
+  with `/labels`). A name that is no stream label, a query without a parser and the
+  Drilldown fast paths keep their translation byte for byte. Needs only `copy`,
+  `format if` and `delete name*`, which VictoriaLogs v1.40 has. Proven against Loki
+  v3.7.7 on v1.40.0 and v1.52.0 (`TestCompat_PlainNameAfterParserReadsStreamLabel`).
+  Not changed: a stream label no listing of the last hour has, labels VictoriaLogs
+  stores under another name (dotted OTel attributes), `service_name`, structured
+  metadata named like the parsed key, an extraction-list expression that targets
+  the name, a second parser in a log query (open
+  `semantics/two-parsers-keep-one`), and bare `drop` / `keep` of the plain name in
+  a log query, a log query's `label_format x=level` (its `delete level` also
+  costs the entry its `level_extracted`; the filter on `x` is right), a
+  same-stage `label_format x="{{.level}}", level="z"` and template functions such
+  as `{{ .level | ToUpper }}`.
+
 ## [2.2.1] - 2026-10-06
 
 ### Changed

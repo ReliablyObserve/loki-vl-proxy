@@ -1,0 +1,48 @@
+id: semantics/drop-keep-plain-name-after-parser
+title: A log query's drop, keep or label_format source of a stream label's plain name after a parser acts on the stored field; Loki acts on the entry's labels (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  After `| json`, Loki's `| drop level` removes the stream label `level` and
+  leaves the parsed `level_extracted` (and `detected_level`) on the entry;
+  `| keep level` keeps only the stream label. The proxy translates drop and keep
+  to VictoriaLogs pipes on the stored field, which a parser overwrote with the
+  parsed value, so the entry loses `level_extracted` and `detected_level` on drop
+  and keeps other labels on keep. Seen on the e2e fixture of
+  TestCompat_PlainNameAfterParserReadsStreamLabel (2026-10); metric queries
+  (`... | keep level [5m]`) already read Loki's value.
+
+  label_format has the same effect: `| json | label_format x=level` translates to
+  `format if (level:*) "<level>" as x skip_empty_results | delete level`, the delete
+  removes the stored field the entry's `level_extracted` is read from, so the
+  entry loses level_extracted where Loki removes only the stream label `level`
+  and keeps level_extracted (the filter result on x is right since the label_format
+  source reads the stream value, see semantics/plain-name-after-parser-reads-stream-label).
+  Same-stage `label_format x="{{.level}}", level="z"` and template functions
+  (`{{ .level | ToUpper }}`) are not rewritten to the scratch field either.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x",level="info"} | json | drop level'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.stream labels]
+  expect: |
+    Entries keep level_extracted and detected_level and carry no level label.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy stage-field exposure (drop and keep of a name a parser also reads)'
+  loki: 'pkg/logql/log/labels.go LabelsBuilder.Del / getWithCategory; pkg/logql/log/drop_labels.go, keep_labels.go'
+  proxy: 'drop and keep act on the stored field the parser overwrote'
+  planned_test: 'TestCompat_DropKeepPlainNameAfterParser (test/e2e-compat, group core)'
+  note: 'Found while proving semantics/plain-name-after-parser-reads-stream-label; the filter, grouping and unwrap halves are fixed there.'

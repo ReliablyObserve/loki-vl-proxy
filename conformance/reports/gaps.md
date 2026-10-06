@@ -126,7 +126,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
-| `loki-compatible-profile` | 2 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
+| `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
 | `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
 | `semantics/extracted-suffix-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
 | `parser-error-and-label-collision` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
@@ -138,3 +138,4 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
 | `backend-admission-and-heavy-query-queueing` | 2 | 0.12s (drilldown landing volume, 7d) | 0.03s |
+| `semantics/plain-name-after-parser-reads-stream-label` | 1 | 0.06s (P8 json count by a name that is no stream label, 3h) | 0.00s |

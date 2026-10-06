@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -186,7 +187,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		derivedStepCacheKey = p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, stepParam)
 	}
 
-	logsqlQuery, err := p.translatePatternQuery(query)
+	logsqlQuery, err := p.translatePatternQuery(r.Context(), query)
 	var parseErr *translator.ParseError
 	if errors.As(err, &parseErr) {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -545,7 +546,7 @@ func looksLikeLogsQLQuery(query string) bool {
 		strings.Contains(query, ":<")
 }
 
-func (p *Proxy) translatePatternQuery(query string) (string, error) {
+func (p *Proxy) translatePatternQuery(ctx context.Context, query string) (string, error) {
 	scoped := patternScopeQuery(query)
 	if scoped == "*" {
 		return scoped, nil
@@ -553,7 +554,7 @@ func (p *Proxy) translatePatternQuery(query string) (string, error) {
 	if looksLikeLogsQLQuery(scoped) {
 		return scoped, nil
 	}
-	return p.translateQuery(scoped)
+	return p.translateQueryWithContext(ctx, scoped)
 }
 
 func parsePatternLimit(raw string) int {
