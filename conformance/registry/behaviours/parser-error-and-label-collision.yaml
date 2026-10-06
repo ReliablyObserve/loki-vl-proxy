@@ -13,9 +13,20 @@ loki: |
 victorialogs: |
   unpack_json adds no field for a line it cannot parse and has no error marker;
   with keep_original_fields a stored field wins over a parsed key, which
-  reproduces the _extracted rule for value purposes but not for the label name.
+  reproduces the _extracted rule for value purposes but not for the label name;
+  unpack_* without it overwrites the stored field of a stream label's name, so
+  the stream label survives only in _stream.
 
 proxy: |
+  A stored field named like a stream label is renamed name_extracted when it is
+  an entry label of its own (a full parser reads the key from the line; a
+  capture or structured metadata differs from the stream label's value); the
+  stream label is read from _stream. A label filter or stats grouping on
+  name_extracted reads the key unpacked again into a scratch field right behind
+  each parser (the first parser that reads the key decides, as Loki's
+  ParserHint.Extracted makes it) where the stream has the label, and
+  name_extracted itself otherwise; the bare-parser metric series labels use the
+  same row decision.
   Counting, grouping and filtering must match Loki line for line, including the
   lines the two parsers read differently (leading whitespace, trailing bytes,
   truncated JSON, repeated keys, arrays, escaped keys, U+FFFD, a key Loki
@@ -33,6 +44,10 @@ proxy: |
   `pipeline error` text from one lookup, before any row is read.
 
 implementation:
+  - "internal/proxy/loki_profile.go lineFieldExposure.entryLabelName, lineFieldExposure.readsLineKey, lineFieldExposure.repeatsLabel, lineFieldExposure.mayReadKey"
+  - "internal/proxy/stream_processing.go Proxy.classifyEntryMetadataFieldsFJ, Proxy.classifyEntryFieldsWithFlags, Proxy.classifyEntryMetadataFields, dropKeepEntryFields, dropEntryFields, keepEntryFields"
+  - "internal/translator/parsed_key_variants.go translateParsedKeyFilter, withParsedKeyVariants, withExtractedScratch, extractedScratchPipes, extractionTargets, resolveStatsKeys"
+  - "internal/translator/translator.go translateKeepStage"
   - "internal/proxy/ordered_json_metric.go orderedJSONMetricPlan.setStatsPushdown, orderedJSONMetricPlan.pushdownLabelFilters, Proxy.orderedJSONPartialParseRisk, Proxy.statsPushdownStoredFieldRisk, Proxy.cachedStatsPushdownRisk"
 
 cases:

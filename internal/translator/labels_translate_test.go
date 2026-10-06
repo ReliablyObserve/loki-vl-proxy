@@ -101,8 +101,8 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		},
 		{
 			name:  "parsed field non empty filter",
-			logql: `{app="api"} | json | path_extracted!=""`,
-			want:  `app:="api" | unpack_json | filter path_extracted:!""`,
+			logql: `{app="api"} | json | path!=""`,
+			want:  `app:="api" | unpack_json | filter path:!""`,
 		},
 		{
 			name:  "service_name label filter after parser matches the derived service name",

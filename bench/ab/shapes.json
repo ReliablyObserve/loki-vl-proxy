@@ -844,6 +844,101 @@
      ]
     }
    ]
+  },
+  "extracted-suffix": {
+   "description": "Parsed keys named like a stream label (level, service_name, app on the generator's streams) read as name_extracted: log entries over json and logfmt, label filters, drop and metric grouping on the renamed label. Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h"
+   ],
+   "shapes": [
+    {
+     "name": "E1 logs, json parser over stream labels",
+     "query": "{service_name=\"api-gateway\"} | json",
+     "logs": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E2 logs, logfmt parser over stream labels",
+     "query": "{service_name=\"cache-redis\"} | logfmt",
+     "logs": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E3 logs, json, existence filter on level_extracted",
+     "query": "{service_name=\"api-gateway\"} | json | level_extracted!=\"\"",
+     "logs": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E4 logs, logfmt, existence filter on level_extracted",
+     "query": "{service_name=\"cache-redis\"} | logfmt | level_extracted!=\"\"",
+     "logs": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E5 logs, json, drop level_extracted",
+     "query": "{service_name=\"api-gateway\"} | json | drop level_extracted",
+     "logs": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E6 logfmt count by level_extracted",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt [1m]))",
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E7 json count by level_extracted",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"api-gateway\"} | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E8 instant logfmt by level_extracted",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"cache-redis\"} | logfmt [5m]))",
+     "instant": true,
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "profiles/structured-metadata-label-collision",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

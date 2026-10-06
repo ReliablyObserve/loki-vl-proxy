@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -264,6 +265,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		if len(dropConditions) > 0 {
 			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 		}
+		dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
 		if len(keepConditions) > 0 {
 			applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
 		}
@@ -668,7 +670,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			var drop bool
-			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.translatedLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
 			if drop {
 				vlFJParserPool.Put(fjParser)
 				continue
@@ -680,6 +682,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
+			dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
 			if len(keepConditions) > 0 {
 				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
 			}
@@ -1031,7 +1034,7 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 
 	rawLabels := cloneStringMap(s.labels)
 	if !levelAsMetadata {
-		if len(trimmedLevel) > 0 {
+		if _, stored := s.labels["level"]; len(trimmedLevel) > 0 && !stored {
 			rawLabels["level"] = string(trimmedLevel)
 		}
 		if name := detectedLevelName(s.labels); stages.keeps(name) {
@@ -1066,8 +1069,8 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 	}
 
 	rawLabels := cloneStringMap(baseLabels)
-	if level != "" {
-		rawLabels["level"] = level
+	if _, stored := baseLabels["level"]; level != "" && !stored {
+		rawLabels["level"] = level // a stream label level keeps its value (see logRowStreamDescriptor)
 	}
 	ensureDetectedLevel(rawLabels)
 	ensureSyntheticServiceName(rawLabels)
@@ -1102,7 +1105,11 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 // and parsed fields for the given log entry. Both buffers must be pre-allocated
 // and are cleared before use; callers must copy or consume content before the
 // next call (metadataFieldMap makes the required copy inside buildStreamValue).
-func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+// In the Loki-compatible profile (exposure set) a field named like a stream
+// label is renamed name_extracted when it is an entry label of its own
+// (lineFieldExposure.entryLabelName); streamOnly and finalLabels are the
+// labels of _stream and the stream labels the entry carries.
+func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels, streamOnly, finalLabels map[string]string, exposure *lineFieldExposure, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
 	for k := range smBuf {
 		delete(smBuf, k)
 	}
@@ -1110,27 +1117,37 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 		delete(pfBuf, k)
 	}
 
+	// The row's line is read (and its JSON keys parsed) only when a field named
+	// like a label of _stream is present: that is the one case that needs it.
+	var row lineRow
+	lineMissing, rowReady := false, false
+	if exposure == nil {
+		finalLabels = streamLabels
+	}
+
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}
-		if _, exists := streamLabels[key]; exists {
-			continue
+		if _, onStream := streamOnly[key]; onStream && exposure != nil && !rowReady {
+			msg, _ := stringifyEntryValue(entry["_msg"])
+			row = lineRow{line: []byte(msg), keys: jsonLineKeys([]byte(msg)), stream: streamLabels}
+			lineMissing, rowReady = isVLMissingMsg(msg, p.defaultMsgValue()), true
 		}
 		stringValue, ok := stringifyEntryValue(value)
-		if !ok || strings.TrimSpace(stringValue) == "" {
+		if !ok || strings.TrimSpace(stringValue) == "" || exposure.repeatsLabel(key, stringValue, streamLabels, streamOnly, &row) {
 			continue
 		}
-		exposures := p.metadataFieldExposuresCached(key, exposureCache)
-		for _, exposure := range exposures {
-			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
+		for _, ex := range p.metadataFieldExposuresCached(key, exposureCache) {
+			name, ok := exposure.entryLabelName(&row, key, stringValue, ex, classifyAsParsed, lineMissing, streamOnly, finalLabels)
+			if !ok {
 				continue
 			}
 			if classifyAsParsed {
-				pfBuf[exposure.name] = stringValue
+				pfBuf[name] = stringValue
 				continue
 			}
-			smBuf[exposure.name] = stringValue
+			smBuf[name] = stringValue
 		}
 	}
 
@@ -1144,6 +1161,31 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 	return sm, pf
 }
 
+// pendingField is a stored field waiting for classification; deferredStreamField
+// is one named like a stream label, whose decision waits for the row's line.
+type (
+	pendingField        struct{ key, value string }
+	deferredStreamField struct {
+		key    string
+		val    *fj.Value
+		stream string
+	}
+)
+
+// resolveStreamKeyFields adds to pending the deferred fields that are entry
+// labels of their own (skipsStreamKeyField says which are not).
+func (e *lineFieldExposure) resolveStreamKeyFields(pending []pendingField, deferred []deferredStreamField, lineKeys map[string]bool, line []byte) []pendingField {
+	for _, d := range deferred {
+		if e.skipsStreamKeyField(d.key, d.val.GetStringBytes(), d.stream, lineKeys, line) {
+			continue
+		}
+		if sv, ok := stringifyFJValue(d.val); ok && strings.TrimSpace(sv) != "" {
+			pending = append(pending, pendingField{d.key, sv})
+		}
+	}
+	return pending
+}
+
 // classifyEntryMetadataFieldsFJ is the fastjson variant of classifyEntryMetadataFields.
 // It uses fj.Object.Visit to iterate fields without allocating a map[string]interface{}.
 //
@@ -1154,7 +1196,7 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 //
 // This matches Loki's behavior: Loki stores structured metadata separately and only
 // JSON/logfmt parser stages produce parsed fields, regardless of the query parser stage.
-func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, bool) {
+func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, streamOnly, finalLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, bool) {
 	for k := range smBuf {
 		delete(smBuf, k)
 	}
@@ -1163,9 +1205,13 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 	}
 
 	// Pass 1: collect non-stream fields and extract _msg raw bytes.
-	type pending struct{ key, value string }
-	var pendingFields []pending
+	var pendingFields []pendingField
 	var msgRaw, storedLine []byte
+	// A stored field named like a stream label is an entry label of its own
+	// only when it differs from the stream label or a stage reads that key from
+	// the line (entryLabelName): it is decided once the line is known.
+	var deferredBuf [8]deferredStreamField
+	deferred := deferredBuf[:0]
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
 		if key == "_msg" {
@@ -1180,13 +1226,20 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 			return
 		}
 		if _, exists := streamLabels[key]; exists {
-			return
+			stream, onStream := streamOnly[key]
+			if exposure == nil || (key == "level" && !onStream) {
+				return
+			}
+			if onStream {
+				deferred = append(deferred, deferredStreamField{key, val, stream})
+				return
+			}
 		}
 		sv, ok := stringifyFJValue(val)
 		if !ok || strings.TrimSpace(sv) == "" {
 			return
 		}
-		pendingFields = append(pendingFields, pending{key, sv})
+		pendingFields = append(pendingFields, pendingField{key, sv})
 	})
 
 	// Fields holding content of a JSON _msg are "parsed" (from the log line);
@@ -1199,6 +1252,7 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		msgRaw = storedLine
 	}
 	msgKeys := jsonLineKeys(msgRaw)
+	pendingFields = exposure.resolveStreamKeyFields(pendingFields, deferred, msgKeys, msgRaw)
 	row := lineRow{line: msgRaw, keys: msgKeys, stream: streamLabels}
 	var lineMissing bool
 	if exposure != nil {
@@ -1214,14 +1268,15 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		if hidden {
 			continue
 		}
-		for _, exposure := range p.metadataFieldExposuresCached(f.key, exposureCache) {
-			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
+		for _, ex := range p.metadataFieldExposuresCached(f.key, exposureCache) {
+			name, ok := exposure.entryLabelName(&row, f.key, f.value, ex, isParsed, lineMissing, streamOnly, finalLabels)
+			if !ok {
 				continue
 			}
 			if isParsed {
-				pfBuf[exposure.name] = f.value
+				pfBuf[name] = f.value
 			} else {
-				smBuf[exposure.name] = f.value
+				smBuf[name] = f.value
 			}
 		}
 	}
@@ -1236,6 +1291,36 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		pf = pfBuf
 	}
 	return sm, pf, false
+}
+
+// dropKeepEntryFields applies the bare `| drop` and `| keep` fields to the
+// entry's labels beyond what VictoriaLogs did (dropEntryFields, keepEntryFields).
+func dropKeepEntryFields(drop, keep []string, sm, pf map[string]string) {
+	dropEntryFields(drop, sm, pf)
+	keepEntryFields(keep, sm, pf)
+}
+
+// dropEntryFields removes the fields a bare `| drop f` names from the entry's
+// structured metadata and parsed labels: VictoriaLogs deletes the stored
+// field, which is not the one a parsed label Loki renamed f (name_extracted)
+// is read from.
+func dropEntryFields(fields []string, sm, pf map[string]string) {
+	for _, f := range fields {
+		delete(sm, f)
+		delete(pf, f)
+	}
+}
+
+// keepEntryFields removes the stored field the translated `| keep x_extracted`
+// also keeps (translator.translateKeepStage keeps x for the proxy to rename)
+// when the entry has no collision and x is no label Loki keeps.
+func keepEntryFields(keep []string, sm, pf map[string]string) {
+	for _, f := range keep {
+		if base, ok := strings.CutSuffix(f, extractedSuffix); ok && !slices.Contains(keep, base) {
+			delete(sm, base)
+			delete(pf, base)
+		}
+	}
 }
 
 // applyDropConditions removes fields from sm/pf when the entry value matches a
@@ -1659,7 +1744,10 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 	for k, v := range streamLabels {
 		labels[k] = v
 	}
-	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
+	if _, stored := streamLabels["level"]; stored {
+		// A stream label level keeps its value: a parser stage overwrites the
+		// stored level field with the line's own.
+	} else if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
 	}
 	// Loki's detected_level for the stored row joins the stream labels.
@@ -1702,26 +1790,24 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		if isVLInternalField(key) || key == "_stream_id" || key == detectedLevelLabel {
 			continue
 		}
-		if _, exists := labels[key]; exists {
-			continue
-		}
 		stringValue, ok := stringifyEntryValue(value)
-		if !ok || strings.TrimSpace(stringValue) == "" {
+		if !ok || strings.TrimSpace(stringValue) == "" || exposure.repeatsLabel(key, stringValue, labels, streamLabels, &lr) {
 			continue
 		}
 		isParsed, hidden := classifyRowField(exposure, &lr, key, stringValue, lineMissing, classifyAsParsed)
 		if hidden {
 			continue
 		}
-		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
-			if _, exists := labels[exposure.name]; exists && !exposure.isAlias {
+		for _, ex := range p.metadataFieldExposuresCached(key, exposureCache) {
+			name, ok := exposure.entryLabelName(&lr, key, stringValue, ex, isParsed, lineMissing, streamLabels, labels)
+			if !ok {
 				continue
 			}
 			if isParsed {
-				pfBuf[exposure.name] = stringValue
+				pfBuf[name] = stringValue
 				continue
 			}
-			smBuf[exposure.name] = stringValue
+			smBuf[name] = stringValue
 		}
 	}
 

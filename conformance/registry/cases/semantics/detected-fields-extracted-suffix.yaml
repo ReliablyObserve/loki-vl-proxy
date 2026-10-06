@@ -1,0 +1,42 @@
+id: semantics/detected-fields-extracted-suffix
+title: detected_fields omits Loki's level_extracted and version_extracted (open; service fields are owner-kept)
+proves:
+  - loki_api_v1_detected_fields
+  - parser-error-and-label-collision
+consumer: drilldown
+why: |
+  For a stream whose labels include `level` and `version`, Loki's
+  /detected_fields lists `level_extracted` and `version_extracted` beside the
+  parsed keys, because a parsed key named like a stream label is renamed
+  (pkg/logql/log/parser.go duplicateSuffix). The proxy lists neither. The
+  owner's stamped decision (profiles/detected-fields-no-extracted-suffix)
+  keeps `service` / `service.name` without the suffix and covers nothing else,
+  so these two fields are an ordinary difference. Evidence: differential run
+  clusters 37eca1b4 (13 queries) and f8fa9aa2 (2 queries), e.g.
+  `{service_name="api-gateway"}` loki-only ['level_extracted', 'version_extracted'].
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [fields.label]
+  expect: |
+    Loki's fields including level_extracted and version_extracted (service fields as the owner decided).
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/label_handlers.go handleDetectedFields (parsed fields named like a stream label)'
+  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; detected fields come from the parsed labels of sampled entries'
+  proxy: 'detected_fields lists the unrenamed parsed keys it can see in VictoriaLogs rows'
+  planned_test: 'TestCompat_DetectedFieldsExtractedSuffix (test/e2e-compat, group drilldown)'
+  note: 'The query-result side is fixed (semantics/extracted-suffix-collision); the detected_fields list reads its fields through a different path.'
+  clusters:
+    - 37eca1b4
+    - f8fa9aa2

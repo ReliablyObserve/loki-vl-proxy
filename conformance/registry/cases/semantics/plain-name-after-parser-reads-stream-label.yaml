@@ -1,0 +1,64 @@
+id: semantics/plain-name-after-parser-reads-stream-label
+title: A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  After `| json`, a key named like a stream label is renamed `name_extracted`
+  and `name` still reads the stream label (LabelsBuilder.getWithCategory,
+  pkg/logql/log/labels.go:293-307, falls through to the stream label because
+  the parsed one was renamed). VictoriaLogs' unpack_json overwrote the stored
+  field `name` with the line's value, so `| json | level="debug"` filters on
+  the parsed value: on a stream with level="info" and a JSON line holding
+  "level":"debug", Loki returns no line and the proxy returns that line (seen
+  on the e2e fixture of TestCompat_ExtractedSuffixOnParsedCollision, 2026-10).
+  Grouping by the plain name (`sum by (level) (... | logfmt ...)`) groups by
+  the parsed value where Loki has the stream label's. Reading the stream
+  label means a _stream lookup (copy _stream, a regexp or extract_regexp on it)
+  in front of every filter or grouping on any parsed name, and the fast paths
+  that recognise the plain `| unpack_json | filter f:!""` shape would stop
+  matching; the alternative, `unpack_json keep_original_fields` for every
+  parser, needs the parsed value of a collided key from the proxy (it has the
+  line) and changes every json and logfmt translation. Neither fits this
+  change; the choice needs its own measurement on the Drilldown paths.
+
+  Cheaper option to measure first: rewrite a plain-name filter or grouping
+  after a parser only when the name is a known stream label name for the
+  tenant (the cached label names the proxy already keeps), and leave every
+  other name, and so the Drilldown fast paths, untouched. A stream label that
+  no cached list knows yet would keep today's behaviour until the cache has it.
+
+  Corpus evidence: differential run clusters 08fb5da3, 19e8f424, 35e2a101 and
+  d650bcfb, 6 queries, all `sum by (level) (... | logfmt ...)` where Loki
+  groups by the stream's level (info) and the proxy by the parsed one (warn);
+  they were counted under semantics/extracted-suffix-collision before.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x",level="info"} | json | level="debug"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    No line where only the parsed `level` is debug (the stream label's level is info).
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator label filter and stats grouping after json / logfmt (stored field overwritten by unpack_*)'
+  loki: 'pkg/logql/log/labels.go:293-307 LabelsBuilder.getWithCategory (stream label read once the parsed one was renamed)'
+  proxy: 'the parsed value of a key named like a stream label'
+  planned_test: 'TestCompat_PlainNameAfterParserReadsStreamLabel (test/e2e-compat, group semantics)'
+  note: 'Loki groups by the stream label; the proxy by the parsed value that overwrote the stored field.'
+  clusters:
+    - 08fb5da3
+    - 19e8f424
+    - 35e2a101
+    - d650bcfb

@@ -9,6 +9,7 @@ import (
 	"net"
 	"regexp"
 	"regexp/syntax"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -634,6 +635,13 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// afterKeyParser is set once a json or logfmt parser ran: label filters after
 	// it name sanitized keys (see parsedKeyVariants).
 	afterKeyParser := false
+	// keyParsers are the json and logfmt stages so far, with the part their
+	// pipe holds; extractedBases are the name_extracted labels the filters name
+	// (see extractedScratchPipes).
+	trackExtracted := strings.Contains(logql, extractedSuffix)
+	var keyParsers []extractedParser
+	var keyParserParts []int
+	var extractedBases, stageBases []string
 	// Track canonical label-filter stages so repeated drilldown include/exclude
 	// clicks don't accumulate duplicate or contradictory filters.
 	labelFilterLatest := make(map[string]int)
@@ -798,6 +806,17 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 
 		if isKeyParserStage(stage) {
 			afterKeyParser = true
+			var parser extractedParser
+			if trackExtracted {
+				parser = extractedParser{unpack: "unpack_json", targets: extractionTargets(stage)}
+				if strings.HasPrefix(stage, "logfmt") {
+					parser.unpack = "unpack_logfmt"
+				}
+			}
+			if trackExtracted {
+				keyParsers = append(keyParsers, parser)
+				keyParserParts = append(keyParserParts, len(parts))
+			}
 		}
 		stageLabelFn := pipelineLabelFn
 		if afterKeyParser && isLabelFilterStage(stage) {
@@ -811,9 +830,33 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 					}
 				}
 				return false
+			}, func(base string) bool {
+				// The label may be a collision rename unless the query sets it
+				// itself; the parsers so far say whether one extracts base.
+				if captureLabels[base+extractedSuffix] || definedLabels[base+extractedSuffix] {
+					return false
+				}
+				for _, parser := range keyParsers {
+					if _, ok := parser.source(base); ok {
+						if !containsStr(extractedBases, base) {
+							extractedBases = append(extractedBases, base)
+						}
+						if !containsStr(stageBases, base) {
+							stageBases = append(stageBases, base)
+						}
+						return true
+					}
+				}
+				return false
 			})
 		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		if len(stageBases) > 0 {
+			if !strings.HasPrefix(translated, "|") {
+				translated = extractedStageMark + strings.Join(stageBases, ",") + extractedStageMark + translated
+			}
+			stageBases = nil
+		}
 		if keepLine && strings.HasPrefix(stage, "line_format ") && strings.HasPrefix(translated, "| format ") {
 			translated = "| copy _msg as " + StoredLineField + " " + translated
 			keepLine = false
@@ -880,6 +923,9 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		}
 	}
 
+	if len(extractedBases) > 0 {
+		parts = withExtractedScratch(parts, keyParsers, keyParserParts, extractedBases)
+	}
 	wrapBareFiltersAfterPipes(parts)
 	result := strings.Join(parts, " ")
 
@@ -1402,6 +1448,14 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 	base := []string{"_time", "_msg", "_stream"}
 	if len(fields) == 0 {
 		return logsql.PipeFields{Labels: base}.String()
+	}
+	// A parsed label Loki renamed name_extracted (a collision with a stream
+	// label) is the stored field name after unpack_*: keep that too, for the
+	// proxy to rename.
+	for _, field := range fields {
+		if b := strings.TrimSuffix(field, extractedSuffix); b != field && isBareIdentifier(b) && !slices.Contains(fields, b) {
+			fields = append(fields, b)
+		}
 	}
 	return logsql.PipeFields{Labels: append(base, fields...)}.String()
 }

@@ -936,7 +936,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			var drop bool
-			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.translatedLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
 			if drop {
 				vlFJParserPool.Put(fjParser)
 				continue
@@ -948,6 +948,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
+			dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
 			if len(keepConditions) > 0 {
 				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
 			}

@@ -1,29 +1,26 @@
 id: semantics/extracted-suffix-collision
-title: A parsed key named like a stream label is renamed with _extracted in query results (open; detected_fields decision unchanged)
+title: A parsed key named like a stream label is renamed with _extracted in query results (fixed; detected_fields decision unchanged)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's parsers rename a parsed key that equals a stream label or structured-
-  metadata name with the `_extracted` suffix, so the stored label keeps its
-  value (`| json` on a line holding `level` beside the stream label `level`
-  yields `level_extracted`). The proxy returns the parsed key under the stream
-  label's name (or not at all), so Explore shows one `level` where Loki shows
-  `level` and `level_extracted`, and grouping or filtering on
-  `level_extracted` finds nothing.
+  Loki's parsers rename a parsed key that equals a stream label's name with the
+  `_extracted` suffix, so the stream label keeps its value (`| json` on a line
+  holding `level` beside the stream label `level` yields `level_extracted`).
+  The proxy returned the parsed key under the stream label's name (or not at
+  all), so Explore showed one `level` where Loki shows `level` and
+  `level_extracted`, and grouping or filtering on `level_extracted` found
+  nothing. Fixed for log entries, label filters and stats grouping on the
+  renamed label, and bare `| drop` / `| keep` of it.
 
-  This is the query-result side only. The owner's stamped decision that
-  /detected_fields lists `service` / `service.name` without the suffix stays
-  (documented deviation detected-fields-no-extracted-suffix); structured
-  metadata named like a stream label is profiles/structured-metadata-label-
-  collision.
-
-  The same collision shows in /detected_fields: Loki lists level_extracted and
-  version_extracted for a JSON line holding level and version beside stream
-  labels of those names, and the proxy does not. Only service / service.name
-  is covered by the owner's detected_fields decision (profiles/detected-
-  fields-no-extracted-suffix); the other `_extracted` fields are this gap.
+  The /detected_fields list of `level_extracted`, `version_extracted` and the
+  like is not part of this case (semantics/detected-fields-extracted-suffix);
+  the owner's stamped decision (profiles/detected-fields-no-extracted-suffix)
+  covers only service / service.name there. A filter or grouping on the plain
+  name is semantics/plain-name-after-parser-reads-stream-label, and a parsed
+  key against structured metadata is profiles/parsed-key-colliding-with-
+  structured-metadata.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -41,31 +38,34 @@ compare:
   expect: |
     Loki's parsed labels including level_extracted.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#660"
   impact: explore-visible
   effort: M
   area: 'internal/proxy stage-field exposure (parsed-label naming)'
   loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; :152 json, :342 logfmt, :696 json expression'
   proxy: 'parsed key merged into the stream label''s name'
-  planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group semantics)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group core); proxy TestLogQuery_ParsedKeyNamedLikeStreamLabelGetsExtractedSuffix; translator TestExtractedSuffixLabelFilter'
+  note: |
+    Fixed for log entries (buffered, streamed, windowed and tail paths, both encodings), label filters
+    (single and `or` / `and` chains, extraction lists, after line_format) and stats grouping on
+    name_extracted, bare drop/keep of it, and the bare-parser metric series labels. Not changed:
+    metric series that name every parsed key (owner-kept parsed-identity/dynamic-key-parsers), a pattern
+    capture whose value equals the stream label's, two parsers in one query (semantics/two-parsers-keep-one), comma-joined and parenthesised label filters
+    (semantics/label-filter-expression-syntax).
   clusters:
     - 05318ee0
     - 087a214a
-    - 08fb5da3
     - 0b0f1379
     - 150024f9
     - 15548dbd
     - 15a876ba
     - 16eaca6c
-    - 19e8f424
     - 231b4102
     - 29ad1639
     - 31d74267
     - 32f36208
     - 3425b43c
-    - 35e2a101
-    - 37eca1b4
     - 3f356b01
     - 41586c11
     - 422b5298
@@ -108,7 +108,6 @@ gap:
     - d41734a9
     - d45a655e
     - d4b04b0c
-    - d650bcfb
     - d72d583b
     - e9b099d2
     - e9d4fcd8
@@ -122,7 +121,6 @@ gap:
     - f455442d
     - f809410d
     - f87f7636
-    - f8fa9aa2
     - fa6d53ad
     - fbece7b0
     - fe307701

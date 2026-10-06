@@ -10,7 +10,7 @@ why: |
   lists service / service.name. The owner stamped this as the intended
   behaviour (2026-04-25). It covers only those service fields: every other
   `_extracted` field Loki lists (level_extracted, version_extracted, ...) is
-  an ordinary difference (semantics/extracted-suffix-collision).
+  an ordinary difference (semantics/detected-fields-extracted-suffix).
 request:
   method: GET
   path: /loki/api/v1/detected_fields

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A parsed key or structured metadata named like a stream label is exposed
+  as `name_extracted`, as Loki does.** When `| json`, `| logfmt`, `| regexp`,
+  `| pattern`, `| unpack` or an extraction list produced a key that is also a
+  stream label's name, Loki leaves the stream label alone and names the parsed
+  label `name_extracted` (`pkg/logql/log/parser.go` `duplicateSuffix`); for a
+  JSON line holding `level`, `app` and `service_name` beside stream labels of
+  those names, Explore shows `level` and `level_extracted`. The proxy dropped
+  the parsed key (VictoriaLogs' `unpack_*` overwrites the stored field of that
+  name, and the row's field was skipped as a repeat of the stream label), used
+  the overwritten `level` field as the entry's stream `level`, and showed
+  structured metadata `service.name` as a second `service_name` beside the
+  derived stream label where Loki answers `service_name_extracted`. Log entries
+  of `query`, `query_range` and the live tail (buffered, streamed and windowed
+  paths; default and `categorize-labels` encodings) and the series labels of a
+  bare parser metric now carry the renamed labels, and the stream label keeps
+  its value. A label filter on `name_extracted` (single, or in an `or` / `and`
+  chain, after a bare parser or an extraction list that names the label, and
+  after a `line_format`), a grouping by it in a metric, and `| keep` / `| drop`
+  of it read the parsed value where the stream also has the label and the key
+  `name_extracted` itself otherwise; a label the query sets itself wins. Proven
+  against Loki v3.7.7 on the supported VictoriaLogs 1.4x and 1.5x lines (proven
+  on v1.40.0, v1.47.0 and v1.52.0, `TestCompat_ExtractedSuffixOnParsedCollision`).
+  Not changed, and registered as open gaps where they are Loki differences: a
+  filter or grouping on the plain name after a parser reads the parsed value
+  (`semantics/plain-name-after-parser-reads-stream-label`), a parsed key against
+  structured metadata of the same name loses the metadata value in VictoriaLogs
+  (`profiles/parsed-key-colliding-with-structured-metadata`), and the
+  `/detected_fields` list of `level_extracted` and the like
+  (`semantics/detected-fields-extracted-suffix`; the owner decision keeps only
+  `service` / `service.name` without the suffix there). Metric series that name
+  every parsed key keep the stream identity by default
+  (`-exact-parser-series-identity`).
+
 ## [2.0.2] - 2026-10-06
 
 ### Fixed

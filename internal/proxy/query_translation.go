@@ -1068,6 +1068,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	streamLabelCache := make(map[string]map[string]string, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	exposure := p.lineFieldExposure(spec.baseQuery)
 
 	smBuf := metadataMapPool.Get().(map[string]string)
 	pfBuf := metadataMapPool.Get().(map[string]string)
@@ -1139,7 +1140,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
 		if includeParsedInMetric || len(captureLabels) > 0 {
-			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
+			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
 			addParsedSeriesLabels(metric, parsedFields, spec.unwrapField, captureLabels, includeParsedInMetric)
 		}
 		seriesKey := canonicalLabelsKey(metric)

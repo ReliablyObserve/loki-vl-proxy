@@ -1,0 +1,48 @@
+id: profiles/parsed-key-colliding-with-structured-metadata
+title: A parsed key named like structured metadata loses the metadata value in VictoriaLogs (open)
+proves:
+  - parser-error-and-label-collision
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki keeps structured metadata `trace_id` and exposes a parsed key of the
+  same name as `trace_id_extracted` (parser.go: HasInCategory(key,
+  StructuredMetadataLabel)). VictoriaLogs stores one field `trace_id`. In a
+  log query without a parser the proxy hides it when the line is JSON holding
+  the key (it cannot tell the metadata from the line's content), so the entry
+  shows no trace_id where Loki shows the metadata; after `| json` the
+  unpack overwrote the stored metadata value with the line's, so the metadata
+  value is gone and the entry shows `trace_id` = the line's value where Loki
+  shows the metadata plus `trace_id_extracted` (measured 2026-10 on a stream
+  pushed with `trace_id: sm-trace` and a line {"trace_id":"line-trace"}; the
+  stored field after unpack_json is line-trace, before it sm-trace). A fix
+  needs the stored value before the unpack (unpack_json keep_original_fields
+  plus the line's value read by the proxy), which changes every json and
+  logfmt translation; see semantics/plain-name-after-parser-reads-stream-label.
+  A structured metadata key named like a stream label is fixed
+  (profiles/structured-metadata-label-collision).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | json'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [structured_metadata_keys, parsed_keys]
+  expect: |
+    structuredMetadata trace_id (the pushed value) and parsed trace_id_extracted.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator json / logfmt unpack (original stored value) and internal/proxy row classification'
+  loki: 'pkg/logql/log/parser.go:152 HasInCategory(key, StructuredMetadataLabel) then duplicateSuffix'
+  proxy: 'the line''s value under trace_id, the metadata value missing'
+  planned_test: 'TestCompat_ParsedKeyAgainstStructuredMetadata (test/e2e-compat, group otel-edge)'

@@ -234,8 +234,8 @@ def compare(left, right, lenient=False, explain=None):
 
 # Differences from Loki that are by design. Each rule takes the PR's and Loki's answer to one request, removes only
 # the documented difference from both and requires the rest to match exactly; it returns the reason, or None.
-EXTRACTED = ("Loki's _extracted suffix for a key named like a stream label (structured metadata: open, owner decision "
-             "pending, profiles/structured-metadata-label-collision; detected_fields: documented deviation)")
+EXTRACTED = ("Loki's _extracted suffix for a key named like a stream label, where the build does not return it "
+             "(detected_fields: open, semantics/detected-fields-extracted-suffix; service/service.name: owner decision)")
 
 
 def _extracted(label):
@@ -328,7 +328,7 @@ def _log_frames(a, b):
             return None
         for lx, tx, ly, ty in zip(cx["labels"], cx["labelTypes"], cy["labels"], cy["labelTypes"]):
             lx, tx, ly, ty = dict(lx or {}), dict(tx or {}), dict(ly or {}), dict(ty or {})
-            for k in [k for k in ly if _extracted(k)]:
+            for k in [k for k in ly if _extracted(k) and k not in lx]:  # an _extracted label the PR returns is compared
                 base = k[: -len("_extracted")]
                 ly.pop(k)
                 ty.pop(k, None)
@@ -430,7 +430,13 @@ def main():
         if loki_ok:
             ln, lok, _, _, _, _ = compare(p, l)
             _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]))
-            _, _, mdiffs, _, _, _ = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]))
+            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]))
+            # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
+            # Loki there) still counts against the base, so a fix towards Loki reads as improved.
+            def what(x):  # the request and its reasons, without window timestamps
+                return re.sub(r"\d{10,}", "#", x)
+            pr_explained = {what(x) for x in explained}
+            mdiffs += [x for x in mexplained if what(x) not in pr_explained]
             # Patterns are mined from the queries the proxy served (and this Loki has no pattern answer): reported, not counted.
             lnondet = [x for x in ldiffs2 if nondeterministic(x)]
             ldiffs2 = [x for x in ldiffs2 if not nondeterministic(x)]

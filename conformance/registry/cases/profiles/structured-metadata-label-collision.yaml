@@ -1,5 +1,5 @@
 id: profiles/structured-metadata-label-collision
-title: Structured metadata named like a stream label gets Loki's _extracted suffix (open gap)
+title: Structured metadata named like a stream label gets Loki's _extracted suffix (fixed)
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
@@ -35,14 +35,15 @@ compare:
   expect: |
     structuredMetadata carries service_name_extracted, not service_name.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#660"
   impact: explore-visible
   effort: M
   area: 'internal/proxy structured-metadata naming in log responses (collision with derived service_name)'
   loki: 'pkg/logql/log/labels.go LabelsBuilder (structured metadata renamed with _extracted on a stream-label collision)'
   proxy: 'structuredMetadata service_name beside the stream label'
-  planned_test: 'TestCompat_StructuredMetadataLabelCollision (test/e2e-compat, group otel-edge)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group core), subtest structured metadata against the derived service_name'
+  note: 'Fixed by the same row rename as semantics/extracted-suffix-collision. Not changed: a label filter or keep on service_name_extracted over structured metadata, and metadata whose value equals the stream label.'
   clusters:
     - 0e676869
     - 1802c76f

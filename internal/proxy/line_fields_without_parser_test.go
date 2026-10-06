@@ -145,7 +145,7 @@ func TestLogQuery_LineFieldsNeedAParserStage(t *testing.T) {
 		}
 
 		sm, parsed, _ = lineFieldCategories(t, p, `{service_name="otel-collector"} | json`)
-		if want := "dropped export_ms message pipeline received"; strings.Join(parsed, " ") != want {
+		if want := "dropped export_ms level_extracted message pipeline received"; strings.Join(parsed, " ") != want {
 			t.Fatalf("%s: | json parsed %v, want %s", name, parsed, want)
 		}
 		if want := "detected_level k8s_cluster_name k8s_pod_name trace_id"; strings.Join(sm, " ") != want {
