@@ -215,7 +215,7 @@ func translateMatcher(m LabelMatcher, opts TranslateOptions) (string, error) {
 // Loki |= is a substring match; VL's ~"text" is the closest equivalent.
 // Pattern filters (|> and !>) fall through to the string translator.
 func translateLineFilter(s *LineFilterStage) (string, error) {
-	if s.IP {
+	if s.IP || len(s.Or) > 0 {
 		return "", errFallthrough
 	}
 	quoted := logsql.QuotePattern(s.Value)

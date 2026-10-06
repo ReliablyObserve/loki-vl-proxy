@@ -1,12 +1,16 @@
 id: semantics/line-filter-or-alternatives
-title: Line filters with `or` alternatives are rejected (open)
+title: Line filters with `or` alternatives match like Loki
 proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
   Loki 3 accepts `|= "a" or "b"` and `!= "foo" or "bar"` (and `or ip(...)`) as
-  one line filter with alternatives. The proxy's parser stops at the second
-  string (`unexpected token STRING`) and returns 400.
+  one line filter with alternatives: any alternative matches for |=, |~ and |>,
+  none may match for !=, !~ and !> (Loki turns a negated chain into one filter
+  per alternative), an `ip(...)` alternative is plain text under |=, |~ and |>,
+  and an alternative that matches every line is dropped from a positive chain.
+  The proxy parses and validates the chains like Loki and sends VictoriaLogs one
+  regexp per chain.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -22,15 +26,16 @@ compare:
   mode: observed
   fields: [status, streams.values]
   expect: |
-    Lines holding either string.
+    Lines holding either string; Loki's error for a malformed chain.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#669"
   impact: explore-visible
   effort: S
-  area: 'internal/logql parser (line filter alternatives) + translator'
+  area: 'internal/logql/ip_filter.go, internal/logql/stage_validate.go, internal/translator/translator.go (orLineFilter)'
   loki: 'pkg/logql/syntax/ast.go:473 newOrLineFilterExpr'
-  proxy: '400 parse error'
-  planned_test: 'TestCompat_LineFilterOrAlternatives (test/e2e-compat, group semantics)'
+  proxy: 'parsed like syntax.y orFilter; translated to one regexp per chain'
+  planned_test: 'TestCompat_LineFilterOrAlternatives (test/e2e-compat, group core)'
   clusters:
     - 147e07fb
     - 435e2f3c

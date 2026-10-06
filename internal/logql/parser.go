@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ParseError is a query rejection whose message is already formatted the way
@@ -27,14 +28,14 @@ func newParseError(line, col int, msg string) *ParseError {
 // Parse parses a LogQL expression string and returns the typed AST.
 // It accepts log queries, range aggregations, and vector aggregations.
 func Parse(input string) (Expr, error) {
-	p := &parser{sc: newScanner(input), input: input}
+	p := &parser{sc: newScanner(input)}
 	p.advance()
 	expr, err := p.parseExpr()
 	if err != nil {
 		return nil, err
 	}
 	if p.cur.Typ != TokEOF {
-		return nil, fmt.Errorf("logql: unexpected token %q at position %d", p.cur.Val, p.sc.pos)
+		return nil, p.syntaxErrorAt("")
 	}
 	return expr, nil
 }
@@ -101,9 +102,36 @@ var rangeOps = map[string]RangeOp{
 }
 
 type parser struct {
-	sc    *scanner
-	cur   Token
-	input string
+	sc  *scanner
+	cur Token
+	// canon is set by CanonicalizeLogRanges only.
+	canon *canonState
+}
+
+// pos is the byte offset of the current token in the input.
+func (p *parser) pos() int { return int(p.sc.start) }
+
+// canonState collects what CanonicalizeLogRanges rewrites.
+type canonState struct {
+	// rewrites are the spans of alternative log range forms, in order.
+	rewrites []rewrite
+	// queryStart and queryEnd delimit the log query parseLogQuery returned last.
+	queryStart, queryEnd int
+}
+
+// rewrite replaces input[start:end] with text.
+type rewrite struct {
+	start, end int
+	text       string
+}
+
+// addRewrite records a rewrite, dropping the ones it contains.
+func (p *parser) addRewrite(start, end int, text string) {
+	c := p.canon
+	for len(c.rewrites) > 0 && c.rewrites[len(c.rewrites)-1].start >= start {
+		c.rewrites = c.rewrites[:len(c.rewrites)-1]
+	}
+	c.rewrites = append(c.rewrites, rewrite{start, end, text})
 }
 
 func (p *parser) advance() Token {
@@ -187,11 +215,20 @@ func (p *parser) parsePrimary() (Expr, error) {
 		p.advance()
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
+			argStart := p.pos()
 			endPos, ok := p.consumeBalancedParens()
 			if !ok || endPos < startPos {
 				return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
 			}
-			raw := strings.TrimSpace(p.input[startPos:endPos])
+			if p.canon != nil {
+				// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
+				// metric expression, written in the plain form like any other.
+				argEnd := argStart + firstArgumentLen(p.sc.src[argStart:endPos])
+				if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
+					p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
+				}
+			}
+			raw := strings.TrimSpace(p.sc.src[startPos:endPos])
 			return &OpaqueMetricExpr{Raw: raw}, nil
 		}
 		return nil, fmt.Errorf("logql: unexpected identifier %q", name)
@@ -199,14 +236,19 @@ func (p *parser) parsePrimary() (Expr, error) {
 
 	// Parenthesised expression
 	if p.cur.Typ == TokLParen {
+		open := p.pos()
 		p.advance()
 		inner, err := p.parseExpr()
 		if err != nil {
 			return nil, err
 		}
-		if _, err := p.expect(TokRParen); err != nil {
-			return nil, err
+		if p.cur.Typ != TokRParen {
+			return nil, p.syntaxErrorAt("")
 		}
+		if _, ok := inner.(*LogQuery); ok && p.canon != nil {
+			p.addRewrite(open, p.pos()+1, strings.TrimSpace(p.sc.src[p.canon.queryStart:p.canon.queryEnd]))
+		}
+		p.advance()
 		return inner, nil
 	}
 
@@ -214,7 +256,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 		return p.parseLogQuery()
 	}
 
-	return nil, fmt.Errorf("logql: unexpected token %v (%q)", p.cur.Typ, p.cur.Val)
+	return nil, p.syntaxErrorAt("")
 }
 
 // maybeInfix checks for a binary operator after a primary and builds a BinOpExpr
@@ -313,6 +355,7 @@ func (p *parser) parseLabelList() ([]string, error) {
 
 // parseLogQuery parses {selector} [pipeline stages].
 func (p *parser) parseLogQuery() (*LogQuery, error) {
+	start := p.pos()
 	sel, err := p.parseStreamSelector()
 	if err != nil {
 		return nil, err
@@ -329,6 +372,9 @@ func (p *parser) parseLogQuery() (*LogQuery, error) {
 			break
 		}
 		lq.Pipeline = append(lq.Pipeline, stage)
+	}
+	if p.canon != nil {
+		p.canon.queryStart, p.canon.queryEnd = start, p.pos()
 	}
 
 	return lq, nil
@@ -684,7 +730,7 @@ func (p *parser) consumeExplicitFieldList(start int) (string, []ExtractionField,
 			return "", nil, p.syntaxError("IDENTIFIER")
 		}
 	}
-	return strings.TrimSpace(p.input[start:end]), fields, nil
+	return strings.TrimSpace(p.sc.src[start:end]), fields, nil
 }
 
 // parseLabelFormat parses `dst="template"` / `dst=src` entries separated by
@@ -731,9 +777,38 @@ func (p *parser) syntaxError(expecting string) error {
 		msg += ", expecting " + expecting
 	}
 	if p.cur.Typ == TokEOF {
-		return newParseError(1, len(p.input)+1, msg)
+		return newParseError(1, len(p.sc.src)+1, msg)
 	}
 	return newParseError(0, 0, msg)
+}
+
+// syntaxErrorAt is syntaxError with the position Loki reports: the 1-based
+// column of the offending token on line 1, or line 0 for the line-filter
+// operators and a range, whose lexer tokens carry no line.
+func (p *parser) syntaxErrorAt(expecting string) error {
+	msg := "syntax error: unexpected " + lokiTokenName(p.cur)
+	if expecting != "" {
+		msg += ", expecting " + expecting
+	}
+	pos := p.pos()
+	if p.cur.Typ == TokEOF {
+		pos = len(p.sc.src)
+	}
+	before := p.sc.src[:pos]
+	line := 1 + strings.Count(before, "\n")
+	col := utf8.RuneCountInString(before[strings.LastIndexByte(before, '\n')+1:]) + 1
+	if p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket) {
+		line = 0
+	}
+	return newParseError(line, col, msg)
+}
+
+// errorKeywords are the identifiers Loki's lexer turns into keyword tokens that
+// its parse errors print as written (lex.go tokens), not as IDENTIFIER.
+var errorKeywords = map[string]bool{
+	"json": true, "logfmt": true, "regexp": true, "unpack": true, "pattern": true,
+	"line_format": true, "label_format": true, "unwrap": true, "offset": true,
+	"bool": true, "ip": true, "decolorize": true, "drop": true, "keep": true,
 }
 
 // lokiTokenName renders a token with the name Loki's grammar uses for it.
@@ -745,10 +820,13 @@ func lokiTokenName(tok Token) string {
 		return "NUMBER"
 	case TokString, TokRawString:
 		return "STRING"
-	case TokDuration:
+	case TokDuration, TokLBracket:
 		return "RANGE"
 	case TokIdent:
 		if tok.Val == "label_replace" {
+			return tok.Val
+		}
+		if errorKeywords[tok.Val] {
 			return tok.Val
 		}
 		if _, ok := rangeOps[tok.Val]; ok {
@@ -764,9 +842,9 @@ func lokiTokenName(tok Token) string {
 
 // consumeBalancedParens consumes tokens including nested parentheses until the
 // matching close paren (which is also consumed). It returns the byte position in
-// p.input immediately after the closing ')' and ok=true. If the parentheses
+// p.sc.src immediately after the closing ')' and ok=true. If the parentheses
 // never balance — EOF is reached with the depth still positive — it returns
-// ok=false so the caller can emit a parse error instead of slicing p.input with
+// ok=false so the caller can emit a parse error instead of slicing p.sc.src with
 // a stale endPos of 0 (which panics for any startPos > 0). Used for opaque
 // function calls.
 func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
@@ -905,6 +983,7 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 // For quantile_over_time the optional phi parameter comes before the
 // inner expression: quantile_over_time(0.95, {app="nginx"}[5m]).
 func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
+	start := p.pos()
 	p.advance() // consume function name
 
 	if _, err := p.expect(TokLParen); err != nil {
@@ -919,36 +998,126 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		}
 	}
 
-	// Inner expression: a log query ({...}), optionally parenthesised.
 	if err := p.checkRangeAggregationArgument(!ra.HasParam); err != nil {
 		return nil, err
 	}
-	var err error
-	if p.cur.Typ == TokLBrace {
-		lq, lqErr := p.parseLogQuery()
-		if lqErr != nil {
-			return nil, lqErr
+	innerStart := p.pos()
+	form, err := p.parseLogRange(ra)
+	if err != nil {
+		return nil, err
+	}
+	if p.cur.Typ != TokRParen {
+		return nil, p.syntaxErrorAt(")")
+	}
+	if form.alt && p.canon != nil {
+		// op(param, selector pipeline trailing-pipeline [range] offset): the
+		// plain form, from the text of the query as written.
+		query := form.log
+		if form.trailing != "" {
+			query += " " + form.trailing
 		}
-		ra.Inner = lq
-	} else {
-		ra.Inner, err = p.parsePrimary()
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := ra.Inner.(*LogQuery); !ok {
-			return nil, newParseError(0, 0, "syntax error: unexpected expression in range aggregation, expecting { or (")
+		p.addRewrite(start, p.pos()+1, p.sc.src[start:innerStart]+query+" "+form.rng+")")
+	}
+	p.advance()
+	return ra, nil
+}
+
+// parseLogRange parses Loki's logRangeExpr (syntax.y): a log selector with its
+// pipeline, the [range], an optional offset, and any parentheses around it.
+// Parentheses come in two kinds. `(selector pipeline unwrap)[range]` closes
+// before the range and then accepts only an unwrap, and only after a bare
+// selector. `(selector[range] ...)` wraps the whole range expression, may nest,
+// and may carry the pipeline after the range (`selector[range] | json`) when
+// the selector had none. Anything else is rejected where Loki's parser stops.
+// rangeForm is the source text of the parts of a log range, and whether it is
+// written in one of the alternative forms.
+type rangeForm struct {
+	alt                bool
+	log, trailing, rng string
+}
+
+func (p *parser) parseLogRange(ra *RangeAggregation) (rangeForm, error) {
+	var form rangeForm
+	open := 0
+	for p.cur.Typ == TokLParen {
+		p.advance()
+		open++
+	}
+	lq, err := p.parseLogQuery()
+	if err != nil {
+		return form, err
+	}
+	ra.Inner = lq
+	if p.canon != nil {
+		form.log = strings.TrimSpace(p.sc.src[p.canon.queryStart:p.canon.queryEnd])
+	}
+	bare := len(lq.Pipeline) == 0
+	form.alt = open > 0
+	closed := open > 0 && p.cur.Typ == TokRParen
+	if closed {
+		p.advance()
+		open--
+		if p.cur.Typ != TokLBracket {
+			return form, p.syntaxErrorAt("RANGE")
 		}
 	}
+	rangeStart := p.pos()
+	if err := p.parseRangeSuffix(ra); err != nil {
+		return form, err
+	}
+	form.rng = strings.TrimSpace(p.sc.src[rangeStart:p.pos()])
+	trailStart := p.pos()
+	switch {
+	case !p.atStageStart():
+	case closed && bare && p.cur.Typ == TokPipe:
+		p.advance()
+		if p.cur.Typ != TokIdent || p.cur.Val != "unwrap" {
+			return form, p.syntaxErrorAt("unwrap")
+		}
+		unwrap, err := p.parsePipeBody()
+		if err != nil {
+			return form, err
+		}
+		lq.Pipeline = append(lq.Pipeline, unwrap)
+		fallthrough
+	case !closed && bare:
+		form.alt = true
+		for p.atStageStart() {
+			stage, err := p.parsePipelineStage()
+			if err != nil {
+				return form, err
+			}
+			lq.Pipeline = append(lq.Pipeline, stage)
+		}
+		form.trailing = strings.TrimSpace(p.sc.src[trailStart:p.pos()])
+	default:
+		return form, p.syntaxErrorAt(")")
+	}
+	for ; open > 0; open-- {
+		if p.cur.Typ != TokRParen {
+			return form, p.syntaxErrorAt(")")
+		}
+		p.advance()
+	}
+	return form, nil
+}
 
+// atStageStart reports whether the current token starts a pipeline stage.
+func (p *parser) atStageStart() bool {
+	return p.cur.Typ == TokPipe || isLineFilterOperator(p.cur.Typ)
+}
+
+// parseRangeSuffix parses `[duration]`, an optional offset and the @ modifier.
+func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// Expect [duration]. bracketCol is the 1-based column of '[' (the scanner
 	// position just past it), which Loki reports for a malformed duration.
 	bracketCol := p.sc.pos
 	if _, err := p.expect(TokLBracket); err != nil {
-		return nil, fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
+		return fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
 	}
 	dur, err := p.expect(TokDuration)
 	if err != nil {
-		return nil, fmt.Errorf("logql: expected duration: %w", err)
+		return fmt.Errorf("logql: expected duration: %w", err)
 	}
 	ra.Range = dur.Val
 
@@ -959,11 +1128,11 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		if p.advance(); p.cur.Typ == TokDuration {
 			literal += p.cur.Val
 		}
-		return nil, newParseError(0, bracketCol, fmt.Sprintf("unknown unit %q in duration %q", durationUnit(ra.Range)+":", literal))
+		return newParseError(0, bracketCol, fmt.Sprintf("unknown unit %q in duration %q", durationUnit(ra.Range)+":", literal))
 	}
 
 	if _, err := p.expect(TokRBracket); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Optional offset modifier: [duration] offset 1h
@@ -971,7 +1140,7 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		p.advance() // consume "offset"
 		off, offErr := p.expect(TokDuration)
 		if offErr != nil {
-			return nil, fmt.Errorf("logql: expected duration after offset: %w", offErr)
+			return fmt.Errorf("logql: expected duration after offset: %w", offErr)
 		}
 		ra.Offset = off.Val
 	}
@@ -986,21 +1155,16 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		case p.cur.Typ == TokIdent && (p.cur.Val == "start" || p.cur.Val == "end"):
 			p.advance() // consume "start" or "end"
 			if _, err := p.expect(TokLParen); err != nil {
-				return nil, fmt.Errorf("logql: expected '(' after start/end in @ modifier")
+				return fmt.Errorf("logql: expected '(' after start/end in @ modifier")
 			}
 			if _, err := p.expect(TokRParen); err != nil {
-				return nil, fmt.Errorf("logql: expected ')' after start/end in @ modifier")
+				return fmt.Errorf("logql: expected ')' after start/end in @ modifier")
 			}
 		default:
-			return nil, fmt.Errorf("logql: expected unix timestamp or start()/end() after @, got %v", p.cur.Val)
+			return fmt.Errorf("logql: expected unix timestamp or start()/end() after @, got %v", p.cur.Val)
 		}
 	}
-
-	if _, err := p.expect(TokRParen); err != nil {
-		return nil, err
-	}
-
-	return ra, nil
+	return nil
 }
 
 // checkRangeAggregationArgument rejects a range aggregation whose argument is
@@ -1010,7 +1174,7 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 // NUMBER or { or (". The probe runs on a scanner copy and consumes nothing.
 func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	sc := *p.sc
-	probe := parser{sc: &sc, cur: p.cur, input: p.input}
+	probe := parser{sc: &sc, cur: p.cur}
 	expecting := "{ or ("
 	if numberAllowed {
 		expecting = "NUMBER or { or ("
@@ -1025,7 +1189,7 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	msg := "syntax error: unexpected " + lokiTokenName(probe.cur) + ", expecting " + expecting
 	switch probe.cur.Typ {
 	case TokEOF:
-		return newParseError(1, len(p.input)+1, msg)
+		return newParseError(1, len(p.sc.src)+1, msg)
 	case TokIdent, TokNumber:
 		return newParseError(1, sc.pos-len(probe.cur.Val)+1, msg)
 	}

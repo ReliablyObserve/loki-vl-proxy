@@ -167,3 +167,29 @@ groups:
 		t.Fatalf("expected manual review error, got %v", err)
 	}
 }
+
+// A rule written in one of Loki's alternative log range forms translates like
+// its plain form (it used to lose the pipeline or become a phrase filter).
+// conformance: semantics/parenthesized-log-range
+func TestConvertAlternativeLogRangeForms(t *testing.T) {
+	for _, tc := range []struct{ alt, plain string }{
+		{`sum by (a) (rate({a="b"}[5m] | logfmt | a != ""))`, `sum by (a) (rate({a="b"} | logfmt | a != "" [5m]))`},
+		{`rate(({a="b"} |= "x")[5m]) > 1`, `rate({a="b"} |= "x" [5m]) > 1`},
+		{`sum(count_over_time(({a="b"} | json)[5m] offset 1m))`, `sum(count_over_time({a="b"} | json [5m] offset 1m))`},
+	} {
+		convert := func(expr string) string {
+			out, err := Convert([]byte("groups:\n  - name: g\n    rules:\n      - record: r\n        expr: '" + strings.ReplaceAll(expr, "'", "''") + "'\n"))
+			if err != nil {
+				t.Fatalf("%s: %v", expr, err)
+			}
+			var decoded RuleFile
+			if err := yaml.Unmarshal(out, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			return decoded.Groups[0].Rules[0].Expr
+		}
+		if got, want := convert(tc.alt), convert(tc.plain); got != want {
+			t.Errorf("%s\n got %s\nwant %s", tc.alt, got, want)
+		}
+	}
+}

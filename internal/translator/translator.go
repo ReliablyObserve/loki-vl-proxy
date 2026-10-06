@@ -682,6 +682,15 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		if strings.HasPrefix(remaining, "|= ip(") || strings.HasPrefix(remaining, "|=ip(") {
 			remaining = strings.TrimSpace(remaining[2:])
 			arg, rest, ok := extractIPFilterArg(remaining)
+			if alts, orRest, err := takeOrAlternatives(rest); err != nil {
+				return "", err
+			} else if len(alts) > 0 {
+				// Loki builds an `or` chain from the text of each alternative, so the
+				// ip() head matches as plain text (LineFilterExpr.newOrFilter).
+				parts = append(parts, orLineFilter(false, false, append([]orAlternative{{text: arg}}, alts...)))
+				remaining = orRest
+				continue
+			}
 			remaining = rest
 			if ok {
 				// The request validator rejects invalid IP patterns before translation.
@@ -692,9 +701,13 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		if strings.HasPrefix(remaining, "!= ip(") || strings.HasPrefix(remaining, "!=ip(") {
 			remaining = strings.TrimSpace(remaining[2:])
 			arg, rest, ok := extractIPFilterArg(remaining)
-			remaining = rest
+			alts, orRest, err := takeOrAlternatives(rest)
+			if err != nil {
+				return "", err
+			}
+			remaining = orRest
 			if ok {
-				parts = append(parts, "NOT ~"+strconv.Quote(ipLineFilterToRegex(arg)))
+				parts = append(parts, orLineFilter(true, false, append([]orAlternative{{text: arg, ip: true}}, alts...)))
 			}
 			continue
 		}
@@ -707,7 +720,15 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if err != nil {
 				return "", fmt.Errorf("invalid line filter: %w", err)
 			}
-			parts = append(parts, "~"+strconv.Quote(regexp.QuoteMeta(literal)))
+			alts, rest, err := takeOrAlternatives(rest)
+			if err != nil {
+				return "", err
+			}
+			if len(alts) > 0 {
+				parts = append(parts, orLineFilter(false, false, append([]orAlternative{{text: literal}}, alts...)))
+			} else {
+				parts = append(parts, "~"+strconv.Quote(regexp.QuoteMeta(literal)))
+			}
 			remaining = rest
 			continue
 		}
@@ -719,7 +740,15 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if err != nil {
 				return "", fmt.Errorf("invalid line filter: %w", err)
 			}
-			parts = append(parts, "NOT ~"+strconv.Quote(regexp.QuoteMeta(literal)))
+			alts, rest, err := takeOrAlternatives(rest)
+			if err != nil {
+				return "", err
+			}
+			if len(alts) > 0 {
+				parts = append(parts, orLineFilter(true, false, append([]orAlternative{{text: literal}}, alts...)))
+			} else {
+				parts = append(parts, "NOT ~"+strconv.Quote(regexp.QuoteMeta(literal)))
+			}
 			remaining = rest
 			continue
 		}
@@ -727,7 +756,16 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			// Regexp match: |~ "regexp" → ~"regexp"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "~"+val)
+			alts, rest, err := takeOrAlternatives(rest)
+			if err != nil {
+				return "", err
+			}
+			if len(alts) > 0 {
+				head, _ := strconv.Unquote(val)
+				parts = append(parts, orLineFilter(false, true, append([]orAlternative{{text: head}}, alts...)))
+			} else {
+				parts = append(parts, "~"+val)
+			}
 			remaining = rest
 			continue
 		}
@@ -735,7 +773,16 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			// Negative regexp: !~ "regexp" → NOT ~"regexp"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "NOT ~"+val)
+			alts, rest, err := takeOrAlternatives(rest)
+			if err != nil {
+				return "", err
+			}
+			if len(alts) > 0 {
+				head, _ := strconv.Unquote(val)
+				parts = append(parts, orLineFilter(true, true, append([]orAlternative{{text: head}}, alts...)))
+			} else {
+				parts = append(parts, "NOT ~"+val)
+			}
 			remaining = rest
 			continue
 		}
@@ -2957,12 +3004,22 @@ func extractPipelineStage(s string) (stage, rest string) {
 			return strings.TrimSpace(s[:i]), s[i:]
 		}
 		// !> (pattern negation) acts as a stage boundary without a preceding |.
-		// Stop here so the caller's loop can handle !> as its own operator.
-		if c == '!' && i+1 < len(s) && s[i+1] == '>' {
+		// Stop here so the caller's loop can handle !> as its own operator. So do
+		// != and !~ right after a bare parser (`| json != "x"`), where they are a
+		// line filter and not a label filter.
+		if c == '!' && i+1 < len(s) && (s[i+1] == '>' || (s[i+1] == '=' || s[i+1] == '~') && isBareParserKeyword(strings.TrimSpace(s[:i]))) {
 			return strings.TrimSpace(s[:i]), s[i:]
 		}
 	}
 	return strings.TrimSpace(s), ""
+}
+
+func isBareParserKeyword(stage string) bool {
+	switch stage {
+	case "json", "logfmt", "unpack", "decolorize":
+		return true
+	}
+	return false
 }
 
 // extractQuotedValue extracts a quoted string (respecting escaped quotes) and returns (quoted_value, remaining).
@@ -3010,6 +3067,106 @@ func normalizeQuotedStageExpr(expr string) string {
 	return expr
 }
 
+// orAlternative is one `or` alternative of a line filter: its unquoted text and
+// whether it was written ip("...").
+type orAlternative struct {
+	text string
+	ip   bool
+}
+
+// takeOrAlternatives consumes the `or "b" or ip("c")` alternatives that follow a
+// line filter operand and returns them with the rest of the query.
+func takeOrAlternatives(rest string) ([]orAlternative, string, error) {
+	var alts []orAlternative
+	for len(rest) > 2 && strings.EqualFold(rest[:2], "or") && (unicode.IsSpace(rune(rest[2])) || rest[2] == '"' || rest[2] == '`') {
+		rest = strings.TrimSpace(rest[2:])
+		if arg, after, ok := extractIPFilterArg(rest); ok {
+			alts = append(alts, orAlternative{text: arg, ip: true})
+			rest = after
+			continue
+		}
+		quoted, after := extractQuotedValue(rest)
+		text, err := strconv.Unquote(quoted)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid line filter: %w", err)
+		}
+		alts = append(alts, orAlternative{text: text})
+		rest = after
+	}
+	return alts, rest, nil
+}
+
+// orLineFilter renders a line filter with `or` alternatives as one regexp, which
+// VictoriaLogs evaluates in a single pass over the line. Loki matches a line
+// that holds any alternative for |=, |~ and |> and none of them for !=, !~ and
+// !> (a negated chain is a conjunction), so negate flips the one regexp.
+// A positive chain follows Loki's quirks: every alternative is plain text, even
+// ip(...) (LineFilterExpr.newOrFilter ignores its Op), an ip(...) alternative
+// ends its orFilter so that the next `or` drops everything attached before
+// (newOrLineFilterExpr: left.Or = right), and an alternative that matches every
+// line is dropped (log.newOrFilter: true or x is x). A negated != keeps ip
+// semantics. alts[0] is the filter's own operand.
+func orLineFilter(negate, regex bool, alts []orAlternative) string {
+	if !negate {
+		alts = positiveOrChain(alts)
+	}
+	var frags []string
+	wrap := regex
+	for _, alt := range alts {
+		switch {
+		case !negate && lokiMatchesEverything(alt.text, regex):
+			continue
+		case regex:
+			frags = append(frags, alt.text)
+		case alt.ip && negate:
+			frags, wrap = append(frags, ipLineFilterToRegex(alt.text)), true
+		default:
+			frags = append(frags, regexp.QuoteMeta(alt.text))
+		}
+	}
+	if wrap && len(frags) > 1 {
+		for i, frag := range frags {
+			frags[i] = "(?:" + frag + ")"
+		}
+	}
+	filter := "~" + strconv.Quote(strings.Join(frags, "|"))
+	if negate {
+		return "NOT " + filter
+	}
+	return filter
+}
+
+// positiveOrChain keeps the head and the alternatives Loki keeps: those of the
+// last orFilter, which an ip(...) alternative ends.
+func positiveOrChain(alts []orAlternative) []orAlternative {
+	rest := alts[1:]
+	start := 0
+	for i, alt := range rest {
+		if alt.ip && i+1 < len(rest) {
+			start = i + 1
+		}
+	}
+	return append([]orAlternative{alts[0]}, rest[start:]...)
+}
+
+// lokiMatchesEverything reports whether Loki turns the filter into its
+// match-all filter: an empty string, or a regexp that simplifies to `.*` or the
+// empty match (RegexSimplifier.Simplify).
+func lokiMatchesEverything(text string, regex bool) bool {
+	if !regex {
+		return text == ""
+	}
+	re, err := syntax.Parse(text, syntax.Perl)
+	if err != nil {
+		return false
+	}
+	re = re.Simplify()
+	for re.Op == syntax.OpCapture {
+		re = re.Sub[0]
+	}
+	return re.Op == syntax.OpEmptyMatch || re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyCharNotNL
+}
+
 func translatePatternLineFilter(expr string, negative bool) string {
 	values, ok := extractPatternFilterValues(expr)
 	if !ok || len(values) == 0 {
@@ -3040,8 +3197,12 @@ func extractPatternFilterValues(expr string) ([]string, bool) {
 
 	values := make([]string, 0, 1)
 	for remaining != "" {
+		// An ip("...") alternative is plain pattern text, as in Loki's or chain.
 		quoted, rest := extractQuotedValue(remaining)
 		value, err := strconv.Unquote(quoted)
+		if arg, after, ok := extractIPFilterArg(remaining); ok {
+			value, err, rest = arg, nil, after
+		}
 		if err != nil {
 			return nil, false
 		}
@@ -3612,17 +3773,15 @@ func extractIPFilterArg(s string) (arg, rest string, ok bool) {
 	if !strings.HasPrefix(s, "ip(") {
 		return "", s, false
 	}
-	s = s[3:] // skip "ip("
-	s = strings.TrimSpace(s)
-	if len(s) == 0 || s[0] != '"' {
+	s = strings.TrimSpace(s[3:]) // skip "ip("
+	if len(s) == 0 || (s[0] != '"' && s[0] != '`') {
 		return "", s, false
 	}
-	end := strings.IndexByte(s[1:], '"')
-	if end < 0 {
+	quoted, rest := extractQuotedValue(s)
+	arg, err := strconv.Unquote(quoted)
+	if err != nil {
 		return "", s, false
 	}
-	arg = s[1 : end+1]
-	rest = strings.TrimSpace(s[end+2:])
 	if strings.HasPrefix(rest, ")") {
 		rest = strings.TrimSpace(rest[1:])
 	}

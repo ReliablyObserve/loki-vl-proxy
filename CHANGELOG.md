@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A log expression in parentheses under a range function evaluates like the
+  plain form, as in Loki.** `rate(({app="x"} |= "err")[5m])`,
+  `count_over_time(({app="x"} | json)[1m] offset 1h)`,
+  `sum_over_time(({app="x"} | json | unwrap v)[5m])`,
+  `rate(({app="x"}[5m] |= "e"))` and a parenthesised log query
+  (`({app="x"} |= "a")`) used to reach VictoriaLogs as written (`cannot parse
+  query arg ... missing whitespace or ':'`, HTTP 400) or, as instant queries,
+  fail with "log queries are not supported as an instant query type". The
+  parser now follows Loki's `logRangeExpr` (`pkg/logql/syntax/syntax.y`)
+  form by form: parentheses around the selector and pipeline or around the
+  whole range expression (nested), an `offset`, an `unwrap` before or after the
+  range, and a pipeline after the range (`{a}[5m] | json`, only after a bare
+  selector). It rejects what Loki rejects with Loki's status and text
+  (`unexpected ), expecting RANGE`, `unexpected |, expecting )`,
+  `unexpected json, expecting unwrap`, ...), including the column Loki reports
+  (a line-filter operator or a range reports line 0), and the generic
+  `unexpected token` parse errors now read like Loki's. The translator
+  receives the plain form (`logql.CanonicalizeLogRanges`, run on a translation
+  cache miss, skipped without parsing for every other query), built from the
+  text of the query as written, including the first argument of
+  `label_replace`/`label_join`. Rule files (`rulesmigrate`) translate the plain
+  form too.
+- **Line filters accept `or` alternatives, as in Loki.** `|= "a" or "b"`,
+  `!= "a" or "b"`, `|~`, `!~`, `|>` and `!>` chains (`{app="x"} != "a" or "b"
+  != "c" or "d"`) and `or ip("1.2.3.4")` were rejected with `unexpected token
+  STRING`. Loki matches a line holding any alternative for `|=`, `|~` and `|>`,
+  and none of them for `!=`, `!~` and `!>` (it turns a negated chain into one
+  filter per alternative); under `|=`, `|~` and `|>` an `ip(...)` alternative
+  is plain text, an `ip(...)` alternative ends its chain (the next `or`
+  drops what came before, as Loki's grammar does), and an alternative that
+  matches every line (`""`, `.*`, `(.*)`, `()`) is dropped from the chain;
+  under `!=` an `ip(...)` alternative is an ip match, and `!~`/`!>` with
+  `ip(...)` is Loki's `ip: invalid operation`. `or` is case-insensitive, any
+  white space may follow it, and strings may be raw (backticks). Each chain is sent to VictoriaLogs as one regexp
+  (`~"a|b"`, `NOT ~"(?:x)|(?:y)"`), a single pass over the line that works on
+  every supported VictoriaLogs version. Malformed chains get Loki's error text
+  (`unexpected $end, expecting STRING or ip`), and an invalid regular
+  expression in a `|~`/`!~` filter is now rejected with Loki's `stage '...' :
+  error parsing regexp` error instead of reaching VictoriaLogs. A negated line
+  filter directly after a bare parser (`| json != "a"`, `| logfmt !~ "a"`) is
+  translated as a line filter; it used to be read as part of the parser stage
+  and mistranslated.
+
 ## [2.1.1] - 2026-10-06
 
 ### Fixed

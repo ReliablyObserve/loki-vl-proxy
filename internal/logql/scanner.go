@@ -178,7 +178,8 @@ type Token struct {
 type scanner struct {
 	src        string
 	pos        int
-	braceDepth int // tracks {} nesting for != vs |= disambiguation
+	braceDepth int32 // tracks {} nesting for != vs |= disambiguation
+	start      int32 // byte offset where the token last returned by next begins
 }
 
 func newScanner(src string) *scanner {
@@ -212,6 +213,7 @@ func (s *scanner) skipWS() {
 //nolint:gocyclo // lexer dispatches on every character class; branching is inherent to a hand-written lexer.
 func (s *scanner) next() Token {
 	s.skipWS()
+	s.start = int32(s.pos)
 	if s.pos >= len(s.src) {
 		return Token{Typ: TokEOF}
 	}

@@ -39,6 +39,9 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	if isIP && tok.Typ != TokPipeEq && tok.Typ != TokBangEq {
 		return nil, fmt.Errorf("ip: invalid operation")
 	}
+	if p.cur.Typ != TokString && p.cur.Typ != TokRawString && !isIP {
+		return nil, p.syntaxErrorAt("STRING or ip")
+	}
 	value, err := p.expectStringOrRaw()
 	if err != nil {
 		return nil, err
@@ -59,5 +62,57 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	case TokBangGt:
 		op = LineFilterExcludePat
 	}
-	return &LineFilterStage{Op: op, Value: value, IP: isIP}, nil
+	stage := &LineFilterStage{Op: op, Value: value, IP: isIP}
+	for p.cur.Typ == TokOr || p.cur.Typ == TokIdent && strings.EqualFold(p.cur.Val, "or") {
+		p.advance()
+		alt, err := p.parseLineFilterAlt()
+		if err != nil {
+			return nil, err
+		}
+		stage.Or = append(stage.Or, alt)
+	}
+	if !stage.negated() {
+		stage.Or = lastOrGroup(stage.Or)
+	}
+	return stage, nil
+}
+
+// lastOrGroup mirrors how Loki's grammar builds a positive chain: an ip(...)
+// alternative ends an orFilter, and the next `or` attaches its alternatives to
+// the head again (newOrLineFilterExpr: left.Or = right), dropping every
+// alternative attached before. `|= "a" or "b" or ip("x") or "c"` is `a or c`.
+func lastOrGroup(alts []LineFilterAlt) []LineFilterAlt {
+	start := 0
+	for i, alt := range alts {
+		if alt.IP && i+1 < len(alts) {
+			start = i + 1
+		}
+	}
+	return alts[start:]
+}
+
+// parseLineFilterAlt parses what follows `or` in a line filter (syntax.y
+// orFilter): a string or ip("..."). Loki builds an alternative from its text
+// alone, so the ip pattern is not validated here.
+func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
+	switch {
+	case p.cur.Typ == TokString || p.cur.Typ == TokRawString:
+		return LineFilterAlt{Value: p.advance().Val}, nil
+	case p.cur.Typ == TokIdent && p.cur.Val == "ip":
+		p.advance()
+		if p.cur.Typ != TokLParen {
+			return LineFilterAlt{}, p.syntaxErrorAt("(")
+		}
+		p.advance()
+		if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+			return LineFilterAlt{}, p.syntaxErrorAt("STRING")
+		}
+		alt := LineFilterAlt{Value: p.advance().Val, IP: true}
+		if p.cur.Typ != TokRParen {
+			return LineFilterAlt{}, p.syntaxErrorAt(")")
+		}
+		p.advance()
+		return alt, nil
+	}
+	return LineFilterAlt{}, p.syntaxErrorAt("STRING or ip")
 }

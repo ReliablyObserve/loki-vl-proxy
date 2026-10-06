@@ -74,7 +74,10 @@ async function uiState(page: Page) {
     return {
       noData: (text.match(/No data/g) || []).length,
       banners,
-      panelErrors: document.querySelectorAll('[data-testid="data-testid Panel status error"], [data-testid="data-testid Alert error"], [data-testid="data-testid Error boundary"]').length,
+      // Visible errors only: Explore keeps a hidden "Alert error" in the scroll view whenever results render. A query
+      // the datasource rejects shows in the query row (warning icon, no test id), not in a panel.
+      panelErrors: [...document.querySelectorAll('[data-testid="data-testid Panel status error"], [data-testid="data-testid Alert error"], [data-testid="data-testid Error boundary"], [data-testid="data-testid Query editor row"] [data-testid="icon-exclamation-triangle"]')]
+        .filter((e) => e.getClientRects().length > 0).length,
       ...(details ? { details } : {}),
     };
   }).catch(() => ({ noData: 0, banners: ["page state unreadable"], panelErrors: 0 }));

@@ -452,7 +452,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		if keepLine {
 			translate = translator.TranslateLogQueryKeepingLine
 		}
-		translated, err := translate(normalized, labelFn, streamFieldsMap, caps)
+		translated, err := translate(logqlpkg.CanonicalizeLogRanges(normalized), labelFn, streamFieldsMap, caps)
 		if err != nil {
 			return translationResult{err: err}, nil
 		}
