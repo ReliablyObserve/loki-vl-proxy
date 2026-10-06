@@ -25,6 +25,7 @@ Prints JSON: {"run", "entries": {id: {"ranges", "why"}}, "captures", "trimmed", 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -152,6 +153,8 @@ def check(spec=None, items=None):
         pid = p["id"]
         if pid in seen:
             problems.append(f"{SPEC}: duplicate entry {pid}")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", pid):
+            problems.append(f"{SPEC}: {pid} must use only letters, digits, '_' and '-' (it names capture files)")
         seen.add(pid)
         covers = p.get("covers") or []
         if not covers:

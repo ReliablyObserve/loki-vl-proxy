@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Open code-scanning and Dependabot alerts on main resolved.**
+  - CodeQL `go/allocation-size-overflow` (internal/proxy/patterns.go): the
+    custom-pattern merge no longer sizes its slice and set from the sum of two
+    lengths; it starts from the response's pattern count and grows.
+  - Semgrep `run-shell-injection` (`.github/workflows/ci.yaml`, registry report
+    step): `github.base_ref` is passed through an environment variable instead
+    of being expanded inside the shell script.
+  - Semgrep `insecure-hash-algorithm-sha1` (benchmark and parity harnesses):
+    digests that are only compared within a run now use SHA-256. The parity
+    cluster id stays SHA-1 with `usedforsecurity=False` and an inline
+    suppression: it is a content identifier that every registry case claims a
+    cluster by, not a security control, and changing it would renumber every
+    claim.
+  - Semgrep `path-join-resolve-traversal` (`bench/visual/capture.spec.ts`):
+    page and datasource ids are reduced to single path segments before they
+    name capture files, and `bench/visual/plan.py --check` rejects ids with
+    other characters.
+  - Documentation site: `katex` 0.16.47 → 0.18.10 (CVE-2026-103923, override;
+    mermaid still asks for ^0.16), `postcss-selector-parser` 6.1.4 → 7.1.6
+    (CVE-2026-104844, override; cssnano plugins ask for ^6) and
+    `http-cache-semantics` 4.2.0 → 4.3.0 (CVE-2026-93748). `docusaurus build`
+    completes. `braces` 3.0.3 (CVE-2026-93687) has no fixed release; it is
+    reached only through the site's build tooling (chokidar, micromatch) with
+    patterns from the repository's own configuration.
+
 ## [1.108.0] - 2026-10-05
 
 ### Added

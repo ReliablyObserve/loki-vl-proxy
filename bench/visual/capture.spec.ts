@@ -132,13 +132,16 @@ async function tail(browser: any, p: PageSpec, ds: Ds) {
   await page.goto(url(p, ds.uid, "live"), { waitUntil: "commit" });
   await page.getByRole("button", { name: /Start live stream/i }).first().click({ timeout: 30_000 });
   await page.waitForTimeout((parseInt(process.env.VP_TAIL_SECONDS || "25")) * 1000);
-  const dir = path.join(OUT, "shots", p.id, "live");
-  const ddir = path.join(OUT, "data", p.id, "live");
+  // spec ids name files under OUT: keep them single path segments
+  const pid = p.id.replace(/[^A-Za-z0-9_-]/g, "_");
+  const dsid = ds.id.replace(/[^A-Za-z0-9_-]/g, "_");
+  const dir = path.join(OUT, "shots", pid, "live");
+  const ddir = path.join(OUT, "data", pid, "live");
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(ddir, { recursive: true });
-  await page.screenshot({ path: path.join(dir, `${ds.id}.png`) });
+  await page.screenshot({ path: path.join(dir, `${dsid}.png`) });
   const ui = await uiState(page);
-  fs.writeFileSync(path.join(ddir, `${ds.id}.json`), JSON.stringify({ settled: true, records: [], frames, ui }));
+  fs.writeFileSync(path.join(ddir, `${dsid}.json`), JSON.stringify({ settled: true, records: [], frames, ui }));
   await ctx.close();
 }
 

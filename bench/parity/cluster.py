@@ -74,7 +74,9 @@ def impact_of(row):
 
 
 def signature_id(signature):
-    return hashlib.sha1(json.dumps(signature).encode()).hexdigest()[:8]
+    # A content identifier, not a security control: registry cases claim clusters by this id, so changing the hash
+    # would renumber every claim in conformance/registry.
+    return hashlib.sha1(json.dumps(signature).encode(), usedforsecurity=False).hexdigest()[:8]  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
 
 
 # The facet that names a request's difference, most fundamental first: a request

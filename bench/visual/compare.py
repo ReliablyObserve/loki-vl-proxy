@@ -41,7 +41,7 @@ def strip(obj):
 
 
 def digest(obj):
-    return hashlib.sha1(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:12]
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
 def signature(sch):
@@ -90,7 +90,7 @@ def records(path, raw=None):
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
             lists = [body.get(k) for k in ("data", "fields", "detectedLabels")] if isinstance(body, dict) else [body]
             rows = next((len(x) for x in lists if isinstance(x, list)), 0)
-            recs[key].append({"body": ("other", hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
+            recs[key].append({"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     return d.get("settled", False), recs
 
 
