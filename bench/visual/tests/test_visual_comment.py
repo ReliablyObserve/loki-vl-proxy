@@ -111,6 +111,22 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["improved"], 1)
         self.assertNotIn("panel error (", text)
 
+    def test_pr_removing_a_base_difference_and_adding_none_is_an_improvement(self):
+        # Base differs from Loki on the query and index/stats; the PR fixes the query, index/stats stays as on base.
+        same = "resource index/stats: body differs"
+        d = row(main_pr_diffs=["q: base wrong"], loki_main_n=2, loki_diffs=[same], loki_new=[], points_loki=5)
+        text, v = self.verdict([d])
+        self.assertEqual(v["exit"], 0)
+        self.assertEqual(v["improved"], 1)
+        # a new difference from Loki keeps it failing, even with fewer in total
+        d = row(main_pr_diffs=["q: changed"], loki_main_n=3, loki_diffs=["q: new"], loki_new=["q: new"], points_loki=5)
+        _, v = self.verdict([d])
+        self.assertEqual(v["exit"], 1)
+        # as many differences as the base is not an improvement
+        d = row(main_pr_diffs=["q: changed"], loki_main_n=1, loki_diffs=[same], loki_new=[], points_loki=5)
+        _, v = self.verdict([d])
+        self.assertEqual(v["exit"], 1)
+
     def test_pr_diverging_from_loki_where_base_matched_fails_even_when_labelled(self):
         d = row(main_pr_diffs=["q: pr wrong"], loki_main_n=0, loki_diffs=["q: differs"], loki_new=["q: differs"], points_loki=5)
         a = argparse.Namespace(**{**vars(ARGS), "expected_change": True})

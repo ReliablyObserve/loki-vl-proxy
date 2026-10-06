@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The visual-smoke gate reads a PR that removes a difference from Loki as
+  improved even when another, pre-existing difference stays.** A page whose
+  query the PR fixes was reported as "neither build matches Loki" when the same
+  page also carried a difference both builds share (for example index/stats on
+  an open gap). The gate now passes a PR that adds no difference from Loki and
+  has fewer than the base; a new difference still fails.
+
 - **Two unit tests waited out timeouts.**
   `TestHeavyQueryAdmission_QueueFullDoesNotOpenCircuitBreaker` took 120 s:
   its deferred `close(unblock)` ran after `backend.Close`, which waits for the
