@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-06
+
 ### Fixed
 
 - **A filter, grouping, unwrap or label_format on the plain name of a stream
