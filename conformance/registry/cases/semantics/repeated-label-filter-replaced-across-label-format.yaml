@@ -1,0 +1,44 @@
+id: semantics/repeated-label-filter-replaced-across-label-format
+title: A second filter on the same label replaces the first even with a label_format between them (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The translator keeps only the latest equality or regexp filter per field so
+  repeated Drilldown include/exclude clicks do not accumulate impossible AND
+  chains (labelFilterLatest in translateLogQueryOpts). The replacement is in
+  place, so a later filter on the same label overwrites the earlier one even
+  when stages sit between them that change what the label holds. Loki applies
+  each filter where it stands.
+
+  Evidence (main and this branch translate alike, 2026-10):
+    {app="x"} | json | user="info" | label_format x=msg | user="m"
+    =>  app:="x" | unpack_json | filter user:="m" | format if (msg:*) "<msg>" as x skip_empty_results | delete msg
+  The first filter (user="info") is gone and the surviving one runs before the
+  label_format; with a different second label (`| y="m"`) both filters are kept
+  in order. Loki returns only lines where user is "info" and "m" at once (none).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | json | user="info" | label_format x=msg | user="m"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Both filters apply, each where it stands in the pipeline.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator labelFilterLatest (latest filter per field replaces the earlier one in place)'
+  loki: 'pkg/logql/log/pipeline.go (stages run in order); label_filter.go'
+  proxy: 'the earlier filter on the same label is replaced by the later one and moves before the stage between them'
+  planned_test: 'TestCompat_RepeatedLabelFilterAcrossLabelFormat (test/e2e-compat, group core)'
+  note: 'Found while reviewing semantics/plain-name-after-parser-reads-stream-label; the behaviour is the same on main. The replacement should only apply between adjacent filters with no stage in between.'

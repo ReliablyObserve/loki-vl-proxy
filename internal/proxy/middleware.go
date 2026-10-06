@@ -370,6 +370,9 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 		key += ":auth:" + fp
 	}
 	key += ":profile:" + p.responseProfileCacheKey(r)
+	if q := r.FormValue("query"); q != "" {
+		key += p.responseNamesCacheKey(r, q)
+	}
 	return key, true
 }
 

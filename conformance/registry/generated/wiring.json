@@ -188,6 +188,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
+      "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "loki_api_v1_query_range": [
@@ -198,6 +199,7 @@
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/parenthesized_range_test.go",
+      "internal/proxy/plain_stream_labels_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/tenant_query_limits_test.go",
@@ -209,6 +211,7 @@
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
+      "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
@@ -416,6 +419,10 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/ordered_json_metric_test.go"
     ],
+    "semantics/plain-name-after-parser-reads-stream-label": [
+      "internal/proxy/plain_stream_labels_test.go",
+      "test/e2e-compat/plain_name_after_parser_test.go"
+    ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
@@ -463,7 +470,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 278,
+  "registry_items": 280,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -669,6 +676,10 @@
     "internal/proxy/parser_capture_identity_test.go": [
       "parsed-label-series-identity"
     ],
+    "internal/proxy/plain_stream_labels_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/plain-name-after-parser-reads-stream-label"
+    ],
     "internal/proxy/recent_tail_bypass_clamp_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -855,6 +866,11 @@
       "loki_api_v1_query",
       "parsed-label-series-identity"
     ],
+    "test/e2e-compat/plain_name_after_parser_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/plain-name-after-parser-reads-stream-label"
+    ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -902,7 +918,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 80,
+  "tests_with_markers": 82,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -972,6 +988,7 @@
     "semantics/binary-ignoring-matching",
     "semantics/count-values-unsupported",
     "semantics/detected-fields-extracted-suffix",
+    "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
     "semantics/first-last-over-time-translation",
     "semantics/instant-result-type-missing",
@@ -984,9 +1001,9 @@
     "semantics/parse-error-labels-on-log-lines",
     "semantics/parse-error-text-parity",
     "semantics/pattern-line-filter",
-    "semantics/plain-name-after-parser-reads-stream-label",
     "semantics/proxy-accepts-invalid-logql",
     "semantics/proxy-rejects-valid-logql",
+    "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/stddev-stdvar-grouped-values",
     "semantics/tail-history-start-limit",
     "semantics/topk-bottomk-range-series",
@@ -1002,5 +1019,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 93
+  "wired_items": 94
 }

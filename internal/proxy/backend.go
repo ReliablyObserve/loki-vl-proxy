@@ -68,6 +68,9 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 	} else if statusCode >= http.StatusBadRequest {
 		level = slog.LevelWarn
 	}
+	if level > slog.LevelInfo && ctx.Value(quietUpstreamFailuresKey{}) != nil {
+		level = slog.LevelDebug // the caller logs one line for the whole operation
+	}
 	if !p.log.Enabled(ctx, level) {
 		return
 	}

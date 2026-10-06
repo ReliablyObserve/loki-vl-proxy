@@ -1059,6 +1059,100 @@
      "instant": true
     }
    ]
+  },
+  "plain-name-after-parser": {
+   "description": "A plain name after a parser that is also a stream label (level on the generator's streams) reads the stream value: label filters on json and logfmt logs, and metric grouping, filters and unwrap on the plain name. Run with the control set, and with drilldown-breakdown-exact for the fast paths that must not change.",
+   "ranges": [
+    "1h",
+    "3h"
+   ],
+   "shapes": [
+    {
+     "name": "P1 logs, json, level equals",
+     "query": "{service_name=\"api-gateway\"} | json | level=\"info\"",
+     "logs": true,
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P2 logs, logfmt, level not equal",
+     "query": "{service_name=\"cache-redis\"} | logfmt | level!=\"debug\"",
+     "logs": true,
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P3 logs, json, level existence",
+     "query": "{service_name=\"api-gateway\"} | json | level!=\"\"",
+     "logs": true,
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P4 logfmt count by level",
+     "query": "sum by (level) (count_over_time({service_name=\"cache-redis\"} | logfmt [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P5 json count by level",
+     "query": "sum by (level) (count_over_time({service_name=\"api-gateway\"} | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P6 json count, level filter",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | level=\"info\" | drop __error__ [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P7 json rate by level, level regexp",
+     "query": "sum by (level) (rate({service_name=\"api-gateway\"} | json | level=~\"info|warn\" | drop __error__ [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P8 json count by a name that is no stream label",
+     "query": "sum by (method) (count_over_time({service_name=\"api-gateway\"} | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "P9 instant logfmt by level",
+     "query": "sum by (level) (count_over_time({service_name=\"cache-redis\"} | logfmt [5m]))",
+     "instant": true,
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "loki-compatible-profile",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

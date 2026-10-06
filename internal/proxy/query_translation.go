@@ -423,6 +423,10 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 	if keepLine {
 		cacheKey = "\x00keep-line\x00" + normalized
 	}
+	streamLabels := p.plainStreamLabelNames(ctx, normalized)
+	if len(streamLabels) > 0 {
+		cacheKey += streamLabelsCacheKey(streamLabels)
+	}
 	if p.translationCache != nil {
 		if cached, ok := p.translationCache.Get(cacheKey); ok {
 			p.observeInternalOperation(ctx, "translate_query", "cache_hit", time.Since(start))
@@ -442,7 +446,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		}
 
 		p.configMu.RLock()
-		labelFn := p.labelTranslator.ToVL
+		labelFn := translator.WithStreamLabels(p.labelTranslator.ToVL, streamLabels)
 		streamFieldsMap := p.streamFieldsMap
 		p.configMu.RUnlock()
 

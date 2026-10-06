@@ -567,12 +567,13 @@ type Proxy struct {
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
-	rejectDottedNames                     bool             // -logql-dotted-names resolved; see loki_profile.go
-	labelBrowse                           bool             // -label-browse-extensions resolved
-	errorMessageField                     bool             // -error-response-message-field
-	streamFieldsMap                       map[string]bool  // known _stream_fields for VL stream selector optimization
-	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
-	peerCache                             *cache.PeerCache // L3 fleet peer cache
+	rejectDottedNames                     bool                  // -logql-dotted-names resolved; see loki_profile.go
+	labelBrowse                           bool                  // -label-browse-extensions resolved
+	errorMessageField                     bool                  // -error-response-message-field
+	streamFieldsMap                       map[string]bool       // known _stream_fields for VL stream selector optimization
+	streamLabelNames                      streamLabelNamesState // last known stream label names per tenant, refreshed in the background
+	declaredLabelFields                   []string              // configured VL-native label fields (stream_fields + extras)
+	peerCache                             *cache.PeerCache      // L3 fleet peer cache
 	peerAuthToken                         string
 	peerInsecureIPAllowlist               bool // gate the legacy IP-allowlist fallback (default false: token required)
 	coldRouter                            *ColdRouter
@@ -1670,6 +1671,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 			close(p.keepWarmStop)
 		}
 	}
+	p.stopStreamLabelNames()
 	if p.limiter != nil {
 		p.limiter.Stop()
 	}
@@ -2456,6 +2458,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	}
 	writePart(p.responseProfileCacheKey(r))
 	writePart(p.fingerprintFromCtx(r.Context(), r))
+	writePart(p.responseNamesCacheKey(r, logqlQuery))
 	return key.String()
 }
 

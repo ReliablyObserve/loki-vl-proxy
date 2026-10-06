@@ -158,6 +158,26 @@
    ]
   },
   {
+   "id": "explore-logs-plain-level",
+   "kind": "explore",
+   "query": "{env=\"production\"} | json | level=\"info\"",
+   "covers": [
+    "semantics/plain-name-after-parser-reads-stream-label",
+    "loki-compatible-profile",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-plain-level-metric",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt [$__auto]))",
+   "covers": [
+    "semantics/plain-name-after-parser-reads-stream-label",
+    "loki-compatible-profile",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-logs-line-format",
    "kind": "explore",
    "query": "{env=\"production\"} | json | line_format \"{{.message}}\"",
