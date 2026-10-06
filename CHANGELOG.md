@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The label cache e2e tests failed intermittently in the `loki-pinned` job.**
+  The proxy serves one `/metrics` scrape at a time
+  (`-server.metrics-max-concurrency`, default 1) and answers an overlapping
+  one with `429 metrics scrape already in progress`. The e2e stack's
+  VictoriaMetrics scrapes the proxy every 5 s, and a test scrape that landed
+  during one read the 429 text as an exposition without any series, so the
+  cache-hit and VictoriaLogs call counters looked absent or zero ("expected at
+  least 4 cache hits on second pass, got 0", "expected at least 4 VL
+  stream_field_names calls from warmup, got -1"). The e2e tests now read the
+  proxy's `/metrics` through one helper that retries such a 429 as soon as the
+  other scrape is done and fails on any other non-200. Proxy behaviour is
+  unchanged.
+
 ## [2.1.0] - 2026-10-06
 
 ### Fixed

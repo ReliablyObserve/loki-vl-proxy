@@ -386,15 +386,7 @@ func TestCompat_DetectedFields(t *testing.T) {
 func TestCompat_Metrics(t *testing.T) {
 	score := &CompatScore{}
 
-	resp, err := http.Get(proxyURL + "/metrics")
-	if err != nil {
-		score.fail("metrics", err.Error())
-		score.report(t)
-		return
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	text := string(body)
+	text := scrapeProxyMetrics(t, proxyURL)
 
 	metrics := []string{
 		"loki_vl_proxy_requests_total",
@@ -513,6 +505,39 @@ func waitForReady(t *testing.T, url string, timeout time.Duration) {
 		time.Sleep(1 * time.Second)
 	}
 	t.Fatalf("timeout waiting for %s", url)
+}
+
+// scrapeProxyMetrics returns the Prometheus exposition from a proxy's
+// /metrics. The proxy serves one scrape at a time
+// (-server.metrics-max-concurrency, default 1) and answers an overlapping one
+// with 429; the stack's VictoriaMetrics scrapes the proxies every 5s, so a test
+// scrape can overlap it. Such a 429 is retried as soon as the other scrape is
+// done instead of being read as an exposition without any series. The retry
+// does not wait the full Retry-After second: the label cache tests compare
+// counters around requests that must stay within
+// -recent-tail-refresh-max-staleness (2s) of each other.
+func scrapeProxyMetrics(t *testing.T, baseURL string) string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	client := &http.Client{Timeout: 5 * time.Second}
+	for {
+		resp, err := client.Get(baseURL + "/metrics")
+		if err != nil {
+			t.Fatalf("GET %s/metrics failed: %v", baseURL, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("read %s/metrics: %v", baseURL, err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return string(body)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || time.Now().After(deadline) {
+			t.Fatalf("GET %s/metrics: HTTP %d: %s", baseURL, resp.StatusCode, body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func getJSON(t *testing.T, url string) map[string]interface{} {

@@ -1197,15 +1197,7 @@ func TestEdge_InstantQuery(t *testing.T) {
 func TestFeature_MetricsEndpoint(t *testing.T) {
 	score := &CompatScore{}
 
-	resp, err := http.Get(proxyURL + "/metrics")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	body := make([]byte, 64*1024)
-	n, _ := resp.Body.Read(body)
-	text := string(body[:n])
+	text := scrapeProxyMetrics(t, proxyURL)
 
 	expectedMetrics := []string{
 		"loki_vl_proxy_requests_total",

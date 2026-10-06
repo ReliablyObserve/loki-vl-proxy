@@ -26,12 +26,8 @@ func rangeParams(query string, start, end time.Time, step time.Duration) url.Val
 // from a proxy's /metrics, keyed "evaluator/reason".
 func parserMetricEvaluations(t *testing.T, baseURL string) map[string]int {
 	t.Helper()
-	status, body := hardeningRequest(t, http.MethodGet, baseURL+"/metrics", "", nil)
-	if status != http.StatusOK {
-		t.Fatalf("/metrics: %d %s", status, body)
-	}
 	out := map[string]int{}
-	for _, m := range regexp.MustCompile(`(?m)^loki_vl_proxy_parser_metric_evaluations_total\{evaluator="([^"]+)",reason="([^"]+)"\} (\d+)$`).FindAllStringSubmatch(string(body), -1) {
+	for _, m := range regexp.MustCompile(`(?m)^loki_vl_proxy_parser_metric_evaluations_total\{evaluator="([^"]+)",reason="([^"]+)"\} (\d+)$`).FindAllStringSubmatch(scrapeProxyMetrics(t, baseURL), -1) {
 		out[m[1]+"/"+m[2]], _ = strconv.Atoi(m[3])
 	}
 	return out
