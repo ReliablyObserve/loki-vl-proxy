@@ -265,21 +265,7 @@ func TestLokiFunctions_RulesCompatibilityShapes(t *testing.T) {
 
 // TestLokiFunctions_Metrics verifies /metrics endpoint returns valid Prometheus exposition.
 func TestLokiFunctions_Metrics(t *testing.T) {
-	resp, err := http.Get(proxyURL + "/metrics")
-	if err != nil {
-		t.Fatalf("metrics failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read /metrics body: %v", err)
-	}
-	content := string(body)
+	content := scrapeProxyMetrics(t, proxyURL)
 
 	// Verify key metrics exist
 	requiredMetrics := []string{
@@ -441,7 +427,7 @@ func TestLokiFunctions_PatternsAutodetectFromQueryRange(t *testing.T) {
 	ingestPatternData(t)
 	waitForReady(t, patternsAutodetectProxyURL+"/ready", 30*time.Second)
 
-	metricBefore := readPromMetric(t, patternsAutodetectProxyURL+"/metrics", "loki_vl_proxy_patterns_detected_total")
+	metricBefore := readPromMetric(t, patternsAutodetectProxyURL, "loki_vl_proxy_patterns_detected_total")
 
 	queryRangeParams := url.Values{
 		"query":     {`{app="pattern-test", level="info"}`},
@@ -459,7 +445,7 @@ func TestLokiFunctions_PatternsAutodetectFromQueryRange(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	var metricAfter float64
 	for {
-		metricAfter = readPromMetric(t, patternsAutodetectProxyURL+"/metrics", "loki_vl_proxy_patterns_detected_total")
+		metricAfter = readPromMetric(t, patternsAutodetectProxyURL, "loki_vl_proxy_patterns_detected_total")
 		if metricAfter > metricBefore {
 			break
 		}
@@ -483,18 +469,9 @@ func TestLokiFunctions_PatternsAutodetectFromQueryRange(t *testing.T) {
 	}
 }
 
-func readPromMetric(t *testing.T, metricsURL, metricName string) float64 {
+func readPromMetric(t *testing.T, baseURL, metricName string) float64 {
 	t.Helper()
-	resp, err := http.Get(metricsURL)
-	if err != nil {
-		t.Fatalf("metrics request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("metrics read failed: %v", err)
-	}
-	lines := strings.Split(string(body), "\n")
+	lines := strings.Split(scrapeProxyMetrics(t, baseURL), "\n")
 	prefix := metricName + " "
 	for _, line := range lines {
 		if !strings.HasPrefix(line, prefix) {
@@ -506,7 +483,7 @@ func readPromMetric(t *testing.T, metricsURL, metricName string) float64 {
 			return v
 		}
 	}
-	t.Fatalf("metric %q not found in %s", metricName, metricsURL)
+	t.Fatalf("metric %q not found in %s/metrics", metricName, baseURL)
 	return 0
 }
 

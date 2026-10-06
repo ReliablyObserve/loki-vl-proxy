@@ -234,6 +234,11 @@ func TestChaining_AllEndpointsWithLabels(t *testing.T) {
 
 	for _, ep := range endpoints {
 		t.Run(ep.name, func(t *testing.T) {
+			if ep.path == "/metrics" {
+				// One scrape at a time (-server.metrics-max-concurrency): retries the 429 an overlapping scrape gets.
+				scrapeProxyMetrics(t, proxyURL)
+				return
+			}
 			resp, err := http.Get(proxyURL + ep.path)
 			if err != nil {
 				t.Fatalf("%s: request failed: %v", ep.name, err)

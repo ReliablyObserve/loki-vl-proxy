@@ -6,8 +6,8 @@ package e2e_compat
 
 import (
 	"fmt"
-	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -60,13 +60,31 @@ func parsePrometheusCounter(body, metricName string, labels map[string]string) f
 
 func fetchMetricsBody(t *testing.T) string {
 	t.Helper()
-	resp, err := http.Get(proxyURL + "/metrics")
-	if err != nil {
-		t.Fatalf("GET /metrics failed: %v", err)
+	return scrapeProxyMetrics(t, proxyURL)
+}
+
+// TestLabelCache_MetricsScrapeRetriesOverlap pins the scrape helper the tests
+// above read counters with: a proxy answers a /metrics scrape that overlaps
+// another one (here the stack's VictoriaMetrics scraper) with 429 and
+// Retry-After, and that text has none of the counters, so reading it as an
+// exposition made every counter look absent (-1) or unchanged (0).
+func TestLabelCache_MetricsScrapeRetriesOverlap(t *testing.T) {
+	scrapes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		scrapes++
+		if scrapes == 1 {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "metrics scrape already in progress", http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte("loki_vl_proxy_cache_hits_total 7\n"))
+	}))
+	defer srv.Close()
+
+	got := parsePrometheusCounter(scrapeProxyMetrics(t, srv.URL), "loki_vl_proxy_cache_hits_total", nil)
+	if got != 7 || scrapes != 2 {
+		t.Fatalf("expected the 429 to be retried and the counter read as 7, got %v after %d scrapes", got, scrapes)
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return string(b)
 }
 
 // labelsWindowParams returns query params for /loki/api/v1/labels covering
