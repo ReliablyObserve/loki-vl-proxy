@@ -415,7 +415,7 @@ def main():
             n, diffs, lk = compare_tail(d)
             rows.append(dict(page=page, range=rng, requests=n, series=0, main_vs_pr="identical" if not diffs else "DIFFERS",
                              pr_vs_loki="; ".join(lk), settled=True, main_pr_diffs=diffs, loki_diffs=[], loki_new=[],
-                             loki_compared=True, points_main=n, points_pr=n, points_loki=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
+                             loki_compared=True, points_main=n, points_pr=n, points_loki=n, ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
                              settled_pr=True, errors_pr=[], errors_main=[], loki_missing=False))
             continue
         raw = {n: defaultdict(list) for n in ("main", "pr", "loki")}
@@ -451,7 +451,7 @@ def main():
                          settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=[x for x in diffs if not nondeterministic(x) and not configuration(x)], main_pr_nondet=[x for x in diffs if nondeterministic(x)], main_pr_config=[x for x in diffs if configuration(x)], loki_diffs=ldiffs2 if loki_ok else [],
                          loki_explained=explained, loki_nondet=lnondet,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
-                         points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"),
+                         points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
                          settled_pr=bool(sp), errors_pr=errors(p, allowed), errors_main=errors(m, allowed),
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
     md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]

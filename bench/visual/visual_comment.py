@@ -66,10 +66,11 @@ def esc_html(text, limit=0):
     return html.escape(text[:limit] if limit else text, quote=True)
 
 
-def ui_problems(main, pr):
-    """What the PR side shows that the base does not."""
+def ui_problems(main, pr, loki=None):
+    """What the PR side shows that the base does not. An empty panel Loki shows too is Loki's answer, not a regression."""
     out = []
-    if pr.get("noData", 0) > main.get("noData", 0):
+    loki_no_data = (loki or {}).get("noData", 0)
+    if pr.get("noData", 0) > max(main.get("noData", 0), loki_no_data):
         out.append(f"new empty panel (\"No data\" {main.get('noData', 0)} on base, {pr.get('noData', 0)} on PR)")
     new = [b for b in pr.get("banners", []) if b not in main.get("banners", [])]
     if new:
@@ -144,7 +145,7 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
         warns.append(f"history-dependent difference, not gated ({len(row['main_pr_nondet'])}): {row['main_pr_nondet'][0][:160]}")
     if f"{row['page']} {row['range']}" in flipped:
         fails.append("non-deterministic: the difference between base and PR was gone on the recapture")
-    fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {})
+    fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {}, row.get("ui_loki") if row.get("loki_compared") else None)
     if row.get("points_main", 0) > 0 and row.get("points_pr", 0) == 0:
         fails.append("empty on the PR, data on the base")
     if row.get("errors_pr"):
