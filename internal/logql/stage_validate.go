@@ -69,12 +69,49 @@ func validateStageSemantics(stage Stage) string {
 		return validateParserStage(s)
 	case *LabelFormatStage:
 		return validateLabelFormatStage(s)
+	case *LineFilterStage:
+		return validateLineFilter(s)
 	case *LineFormatStage:
 		if err := validateTemplate("line", s.Template); err != nil {
 			return stageError("| line_format "+strconv.Quote(s.Template), fmt.Errorf("invalid line template: %w", err))
 		}
 	}
 	return ""
+}
+
+// validateLineFilter mirrors the filters Loki builds for a line filter stage
+// (LineFilterExpr.Filter). A negated chain is one filter per alternative, so a
+// regex must compile, and `or ip(...)` is an ip filter that only != accepts and
+// whose pattern must be valid. Under |=, |~ and |> an ip alternative is plain
+// text (newOrFilter ignores its Op), so it is not validated.
+func validateLineFilter(s *LineFilterStage) string {
+	if s.Op == LineFilterMatchRe || s.Op == LineFilterExcludeRe {
+		for _, v := range append([]string{s.Value}, altValues(s.Or)...) {
+			if _, err := regexp.Compile(v); err != nil {
+				return stageError(s.flatString(), err)
+			}
+		}
+	}
+	if !s.negated() {
+		return ""
+	}
+	for _, alt := range s.Or {
+		switch {
+		case alt.IP && s.Op != LineFilterExcludes:
+			return stageError(s.flatString(), errors.New("ip: invalid operation"))
+		case alt.IP && !validIPPattern(alt.Value):
+			return stageError(s.flatString(), fmt.Errorf("ip: invalid pattern: %q", alt.Value))
+		}
+	}
+	return ""
+}
+
+func altValues(alts []LineFilterAlt) []string {
+	values := make([]string, len(alts))
+	for i, alt := range alts {
+		values[i] = alt.Value
+	}
+	return values
 }
 
 func validateParserStage(s *ParserStage) string {

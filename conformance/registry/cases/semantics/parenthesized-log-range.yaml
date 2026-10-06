@@ -1,5 +1,5 @@
 id: semantics/parenthesized-log-range
-title: A parenthesized log expression under a range function fails translation (open)
+title: A parenthesized log expression under a range function evaluates like the plain form
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -7,10 +7,11 @@ consumer: explore
 why: |
   LogQL allows `rate(({namespace="prod"} |= "error")[5m])` and
   `count_over_time(({...} |~ "x")[1m])`; Loki answers them like the
-  unparenthesized form. The proxy sends VictoriaLogs a query it cannot parse
-  (`cannot parse query arg ... missing whitespace or ':'`, HTTP 400) on range
-  queries and answers instant ones with `log queries are not supported as an
-  instant query type`.
+  unparenthesized form (syntax.y logRangeExpr: parentheses around the selector
+  and pipeline, or around the whole range expression, an offset, an unwrap
+  before or after the range, a pipeline after the range). The proxy parses every
+  form Loki accepts, rewrites it to the plain form before translation, and
+  rejects what Loki rejects with Loki's status and error text.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -26,15 +27,16 @@ compare:
   mode: observed
   fields: [status]
   expect: |
-    200 with Loki's series.
+    200 with Loki's series; Loki's 400 and error text for the forms Loki rejects.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#669"
   impact: explore-visible
   effort: S
-  area: 'internal/logql parser / internal/translator (LogRangeExpr with parenthesized left side)'
-  loki: 'pkg/logql/syntax/syntax.y logRangeExpr: OPEN_PARENTHESIS logExpr CLOSE_PARENTHESIS RANGE'
-  proxy: '400 (VictoriaLogs parse error) / instant 400'
-  planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group semantics)'
+  area: 'internal/logql/parser.go (parseLogRange), internal/logql/canonical.go, internal/proxy/query_translation.go'
+  loki: 'pkg/logql/syntax/syntax.y logRangeExpr: OPEN_PARENTHESIS selector [pipelineExpr] [unwrapExpr] CLOSE_PARENTHESIS RANGE [offsetExpr]'
+  proxy: 'parsed and rewritten to the plain range form (logql.CanonicalizeLogRanges)'
+  planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group core)'
   clusters:
     - 0e5f1b8d
     - 154f3c5e

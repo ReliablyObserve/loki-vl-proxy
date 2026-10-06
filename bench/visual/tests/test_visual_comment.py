@@ -102,6 +102,15 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["improved"], 1)
         self.assertIn("improved (closer to Loki)", text)
 
+    def test_base_query_error_the_pr_fixes_is_an_improvement(self):
+        # The base rejects the query (400, the query row shows the parse error), the PR answers like Loki.
+        d = row(main_pr_diffs=["q: base 400"], loki_main_n=1, errors_main=["400"],
+                ui_main={"noData": 0, "banners": [], "panelErrors": 1})
+        text, v = self.verdict([d])
+        self.assertEqual(v["exit"], 0)
+        self.assertEqual(v["improved"], 1)
+        self.assertNotIn("panel error (", text)
+
     def test_pr_diverging_from_loki_where_base_matched_fails_even_when_labelled(self):
         d = row(main_pr_diffs=["q: pr wrong"], loki_main_n=0, loki_diffs=["q: differs"], loki_new=["q: differs"], points_loki=5)
         a = argparse.Namespace(**{**vars(ARGS), "expected_change": True})

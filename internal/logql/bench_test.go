@@ -76,3 +76,44 @@ func BenchmarkTranslate(b *testing.B) {
 		})
 	}
 }
+
+// Queries in Loki's alternative forms, and line filters with `or`.
+var alternativeBenchQueries = map[string]string{
+	"paren_range":     `rate(({app="api"} |= "error")[5m])`,
+	"paren_unwrap":    `sum_over_time(({app="api"} | json | unwrap latency)[5m] offset 1h)`,
+	"range_pipeline":  `rate({app="api"}[5m] | json)`,
+	"line_filter_or":  `{app="nginx"} |= "error" or "timeout" or "panic" | json`,
+	"line_filter_not": `{app="nginx"} != "debug" or "trace" !~ "a" or "b"`,
+}
+
+// BenchmarkCanonicalizeLogRanges covers the queries that need no rewrite (the
+// pre-check must not allocate) and the alternative forms that do.
+func BenchmarkCanonicalizeLogRanges(b *testing.B) {
+	for name, q := range benchQueries {
+		b.Run("plain_"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = logql.CanonicalizeLogRanges(q)
+			}
+		})
+	}
+	for name, q := range alternativeBenchQueries {
+		b.Run("alternative_"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = logql.CanonicalizeLogRanges(q)
+			}
+		})
+	}
+}
+
+func BenchmarkValidateAlternativeForms(b *testing.B) {
+	for name, q := range alternativeBenchQueries {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = logql.ValidateLogQL(q)
+			}
+		})
+	}
+}

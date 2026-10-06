@@ -54,7 +54,7 @@ func validateSemantics(expr Expr, raw string) string {
 // It returns a nil Expr when the call has no parseable expression argument,
 // and the parse error when that argument is itself rejected.
 func opaqueFirstArgument(call string) (Expr, error) {
-	p := &parser{sc: newScanner(call), input: call}
+	p := &parser{sc: newScanner(call)}
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil

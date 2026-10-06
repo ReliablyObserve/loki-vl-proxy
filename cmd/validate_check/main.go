@@ -7,7 +7,7 @@ import (
 )
 
 func translate(q string) string {
-	result, err := translator.TranslateLogQL(q)
+	result, err := translator.TranslateLogQL(logql.CanonicalizeLogRanges(q))
 	if err != nil {
 		return fmt.Sprintf("ERROR: %v", err)
 	}

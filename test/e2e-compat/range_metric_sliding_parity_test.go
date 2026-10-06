@@ -28,6 +28,10 @@ type slidingLiveFixture struct {
 	// VictoriaLogs stream field), so bare range metrics, which keep every
 	// label, have identical label sets. Otherwise the stream label is app.
 	service bool
+	// derivedLevel leaves detected_level out of both ingests, so each backend
+	// derives it from the line (Loki at ingest, the proxy on read), which is how
+	// an ordinary client's data looks. Only with service.
+	derivedLevel bool
 }
 
 // streamLabels returns the fixture's stream labels as pushed to Loki.
@@ -113,7 +117,7 @@ func ingestSlidingFixtures(t *testing.T, fixtures ...slidingLiveFixture) {
 				fields[name] = value
 			}
 			value := []any{strconv.FormatInt(line.ts.UnixNano(), 10), line.msg}
-			if fx.service {
+			if fx.service && !fx.derivedLevel {
 				fields["detected_level"] = "unknown"
 				value = append(value, map[string]string{"detected_level": "unknown"})
 			}

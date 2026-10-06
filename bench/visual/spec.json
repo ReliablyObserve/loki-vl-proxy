@@ -168,6 +168,33 @@
    ]
   },
   {
+   "id": "explore-metric-parenthesized",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time(({env=\"production\"} | json | drop __error__)[$__auto]))",
+   "covers": [
+    "semantics/parenthesized-log-range",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-logs-line-filter-or",
+   "kind": "explore",
+   "query": "{env=\"production\"} |= \"failed\" or \"cache hit\"",
+   "covers": [
+    "semantics/line-filter-or-alternatives",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-metric-line-filter-or",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} |= \"failed\" or \"backup\" | json | drop __error__ [$__auto]))",
+   "covers": [
+    "semantics/line-filter-or-alternatives",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

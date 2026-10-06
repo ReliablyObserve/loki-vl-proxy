@@ -78,11 +78,20 @@ const (
 	LineFilterExcludePat                      // !>
 )
 
-// LineFilterStage is a `|= "value"` pipeline stage.
+// LineFilterAlt is one `or` alternative of a line filter: `or "b"` or `or ip("1.2.3.4")`.
+type LineFilterAlt struct {
+	Value string
+	IP    bool
+}
+
+// LineFilterStage is a `|= "value"` pipeline stage. Or holds the
+// alternatives of `|= "a" or "b"`: Loki matches any of them for |=, |~ and |>
+// and none of them for !=, !~ and !> (the negated chain is a conjunction).
 type LineFilterStage struct {
 	Op    LineFilterOp
 	Value string
 	IP    bool // Distinguishes ip("address") from the literal "ip(address)".
+	Or    []LineFilterAlt
 }
 
 func (s *LineFilterStage) String() string {
@@ -101,10 +110,49 @@ func (s *LineFilterStage) String() string {
 	case LineFilterExcludePat:
 		op = "!>"
 	}
-	if s.IP {
-		return op + " ip(" + strconv.Quote(s.Value) + ")"
+	if len(s.Or) == 0 {
+		if s.IP {
+			return op + " ip(" + strconv.Quote(s.Value) + ")"
+		}
+		return op + " " + strconv.Quote(s.Value)
 	}
-	return op + " " + strconv.Quote(s.Value)
+	str := op + " " + lineFilterOperand(s.Value, s.IP)
+	for _, alt := range s.Or {
+		str += " or " + lineFilterOperand(alt.Value, alt.IP)
+	}
+	return str
+}
+
+func lineFilterOperand(value string, ip bool) string {
+	if ip {
+		return "ip(" + strconv.Quote(value) + ")"
+	}
+	return strconv.Quote(value)
+}
+
+// negated reports whether the operator is one of !=, !~ and !>.
+func (s *LineFilterStage) negated() bool {
+	return s.Op == LineFilterExcludes || s.Op == LineFilterExcludeRe || s.Op == LineFilterExcludePat
+}
+
+// flatString renders the stage the way Loki prints a negated or chain, which
+// it turns into one filter per alternative (`!~ "a" !~ ip("b")`).
+func (s *LineFilterStage) flatString() string {
+	if !s.negated() || len(s.Or) == 0 {
+		return s.String()
+	}
+	op := s.String()[:2]
+	if len(s.Or) == 0 {
+		if s.IP {
+			return op + " ip(" + strconv.Quote(s.Value) + ")"
+		}
+		return op + " " + strconv.Quote(s.Value)
+	}
+	str := op + " " + lineFilterOperand(s.Value, s.IP)
+	for _, alt := range s.Or {
+		str += " " + op + " " + lineFilterOperand(alt.Value, alt.IP)
+	}
+	return str
 }
 
 func (s *LineFilterStage) stage() {}

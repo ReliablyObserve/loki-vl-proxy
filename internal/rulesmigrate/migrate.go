@@ -113,7 +113,7 @@ func translateGroup(g Group, opts ConvertOptions) (Group, []Warning, error) {
 		if msg := logql.ValidateLogQL(r.Expr); msg != "" {
 			return Group{}, nil, fmt.Errorf("translate group %q rule %q: %s", g.Name, ruleName(r), msg)
 		}
-		translated, err := translator.TranslateLogQL(r.Expr)
+		translated, err := translator.TranslateLogQL(logql.CanonicalizeLogRanges(r.Expr))
 		if err != nil {
 			name := r.Alert
 			if name == "" {

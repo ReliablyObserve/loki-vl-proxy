@@ -939,6 +939,126 @@
      ]
     }
    ]
+  },
+  "parenthesized-range-or-filters": {
+   "description": "A log expression in parentheses under a range function (offset, unwrap, pipeline after the range) and line filters with `or` alternatives, as Loki accepts them: PR parenthesised-range / or-filters. Before the change every shape here answers 400 on main; the proof is that the branch answers like Loki. Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "PR1 count by level, parenthesised json",
+     "query": "sum by (level) (count_over_time(({env=\"production\"} | json | drop __error__)[1m]))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR2 rate, parenthesised line filter",
+     "query": "sum(rate(({env=\"production\"} |= \"failed\")[5m]))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR3 bytes by app, parenthesised regexp",
+     "query": "sum by (app) (bytes_over_time(({env=\"production\"} |~ \"level=(debug|info)\")[5m]))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR4 count by level, parenthesised parser, offset",
+     "query": "sum by (level) (count_over_time(({env=\"production\"} | json | drop __error__)[1m] offset 5m))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR5 rate by app, pipeline after the range",
+     "query": "sum by (app) (rate({env=\"production\"}[5m] | json | drop __error__))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR6 doubly parenthesised range",
+     "query": "sum(count_over_time((({env=\"production\"} |= \"failed\")[5m])))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PR7 instant, parenthesised line filter",
+     "query": "sum(count_over_time(({env=\"production\"} |= \"failed\")[5m]))",
+     "covers": [
+      "semantics/parenthesized-log-range",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "OR1 logs, or alternatives",
+     "query": "{env=\"production\"} |= \"failed\" or \"cache hit\"",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "OR2 logs, negated or alternatives",
+     "query": "{env=\"production\"} != \"failed\" or \"cache hit\"",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "OR3 logs, regexp or alternatives",
+     "query": "{env=\"production\"} |~ \"level=debug\" or \"phase=failed\"",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "OR4 count by level, or alternatives with parser",
+     "query": "sum by (level) (count_over_time({env=\"production\"} |= \"failed\" or \"backup\" | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "OR5 rate, negated regexp or alternatives",
+     "query": "sum(rate({env=\"production\"} !~ \"level=debug\" or \"phase=failed\" [5m]))",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "OR6 instant, or alternatives",
+     "query": "sum(count_over_time({env=\"production\"} |= \"failed\" or \"cache hit\" [5m]))",
+     "covers": [
+      "semantics/line-filter-or-alternatives",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }
