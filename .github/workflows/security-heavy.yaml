@@ -38,6 +38,9 @@ jobs:
           format: sarif
           output: trivy-image.sarif
           severity: HIGH,CRITICAL
+          # Without this the action drops the severity filter for SARIF output, so exit-code
+          # fails the job on any finding (an UNKNOWN-severity tzdata note in the base image).
+          limit-severities-for-sarif: "true"
           ignore-unfixed: true
           scanners: vuln,misconfig,secret
 
