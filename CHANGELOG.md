@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-06
+
 ### Fixed
 
 - **The label cache e2e tests failed intermittently in the `loki-pinned` job.**
