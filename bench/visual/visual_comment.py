@@ -14,6 +14,7 @@ A capture whose base-vs-PR data differs is classified against Loki, where Loki
 holds data for the range:
 
   PR matches Loki, base did not        improved (closer to Loki): passes
+  PR has fewer differences, none new   improved (closer to Loki): passes
   base matched Loki, PR diverges       regressed vs Loki: fails
   neither matches, or no Loki data     unexpected change: fails, unless the pull
                                        request carries the label
@@ -87,6 +88,11 @@ def classify(row):
     base_matches = row.get("loki_main_n", 1) == 0
     pr_matches = not row.get("loki_diffs")
     if pr_matches and not base_matches:
+        return "improved"
+    # The PR adds no difference from Loki and removes at least one the base has: what is left was already on the
+    # base (e.g. an open gap on another request of the page), so the change moves the page closer to Loki.
+    if (row.get("loki_diffs") and not row.get("loki_new")
+            and row.get("loki_main_n", 0) > len(row["loki_diffs"])):
         return "improved"
     if base_matches and not pr_matches:
         return "regressed"
