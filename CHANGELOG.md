@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.108.1] - 2026-10-06
+
 ### Security
 
 - **Open code-scanning and Dependabot alerts on main resolved.**
