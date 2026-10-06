@@ -75,6 +75,7 @@ var levelFieldNameBytes = func() [len(levelFieldNames)][]byte {
 const (
 	levelSlotDetected       = 0
 	levelSlotFirstName      = 1
+	levelSlotSeverity       = 1 + 4  // severity
 	levelSlotSeverityText   = 1 + 11 // severity_text
 	levelSlotSeverityNumber = 1 + len(levelFieldNames)
 	levelSlotCount          = levelSlotSeverityNumber + 1
@@ -271,8 +272,21 @@ func deriveRowLevel(stream, fields *levelFields, body []byte, jsonUnpacked, body
 		return detectedLevel{canonical: levelFromKeywords(body)}
 	}
 	skipSeverityNumber := false
+	// derived is the OTel number behind a VictoriaLogs-derived severity name
+	// stored without severity_number (v1.50.0 and newer always store it).
+	derived := 0
 	if slot, v := fields.firstName(); v != nil {
 		synthesized := false
+		if slot == levelSlotSeverity && len(fields.value(levelSlotSeverityNumber)) == 0 {
+			// VictoriaLogs before v1.50.0 stores an OTLP record's severity as
+			// a single "severity" field (the text, or the name derived from
+			// the number) and no severity_number. It stores an out-of-range
+			// number as Unspecified too, so the line is scanned where Loki
+			// gives unknown: the number is lost at ingest.
+			if n := vlSeverityIndex(v); n >= 0 {
+				synthesized, derived, skipSeverityNumber = true, n, n == 0
+			}
+		}
 		if slot == levelSlotSeverityText {
 			var zero bool
 			synthesized, zero = isVLSynthesizedSeverityText(v, fields.value(levelSlotSeverityNumber))
@@ -284,11 +298,14 @@ func deriveRowLevel(stream, fields *levelFields, body []byte, jsonUnpacked, body
 			return normalizedDetectedLevel(v)
 		}
 		// Loki never stored the synthesised text: later names still count.
-		for next := levelSlotSeverityText + 1; next < levelSlotSeverityNumber; next++ {
+		for next := slot + 1; next < levelSlotSeverityNumber; next++ {
 			if v := fields.value(next); len(v) > 0 {
 				return normalizedDetectedLevel(v)
 			}
 		}
+	}
+	if derived > 0 {
+		return detectedLevel{canonical: levelFromSeverityInt(int64(derived))}
 	}
 	if v := fields.value(levelSlotSeverityNumber); len(v) > 0 && !skipSeverityNumber {
 		return detectedLevel{canonical: levelFromSeverityNumber(v)}
@@ -309,6 +326,17 @@ var vlSeverityTexts = [...]string{
 	"Warn", "Warn2", "Warn3", "Warn4",
 	"Error", "Error2", "Error3", "Error4",
 	"Fatal", "Fatal2", "Fatal3", "Fatal4",
+}
+
+// vlSeverityIndex returns the OTel severity number whose VictoriaLogs name is
+// text, or -1.
+func vlSeverityIndex(text []byte) int {
+	for i, name := range vlSeverityTexts {
+		if string(text) == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // isVLSynthesizedSeverityText reports whether text is the value VictoriaLogs
@@ -383,9 +411,15 @@ func canonicalLevel(v []byte) string {
 // an unparsable value is info, 0 and values above 24 are unknown.
 func levelFromSeverityNumber(v []byte) string {
 	n, ok := parseLevelInt(v)
-	switch {
-	case !ok:
+	if !ok {
 		return levelInfo
+	}
+	return levelFromSeverityInt(n)
+}
+
+// levelFromSeverityInt maps a parsed OTel severity number.
+func levelFromSeverityInt(n int64) string {
+	switch {
 	case n == 0:
 		return levelUnknown
 	case n <= 4:
