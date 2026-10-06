@@ -268,12 +268,20 @@ func TestTailHardening_AutoModeFallsBackOnNativeBackendStatuses(t *testing.T) {
 }
 
 func TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/tail":
-			// Sleep longer than ResponseHeaderTimeout (5s) so the transport-level
-			// timeout fires first and triggers the synthetic fallback path.
-			time.Sleep(10 * time.Second)
+			// Wait longer than ResponseHeaderTimeout (5s) so the transport-level
+			// timeout fires first and triggers the synthetic fallback path; return
+			// once the proxy gives up so vlBackend.Close does not wait out the rest.
+			select {
+			case <-time.After(10 * time.Second):
+			case <-r.Context().Done():
+				return
+			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
 		case "/select/logsql/query":

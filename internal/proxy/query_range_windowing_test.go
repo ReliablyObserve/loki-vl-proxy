@@ -915,6 +915,9 @@ func TestQueryRangeWindow_AlignedWindowsImproveOverlapReuse(t *testing.T) {
 }
 
 func TestQueryRangeWindow_PartialResponseOnRetryableFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	start := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(3*time.Hour) - 1
 	oldestWindowStart := start
@@ -1085,6 +1088,9 @@ func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
 }
 
 func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow (5s or more); runs without -short")
+	}
 	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(2*time.Hour) - 1
 

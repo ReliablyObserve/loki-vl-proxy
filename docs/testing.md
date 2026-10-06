@@ -78,6 +78,17 @@ PROXY_URL=http://127.0.0.1:13100 PROXY_URL_CATEGORIZED=http://127.0.0.1:13102 \
   SMOKE_QUERY='{app="e2e-test"}' ./scripts/smoke-test.sh
 ```
 
+For a local run that keeps memory and time down, use the capped short mode:
+
+```bash
+scripts/test-short.sh                                   # GOMEMLIMIT=3GiB, GOMAXPROCS=4, -short -p 1
+scripts/test-short.sh -run 'TestLabel' ./internal/proxy # narrow it with go test flags
+```
+
+`-short` skips the unit tests that take five seconds or more; CI runs them (it
+does not pass `-short`). Run `-race` locally only on the tests you touched
+(`go test -race -run '<tests>' ./internal/...`); CI runs it on every package.
+
 CI runs each `e2e-compat` group on a fresh stack. Running several groups against one stack re-ingests the fixtures (VictoriaLogs keeps duplicate rows, Loki drops them), which shows up as false parity diffs, so run `docker compose down -v` between groups. Do not run the Go parity groups with `--profile ui`: the continuous log generator changes cardinality while the comparison runs.
 
 The UI specs read these environment variables: `GRAFANA_URL` (default `http://127.0.0.1:3002`, used as the Playwright `baseURL`), `LOKI_URL` (default `http://127.0.0.1:13101`), `VL_URL` (default `http://127.0.0.1:19428`), `PROXY_NATIVE_METADATA_URL` (default `http://127.0.0.1:13106`), plus `PLAYWRIGHT_EXECUTABLE_PATH`, `CI`, `WORKERS` and `HEADED` in `playwright.config.ts`. CI also exports `PROXY_URL`, but no spec reads it.
