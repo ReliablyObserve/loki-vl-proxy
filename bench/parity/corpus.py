@@ -176,7 +176,7 @@ def extract_strings(paths):
 
 def entry(source, endpoint, params, origin="", headers=None, transport="api", **extra):
     body = json.dumps([endpoint, params, headers or {}, transport, extra], sort_keys=True)
-    out = {"id": hashlib.sha1(body.encode()).hexdigest()[:12], "source": source, "endpoint": endpoint,
+    out = {"id": hashlib.sha256(body.encode()).hexdigest()[:12], "source": source, "endpoint": endpoint,
            "params": params, "origin": origin, "transport": transport}
     if headers:
         out["headers"] = headers

@@ -673,9 +673,11 @@ jobs:
 
       - name: Registry report for this change
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          python3 conformance/scripts/pr_report.py --base "origin/${{ github.base_ref }}" \
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          python3 conformance/scripts/pr_report.py --base "origin/$BASE_REF" \
             | tee "$GITHUB_STEP_SUMMARY"
 
   lint:

@@ -975,8 +975,8 @@ func (p *Proxy) prependCustomPatternEntries(patterns []patternResultEntry, start
 	}
 
 	seedBucket := customPatternSeedBucket(startParam, stepParam)
-	out := make([]patternResultEntry, 0, len(p.patternsCustom)+len(patterns))
-	seen := make(map[string]struct{}, len(p.patternsCustom)+len(patterns))
+	out := make([]patternResultEntry, 0, len(patterns))
+	seen := make(map[string]struct{}, len(patterns))
 
 	for _, customPattern := range p.patternsCustom {
 		customPattern = strings.TrimSpace(customPattern)

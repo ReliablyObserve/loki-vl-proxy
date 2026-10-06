@@ -72,7 +72,7 @@ def request(url, headers, tenant, timeout):
 
 def name_set_signature(kind, names):
     names = sorted(names)
-    return f"{kind}={len(names)} set={hashlib.sha1(chr(10).join(names).encode()).hexdigest()[:12]}"
+    return f"{kind}={len(names)} set={hashlib.sha256(chr(10).join(names).encode()).hexdigest()[:12]}"
 
 
 def signature(status, body, logs):
