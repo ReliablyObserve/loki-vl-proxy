@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release bot read the wrong PR when choosing the version bump.** It
+  took the last `#N` anywhere in the merge commit message, so a squash commit
+  whose body mentions other PRs was sized by one of those instead: v2.5.0 (a
+  test-only fix, #691) was promoted to a minor release because its body named
+  #690 (24 files, 5,648 changed lines). The number now comes only from the
+  `(#N)` that ends the subject line; a push without one falls back to the
+  commit-type rules as before.
+
 ## [2.5.0] - 2026-10-07
 
 ### Fixed
