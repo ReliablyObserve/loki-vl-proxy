@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-10-07
+
 ### Fixed
 
 - **A flaky unit test could stop a release without naming the test.** The
