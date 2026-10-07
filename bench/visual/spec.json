@@ -166,6 +166,34 @@
    ]
   },
   {
+   "id": "explore-extracted-filter-metric",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} | json | level_extracted!=\"\" [$__auto]))",
+   "fixes": [
+    "semantics/json-extracted-metric-pushdown"
+   ],
+   "covers": [
+    "semantics/json-extracted-metric-pushdown",
+    "semantics/extracted-suffix-collision",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-extracted-group-metric",
+   "kind": "explore",
+   "query": "sum by (level_extracted) (count_over_time({env=\"production\"} | json | drop __error__ [$__auto]))",
+   "fixes": [
+    "semantics/json-extracted-metric-pushdown"
+   ],
+   "covers": [
+    "semantics/json-extracted-metric-pushdown",
+    "semantics/extracted-suffix-collision",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-logs-plain-level",
    "kind": "explore",
    "query": "{env=\"production\"} | json | level=\"info\"",

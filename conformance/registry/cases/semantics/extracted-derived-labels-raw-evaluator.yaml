@@ -1,0 +1,45 @@
+id: semantics/extracted-derived-labels-raw-evaluator
+title: service_name_extracted and detected_level_extracted metrics keep the raw-row evaluator (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `service_name` and `detected_level` are labels Loki derives at ingest and
+  the proxy derives on the read path, so the stats pushdown never reads them
+  from a parsed key (`orderedJSONPushdownLabelOK`). The `_extracted` forms
+  inherit that: `sum by (level) (count_over_time({env="production"} | json |
+  service_name_extracted!="" [1m]))` stays on the raw-row evaluator and meets
+  the row limit over wide ranges. Every Loki stream has `service_name`, so the
+  collision is certain wherever a body carries the key; the scratch pipes
+  already treat it that way (translator.ExtractedLabelPipes), only the
+  eligibility check refuses it.
+
+  Also, the isolated stack stores `service_name_extracted` as a real label
+  (the generator ingests it), where main, the branch and Loki disagree on the
+  answer; see profiles/parsed-key-colliding-with-structured-metadata.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | service_name_extracted!="" [1m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series from stats; today the raw-row evaluator.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/proxy orderedJSONPushdownLabelOK (service_name, detected_level)'
+  loki: 'pkg/logql/log/parser.go duplicateSuffix; service_name set by discover_service_name at ingest'
+  proxy: 'derived labels are not read from parsed keys'
+  planned_test: 'TestCompat_ExtractedLabelMetricPushdown rows for service_name_extracted (test/e2e-compat, group core)'
+  note: 'Related: profiles/parsed-key-colliding-with-structured-metadata.'
+  clusters: []

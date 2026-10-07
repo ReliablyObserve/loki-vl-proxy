@@ -42,7 +42,7 @@ type pushdownFakeVL struct {
 	raw    int
 }
 
-var pushdownFormatRE = regexp.MustCompile("^format if \\(`?([^`:]+)`?:\\*\\) \"<([^>]+)>\" as (\\S+)$")
+var pushdownFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"<([^>]+)>\" as (\\S+)$")
 
 // vlUnpackJSONFields mirrors unpack_json: a line that is one JSON object after
 // trimming whitespace yields its keys raw, nested objects flattened with a
@@ -91,6 +91,12 @@ func (f *pushdownFakeVL) values(row pushdownRow) map[string]string {
 	for k, v := range row.vl {
 		values[k] = v
 	}
+	var streamParts []string
+	for k, v := range row.stream {
+		streamParts = append(streamParts, k+"="+strconv.Quote(v))
+	}
+	sort.Strings(streamParts)
+	values["_stream"] = "{" + strings.Join(streamParts, ",") + "}"
 	return values
 }
 
@@ -337,8 +343,24 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				t.Errorf("fake VL: unsupported format pipe %q", pipe)
 				return nil, false
 			}
-			if values[m[1]] != "" {
-				values[m[3]] = values[m[1]]
+			// format if (<filter>) "<src>" as dst: dst is src's value where the filter holds.
+			if fakeLogsQLMatch(t, m[1], values) && values[m[2]] != "" {
+				values[m[3]] = values[m[2]]
+			}
+		case strings.HasPrefix(pipe, "copy "):
+			src, dst, _ := strings.Cut(strings.TrimPrefix(pipe, "copy "), " as ")
+			values[dst] = values[strings.Trim(src, "`")]
+		case strings.HasPrefix(pipe, "delete "):
+			for _, field := range strings.Split(strings.TrimPrefix(pipe, "delete "), ", ") {
+				if prefix, ok := strings.CutSuffix(field, "*"); ok {
+					for name := range values {
+						if strings.HasPrefix(name, prefix) {
+							delete(values, name)
+						}
+					}
+				} else {
+					delete(values, strings.Trim(field, "`"))
+				}
 			}
 		case strings.HasPrefix(pipe, "replace_regexp ("):
 			m := regexp.MustCompile(`^replace_regexp \(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\) at (\S+)$`).FindStringSubmatch(pipe)
@@ -511,6 +533,16 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 // parser error fails the fixture, because Loki fails such a query.
 func lokiPushdownReference(t testing.TB, plan *orderedJSONMetricPlan, rows []pushdownRow, start, end time.Time, step time.Duration) map[string]map[int64]string {
 	t.Helper()
+	out, err := lokiPushdownReferenceErr(plan, rows, start, end, step)
+	if err != nil {
+		t.Fatalf("reference: %v", err)
+	}
+	return out
+}
+
+// lokiPushdownReferenceErr is lokiPushdownReference returning the error Loki
+// answers a line with a parser error or an unparsable pipeline with.
+func lokiPushdownReferenceErr(plan *orderedJSONMetricPlan, rows []pushdownRow, start, end time.Time, step time.Duration) (map[string]map[int64]string, error) {
 	out := map[string]map[int64]string{}
 	for at := start; !at.After(end); at = at.Add(step) {
 		values := map[string]float64{}
@@ -524,13 +556,13 @@ func lokiPushdownReference(t testing.TB, plan *orderedJSONMetricPlan, rows []pus
 			}
 			labels, ok, err := plan.processWithStreamLabels(row.msg, base, row.stream)
 			if err != nil {
-				t.Fatalf("reference: %q: %v", row.msg, err)
+				return nil, fmt.Errorf("%q: %w", row.msg, err)
 			}
 			if !ok {
 				continue
 			}
 			if labels["__error__"] != "" {
-				t.Fatalf("reference: %q reaches the aggregation with %s; Loki fails such a query", row.msg, labels["__error__"])
+				return nil, fmt.Errorf("%q reaches the aggregation with %s; Loki fails such a query", row.msg, labels["__error__"])
 			}
 			key := canonicalLabelsKey(plan.groupLabels(labels))
 			switch plan.function {
@@ -550,7 +582,7 @@ func lokiPushdownReference(t testing.TB, plan *orderedJSONMetricPlan, rows []pus
 			out[key][at.Unix()] = strconv.FormatFloat(v, 'f', -1, 64)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // filterPushdownFixture is a JSON stream in the shape of an OTel collector
@@ -925,7 +957,15 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum(count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (__error__) (count_over_time({env="production"} | json | pipeline="x" [1m]))`, false, nil, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | __error__="" [1m]))`, false, nil, nil},
-		{`sum by (level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
+		// name_extracted: the key name where the stream has the label name, the key name_extracted otherwise.
+		{`sum by (level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"level_extracted"}, nil},
+		{`sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
+		{`sum by (k8s_pod_name_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"k8s_pod_name_extracted"}, nil},
+		{`sum by (level_extracted_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
+		{`sum by (service_name_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
+		{`sum by (detected_level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
+		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
+		{`sum by (level_extracted, detected_level) (count_over_time({env="production"} | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (a_b_c_d_e_f_g_h) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
@@ -1004,7 +1044,7 @@ func TestRangeMetricEvaluatorCounter(t *testing.T) {
 	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, start, end, time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" | drop __error__ [1m]))`, start, end, time.Minute)
-	runJSONVolumeQueryRange(t, p, `sum by (level_extracted) (count_over_time({app="api"} | json | drop __error__ [1m]))`, start, end, time.Minute)
+	runJSONVolumeQueryRange(t, p, `sum by (service_name_extracted) (count_over_time({app="api"} | json | drop __error__ [1m]))`, start, end, time.Minute)
 	runJSONVolumeQueryRange(t, p, `sum by (level) (count_over_time({app="api"} | json | service_version="0.96.0" | drop __error__ [1m]))`, start, end, time.Minute)
 	rec := httptest.NewRecorder()
 	p.metrics.Handler(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))

@@ -1,0 +1,60 @@
+id: versions/stats-bucket-label-v1.45
+title: Stats-bucket metrics put a line on a bucket edge one bucket late on VictoriaLogs before v1.45 (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: operator
+why: |
+  Loki's range `(T-range, T]` is left-open and right-closed. The proxy
+  answers sliding and grouped range metrics from `stats_query_range` buckets
+  and needs bucket edges at start+k*step shifted by 1 ns, which it asks for
+  with the `offset` query arg. VictoriaLogs added that arg in v1.45.0
+  (docs/victorialogs/CHANGELOG.md, v1.45.0: "`/select/logsql/stats_query_range`
+  endpoint: support optional `offset` query arg"). Earlier releases ignore it
+  and align buckets to the epoch, so a line whose timestamp sits exactly on an
+  edge lands one bucket late: `TestRangeMetricCompatibilityJSONFilterPushdown`
+  (fixture lines on 5 s multiples, step 60 s) passes on v1.45.0, v1.46.0 and
+  v1.52.0 and fails on v1.42.0 and v1.44.0 (the first sample of a series is
+  missing and the neighbours carry the wrong counts: `proxy "3"` where Loki
+  has `"2"`). Bisected on isolated stacks, one VictoriaLogs per release.
+
+  `supportsStatsRangeOffset` already makes the sliding window decline a start
+  that is not on the epoch grid below v1.45 (`slidingStatsBucket`), but an
+  aligned start still passes and an edge line is misplaced; the existing
+  pushdown of every `| json` metric, and the `name_extracted` pushdown before
+  it was gated, are affected. Real data rarely sits on a bucket edge (nanosecond
+  timestamps), so this shows on synthetic fixtures and second-aligned
+  generators.
+
+  The `name_extracted` stats pushdown is gated on `supportsStatsRangeOffset`
+  (v1.45+); older backends keep the raw-row evaluator these shapes had, which
+  is exact within `-manual-range-metric-row-limit`
+  (TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset). Not gated: the
+  other pushdowns.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({app="json-filter-X"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__[1m]))'
+    start: 'now-9h'
+    end: 'now-8h'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The fixture holds lines exactly on 5 s multiples; VictoriaLogs v1.42.0 or v1.44.0.
+compare:
+  mode: exact
+  fields: [series_labels, values]
+  expect: |
+    Loki's samples. v1.42.0 and v1.44.0 answer one bucket late for an edge line.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'stats-bucket relabel (internal/proxy range_metric_compat.go setSlidingStatsRangeParams / slidingStatsBucket; sliding_window_stats.go)'
+  loki: 'pkg/logql range vector (T-range, T]'
+  proxy: 'stats_query_range without offset aligns buckets to the epoch; the 1 ns edge shift is not applied'
+  planned_test: 'TestRangeMetricCompatibilityJSONFilterPushdown on VictoriaLogs v1.40-v1.44 (version matrix); fix by relabelling edge lines or declining the pushdown below v1.45'
+  note: 'Evidence: bisect v1.42.0 FAIL, v1.44.0 FAIL, v1.45.0 PASS, v1.46.0 PASS, v1.52.0 PASS. The v1.45.0 changelog entry for the offset arg is the introducing release.'
+  clusters: []

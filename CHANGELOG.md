@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A metric filtered or grouped on a `name_extracted` label after `| json` is
+  answered from VictoriaLogs stats, not from raw rows.**
+  `sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))`
+  answered over 1 h but failed over 6 h with `manual range metric row limit
+  exceeded (1000000)` (HTTP 502, 1.7 M generator rows; Loki answered both):
+  the stats pushdown refused every label ending in `_extracted`, because
+  `unpack_json ... keep_original_fields` keeps the stored value of the stream
+  label and loses the parsed one, so the shape fell back to the raw-row
+  evaluator, which reads every matching row into the proxy. The pushdown now
+  reads both keys (`name` and `name_extracted`) and computes the label with the
+  scratch fields the log-query translation already uses
+  (`translator.ExtractedLabelPipes`): the parsed `name` where the stream has the
+  label `name` (or structured metadata VictoriaLogs stores under another
+  spelling, such as `service_version` as `service.version`), the key
+  `name_extracted` otherwise. The parse-risk probes read both keys with the
+  stored value of `name` ignored, so a line the two parsers read differently (a
+  key before a syntax error, a repeated key, an array, a body holding both
+  `name` and `name_extracted`) still keeps the exact raw evaluator. Counts,
+  `rate`, `bytes_over_time` and `bytes_rate` filtered with `=`, `!=`, `=~`,
+  `!~` on `name_extracted`, and `sum by (name_extracted)`, are covered (a
+  `| logfmt` volume grouped by `detected_level` uses the same pipes); a label
+  with no stream collision answers the same empty result as Loki (main
+  returned a wrong series for `message_extracted`). The pushdown needs the
+  stats `offset` arg of VictoriaLogs v1.45, so older backends keep the raw
+  evaluator these shapes had. Proven by a differential run of 50 seeds of 300
+  random rows against the raw evaluator's Loki semantics, and by an e2e test
+  against Loki at 1 h and 6 h30m. Registry case
+  `semantics/json-extracted-metric-pushdown`.
+
+  Known differences from Loki, shared with the raw evaluator and registered as
+  `semantics/extracted-metric-known-differences`: a body holding both `level`
+  and `level_extracted` on a stream with a `level` label (Loki keeps the first
+  key in line order, the proxy the parsed `level`), and a stream label plus
+  structured metadata of the same name (Loki renames the metadata to
+  `level_extracted`, the proxy shows it absent). Not changed, registered as open
+  items: an ungrouped range metric and `sum without` still read raw rows
+  (`semantics/extracted-ungrouped-metric-raw-rows`), `service_name_extracted`
+  and `detected_level_extracted` keep the raw evaluator
+  (`semantics/extracted-derived-labels-raw-evaluator`), an unwrap window is one
+  step late (`semantics/unwrap-range-last-point`), and VictoriaLogs before v1.45
+  places a line on a bucket edge one bucket late in every stats pushdown
+  (`versions/stats-bucket-label-v1.45`).
+
 ## [2.5.2] - 2026-10-07
 
 ### Fixed
