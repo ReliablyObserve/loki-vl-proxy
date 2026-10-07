@@ -51,11 +51,20 @@ def signature(sch):
     return digest([fields, meta])
 
 
+# Loki's pipeline error names the first failing line its shards meet, so two answers of the same failing query
+# (Loki's, and a build that answers Loki's error) name different lines: the series is set aside, the rest compared.
+PIPELINE_ERROR_SERIES = re.compile(r"for series: '\{.*\}'\.", re.S)
+
+
+def error_text(text):
+    return PIPELINE_ERROR_SERIES.sub("for series: '{...}'.", str(text))
+
+
 def frames_of(resp):
     out = {}
     for ref, res in (resp or {}).get("results", {}).items():
         if res.get("error"):
-            out[(ref, "error")] = ("error", res["error"])
+            out[(ref, "error")] = ("error", error_text(res["error"]))
         for fr in res.get("frames", []):
             sch, data = fr["schema"], fr["data"]["values"]
             fields = sch["fields"]
@@ -452,7 +461,9 @@ def main():
                          loki_explained=explained, loki_nondet=lnondet,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
-                         settled_pr=bool(sp), errors_pr=errors(p, allowed), errors_main=errors(m, allowed),
+                         # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer.
+                         settled_pr=bool(sp), errors_pr=[e for e in errors(p, allowed) if not loki_ok or e not in errors(l, allowed)],
+                         errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if loki_ok else [],
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
     md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
     for r in rows:

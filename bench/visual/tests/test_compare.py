@@ -93,6 +93,23 @@ class CompareTest(unittest.TestCase):
         _, row = self.run_compare(capture([1]), capture([1], status=500))
         self.assertTrue(row["errors_pr"])
 
+    def test_an_error_the_pr_answers_as_loki_does_is_lokis_answer(self):
+        # Loki's pipeline error names the first failing line its shards meet: the series is set aside.
+        def err(series):
+            return ("pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", v=\"" + series +
+                    "\"}'.\nUse a label filter to intentionally skip this error.")
+        code, row = self.run_compare(capture([1, 2]), capture([1], error=err("x7")), capture([1], error=err("x3")))
+        self.assertEqual(code, 1)  # base and PR differ; the gate decides against Loki
+        self.assertEqual(row["errors_pr"], [])
+        self.assertEqual(len(row["errors_loki"]), 1)
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertEqual(row["loki_main_n"], 1)
+        # An error Loki does not answer stays an error of the PR.
+        _, row = self.run_compare(capture([1, 2]), capture([1], error=err("x7")), capture([1, 2]))
+        self.assertEqual(len(row["errors_pr"]), 1)
+        self.assertEqual(compare.error_text(err("a")), compare.error_text(err("b")))
+        self.assertNotEqual(compare.error_text(err("a")), compare.error_text("pipeline error: 'JSONParserErr' for series: '{}'."))
+
     def test_missing_loki_capture_within_its_window_is_flagged(self):
         _, row = self.run_compare(capture([1]), capture([1]))
         self.assertTrue(row["loki_missing"])
