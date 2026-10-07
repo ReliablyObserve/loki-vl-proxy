@@ -194,7 +194,7 @@ func lokiLogfmtU4(s string) rune {
 	if len(s) < 6 || s[0] != '\\' || s[1] != 'u' {
 		return -1
 	}
-	v, err := strconv.ParseUint(s[2:6], 16, 64)
+	v, err := strconv.ParseUint(s[2:6], 16, 16) // four hex digits: at most 0xFFFF
 	if err != nil {
 		return -1
 	}
