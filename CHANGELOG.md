@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The visual-smoke comment opens with a fix proof: captures of the exact case
+  a PR fixes.** A `bench/visual/spec.json` entry lists in `fixes` the registry
+  cases it reproduces (backfilled for the extracted-suffix, plain-name,
+  parenthesized-range and line-filter-or pages). A PR that adds a case or turns
+  a case's gap to `fixed` captures those entries first at the ci_ranges Loki
+  holds (a fix is proven against Loki), never trimmed by the capture budget, and
+  the comment shows base | PR | Loki with a verdict (fixed, improved, still
+  differs, regressed) above the regression tables. `plan.py --check` fails when
+  a fixed explore-, drilldown-visible or grafana-datasource case has no entry,
+  unless its gap block carries `visual: none` and a `visual_reason`; two fixed
+  cases that need VictoriaLogs-version-specific data are exempt that way. The
+  visual-smoke gate also fails a PR that fixes a case unless one capture of it
+  is fixed or improved against Loki (a capture the base already matched proves
+  nothing); the `visual-change-expected` label does not excuse it.
+
 ## [2.3.4] - 2026-10-07
 
 ### Fixed

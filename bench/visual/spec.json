@@ -1,6 +1,6 @@
 {
  "profile": "drilldown+explore",
- "description": "Explore (filtered json log view + volume, json-filter-pushdown metric shapes, logfmt metric, label browser) and Logs Drilldown (landing, service logs, labels, fields, field value breakdown, patterns). Query shapes come from bench/ab/shapes.json set json-filter-pushdown, with [1m] replaced by $__auto as Explore sends it. Entries with core:true form the small always-on set bench/visual/plan.py runs on every relevant PR (core_range only); the others run at ci_ranges when the PR touches code their covers (registry ids, as in bench/ab/shapes.json) point at.",
+ "description": "Explore (filtered json log view + volume, json-filter-pushdown metric shapes, logfmt metric, label browser) and Logs Drilldown (landing, service logs, labels, fields, field value breakdown, patterns). Query shapes come from bench/ab/shapes.json set json-filter-pushdown, with [1m] replaced by $__auto as Explore sends it. Entries with core:true form the small always-on set bench/visual/plan.py runs on every relevant PR (core_range only); the others run at ci_ranges when the PR touches code their covers (registry ids, as in bench/ab/shapes.json) point at. An entry's `fixes` lists the registry case ids (conformance/registry/cases, gap block) whose fix it reproduces: a PR that adds a case or turns one to fixed captures those entries at ci_ranges first and never trims them (bench/visual/README.md).",
  "datasources": [
   {
    "id": "main",
@@ -145,6 +145,10 @@
     "semantics/extracted-suffix-collision",
     "profiles/structured-metadata-label-collision",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/extracted-suffix-collision",
+    "profiles/structured-metadata-label-collision"
    ]
   },
   {
@@ -155,6 +159,10 @@
     "semantics/extracted-suffix-collision",
     "profiles/structured-metadata-label-collision",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/extracted-suffix-collision",
+    "profiles/structured-metadata-label-collision"
    ]
   },
   {
@@ -165,6 +173,9 @@
     "semantics/plain-name-after-parser-reads-stream-label",
     "loki-compatible-profile",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/plain-name-after-parser-reads-stream-label"
    ]
   },
   {
@@ -175,6 +186,9 @@
     "semantics/plain-name-after-parser-reads-stream-label",
     "loki-compatible-profile",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/plain-name-after-parser-reads-stream-label"
    ]
   },
   {
@@ -190,10 +204,13 @@
   {
    "id": "explore-metric-parenthesized",
    "kind": "explore",
-   "query": "sum by (level) (count_over_time(({env=\"production\"} | json | drop __error__)[$__auto]))",
+   "query": "sum by (level) (count_over_time(({env=\"production\"} |= \"failed\")[$__auto]))",
    "covers": [
     "semantics/parenthesized-log-range",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/parenthesized-log-range"
    ]
   },
   {
@@ -203,6 +220,9 @@
    "covers": [
     "semantics/line-filter-or-alternatives",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/line-filter-or-alternatives"
    ]
   },
   {
@@ -212,6 +232,9 @@
    "covers": [
     "semantics/line-filter-or-alternatives",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/line-filter-or-alternatives"
    ]
   },
   {
@@ -222,6 +245,9 @@
     "semantics/unwrap-sample-validity",
     "parser-error-and-label-collision",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-sample-validity"
    ]
   },
   {
@@ -232,6 +258,9 @@
     "semantics/unwrap-sample-validity",
     "parser-error-and-label-collision",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-sample-validity"
    ]
   },
   {
@@ -242,6 +271,9 @@
     "semantics/unwrap-sample-validity",
     "parser-error-and-label-collision",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-sample-validity"
    ]
   },
   {

@@ -28,6 +28,16 @@ capture whose difference flipped between the first pass and the recapture
 (non-deterministic). Pixel differences, a missing Loki capture and captures with no
 data on either side only warn.
 
+Fix proof: when plan.json carries `fix_cases` (a pull request that adds a registry case or
+turns one to fixed; see plan.py), a "Fix proof" section comes first, before the regression
+table: per case the captures that reproduce it, with the base | PR | Loki montage, and a
+verdict: fixed (the PR matches Loki where the base did not), improved (closer to Loki, still
+differs), still differs, regressed, not reproduced on base (the base already matched Loki, so
+the capture proves nothing), undecided (no Loki data). A case with entries FAILS the gate unless
+at least one capture is fixed or improved; the label `visual-change-expected` does not excuse
+it, only a reviewed `visual: none` on the case does. A plan without `fix_cases` renders as
+before.
+
 Every string that comes from the pull request (page names, queries, banner text,
 differences) is escaped before it reaches the markdown, so the comment cannot be
 made to carry markup or links.
@@ -205,11 +215,85 @@ def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
                           core=plan["entries"][pid]["core"] and rng == plan.get("core_range", "1h"), why=plan["entries"][pid]["why"]))
         if fails:
             failed.append(f"{pid} {rng}: {fails[0]}")
+    failed += fix_failures(fix_proofs(items, plan))
     code = 3 if missing or not items else (1 if failed else 0)
     return items, dict(exit=code, failures=failed, missing=missing, captures=len(items),
                        warnings=sum(1 for i in items if i["warns"] and not i["fails"]),
                        improved=sum(1 for i in items if i["status"] == "improved"),
                        expected=sum(1 for i in items if i["status"] == "expected"))
+
+
+def fix_verdict(row):
+    """Verdict of one fix-proof capture, from the same Loki comparison as classify()."""
+    if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
+        return "undecided"
+    base_ok = row.get("loki_main_n", 1) == 0
+    if not row.get("loki_diffs"):
+        return "not reproduced on base" if base_ok else "fixed"
+    if base_ok:
+        return "regressed"
+    return "improved" if classify(row) == "improved" else "still differs"
+
+
+FIX_RANK = ["regressed", "still differs", "fixed", "improved"]  # worst problem, else best proof
+FIX_ICON = {"fixed": "✅", "not reproduced on base": "⚠️", "improved": "🟡", "still differs": "❌", "regressed": "❌",
+            "undecided": "⚪", "unproven": "⚠️"}
+CASE_ID = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
+
+
+def fix_proofs(items, plan):
+    """[(case, entries, [(item, verdict)], verdict, exempt)] for the plan's fix cases; [] for an older or malformed plan."""
+    out = []
+    by_page = {}
+    for i in items:
+        by_page.setdefault(i["row"]["page"], []).append(i)
+    cases = plan.get("fix_cases")
+    for cid, c in (cases.items() if isinstance(cases, dict) else ()):
+        if not (isinstance(c, dict) and CASE_ID.match(str(cid)) and isinstance(c.get("entries", []), list)):
+            continue
+        entries = [e for e in c.get("entries", []) if isinstance(e, str)]
+        caps = [(i, fix_verdict(i["row"])) for pid in entries for i in by_page.get(pid, [])]
+        caps.sort(key=lambda x: (x[0]["row"]["page"], ORDER[x[0]["row"]["range"]]))
+        verdicts = {v for _, v in caps}
+        # Captures with no Loki data decide nothing; what is left, base never reproducing the bug, proves nothing.
+        verdict = next((v for v in FIX_RANK if v in verdicts),
+                       "unproven" if "not reproduced on base" in verdicts else ("undecided" if caps else ""))
+        out.append((cid, entries, caps, verdict, str(c.get("exempt") or "")))
+    return out
+
+
+def fix_failures(proofs):
+    """A case with entries needs a capture that is fixed or improved; the base side alone proves nothing."""
+    return [f"fix proof {cid}: no capture shows the PR closer to Loki ({verdict or 'not captured'})"
+            for cid, entries, caps, verdict, _ in proofs
+            if entries and not any(v in ("fixed", "improved") for _, v in caps)]
+
+
+def fix_section(a, meta, proofs, trimmed=()):
+    lines = ["", "#### Fix proof", "",
+             ("Captures of the exact cases this pull request adds or fixes (registry case, base | PR | Loki). "
+              + "The verdict compares the PR with Loki where the base did not match. The gate fails a case unless one "
+              + "capture is fixed or improved (the label does not excuse it; only `visual: none` on the case does)."), ""]
+    if trimmed:
+        lines += [f"Trimmed to the core range for the fix-capture budget (not dropped): {esc(', '.join(map(str, trimmed)))}.", ""]
+    for cid, entries, caps, verdict, exempt in proofs:
+        if not entries:
+            lines.append(f"- `{esc(cid)}`: " + (f"no visual proof, exempt: {esc(exempt, 200)}" if exempt else
+                                                "⚠️ no `fixes` entry in bench/visual/spec.json reproduces this case"))
+            continue
+        lines += [f"**`{esc(cid)}`**: {FIX_ICON.get(verdict, '')} {verdict or 'not captured'}", ""]
+        lines += ["| page | range | base = PR (data) | vs Loki (PR) | verdict |", "|---|---|---|---|---|"]
+        for i, v in caps:
+            r = i["row"]
+            same = "identical" if not r["main_pr_diffs"] else f"differs ({len(r['main_pr_diffs'])})"
+            lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {same} | {vs_loki(r)} | {FIX_ICON.get(v, '')} {v} |")
+        if a.mode == "branch":
+            for i, v in caps:
+                name = key(i["row"])
+                lines += ["", f"<details{' open' if v in ('still differs', 'regressed') else ''}><summary>{esc_html(name)}: {esc_html(v)}</summary>", "",
+                          image(a, name, meta), "", "</details>"]
+        lines.append("")
+    return lines
 
 
 def rawbase(a):
@@ -277,7 +361,13 @@ def render(rows, pixeldiff, plan, meta, a):
         icon = "✅"
         text = "passed" + (" with warnings" if verdict["warnings"] or verdict["expected"] else "")
     lines = header(icon, text, a, meta, plan)
+    proofs = fix_proofs(items, plan)
+    if proofs:
+        lines += fix_section(a, meta, proofs, plan.get("fix_trimmed") if isinstance(plan.get("fix_trimmed"), list) else ())
+        verdict["fix_proof"] = {cid: v for cid, _, _, v, _ in proofs}
     items.sort(key=lambda i: (not i["core"], i["row"]["page"], ORDER[i["row"]["range"]]))
+    if proofs:
+        lines += ["", "#### Regression check"]
     lines += ["", "| page | range | set | base = PR (data) | vs Loki (PR) | pixel diff | result |", "|---|---|---|---|---|---|---|"]
     for i in items:
         r = i["row"]

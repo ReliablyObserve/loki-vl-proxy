@@ -36,6 +36,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from vio import dump_json, load_json  # noqa: E402
+from visual_comment import classify  # noqa: E402
 
 PY = sys.executable
 
@@ -92,12 +93,14 @@ def recapture(a, out, plan, end, port, meta):
     differs from a fully loaded one. A difference that survives the second look is the one reported.
     """
     rows = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
-    again = {}
+    again, n = {}, 0
     for r in rows:
         if r["range"] != "live" and (r["main_pr_diffs"] or not r.get("settled", True)):
             again.setdefault(r["page"], {"kind": plan["entries"][r["page"]]["kind"], "ranges": []})["ranges"].append(r["range"])
-    n = sum(len(e["ranges"]) for e in again.values())
-    if not n or n > a.max_recapture:
+            # A difference Loki judged an improvement is expected (fix-proof captures differ by design): still
+            # loaded again, not counted against the cap.
+            n += 0 if classify(r) == "improved" else 1
+    if not again or n > a.max_recapture:
         meta["recaptured"] = []
         return False
     retry = os.path.join(out, "plan-recapture.json")

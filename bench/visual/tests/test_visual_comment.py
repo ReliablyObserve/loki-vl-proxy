@@ -30,6 +30,93 @@ def plan(*pairs, core=()):
     return {"run": True, "core_range": "1h", "entries": entries, "captures": len(pairs), "trimmed": [], "dropped": []}
 
 
+def fix_plan(rows, cases):
+    p = plan(*[(r["page"], r["range"]) for r in rows])
+    for page, e in p["entries"].items():
+        e["why"] = ["fix proof: " + c for c, ents in cases.items() if page in ents]
+    p["fix_cases"] = {c: {"entries": ents, "exempt": ""} for c, ents in cases.items()}
+    return p
+
+
+class FixProofTest(unittest.TestCase):
+    def render(self, rows, cases, mode="branch"):
+        a = argparse.Namespace(**{**vars(ARGS), "mode": mode})
+        return comment.render(rows, {}, fix_plan(rows, cases), META, a)
+
+    def test_section_comes_before_the_regression_table_with_montage_and_verdict(self):
+        fixed = row(page="p1", main_pr_diffs=["query A: value differs"], loki_main_n=2, loki_diffs=[])
+        text, v = self.render([fixed, row(page="p2")], {"semantics/case-a": ["p1"]})
+        self.assertLess(text.index("#### Fix proof"), text.index("#### Regression check"))
+        self.assertLess(text.index("#### Fix proof"), text.index("| page | range | set |"))
+        self.assertIn("✅ fixed", text)
+        self.assertIn("p1-1h.png", text[text.index("#### Fix proof"):text.index("#### Regression check")])
+        self.assertEqual(v["fix_proof"], {"semantics/case-a": "fixed"})
+
+    def test_verdicts(self):
+        self.assertEqual(comment.fix_verdict(row()), "not reproduced on base")
+        self.assertEqual(comment.fix_verdict(row(loki_main_n=3)), "fixed")
+        self.assertEqual(comment.fix_verdict(row(loki_main_n=3, loki_diffs=["a", "b"], loki_new=[])), "improved")
+        self.assertEqual(comment.fix_verdict(row(loki_main_n=1, loki_diffs=["a"], loki_new=[])), "still differs")
+        self.assertEqual(comment.fix_verdict(row(loki_diffs=["a"], loki_new=["a"])), "regressed")
+        self.assertEqual(comment.fix_verdict(row(loki_compared=False, points_loki=0)), "undecided")
+
+    def test_gate_needs_a_fixed_or_improved_capture_and_the_label_does_not_excuse_it(self):
+        case = {"semantics/case-a": ["p1"]}
+        for rows in ([row(page="p1", loki_main_n=1, loki_diffs=["x"], loki_new=[])],  # still differs
+                     [row(page="p1")],                                                  # base never reproduced it
+                     [row(page="p1", loki_compared=False, points_loki=0)]):             # no Loki data
+            _, v = self.render(rows, case)
+            self.assertEqual(v["exit"], 1, v)
+            self.assertTrue(any("fix proof semantics/case-a" in f for f in v["failures"]))
+        a = argparse.Namespace(**{**vars(ARGS), "expected_change": True})
+        _, v = comment.render([row(page="p1")], {}, fix_plan([row(page="p1")], case), META, a)
+        self.assertEqual(v["exit"], 1)
+
+    def test_gate_passes_with_one_fixed_capture_and_exempt_cases_are_not_gated(self):
+        rows = [row(page="p1", rng="15m", loki_main_n=2), row(page="p1", rng="1h", loki_compared=False, points_loki=0)]
+        _, v = self.render(rows, {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["exit"], 0)
+        p = fix_plan([row()], {})
+        p["fix_cases"] = {"semantics/case-c": {"entries": [], "exempt": "api-only"}}
+        self.assertEqual(comment.render([row()], {}, p, META, ARGS)[1]["exit"], 0)
+
+    def test_all_not_reproduced_is_unproven_and_malformed_fix_cases_are_ignored(self):
+        _, v = self.render([row(page="p1")], {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"]["semantics/case-a"], "unproven")
+        _, v = self.render([row(page="p1", rng="1h"), row(page="p1", rng="6h", loki_compared=False, points_loki=0)],
+                           {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"]["semantics/case-a"], "unproven")  # the range without Loki data is neutral
+        p = plan(("explore-a", "1h"))
+        for bad in ("x", ["a"], {"Bad Id": {"entries": ["explore-a"]}, "ok/id": "x", "ok/two": {"entries": "explore-a"}}):
+            p["fix_cases"] = bad
+            text, v = comment.render([row()], {}, p, META, ARGS)
+            self.assertEqual(v["exit"], 0)
+            self.assertNotIn("Bad Id", text)
+
+    def test_worst_capture_decides_the_case(self):
+        rows = [row(page="p1", rng="15m", loki_main_n=2), row(page="p1", rng="1h", loki_main_n=1, loki_diffs=["x"], loki_new=[])]
+        rows[1]["loki_diffs"] = ["x", "y"]; rows[1]["loki_main_n"] = 1  # not an improvement: more differences than the base
+        text, v = self.render(rows, {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"]["semantics/case-a"], "still differs")
+
+    def test_exempt_and_unlisted_cases_are_listed(self):
+        p = fix_plan([row()], {"semantics/case-a": ["explore-a"]})
+        p["fix_cases"]["semantics/case-c"] = {"entries": [], "exempt": "api-only"}
+        p["fix_cases"]["semantics/case-d"] = {"entries": [], "exempt": ""}
+        text, _ = comment.render([row()], {}, p, META, ARGS)
+        self.assertIn("exempt: api-only", text)
+        self.assertIn("no `fixes` entry", text)
+
+    def test_fork_mode_has_no_images_and_old_plan_has_no_section(self):
+        text, _ = self.render([row(page="p1", loki_main_n=2)], {"semantics/case-a": ["p1"]}, mode="artifact")
+        self.assertIn("#### Fix proof", text)
+        self.assertNotIn("![", text)
+        old = plan(("explore-a", "1h"))
+        text, v = comment.render([row()], {}, old, META, ARGS)
+        self.assertNotIn("Fix proof", text)
+        self.assertNotIn("fix_proof", v)
+
+
 class GateTest(unittest.TestCase):
     def verdict(self, rows, px=None, p=None):
         p = p or plan(*[(r["page"], r["range"]) for r in rows])
