@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two metadata freshness tests failed intermittently in CI.**
+  `TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegativeTTL`
+  and `TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNextRequest`
+  ended every request at `time.Now()` and allowed the backfill refresh one scan
+  more than the unchanged refresh before it. When a wall-clock minute passed
+  between those two requests, the minute that had just left the unsealed right
+  edge of the window was scanned once as a new bucket, so the backfill refresh
+  made one scan too many ("4 scans (idle refresh 2)"). Forcing a minute boundary
+  between the two requests reproduced it every time; a 5-minute boundary added
+  four more scans, as the moved window start splits a cached 5-minute bucket
+  into minute buckets. This is the bucket inventory working as designed (the
+  newly sealed minute is listed once instead of with every request's edge), not
+  extra VictoriaLogs load. The tests now ask for one window whose end is
+  already sealed (minute aligned, at least a minute old, still within
+  `max_metadata_cache_freshness` of now), so the plan cannot change between
+  requests, and assert exact numbers: an unchanged refresh scans only the plan's
+  uncached edges, a backfill refresh scans those and the one bucket that
+  received rows.
+
 ## [2.3.3] - 2026-10-07
 
 ### Fixed

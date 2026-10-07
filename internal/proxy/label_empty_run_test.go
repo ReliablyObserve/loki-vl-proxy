@@ -67,6 +67,29 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// sealedWindowEnd is a request end within max_metadata_cache_freshness of now
+// (a near-now request for Loki) that the inventory has already sealed: minute
+// aligned and at least the seal lag old. The plan of a window ending there is
+// the same on every request. A window ending at time.Now() is not: when a
+// wall-clock minute passes between two requests, the minute that left the
+// unsealed right edge is scanned once as a new bucket, so a scan-count
+// comparison between those requests fails about once in 200 runs.
+func sealedWindowEnd() time.Time {
+	return time.Now().Truncate(time.Minute).Add(-metadataInventorySealLag)
+}
+
+// inventoryEdgeCount is the number of uncached edges in the plan of a sealed
+// window: the only listings a refresh with unchanged data sends.
+func inventoryEdgeCount(start, end time.Time) int64 {
+	n := int64(0)
+	for _, seg := range planInventorySegments(start.UnixNano(), end.UnixNano(), end.UnixNano()) {
+		if seg.level < 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // Empty hours cached during a shipper outage, then rows backfilled into them
 // with old timestamps: the next near-now request after the negative TTL lists
 // them, for one count per run of empty buckets and a rescan of the bucket that
@@ -76,23 +99,27 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 func TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegativeTTL(t *testing.T) {
 	vl := &backfillVL{ts: time.Now().Add(-10 * time.Hour).UnixNano()}
 	_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
-	path := func() string {
-		now := time.Now().UnixNano()
-		return fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", now-int64(7*24*time.Hour), now)
-	}
-	if got := getMetadataList(t, mux, path()); contains(got, "backfill_label") {
+	// Every request asks for the same 7-day window: its start is not aligned
+	// (an uncached edge), its end is sealed (see sealedWindowEnd).
+	start, end := time.Now().Add(-7*24*time.Hour), sealedWindowEnd()
+	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
+	edges := inventoryEdgeCount(start, end)
+	if got := getMetadataList(t, mux, path); contains(got, "backfill_label") {
 		t.Fatalf("before the backfill: %v", got)
 	}
 	coldScans, coldCounts := vl.scan.Load(), vl.counts.Load()
 
-	// Unchanged data, past the negative TTL: one count per run, no bucket scans
-	// beyond the live edges.
+	// Unchanged data, past the negative TTL: one count per run, no bucket scans,
+	// only the uncached edges.
 	restore := cache.AdvanceClockForTesting(metadataNegativeCacheTTL + 5*time.Second)
 	defer restore()
 	time.Sleep(200 * time.Millisecond)
-	_ = getMetadataList(t, mux, path())
+	_ = getMetadataList(t, mux, path)
 	idleScans, idleCounts := vl.scan.Load()-coldScans, vl.counts.Load()-coldCounts
 	t.Logf("cold: %d scans, %d counts; unchanged refresh: %d scans, %d counts", coldScans, coldCounts, idleScans, idleCounts)
+	if idleScans != edges {
+		t.Fatalf("unchanged refresh made %d scans, want only the plan's %d uncached edges", idleScans, edges)
+	}
 	if idleCounts > 2 {
 		t.Fatalf("unchanged refresh made %d counts, want about one per run of empty buckets", idleCounts)
 	}
@@ -103,13 +130,13 @@ func TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegati
 	defer restore2()
 	time.Sleep(200 * time.Millisecond)
 	scansBefore, countsBefore := vl.scan.Load(), vl.counts.Load()
-	if got := getMetadataList(t, mux, path()); !contains(got, "backfill_label") {
+	if got := getMetadataList(t, mux, path); !contains(got, "backfill_label") {
 		t.Fatalf("rows backfilled into cached empty hours were not listed: %v", got)
 	}
 	scans, counts := vl.scan.Load()-scansBefore, vl.counts.Load()-countsBefore
 	t.Logf("backfill refresh: %d scans, %d counts", scans, counts)
-	if scans > idleScans+1 {
-		t.Fatalf("backfill refresh made %d scans (idle refresh %d): more than the one bucket that received rows", scans, idleScans)
+	if scans != edges+1 {
+		t.Fatalf("backfill refresh made %d scans, want the %d uncached edges and the one bucket that received rows", scans, edges)
 	}
 	if counts > 12 {
 		t.Fatalf("backfill refresh made %d counts", counts)
@@ -126,8 +153,11 @@ func TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegati
 func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNextRequest(t *testing.T) {
 	now := time.Now()
 	// The window starts 7m30s past an hour: an edge, 1m buckets to :10, 5m
-	// buckets to the hour, then hours.
+	// buckets to the hour, then hours. Its end is sealed (see sealedWindowEnd).
 	start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
+	end := sealedWindowEnd()
+	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
+	edges := inventoryEdgeCount(start, end)
 	for _, tc := range []struct {
 		name string
 		ts   time.Time
@@ -138,10 +168,7 @@ func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNe
 		t.Run(tc.name, func(t *testing.T) {
 			vl := &backfillVL{ts: tc.ts.UnixNano()}
 			_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
-			path := func() string {
-				return fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), time.Now().UnixNano())
-			}
-			if got := getMetadataList(t, mux, path()); contains(got, "backfill_label") {
+			if got := getMetadataList(t, mux, path); contains(got, "backfill_label") {
 				t.Fatalf("before the backfill: %v", got)
 			}
 
@@ -149,9 +176,12 @@ func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNe
 			// with about one count per run and rescans none of them.
 			time.Sleep(200 * time.Millisecond) // older than max-staleness
 			scans, counts := vl.scan.Load(), vl.counts.Load()
-			_ = getMetadataList(t, mux, path())
+			_ = getMetadataList(t, mux, path)
 			idleScans, idleCounts := vl.scan.Load()-scans, vl.counts.Load()-counts
 			t.Logf("unchanged refresh: %d scans, %d counts", idleScans, idleCounts)
+			if idleScans != edges {
+				t.Fatalf("unchanged refresh made %d scans, want only the plan's %d uncached edges", idleScans, edges)
+			}
 			if idleCounts > 2 {
 				t.Fatalf("unchanged refresh made %d counts, want about one per run of empty buckets", idleCounts)
 			}
@@ -159,13 +189,13 @@ func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNe
 			vl.backfilled.Store(true)
 			time.Sleep(200 * time.Millisecond)
 			scans, counts = vl.scan.Load(), vl.counts.Load()
-			if got := getMetadataList(t, mux, path()); !contains(got, "backfill_label") {
+			if got := getMetadataList(t, mux, path); !contains(got, "backfill_label") {
 				t.Fatalf("rows backfilled into a bucket cached empty a moment before were not listed: %v", got)
 			}
 			scans, counts = vl.scan.Load()-scans, vl.counts.Load()-counts
 			t.Logf("backfill refresh: %d scans, %d counts", scans, counts)
-			if scans > idleScans+1 {
-				t.Fatalf("backfill refresh made %d scans (unchanged refresh %d): more than the one bucket that received rows", scans, idleScans)
+			if scans != edges+1 {
+				t.Fatalf("backfill refresh made %d scans, want the %d uncached edges and the one bucket that received rows", scans, edges)
 			}
 			if counts > 16 {
 				t.Fatalf("backfill refresh made %d counts", counts)
