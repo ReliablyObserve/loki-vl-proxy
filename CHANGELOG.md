@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The visual smoke failed a PR that answers a query Loki rejects with Loki's
+  own error.** When Loki answers a capture with an error (for example a 400
+  pipeline error such as `SampleExtractionErr`) and the PR answers the same
+  error, the capture counted as an error answer on the PR side, an empty PR
+  panel and a panel error, so a fix that makes the proxy reject what Loki
+  rejects could never pass. An error the PR answers exactly as Loki answers it
+  is now Loki's answer: it is not a PR error, a Loki error banner or panel
+  error on the PR is not a regression, and the fix proof calls such a capture
+  fixed (or not reproduced on base when the base already answered it). Loki's
+  pipeline error names the first failing line its shards meet, so the series
+  in `for series: '{...}'` is set aside when error texts are compared. An
+  error Loki does not answer, or a different error, still fails.
+
 ## [2.6.0] - 2026-10-07
 
 ### Fixed

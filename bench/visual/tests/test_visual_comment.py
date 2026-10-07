@@ -60,6 +60,24 @@ class FixProofTest(unittest.TestCase):
         self.assertEqual(comment.fix_verdict(row(loki_diffs=["a"], loki_new=["a"])), "regressed")
         self.assertEqual(comment.fix_verdict(row(loki_compared=False, points_loki=0)), "undecided")
 
+    def test_a_query_loki_rejects_answered_with_its_error_is_fixed(self):
+        error_ui = {"noData": 0, "banners": ["Query error: pipeline error"], "panelErrors": 1}
+        rejected = row(page="p1", main_pr_diffs=["query A: series sets differ"], loki_main_n=1, loki_diffs=[], points_loki=0,
+                       points_pr=0, points_main=40, errors_loki=["pipeline error: 'SampleExtractionErr' for series: '{...}'."],
+                       ui_pr=error_ui, ui_loki=error_ui)
+        self.assertEqual(comment.fix_verdict(rejected), "fixed")
+        fails, _, status = comment.assess(rejected, None)
+        self.assertEqual((fails, status), ([], "improved"))
+        text, v = self.render([rejected], {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"], {"semantics/case-a": "fixed"})
+        # The base already answered Loki's error: nothing reproduced.
+        self.assertEqual(comment.fix_verdict(row(**{**rejected, "loki_main_n": 0, "main_pr_diffs": []})), "not reproduced on base")
+        # An error Loki does not answer is a PR failure, and an empty PR where Loki has data still fails.
+        fails, _, _ = comment.assess(row(**{**rejected, "errors_pr": ["502"]}), None)
+        self.assertTrue(fails)
+        fails, _, _ = comment.assess(row(**{**rejected, "errors_loki": [], "points_loki": 10}), None)
+        self.assertIn("empty on the PR, data on the base", fails)
+
     def test_base_failure_beyond_the_loki_window(self):
         beyond = dict(loki_compared=False, points_loki=800, errors_main=["400"], points_main=15, points_pr=3000,
                       ui_main={"noData": 0, "banners": [], "panelErrors": 1}, ui_loki={"noData": 0, "panelErrors": 0})

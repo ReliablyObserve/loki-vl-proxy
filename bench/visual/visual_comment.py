@@ -55,6 +55,7 @@ import os
 import re
 import sys
 
+from compare import error_text
 from vio import dump_json, load_json, write_text
 
 MARKER = "<!-- visual-smoke -->"
@@ -79,17 +80,19 @@ def esc_html(text, limit=0):
 
 
 def ui_problems(main, pr, loki=None):
-    """What the PR side shows that the base does not. An empty panel Loki shows too is Loki's answer, not a regression."""
+    """What the PR side shows that the base does not. An empty panel or a query error Loki shows too is Loki's
+    answer, not a regression."""
     out = []
     loki_no_data = (loki or {}).get("noData", 0)
     if pr.get("noData", 0) > max(main.get("noData", 0), loki_no_data):
         out.append(f"new empty panel (\"No data\" {main.get('noData', 0)} on base, {pr.get('noData', 0)} on PR)")
-    new = [b for b in pr.get("banners", []) if b not in main.get("banners", [])]
+    loki_banners = [error_text(b) for b in (loki or {}).get("banners", [])]
+    new = [b for b in pr.get("banners", []) if b not in main.get("banners", []) and error_text(b) not in loki_banners]
     if new:
         # The error behind the banner (capture.spec.ts records the error boundary's "Details").
         why = next((ln.strip() for ln in str(pr.get("details", "")).splitlines() if "Error" in ln), "")
         out.append(f"error banner only on the PR: {new[0][:100]}" + (f" ({why[:160]})" if why else ""))
-    if pr.get("panelErrors", 0) > main.get("panelErrors", 0):
+    if pr.get("panelErrors", 0) > max(main.get("panelErrors", 0), (loki or {}).get("panelErrors", 0)):
         out.append(f"panel error ({main.get('panelErrors', 0)} on base, {pr.get('panelErrors', 0)} on PR)")
     return out
 
@@ -103,9 +106,14 @@ def base_failed(row):
                 and not row.get("loki_missing") and row.get("points_loki", 0) > 0 and ui_loki.get("panelErrors", 0) == 0)
 
 
+def loki_rejects(row):
+    """Loki answered the capture with an error (a query it rejects) and the PR answers the same error."""
+    return bool(row.get("loki_compared") and row.get("errors_loki") and not row.get("loki_diffs") and not row.get("errors_pr"))
+
+
 def classify(row):
     """Base vs PR difference against Loki: 'improved', 'regressed', 'unsettled' (neither matches) or 'no-loki'."""
-    if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
+    if not (row.get("loki_compared") and (row.get("points_loki", 0) > 0 or row.get("errors_loki"))):
         return "no-loki"
     base_matches = row.get("loki_main_n", 1) == 0
     pr_matches = not row.get("loki_diffs")
@@ -171,7 +179,7 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
     if f"{row['page']} {row['range']}" in flipped:
         fails.append("non-deterministic: the difference between base and PR was gone on the recapture")
     fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {}, row.get("ui_loki") if row.get("loki_compared") else None)
-    if row.get("points_main", 0) > 0 and row.get("points_pr", 0) == 0:
+    if row.get("points_main", 0) > 0 and row.get("points_pr", 0) == 0 and not loki_rejects(row):
         fails.append("empty on the PR, data on the base")
     if row.get("errors_pr"):
         fails.append(f"{len(row['errors_pr'])} error answer(s) on the PR side: {row['errors_pr'][0][:120]}")
@@ -240,6 +248,9 @@ def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
 
 def fix_verdict(row):
     """Verdict of one fix-proof capture, from the same Loki comparison as classify()."""
+    if loki_rejects(row):
+        # Loki rejects the query and the PR answers its error: fixed when the base answered otherwise.
+        return "not reproduced on base" if row.get("loki_main_n", 1) == 0 else "fixed"
     if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
         return "base failed" if base_failed(row) else "undecided"
     base_ok = row.get("loki_main_n", 1) == 0
