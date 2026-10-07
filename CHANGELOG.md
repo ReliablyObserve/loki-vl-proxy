@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`TestCompatOptionMatrix` failed intermittently in CI** and turned the
+  conformance gate red for eight registry items ("a test declaring it
+  failed"). Its "a rejected dotted name reached the backend" check counted
+  every request to the shared test backend, including a stream label refresh
+  that an earlier subtest's proxy had already cancelled on shutdown but the
+  test server handled a moment later. The check now counts only requests whose
+  query names the dotted label, and an accepted dotted name must be seen
+  reaching the backend so the count cannot stop seeing a real leak. The proxy
+  never sent the rejected query; 120 runs at 1, 2 and 4 CPUs pass (2 of 15
+  failed at 2 CPUs before).
+- **The conformance job now names failing unit tests.** Its unit-test step
+  lists each failing test and its assertion lines instead of leaving only the
+  gate's "a test declaring it failed".
+
 ## [2.4.0] - 2026-10-07
 
 ### Added
