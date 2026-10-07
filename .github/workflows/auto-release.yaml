@@ -117,7 +117,8 @@ jobs:
           PR_ADDITIONS=0
           PR_DELETIONS=0
           PR_TOTAL_CHURN=0
-          PR_NUMBER="$(echo "${HEAD_COMMIT_MSG:-}" | grep -oE '#[0-9]+' | tail -1 | tr -d '#' || true)"
+          # The squash-merge subject ends with "(#N)"; the body may name other PRs.
+          PR_NUMBER="$(printf '%s\n' "${HEAD_COMMIT_MSG:-}" | head -1 | grep -oE '\(#[0-9]+\)$' | tr -dc '0-9' || true)"
 
           if [ -n "${PR_NUMBER}" ]; then
             PR_JSON="$(curl -fsSL \
