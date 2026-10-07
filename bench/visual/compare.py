@@ -473,8 +473,10 @@ def main():
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
                          # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer.
-                         settled_pr=bool(sp), errors_pr=[e for e in errors(p, allowed) if not loki_ok or e not in errors(l, allowed)],
-                         errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if loki_ok else [],
+                         # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer, at any
+                         # range Loki was captured: an error does not depend on how much history Loki holds.
+                         settled_pr=bool(sp), errors_pr=[e for e in errors(p, allowed) if not has_loki or e not in errors(l, allowed)],
+                         errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if has_loki else [],
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
     md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
     for r in rows:

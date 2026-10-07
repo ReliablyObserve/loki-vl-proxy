@@ -106,6 +106,17 @@ def base_failed(row):
                 and not row.get("loki_missing") and row.get("points_loki", 0) > 0 and ui_loki.get("panelErrors", 0) == 0)
 
 
+def loki_ui_for_gate(row):
+    """What Loki showed, for judging the PR side's UI. Beyond the history Loki holds only its errors count (a panel
+    error or banner Loki shows too is Loki's answer); its "No data" there may only mean missing history."""
+    ui = row.get("ui_loki")
+    if not ui:
+        return None
+    if row.get("loki_compared"):
+        return ui
+    return {"noData": 0, "banners": ui.get("banners", []), "panelErrors": ui.get("panelErrors", 0)}
+
+
 def loki_rejects(row):
     """Loki answered the capture with an error (a query it rejects) and the PR answers the same error."""
     return bool(row.get("loki_compared") and row.get("errors_loki") and not row.get("loki_diffs") and not row.get("errors_pr"))
@@ -178,7 +189,7 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
         warns.append(f"history-dependent difference, not gated ({len(row['main_pr_nondet'])}): {row['main_pr_nondet'][0][:160]}")
     if f"{row['page']} {row['range']}" in flipped:
         fails.append("non-deterministic: the difference between base and PR was gone on the recapture")
-    fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {}, row.get("ui_loki") if row.get("loki_compared") else None)
+    fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {}, loki_ui_for_gate(row))
     if row.get("points_main", 0) > 0 and row.get("points_pr", 0) == 0 and not loki_rejects(row):
         fails.append("empty on the PR, data on the base")
     if row.get("errors_pr"):
