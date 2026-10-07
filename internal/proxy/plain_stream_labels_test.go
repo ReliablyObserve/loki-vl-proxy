@@ -304,8 +304,13 @@ func TestPlainStreamLabel_ShutdownStopsRefresher(t *testing.T) {
 	defer srv.Close()
 	p := lineFieldsProxy(t, srv.URL, "buffered")
 	ctx := scopedRequest(p, "/").Context()
-	before := runtime.NumGoroutine()
 	p.tenantStreamLabelNames(ctx) // starts the (blocked) refresh
+	for seen := time.Now().Add(2 * time.Second); refresherGoroutines() == 0; {
+		if time.Now().After(seen) {
+			t.Fatal("the blocked refresh never showed up as a refreshStreamLabelNames goroutine")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	begin := time.Now()
 	if err := p.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
@@ -326,13 +331,35 @@ func TestPlainStreamLabel_ShutdownStopsRefresher(t *testing.T) {
 	if after != started {
 		t.Fatal("a refresh started after Shutdown")
 	}
+	// Count the refresher's own goroutines: the process-wide count also moves with
+	// other tests' goroutines still finishing in a full-package run.
 	deadline := time.Now().Add(3 * time.Second)
-	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
+	for refresherGoroutines() > 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if n := runtime.NumGoroutine(); n > before+2 {
-		t.Fatalf("goroutines: %d before, %d after Shutdown", before, n)
+	if n := refresherGoroutines(); n > 0 {
+		t.Fatalf("%d refreshStreamLabelNames goroutine(s) still running after Shutdown", n)
 	}
+}
+
+// refresherGoroutines counts the goroutines running refreshStreamLabelNames.
+func refresherGoroutines() int {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	count := 0
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(g, ".refreshStreamLabelNames(") {
+			count++
+		}
+	}
+	return count
 }
 
 // An answer made while the names were unknown (the plain translation) is not
