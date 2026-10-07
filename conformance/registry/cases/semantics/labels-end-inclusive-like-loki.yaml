@@ -49,7 +49,7 @@ compare:
     time-precise, see quality/label-values-chunk-window).
 gap:
   status: fixed
-  fixed_by: "PENDING"
+  fixed_by: "#703"
   impact: explore-visible
   effort: S
   area: 'internal/proxy/label_metadata.go lokiLabelEndToVL, fetchScopedLabelNames/Values; label_handlers.go service_name and detected_level values'
