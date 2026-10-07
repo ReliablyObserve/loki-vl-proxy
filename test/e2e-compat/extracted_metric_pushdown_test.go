@@ -51,7 +51,10 @@ func extractedMetricFixture(s0 time.Time, lines int, every time.Duration) []json
 func TestCompat_ExtractedLabelMetricPushdown(t *testing.T) {
 	now := time.Now()
 	app := fmt.Sprintf("extracted-metric-%d", now.UnixNano())
-	s0 := now.Add(-9 * time.Hour).Truncate(time.Hour)
+	// 20 h back, as the other long-range fixtures: newer hours hold the
+	// label fixtures, whose label inventory buckets must not hold this stream
+	// (quality/labels-backfill-into-cached-bucket).
+	s0 := now.Add(-20 * time.Hour).Truncate(time.Hour)
 	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{app: extractedMetricFixture(s0, 1200, 20*time.Second)})
 
 	// Below VictoriaLogs v1.45 the pushdown is gated off (versions/stats-bucket-label-v1.45):

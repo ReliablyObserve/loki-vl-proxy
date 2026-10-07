@@ -499,7 +499,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 286,
+  "registry_items": 287,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1040,6 +1040,7 @@
     "quality/index-stats-streams-differ",
     "quality/label-cache-aged-labels-kept",
     "quality/label-values-chunk-window",
+    "quality/labels-backfill-into-cached-bucket",
     "quality/stats-volume-freshness",
     "semantics/absent-over-time-semantics",
     "semantics/binary-ignoring-matching",
