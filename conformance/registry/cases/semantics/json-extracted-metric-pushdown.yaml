@@ -51,7 +51,7 @@ compare:
     `stats_query_range` after the parse-risk probes and no raw-row fetch.
 gap:
   status: fixed
-  fixed_by: "PENDING"
+  fixed_by: "#690"
   impact: explore-visible
   effort: M
   area: 'internal/proxy ordered_json_metric.go stats pushdown (name_extracted labels) and translator.ExtractedLabelPipes'
