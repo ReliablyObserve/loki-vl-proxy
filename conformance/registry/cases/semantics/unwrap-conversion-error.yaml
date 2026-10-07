@@ -111,7 +111,7 @@ compare:
     message family and the same three hint lines; the line named may differ.
 gap:
   status: fixed
-  fixed_by: "PENDING"
+  fixed_by: "#704"
   impact: explore-visible
   effort: L
   area: 'internal/proxy/unwrap_conversion_error.go (unwrapErrorProbes, unwrapCountingQuery, stripUnwrapCounter, unwrapCheck.confirm, unwrapLokiLabels, unwrapLookupWriter); the VictoriaLogs client hook (backend.go vlPostHTTP) and the raw-row evaluators'
