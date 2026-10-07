@@ -1,0 +1,39 @@
+id: semantics/unwrap-sum-without-collapses
+title: sum without over an unwrap range function returns a single series (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum without (pod) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
+  keeps every label but pod on Loki 3.7.7: 17823 series on query_range and
+  1596 on an instant query over an hour of generator data. The proxy answers
+  one series on both. Measured on an isolated stack with VL v1.52.0, the same
+  on main and with the unwrap conversion-error change. Related:
+  semantics/extracted-ungrouped-metric-raw-rows (the stats pushdown never
+  covered `without`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per label set without pod.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator `without` grouping over unwrap range functions'
+  loki: 'pkg/logql/evaluator.go newVectorAggEvaluator (without)'
+  proxy: 'one series'
+  planned_test: 'an e2e over sum without (...) with unwrap on query_range and query'
+  clusters: []

@@ -1,0 +1,66 @@
+id: semantics/unwrap-conversion-error-undetected-shapes
+title: A few query shapes answer 200 where Loki fails with SampleExtractionErr, because no VictoriaLogs query of theirs carries the conversion counter (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The conversion-error detection (semantics/unwrap-conversion-error) counts the
+  rejected values in the metric's own stats query or in the rows a raw-row
+  evaluator reads, and never scans the rows again. Shapes where neither carries
+  the counter answer as before (200 without the rows that do not convert):
+
+  - `absent_over_time({app="payment-service"} | logfmt | unwrap tx_id [5m])`
+    and `sum(absent_over_time({app="payment-service"} | logfmt | unwrap tx_id [5m]))`:
+    Loki 3.7.7 400 on query_range and query, the proxy 200 (19728 per-row
+    series, or one); absent_over_time is not counted (its own series
+    difference is semantics/absent-over-time-semantics);
+  - `label_replace(sum by (service_name) (sum_over_time({...} | json | unwrap s [5m])), "x", "$1", "service_name", "(.*)")`
+    and `label_join(...)`: the parser keeps them opaque, so no aggregation is
+    checked (Loki 3.7.7 400, proxy 200, measured on an isolated stack);
+  - a stats query whose stats pipe is followed by a pipe that could mix or drop
+    the counted groups (`sort`, `limit`, `fields`), or that carries two unwrap
+    gates: sent without the counter;
+  - `unwrap duration_seconds(x)`: the translator does not gate it
+    (semantics/unwrap-duration-seconds), so nothing is counted;
+  - a line Loki's logfmt parser marks LogfmtParserErr with `__error__` among the
+    parser hints (`sum by (__error__) (...)`): Loki preserves the error and does
+    not fail; the proxy does not model logfmt parser errors and may fail it
+    (`| json` lines are modelled);
+  - a pipeline the confirmation does not re-derive (`| pattern`, `| json a="b"`,
+    `| logfmt` with arguments, `| label_format` writing the unwrapped label, a
+    second `| line_format`): a counted row is not confirmed and the query
+    answers 200.
+
+  `sum(quantile_over_time(0.5, {app="payment-service"} | logfmt | unwrap tx_id [5m]))`,
+  `max(quantile_over_time(...))` and
+  `sum(quantile_over_time(0.5, {app="frontend-ssr"} | json | unwrap duration(load_ms) [5m]))`
+  are detected (400 like Loki, TestCompat_UnwrapConversionErrorParity).
+
+  Multi-tenant fanout (`X-Scope-OrgID: a|b`) is detected per tenant (400
+  text/plain measured on an isolated stack); its series text is not compared
+  with Loki's multi-tenant answer.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(sum by (service_name) (sum_over_time({service_name="payment-service"} | logfmt | unwrap msg [5m])), "x", "$1", "service_name", "(.*)")'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 SampleExtractionErr.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorProbes (opaque expressions), unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
+  loki: 'pkg/logql/evaluator.go:726-733'
+  proxy: '200 without the rows that do not convert'
+  planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (absent_over_time, label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
+  clusters: []

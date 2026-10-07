@@ -107,10 +107,10 @@ func unwrapRangeValues(t *testing.T, p *Proxy, query string, start, end time.Tim
 func TestUnwrapConversionIsConvertedInTheStatsQuery(t *testing.T) {
 	t0 := time.Unix(1700000400, 0).UTC()
 	for _, tc := range []struct{ name, query, conv, want string }{
-		{"duration", `sum by (app) (max_over_time({app="x"} | unwrap duration(v) [1m]))`, "duration", " | stats by (app) max(__lvp_v)"},
-		{"bytes", `sum by (app) (max_over_time({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app) max(__lvp_v)"},
-		{"duration rate, sliding", `sum by (app) (rate({app="x"} | unwrap duration(v) [2m]))`, "duration", " | stats by (app) sum(__lvp_v) as c, count() as __sample_count"},
-		{"bytes rate, tumbling", `sum by (app) (rate({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app) sum(__lvp_v) as __lvp_inner"},
+		{"duration", `sum by (app) (max_over_time({app="x"} | unwrap duration(v) [1m]))`, "duration", " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"bytes", `sum by (app) (max_over_time({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"duration rate, sliding", `sum by (app) (rate({app="x"} | unwrap duration(v) [2m]))`, "duration", " | stats by (app, __lvp_bad) sum(__lvp_v) as c, count() as __sample_count"},
+		{"bytes rate, tumbling", `sum by (app) (rate({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app, __lvp_bad) sum(__lvp_v) as __lvp_inner"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newUnwrapFakeVL(t, nil)
@@ -121,7 +121,9 @@ func TestUnwrapConversionIsConvertedInTheStatsQuery(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("%d %s", rec.Code, rec.Body.String())
 			}
-			want := translator.UnwrapGateFor("v", tc.conv) + tc.want
+			// No filter after the unwrap drops the error: the gate also counts the
+			// values the conversion rejects, in a group of their own.
+			want := unwrapCountedGate("v", tc.conv) + tc.want
 			if q := fake.query("/select/logsql/stats_query_range"); !strings.Contains(q, want) {
 				t.Fatalf("expected %q in the VictoriaLogs query, got %q", want, q)
 			}
@@ -140,8 +142,11 @@ func TestUnwrapStatsQueriesCarryTheSampleGate(t *testing.T) {
 	for _, tc := range []struct {
 		name, query, path, want string
 	}{
-		{"native range", `sum by (app) (max_over_time({app="x"} | unwrap b [1m]))`, "/select/logsql/stats_query_range", gate + " | stats by (app) max(__lvp_v)"},
-		{"bare parser buckets", `max_over_time({app="x"} | logfmt | unwrap b [2m])`, "/select/logsql/stats_query_range", translator.UnwrapGate("b") + " | stats by (_stream) max(__lvp_v) as c"},
+		{"native range", `sum by (app) (max_over_time({app="x"} | unwrap b | __error__="" [1m]))`, "/select/logsql/stats_query_range", gate + " | stats by (app) max(__lvp_v)"},
+		{"bare parser buckets", `max_over_time({app="x"} | logfmt | unwrap b | __error__="" [2m])`, "/select/logsql/stats_query_range", translator.UnwrapGate("b") + " | stats by (_stream) max(__lvp_v) as c"},
+		// Without the error filter the gate also counts the rejected values.
+		{"native range, counted", `sum by (app) (max_over_time({app="x"} | unwrap b [1m]))`, "/select/logsql/stats_query_range", unwrapCountedGate("b", "") + " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"bare parser buckets, counted", `max_over_time({app="x"} | logfmt | unwrap b [2m])`, "/select/logsql/stats_query_range", unwrapCountedGate("b", "") + " | stats by (_stream, __lvp_bad) max(__lvp_v) as c"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newUnwrapFakeVL(t, nil)
@@ -168,13 +173,13 @@ func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 	rows := []string{
 		unwrapRow(t0.Add(10*time.Second), map[string]string{"n": "10", "d": "1m30s"}),
 		unwrapRow(t0.Add(20*time.Second), map[string]string{"n": "20", "d": "30s"}),
-		unwrapRow(t0.Add(30*time.Second), map[string]string{"n": "30", "d": "x"}),
+		unwrapRow(t0.Add(30*time.Second), map[string]string{"n": "30", "d": "15s"}),
 	}
 	for _, tc := range []struct{ name, query, want string }{
 		{"quantile", `quantile_over_time(0.5, {app="x"} | unwrap n [1m])`, "20"},
 		{"quantile grouped", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]))`, "20"},
 		{"rate_counter", `rate_counter({app="x"} | unwrap n [1m])`, "0.3333333333333333"},
-		{"quantile of a conversion", `quantile_over_time(0.5, {app="x"} | unwrap duration(d) [1m])`, "60"},
+		{"quantile of a conversion", `quantile_over_time(0.5, {app="x"} | unwrap duration(d) [1m])`, "30"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newUnwrapFakeVL(t, rows)
@@ -229,7 +234,7 @@ func TestUnwrapRateSlidingWindowSumsBuckets(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	want := translator.UnwrapGate("n") + " | stats by (app) sum(__lvp_v) as c, count() as __sample_count"
+	want := unwrapCountedGate("n", "") + " | stats by (app, __lvp_bad) sum(__lvp_v) as c, count() as __sample_count"
 	if q := fake.query("/select/logsql/stats_query_range"); !strings.Contains(q, want) {
 		t.Fatalf("expected %q in the VictoriaLogs query, got %q", want, q)
 	}

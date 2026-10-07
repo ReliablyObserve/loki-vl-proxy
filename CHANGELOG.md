@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An unwrap over a value its conversion rejects fails like Loki, with HTTP
+  400 and Loki's `SampleExtractionErr` text, instead of answering 200 without
+  those lines.** `sum_over_time({service_name="payment-service"} | logfmt |
+  unwrap msg [5m])` over text, `| unwrap duration(d)` over `1d`, `| unwrap
+  bytes(size)` over `lots`, `| unwrap latency` over `250ms` or `| json | unwrap
+  c` over a JSON boolean answered 200 on the proxy (the unwrap gate let
+  VictoriaLogs stats read only the rows that convert). Loki v3.7.7 marks such a
+  value with `__error__="SampleExtractionErr"` and the conversion's message
+  (`pkg/logql/log/metrics_extraction.go:202-231`), and a range vector holding
+  that sample fails the query (`pkg/logql/evaluator.go:726-733`) with
+  `logqlmodel.PipelineError` over the line's labels, written as `text/plain`
+  (`pkg/util/server/error.go:46-51`). Only a label filter after the unwrap
+  drops it (`| unwrap f | __error__=""`, `__error__!="SampleExtractionErr"`,
+  `__error_details__!=""`); `drop __error__` or `__error__=""` before the
+  unwrap and `by (__error__)` do not. The value is the one Loki's parser gives:
+  `| json` skips arrays and `null` (`parser.go:101-115`), `| unpack` adds the
+  strings of a line holding `_entry` only (`parser.go:788-840`), and a key named
+  like stored structured metadata becomes `name_extracted`, leaving the stored
+  value to unwrap.
+  The detection rides on the metric's own VictoriaLogs scan: when no filter
+  after the unwrap drops the error, the gate counts instead of dropping (a row
+  whose value is present and outside every form the conversion may accept is
+  flagged with `format if`, let through with the value 0 and grouped apart in
+  every stats pipe), the flagged groups are taken out of the answer before any
+  caller reads it, and the raw-row evaluators (quantile, first, last,
+  rate_counter, bare parsers) report the rows they cannot convert. A clean
+  query sends the one VictoriaLogs query main sends. After a flagged row, at
+  most 4 `| limit 3` lookups restricted to the flagged buckets read rows (the
+  first confirmed row stops them), each row's stored line is re-read by stream
+  id, time and exact `_msg` in parallel, and Loki's value is re-derived with
+  Loki's parsers: `| logfmt` keeps the first non-empty value of a key, maps
+  U+FFFD to a space and unquotes as Loki's decoder does, `| unpack` keeps the
+  last. Only a value Loki's conversion rejects, on a line in an evaluated window
+  that passes Loki's label filters, answers Loki's 400 text over that line's
+  labels (cut to Loki's parser hints, `appendLabelHints`, when a `sum` pushes
+  its grouping down), as `text/plain; charset=utf-8`. A query VictoriaLogs
+  flags but Loki converts (a duplicate logfmt key, `5KB` followed by U+FFFD)
+  pays those lookups: about 0.02 s p50 against 0.01 s on main over 1 h, 16
+  small VictoriaLogs queries. The route records the status sent, once. Range
+  and instant queries, every unwrap range function, binary operands, `sum` and
+  `max` over `quantile_over_time`, sliding, tumbling and gapped grids,
+  `duration()` and `bytes()`. The LogsQL is the gate's own (`format if`,
+  `filter ... or ...`, `stats by`), available on VictoriaLogs v1.40.
+  Proven against Loki 3.7.7 (`TestCompat_UnwrapConversionErrorParity`, 53
+  cases plus 3 registered open shapes, on VictoriaLogs v1.52.0, v1.47.0 and
+  v1.40.0), unit tables, and a differential test of the proxy's decision
+  against an independent reference of Loki's rule over 11,723 generated row
+  sets and queries (JSON and logfmt bodies, duplicate keys, quoting, U+FFFD,
+  arrays, booleans, null, stored metadata), where no query the proxy fails is
+  one Loki answers. Cost (A/B on seeded generator data, main vs branch
+  interleaved, 5 runs, warm p50): clean shapes stay within about 10% of main
+  at 1h, 6h, 24h and 7d; the largest slowdown is 7d `sum by (app)
+  (sum_over_time({namespace="prod"} | logfmt | unwrap amount [1h]))`, 1.49 s
+  to 1.63 s. Loki's own p50 on these runs comes from its results cache and is
+  not a reference. The 37-row control set is unchanged, benchstat shows no
+  change and identical allocations, and under 24 concurrent 24h and 7d unwrap
+  queries VictoriaLogs did not restart and `/labels` kept answering.
+  Registered: `semantics/unwrap-conversion-error` (fixed); open
+  `semantics/unwrap-conversion-error-postfilter-forms` (a post filter that keeps
+  only the error, a comparison, an `and`/`or` expression),
+  `semantics/unwrap-conversion-error-stored-value-overwritten` (a stored value
+  Loki reads that VictoriaLogs' parser overwrote; `unwrap x_extracted` beside
+  stored metadata), `semantics/unwrap-conversion-error-parser-divergence` (a
+  value Loki rejects hidden by a later duplicate logfmt key; samples of rows
+  only Loki converts), `semantics/unwrap-conversion-error-undetected-shapes`
+  (`absent_over_time`, `label_replace`, pipelines the confirmation does not
+  re-derive, pipes after stats the counter cannot carry) and
+  `semantics/unwrap-duration-seconds` (`duration_seconds()` answers no data
+  where Loki converts it like `duration()`). Found while measuring, the same
+  on main, registered open: `semantics/unwrap-rate-ungrouped-sum-per-stream`,
+  `semantics/unwrap-sum-without-collapses`,
+  `semantics/unwrap-first-last-under-aggregation` (422) and
+  `semantics/unwrap-quantile-response-limit` (502 from 6h); `count_over_time`
+  with unwrap is added to `semantics/proxy-accepts-invalid-logql`.
+
 ## [2.7.1] - 2026-10-08
 
 ### Fixed

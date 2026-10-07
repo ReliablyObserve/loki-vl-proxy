@@ -41,7 +41,12 @@ proxy: |
   value stands in for `drop __error__`, since no unparsed line has the key.
   A label filter before the parser is applied by VictoriaLogs, as for a log
   query. A metric Loki fails on an unparsed line fails with Loki's
-  `pipeline error` text from one lookup, before any row is read.
+  `pipeline error` text from one lookup, before any row is read. An unwrap
+  whose value its conversion rejects (SampleExtractionErr) fails the same way,
+  unless a filter after the unwrap drops the error: the metric's own stats
+  query counts such values in a group of its own, and only a hit costs a
+  bounded lookup whose row is re-derived with Loki's parser before the
+  text/plain 400 is answered.
 
 implementation:
   - "internal/proxy/loki_profile.go lineFieldExposure.entryLabelName, lineFieldExposure.readsLineKey, lineFieldExposure.repeatsLabel, lineFieldExposure.mayReadKey"
@@ -49,6 +54,7 @@ implementation:
   - "internal/translator/parsed_key_variants.go translateParsedKeyFilter, withParsedKeyVariants, withExtractedScratch, extractedScratchPipes, extractionTargets, resolveStatsKeys"
   - "internal/translator/translator.go translateKeepStage"
   - "internal/proxy/ordered_json_metric.go orderedJSONMetricPlan.setStatsPushdown, orderedJSONMetricPlan.pushdownLabelFilters, Proxy.orderedJSONPartialParseRisk, Proxy.statsPushdownStoredFieldRisk, Proxy.cachedStatsPushdownRisk"
+  - "internal/proxy/unwrap_conversion_error.go unwrapErrorProbes, unwrapErrorPostFilters, unwrapAcceptablePattern, unwrapCountingQuery, stripUnwrapCounter, unwrapLokiLabels, Proxy.unwrapRowError, Proxy.startUnwrapConversionCheck"
 
 cases:
   - semantics/json-parse-error-excluded
@@ -68,4 +74,7 @@ cases:
   - semantics/parse-error-labels-on-log-lines
   - semantics/unwrap-sample-validity
   - semantics/unwrap-conversion-error
+  - semantics/unwrap-conversion-error-postfilter-forms
+  - semantics/unwrap-conversion-error-stored-value-overwritten
+  - semantics/unwrap-conversion-error-undetected-shapes
   - semantics/logfmt-existence-filter-ungrouped-sum

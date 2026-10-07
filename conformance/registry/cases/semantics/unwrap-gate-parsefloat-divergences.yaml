@@ -22,6 +22,12 @@ why: |
     nanoseconds (`2562048h`; VictoriaLogs saturates at 9.2e9 seconds), a byte size
     at or above 2^64 (`19EB`; VictoriaLogs answers 1.9e19 or saturates).
 
+  The unwrap conversion-error detection (semantics/unwrap-conversion-error) skips the
+  values in the first list and every decimal with an exponent, so it never
+  reports a value Loki converts; the overflowing forms (`1e309`, `1.8e308`,
+  `0x1p2000`, the second list) are not reported either, and Loki fails those
+  queries where the proxy answers 200.
+
   Checked against Go's functions on VictoriaLogs v1.40.0 and v1.52.0: every other
   form of the lists in internal/translator/unwrap_gate_test.go converts to Go's value
   (including `5 kB`, `1PB`, `1EiB`, `5.s`, `.5s`, `-.5ms`, `100μs`, `1e-310`, `1e-400`).

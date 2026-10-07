@@ -1,0 +1,36 @@
+id: semantics/unwrap-quantile-response-limit
+title: quantile_over_time over a JSON unwrap fails at the manual metric response limit from 6 hours (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap duration_ms [1m]) by (service_name)`
+  answers on Loki 3.7.7 at 6h, 24h and 7d. The proxy evaluates quantiles from
+  raw rows and answers 502 `manual metric response exceeds 67108864 bytes;
+  narrow the query` from 6h on generator data (bench/ab set
+  unwrap-conversion-error, shape E2), on main and with the unwrap
+  conversion-error change alike.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap duration_ms [1m]) by (service_name)'
+    start: 'now-6h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series]
+  expect: |
+    HTTP 200 with Loki's series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/proxy raw-row quantile evaluator (manual metric response cap)'
+  loki: 'pkg/logql/range_vector.go quantile_over_time'
+  proxy: '502 at the manual metric response limit'
+  planned_test: 'bench/ab set unwrap-conversion-error E2 at 6h/24h/7d'
+  clusters: []

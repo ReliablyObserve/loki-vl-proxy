@@ -1445,6 +1445,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {
+			p.reportUnwrapRejectedRow(ctx, v, baseQuery, field, unwrapConv, ts)
 			continue
 		}
 
@@ -1593,6 +1594,21 @@ func (p *Proxy) buildParsedGroupByCacheKey(streamStr, levelStr string, v *fj.Val
 		b.WriteString(val)
 	}
 	return b.String()
+}
+
+// reportUnwrapRejectedRow reports a raw row whose unwrapped value is present
+// but does not convert to the request's unwrap conversion check, which
+// confirms whether Loki fails on it. The checked aggregations name the fields:
+// the evaluator's own field may be another (a nested aggregation).
+func (p *Proxy) reportUnwrapRejectedRow(ctx context.Context, v *fj.Value, baseQuery, field, unwrapConv string, ts int64) {
+	check := unwrapCheckFrom(ctx)
+	if check == nil || field == "__count__" || field == "__bytes__" {
+		return
+	}
+	check.rawRowRejected(baseQuery, ts, func(name string) string {
+		value, _ := stringifyFJValue(v.Get(name))
+		return value
+	})
 }
 
 // extractManualSampleValueFJ is the fastjson variant of extractManualSampleValue.

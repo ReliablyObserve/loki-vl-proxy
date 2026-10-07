@@ -8,6 +8,10 @@ why: |
   (grouping not allowed), `rate({...}[5minutes])` (unknown unit), `| bytes <
   0B`, `rate({...}[5m] @ 1000000000)` and others; the proxy answers 200 (or a
   5xx), so a client learns of a broken query only from Loki.
+  `count_over_time({app="payment-service"} | logfmt | unwrap amount [5m])`:
+  Loki 3.7.7 400 `parse error : invalid aggregation count_over_time with
+  unwrap`, the proxy 200 with a series per row label set (measured on an
+  isolated stack with VL v1.52.0).
 request:
   method: GET
   path: /loki/api/v1/query

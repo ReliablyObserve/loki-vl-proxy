@@ -305,6 +305,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-conversion-error",
+   "kind": "explore",
+   "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))",
+   "covers": [
+    "semantics/unwrap-conversion-error",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-conversion-error"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

@@ -1,15 +1,96 @@
 id: semantics/unwrap-conversion-error
-title: An unwrap over non-numeric values fails in Loki with a 400 SampleExtractionErr; the proxy answers 200 (open)
+title: An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed)
 proves:
   - parser-error-and-label-collision
+  - status-400
   - loki_api_v1_query_range
+  - loki_api_v1_query
 consumer: explore
 why: |
-  Loki fails `sum_over_time({app="a"} | logfmt | unwrap msg [5m])` over text
-  with HTTP 400 `pipeline error: 'SampleExtractionErr' for series ...` unless
-  `| __error__=""` drops those samples. VictoriaLogs' stats functions skip
-  non-numeric values, so the proxy returns 200 with the numeric samples only
-  (documented in KNOWN_ISSUES).
+  Loki v3.7.7 (pkg/logql/log/metrics_extraction.go:202-231,
+  streamLabelSampleExtractor.Process) skips a line whose unwrapped label is
+  absent or empty and marks a value its conversion rejects (convertFloat =
+  strconv.ParseFloat, convertDuration = time.ParseDuration for duration() and
+  duration_seconds(), convertBytes = humanize.ParseBytes; lines 316-338) with
+  __error__="SampleExtractionErr" and the conversion's message as
+  __error_details__. The label filters after the unwrap then run with the error
+  set: a string filter on __error__ compares "SampleExtractionErr"
+  (label_filter.go:418-424), one on __error_details__ compares "". A range
+  vector holding a sample with __error__ fails the query
+  (pkg/logql/evaluator.go:726-733) with logqlmodel.PipelineError over the
+  sample's whole label set (labels.go:664-668: stream labels, structured
+  metadata, parsed labels, restricted by the parser hints when a `sum` pushes
+  its grouping down, syntax/ast.go:1612-1642), answered as HTTP 400 text/plain
+  (pkg/util/server/error.go:46-51). __preserve_error__ only exempts parser
+  errors (parser.go:778-787): `drop __error__` or `__error__=""` before the
+  unwrap, and `by (__error__)`, do not intercept it. The value is Loki's
+  parser's: `| json` skips arrays and null and keeps booleans
+  (parser.go:101-115), `| unpack` adds the strings of a line holding _entry only
+  (parser.go:788-840), a key named like stored metadata becomes name_extracted.
+
+  Captured on Loki 3.7.7 (logfmt fixture: n numeric, t="abc", v numeric on even
+  lines and "x<k>" on odd lines, dur 1.5s or "1d", size 2KiB or "lots",
+  okdur=250ms, w numeric except one "bad", e empty every fifth line; JSON
+  fixture `{"a":[1,2],"b":null,"c":true,"d":5,"e":{"x":1},"f":"[1,2]","g":"7","s":"abc"}`;
+  a logfmt line `x=abc` stored with metadata `x="5"`): 400
+  `text/plain; charset=utf-8` for sum_over_time/rate/avg/max/quantile over t or
+  v, duration(dur), duration_seconds(dur), bytes(size), unwrap okdur, unwrap
+  detected_level (no parser), `sum by`, `sum()`, `max by (n)`, `... by (n)`,
+  `* 2`, `| __error__="" | unwrap v`, `| drop __error__ | unwrap v`,
+  `sum by (__error__)`, `| unwrap v | __error_details__=""`, `n!="99"`,
+  `| json | unwrap c` (true), `unwrap f` ("[1,2]"), `unwrap s`, instant queries;
+  200 for `| unwrap v | __error__=""`, `__error__!="SampleExtractionErr"`,
+  `n="99"`, an empty or missing label, numbers, duration(okdur), a value outside
+  every evaluated window, `| json | unwrap a` (array), `b` (null), `e` (object),
+  every `| unpack` (no _entry), `| logfmt | unwrap x` (Loki reads the stored 5),
+  `| json` over a logfmt line. Example body:
+
+      pipeline error: 'SampleExtractionErr' for series: '{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="uwerr-cap-1791400701", v="x7"}'.
+      Use a label filter to intentionally skip this error. (e.g | __error__!="SampleExtractionErr").
+      To skip all potential errors you can match empty errors.(e.g __error__="")
+      The label filter can also be specified after unwrap. (e.g | unwrap latency | __error__="" )
+
+  The proxy's unwrap gate (translator.UnwrapGateFor) let VictoriaLogs stats
+  read only the rows that convert, so it answered 200 without them.
+
+  Fixed (internal/proxy/unwrap_conversion_error.go), without reading the rows a
+  second time: when no filter after the unwrap drops the error
+  (unwrapErrorProbes), the metric's own VictoriaLogs stats query is sent with
+  the gate counting: a row whose unwrapped value is present and outside every
+  form the conversion may accept is flagged (`format if (...) "1" as
+  __lvp_bad`), let through the gate with the value 0, and grouped apart in every
+  stats pipe (unwrapCountingQuery), so the other groups aggregate exactly the
+  rows they did. The flagged groups are removed from the answer before any
+  caller reads it (the clean answer only loses an empty label), and the buckets
+  they held are remembered. The raw-row evaluators (quantile, first, last,
+  rate_counter, bare parsers) report the rows they cannot convert (at most 64
+  per request). Only after a hit, a `| limit 3` lookup restricted to the hit's
+  bucket (a step on either side, inside Loki's windows, with the window phase
+  filter on a gapped grid) reads the row; at most 4 lookups run per request and
+  the first confirmed row stops them. Each row's stored line is re-read by
+  stream id, time and exact `_msg` (`| limit 64`, identical copies count as
+  one), in parallel, and Loki's value is re-derived with Loki's parsers
+  (unwrapLokiLabels): `| logfmt` keeps the first non-empty value of a key, maps
+  U+FFFD to a space and unquotes as Loki's decoder (unwrap_loki_parsers.go),
+  `| unpack` the last, fields VictoriaLogs unpacked from a JSON line at ingest
+  are dropped. Only a value Loki's conversion rejects, on a line inside an
+  evaluated window that passes Loki's label filters, answers Loki's text over
+  the line's labels as text/plain; the parser hints of a pushed-down `sum by`
+  follow appendLabelHints (a grouping `x_extracted` hints `x`). A flagged query
+  whose rows all convert in Loki costs those lookups and nothing else: measured
+  about 0.02 s p50 vs 0.01 s on main over 1 h, 16 small lookups (`sum by (service_name)
+  (sum_over_time({app="auth-service"} | unpack | unwrap user_id [5m]))`). The
+  route records the status sent, once. VictoriaLogs features: `format if`,
+  `filter ... or ...`, `stats by`, all used by the gate since v1.40.
+
+  Not changed: semantics/unwrap-conversion-error-postfilter-forms,
+  semantics/unwrap-conversion-error-stored-value-overwritten,
+  semantics/unwrap-conversion-error-undetected-shapes,
+  semantics/unwrap-conversion-error-parser-divergence, values whose conversion
+  overflows (semantics/unwrap-gate-parsefloat-divergences), and which failing
+  line is named (Loki's choice depends on its shards; compared by shape). As
+  for any metric, an identical request ending near now within
+  -recent-tail-refresh-max-staleness is answered from the response cache.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -22,16 +103,20 @@ request:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
-  mode: observed
-  fields: [status, error_text]
+  mode: exact
+  fields: [status, content_type, error_text]
   expect: |
-    Loki's 400 pipeline error.
+    HTTP 400 text/plain; charset=utf-8 on both, with
+    logqlmodel.PipelineError's text: the same label names, the same conversion
+    message family and the same three hint lines; the line named may differ.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "PENDING"
   impact: explore-visible
-  effort: M
-  area: 'internal/proxy range metric unwrap path (one-lookup probe like pipeline-error-text-parity)'
-  loki: 'pkg/logql/log/metrics_extraction.go SampleExtractionErr; logqlmodel.PipelineError'
-  proxy: '200, non-numeric samples skipped'
-  planned_test: 'TestCompat_UnwrapConversionErrorParity (test/e2e-compat, group semantics)'
+  effort: L
+  area: 'internal/proxy/unwrap_conversion_error.go (unwrapErrorProbes, unwrapCountingQuery, stripUnwrapCounter, unwrapCheck.confirm, unwrapLokiLabels, unwrapLookupWriter); the VictoriaLogs client hook (backend.go vlPostHTTP) and the raw-row evaluators'
+  loki: 'pkg/logql/log/metrics_extraction.go:202-231,316-338; pkg/logql/log/label_filter.go:306-424; pkg/logql/log/parser.go:101-115,379-438,788-840; pkg/logql/log/logfmt/decode.go; pkg/logql/log/parser_hints.go:207-214; pkg/logql/evaluator.go:726-733; pkg/logqlmodel/error.go:64-83; pkg/util/server/error.go:46-51'
+  proxy: '400 text/plain with Loki''s text, detected in the metric''s own VictoriaLogs scan'
+  planned_test: 'TestCompat_UnwrapConversionErrorParity (test/e2e-compat, group core: TestCompat_.*); proxy TestUnwrapErrorProbePlans, TestUnwrapCountingQuery, TestStripUnwrapCounter, TestUnwrapLokiLabels, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapAcceptablePatternCoversConversions, TestUnwrapConversionErrorDifferential'
+  note: 'The stack Loki aligns queries with the step (align_queries_with_step); the proxy evaluates at start+k*step as a default Loki does, so the e2e grids start on a step multiple. Related: semantics/unwrap-sample-validity (missing and empty labels make no sample), semantics/unwrap-duration-seconds.'
   clusters: []
