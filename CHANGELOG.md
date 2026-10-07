@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`TestPlainStreamLabel_ShutdownStopsRefresher` failed releases
+  intermittently.** It compared the process-wide goroutine count before and
+  after `Shutdown`, which moves with other tests' goroutines still finishing in
+  a full-package run (26,641 before, 26,649 after on the #680 release
+  validation). It now counts only `refreshStreamLabelNames` goroutines, first
+  checking it sees the blocked refresh, so it still catches a refresher that
+  outlives `Shutdown`.
+
 - **An `unwrap` metric makes a sample only from a line whose label is present and
   converts, as Loki does.** Loki skips a line whose unwrapped label is absent or
   empty and does not count a value its conversion rejects as a sample
