@@ -264,8 +264,15 @@ jobs:
         id: metrics
         run: |
           set -euo pipefail
-          TESTS=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l | tr -d ' ')
-          go test ./... -coverprofile=coverage.out -count=1 >/dev/null 2>&1
+          # One run gives both numbers; a failing test is named instead of failing the step silently.
+          if ! go test ./... -count=1 -json -coverprofile=coverage.out > test-results.json 2> test-stderr.log; then
+            echo "::error::unit tests failed while collecting release metrics"
+            jq -r 'select(.Action=="fail" and .Test != null) | "\(.Package) \(.Test)"' test-results.json | sort -u
+            jq -r 'select(.Action=="output" and .Test != null) | .Output' test-results.json | grep -E -- '--- FAIL|_test\.go:[0-9]+:' | head -50 || true
+            tail -20 test-stderr.log || true
+            exit 1
+          fi
+          TESTS=$(jq -r 'select(.Action=="pass" and .Test != null) | .Test' test-results.json | wc -l | tr -d ' ')
           COV=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}' | tr -d '%')
           CODE_LINES=$(git ls-files '*.go' | xargs wc -l | tail -1 | awk '{print $1}')
           {
