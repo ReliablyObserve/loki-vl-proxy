@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The visual fix proof could not prove a fix that only shows at long
+  ranges.** A failure that needs a long range to appear, such as a row limit,
+  is captured at 6h, beyond the 1.5h of data Loki holds on the CI stack, so the
+  capture was "undecided" and the gate failed the case, while the regression
+  table failed the same capture as "data differs base vs PR and no Loki data".
+  A capture beyond the Loki data window where the base answered with an error
+  or a panel error, and Loki and the PR both answered with data and no error,
+  is now **base failed**: it proves the fix case and counts as an improvement
+  in the regression table (with a warning that the values there are not
+  compared). An error, a panel error or no data on the PR, no Loki answer, or
+  a base without a failure still decides nothing.
+
 ## [2.5.1] - 2026-10-07
 
 ### Fixed

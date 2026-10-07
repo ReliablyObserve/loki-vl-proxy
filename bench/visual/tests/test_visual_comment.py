@@ -60,6 +60,41 @@ class FixProofTest(unittest.TestCase):
         self.assertEqual(comment.fix_verdict(row(loki_diffs=["a"], loki_new=["a"])), "regressed")
         self.assertEqual(comment.fix_verdict(row(loki_compared=False, points_loki=0)), "undecided")
 
+    def test_base_failure_beyond_the_loki_window(self):
+        beyond = dict(loki_compared=False, points_loki=800, errors_main=["400"], points_main=15, points_pr=3000,
+                      ui_main={"noData": 0, "banners": [], "panelErrors": 1}, ui_loki={"noData": 0, "panelErrors": 0})
+        self.assertEqual(comment.fix_verdict(row(**beyond)), "base failed")
+        # A panel error alone on the base counts; an error on the PR, no PR data or no Loki answer decides nothing.
+        self.assertEqual(comment.fix_verdict(row(**{**beyond, "errors_main": []})), "base failed")
+        for bad in ({"errors_pr": ["502"]}, {"ui_pr": {"noData": 0, "panelErrors": 1}}, {"ui_pr": {"noData": 1, "panelErrors": 0}},
+                    {"points_pr": 0}, {"loki_missing": True}, {"points_loki": 0},
+                    {"ui_loki": {"noData": 0, "panelErrors": 1}},
+                    {"errors_main": [], "ui_main": {"noData": 0, "banners": [], "panelErrors": 0}}):
+            self.assertEqual(comment.fix_verdict(row(**{**beyond, **bad})), "undecided", bad)
+        # Inside the Loki window the data comparison decides, never this rule.
+        self.assertEqual(comment.fix_verdict(row(**{**beyond, "loki_compared": True})), "not reproduced on base")
+
+    def test_base_failure_passes_the_gate_and_a_regression_still_fails_it(self):
+        beyond = row(page="p1", rng="6h", loki_compared=False, points_loki=800, errors_main=["400"], points_pr=3000,
+                     main_pr_diffs=["query A: series sets differ"],
+                     ui_main={"noData": 0, "banners": [], "panelErrors": 1}, ui_loki={"noData": 0, "panelErrors": 0})
+        _, v = self.render([row(page="p1"), beyond], {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"], {"semantics/case-a": "base failed"})
+        self.assertFalse(any("fix proof" in f for f in v["failures"]), v)
+        _, v = self.render([row(page="p1", loki_diffs=["a"], loki_new=["a"]), beyond], {"semantics/case-a": ["p1"]})
+        self.assertEqual(v["fix_proof"], {"semantics/case-a": "regressed"})
+
+    def test_base_failure_beyond_the_loki_window_is_no_regression(self):
+        beyond = row(page="p1", rng="6h", loki_compared=False, points_loki=800, errors_main=["400"], points_pr=3000,
+                     main_pr_diffs=["query A: series sets differ: 1 only left [('status', '400')]"],
+                     ui_main={"noData": 0, "banners": [], "panelErrors": 1}, ui_loki={"noData": 0, "panelErrors": 0})
+        fails, warns, status = comment.assess(beyond, None)
+        self.assertEqual((fails, status), ([], "improved"))
+        self.assertTrue(any("base failed" in w for w in warns))
+        # Without the base failure the same difference beyond the Loki window still fails.
+        fails, _, _ = comment.assess(row(**{**beyond, "errors_main": [], "ui_main": {"noData": 0, "panelErrors": 0}}), None)
+        self.assertTrue(any("no Loki data for this range" in f for f in fails))
+
     def test_gate_needs_a_fixed_or_improved_capture_and_the_label_does_not_excuse_it(self):
         case = {"semantics/case-a": ["p1"]}
         for rows in ([row(page="p1", loki_main_n=1, loki_diffs=["x"], loki_new=[])],  # still differs

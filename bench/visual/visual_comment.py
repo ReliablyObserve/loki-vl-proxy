@@ -33,8 +33,10 @@ turns one to fixed; see plan.py), a "Fix proof" section comes first, before the 
 table: per case the captures that reproduce it, with the base | PR | Loki montage, and a
 verdict: fixed (the PR matches Loki where the base did not), improved (closer to Loki, still
 differs), still differs, regressed, not reproduced on base (the base already matched Loki, so
-the capture proves nothing), undecided (no Loki data). A case with entries FAILS the gate unless
-at least one capture is fixed or improved; the label `visual-change-expected` does not excuse
+the capture proves nothing), undecided (no Loki data), base failed (beyond the Loki data
+window: the base answered with an error or a panel error where Loki and the PR both answered
+with data; the PR's values there are not compared). A case with entries FAILS the gate unless
+at least one capture is fixed, improved or base failed; the label `visual-change-expected` does not excuse
 it, only a reviewed `visual: none` on the case does. A plan without `fix_cases` renders as
 before.
 
@@ -92,6 +94,15 @@ def ui_problems(main, pr, loki=None):
     return out
 
 
+def base_failed(row):
+    """Beyond the Loki data window: the base errored where Loki and the PR both answered with data."""
+    ui_main, ui_pr, ui_loki = (row.get(k) or {} for k in ("ui_main", "ui_pr", "ui_loki"))
+    return bool((row.get("errors_main") or ui_main.get("panelErrors", 0) > 0)
+                and not row.get("errors_pr") and ui_pr.get("panelErrors", 0) == 0 and not ui_pr.get("noData")
+                and row.get("points_pr", 0) > 0
+                and not row.get("loki_missing") and row.get("points_loki", 0) > 0 and ui_loki.get("panelErrors", 0) == 0)
+
+
 def classify(row):
     """Base vs PR difference against Loki: 'improved', 'regressed', 'unsettled' (neither matches) or 'no-loki'."""
     if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
@@ -141,6 +152,10 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
             # differences an improvement against Loki at a shorter range.
             status = "improved"
             warns.append(f"no Loki data at this range; the same differences match Loki at a shorter range {detail}")
+        elif kind == "no-loki" and base_failed(row):
+            # Beyond Loki's data window the base failed where Loki and the PR both answered with data.
+            status = "improved"
+            warns.append(f"base failed where Loki and the PR answered; values beyond the Loki window not compared {detail}")
         elif kind == "regressed":
             fails.append(f"regressed vs Loki: the base matched Loki, the PR diverges {detail}")
         elif expected:
@@ -226,7 +241,7 @@ def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
 def fix_verdict(row):
     """Verdict of one fix-proof capture, from the same Loki comparison as classify()."""
     if not (row.get("loki_compared") and row.get("points_loki", 0) > 0):
-        return "undecided"
+        return "base failed" if base_failed(row) else "undecided"
     base_ok = row.get("loki_main_n", 1) == 0
     if not row.get("loki_diffs"):
         return "not reproduced on base" if base_ok else "fixed"
@@ -235,9 +250,10 @@ def fix_verdict(row):
     return "improved" if classify(row) == "improved" else "still differs"
 
 
-FIX_RANK = ["regressed", "still differs", "fixed", "improved"]  # worst problem, else best proof
+FIX_RANK = ["regressed", "still differs", "fixed", "improved", "base failed"]  # worst problem, else best proof
+FIX_PROVEN = ("fixed", "improved", "base failed")
 FIX_ICON = {"fixed": "✅", "not reproduced on base": "⚠️", "improved": "🟡", "still differs": "❌", "regressed": "❌",
-            "undecided": "⚪", "unproven": "⚠️"}
+            "undecided": "⚪", "unproven": "⚠️", "base failed": "✅"}
 CASE_ID = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 
 
@@ -263,17 +279,18 @@ def fix_proofs(items, plan):
 
 
 def fix_failures(proofs):
-    """A case with entries needs a capture that is fixed or improved; the base side alone proves nothing."""
+    """A case with entries needs a capture that is fixed, improved or base failed; the base side alone proves nothing."""
     return [f"fix proof {cid}: no capture shows the PR closer to Loki ({verdict or 'not captured'})"
             for cid, entries, caps, verdict, _ in proofs
-            if entries and not any(v in ("fixed", "improved") for _, v in caps)]
+            if entries and not any(v in FIX_PROVEN for _, v in caps)]
 
 
 def fix_section(a, meta, proofs, trimmed=()):
     lines = ["", "#### Fix proof", "",
              ("Captures of the exact cases this pull request adds or fixes (registry case, base | PR | Loki). "
               + "The verdict compares the PR with Loki where the base did not match. The gate fails a case unless one "
-              + "capture is fixed or improved (the label does not excuse it; only `visual: none` on the case does)."), ""]
+              + "capture is fixed or improved, or, beyond the Loki data window, the base failed where Loki and the PR "
+              + "both answered with data (the label does not excuse it; only `visual: none` on the case does)."), ""]
     if trimmed:
         lines += [f"Trimmed to the core range for the fix-capture budget (not dropped): {esc(', '.join(map(str, trimmed)))}.", ""]
     for cid, entries, caps, verdict, exempt in proofs:
