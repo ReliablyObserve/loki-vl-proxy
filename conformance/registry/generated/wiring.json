@@ -403,6 +403,10 @@
       "internal/proxy/label_values_cap_inventory_test.go",
       "internal/proxy/metadata_inventory_test.go"
     ],
+    "semantics/labels-end-inclusive-like-loki": [
+      "internal/proxy/labels_inclusive_end_test.go",
+      "test/e2e-compat/labels_zero_width_test.go"
+    ],
     "semantics/line-filter-or-alternatives": [
       "internal/logql/log_range_alternatives_test.go",
       "internal/translator/line_filter_or_test.go",
@@ -499,7 +503,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 287,
+  "registry_items": 288,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -614,6 +618,9 @@
     ],
     "internal/proxy/labels_cache_warm_test.go": [
       "quality/label-cache-warm"
+    ],
+    "internal/proxy/labels_inclusive_end_test.go": [
+      "semantics/labels-end-inclusive-like-loki"
     ],
     "internal/proxy/line_fields_without_parser_test.go": [
       "loki-compatible-profile",
@@ -885,6 +892,9 @@
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
+    "test/e2e-compat/labels_zero_width_test.go": [
+      "semantics/labels-end-inclusive-like-loki"
+    ],
     "test/e2e-compat/line_fields_parity_test.go": [
       "loki_api_v1_detected_fields",
       "loki_api_v1_index_stats",
@@ -976,7 +986,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 88,
+  "tests_with_markers": 90,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1078,5 +1088,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 100
+  "wired_items": 101
 }

@@ -114,7 +114,7 @@ func TestPerf_Labels_BackendFullRange(t *testing.T) {
 			if len(spans) == 0 {
 				t.Fatal("VL backend was not called")
 			}
-			if !spansTile(spans, perfBaseTimeNs-int64(tc.duration), perfBaseTimeNs) {
+			if !spansTile(spans, perfBaseTimeNs-int64(tc.duration), perfBaseTimeNs+int64(time.Millisecond)) { // [start, end] = [start, end+1ms)
 				t.Errorf("window=%s: VL listings %v do not tile the full window", tc.name, spans)
 			}
 		})

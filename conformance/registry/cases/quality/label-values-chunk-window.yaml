@@ -30,6 +30,7 @@ gap:
   loki: 'pkg/querier/querier.go Label (index lookups by chunk overlap)'
   proxy: 'streams with lines in the window'
   planned_test: 'TestCompat_LabelValuesWindowEdge (test/e2e-compat, group core)'
+  note: 'A row exactly at end (and a zero-width request) is listed like Loki: semantics/labels-end-inclusive-like-loki.'
   clusters:
     - 185c0010
     - 76d3a547

@@ -474,7 +474,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
-      "backend-admission-and-heavy-query-queueing"
+      "backend-admission-and-heavy-query-queueing",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -487,7 +488,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
-      "backend-admission-and-heavy-query-queueing"
+      "backend-admission-and-heavy-query-queueing",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -499,7 +501,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
-      "backend-admission-and-heavy-query-queueing"
+      "backend-admission-and-heavy-query-queueing",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -512,7 +515,8 @@
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-queue-429",
-      "backend-admission-and-heavy-query-queueing"
+      "backend-admission-and-heavy-query-queueing",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -574,7 +578,8 @@
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
-      "limits/metadata-scan-adaptive-limit"
+      "limits/metadata-scan-adaptive-limit",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -592,7 +597,8 @@
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
-      "limits/metadata-scan-adaptive-limit"
+      "limits/metadata-scan-adaptive-limit",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -609,7 +615,8 @@
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
-      "limits/metadata-scan-adaptive-limit"
+      "limits/metadata-scan-adaptive-limit",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     },
     {
@@ -627,7 +634,8 @@
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental",
       "limits/concurrent-full-retention-scans-exhaust-backend",
-      "limits/metadata-scan-adaptive-limit"
+      "limits/metadata-scan-adaptive-limit",
+      "semantics/labels-end-inclusive-like-loki"
      ]
     }
    ]
@@ -696,7 +704,8 @@
       "loki_api_v1_labels",
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
-      "data-probing-and-freshness"
+      "data-probing-and-freshness",
+      "semantics/labels-end-inclusive-like-loki"
      ],
      "pause": 3
     },
@@ -707,7 +716,8 @@
       "loki_api_v1_label_name_values",
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
-      "data-probing-and-freshness"
+      "data-probing-and-freshness",
+      "semantics/labels-end-inclusive-like-loki"
      ],
      "pause": 3
     },
@@ -718,7 +728,8 @@
       "loki_api_v1_labels",
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
-      "data-probing-and-freshness"
+      "data-probing-and-freshness",
+      "semantics/labels-end-inclusive-like-loki"
      ],
      "end_offset": 172800,
      "pause": 3
@@ -730,7 +741,8 @@
       "loki_api_v1_label_name_values",
       "semantics/metadata-answers-include-last-24h-like-loki",
       "semantics/label-inventory-exact-and-incremental",
-      "data-probing-and-freshness"
+      "data-probing-and-freshness",
+      "semantics/labels-end-inclusive-like-loki"
      ],
      "end_offset": 172800,
      "pause": 3

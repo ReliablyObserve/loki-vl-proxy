@@ -16,7 +16,7 @@ import * as path from "path";
 type Ds = { id: string; uid: string };
 type PageSpec = {
   id: string;
-  kind: "explore" | "label-browser" | "drilldown" | "tail";
+  kind: "explore" | "label-browser" | "log-context" | "drilldown" | "tail";
   query?: string;
   path?: string; // drilldown path below /explore, {service} {label} {field} expanded
   service?: boolean; // drilldown: filter by var-filters service_name
@@ -81,6 +81,20 @@ async function uiState(page: Page) {
       ...(details ? { details } : {}),
     };
   }).catch(() => ({ noData: 0, banners: ["page state unreadable"], panelErrors: 0 }));
+}
+
+// Grafana's "Show context" on the newest log row of an Explore logs page (Grafana 13: the row's "Log menu", then
+// "Show context"). The context dialog asks /labels for the row's instant (start == end, in milliseconds) and builds
+// its context query from the row's labels that answer lists; an empty answer gives the invalid query {}.
+async function openLogContext(page: Page) {
+  const row = page.locator('[data-testid="logRows"] tr, [data-testid="log-line"], [class*="log-line"]').first();
+  await row.hover({ timeout: 30_000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const menu = page.getByRole("button", { name: /log menu|log line menu/i }).first();
+  if (await menu.count()) await menu.click({ timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  await page.getByRole("menuitem", { name: /show context/i }).or(page.getByRole("button", { name: /show context/i }))
+    .first().click({ timeout: 10_000 }).catch(() => {});
 }
 
 // Settled = no backend request in flight for QUIET ms. A page that issues its requests in waves (Drilldown field
@@ -221,6 +235,10 @@ for (const p of spec.pages as PageSpec[]) {
           await page.getByRole("button", { name: /Label browser/i }).first().click({ timeout: 30_000 }).catch(() => {});
           await page.waitForTimeout(1500);
           await page.getByText("service_name", { exact: true }).first().click({ timeout: 10_000 }).catch(() => {});
+        }
+        if (p.kind === "log-context") {
+          await settle(page, pending);
+          await openLogContext(page);
         }
         const ok = await settle(page, pending);
         const unavailable = records.some((x) => x.status === 500 && /plugin\.(unavailable|connectionUnavailable)/.test(JSON.stringify(x.response)));

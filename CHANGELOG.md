@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grafana's "Show context" / "Open in split view" got an empty label list
+  and built the invalid query `{}` (issue #700).** Grafana asks `/labels` for
+  the selected row's instant (`start == end`, the row's time in milliseconds)
+  and keeps the row labels that answer lists. Loki v3.7.7 lists labels and
+  label values from its index at millisecond precision, including data at the
+  request's end: the querier turns the bounds into `model.Time` (milliseconds,
+  `pkg/querier/querier.go` Label) and a chunk matches when its `From <= end`
+  and its `Through >= start` (`tsdb/index` `ChunkMeta` `MinTime`/`MaxTime`).
+  The proxy passed the bounds to VictoriaLogs, whose time filter is
+  `[start, end)` in nanoseconds, so a zero-width request answered `[]`, and a
+  window ending exactly at a row also missed it. `/labels` and
+  `/label/{name}/values` (scoped listings, `service_name` and
+  `detected_level` values, their background refreshes) now ask VictoriaLogs
+  for `[start, end]` at millisecond precision: start floored to its
+  millisecond, end moved to the start of the next one. `/series`, log and
+  metric queries and `detected_field_values` keep their bounds, as Loki's do
+  (on the e2e stack Loki's `/series` at a row's instant and a `query_range`
+  ending at a row return nothing). Measured on an isolated stack with Loki
+  3.7.7: main answered `[]` on all six zero-width and end-at-row label and
+  label-value cases where Loki listed the row's labels; the fix matches Loki
+  on all of them, on VictoriaLogs v1.52.0 and v1.40.0. An end that falls
+  exactly on a label-inventory bucket boundary adds one listing of that
+  millisecond; Grafana's usual end (now) only extends the last uncached edge.
+  Registry: `semantics/labels-end-inclusive-like-loki` (fixed). Loki listing
+  more values than the window holds (its index granularity) stays open as
+  `quality/label-values-chunk-window`. The visual smoke gains a `log-context`
+  page kind (`explore-log-context`) that opens "Show context" on a log row.
+
 ## [2.6.1] - 2026-10-07
 
 ### Fixed

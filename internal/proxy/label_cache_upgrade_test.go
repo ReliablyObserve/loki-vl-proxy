@@ -240,7 +240,11 @@ func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			for _, call := range calls {
-				if !strings.HasSuffix(call, fmt.Sprintf("?start=%d", start)) {
+				// The full range, or the inventory's edge for the inclusive end
+				// millisecond [end, end+1ms) (Loki lists data at end).
+				fullRange := strings.HasSuffix(call, fmt.Sprintf("?start=%d", start))
+				endEdge := strings.HasPrefix(call, "/select/logsql/field_values?") && strings.HasSuffix(call, fmt.Sprintf("?start=%d", end))
+				if !fullRange && !endEdge {
 					t.Fatalf("backend call %s did not cover the full range (start=%d); calls %v", call, start, calls)
 				}
 			}
