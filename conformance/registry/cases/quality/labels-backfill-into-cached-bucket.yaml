@@ -1,0 +1,49 @@
+id: quality/labels-backfill-into-cached-bucket
+title: Rows backfilled into a past bucket the label inventory already cached with data appear in /labels only after its revalidation delay (open)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_labels
+consumer: explore
+why: |
+  Loki's /labels reads its index (ingesters and store), so a stream pushed
+  with an old timestamp is listed as soon as it is ingested. The proxy's label
+  inventory (semantics/label-inventory-exact-and-incremental) caches each
+  sealed UTC bucket and revalidates a bucket that holds data only after a
+  delay that grows with its age, so labels of rows backfilled into such a
+  bucket are missing until then. An empty bucket is revalidated after the
+  negative TTL, so backfill into an empty past window is not affected.
+
+  Seen in CI (e2e-compat core): TestCompat_LabelsIncludeStreamWrittenAfterCaching
+  lists labels over 6h/24h/7d, caching hours that held another test's stream
+  ({app, level}); TestCompat_LabelsFullRangeFixture then backfilled its
+  fixture into those hours and the proxy's unscoped /labels answered
+  [app level service_name] while Loki listed the fixture's env and unique
+  label.
+
+  Layer: caching / freshness. A fix needs a cheap change signal for a cached
+  bucket that already holds data (the hour/day row count is read only on
+  revalidation), without rescanning every bucket on every request.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: 'now-8h'
+    end: 'now-6h'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    The labels of a stream backfilled into the window, on the next request
+    after ingestion, as Loki lists them.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/metadata_inventory.go (bucket revalidation delay)'
+  loki: 'pkg/querier/querier.go Label (index read per request)'
+  proxy: 'sealed bucket with data revalidated after an age-dependent delay'
+  planned_test: 'TestCompat_LabelsBackfillIntoCachedBucket (test/e2e-compat, group core)'
+  note: 'Related: semantics/label-inventory-exact-and-incremental, quality/label-cache-aged-labels-kept.'
+  clusters: []

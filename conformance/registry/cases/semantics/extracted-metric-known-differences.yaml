@@ -1,0 +1,53 @@
+id: semantics/extracted-metric-known-differences
+title: Two name_extracted differences against Loki remain in the metric pushdown and the raw evaluator (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Both are visible only on data Loki would rarely see, and both are shared by
+  the raw evaluator, so the differential test
+  (TestOrderedJSONExtractedMetricDifferential, whose reference is that
+  evaluator) cannot show them; they are declared here.
+
+  1. A body holding both `level` and `level_extracted` on a stream that has a
+     `level` label. Loki's parser extracts keys in line order and skips a key
+     already extracted: the first of the two wins and the second is dropped, so
+     `level_extracted` is the first key's value. The proxy takes the parsed
+     `level`. The stats pushdown sends such lines to the raw evaluator through
+     the both-keys probe (extractedBothKeysRisk), so the pushdown agrees with
+     the raw path, not with Loki.
+  2. A stream label and structured metadata with the same name. Loki renames
+     the metadata to `level_extracted`; VictoriaLogs stores one field `level`,
+     so the proxy shows `level_extracted` absent. Metadata under a different
+     spelling (`service_version` stored as `service.version`) is handled; a
+     field stored under the label's own spelling outside `_stream` is not
+     taken as metadata, because VictoriaLogs' JSON route stores body keys the
+     same way (a body key `message` must not become `message_extracted`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A line `{"level_extracted":"a","level":"b"}` on a stream with a level label.
+compare:
+  mode: exact
+  fields: [series_labels]
+  expect: |
+    Loki: level_extracted="a" (first key). Proxy: "b".
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy raw evaluator parsed-label naming (processWithStreamLabels) and translator.ExtractedLabelPipes'
+  loki: 'pkg/logql/log/parser.go duplicateSuffix and ParserHint.Extracted (a key an earlier extraction produced is skipped)'
+  proxy: 'the parsed key name wins; same-spelling stored fields are not metadata'
+  planned_test: 'TestCompat_ExtractedBothKeysInLineOrder (test/e2e-compat, group core)'
+  note: 'Related: profiles/parsed-key-colliding-with-structured-metadata, semantics/extracted-suffix-collision.'
+  clusters: []

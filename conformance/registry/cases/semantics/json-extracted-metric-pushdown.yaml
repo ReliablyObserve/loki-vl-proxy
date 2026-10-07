@@ -1,0 +1,68 @@
+id: semantics/json-extracted-metric-pushdown
+title: A metric filtered or grouped on a name_extracted label after `| json` is answered from VictoriaLogs stats (fixed)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki renames a parsed key that shares its name with a stream label to
+  `name_extracted` (pkg/logql/log/parser.go duplicateSuffix), so
+  `sum by (level) (count_over_time({env="production"} | json |
+  level_extracted!="" [1m]))` counts the lines whose body holds a `level`
+  while the stream has a `level` label, plus the lines holding the literal
+  key `level_extracted`. The metric pushdown (setStatsPushdown) refused every
+  label ending in `_extracted`, because `unpack_json ... keep_original_fields`
+  keeps the stored value and loses the parsed one, so the shape fell to the
+  raw-row evaluator: 1 h answered, 6 h answered 502 `manual range metric row
+  limit exceeded (1000000)` on 1.7 M generator rows (Loki 200 in 1.6 s), and
+  the raw path read every matching row into the proxy.
+
+  Fixed: the pushdown reads both keys (name and name_extracted) in its plain
+  unpack and computes the label with the same scratch fields the log-query
+  translation uses (translator.ExtractedLabelPipes: a second
+  `unpack_json from _msg fields (name) result_prefix "__lxp0_"`, a copy of
+  `_stream`, and `format if (<stream has name, or stores it under its metadata
+  spelling> <parsed name present>) "<__lxp_name>" as name_extracted`), so the
+  value is the parsed `name` where the stream carries the label and the key
+  `name_extracted` otherwise. The
+  parse-risk probes read both keys with the stored value of `name` ignored
+  (it does not decide name_extracted), so a line the two parsers read
+  differently still keeps the exact raw evaluator.
+
+  Layer: VictoriaLogs native stats (`unpack_json`, `copy`, `format if`,
+  `filter`, `stats by`), no raw rows. `| logfmt` volumes with a detected_level grouping use the same pipes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))'
+    start: now-6h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    `level` is a stream label and a key of the JSON body.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values, answered from
+    `stats_query_range` after the parse-risk probes and no raw-row fetch.
+gap:
+  status: fixed
+  fixed_by: "#690"
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy ordered_json_metric.go stats pushdown (name_extracted labels) and translator.ExtractedLabelPipes'
+  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; pkg/logql/log/labels.go ParserHint/Extracted'
+  proxy: 'orderedJSONPushdownLabelOK refused name_extracted; raw-row evaluator answered (502 at the row limit)'
+  planned_test: 'TestCompat_ExtractedLabelMetricPushdown (test/e2e-compat, group core); proxy TestOrderedJSONExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricProbeKeepsRawEvaluator, TestLogfmtExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricDifferential, TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset; translator TestExtractedLabelPipes'
+  note: |
+    Gated off below VictoriaLogs v1.45 (versions/stats-bucket-label-v1.45), where the raw-row evaluator
+    answers as before. Open items: an ungrouped range metric stays on raw rows
+    (semantics/extracted-ungrouped-metric-raw-rows); service_name_extracted and detected_level_extracted
+    stay on the raw evaluator (semantics/extracted-derived-labels-raw-evaluator); two differences against
+    Loki (semantics/extracted-metric-known-differences). Related, unchanged: semantics/unwrap-range-last-point
+    (an unwrap window is one step late), profiles/parsed-key-colliding-with-structured-metadata.
+  clusters: []

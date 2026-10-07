@@ -1290,6 +1290,66 @@
      "instant": true
     }
    ]
+  },
+  "extracted-pushdown": {
+   "description": "Metrics filtered or grouped on a name_extracted label after a parser: answered from VictoriaLogs stats buckets instead of the raw-row evaluator, so they no longer fail at the row limit on long ranges. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "X1 json filter level_extracted, by level",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | json | level_extracted!=\"\" [1m]))",
+     "covers": [
+      "semantics/json-extracted-metric-pushdown",
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "X2 json group by level_extracted",
+     "query": "sum by (level_extracted) (count_over_time({env=\"production\"} | json | drop __error__ [1m]))",
+     "covers": [
+      "semantics/json-extracted-metric-pushdown",
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "X3 json rate, level_extracted equality",
+     "query": "sum(rate({env=\"production\"} | json | level_extracted=\"error\" [1m]))",
+     "covers": [
+      "semantics/json-extracted-metric-pushdown",
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "X4 json bytes, level_extracted regexp",
+     "query": "sum by (level) (bytes_over_time({env=\"production\"} | json | level_extracted=~\"err.*|warn\" [5m]))",
+     "covers": [
+      "semantics/json-extracted-metric-pushdown",
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "X5 logfmt filter level_extracted, by level",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt | level_extracted!=\"\" [1m]))",
+     "covers": [
+      "semantics/json-extracted-metric-pushdown",
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

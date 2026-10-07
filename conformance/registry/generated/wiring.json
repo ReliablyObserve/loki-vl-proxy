@@ -245,7 +245,10 @@
     ],
     "parser-error-and-label-collision": [
       "internal/proxy/ordered_json_drilldown_test.go",
+      "internal/proxy/ordered_json_extracted_differential_test.go",
+      "internal/proxy/ordered_json_extracted_pushdown_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
+      "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go"
     ],
@@ -302,6 +305,9 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
+    "profiles/parsed-key-colliding-with-structured-metadata": [
+      "internal/proxy/ordered_json_extracted_pushdown_test.go"
+    ],
     "profiles/sanitized-json-key-filter": [
       "internal/proxy/sanitized_json_key_filter_test.go",
       "internal/translator/parsed_key_variants_test.go",
@@ -346,10 +352,19 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/extracted-metric-known-differences": [
+      "internal/proxy/ordered_json_extracted_differential_test.go"
+    ],
     "semantics/extracted-suffix-collision": [
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/translator/extracted_suffix_test.go",
+      "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go"
+    ],
+    "semantics/json-extracted-metric-pushdown": [
+      "internal/proxy/ordered_json_extracted_differential_test.go",
+      "internal/proxy/ordered_json_extracted_pushdown_test.go",
+      "test/e2e-compat/extracted_metric_pushdown_test.go"
     ],
     "semantics/json-filter-pushdown-translated-label": [
       "internal/proxy/ordered_json_conditional_unpack_test.go",
@@ -475,13 +490,16 @@
       "internal/proxy/tenant_query_limits_test.go",
       "test/e2e-compat/tenant_limits_published_test.go"
     ],
+    "versions/stats-bucket-label-v1.45": [
+      "internal/proxy/ordered_json_extracted_pushdown_test.go"
+    ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ]
   },
-  "registry_items": 281,
+  "registry_items": 287,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -664,6 +682,17 @@
       "parser-error-and-label-collision",
       "semantics/json-filter-pushdown-translated-label"
     ],
+    "internal/proxy/ordered_json_extracted_differential_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/extracted-metric-known-differences",
+      "semantics/json-extracted-metric-pushdown"
+    ],
+    "internal/proxy/ordered_json_extracted_pushdown_test.go": [
+      "parser-error-and-label-collision",
+      "profiles/parsed-key-colliding-with-structured-metadata",
+      "semantics/json-extracted-metric-pushdown",
+      "versions/stats-bucket-label-v1.45"
+    ],
     "internal/proxy/ordered_json_filter_pushdown_test.go": [
       "parser-error-and-label-collision",
       "semantics/json-filter-pushdown-translated-label",
@@ -823,6 +852,11 @@
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
     ],
+    "test/e2e-compat/extracted_metric_pushdown_test.go": [
+      "parser-error-and-label-collision",
+      "semantics/extracted-suffix-collision",
+      "semantics/json-extracted-metric-pushdown"
+    ],
     "test/e2e-compat/extracted_suffix_collision_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -942,7 +976,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 85,
+  "tests_with_markers": 88,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -996,7 +1030,6 @@
     "profiles/label-filter-regexp-anchoring",
     "profiles/metadata-default-lookback",
     "profiles/multi-tenant-volume-merge",
-    "profiles/parsed-key-colliding-with-structured-metadata",
     "profiles/volume-bytes-accounting",
     "profiles/volume-detected-level-extension",
     "prometheus_api_v1_alerts",
@@ -1007,6 +1040,7 @@
     "quality/index-stats-streams-differ",
     "quality/label-cache-aged-labels-kept",
     "quality/label-values-chunk-window",
+    "quality/labels-backfill-into-cached-bucket",
     "quality/stats-volume-freshness",
     "semantics/absent-over-time-semantics",
     "semantics/binary-ignoring-matching",
@@ -1014,6 +1048,8 @@
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
+    "semantics/extracted-derived-labels-raw-evaluator",
+    "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
     "semantics/instant-result-type-missing",
     "semantics/ip-filter-precision",
@@ -1042,5 +1078,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 96
+  "wired_items": 100
 }

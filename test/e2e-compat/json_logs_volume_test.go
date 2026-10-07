@@ -53,6 +53,14 @@ func (rec *vlQueryRecorder) reset() []string {
 // patterns-autodetect label flags whose backend requests are recorded.
 func newJSONVolumeRouteProxy(t *testing.T) (string, *vlQueryRecorder) {
 	t.Helper()
+	return newJSONVolumeRouteProxyWithRowLimit(t, 0)
+}
+
+// newJSONVolumeRouteProxyWithRowLimit is newJSONVolumeRouteProxy with
+// -manual-range-metric-row-limit set (0: the default), so a query that falls
+// back to the raw-row evaluator over more rows fails with the limit error.
+func newJSONVolumeRouteProxyWithRowLimit(t *testing.T, rowLimit int) (string, *vlQueryRecorder) {
+	t.Helper()
 	target, err := url.Parse(vlURL)
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +85,7 @@ func newJSONVolumeRouteProxy(t *testing.T) (string, *vlQueryRecorder) {
 	p, err := proxy.New(proxy.Config{
 		BackendURL: backend.URL, Cache: cache.NewDisabled(), LogLevel: "error",
 		LabelStyle: proxy.LabelStyleUnderscores, MetadataFieldMode: proxy.MetadataFieldModeHybrid, EmitStructuredMetadata: true,
+		RangeMetricRowLimit: rowLimit,
 	})
 	if err != nil {
 		t.Fatal(err)

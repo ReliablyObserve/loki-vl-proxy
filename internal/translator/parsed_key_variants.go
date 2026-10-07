@@ -474,6 +474,56 @@ func containsStr(list []string, s string) bool {
 	return false
 }
 
+// ExtractedLabelPipes returns the pipes that give each name_extracted label of
+// labels its Loki value in a stats pipeline over a single json or logfmt parser
+// (unpack is "unpack_json" or "unpack_logfmt"). after runs behind the parser's
+// plain unpack and sets name_extracted to the parsed value of the key name where
+// the entry has a stream label name, leaving the unpacked key name_extracted
+// otherwise, then deletes the scratch fields. A structured metadata name that
+// VictoriaLogs stores under another spelling (stored: name to field) is a
+// collision too, so before remembers, ahead of the parser, whether the entry
+// stores it. A VictoriaLogs stats pipeline groups or filters on the result like
+// on any field. Labels that are not name_extracted with a plain identifier name
+// are skipped.
+func ExtractedLabelPipes(unpack string, labels []string, stored map[string]string) (before, after string) {
+	var bases, names []string
+	for _, label := range labels {
+		if base, ok := strings.CutSuffix(label, extractedSuffix); ok && isBareIdentifier(base) {
+			bases = append(bases, base)
+			names = append(names, label)
+		}
+	}
+	if len(bases) == 0 {
+		return "", ""
+	}
+	var pre strings.Builder
+	for _, base := range bases {
+		if vl, ok := stored[base]; ok {
+			pre.WriteString(" | format if (" + logsqlFieldName(vl) + ":*) \"<" + vl + ">\" as " + extractedStored + "_" + base)
+		}
+	}
+	parsers := []extractedParser{{unpack: unpack}}
+	streamCopied := false
+	var b strings.Builder
+	b.WriteString(strings.Join(extractedUnpackPipes(parsers, bases), ""))
+	b.WriteString(extractedCoalescePipes(parsers, bases, &streamCopied))
+	for i, name := range names {
+		// Every stream has service_name in Loki; any other name collides when
+		// it is a stream label (including a dotted spelling) or stored metadata.
+		collides := extractedCollides(bases[i])
+		if _, ok := stored[bases[i]]; ok && bases[i] != "service_name" {
+			collides = "(" + extractedScratch + "_stream:~" + strconv.Quote(`[{,]`+strings.ReplaceAll(bases[i], "_", "[._]")+`="`) + " or " + extractedStored + "_" + bases[i] + ":*) " + extractedScratch + "_" + bases[i] + ":*"
+		}
+		b.WriteString(" | format if (" + collides + ") \"<" + extractedScratch + "_" + bases[i] + ">\" as " + name)
+	}
+	b.WriteString(" | delete " + extractedScratch + "*, " + extractedStored + "*")
+	return pre.String(), b.String()
+}
+
+// extractedStored prefixes the scratch fields ExtractedLabelPipes remembers a
+// stored name in.
+const extractedStored = "__lxs"
+
 // extractedStageMark brackets, in the translation of a label filter stage, the
 // name_extracted bases it reads (comma-joined); withExtractedScratch turns it
 // into the pipes that compute them.

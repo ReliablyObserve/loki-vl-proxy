@@ -1,0 +1,45 @@
+id: semantics/extracted-ungrouped-metric-raw-rows
+title: An ungrouped range metric over a `| json` pipeline filtered on name_extracted still reads raw rows and fails at the row limit (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `count_over_time({env="production"} | json | level_extracted!="" [1m])`
+  without an outer `sum` keeps one series per label set, parsed keys
+  included (parsed identity, parsed-identity/dynamic-key-parsers), so the
+  bare-parser evaluator reads every matching row into the proxy and answers
+  502 `manual range metric row limit exceeded (1000000)` over 6 h of the
+  generator data (about 1.7 M rows) on main and on the branch that moved the
+  grouped shapes to stats (semantics/json-extracted-metric-pushdown). Loki
+  answers with a series per stream and parsed label set. `sum without (...)`
+  has the same raw path, since the stats pushdown never covered `without`.
+
+  Layer: limits / performance. A fix needs VictoriaLogs stats grouped by every
+  parsed key the series identity names, with a bounded series count, not raw
+  rows.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({env="production"} | json | level_extracted!="" [1m])'
+    start: 'now-6h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series; today 502 at the row limit.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/proxy bare-parser metric evaluator (fetchBareParserMetricSeries) and the ordered JSON pushdown (without grouping)'
+  loki: 'pkg/logql range aggregation keeps every label of the sample'
+  proxy: 'raw-row evaluation bounded by -manual-range-metric-row-limit'
+  planned_test: 'TestCompat_ExtractedUngroupedMetricAtSixHours (test/e2e-compat, group core)'
+  note: 'Related: parsed-identity/dynamic-key-parsers, limits table entry for -manual-range-metric-row-limit.'
+  clusters: []

@@ -436,9 +436,42 @@ var orderedJSONPushdownLabelRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // a probe. Loki's own labels, the _extracted collision suffix and the labels
 // the proxy derives on the read path are never read from a parsed key.
 func orderedJSONPushdownLabelOK(label string) bool {
+	if base, ok := orderedJSONExtractedBase(label); ok {
+		// name_extracted is the parsed value of the key name where the stream
+		// has the label name, the key name_extracted otherwise; both keys are
+		// read (orderedJSONExtractedKeys).
+		return !strings.HasSuffix(base, "_extracted") && orderedJSONPushdownLabelOK(base) && orderedJSONPushdownLabelRE.MatchString(label) &&
+			strings.Count(label, "_") <= maxOrderedJSONAliasUnderscores
+	}
 	return orderedJSONPushdownLabelRE.MatchString(label) && !strings.HasPrefix(label, "__") &&
 		!strings.HasSuffix(label, "_extracted") && label != "service_name" && label != "detected_level" &&
 		strings.Count(label, "_") <= maxOrderedJSONAliasUnderscores
+}
+
+// orderedJSONExtractedBase returns the label name when label is name_extracted,
+// Loki's rename of a parsed key that shares its name with a stream label.
+func orderedJSONExtractedBase(label string) (string, bool) {
+	base, ok := strings.CutSuffix(label, "_extracted")
+	return base, ok && base != ""
+}
+
+// orderedJSONExtractedKeys splits the labels the pushdown reads into the keys
+// a plain unpack extracts (every name_extracted label contributes the key name
+// and the key name_extracted) and the name_extracted labels themselves, which
+// translator.ExtractedLabelPipes computes from a scratch unpack.
+func orderedJSONExtractedKeys(labels []string) (keys, extracted []string) {
+	for _, label := range labels {
+		if base, ok := orderedJSONExtractedBase(label); ok {
+			extracted = append(extracted, label)
+			if !containsString(keys, base) {
+				keys = append(keys, base)
+			}
+		}
+		if !containsString(keys, label) {
+			keys = append(keys, label)
+		}
+	}
+	return keys, extracted
 }
 
 // maxOrderedJSONAliasUnderscores bounds the nested-key splits the spelling
@@ -700,7 +733,7 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 		for _, label := range plan.grouping.Labels {
 			if label == "detected_level" {
 				label = "level"
-			} else if !orderedJSONPushdownLabelOK(label) {
+			} else if !orderedJSONPushdownLabelOK(label) || plan.parser == "" && strings.HasSuffix(label, "_extracted") {
 				return
 			}
 			if !containsString(fields, label) {
@@ -741,7 +774,7 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 		case stage.line != nil:
 			continue
 		case stage.filter != nil:
-			if !parsed || !orderedJSONPushdownLabelOK(stage.filter.Field) {
+			if !parsed || !orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted") {
 				return nil, nil, false
 			}
 			filters = append(filters, *stage.filter)
@@ -823,11 +856,23 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 			unpack = append(unpack, filter.Field)
 		}
 	}
+	// A name_extracted label is computed after the plain unpack from a scratch
+	// unpack of the key name (translator.ExtractedLabelPipes); the plain unpack
+	// and the parse-risk probes read both keys, the probes with the stored
+	// value of name ignored because the scratch unpack reads the body anyway.
+	plain, allKeys, extracted, extractedKeys := splitPushdownKeys(unpack)
+	// The name_extracted pushdown needs the bucket edges of the stats range
+	// offset arg (VictoriaLogs v1.45+): without it a line on a bucket edge
+	// lands one bucket late, so older backends keep the raw evaluator these
+	// shapes always had (versions/stats-bucket-label-v1.45).
+	if len(extracted) > 0 && !p.supportsStatsRangeOffset() {
+		return nil, false, false, nil
+	}
 	// A stream label or structured metadata VictoriaLogs stores under another
 	// spelling (service_version as service.version) is read from that field:
 	// Loki gives such a label precedence over a parsed key of the same name.
 	stored := make(map[string]string)
-	for _, field := range unpack {
+	for _, field := range allKeys {
 		if vl := p.labelTranslator.ToVL(field); vl != field {
 			stored[field] = vl
 		}
@@ -851,7 +896,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	riskDone := make(chan riskResult, 1)
 	go func() {
-		risky, err := p.cachedStatsPushdownRisk(riskCtx, plan.parser, base, unpack, stored, plan.pushdownErrorFilters, windowStart, end)
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, windowStart, end)
 		riskDone <- riskResult{risky, err}
 	}()
 	statsCtx, cancelStats := context.WithCancel(ctx)
@@ -864,7 +909,14 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	if plan.function == "bytes_rate" || plan.function == "bytes_over_time" {
 		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
 	}
-	query := base + orderedJSONUnpackPipes(plan.parser, unpack, stored, plan.requiredFields(base))
+	var required []string
+	for _, field := range plan.requiredFields(base) {
+		if _, ok := orderedJSONExtractedBase(field); !ok {
+			required = append(required, field)
+		}
+	}
+	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
+	query := base + remember + orderedJSONUnpackPipes(plan.parser, allKeys, stored, required) + compute
 	for _, filter := range plan.pushdownFilters {
 		query += logsQLLabelFilter(filter)
 	}
@@ -923,6 +975,68 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
 	return body, err == nil, false, err
+}
+
+// splitPushdownKeys splits the labels a pushdown reads: the plain ones, every
+// key the plain unpack extracts (a name_extracted label adds name and
+// name_extracted), the name_extracted labels, and the keys behind them.
+func splitPushdownKeys(unpack []string) (plain, allKeys, extracted, extractedKeys []string) {
+	plain = make([]string, 0, len(unpack))
+	for _, field := range unpack {
+		if _, ok := orderedJSONExtractedBase(field); !ok {
+			plain = append(plain, field)
+		}
+	}
+	allKeys, extracted = orderedJSONExtractedKeys(unpack)
+	if len(extracted) > 0 {
+		extractedKeys, _ = orderedJSONExtractedKeys(extracted)
+	}
+	return plain, allKeys, extracted, extractedKeys
+}
+
+// pushdownParseRisk runs the parse-risk probes of a pushdown plan: for the
+// plain labels with their stored values (and the filters that exclude unparsed
+// lines), and for the name_extracted labels over both keys with the stored
+// value of name deleted, because the scratch unpack reads the body whatever
+// the stream holds.
+func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, start, end time.Time) (bool, error) {
+	type result struct {
+		risky bool
+		err   error
+	}
+	var errorFilters []string
+	for _, field := range plan.pushdownErrorFilters {
+		if _, ok := orderedJSONExtractedBase(field); !ok {
+			errorFilters = append(errorFilters, field)
+		}
+	}
+	var extractedRisk chan result
+	if len(extracted) > 0 {
+		names := []string{}
+		for _, key := range extractedKeys {
+			if _, ok := orderedJSONExtractedBase(key); !ok {
+				names = append(names, quoteLogsQLIdent(key))
+				if vl, ok := stored[key]; ok {
+					names = append(names, quoteLogsQLIdent(vl))
+				}
+			}
+		}
+		extractedRisk = make(chan result, 1)
+		go func() {
+			risky, err := p.cachedStatsPushdownRisk(ctx, plan.parser, base+" | delete "+strings.Join(names, ", "), extractedKeys, nil, nil, start, end)
+			extractedRisk <- result{risky, err}
+		}()
+	}
+	var out result
+	if len(plain) > 0 {
+		out.risky, out.err = p.cachedStatsPushdownRisk(ctx, plan.parser, base, plain, stored, errorFilters, start, end)
+	}
+	if extractedRisk != nil {
+		if second := <-extractedRisk; out.err == nil && !out.risky {
+			out = second
+		}
+	}
+	return out.risky, out.err
 }
 
 // serveLevelVolumeStatsBuckets answers a plain or `| logfmt` logs volume plan
@@ -1191,6 +1305,30 @@ func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fie
 	return p.statsPushdownRiskExists(ctx, query+" | limit 1", start, end)
 }
 
+// extractedBothKeysRisk reports whether a selected line holds both the key name
+// and the key name_extracted for a label pair in fields. Loki keeps the first
+// of them in line order (the later one is skipped as already extracted) where
+// the scratch unpack reads name whatever the order, so one such line keeps the
+// exact raw evaluator.
+func (p *Proxy) extractedBothKeysRisk(ctx context.Context, parser, base string, fields []string, start, end time.Time) (bool, error) {
+	var pairs []string
+	for _, field := range fields {
+		if name, ok := orderedJSONExtractedBase(field); ok && containsString(fields, name) {
+			a, b := regexp.QuoteMeta(name), regexp.QuoteMeta(field)
+			if parser == "json" {
+				pairs = append(pairs, jsonKeyPattern(a)+`(?s:.*)`+jsonKeyPattern(b), jsonKeyPattern(b)+`(?s:.*)`+jsonKeyPattern(a))
+			} else {
+				pairs = append(pairs, `(?:^|\s)`+a+`=(?s:.*)\s`+b+`=`, `(?:^|\s)`+b+`=(?s:.*)\s`+a+`=`)
+			}
+		}
+	}
+	if len(pairs) == 0 {
+		return false, nil
+	}
+	query := base + " | filter _msg:~" + strconv.Quote(strings.Join(pairs, "|")) + " | limit 1"
+	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
 // statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered.
 // Coverage never extends past statsPushdownRiskSettle before now, so lines that
 // arrive late for recent timestamps are still checked on the next request.
@@ -1217,6 +1355,11 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 				}
 				return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
 			},
+		}
+		if parser != "" {
+			probes = append(probes, func(ctx context.Context) (bool, error) {
+				return p.extractedBothKeysRisk(ctx, parser, base, fields, from, to)
+			})
 		}
 		switch parser {
 		case "json":
