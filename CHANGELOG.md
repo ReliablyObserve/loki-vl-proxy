@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A flaky unit test could stop a release without naming the test.** The
+  release's "Collect validation metrics" step ran the whole suite twice (once
+  for the test count, once for coverage) with all output discarded, so a single
+  intermittent failure failed validation with no clue which test it was (seen
+  on the release run for #680). It now runs the suite once with `-json` and
+  coverage, and on failure prints the failing tests and their assertion lines.
+
 ## [2.3.2] - 2026-10-07
 
 ### Fixed
