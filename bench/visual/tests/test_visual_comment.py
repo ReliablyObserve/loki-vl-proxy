@@ -127,6 +127,21 @@ class GateTest(unittest.TestCase):
         _, v = self.verdict([d])
         self.assertEqual(v["exit"], 1)
 
+    def test_no_data_that_loki_shows_too_is_not_a_new_empty_panel(self):
+        # The base showed a parse error with data around it; the PR and Loki both answer "No data".
+        ui = {"noData": 1, "banners": [], "panelErrors": 0}
+        d = row(main_pr_diffs=["q: base 400"], loki_main_n=1, loki_diffs=[], points_loki=5, points_pr=5,
+                ui_pr=ui, ui_loki=ui)
+        text, v = self.verdict([d])
+        self.assertEqual(v["exit"], 0)
+        self.assertNotIn("new empty panel", text)
+        # Loki has data where the PR is empty: still a new empty panel
+        d = row(main_pr_diffs=["q: changed"], loki_main_n=1, loki_diffs=[], points_loki=5, points_pr=5,
+                ui_pr=ui, ui_loki={"noData": 0, "banners": [], "panelErrors": 0})
+        text, v = self.verdict([d])
+        self.assertEqual(v["exit"], 1)
+        self.assertIn("new empty panel", text)
+
     def test_pr_diverging_from_loki_where_base_matched_fails_even_when_labelled(self):
         d = row(main_pr_diffs=["q: pr wrong"], loki_main_n=0, loki_diffs=["q: differs"], loki_new=["q: differs"], points_loki=5)
         a = argparse.Namespace(**{**vars(ARGS), "expected_change": True})

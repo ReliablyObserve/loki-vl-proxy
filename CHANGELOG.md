@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The visual-smoke gate no longer reads a "No data" panel that Loki shows
+  too as a new empty panel.** A PR that fixes a query main answered wrongly
+  (for example an unwrap over a missing label, where main showed a parse error)
+  now answers "No data" like Loki, and the gate failed it as an empty panel
+  the base did not have. The comparison records Loki's page state and an empty
+  panel counts only when Loki has data there.
+
 ## [2.3.0] - 2026-10-06
 
 ### Fixed
