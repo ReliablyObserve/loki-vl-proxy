@@ -172,7 +172,7 @@ func TestParsedKeyGroupingAndUnwrapReadOriginalKeys(t *testing.T) {
 		{
 			name:  "unwrap of a sanitized key",
 			query: `sum(sum_over_time({app="a"} | json | unwrap http_code [1m]))`,
-			want:  []string{`format if ("http.code":*) "<http.code>" as http_code`, `| filter http_code:*`, `sum(http_code)`},
+			want:  []string{`format if ("http.code":*) "<http.code>" as http_code`, `| filter http_code:*`, UnwrapGate("http_code"), `sum(__lvp_v)`},
 		},
 		{
 			name:  "logfmt keys resolve too",
@@ -187,7 +187,7 @@ func TestParsedKeyGroupingAndUnwrapReadOriginalKeys(t *testing.T) {
 		{
 			name:  "json expression feeding unwrap",
 			query: `sum(sum_over_time({app="a"} | json c="[\"probe.code\"]" | unwrap c [1m]))`,
-			want:  []string{`| copy "probe.code" as c | filter c:*`, `sum(c)`},
+			want:  []string{`| copy "probe.code" as c | filter c:*`, UnwrapGate("c"), `sum(__lvp_v)`},
 		},
 		{
 			name:    "a name without an underscore is one key",
@@ -202,7 +202,7 @@ func TestParsedKeyGroupingAndUnwrapReadOriginalKeys(t *testing.T) {
 		{
 			name:  "a binary expression resolves each operand on its own",
 			query: `sum(sum_over_time({app="a"} | json | unwrap resp_time [1m])) / sum(count_over_time({app="a"} | json [1m]))`,
-			want:  []string{`| filter resp_time:* | stats by (_stream, _msg) sum(resp_time) as __lvp_inner | stats sum(__lvp_inner)|||app:="a" | unpack_json | stats count()`},
+			want:  []string{`| filter resp_time:*` + UnwrapGate("resp_time") + ` | stats by (_stream, _msg) sum(__lvp_v) as __lvp_inner | stats sum(__lvp_inner)|||app:="a" | unpack_json | stats count()`},
 		},
 		{
 			name:    "a label a later stage defines is left to that stage",

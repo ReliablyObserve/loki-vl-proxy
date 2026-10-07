@@ -322,12 +322,12 @@ func TestMetricQueryTranslation(t *testing.T) {
 		{
 			name:  "quantile_over_time",
 			logql: `quantile_over_time(0.95, {app="nginx"} | unwrap duration [5m])`,
-			want:  `app:="nginx" | stats quantile(0.95, duration)`,
+			want:  `app:="nginx"` + UnwrapGate("duration") + ` | stats quantile(0.95, __lvp_v)`,
 		},
 		{
 			name:  "quantile_over_time with by",
 			logql: `sum(quantile_over_time(0.99, {app="nginx"} | unwrap latency [5m])) by (host)`,
-			want:  `app:="nginx" | stats by (host) quantile(0.99, latency)`,
+			want:  `app:="nginx"` + UnwrapGate("latency") + ` | stats by (host) quantile(0.99, __lvp_v)`,
 		},
 		{
 			name:  "absent_over_time",
@@ -337,12 +337,12 @@ func TestMetricQueryTranslation(t *testing.T) {
 		{
 			name:  "avg_over_time with unwrap",
 			logql: `avg_over_time({app="nginx"} | unwrap response_time [5m])`,
-			want:  `app:="nginx" | stats avg(response_time)`,
+			want:  `app:="nginx"` + UnwrapGate("response_time") + ` | stats avg(__lvp_v)`,
 		},
 		{
 			name:  "rate_counter with unwrap",
 			logql: `rate_counter({app="nginx"} | unwrap requests_total [5m])`,
-			want:  `app:="nginx" | stats __rate_counter__(requests_total)`,
+			want:  `app:="nginx"` + UnwrapGate("requests_total") + ` | stats __rate_counter__(__lvp_v)`,
 		},
 	}
 
@@ -692,12 +692,12 @@ func TestRangeByClauseTranslation(t *testing.T) {
 			// into ONE series. Translator must emit "by ()" so the proxy can detect it
 			// and return a single empty-label series instead of N per-stream series.
 			query:   `avg_over_time({env="production"} | json confidence="[\"confidence\"]" | drop __error__, __error_details__ | confidence!="" | unwrap confidence | __error__="" [5s]) by ()`,
-			wantHas: "stats by () avg(confidence)",
+			wantHas: "stats by () avg(__lvp_v)",
 			wantNot: "_msg",
 		},
 		{
 			query:   `avg_over_time({env="production"} | json | unwrap duration_s [5s]) by ()`,
-			wantHas: "stats by () avg(duration_s)",
+			wantHas: "stats by () avg(__lvp_v)",
 			wantNot: "_msg",
 		},
 	}

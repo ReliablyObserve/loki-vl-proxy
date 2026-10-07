@@ -215,6 +215,36 @@
    ]
   },
   {
+   "id": "explore-unwrap-sum",
+   "kind": "explore",
+   "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [$__auto]))",
+   "covers": [
+    "semantics/unwrap-sample-validity",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unwrap-unit-string",
+   "kind": "explore",
+   "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap ttl | __error__=\"\" [$__auto]))",
+   "covers": [
+    "semantics/unwrap-sample-validity",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unwrap-missing-label",
+   "kind": "explore",
+   "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | unwrap nosuch [$__auto]))",
+   "covers": [
+    "semantics/unwrap-sample-validity",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

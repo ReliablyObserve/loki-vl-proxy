@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // slidingFixtureLine is one stored log line of the fake VictoriaLogs backend.
@@ -139,7 +141,9 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 			withPresence := strings.Contains(q, "count() as __sample_count")
 			unwrapAgg := ""
 			for _, agg := range []string{"sum", "max", "min"} {
-				if strings.Contains(q, "stats by (_stream) "+agg+"(n) as c") {
+				// The unwrap bucket query converts n with a math pipe and
+				// aggregates the converted value.
+				if strings.Contains(q, "stats by (_stream) "+agg+"(n) as c") || strings.Contains(q, "stats by (_stream) "+agg+"("+translator.UnwrapValueAlias+") as c") {
 					unwrapAgg = agg
 				}
 			}

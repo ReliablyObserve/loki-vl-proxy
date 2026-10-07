@@ -20,6 +20,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 type statsCompatSpec struct {
@@ -229,6 +230,10 @@ func isManualRangeStatsFunc(funcName string) bool {
 func normalizeManualMetricFunction(spec statsCompatSpec, origSpec originalRangeMetricSpec) string {
 	switch strings.TrimSpace(origSpec.Func) {
 	case "rate":
+		if origSpec.HasUnwrap {
+			// rate over an unwrapped label: its sum per second.
+			return "unwrap_rate"
+		}
 		return "rate"
 	case "count_over_time":
 		return "count_over_time"
@@ -373,7 +378,8 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// "| drop __error__" opt-in must NOT use VL native stats for tumbling windows. Loki
 	// excludes parse-failed lines from metric aggregation; VL counts all lines. The manual
 	// path (collectRangeMetricSamples) preserves Loki's error-exclusion semantics.
-	if strings.Contains(logsqlQuery, "| math ") {
+	// The unwrap gate's own math pipe does not make a query one of these.
+	if strings.Contains(queryWithoutUnwrapGate(logsqlQuery), "| math ") {
 		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 		if stepOk && hasOrigSpec && origSpec.Window > 0 && p.statsRangeIsTumbling(r, origSpec.Window, step) {
@@ -514,7 +520,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		spec.GroupBy, spec.OrigGroupBy = nil, nil
 		spec.ByExplicit = true
 	}
-	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
+	return p.proxyManualRangeMetricInstant(w, r, withoutUnwrapGate(spec), origSpec, manualFunc)
 }
 
 // hasOuterAggregationWithoutBy reports whether logql starts with a bare outer aggregation
@@ -592,7 +598,7 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// including for queries that use parser stages (| unpack_json, | unpack_logfmt): VL stats_query_range
 	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
-	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+	case "rate", "bytes_rate", "count_over_time", "bytes_over_time", "unwrap_rate":
 		return !rangeEqualsStep
 	}
 
@@ -653,7 +659,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// sentinel (stats endpoint can group by stream labels; sentinel means caller
 	// needs VL to enumerate all distinct streams — skip), (3) labels are explicit
 	// (non-empty groupBy or byExplicit aggregate-all).
-	var statsAggFunc string
+	spec, rawSpec, statsAggFunc := unwrapManualSpecs(spec, manualFunc)
 	switch field {
 	case "__count__":
 		statsAggFunc = "count() as c"
@@ -675,6 +681,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		// grow with every step that range does not divide (a 604.8s step and a
 		// 5m range need 2.4s buckets: 252k per series over 7 days).
 		spec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
+		rawSpec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = p.slidingStatsBucket(startTS, step, step)
 	}
@@ -746,7 +753,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		// VL's raw-query end is exclusive; Loki includes the evaluation time.
 		fetchEnd = fetchEnd.Add(time.Nanosecond)
 	}
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
+	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
 		return true
@@ -1054,6 +1061,10 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 		phi, field, ok := parseStatsQuantileSpec(spec.Field)
 		if !ok {
 			return "", 0, fmt.Errorf("invalid quantile query")
+		}
+		if field == translator.UnwrapValueAlias {
+			// The gated translation aggregates the converted value.
+			field = origSpec.UnwrapField
 		}
 		field = p.labelTranslator.ToVL(field)
 		if strings.TrimSpace(field) == "" {
@@ -1626,7 +1637,7 @@ func parseFloatValueFJ(v *fj.Value) (float64, bool) {
 		f, err := v.Float64()
 		return f, err == nil
 	case fj.TypeString:
-		f, err := strconv.ParseFloat(strings.TrimSpace(string(v.GetStringBytes())), 64)
+		f, err := strconv.ParseFloat(string(v.GetStringBytes()), 64)
 		return f, err == nil
 	default:
 		return 0, false
@@ -1682,6 +1693,11 @@ func withoutDerivedLevelChain(query string) string {
 
 func queryUsesParserStages(baseQuery string) bool {
 	baseQuery = withoutDerivedLevelChain(baseQuery)
+	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
+	// parser stage of the query.
+	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {
+		baseQuery = base
+	}
 	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
 	// log line — VL's stats_query_range handles it natively in tens of ms.
 	// Excluding it from the "parser stages" check lets queries with a
@@ -2031,6 +2047,15 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStartNS })
 			hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= tNS })
 			sum := prefix[hi] - prefix[lo]
+			if manualFunc == "unwrap_rate" {
+				// Unwrap values are floats: one infinity would turn every later
+				// prefix difference into NaN, and large values lose precision to
+				// cancellation, so each window is summed on its own.
+				sum = 0
+				for _, sample := range samples[lo:hi] {
+					sum += sample.value
+				}
+			}
 			hasLines := sum != 0
 			if present != nil {
 				pLo := sort.Search(len(present), func(i int) bool { return present[i] >= windowStartNS })
@@ -2040,7 +2065,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 				continue
 			}
 			value := sum
-			if manualFunc == "rate" || manualFunc == "bytes_rate" {
+			if manualFunc == "rate" || manualFunc == "bytes_rate" || manualFunc == "unwrap_rate" {
 				value = sum / windowSec
 			}
 			if points == nil {
@@ -2209,7 +2234,7 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 		return float64(count) / windowSeconds, true
 	case "bytes_over_time", "sum":
 		return sum, true
-	case "bytes_rate":
+	case "bytes_rate", "unwrap_rate":
 		if windowSeconds <= 0 {
 			return 0, false
 		}

@@ -11,6 +11,10 @@ why: |
   the same for sum_over_time and avg_over_time by app over `| json | unwrap
   duration_ms`.
 
+  The raw evaluator that a sliding unwrap `rate` falls back to above the 11,000-bucket
+  threshold reads [T-range, T) for it (`unwrap_rate` is not in isLogRangeWindowFunc), the
+  same window-bound gap.
+
   In the differential run this shows only as a secondary difference of
   requests whose primary difference is the parser series identity, so those
   clusters are owned by parsed-identity/dynamic-key-parsers; this case claims

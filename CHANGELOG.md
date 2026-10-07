@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `unwrap` metric makes a sample only from a line whose label is present and
+  converts, as Loki does.** Loki skips a line whose unwrapped label is absent or
+  empty and does not count a value its conversion rejects as a sample
+  (`pkg/logql/log/metrics_extraction.go`, `streamLabelSampleExtractor.Process`).
+  VictoriaLogs' stats functions parse leniently instead: `sum` read `86282s` as
+  86282000000000 and `1KiB` as 1024, `max` and `min` compared strings and
+  answered `"86282s"` or `"x7"`, and a group without a value answered `""` or
+  `NaN`. So `max_over_time({...} | unwrap b [2s])` over lines without `b` returned
+  a series per stream with empty-string samples (not a number: Grafana shows a
+  parse error, API clients fail to read it), `sum by (a) (sum_over_time(... |
+  unwrap b ...))` a `{}` series of `NaN`, and `rate({...} | unwrap b [5m])` a line
+  rate where Loki has no series (295 queries of the differential corpus, 64
+  clusters). Every stats pipe over an unwrapped label now reads only the rows
+  whose value converts in Loki's own syntax, converted by the `math` pipe, so a
+  missing label, a unit string and a non-numeric value make no sample and an empty
+  group answers no series:
+  a plain value is `strconv.ParseFloat`'s decimal syntax (digit separators,
+  exponent up to 307, `inf`), `duration(f)` is `time.ParseDuration`'s syntax in
+  seconds (compound terms of `ns`, `us`, `µs`, `ms`, `s`, `m`, `h`, a leading
+  sign) and `bytes(f)` is `humanize.ParseBytes`'s syntax in bytes (case-insensitive
+  SI and IEC units, an optional space, commas in the number), floored like it.
+  Nothing is read row by row: `duration()` and `bytes()` stay VictoriaLogs stats
+  (the quantile, `rate_counter`, `first` and `last` functions keep the bounded
+  raw evaluator they always had, which converts with the same Go functions). The
+  field is quoted in the filter and the `math` pipe, which read a bare `max`,
+  `abs` or `rand` as a function. `rate` over an unwrapped label is the sum of its
+  values per second (`rateLogs` with `computeValues`), not a line rate; a sliding
+  window answers it from stats buckets of the sum. Known differences from Loki's
+  parsing, registered as `semantics/unwrap-gate-parsefloat-divergences`. The filter
+  drops hexadecimal floats, `infinity`, `nan`, a plain exponent of 308 (and exponent
+  underscores) and, for `bytes()`, a number that starts with a comma or a no-break
+  space before the unit; it keeps a duration beyond int64 nanoseconds and a byte size
+  at or above 2^64, which Loki rejects. Not changed: a value that does not
+  convert is skipped, as `| __error__=""` skips it, where Loki fails the query with
+  `SampleExtractionErr` unless the query drops it
+  (`semantics/unwrap-conversion-error`; on main VictoriaLogs misread such a value
+  instead), and the window bounds and the sample at `end` of an unwrap range
+  metric (`semantics/unwrap-range-last-point`). Both are separate changes.
+
 ## [2.3.1] - 2026-10-07
 
 ### Fixed

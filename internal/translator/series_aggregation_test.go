@@ -62,7 +62,7 @@ func TestSeriesLevelOuterAggregationsKeepSeriesIdentity(t *testing.T) {
 		},
 		{
 			`max by (pod) (max_over_time({app="x"} | unwrap d [1m]))`,
-			`app:="x" | stats by (pod, _stream, level) max(d) as __lvp_inner | stats by (pod) max(__lvp_inner)`,
+			`app:="x"` + UnwrapGate("d") + ` | stats by (pod, _stream, level) max(__lvp_v) as __lvp_inner | stats by (pod) max(__lvp_inner)`,
 		},
 		{
 			// sum aggregates rows, so it keeps the single stats pipe.

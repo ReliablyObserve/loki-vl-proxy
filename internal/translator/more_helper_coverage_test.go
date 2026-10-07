@@ -63,7 +63,7 @@ func TestPatternAndTranslatorHelperBehaviors(t *testing.T) {
 		t.Fatalf("unexpected normalized by-labels %q", got)
 	}
 
-	if got, ok := tryTranslateQuantileOverTime(`quantile_over_time(0.95, {app="api"} | unwrap duration(latency) [5m])`, "", "detected_level", labelFn); !ok || got != `app:="api" | stats by (detected_level) quantile(0.95, latency)` {
+	if got, ok := tryTranslateQuantileOverTime(`quantile_over_time(0.95, {app="api"} | unwrap duration(latency) [5m])`, "", "detected_level", labelFn); !ok || got != `app:="api"`+UnwrapGateFor("latency", "duration")+` | stats by (detected_level) quantile(0.95, __lvp_v)` {
 		t.Fatalf("unexpected quantile translation %q ok=%v", got, ok)
 	}
 	if _, ok := tryTranslateQuantileOverTime(`quantile_over_time(0.95 {app="api"})`, "", "", nil); ok {

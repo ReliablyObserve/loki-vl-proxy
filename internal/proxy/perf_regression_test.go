@@ -525,15 +525,16 @@ func TestParseFloatValueFJ_StringNumber(t *testing.T) {
 	}
 }
 
+// Loki's convertFloat is strconv.ParseFloat on the label value, which does not
+// trim: a value with spaces around the number is a conversion error, not 7.
 func TestParseFloatValueFJ_StringWithSpaces(t *testing.T) {
 	var p fj.Parser
 	v, err := p.Parse(`{"x":" 7 "}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, ok := parseFloatValueFJ(v.Get("x"))
-	if !ok || got != 7.0 {
-		t.Fatalf("expected 7.0, got ok=%v val=%v", ok, got)
+	if got, ok := parseFloatValueFJ(v.Get("x")); ok {
+		t.Fatalf("a value with spaces must not convert, got %v", got)
 	}
 }
 

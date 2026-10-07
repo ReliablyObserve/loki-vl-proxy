@@ -34,6 +34,8 @@ const seriesLimitLineMsg = `{"pipeline":"logs/loki","latency":"2"}`
 var (
 	seriesLimitStatsRE = regexp.MustCompile(`\| stats (?:by \(([^)]*)\) )?(.+?)(?: \| .*)?$`)
 	seriesLimitAggRE   = regexp.MustCompile(`^(count|sum_len|sum|max|min)\(([^)]*)\)(?: as ([A-Za-z_]+))?$`)
+	// The unwrap bucket query converts the unwrapped field with a math pipe.
+	seriesLimitUnwrapRE = regexp.MustCompile(`\| math "([^"]+)" as __lvp_v`)
 )
 
 // seriesLimitFakeVL answers every VictoriaLogs endpoint the metric routes use,
@@ -152,6 +154,11 @@ func (f *seriesLimitFakeVL) statsQueryRange(query string, start, end, step, offs
 		if am == nil {
 			f.t.Errorf("fake VL: unsupported aggregate %q in %q", agg, query)
 			continue
+		}
+		if am[2] == "__lvp_v" {
+			if um := seriesLimitUnwrapRE.FindStringSubmatch(query); um != nil {
+				am[2] = um[1]
+			}
 		}
 		for _, line := range f.lines {
 			if line.ts < start || line.ts >= end {

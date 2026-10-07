@@ -100,13 +100,20 @@ def signature(status, body, logs):
     result = data.get("result", [])
     if logs or data.get("resultType") == "streams":
         return f"streams={len(result)} lines={sum(len(s.get('values', [])) for s in result)}"
-    total, points = 0.0, 0
+    total, points, not_numbers = 0.0, 0, 0
     for series in result:
         values = series.get("values") or ([series["value"]] if "value" in series else [])
         for _, v in values:
-            total += float(v)
+            try:
+                total += float(v)
+            except ValueError:
+                # A sample that is not a number ("" or "86282s" from an unwrap
+                # over a missing label or a unit string) is a wrong answer to
+                # report, not a reason to stop the run.
+                not_numbers += 1
             points += 1
-    return f"series={len(result)} points={points} sum={total:.6g}"
+    sig = f"series={len(result)} points={points} sum={total:.6g}"
+    return f"{sig} not_numbers={not_numbers}" if not_numbers else sig
 
 
 def main():
