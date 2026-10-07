@@ -42,6 +42,8 @@ gap:
   status: fixed
   fixed_by: "#666"
   impact: explore-visible
+  visual: none
+  visual_reason: 'data stored by VictoriaLogs before v1.50 cannot be ingested on the single-version visual stack; proven per version by the compat-vl matrix'
   effort: S
   area: 'internal/proxy/detected_level.go deriveDetectedLevel (pre-1.50 `severity` field) + test/e2e-compat/detected_level_test.go'
   loki: 'detected_level from severity_text / line keyword scan (pkg/distributor/field_detection.go, v3.7.7)'

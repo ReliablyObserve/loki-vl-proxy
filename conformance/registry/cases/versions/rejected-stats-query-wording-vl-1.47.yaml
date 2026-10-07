@@ -46,6 +46,8 @@ gap:
   status: fixed
   fixed_by: "#659"
   impact: explore-visible
+  visual: none
+  visual_reason: 'depends on the parse-error wording of VictoriaLogs v1.47, absent on the version the visual stack runs; proven by the compat-vl matrix'
   effort: S
   area: 'internal/proxy/http_utils.go vlParseEchoPrefixes, classifyVLError, stripVLParseEcho'
   loki: 'pkg/logql/syntax regexp validation: 400 bad_data'

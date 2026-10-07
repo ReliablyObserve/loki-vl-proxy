@@ -107,6 +107,31 @@ slowly), then the static captures, then, only when a Live tail entry was selecte
 the mirrored live generator and the tail captures. 24h and 7d stay out of PR CI
 (use the manual run).
 
+**Fix proof.** The regression tiers prove nothing broke elsewhere; a fix proof shows the exact
+case a PR fixes. A spec entry lists in `fixes` the registry case ids (`conformance/registry/cases/**`,
+the ones with a `gap:` block) whose behaviour its query reproduces. When a PR adds a case file or turns a
+case's `gap.status` to `fixed` (read from git against the merge base of the base and the head, renames
+followed), `plan.py` selects every entry that lists the case at the `ci_ranges` Loki holds, puts it first, marks it
+`why: ["fix proof: <case>"]` and never trims or drops it for the capture budget (a registry-only PR also
+runs the core set). A fix-only entry is captured at the ci_ranges Loki holds (15m and 1h with the 1.5h Loki seed), since a fix is proven against Loki. At most 18 fix captures run at those ranges; further fix entries narrow to `core_range`
+(listed in the comment, never dropped). `visual_comment.py` opens the comment with a "Fix proof" section
+per case: the captures with their base | PR | Loki montage and a verdict: **fixed** (PR matches Loki, base
+did not), **improved** (closer to Loki, still differs), **still differs**, **regressed**, **not reproduced
+on base** (the base already matched Loki, so the capture proves nothing) or **undecided** (no Loki data at
+that range). The case verdict is the worst problem, else the best proof; a case whose captures are only
+not-reproduced is **unproven**. **Gate:** a case with entries fails the run unless at least one
+Loki-compared capture is fixed or improved. The label `visual-change-expected` does not excuse it; only a
+reviewed `visual: none` on the case does. Fix captures that differ base vs PR by design do not count
+against `--max-recapture`. An old `plan.json` without `fix_cases` renders as before.
+
+How to add a fix proof: add (or extend) a page in `spec.json` whose query shows the wrong behaviour on
+the base, add `"fixes": ["<case id>"]`, and cover registry ids that name code (as for any entry).
+`python3 bench/visual/plan.py --check` fails when a case with `status: fixed` and impact `explore-visible`
+or `drilldown-visible` is listed by no entry. The page must fail on the base build (check the base proxy's answer for the query first: a form the base
+already handles proves nothing and the gate says so). If Grafana cannot show the case (data the stack cannot
+hold, a single-version behaviour, nothing a panel renders), set in the case's gap block
+`visual: none` and `visual_reason: '<why>'` (an honest reason; `api-only` and `edge` impacts need nothing).
+
 **Gate.** A base-vs-PR data difference is classified against Loki, where Loki holds
 data for the range (15m and 1h):
 
