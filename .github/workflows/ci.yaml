@@ -657,7 +657,14 @@ jobs:
       # Unit results feed the evidence check: an item whose state claims
       # `proven` must have a test that declares it and passed in this run.
       - name: Unit tests with machine-readable results
-        run: go test ./internal/... -count=1 -json > /tmp/unit-results.json || true
+        # The gate decides; this step only names the failing tests so a red
+        # gate ("a test declaring it failed") shows which test and why.
+        run: |
+          go test ./internal/... -count=1 -json > /tmp/unit-results.json || {
+            echo "::warning::unit tests failed; the conformance gate decides whether that matters"
+            jq -r 'select(.Action=="fail" and .Test != null) | "\(.Package) \(.Test)"' /tmp/unit-results.json | sort -u
+            jq -r 'select(.Action=="output" and .Test != null) | .Output' /tmp/unit-results.json | grep -E -- '--- FAIL|_test\.go:[0-9]+:' | head -50 || true
+          }
 
       - name: Conformance gate
         run: python3 scripts/ci/check_conformance.py --go-results /tmp/unit-results.json

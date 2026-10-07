@@ -137,13 +137,20 @@ func allCompatOptions() []compatOptions {
 // matrixBackend is a fake VictoriaLogs serving one OTel row with dotted
 // stream labels, dotted stored metadata fields (http.target, cloud.region)
 // and a JSON line with a dotted key (http.method), plus label values.
+//
+// calls counts only requests whose query names k8s.pod.name: the dotted-name
+// check needs "did the rejected query reach the backend", and a count of every
+// request also catches a cancelled stream label refresh of an earlier
+// subtest's proxy that the test server only handles later.
 func matrixBackend(t *testing.T, calls *atomic.Int64) *httptest.Server {
 	t.Helper()
 	row := `{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"login\",\"http.method\":\"GET\"}",` +
 		`"_stream":"{service.name=\"svc\",k8s.pod.name=\"pod-1\",level=\"info\"}","service.name":"svc","k8s.pod.name":"pod-1","level":"info",` +
 		`"http.method":"GET","http.target":"/api/login","cloud.region":"eu-west-1"}`
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		if strings.Contains(r.FormValue("query"), "k8s.pod.name") {
+			calls.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/select/logsql/query":
@@ -217,6 +224,8 @@ func TestCompatOptionMatrix(t *testing.T) {
 				}
 			} else if w.Code == http.StatusBadRequest {
 				t.Fatalf("dotted name rejected with dotted names accepted: %.200s", w.Body)
+			} else if calls.Load() == before {
+				t.Fatal("an accepted dotted name never reached the backend (the call count would not see a leak)")
 			}
 
 			// Label browse parameters.
