@@ -35,7 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Registry: `semantics/labels-end-inclusive-like-loki` (fixed). Loki listing
   more values than the window holds (its index granularity) stays open as
   `quality/label-values-chunk-window`. The visual smoke gains a `log-context`
-  page kind (`explore-log-context`) that opens "Show context" on a log row.
+  page kind (`explore-log-context`) that opens "Show context" on a log row,
+  and pairs up Grafana's context queries across datasources (their refId ends
+  in a random number).
 
 ## [2.6.1] - 2026-10-07
 

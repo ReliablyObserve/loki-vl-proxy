@@ -60,9 +60,19 @@ def error_text(text):
     return PIPELINE_ERROR_SERIES.sub("for series: '{...}'.", str(text))
 
 
+# Grafana names each "Show context" query with a random suffix (log-row-context-query-_0.4374…), so the same
+# query from two datasources would never pair up: the suffix is dropped (the direction field keeps the two apart).
+RANDOM_REF = re.compile(r"^(log-row-context-query)-_?[0-9.]+$")
+
+
+def stable_ref(ref):
+    return RANDOM_REF.sub(r"\1", ref) if isinstance(ref, str) else ref
+
+
 def frames_of(resp):
     out = {}
     for ref, res in (resp or {}).get("results", {}).items():
+        ref = stable_ref(ref)
         if res.get("error"):
             out[(ref, "error")] = ("error", error_text(res["error"]))
         for fr in res.get("frames", []):
@@ -84,8 +94,9 @@ def records(path, raw=None):
     for r in d["records"]:
         if "/api/ds/query" in r["url"]:
             for q in (r["request"] or {}).get("queries", []):
-                key = ("query", q.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
-                       digest(strip(q)))
+                sq = {**q, "refId": stable_ref(q.get("refId"))}
+                key = ("query", sq.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
+                       digest(strip(sq)))
                 recs[key].append(frames_of(r["response"]) if r["status"] == 200 else {("status", str(r["status"])): ("error", r["status"])})
                 if raw is not None:
                     raw[key].append(((r["response"] or {}).get("results") or {}).get(q.get("refId")) if r["status"] == 200 else None)
