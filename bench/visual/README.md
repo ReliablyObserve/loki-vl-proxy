@@ -117,10 +117,13 @@ runs the core set). A fix-only entry is captured at the ci_ranges Loki holds (15
 (listed in the comment, never dropped). `visual_comment.py` opens the comment with a "Fix proof" section
 per case: the captures with their base | PR | Loki montage and a verdict: **fixed** (PR matches Loki, base
 did not), **improved** (closer to Loki, still differs), **still differs**, **regressed**, **not reproduced
-on base** (the base already matched Loki, so the capture proves nothing) or **undecided** (no Loki data at
-that range). The case verdict is the worst problem, else the best proof; a case whose captures are only
+on base** (the base already matched Loki, so the capture proves nothing), **base failed** (beyond the
+Loki data window: the base answered with an error or a panel error where Loki and the PR both answered
+with data and no error; the PR's values there are not compared, so the case should also have a
+Loki-compared capture) or **undecided** (no Loki data at that range). The case verdict is the worst problem, else the best proof; a case whose captures are only
 not-reproduced is **unproven**. **Gate:** a case with entries fails the run unless at least one
-Loki-compared capture is fixed or improved. The label `visual-change-expected` does not excuse it; only a
+Loki-compared capture is fixed or improved, or one capture is base failed (a fix for a failure that only
+appears at long ranges, such as a row limit, cannot be compared with Loki's shorter data window in CI). The label `visual-change-expected` does not excuse it; only a
 reviewed `visual: none` on the case does. Fix captures that differ base vs PR by design do not count
 against `--max-recapture`. An old `plan.json` without `fix_cases` renders as before.
 
