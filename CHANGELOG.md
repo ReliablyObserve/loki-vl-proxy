@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Release metadata PRs can merge under the full branch rules.** The release
+  bot committed the metadata sync with a local `git commit` as
+  `github-actions[bot]`, which is unsigned, so every metadata PR failed the
+  "commits must have verified signatures" rule and needed an admin bypass. The
+  commit is now made through GitHub's `createCommitOnBranch` API
+  (`scripts/ci/commit_via_api.sh`), which GitHub signs: the commit is Verified
+  and the PR passes the signature rule like any other. Checked on the
+  repository: an API commit came back `verified: true` with GitHub as committer.
+
+### Fixed
+
 - **An unwrap over a value its conversion rejects fails like Loki, with HTTP
   400 and Loki's `SampleExtractionErr` text, instead of answering 200 without
   those lines.** `sum_over_time({service_name="payment-service"} | logfmt |

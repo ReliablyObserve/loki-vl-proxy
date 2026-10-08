@@ -25,7 +25,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_check_changelog_pr
+        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
