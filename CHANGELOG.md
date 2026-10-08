@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-10-08
+
 ### Fixed
 
 - **Release metadata PRs can merge under the full branch rules.** The release
