@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A metadata freshness unit test failed for about 19 minutes after every UTC
+  midnight.** `TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegativeTTL`
+  backfills a row ten hours back into a 7-day `/labels` window and expects it
+  within the negative TTL, which the proxy guarantees for buckets cached empty.
+  Its fake VictoriaLogs holds rows in the 20 minutes before now. Between 00:01
+  and 00:20 UTC those rows fall into yesterday's day bucket, the same bucket
+  as the backfilled row, so that bucket is not empty: it is not confirmed by
+  the empty-run count, and a row backfilled into it appears at the bucket's
+  revalidation, the accepted limit the
+  `semantics/metadata-answers-include-last-24h-like-loki` case already
+  documents. The test failed there every time (CI run at about 00:12 UTC:
+  `cold: 44 scans, 29 counts; unchanged refresh: 1 scans, 0 counts`, backfill
+  not listed). It was not a timing problem: the counts run inside the request,
+  and 30 runs under `-race`, `GOMAXPROCS=1` and six CPU hogs passed outside
+  that band. Replaying the test at fixed times of day on the cache clock
+  reproduced the CI numbers exactly at 00:12 and failed at every sampled time
+  from 00:01:00 to 00:19:59 and nowhere else; the sibling backfill test
+  passed at every sampled time. The test now runs at two fixed UTC times of
+  day on the cache clock, which the inventory reads for bucket ages and the
+  live window: one with the row in an empty hour bucket of today and one with
+  it in an empty day bucket of yesterday. It also fails when an unchanged
+  refresh makes no row count, the sign that the backfill target is not an
+  empty bucket. No proxy change.
+
 ## [2.8.1] - 2026-10-08
 
 ### Fixed
