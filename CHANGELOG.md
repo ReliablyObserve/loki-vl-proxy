@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`TestMetadataInventory_RefusedFillIsNotRetriedByItsLeader` failed in the
+  first minute after midnight UTC.** Its 24-hour window ended at
+  `time.Now().Truncate(24h)`; right after midnight that end lies within the
+  label inventory's one-minute seal lag, so the day is split into live
+  listings of another cost class, which the scan limiter may admit next to
+  the scan the test holds, and the two requests answered instead of the
+  documented 429 (CI run at 00:01:23 UTC; reproduced every time with an end
+  30 s in the past). The window now ends at least two seal lags before now,
+  so it is always a sealed day.
+
 ## [2.8.1] - 2026-10-08
 
 ### Fixed
