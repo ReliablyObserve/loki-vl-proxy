@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-10-08
+
 ### Fixed
 
 - **Release metadata PRs can merge under the full branch rules.** The release
@@ -17,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`scripts/ci/commit_via_api.sh`), which GitHub signs: the commit is Verified
   and the PR passes the signature rule like any other. Checked on the
   repository: an API commit came back `verified: true` with GitHub as committer.
+
+## [2.8.0] - 2026-10-08
 
 ### Fixed
 
