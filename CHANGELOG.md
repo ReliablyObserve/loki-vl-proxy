@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-10-08
+
 ### Fixed
 
 - **The visual smoke failed a PR that answers Loki's error at a range beyond
