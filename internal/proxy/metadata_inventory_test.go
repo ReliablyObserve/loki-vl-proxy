@@ -777,7 +777,10 @@ func TestMetadataInventory_RefusedFillIsNotRetriedByItsLeader(t *testing.T) {
 	}
 	p.metadataScanLimiter.jitter = nil // the timing bound below has no room for it
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
-	end := time.Now().Truncate(24 * time.Hour)
+	// A sealed day: a window ending within the inventory's seal lag of now (the
+	// first minute after midnight UTC) is split into live listings of another
+	// cost class, which the limiter may admit next to the held scan.
+	end := time.Now().Add(-2 * metadataInventorySealLag).Truncate(24 * time.Hour)
 	params := url.Values{"query": {"*"}, "start": {strconv.FormatInt(end.Add(-24*time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
 	holder, err := p.metadataScanLimiter.acquire(context.Background(), "/select/logsql/stream_field_names", params, time.Now(), false)
 	if err != nil {
