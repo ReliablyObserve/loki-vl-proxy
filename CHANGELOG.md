@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The visual smoke failed a PR that answers Loki's error at a range beyond
+  the history Loki holds on the CI stack.** At 6h (Loki holds 1.5h there) a
+  query Loki rejects with a 400 showed a panel error and an error answer on
+  the PR side, and the gate counted both as regressions, because it only used
+  Loki's capture inside Loki's history. An error does not depend on how much
+  history Loki holds, so an error answer, panel error or banner that Loki's
+  capture at the same range shows too is now Loki's answer at any captured
+  range. Beyond Loki's history its "No data" still excuses nothing, since it
+  may only mean missing data there.
+
 ## [2.7.0] - 2026-10-08
 
 ### Fixed

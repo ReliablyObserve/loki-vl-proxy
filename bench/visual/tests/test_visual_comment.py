@@ -78,6 +78,21 @@ class FixProofTest(unittest.TestCase):
         fails, _, _ = comment.assess(row(**{**rejected, "errors_loki": [], "points_loki": 10}), None)
         self.assertIn("empty on the PR, data on the base", fails)
 
+    def test_a_panel_error_loki_shows_beyond_its_history_is_no_regression(self):
+        error_ui = {"noData": 0, "banners": [], "panelErrors": 1}
+        beyond = row(rng="6h", loki_compared=False, points_loki=15, main_pr_diffs=["query A: series sets differ"],
+                     ui_pr=error_ui, ui_loki=error_ui)
+        fails, _, _ = comment.assess(beyond, None)
+        self.assertFalse(any("panel error" in f for f in fails), fails)
+        # Without Loki's panel error it is a regression.
+        fails, _, _ = comment.assess(row(**{**beyond, "ui_loki": {"noData": 0, "banners": [], "panelErrors": 0}}), None)
+        self.assertTrue(any("panel error" in f for f in fails), fails)
+        # Loki's "No data" beyond its history is no excuse: it may only mean missing data there.
+        empty = row(rng="6h", loki_compared=False, points_loki=0, ui_pr={"noData": 1, "banners": [], "panelErrors": 0},
+                    ui_loki={"noData": 1, "banners": [], "panelErrors": 0})
+        fails, _, _ = comment.assess(empty, None)
+        self.assertTrue(any("new empty panel" in f for f in fails), fails)
+
     def test_base_failure_beyond_the_loki_window(self):
         beyond = dict(loki_compared=False, points_loki=800, errors_main=["400"], points_main=15, points_pr=3000,
                       ui_main={"noData": 0, "banners": [], "panelErrors": 1}, ui_loki={"noData": 0, "panelErrors": 0})

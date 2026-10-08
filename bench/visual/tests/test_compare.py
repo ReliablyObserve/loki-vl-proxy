@@ -23,9 +23,9 @@ def capture(values, ui=None, settled=True, uid="ds1", fields=None, status=200, e
 
 
 class CompareTest(unittest.TestCase):
-    def run_compare(self, main, pr, loki=None):
+    def run_compare(self, main, pr, loki=None, rng="1h"):
         with tempfile.TemporaryDirectory() as out:
-            d = os.path.join(out, "data", "page-a", "1h")
+            d = os.path.join(out, "data", "page-a", rng)
             os.makedirs(d)
             for name, cap in (("main", main), ("pr", pr), ("loki", loki)):
                 if cap is not None:
@@ -47,6 +47,16 @@ class CompareTest(unittest.TestCase):
         self.assertEqual((code, row["main_pr_diffs"], row["loki_diffs"]), (0, [], []))
         self.assertEqual(compare.stable_ref("log-row-context-query-_0.4374129728512264"), "log-row-context-query")
         self.assertEqual(compare.stable_ref("A"), "A")
+    def test_an_error_loki_answers_too_is_lokis_answer_beyond_its_history(self):
+        err = "pipeline error: 'SampleExtractionErr' for series: '{v=\"x\"}'."
+        # 6h is beyond the history Loki holds on the CI stack: the data is not compared, the error still is.
+        _, row = self.run_compare(capture([1, 2]), capture([1], error=err), capture([1], error=err), rng="6h")
+        self.assertFalse(row["loki_compared"])
+        self.assertEqual(row["errors_pr"], [])
+        self.assertEqual(len(row["errors_loki"]), 1)
+        # An error Loki does not answer stays an error of the PR.
+        _, row = self.run_compare(capture([1, 2]), capture([1], error=err), capture([1, 2]), rng="6h")
+        self.assertEqual(len(row["errors_pr"]), 1)
 
     def test_identical_counts_points_and_exits_zero(self):
         code, row = self.run_compare(capture([1, 2, 0]), capture([1, 2, 0]), capture([1, 2, 0]))
