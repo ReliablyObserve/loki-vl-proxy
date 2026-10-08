@@ -100,6 +100,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
 | `semantics/plain-name-after-parser-reads-stream-label` — A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed) | #676 | 4 | 6 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
+| `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
 | `severity/otlp-severity-before-vl-1.50` — OTLP rows stored by VictoriaLogs before v1.50 (one `severity` field, no severity_number) get detected_level "Unspecified" / "Info2" (fixed) | #666 | 0 | 0 |
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

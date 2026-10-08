@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -119,6 +120,53 @@ func applyDefaultMetadataLookback(start, end string, lookback time.Duration) (st
 	return fmt.Sprintf("%d", now.Add(-lookback).UnixNano()), fmt.Sprintf("%d", now.UnixNano())
 }
 
+// Loki lists labels and label values from its index at millisecond precision:
+// the querier turns the request's bounds into model.Time (Unix milliseconds,
+// pkg/querier/querier.go Label) and a chunk matches when its From <= end and
+// its Through >= start, both milliseconds (tsdb/index ChunkMeta MinTime and
+// MaxTime). So Loki lists every row whose millisecond lies in
+// [start, end] floored to milliseconds: a row at end, and with start == end
+// (Grafana's "Show context", which sends the row's time in milliseconds) the
+// rows of that millisecond. VictoriaLogs' time filter is [start, end) in
+// nanoseconds, so lokiLabelStartToVL floors start to its millisecond and
+// lokiLabelEndToVL moves end to the start of the next millisecond. Series and
+// log queries keep their bounds, as in Loki. An empty or unparsable bound is
+// returned unchanged.
+func lokiLabelStartToVL(start string) string {
+	ns, ok := parseLokiLabelBound(start)
+	if !ok {
+		return start
+	}
+	return strconv.FormatInt(floorToMillisecond(ns), 10)
+}
+
+func lokiLabelEndToVL(end string) string {
+	ns, ok := parseLokiLabelBound(end)
+	if !ok {
+		return end
+	}
+	ms := floorToMillisecond(ns)
+	if ms > math.MaxInt64-int64(time.Millisecond) {
+		return end
+	}
+	return strconv.FormatInt(ms+int64(time.Millisecond), 10)
+}
+
+func parseLokiLabelBound(raw string) (int64, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, false
+	}
+	return parseLokiTimeToUnixNano(raw)
+}
+
+func floorToMillisecond(ns int64) int64 {
+	ms := int64(time.Millisecond)
+	if ns < 0 && ns%ms != 0 {
+		return (ns/ms - 1) * ms
+	}
+	return ns / ms * ms
+}
+
 func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, limit, search string) (url.Values, error) {
 	params := url.Values{}
 	translated, err := p.translateQueryWithContext(ctx, candidate)
@@ -148,6 +196,7 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 }
 
 func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end, search string, useInventoryCache bool) ([]string, error) {
+	start, end = lokiLabelStartToVL(start), lokiLabelEndToVL(end)
 	candidates := metadataQueryCandidates(rawQuery)
 	var lastErr error
 	for i, candidate := range candidates {
@@ -181,6 +230,7 @@ func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end,
 }
 
 func (p *Proxy) fetchScopedLabelValues(ctx context.Context, labelName, rawQuery, start, end, limit, search string) ([]string, error) {
+	start, end = lokiLabelStartToVL(start), lokiLabelEndToVL(end)
 	candidates := metadataQueryCandidates(rawQuery)
 	var lastErr error
 	for i, candidate := range candidates {
@@ -779,7 +829,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 			)
 
 			if labelName == "service_name" {
-				values, fetchErr = p.serviceNameValues(ctx, rawQuery, start, end)
+				values, fetchErr = p.serviceNameValues(ctx, rawQuery, lokiLabelStartToVL(start), lokiLabelEndToVL(end))
 			} else {
 				values, fetchErr = p.fetchScopedLabelValues(ctx, labelName, rawQuery, start, end, limit, search)
 			}

@@ -1,0 +1,60 @@
+id: semantics/labels-end-inclusive-like-loki
+title: /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labels (fixed)
+proves:
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Grafana's "Show context" / "Open in split view" asks /labels for the
+  selected row's instant (start == end, nanosecond precision) and builds the
+  context filters from the answer. Loki v3.7.7 lists labels and label values
+  from its index: the querier asks the ingesters (whose in-memory index
+  answers by stream, using only the start to pick the index period:
+  pkg/ingester/instance.go label) and the store (chunks matching when their
+  From <= end and Through >= start), so a stream with data at end is listed,
+  and with start == end the row at that instant is. The proxy passed end to
+  VictoriaLogs, whose time filter is [start, end), so a zero-width request
+  answered [] and Grafana built the invalid context query {} (issue #700); a
+  window ending exactly at a row also missed it. Measured on the e2e stack
+  with Loki 3.7.7: zero-width /labels at a row's time, Loki
+  [app cluster container env level namespace pod service_name version], the
+  proxy []; the same with a window ending at the row.
+
+  The proxy now asks VictoriaLogs for one nanosecond more on these two
+  endpoints (lokiLabelEndToVL in internal/proxy/label_metadata.go), on every
+  label-name and label-value path (scoped listings, service_name and
+  detected_level values, the async refreshes). /series and log or metric
+  queries keep end exclusive, as Loki's do (Loki's /series at a row's instant
+  and query_range ending at a row return nothing on the same stack).
+  detected_field_values keeps end exclusive (Loki answers it from a log query).
+  An end that falls exactly on a label-inventory bucket boundary adds one
+  listing of that nanosecond; an unaligned end (Grafana's usual "now") only
+  extends the last uncached edge.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    query: '{service_name="api-gateway"}'
+    start: '<a row time in ns>'
+    end: '<the same time>'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A row exists at exactly that nanosecond (Grafana sends the row's time).
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    The row's stream labels (Loki may list more: its ingester index is not
+    time-precise, see quality/label-values-chunk-window).
+gap:
+  status: fixed
+  fixed_by: "#703"
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/label_metadata.go lokiLabelEndToVL, fetchScopedLabelNames/Values; label_handlers.go service_name and detected_level values'
+  loki: 'pkg/loghttp/params.go determineBounds; pkg/querier/querier.go:307 Label; pkg/ingester/instance.go label'
+  proxy: 'VictoriaLogs [start, end) answered [] for start == end and dropped a row at end'
+  planned_test: 'TestCompat_LabelsZeroWidthLikeLoki (test/e2e-compat, group core); proxy TestLabelsEndIsInclusiveLikeLoki, TestLokiLabelEndToVL'
+  note: 'Reported in issue #700. Loki listing more values than the window holds (its index granularity) stays open as quality/label-values-chunk-window.'
+  clusters: []

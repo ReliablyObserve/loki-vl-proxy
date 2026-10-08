@@ -79,10 +79,14 @@ func sealedWindowEnd() time.Time {
 }
 
 // inventoryEdgeCount is the number of uncached edges in the plan of a sealed
-// window: the only listings a refresh with unchanged data sends.
+// window: the only listings a refresh with unchanged data sends. A label
+// request's end is inclusive at millisecond precision, so the plan covers
+// [start, end+1ms) (start floored to its millisecond).
 func inventoryEdgeCount(start, end time.Time) int64 {
 	n := int64(0)
-	for _, seg := range planInventorySegments(start.UnixNano(), end.UnixNano(), end.UnixNano()) {
+	s := floorToMillisecond(start.UnixNano())
+	e := floorToMillisecond(end.UnixNano()) + int64(time.Millisecond)
+	for _, seg := range planInventorySegments(s, e, e) {
 		if seg.level < 0 {
 			n++
 		}

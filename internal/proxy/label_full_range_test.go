@@ -370,10 +370,15 @@ func TestLabelsFullRange_BackendErrorServesStaleOrError(t *testing.T) {
 				t.Fatalf("without a cached answer want an error status, got %d: %s", rec.Code, rec.Body.String())
 			}
 			mu.Lock()
+			// The full range [start, end] is [start, end+1ms) for VictoriaLogs (Loki's
+			// index is inclusive, in milliseconds); the inventory lists it as its day
+			// bucket [start, end) plus the end millisecond [end, end+1ms). Never a
+			// recent slice of the range.
+			endVL := end + int64(time.Millisecond)
 			for _, got := range backendRanges {
-				if got != fmt.Sprintf("%d/%d", start, end) {
+				if got != fmt.Sprintf("%d/%d", start, endVL) && got != fmt.Sprintf("%d/%d", start, end) && got != fmt.Sprintf("%d/%d", end, endVL) {
 					mu.Unlock()
-					t.Fatalf("backend call used range %s, want only the full range %d/%d", got, start, end)
+					t.Fatalf("backend call used range %s, want only the full range %d/%d", got, start, endVL)
 				}
 			}
 			mu.Unlock()
@@ -537,8 +542,8 @@ func TestMetadataRefresh_DetectedEndpointsWriteWindowScaledTTL(t *testing.T) {
 }
 
 // A cold /labels request lists the full range: its stream_field_names calls
-// (one per inventory bucket) tile [start, end) exactly, and no follow-up
-// refresh is scheduled.
+// (one per inventory bucket) tile [start, end] (VictoriaLogs' [start, end+1ms))
+// exactly, and no follow-up refresh is scheduled.
 func TestLabelsFullRange_ColdMissListsTheFullRange(t *testing.T) {
 	fake := &fullRangeVL{}
 	srv := fake.server(t)
@@ -560,7 +565,7 @@ func TestLabelsFullRange_ColdMissListsTheFullRange(t *testing.T) {
 		q, _ := url.ParseQuery(query)
 		spans = append(spans, parseSpan(q.Get("start"), q.Get("end")))
 	}
-	if !spansTile(spans, start, end) {
-		t.Fatalf("stream_field_names calls do not tile [%d, %d): %v", start, end, fake.calls)
+	if !spansTile(spans, start, end+int64(time.Millisecond)) {
+		t.Fatalf("stream_field_names calls do not tile [%d, %d]: %v", start, end, fake.calls)
 	}
 }

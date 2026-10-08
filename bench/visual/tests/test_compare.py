@@ -35,6 +35,19 @@ class CompareTest(unittest.TestCase):
             with open(os.path.join(out, "compare.json"), encoding="utf-8") as f:
                 return proc.returncode, json.load(f)[0]
 
+    def test_show_context_queries_pair_up_despite_grafanas_random_ref_ids(self):
+        def ctx(ref):
+            cap = capture([1, 2])
+            rec = cap["records"][0]
+            rec["request"]["queries"][0].update(refId=ref, direction="forward")
+            rec["response"]["results"] = {ref: rec["response"]["results"]["A"]}
+            return cap
+        code, row = self.run_compare(ctx("log-row-context-query-_0.43741"), ctx("log-row-context-query-_0.95931"),
+                                     ctx("log-row-context-query-_0.11"))
+        self.assertEqual((code, row["main_pr_diffs"], row["loki_diffs"]), (0, [], []))
+        self.assertEqual(compare.stable_ref("log-row-context-query-_0.4374129728512264"), "log-row-context-query")
+        self.assertEqual(compare.stable_ref("A"), "A")
+
     def test_identical_counts_points_and_exits_zero(self):
         code, row = self.run_compare(capture([1, 2, 0]), capture([1, 2, 0]), capture([1, 2, 0]))
         self.assertEqual(code, 0)

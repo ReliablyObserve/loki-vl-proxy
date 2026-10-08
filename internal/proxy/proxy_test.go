@@ -77,8 +77,10 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if !spansTile(spans, 1609459200*int64(time.Second), 1609545600*int64(time.Second)) {
-		t.Errorf("listings %v do not tile [1609459200s, 1609545600s)", spans)
+	// Loki's index is inclusive at millisecond precision; VictoriaLogs' end is
+	// exclusive, so [start, end] is [start, end+1ms).
+	if !spansTile(spans, 1609459200*int64(time.Second), 1609545600*int64(time.Second)+int64(time.Millisecond)) {
+		t.Errorf("listings %v do not tile [1609459200s, 1609545600s]", spans)
 	}
 }
 

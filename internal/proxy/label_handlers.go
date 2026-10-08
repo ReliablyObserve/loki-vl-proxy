@@ -210,7 +210,7 @@ func (p *Proxy) serveServiceNameLabelValues(w http.ResponseWriter, r *http.Reque
 	const labelName = "service_name"
 	orgID := r.Header.Get("X-Scope-OrgID")
 	values, err := p.syncFetchStrings(fetchCtx, cacheKey, func() ([]string, error) {
-		return p.serviceNameValues(withLabelValuesResponseCap(fetchCtx, p.labelValuesMaxResponseBytes(orgID)), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+		return p.serviceNameValues(withLabelValuesResponseCap(fetchCtx, p.labelValuesMaxResponseBytes(orgID)), r.FormValue("query"), lokiLabelStartToVL(r.FormValue("start")), lokiLabelEndToVL(r.FormValue("end")))
 	})
 	if err != nil {
 		if p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
@@ -302,7 +302,7 @@ func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Re
 	var values []string
 	if p.supportsStreamMetadataEndpoints() {
 		for _, candidate := range metadataQueryCandidates(r.FormValue("query")) {
-			params, err := p.metadataQueryParams(r.Context(), candidate, r.FormValue("start"), r.FormValue("end"), p.labelLimitParam(r), "")
+			params, err := p.metadataQueryParams(r.Context(), candidate, lokiLabelStartToVL(r.FormValue("start")), lokiLabelEndToVL(r.FormValue("end")), p.labelLimitParam(r), "")
 			if err != nil {
 				p.writeError(w, http.StatusBadRequest, err.Error())
 				p.metrics.RecordRequest("label_values", http.StatusBadRequest, time.Since(start))

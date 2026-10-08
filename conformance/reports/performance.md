@@ -94,6 +94,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 32 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | same |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 2 faster, 6 same | worst 3.33s / 1.08s (24h) | — / — | differs; 2 slower than Loki cold |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | differs |
+| `semantics/labels-end-inclusive-like-loki` | 12 × 4 ranges | 48 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | differs |
 | `semantics/line-filter-or-alternatives` | 6 × 5 ranges | 21 fixed | worst 0.06s / 0.04s (3h) | 0.01s / 0.02s | same |
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.00s / 0.00s | differs |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 17 fixed, 8 same | worst 0.07s / 0.04s (6h) | 0.28s / 0.01s | same |
