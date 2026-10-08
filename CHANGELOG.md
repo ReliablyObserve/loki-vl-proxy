@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-08
+
 ### Fixed
 
 - **An unwrap over a value its conversion rejects fails like Loki, with HTTP
