@@ -33,10 +33,13 @@ loki_behaviour: |
   semantics/pipeline-error-text-parity for the exact text), a blocked query
   and an unsupported one (`serverutil.ClientHTTPStatusAndError`). The proxy
   keeps its JSON envelope (`status`, `errorType: bad_data`, `error`) and
-  matches the message text where a case proves it.
+  matches the message text where a case proves it; an unwrap conversion
+  error (semantics/unwrap-conversion-error) is answered as Loki writes it,
+  text/plain.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
   Grafana shows the message text in the panel or Explore error; Logs
   Drilldown shows it in the affected panel.
 cases:
   - semantics/pipeline-error-text-parity
+  - semantics/unwrap-conversion-error

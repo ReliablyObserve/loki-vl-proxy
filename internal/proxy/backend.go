@@ -763,6 +763,8 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // decodes compression. It does NOT interact with the circuit breaker — callers are
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	// A metric checked for unwrap conversion errors counts them in its own stats.
+	params, stripUnwrapCounter, _ := unwrapCheckFrom(ctx).countingStatsQuery(path, params)
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path
@@ -798,6 +800,11 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	if stripUnwrapCounter != nil {
+		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
+			return nil, err
+		}
+	}
 	return resp, nil
 }
 
@@ -855,6 +862,11 @@ func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, 
 // vlPostCoalesced wraps vlPostInner with request coalescing and a CB guard.
 func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
 	key += ":scope:" + p.contextScopeFingerprint(ctx)
+	if c := unwrapCheckFrom(ctx); c != nil {
+		// The answer is read by this request's unwrap conversion check; another
+		// request's call does not report its hits here.
+		key += fmt.Sprintf(":unwrap-check:%p", c)
+	}
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlPostInner(ctx, path, params)
 	})

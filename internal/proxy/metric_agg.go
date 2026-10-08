@@ -260,7 +260,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
@@ -277,12 +277,12 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
 		if leftErr != nil {
 			p.writeError(w, http.StatusBadRequest, leftErr.Error())
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 			return
 		}
 		if rightErr != nil {
 			p.writeError(w, http.StatusBadRequest, rightErr.Error())
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 			return
 		}
 		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
@@ -294,7 +294,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 			p.proxyStatsQuery(sc, r, translatedInner)
 		} else {
 			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 			return
 		}
 	}
@@ -311,7 +311,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		w.WriteHeader(sc.code)
 		_, _ = w.Write(bw.body)
 		elapsed := time.Since(start)
-		p.metrics.RecordRequest("query", sc.code, elapsed)
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), sc.code), elapsed)
 		p.queryTracker.Record("query", originalQuery, elapsed, true)
 		return
 	}
@@ -323,7 +323,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 	_, _ = w.Write(result)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
@@ -333,7 +333,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
@@ -389,7 +389,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		w.WriteHeader(sc.code)
 		_, _ = w.Write(bw.body)
 		elapsed := time.Since(start)
-		p.metrics.RecordRequest("query_range", sc.code, elapsed)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), sc.code), elapsed)
 		p.queryTracker.Record("query_range", originalQuery, elapsed, true)
 		return
 	}
@@ -401,7 +401,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 	_, _ = w.Write(result)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 }
 

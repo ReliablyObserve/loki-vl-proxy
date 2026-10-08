@@ -1,0 +1,54 @@
+id: semantics/unwrap-conversion-error-postfilter-forms
+title: An unwrap whose post filter keeps only the error, compares a label, or combines filters with and/or answers 200 where Loki may fail with SampleExtractionErr (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates the label filters after an unwrap on a sample marked
+  SampleExtractionErr (pkg/logql/log/label_filter.go): a string filter on
+  __error__ compares "SampleExtractionErr" (lines 418-424), a comparison filter
+  drops the sample when its label is missing, passes it when the label does not
+  parse and compares otherwise (lines 306-340), `and`/`or` combine those per
+  line. The conversion-error detection (semantics/unwrap-conversion-error) rides
+  on the metric's own VictoriaLogs query, which applies the post filters itself
+  (the translator moves them before the gate), so it runs only where
+  VictoriaLogs gives a failing row Loki's answer: string filters on other
+  labels, a filter on __error__ that also keeps the empty value, any filter on
+  __error_details__. For the other forms the query answers as before (200,
+  without the rows that do not convert), where Loki fails it:
+
+  - a filter that keeps only the error: `| unwrap v | __error__="SampleExtractionErr"`,
+    `| unwrap v | __error__!=""`, `| unwrap v | __error__=~"Sample.+"`
+    (VictoriaLogs rows have no __error__, so the query reads no row);
+  - a comparison: `| unwrap v | v > 3` (Loki 3.7.7 answers 400 on a value v
+    that does not parse; VictoriaLogs' `v:>3` drops it), `| unwrap v | n > 3`;
+  - an and/or expression: `| unwrap v | __error__="" or v="1"`.
+
+  Captured on Loki 3.7.7: `sum_over_time({...} | logfmt | unwrap v | v > 3 [5m])`,
+  `... | __error__="SampleExtractionErr"` and `... | __error__!=""` answer 400 over a
+  fixture whose v holds `x<k>` on odd lines; the proxy answers 200.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum_over_time({service_name="payment-service"} | logfmt | unwrap msg | __error__!="" [5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 SampleExtractionErr where a failing line passes the filter.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorPostFilters; the translator''s post-filter placement'
+  loki: 'pkg/logql/log/label_filter.go:90-100 BinaryLabelFilter.Process, 306-340 NumericLabelFilter.Process, 418-424 labelValue'
+  proxy: 'no detection; 200 without the rows that do not convert'
+  planned_test: 'TestUnwrapErrorProbePlans and TestUnwrapConversionErrorDifferential (internal/proxy) assert the detection stays off for these forms; flip them to compare'
+  clusters: []

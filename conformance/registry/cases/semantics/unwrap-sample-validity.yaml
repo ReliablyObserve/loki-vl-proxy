@@ -46,7 +46,7 @@ gap:
   loki: 'pkg/logql/log/metrics_extraction.go:202-231 streamLabelSampleExtractor.Process'
   proxy: 'rows that make a Loki sample only; Go conversions for duration() and bytes()'
   planned_test: 'TestCompat_UnwrapMissingAndNonNumeric and TestCompat_UnwrapRangeSamplesAreNumbers (test/e2e-compat, group core)'
-  note: 'Not changed: a value that does not convert is skipped where Loki fails the query with SampleExtractionErr (semantics/unwrap-conversion-error), and the window bounds and the sample at `end` of an unwrap range metric (semantics/unwrap-range-last-point). Gate divergences from ParseFloat, ParseDuration and ParseBytes: semantics/unwrap-gate-parsefloat-divergences.'
+  note: 'A value that does not convert fails the query like Loki since semantics/unwrap-conversion-error (SampleExtractionErr), unless a filter after the unwrap drops it. Not changed: the window bounds and the sample at `end` of an unwrap range metric (semantics/unwrap-range-last-point). Gate divergences from ParseFloat, ParseDuration and ParseBytes: semantics/unwrap-gate-parsefloat-divergences.'
   clusters:
     - 0adb5d8c
     - 0b6060ea

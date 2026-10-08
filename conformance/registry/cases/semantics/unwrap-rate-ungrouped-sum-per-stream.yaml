@@ -1,0 +1,36 @@
+id: semantics/unwrap-rate-ungrouped-sum-per-stream
+title: An ungrouped sum over rate with unwrap returns one series per stream on query_range (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum(rate({app="payment-service"} | logfmt | unwrap amount [5m]))` is one
+  series on Loki 3.7.7. On the range path the proxy returns 660 series over an
+  hour of generator data (one per stream and parsed label set); the instant
+  query returns the single series. Measured on an isolated stack with VL
+  v1.52.0, the same on main and with the unwrap conversion-error change.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(rate({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One unlabelled series, Loki's sum per step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator rate with unwrap under an ungrouped sum (range path)'
+  loki: 'pkg/logql/evaluator.go newVectorAggEvaluator'
+  proxy: 'per-stream series on query_range'
+  planned_test: 'an e2e over sum(rate(... | unwrap ...)) on query_range and query'
+  clusters: []

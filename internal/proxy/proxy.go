@@ -2306,11 +2306,21 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Loki fails a metric whose unwrap meets a value its conversion rejects:
+	// the metric's own VictoriaLogs queries count such values, and its answer
+	// waits for the decision.
+	r, unwrapLookup := p.startUnwrapConversionCheck(w, r, logqlQuery, true)
+	if unwrapLookup != nil {
+		w = unwrapLookup
+		defer unwrapLookup.finish("query_range", logqlQuery, start)
+	}
+
 	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, true) {
 		return
 	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -2399,6 +2409,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if unwrapLookup.failed() {
+		cacheable = false // the answer sent is Loki's error, not this body
+	}
 	if capture != nil {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
@@ -2437,8 +2450,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", sc.code, elapsed)
-	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
+	code := unwrapRecordedStatus(r.Context(), sc.code)
+	p.metrics.RecordRequest("query_range", code, elapsed)
+	p.queryTracker.Record("query_range", logqlQuery, elapsed, code >= 400)
 }
 
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
@@ -2560,11 +2574,18 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		defer rewriter.finish()
 	}
 
+	r, unwrapLookup := p.startUnwrapConversionCheck(w, r, logqlQuery, false)
+	if unwrapLookup != nil {
+		w = unwrapLookup
+		defer unwrapLookup.finish("query", logqlQuery, start)
+	}
+
 	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, false) {
 		return
 	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -2659,6 +2680,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query", sc.code, elapsed)
-	p.queryTracker.Record("query", logqlQuery, elapsed, sc.code >= 400)
+	code := unwrapRecordedStatus(r.Context(), sc.code)
+	p.metrics.RecordRequest("query", code, elapsed)
+	p.queryTracker.Record("query", logqlQuery, elapsed, code >= 400)
 }

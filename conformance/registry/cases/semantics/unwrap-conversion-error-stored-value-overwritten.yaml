@@ -1,0 +1,51 @@
+id: semantics/unwrap-conversion-error-stored-value-overwritten
+title: An unwrap over a label stored as structured metadata and also parsed from the line misses Loki's SampleExtractionErr (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki renames a parsed key named like structured metadata or a stream label to
+  `name_extracted` (pkg/logql/log/parser.go:151 and :809), so `unwrap x` reads
+  the stored value and `unwrap x_extracted` the parsed one. VictoriaLogs'
+  unpack_logfmt / unpack_json overwrite the stored field with the parsed value.
+  The conversion-error detection (semantics/unwrap-conversion-error) counts the
+  rows VictoriaLogs' value rejects and confirms each with Loki's value
+  re-derived from the stored row, so a stored number with a non-numeric body
+  key answers 200 like Loki (captured: Loki 3.7.7 200 for
+  `sum by (service_name) (sum_over_time({...} | logfmt | unwrap x [5m]))` over
+  `x=abc` lines stored with metadata `x="5"`). Two cases stay different:
+
+  - a stored value Loki rejects hidden by a parsed value VictoriaLogs accepts
+    (metadata `x="abc"`, line `x=5`): Loki fails the query, the proxy answers
+    200 (105 of the 11723 generated queries in TestUnwrapConversionErrorDifferential;
+    duplicate logfmt keys are semantics/unwrap-conversion-error-parser-divergence);
+  - `unwrap x_extracted` beside stored metadata x: Loki 3.7.7 answers 400 over
+    `x=abc` lines, the proxy reads no x_extracted value and answers an empty
+    200 (the same series difference as profiles/parsed-key-colliding-with-structured-metadata).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="api-gateway"} | logfmt | unwrap x_extracted [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    Lines hold a key x that is also stored as structured metadata x.
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 SampleExtractionErr over x_extracted.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator parsed-key collision with stored fields (unpack keep_original_fields); internal/proxy/unwrap_conversion_error.go'
+  loki: 'pkg/logql/log/parser.go:151,809 duplicateSuffix'
+  proxy: 'the stored value is overwritten before the counter reads it'
+  planned_test: 'TestUnwrapConversionErrorDifferential counts the first case; TestCompat_UnwrapConversionErrorParity asserts the 200 side'
+  clusters: []

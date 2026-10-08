@@ -1362,6 +1362,99 @@
      ]
     }
    ]
+  },
+  "unwrap-conversion-error": {
+   "description": "Unwrap range metrics without an error filter: the metric's own VictoriaLogs stats query counts the values the unwrap conversion rejects (Loki fails the query with SampleExtractionErr) in groups of their own, and only a hit costs a bounded lookup. E1-E5, E8 and E9 hold only numbers, so they measure the counter's cost on the common path (clean queries must stay within noise of main at every range); E6 and E7 hold values Loki rejects (a unit string, hexadecimal ids), so main answers 200 and the branch answers Loki's 400. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "E1 json duration_ms sum by service",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [1m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E2 json duration_ms p95 by service",
+     "query": "quantile_over_time(0.95, {service_name=\"api-gateway\"} | json | unwrap duration_ms [1m]) by (service_name)",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E3 logfmt latency_ms rate, production",
+     "query": "sum by (service_name) (rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E4 logfmt size_bytes max by service",
+     "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap size_bytes [1m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E5 json duration_ms sum, instant",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ],
+     "instant": true
+    },
+    {
+     "name": "E6 logfmt ttl unit string (Loki 400)",
+     "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap ttl [1m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E7 json hexadecimal trace_id (Loki 400)",
+     "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E8 json duration_ms sum by service, namespace prod",
+     "query": "sum by (service_name) (sum_over_time({namespace=\"prod\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "E9 logfmt latency_ms sum by service, namespace prod",
+     "query": "sum by (service_name) (sum_over_time({namespace=\"prod\"} | logfmt | unwrap latency_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-conversion-error",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

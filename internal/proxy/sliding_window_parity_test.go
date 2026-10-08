@@ -127,6 +127,20 @@ func newSlidingFakeVL(t testing.TB, lines []slidingFixtureLine) (*httptest.Serve
 		switch r.URL.Path {
 		case "/select/logsql/stats_query_range":
 			q := r.Form.Get("query")
+			if strings.Contains(q, unwrapBadField) {
+				// The unwrap conversion check counts rejected values in a group of
+				// their own. The fixture holds none (every n is a number), so the
+				// answer has no such group; a fixture that holds one needs a fake
+				// that models the counter.
+				for _, line := range fake.lines {
+					if n, ok := slidingLogfmtFields(line.msg)["n"]; ok && n != "" {
+						if _, err := strconv.ParseFloat(n, 64); err != nil {
+							t.Errorf("fixture line %q holds a value Loki rejects; this fake does not model the counter", line.msg)
+						}
+					}
+				}
+				q = strings.ReplaceAll(strings.ReplaceAll(q, ", "+unwrapBadField+")", ")"), "by ("+unwrapBadField+") ", "")
+			}
 			fake.mu.Lock()
 			fake.statsCalls = append(fake.statsCalls, slidingStatsCall{query: q, start: r.Form.Get("start"), end: r.Form.Get("end"), step: r.Form.Get("step"), offset: r.Form.Get("offset")})
 			fake.mu.Unlock()

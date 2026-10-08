@@ -1044,6 +1044,19 @@ func metricWindowValue(funcName string, total float64, rangeWindow time.Duration
 // fetchBareParserMetricSeries fetches log series for bare-parser metric queries.
 // Caching keyed by (query, start, end) would reduce redundant VL fetches within a single
 // Grafana render cycle but requires a request-scoped cache — tracked as a separate concern.
+// reportUnwrapRejectedEntry reports a bare-parser row whose unwrapped value is
+// present but does not convert to the request's unwrap conversion check.
+func reportUnwrapRejectedEntry(ctx context.Context, entry map[string]interface{}, logsqlQuery string, spec bareParserMetricCompatSpec, ts int64) {
+	check := unwrapCheckFrom(ctx)
+	if check == nil || spec.unwrapField == "" {
+		return
+	}
+	check.rawRowRejected(logsqlQuery, ts, func(name string) string {
+		value, _ := stringifyEntryValue(entry[name])
+		return value
+	})
+}
+
 func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery string, spec bareParserMetricCompatSpec, start, end string) ([]bareParserMetricSeries, error) {
 	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
 	if err != nil {
@@ -1143,6 +1156,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		weight, ok := bareParserRawSampleWeight(entry, spec)
 		if !ok {
+			reportUnwrapRejectedEntry(ctx, entry, logsqlQuery, spec, tsNanos)
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -1695,14 +1709,14 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
 	if spec.rangeWindowStr == "" {
 		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
 	logsqlQuery, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 
@@ -1716,7 +1730,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		status := statusFromUpstreamErr(err)
 		p.writeError(w, status, err.Error())
-		p.metrics.RecordRequest("query", status, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
 	}
@@ -1725,7 +1739,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	body, _ := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
 	if resp.StatusCode >= http.StatusBadRequest {
 		code := p.writeBackendError(w, resp.StatusCode, body)
-		p.metrics.RecordRequest("query", code, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), code), time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
 	}
@@ -1740,7 +1754,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
@@ -1753,14 +1767,14 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
 	if spec.rangeWindowStr == "" {
 		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
 	translatedInner, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 
@@ -1774,7 +1788,7 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(sc.code)
 		_, _ = w.Write(bw.body)
 		elapsed := time.Since(start)
-		p.metrics.RecordRequest("query_range", sc.code, elapsed)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), sc.code), elapsed)
 		p.queryTracker.Record("query_range", originalQuery, elapsed, true)
 		return
 	}
@@ -1785,7 +1799,7 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 }
 
@@ -1967,19 +1981,19 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	endNanos, ok := parseFlexibleUnixNanos(r.FormValue("end"))
 	if !ok || endNanos < startNanos {
 		p.writeError(w, http.StatusBadRequest, "invalid end timestamp")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid step")
-		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
 
@@ -2016,7 +2030,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	if err != nil {
 		status := statusFromUpstreamErr(err)
 		p.writeError(w, status, err.Error())
-		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
 		return
 	}
@@ -2076,7 +2090,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 	}
 	status := p.writeHitsRangeMetricMatrix(w, spec.funcName, series, time.Unix(0, startNanos), time.Unix(0, endNanos), time.Duration(stepNanos), spec.rangeWindow)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", status, elapsed)
+	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, status != http.StatusOK)
 	return true
 }
@@ -2149,7 +2163,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	return true
 }
@@ -2165,7 +2179,7 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		status := statusFromUpstreamErr(err)
 		p.writeError(w, status, err.Error())
-		p.metrics.RecordRequest("query", status, time.Since(start))
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
 	}

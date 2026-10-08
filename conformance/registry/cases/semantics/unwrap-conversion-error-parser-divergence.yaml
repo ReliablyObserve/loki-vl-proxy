@@ -1,0 +1,57 @@
+id: semantics/unwrap-conversion-error-parser-divergence
+title: Where VictoriaLogs' logfmt parser reads another value than Loki's, an unwrap misses Loki's SampleExtractionErr or drops samples Loki keeps (open)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki 3.7.7's `| logfmt` keeps the first non-empty value of a key
+  (pkg/logql/log/parser.go:379-438 with Hints.Extracted), skips empty values
+  and turns U+FFFD and invalid UTF-8 into a space (removeInvalidUtf);
+  VictoriaLogs' unpack_logfmt keeps the last value and stores the bytes as
+  they are. The conversion counter reads VictoriaLogs' value, and every
+  flagged row is confirmed with Loki's value re-derived by a Loki-faithful
+  decoder (internal/proxy/unwrap_loki_parsers.go), so the status follows Loki
+  whenever VictoriaLogs flags the row:
+
+  - `max_over_time({...} | logfmt | unwrap v [1m])` over `v=5 v=abc`: Loki
+    unwraps 5 and answers 200, the proxy confirms 5 and answers 200;
+  - `unwrap bytes(b)` over `b=5KB<U+FFFD>`: Loki parses "5KB " and answers 200,
+    the proxy answers 200 (both in TestCompat_UnwrapConversionErrorParity).
+
+  Two differences stay:
+
+  - a value Loki rejects hidden by a later duplicate VictoriaLogs accepts
+    (`v=abc v=5`): Loki fails the query, the proxy answers 200 (87 of the
+    11723 generated queries in TestUnwrapConversionErrorDifferential, with
+    quoting differences);
+  - the rows VictoriaLogs flags but Loki converts (`v=5 v=abc`, `5KB<U+FFFD>`)
+    are left out of the proxy's samples, as VictoriaLogs' stats cannot read
+    Loki's value: the status matches, the series lack those samples.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (max_over_time({service_name="api-gateway"} | logfmt | unwrap v [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    Lines hold a logfmt key twice (`v=abc v=5` or `v=5 v=abc`).
+compare:
+  mode: observed
+  fields: [status, series, values]
+  expect: |
+    Loki's answer over its first value: 400 for `v=abc v=5`, 200 with the
+    samples of 5 for `v=5 v=abc`.
+gap:
+  status: open
+  impact: edge
+  effort: L
+  area: 'internal/translator logfmt unpacking (unpack_logfmt keeps the last value); internal/proxy/unwrap_conversion_error.go'
+  loki: 'pkg/logql/log/parser.go:379-438 LogfmtParser.Process; pkg/logql/log/logfmt/decode.go'
+  proxy: '200 for `v=abc v=5`; samples of rows only Loki converts are missing'
+  planned_test: 'TestUnwrapConversionErrorDifferential counts the first case; TestUnwrapLokiLabels pins the decoder; TestCompat_UnwrapConversionErrorParity asserts the 200 side'
+  clusters: []

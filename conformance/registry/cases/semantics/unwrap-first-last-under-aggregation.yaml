@@ -1,0 +1,38 @@
+id: semantics/unwrap-first-last-under-aggregation
+title: first_over_time and last_over_time with unwrap under sum fail with a VictoriaLogs 422 (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum(first_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
+  and the same with last_over_time answer one series on Loki 3.7.7. The proxy
+  sends VictoriaLogs a `stats ... first(...)` / `last(...)` it cannot parse and
+  answers 422 `cannot parse query ... "first"` on query_range and query.
+  Measured on an isolated stack with VL v1.52.0, the same on main and with the
+  unwrap conversion-error change. Related:
+  semantics/first-last-over-time-translation (offset and line filters).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(first_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series]
+  expect: |
+    HTTP 200, one series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator first_over_time / last_over_time under a vector aggregation'
+  loki: 'pkg/logql/range_vector.go first/last'
+  proxy: '422 VictoriaLogs parse error'
+  planned_test: 'an e2e over sum(first_over_time|last_over_time(... | unwrap ...))'
+  clusters: []

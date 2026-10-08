@@ -45,6 +45,18 @@ const (
 	UnwrapBytesPattern = `^(?:[0-9][0-9,]*(?:[.][0-9]*)?|[.][0-9]+)\s*(?i:(?:[kmgtpe]i?)?b?)\s*$`
 )
 
+// UnwrapPattern returns the expression the gate of the unwrap conversion conv
+// ("" a plain number, "duration" or "bytes") keeps a row by.
+func UnwrapPattern(conv string) string {
+	switch conv {
+	case "duration":
+		return UnwrapDurationPattern
+	case "bytes":
+		return UnwrapBytesPattern
+	}
+	return UnwrapNumberPattern
+}
+
 // UnwrapGate returns the pipes that select the rows of an unwrapped field that
 // make a sample and convert the value into UnwrapValueAlias. The field is quoted:
 // the math pipe reads a bare name such as max, abs or rand as a function, and

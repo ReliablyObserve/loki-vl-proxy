@@ -1,0 +1,38 @@
+id: semantics/unwrap-duration-seconds
+title: '`unwrap duration_seconds(label)` answers no data where Loki converts it like duration() (open)'
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki converts `duration_seconds()` with convertDuration, as `duration()`
+  (pkg/logql/syntax/extractor.go:63-71, OpConvDurationSeconds). The translator
+  strips only `duration(` and `bytes(` off the unwrapped label, so
+  `sum by (service_name) (sum_over_time({...} | logfmt | unwrap
+  duration_seconds(okdur) [5m]))` over okdur=250ms answers an empty matrix on
+  the proxy and 7.5 per window on Loki 3.7.7 (measured on an isolated stack).
+  Its conversion errors are not detected either: nothing is gated, so nothing
+  is counted (semantics/unwrap-conversion-error-undetected-shapes).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap duration_seconds(ttl) [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [series, values]
+  expect: |
+    The values of `unwrap duration(ttl)`.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator extractUnwrapField and unwrapGateField (duration_seconds conversion)'
+  loki: 'pkg/logql/syntax/extractor.go:63-71'
+  proxy: 'empty matrix'
+  planned_test: 'TestCompat_UnwrapDurationSeconds (test/e2e-compat, group core)'
+  clusters: []
