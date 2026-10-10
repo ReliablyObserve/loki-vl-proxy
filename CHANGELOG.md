@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-10
+
 ### Security
 
 - **Go 1.27.2.** Go 1.27.2 fixes nine standard-library vulnerabilities that
