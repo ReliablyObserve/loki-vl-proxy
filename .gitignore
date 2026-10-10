@@ -24,3 +24,6 @@ internal/translator/transdebug_test.go
 .worktrees/
 bench/visual/node_modules/
 bench/visual/test-results/
+
+# Local scratch output (logs, drafts, tool builds); never committed.
+/scratchpad/
