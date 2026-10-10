@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same change: the v2.13.2 release binary, built with Go 1.27.0, cannot read
   Go 1.27.2's standard-library export data ("export data version 5 is greater
   than maximum supported version 4") and fails type checking; v2.14.0 reads it
-  and reports no issues.
+  and reports no issues. `gosec` v2.29.0 (the latest release) pins
+  `golang.org/x/tools` v0.49.0 with the same limit, so the security workflow
+  builds it with `x/tools` v0.52.0 until a gosec release carries a newer one.
 
 ## [2.8.1] - 2026-10-08
 
