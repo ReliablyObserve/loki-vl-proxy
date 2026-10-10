@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **A `scratchpad/` directory committed by accident.** #599 committed 88 local
+  scratch files (about 138 MB of CI logs, draft notes and three tool binaries).
+  None of it is used by the build, tests or docs; they are removed and
+  `/scratchpad/` is ignored so local scratch output cannot be committed again.
+  The files held no credentials.
+
 ## [2.8.1] - 2026-10-08
 
 ### Fixed
