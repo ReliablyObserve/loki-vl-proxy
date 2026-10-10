@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Verify generated configuration and limits reference
@@ -88,7 +88,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Tuple contract gate (default 2-tuple + categorize-labels 3-tuple)
@@ -102,7 +102,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       # --- internal/proxy ---
@@ -205,7 +205,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Select this shard's internal/proxy tests
@@ -274,7 +274,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
@@ -322,7 +322,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Run benchmarks
@@ -651,7 +651,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       # Unit results feed the evidence check: an item whose state claims
@@ -694,7 +694,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: gofmt -s (Go Report Card parity)
@@ -709,7 +709,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9
         with:
-          version: v2.13.2
+          version: v2.14.0
           args: --timeout=5m
 
   docker:
@@ -750,7 +750,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
@@ -830,7 +830,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
@@ -891,7 +891,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7
@@ -972,7 +972,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Stress tests (concurrency + race detector)
@@ -996,7 +996,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Memory-leak tests (bounded heap growth + race detector)
@@ -1018,7 +1018,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Install Helm

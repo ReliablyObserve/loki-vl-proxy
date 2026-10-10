@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Go 1.27.2.** Go 1.27.2 fixes nine standard-library vulnerabilities that
+  `govulncheck` reports as reachable from the proxy's code (HTTP/1 and HTTP/2
+  serving and the HTTP client used for peer cache and upstream calls):
+  GO-2026-6603, GO-2026-6605, GO-2026-6607, GO-2026-6608, GO-2026-6610,
+  GO-2026-6611, GO-2026-6612 (double flow-control refund on HTTP/2 server
+  streams), GO-2026-6613 (HTTP/1 connection desynchronisation after a 2xx
+  CONNECT response) and GO-2026-6617 (HTTP/2 server crash from an HPACK
+  encoder race). With 1.27.1 every pull request failed the govulncheck step.
+  The builder image (`golang:1.27.2-alpine3.24`), `go.mod`, `bench/go.mod`
+  and every workflow move to 1.27.2. `golangci-lint` moves to v2.14.0 in the
+  same change: the v2.13.2 release binary, built with Go 1.27.0, cannot read
+  Go 1.27.2's standard-library export data ("export data version 5 is greater
+  than maximum supported version 4") and fails type checking; v2.14.0 reads it
+  and reports no issues. `gosec` v2.29.0 (the latest release) pins
+  `golang.org/x/tools` v0.49.0 with the same limit, so the security workflow
+  builds it with `x/tools` v0.52.0 until a gosec release carries a newer one.
+
 ## [2.8.1] - 2026-10-08
 
 ### Fixed

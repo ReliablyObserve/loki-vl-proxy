@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - name: Gitleaks
@@ -53,7 +53,14 @@ jobs:
 
       - name: Gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          # gosec v2.29.0 pins golang.org/x/tools v0.49.0, which cannot read Go 1.27.2's
+          # standard-library export data ("export data version 5 is greater than maximum
+          # supported version 4") and reports every package as having type errors. Build it
+          # with x/tools v0.52.0 until a gosec release carries a newer x/tools.
+          tooldir="$(mktemp -d)"
+          (cd "$tooldir" && go mod init gosec-build >/dev/null 2>&1 \
+            && go get github.com/securego/gosec/v2/cmd/gosec@v2.29.0 golang.org/x/tools@v0.52.0 \
+            && go build -o "$(go env GOPATH)/bin/gosec" github.com/securego/gosec/v2/cmd/gosec)
           # Start with the higher-signal rule set and burn down the exclusions over time.
           # G118/G704/G705 (taint analysis, added after v2.22) are excluded on review:
           #   G704 flags cmd/healthcheck fetching http://localhost:$HEALTH_PORT/ready
@@ -163,7 +170,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
-          go-version: "1.27.1"
+          go-version: "1.27.2"
           cache: true
 
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4

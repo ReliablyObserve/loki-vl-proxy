@@ -162,7 +162,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | Workflow | Job | What it runs |
 |---|---|---|
 | `ci.yaml` | `test` | observability asset sync check, CI script unit tests, `go build`, `go vet`, `govulncheck` v1.8.0, `go test ./... -race` with coverage, `internal/cache` coverage guard (79%) |
-| `ci.yaml` | `lint` | `gofmt -s` check and `golangci-lint` v2.13.2 |
+| `ci.yaml` | `lint` | `gofmt -s` check and `golangci-lint` v2.14.0 |
 | `ci.yaml` | `tuple-contract` | `go test ./internal/proxy -run '^TestTupleContract_'` |
 | `ci.yaml` | `tuple-smoke` | compose stack, `TestSetup_IngestLogs`, then `scripts/smoke-test.sh` |
 | `ci.yaml` | `fuzz-smoke` | short (12-20s) fuzz runs for `internal/proxy`, `internal/translator`, `internal/cache` and `internal/rulesmigrate` targets |
