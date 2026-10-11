@@ -80,7 +80,7 @@ compare:
     One unlabelled series, Loki's sum per step.
 gap:
   status: fixed
-  fixed_by: "PENDING"
+  fixed_by: "#716"
   impact: explore-visible
   effort: M
   area: 'internal/proxy range_metric_compat.go (isSumAllLogRange, foldUngroupedSum, handleStatsCompatInstant)'
