@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-10-11
+
 ### Removed
 
 - **A `scratchpad/` directory committed by accident.** #599 committed 88 local
