@@ -1,0 +1,337 @@
+{
+ "label": "unwrapsum-1h",
+ "date": "2026-10-11",
+ "set": "unwrap-ungrouped-sum",
+ "description": "An ungrouped sum over rate or sum_over_time with unwrap (PR for semantics/unwrap-rate-ungrouped-sum-per-stream): Loki answers one series; a sliding window ([5m] over a smaller step) answered one series per stream and parsed label set, from per-stream stats or raw rows. U1-U4 are sliding range queries over logfmt and JSON streams (U4 broad: every production stream), U5-U7 are instant queries (U6 the `| json` route that read raw rows), U8 is the grouped form that was already one series per group (it must not move), U9 folds a function taken per series. Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 4,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 7,
+  "faster": 2
+ },
+ "result_differs_from_reference": 2,
+ "result_differs_preexisting": 2,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 1
+ },
+ "rows": [
+  {
+   "shape": "U1 logfmt amount rate",
+   "range": "1h",
+   "p50": {
+    "base": 0.054,
+    "pr": 0.009,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.221,
+    "pr": 0.057,
+    "loki": 0.011
+   },
+   "cold": {
+    "base": 0.283,
+    "pr": 0.08,
+    "loki": 0.181
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 201.63,
+    "pr": 201.63,
+    "loki": 201.63
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 6.0
+  },
+  {
+   "shape": "U2 json duration_ms rate",
+   "range": "1h",
+   "p50": {
+    "base": 0.418,
+    "pr": 0.021,
+    "loki": 0.015
+   },
+   "p95": {
+    "base": 0.425,
+    "pr": 0.026,
+    "loki": 0.019
+   },
+   "cold": {
+    "base": 0.403,
+    "pr": 0.018,
+    "loki": 0.07
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 40.2,
+    "pr": 40.2,
+    "loki": 40.2
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "faster",
+   "speedup": 19.9
+  },
+  {
+   "shape": "U3 json duration_ms rate, error filter",
+   "range": "1h",
+   "p50": {
+    "base": 0.419,
+    "pr": 0.018,
+    "loki": 0.013
+   },
+   "p95": {
+    "base": 0.419,
+    "pr": 0.02,
+    "loki": 0.013
+   },
+   "cold": {
+    "base": 0.424,
+    "pr": 0.018,
+    "loki": 0.09
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 49.42,
+    "pr": 49.42,
+    "loki": 49.42
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "faster",
+   "speedup": 23.28
+  },
+  {
+   "shape": "U4 logfmt latency_ms rate, production",
+   "range": "1h",
+   "p50": {
+    "base": 0.119,
+    "pr": 0.057,
+    "loki": 0.053
+   },
+   "p95": {
+    "base": 0.119,
+    "pr": 0.063,
+    "loki": 0.057
+   },
+   "cold": {
+    "base": 0.128,
+    "pr": 0.054,
+    "loki": 0.461
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 89.3,
+    "pr": 89.3,
+    "loki": 89.3
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 2.09
+  },
+  {
+   "shape": "U5 logfmt amount rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.004,
+    "pr": 0.004,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.01,
+    "pr": 0.005,
+    "loki": 0.008
+   },
+   "cold": {
+    "base": 0.004,
+    "pr": 0.005,
+    "loki": 0.007
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 51.99,
+    "pr": 51.99,
+    "loki": 51.99
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "U6 json duration_ms rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.019,
+    "pr": 0.004,
+    "loki": 0.016
+   },
+   "p95": {
+    "base": 0.019,
+    "pr": 0.008,
+    "loki": 0.016
+   },
+   "cold": {
+    "base": 0.018,
+    "pr": 0.007,
+    "loki": 0.011
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 7.45,
+    "pr": 7.45,
+    "loki": 7.45
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 4.75
+  },
+  {
+   "shape": "U7 json duration_ms sum_over_time, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.016,
+    "pr": 0.009,
+    "loki": 0.012
+   },
+   "p95": {
+    "base": 0.017,
+    "pr": 0.011,
+    "loki": 0.021
+   },
+   "cold": {
+    "base": 0.02,
+    "pr": 0.011,
+    "loki": 0.01
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 6.59,
+    "pr": 6.59,
+    "loki": 6.59
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.78
+  },
+  {
+   "shape": "U8 logfmt amount rate by service (grouped)",
+   "range": "1h",
+   "p50": {
+    "base": 0.014,
+    "pr": 0.013,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.016,
+    "pr": 0.014,
+    "loki": 0.016
+   },
+   "cold": {
+    "base": 0.01,
+    "pr": 0.014,
+    "loki": 0.035
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 11.95,
+    "pr": 11.95,
+    "loki": 11.95
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  },
+  {
+   "shape": "U9 logfmt amount rate_counter (folded per series)",
+   "range": "1h",
+   "p50": {
+    "base": 0.136,
+    "pr": 0.167,
+    "loki": 0.016
+   },
+   "p95": {
+    "base": 0.14,
+    "pr": 0.169,
+    "loki": 0.021
+   },
+   "cold": {
+    "base": 0.132,
+    "pr": 0.168,
+    "loki": 0.147
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 22.08,
+    "pr": 22.08,
+    "loki": 22.08
+   },
+   "stale": [
+    "loki"
+   ],
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.81
+  }
+ ]
+}

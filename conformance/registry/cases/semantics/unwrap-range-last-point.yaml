@@ -12,8 +12,13 @@ why: |
   duration_ms`.
 
   The raw evaluator that a sliding unwrap `rate` falls back to above the 11,000-bucket
-  threshold reads [T-range, T) for it (`unwrap_rate` is not in isLogRangeWindowFunc), the
-  same window-bound gap.
+  threshold (and, before VictoriaLogs v1.45, for a start off the epoch grid) read
+  [T-range, T] for it: `unwrap_rate` was not in isLogRangeWindowFunc. Fixed with
+  semantics/unwrap-rate-ungrouped-sum-per-stream: it reads (T-range, T] now, pinned
+  for the ungrouped and the grouped sum by TestUngroupedSumUnwrapDifferential and
+  TestGroupedSumUnwrapRateRawWindow. The other unwrap functions (sum, avg, max, min
+  over time) are not served by that evaluator on query_range and stay open here
+  and in semantics/unwrap-over-time-range-windows.
 
   In the differential run this shows only as a secondary difference of
   requests whose primary difference is the parser series identity, so those

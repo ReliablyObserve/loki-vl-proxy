@@ -210,9 +210,10 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 
 // isLogRangeWindowFunc reports the log-line range functions whose Loki window
 // (t-range, t] excludes lines on its lower edge and includes the evaluation time.
+// A rate over an unwrapped label (unwrap_rate) reads the same window.
 func isLogRangeWindowFunc(manualFunc string) bool {
 	switch manualFunc {
-	case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
+	case "rate", "count_over_time", "bytes_over_time", "bytes_rate", "unwrap_rate":
 		return true
 	}
 	return false
@@ -437,7 +438,11 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
 		spec.ByExplicit = true
 	}
-	return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
+	// The evaluator decides on the request's query text (isSumAllLogRange): the
+	// fold must read the same text.
+	return foldUngroupedSum(w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
+		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
+	})
 }
 
 // statsRangeIsTumbling reports whether native step buckets answer a range
@@ -479,6 +484,12 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
+	// An ungrouped sum of an additive unwrap function (rate, sum_over_time): the
+	// translated query ends in the outer sum, so VictoriaLogs answers one series
+	// from stats; the manual evaluator below would keep a series per stream.
+	if hasOrigSpec && origSpec.HasUnwrap && isSumAllLogRange(originalLogql) {
+		return false
+	}
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
@@ -511,16 +522,9 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
 		spec.ByExplicit = true
 	}
-	if !spec.ByExplicit && len(spec.GroupBy) > 0 && internalGroupingOnly(spec.GroupBy) &&
-		origSpec.Func == "sum_over_time" && outerAggregationIsSum(originalLogql) {
-		// An unwrap translates to `stats by (_stream, _msg)` before its outer
-		// sum: that identity is not a label of the result, and summing the
-		// per-stream sums is the sum of all values. Other outer operators
-		// (count, avg, max, topk ...) read one value per stream.
-		spec.GroupBy, spec.OrigGroupBy = nil, nil
-		spec.ByExplicit = true
-	}
-	return p.proxyManualRangeMetricInstant(w, r, withoutUnwrapGate(spec), origSpec, manualFunc)
+	return foldUngroupedSum(w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
+		return p.proxyManualRangeMetricInstant(w, r, withoutUnwrapGate(spec), origSpec, manualFunc)
+	})
 }
 
 // hasOuterAggregationWithoutBy reports whether logql starts with a bare outer aggregation
@@ -759,7 +763,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries(r.Context()))
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.manualSeriesLimit(r.Context()))
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
@@ -817,34 +821,56 @@ func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc str
 	return http.StatusOK
 }
 
-func isSumAllLogRange(query string) bool {
-	expr, err := logqlpkg.Parse(query)
+// ungroupedSumRange returns the range aggregation under a bare `sum(...)`, one
+// with no by() or without() (`sum by ()` included): Loki folds every series the
+// range aggregation yields into one series per step
+// (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
+func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
+	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
-		return false
+		return nil, false
 	}
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
 	if !ok || agg.Op != logqlpkg.VectorSum || (agg.Grouping != nil && (agg.Grouping.Without || len(agg.Grouping.Labels) != 0)) {
-		return false
+		return nil, false
 	}
 	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
+	return ra, ok && ra.Grouping == nil
+}
+
+// isSumAllLogRange reports whether the query is an ungrouped sum of a range
+// aggregation whose per-series values add up to the same number whatever the
+// series identity is, so the evaluator may sum the lines (or the unwrapped
+// values) of all the streams before windowing and read one series from
+// VictoriaLogs: the count and byte functions, and rate and sum_over_time over an
+// unwrapped label, whose value is the sum of the values (pkg/logql/range_vector.go
+// rateLogs with computeValues, sumOverTime). avg, max, min, quantile and the
+// other functions take a value per series, so their series stay apart until the
+// outer sum (foldUngroupedSum).
+func isSumAllLogRange(query string) bool {
+	ra, ok := ungroupedSumRange(query)
 	if !ok {
-		return false
-	}
-	switch ra.Op {
-	case logqlpkg.RangeRate, logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesRate, logqlpkg.RangeBytesOverTime:
-	default:
 		return false
 	}
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
 	if !ok {
 		return false
 	}
+	unwrapped := false
 	for _, stage := range lq.Pipeline {
 		if _, ok := stage.(*logqlpkg.UnwrapStage); ok {
-			return false
+			unwrapped = true
 		}
 	}
-	return true
+	switch ra.Op {
+	case logqlpkg.RangeRate:
+		return true
+	case logqlpkg.RangeSumOverTime:
+		return unwrapped
+	case logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesRate, logqlpkg.RangeBytesOverTime:
+		return !unwrapped
+	}
+	return false
 }
 
 func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {
@@ -872,7 +898,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries(r.Context()))
+	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.manualSeriesLimit(r.Context()))
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
@@ -1494,7 +1520,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
-			if err := seriesLimitCollecting(ctx, len(seriesMap), p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+			if err := seriesLimitCollecting(ctx, len(seriesMap), p.manualSeriesLimit(ctx)); err != nil {
 				return nil, err
 			}
 			current.Metric = seriesEntry.translated
@@ -1517,7 +1543,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		seriesMap[key] = series
 	}
 
-	return capSeriesForRequest(ctx, seriesMap, p.resolvedMaxStatsQuerySeries(ctx))
+	return capSeriesForRequest(ctx, seriesMap, p.manualSeriesLimit(ctx))
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -2325,21 +2351,42 @@ func rateCounterWindow(values []float64, windowSeconds float64) float64 {
 	return increase / windowSeconds
 }
 
-// outerAggregationIsSum reports whether logql is a bare `sum(...)` (no by or
-// without modifier).
-func outerAggregationIsSum(logql string) bool {
-	logql = stripOuterLabelReplace(strings.TrimSpace(logql))
-	rest, ok := strings.CutPrefix(logql, "sum")
-	return ok && hasOuterAggregationWithoutBy(logql) && strings.HasPrefix(strings.TrimSpace(rest), "(")
+// foldedSumKey marks a manual range metric whose series are added up by the
+// outer sum after the evaluator: Loki counts max_query_series on that answer,
+// not on the series the range aggregation yields.
+type foldedSumKey struct{}
+
+// manualSeriesLimit is the series bound of a manual range metric's own answer,
+// in the raw collector and in the builders; none when foldUngroupedSum adds the
+// series up afterwards (the raw-row budget still bounds the memory).
+func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
+	if folded, _ := ctx.Value(foldedSumKey{}).(bool); folded {
+		return 0
+	}
+	return p.resolvedMaxStatsQuerySeries(ctx)
 }
 
-// internalGroupingOnly reports whether a translated stats grouping holds only
-// the proxy's own stream identity fields (or nothing).
-func internalGroupingOnly(groupBy []string) bool {
-	for _, g := range groupBy {
-		if g != "_stream" && g != "_msg" {
-			return false
-		}
+// foldUngroupedSum runs a manual range metric evaluator and, for an ungrouped
+// `sum(...)` over a function whose series do not add up before the window
+// (isSumAllLogRange), sums the series it returns per step: Loki's vector
+// aggregation folds every series of its input into one
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next, groupingKey of no labels).
+func foldUngroupedSum(w http.ResponseWriter, r *http.Request, query string, serve func(http.ResponseWriter, *http.Request) bool) bool {
+	if _, ok := ungroupedSumRange(query); !ok || isSumAllLogRange(query) {
+		return serve(w, r)
 	}
+	buf := &bufferedResponseWriter{}
+	if !serve(buf, r.WithContext(context.WithValue(r.Context(), foldedSumKey{}, true))) {
+		return false
+	}
+	body := buf.body
+	if buf.code == 0 || buf.code == http.StatusOK {
+		body = applyWithoutGrouping(body, []string{withoutAllLabels}, "sum")
+	}
+	copyHeaders(w.Header(), buf.Header())
+	if buf.code != 0 {
+		w.WriteHeader(buf.code)
+	}
+	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the evaluator's own JSON, Content-Type copied above
 	return true
 }

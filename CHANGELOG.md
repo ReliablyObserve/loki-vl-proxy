@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ungrouped `sum` over `rate` with `unwrap` answers one series on query_range
+  and on a `| json` instant query, as Loki does, instead of one series per
+  stream and parsed label set.** `sum(rate({app="payment-service"} | logfmt |
+  unwrap amount [5m]))` over a window that is not the step returned 1,594
+  series on the proxy and 1 on Loki 3.7.7 (`| json | unwrap duration_ms`: 4,062;
+  the instant query over `| json`: 678; measured on VictoriaLogs v1.52.0 over
+  28 minutes of the log generator's data at step 60 s), so Grafana drew a line
+  per pod and the response grew with the stream count. Loki hands a `sum`'s
+  grouping to the range aggregation of `rate`, `sum_over_time`, `count_over_time`
+  and the bytes functions (`pkg/logql/syntax/ast.go:1612-1642`
+  `VectorAggregationExpr.Extractors`, `canInjectVectorGrouping`), so an
+  ungrouped sum extracts every sample with no label and one series is the sum of
+  the values, a rate over an unwrapped label being that sum per second
+  (`pkg/logql/range_vector.go:259-272` `rateLogs`); any other function is
+  evaluated per series and `newVectorAggEvaluator` folds the values per step
+  (`pkg/logql/evaluator.go:400-529`). The proxy translated the sum to
+  `stats by (_stream) ... | stats sum(...)`, but the evaluator that computes a
+  sliding window (and the `| json` instant route) read only the first stats
+  pipe, so the outer sum was dropped; the single-stage collapse a bare
+  `sum(rate({..}[5m]))` had excluded unwrap. Now an ungrouped sum over `rate` or
+  `sum_over_time` with unwrap reads one series from VictoriaLogs stats (a rate
+  on a sliding window: one `stats sum(...), count()` per anchored bucket, no
+  per-stream series, no raw rows; an instant query: one `stats_query` of the
+  whole chain; a `sum_over_time` range query stays on its own, open, path), and the series of a
+  function evaluated per series (`rate_counter`, `quantile_over_time`) are
+  added up per step by the proxy (`rate_counter` under a sum returned 264 to
+  4,062 series, now one). The sliding raw evaluator a rate over an unwrapped
+  label falls back to on VictoriaLogs before v1.45 (no `offset` argument, so an
+  unaligned start has no bucket grid) now reads Loki's window `(t-range, t]`:
+  it counted a line on the lower edge and left out the sample at `t`. No new
+  LogsQL feature is used (the v1.45 `offset` gate is unchanged); proven on
+  VictoriaLogs v1.52.0, v1.47.0 and v1.40.0. Registry:
+  `semantics/unwrap-rate-ungrouped-sum-per-stream` fixed. Found in the same
+  measurement and registered open, not changed here:
+  `semantics/unwrap-over-time-range-windows` (`sum`, `avg`, `max`, `min` over
+  time with unwrap answer the step-sized bucket on a sliding window and are
+  labelled one step early on a tumbling one) and
+  `semantics/unwrap-per-series-identity-raw-rows` (a function taken per series
+  uses the stream, not the stream and parsed labels, as the series).
+
 ## [2.10.3] - 2026-10-11
 
 ### Fixed

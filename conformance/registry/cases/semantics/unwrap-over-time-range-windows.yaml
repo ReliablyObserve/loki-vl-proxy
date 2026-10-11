@@ -1,0 +1,53 @@
+id: semantics/unwrap-over-time-range-windows
+title: sum, avg, max and min over time with unwrap answer the wrong window on query_range (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates `sum_over_time`, `avg_over_time`, `max_over_time` and
+  `min_over_time` over unwrap on the window (t-range, t] for every step
+  (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator.Next, load: the
+  lower bound is exclusive). The proxy answers them with VictoriaLogs'
+  stats_query_range buckets of the step (shouldUseManualRangeMetricCompat sends
+  them to the native path, whose comment assumes range == step), so:
+    * range == step: the bucket [t, t+step) is labelled t, where Loki's sample at
+      t is (t-step, t]; statsRateRangeEqualsStepShift relabels only rate, bytes
+      and count over a log query (logRangeFunctions), so every value sits one
+      step early;
+    * range != step: the value is the step-sized bucket, not the window.
+  Measured on an isolated stack (Loki 3.7.7, VictoriaLogs v1.52.0, generator
+  data), `sum(sum_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`:
+  tumbling (step 300) at t=1791664200 Loki 10089658.54, proxy 10182060.53 (the
+  proxy's value at t-300 is Loki's at t); sliding (step 60) Loki
+  9.84307e+06 at t=1791665280, proxy 2.00257e+06 (about a fifth: one step of the five in the window).
+  The same for avg/max/min over `| json | unwrap duration_ms`, ungrouped or
+  `sum by (level)`, and for the instant query it is exact. An aggregation that is
+  linear in the samples (sum_over_time) can be read from the same anchored
+  buckets rate over an unwrap uses; avg, max and min need a bucket of sum and
+  count, or extremes, per series.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(sum_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series, Loki's window sum at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range_metric_compat.go shouldUseManualRangeMetricCompat (unwrap sum/avg/min/max) and metric_binary.go statsRateRangeEqualsStepShift / logRangeFunctions'
+  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
+  proxy: 'the step-sized bucket, labelled one step early when range == step'
+  planned_test: 'TestCompat_UnwrapOverTimeRangeWindows (test/e2e-compat, group core) over sum/avg/max/min x tumbling/sliding x logfmt/json'
+  note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. The instant path matches Loki.'
+  clusters: []
