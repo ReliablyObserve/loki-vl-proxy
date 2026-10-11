@@ -141,9 +141,12 @@ def classify(row):
 
 
 def signature(diff):
-    """A base-vs-PR difference with its window removed (timestamps, ids, hashes, counts), so the same
-    request shape at another range compares equal."""
-    s = re.sub(r"[0-9a-f]{12,}", "#", diff)
+    """A base-vs-PR difference with its window removed (timestamps, ids, hashes, counts, and the example
+    series of a series-set difference, which name the streams of that window), so the same request shape at
+    another range compares equal."""
+    s = re.sub(r"only left \[.*\], (\d+) only right \[.*\]", r"only left [...], \1 only right [...]", diff)
+    s = re.sub(r"\b0 only (left|right)", r"none only \1", s)  # an empty side stays apart from a non-empty one
+    s = re.sub(r"[0-9a-f]{12,}", "#", s)
     s = re.sub(r"\d{4}-\d\d-\d\dT[\d:.%A-Z]+", "#", s)
     return re.sub(r"\d+", "#", s)
 

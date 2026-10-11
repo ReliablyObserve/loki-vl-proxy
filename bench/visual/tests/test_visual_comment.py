@@ -210,6 +210,26 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["exit"], 0)
         self.assertIn("shorter range", text)
 
+    def test_no_loki_range_passes_when_a_series_set_difference_names_other_streams(self):
+        # compare.same() lists the first two series of each side; they name the streams of the window.
+        q = "query ('sum(rate({a=\"b\"} | logfmt | unwrap v [5m]))', 'range', "
+        d1 = q + "'17: series sets differ: 779 only left [\\'{\"pod\": \"p-02226-d4f9\"}\\'], 1 only right [\"{}\"]')"
+        d6 = q + "'17: series sets differ: 4371 only left [\\'{\"pod\": \"p-000d4-baa2\"}\\'], 1 only right [\"{}\"]')"
+        rows = [row(rng="1h", main_pr_diffs=[d1], loki_main_n=1, loki_diffs=[]),
+                row(rng="6h", main_pr_diffs=[d6], loki_compared=False, points_loki=0)]
+        text, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("shorter range", text)
+
+    def test_no_loki_range_series_set_difference_in_the_other_direction_still_fails(self):
+        q = "query ('sum(rate({a=\"b\"} | logfmt | unwrap v [5m]))', 'range', "
+        d1 = q + "'17: series sets differ: 779 only left [\\'{\"pod\": \"p-1\"}\\'], 1 only right [\"{}\"]')"
+        d6 = q + "'17: series sets differ: 1 only left [\"{}\"], 0 only right []')"
+        rows = [row(rng="1h", main_pr_diffs=[d1], loki_main_n=1, loki_diffs=[]),
+                row(rng="6h", main_pr_diffs=[d6], loki_compared=False, points_loki=0)]
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+
     def test_no_loki_range_with_an_unproven_difference_still_fails(self):
         d1 = "query ('sum by (x) (count_over_time({a=\"b\"} [1m]))', 'range', '1790864400000', '1790868000000', 'aa'): value differs"
         other = "resource /api/datasources/uid/*/resources/labels?end=2026-10-01T18%3A00%3A00Z: body: content differs (rows 3 vs 4)"
