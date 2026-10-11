@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The visual smoke failed a fix at a range beyond Loki's history even though
+  the same page proved it at shorter ranges.** Beyond the history Loki holds on
+  the CI stack, a base-vs-PR difference passes when the same page proved the same
+  difference closer to Loki at a shorter range. The two are matched by a
+  signature of the difference with timestamps, ids, hashes and counts removed.
+  A series-set difference also lists its first two series on each side, and
+  those name the streams of the window (pod names differ between 1h and 6h), so
+  the signatures never matched: #716's 6h capture of an ungrouped `sum(rate(...
+  | unwrap ...))` failed although its 15m and 1h captures were fixed. The
+  signature now leaves out those example series. An empty side stays distinct
+  from a non-empty one, so a difference in the other direction is still not
+  carried over.
+
 ## [2.10.0] - 2026-10-11
 
 ### Removed
