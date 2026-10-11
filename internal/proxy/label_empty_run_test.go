@@ -15,13 +15,15 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// backfillVL is a fake VictoriaLogs holding rows only in the last 20 minutes.
-// Once backfilled is set it also holds one row at ts (hours ago), as after a
-// shipper outage is repaired. It answers row counts and name listings by range
-// and counts both kinds of call.
+// backfillVL is a fake VictoriaLogs holding rows only in the 20 minutes before
+// now (time.Now(), or the fixed instant now when set). Once backfilled is set
+// it also holds one row at ts (hours ago), as after a shipper outage is
+// repaired. It answers row counts and name listings by range and counts both
+// kinds of call.
 type backfillVL struct {
 	backfilled   atomic.Bool
 	ts           int64
+	now          time.Time
 	counts, scan atomic.Int64
 	countDelay   time.Duration // each row count takes this long
 }
@@ -33,12 +35,16 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		now := f.now
+		if now.IsZero() {
+			now = time.Now()
+		}
 		a, _ := parseLokiTimeToUnixNano(r.URL.Query().Get("start"))
 		b, ok := parseLokiTimeToUnixNano(r.URL.Query().Get("end"))
 		if !ok {
-			b = time.Now().UnixNano()
+			b = now.UnixNano()
 		}
-		live := b > time.Now().Add(-20*time.Minute).UnixNano()
+		live := b > now.Add(-20*time.Minute).UnixNano()
 		late := f.backfilled.Load() && a <= f.ts && f.ts < b
 		if strings.Contains(r.URL.Query().Get("query"), "count()") {
 			f.counts.Add(1)
@@ -74,8 +80,31 @@ func (f *backfillVL) server(t *testing.T) *httptest.Server {
 // wall-clock minute passes between two requests, the minute that left the
 // unsealed right edge is scanned once as a new bucket, so a scan-count
 // comparison between those requests fails about once in 200 runs.
-func sealedWindowEnd() time.Time {
-	return time.Now().Truncate(time.Minute).Add(-metadataInventorySealLag)
+func sealedWindowEnd(now time.Time) time.Time {
+	return now.Truncate(time.Minute).Add(-metadataInventorySealLag)
+}
+
+// inventoryClockAt moves the cache clock back to a recent instant whose UTC
+// time of day is tod, and returns that instant: the test's now. The
+// inventory reads bucket ages, the revalidation schedule and the live window
+// of empty runs on the cache clock, so a test that takes its timestamps from
+// the returned instant (and gives it to backfillVL) plans the same buckets
+// whatever the wall clock says. The instant is at least 5 minutes old, so
+// every bucket of a window ending there is sealed on the wall clock too, and
+// at most 23 hours old (else the same time of day an hour later), so such a
+// window still ends within max_metadata_cache_freshness of the wall clock.
+func inventoryClockAt(t *testing.T, tod time.Duration) time.Time {
+	t.Helper()
+	wall := time.Now()
+	at := wall.UTC().Truncate(24 * time.Hour).Add(tod)
+	for at.After(wall.Add(-5 * time.Minute)) {
+		at = at.Add(-24 * time.Hour)
+	}
+	if wall.Sub(at) > 23*time.Hour {
+		at = at.Add(time.Hour)
+	}
+	t.Cleanup(cache.AdvanceClockForTesting(at.Sub(wall)))
+	return at
 }
 
 // inventoryEdgeCount is the number of uncached edges in the plan of a sealed
@@ -94,56 +123,74 @@ func inventoryEdgeCount(start, end time.Time) int64 {
 	return n
 }
 
-// Empty hours cached during a shipper outage, then rows backfilled into them
+// Empty buckets cached during a shipper outage, then rows backfilled into them
 // with old timestamps: the next near-now request after the negative TTL lists
 // them, for one count per run of empty buckets and a rescan of the bucket that
-// received the rows only.
+// received the rows only. The row lands ten hours back, in an hour bucket of
+// today or in yesterday's day bucket.
+//
+// The test runs at a fixed UTC time of day (inventoryClockAt): with the wall
+// clock it failed between 00:01 and 00:20 UTC, when yesterday's day bucket
+// also holds the fake's rows of the last 20 minutes. A non-empty bucket is no
+// part of an empty run, so a row backfilled into it appears at that bucket's
+// revalidation (the registry's accepted limit), not within the negative TTL.
 //
 // conformance: semantics/metadata-answers-include-last-24h-like-loki
 func TestMetadataFreshness_BackfilledRowsInCachedEmptyHoursAppearWithinTheNegativeTTL(t *testing.T) {
-	vl := &backfillVL{ts: time.Now().Add(-10 * time.Hour).UnixNano()}
-	_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
-	// Every request asks for the same 7-day window: its start is not aligned
-	// (an uncached edge), its end is sealed (see sealedWindowEnd).
-	start, end := time.Now().Add(-7*24*time.Hour), sealedWindowEnd()
-	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
-	edges := inventoryEdgeCount(start, end)
-	if got := getMetadataList(t, mux, path); contains(got, "backfill_label") {
-		t.Fatalf("before the backfill: %v", got)
-	}
-	coldScans, coldCounts := vl.scan.Load(), vl.counts.Load()
+	for _, tc := range []struct {
+		name string
+		tod  time.Duration // UTC time of day of the test's now
+	}{
+		{name: "hour bucket of today", tod: 12*time.Hour + 34*time.Minute + 56*time.Second},
+		{name: "day bucket of yesterday", tod: 40*time.Minute + 30*time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := inventoryClockAt(t, tc.tod)
+			vl := &backfillVL{ts: now.Add(-10 * time.Hour).UnixNano(), now: now}
+			_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
+			// Every request asks for the same 7-day window: its start is not
+			// aligned (an uncached edge), its end is sealed (see sealedWindowEnd).
+			start, end := now.Add(-7*24*time.Hour), sealedWindowEnd(now)
+			path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
+			edges := inventoryEdgeCount(start, end)
+			if got := getMetadataList(t, mux, path); contains(got, "backfill_label") {
+				t.Fatalf("before the backfill: %v", got)
+			}
+			coldScans, coldCounts := vl.scan.Load(), vl.counts.Load()
 
-	// Unchanged data, past the negative TTL: one count per run, no bucket scans,
-	// only the uncached edges.
-	restore := cache.AdvanceClockForTesting(metadataNegativeCacheTTL + 5*time.Second)
-	defer restore()
-	time.Sleep(200 * time.Millisecond)
-	_ = getMetadataList(t, mux, path)
-	idleScans, idleCounts := vl.scan.Load()-coldScans, vl.counts.Load()-coldCounts
-	t.Logf("cold: %d scans, %d counts; unchanged refresh: %d scans, %d counts", coldScans, coldCounts, idleScans, idleCounts)
-	if idleScans != edges {
-		t.Fatalf("unchanged refresh made %d scans, want only the plan's %d uncached edges", idleScans, edges)
-	}
-	if idleCounts > 2 {
-		t.Fatalf("unchanged refresh made %d counts, want about one per run of empty buckets", idleCounts)
-	}
+			// Unchanged data, past the negative TTL: one count per run, no
+			// bucket scans, only the uncached edges.
+			restore := cache.AdvanceClockForTesting(metadataNegativeCacheTTL + 5*time.Second)
+			defer restore()
+			time.Sleep(200 * time.Millisecond)
+			_ = getMetadataList(t, mux, path)
+			idleScans, idleCounts := vl.scan.Load()-coldScans, vl.counts.Load()-coldCounts
+			t.Logf("now %s: cold: %d scans, %d counts; unchanged refresh: %d scans, %d counts", now.UTC().Format(time.RFC3339), coldScans, coldCounts, idleScans, idleCounts)
+			if idleScans != edges {
+				t.Fatalf("unchanged refresh made %d scans, want only the plan's %d uncached edges", idleScans, edges)
+			}
+			if idleCounts == 0 || idleCounts > 2 {
+				t.Fatalf("unchanged refresh made %d counts, want about one per run of empty buckets", idleCounts)
+			}
 
-	// Backfill a row ten hours ago, then refresh after the negative TTL.
-	vl.backfilled.Store(true)
-	restore2 := cache.AdvanceClockForTesting(metadataNegativeCacheTTL + 5*time.Second)
-	defer restore2()
-	time.Sleep(200 * time.Millisecond)
-	scansBefore, countsBefore := vl.scan.Load(), vl.counts.Load()
-	if got := getMetadataList(t, mux, path); !contains(got, "backfill_label") {
-		t.Fatalf("rows backfilled into cached empty hours were not listed: %v", got)
-	}
-	scans, counts := vl.scan.Load()-scansBefore, vl.counts.Load()-countsBefore
-	t.Logf("backfill refresh: %d scans, %d counts", scans, counts)
-	if scans != edges+1 {
-		t.Fatalf("backfill refresh made %d scans, want the %d uncached edges and the one bucket that received rows", scans, edges)
-	}
-	if counts > 12 {
-		t.Fatalf("backfill refresh made %d counts", counts)
+			// Backfill a row ten hours ago, then refresh after the negative TTL.
+			vl.backfilled.Store(true)
+			restore2 := cache.AdvanceClockForTesting(metadataNegativeCacheTTL + 5*time.Second)
+			defer restore2()
+			time.Sleep(200 * time.Millisecond)
+			scansBefore, countsBefore := vl.scan.Load(), vl.counts.Load()
+			if got := getMetadataList(t, mux, path); !contains(got, "backfill_label") {
+				t.Fatalf("rows backfilled into cached empty buckets were not listed: %v", got)
+			}
+			scans, counts := vl.scan.Load()-scansBefore, vl.counts.Load()-countsBefore
+			t.Logf("backfill refresh: %d scans, %d counts", scans, counts)
+			if scans != edges+1 {
+				t.Fatalf("backfill refresh made %d scans, want the %d uncached edges and the one bucket that received rows", scans, edges)
+			}
+			if counts > 12 {
+				t.Fatalf("backfill refresh made %d counts", counts)
+			}
+		})
 	}
 }
 
@@ -159,7 +206,7 @@ func TestMetadataFreshness_RowsBackfilledIntoJustCachedEmptyBucketsAppearOnTheNe
 	// The window starts 7m30s past an hour: an edge, 1m buckets to :10, 5m
 	// buckets to the hour, then hours. Its end is sealed (see sealedWindowEnd).
 	start := now.Add(-6 * time.Hour).Truncate(time.Hour).Add(7*time.Minute + 30*time.Second)
-	end := sealedWindowEnd()
+	end := sealedWindowEnd(now)
 	path := fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d", start.UnixNano(), end.UnixNano())
 	edges := inventoryEdgeCount(start, end)
 	for _, tc := range []struct {
