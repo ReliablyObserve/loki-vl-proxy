@@ -192,6 +192,8 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 		{"quantile over mixed values", rangePath, window(`quantile_over_time(0.9, ` + sel + ` | logfmt | unwrap v [5m])`), 400},
 		{"grouped sum, parser hints", rangePath, window(`sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap v [5m]))`), 400},
 		{"ungrouped sum, parser hints", rangePath, window(`sum(sum_over_time(` + sel + ` | logfmt | unwrap v [5m]))`), 400},
+		{"ungrouped sum of rate, sliding window", rangePath, window(`sum(rate(` + sel + ` | logfmt | unwrap v [5m]))`), 400},
+		{"ungrouped sum of rate over json, sliding window", rangePath, window(`sum(rate(` + jsonSel + ` | json | unwrap s [5m]))`), 400},
 		{"max by keeps every label", rangePath, window(`max by (n) (max_over_time(` + sel + ` | logfmt | unwrap v [5m]))`), 400},
 		{"binary operand", rangePath, window(`sum_over_time(` + sel + ` | logfmt | unwrap v [5m]) * 2`), 400},
 		{"duration()", rangePath, window(`sum_over_time(` + sel + ` | logfmt | unwrap duration(dur) [5m])`), 400},
@@ -208,6 +210,8 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 		{"the value inside a gapped window", rangePath, rangeParams(`max_over_time(`+sel+` | logfmt | unwrap w [3m])`, 5*time.Minute, 25*time.Minute, 300), 400},
 		{"instant", instantPath, instant(`sum_over_time(`+sel+` | logfmt | unwrap t [5m])`, 20*time.Minute), 400},
 		{"instant quantile", instantPath, instant(`quantile_over_time(0.5, `+sel+` | logfmt | unwrap v [5m])`, 20*time.Minute), 400},
+		{"instant ungrouped sum of rate", instantPath, instant(`sum(rate(`+sel+` | logfmt | unwrap t [5m]))`, 20*time.Minute), 400},
+		{"instant ungrouped sum of rate over json", instantPath, instant(`sum(rate(`+jsonSel+` | json | unwrap s [5m]))`, 20*time.Minute), 400},
 		{"instant window holding the value", instantPath, instant(`max_over_time(`+sel+` | logfmt | unwrap w [1m])`, 12*time.Minute+30*time.Second), 400},
 
 		{"json boolean", rangePath, window(`sum by (service_name) (sum_over_time(` + jsonSel + ` | json | unwrap c [5m]))`), 400},

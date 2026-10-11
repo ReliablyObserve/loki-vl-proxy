@@ -48,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labelled one step early on a tumbling one) and
   `semantics/unwrap-per-series-identity-raw-rows` (a function taken per series
   uses the stream, not the stream and parsed labels, as the series).
+  The step that folds a `sum` or a `without (...)` aggregation in the proxy
+  now orders the samples of a series by their time as a number (the text form
+  of a time in exponent notation sorted out of order) and answers an empty
+  result as `[]`, as Loki does, instead of `null`; this applies to every
+  `without (...)` query, not only to the unwrap shapes above.
 
 ## [2.10.3] - 2026-10-11
 

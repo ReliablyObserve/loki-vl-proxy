@@ -273,22 +273,28 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 
 	result := []map[string]interface{}{}
 	for _, group := range groups {
-		timestamps := make([]string, 0, len(group.values))
+		type sampleTime struct {
+			key     string
+			seconds float64
+			ok      bool
+		}
+		timestamps := make([]sampleTime, 0, len(group.values))
 		for ts := range group.values {
-			timestamps = append(timestamps, ts)
+			seconds, ok := sampleTimeSeconds(group.order[ts])
+			timestamps = append(timestamps, sampleTime{ts, seconds, ok})
 		}
 		// Sample times order numerically: their text form ("1.79166e+09",
 		// "1.7916642e+09") does not.
-		sort.SliceStable(timestamps, func(i, j int) bool {
-			a, aok := sampleTimeSeconds(group.order[timestamps[i]])
-			b, bok := sampleTimeSeconds(group.order[timestamps[j]])
-			if aok && bok && a != b {
-				return a < b
+		sort.Slice(timestamps, func(i, j int) bool {
+			a, b := timestamps[i], timestamps[j]
+			if a.ok && b.ok && a.seconds != b.seconds {
+				return a.seconds < b.seconds
 			}
-			return timestamps[i] < timestamps[j]
+			return a.key < b.key
 		})
 		values := make([][]interface{}, 0, len(timestamps))
-		for _, ts := range timestamps {
+		for _, t := range timestamps {
+			ts := t.key
 			values = append(values, []interface{}{
 				group.order[ts],
 				strconv.FormatFloat(group.values[ts], 'f', -1, 64),
