@@ -89,7 +89,7 @@ func refValue(op string, a, b float64) (float64, bool) {
 	case "*":
 		return a * b, true
 	case "/":
-		return a / b, true // divisors are never zero here: Loki answers NaN, see the report
+		return a / b, true // the generator never divides by zero: Loki answers NaN there, the proxy ±Inf
 	case ">":
 		return a, a > b
 	case "<":
@@ -199,11 +199,20 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bo
 			continue
 		}
 		labels := s.labels
-		if !n.groupLeft && n.match == "on" {
+		if !n.groupLeft && n.match != "" { // one-to-one: resultMetric keeps on(), drops ignoring()
 			labels = map[string]string{}
-			for _, name := range n.labels {
-				if v := s.labels[name]; v != "" {
-					labels[name] = v
+			if n.match == "on" {
+				for _, name := range n.labels {
+					if v := s.labels[name]; v != "" {
+						labels[name] = v
+					}
+				}
+			} else {
+				for k, v := range s.labels {
+					labels[k] = v
+				}
+				for _, name := range n.labels {
+					delete(labels, name)
 				}
 			}
 		}
@@ -289,7 +298,9 @@ func (a refAggregation) apply(in []refSample) []refSample {
 }
 
 // generateBinaryAggregation draws an expression: operands grouped by (job, pod)
-// or by (job), joined on every label, on() or ignoring() with group_left, with
+// or by (job), joined on every label, on() or ignoring() with group_left,
+// ignoring() one-to-one (`sum by (job) (A) + ignoring(machine) sum by (job,
+// machine) (B)`, one machine per job), with
 // a literal on either side, a comparison with or without bool, and binaries
 // nested in binaries; then one or two aggregations over it. A divisor is never
 // a value that can be zero.
@@ -300,7 +311,7 @@ func generateBinaryAggregation(rnd *rand.Rand) (*refNode, []refAggregation) {
 	literal := func(v float64) *refNode { return &refNode{scalar: &v} }
 	full := []string{"job", "pod"}
 	var expr *refNode
-	switch rnd.Intn(7) {
+	switch rnd.Intn(8) {
 	case 0: // metric op metric on every label
 		op := pick("+", "-", "*", "/")
 		right := operand(full...)
@@ -333,6 +344,13 @@ func generateBinaryAggregation(rnd *rand.Rand) (*refNode, []refAggregation) {
 			match, labels = "ignoring", []string{"pod"}
 		}
 		expr = &refNode{op: pick("/", "*", "-"), match: match, labels: labels, groupLeft: true, l: operand(full...), r: divisor("job")}
+	case 7: // one-to-one ignoring() a label only one side has (one machine per job)
+		left := &refNode{fn: pick("count", "rate", "amount"), by: []string{"job"}}
+		if rnd.Intn(2) == 0 {
+			expr = &refNode{op: pick("+", "-", "*"), match: "ignoring", labels: []string{"machine"}, l: left, r: operand("job", "machine")}
+		} else {
+			expr = &refNode{op: "/", match: "ignoring", labels: []string{"machine"}, l: left, r: divisor("job", "machine")}
+		}
 	case 5: // one-to-one on() the full label set: the answer keeps only those
 		expr = &refNode{op: pick("+", "/"), match: "on", labels: full, l: operand(full...), r: divisor(full...)}
 	default: // nested
@@ -385,11 +403,11 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 					}
 					for j := range s.rows {
 						pod := s.rows[j].stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
-						s.rows[j].stream = fmt.Sprintf(`{app="uw",job="%s",pod="%s"}`, jobs[pod], pod)
-						if version == "v1.40.0" && s.step > 0 && s.rows[j].ts%int64(s.step) == 0 {
+						s.rows[j].stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
+						if version == "v1.40.0" && s.step > 0 && s.rows[j].ts%1e9 == 0 {
 							// Before v1.45 VictoriaLogs has no stats_query_range offset: its
-							// epoch buckets [T, T+step) put a line exactly on T in the next
-							// tumbling window, not Loki's (T-step, T]. Registered apart.
+							// epoch buckets [T, T+b) put a line exactly on a bucket edge T in
+							// the next window, not Loki's (T-range, T], on any operand alone.
 							s.rows[j].ts++
 						}
 					}

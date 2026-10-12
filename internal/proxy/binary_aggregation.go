@@ -48,6 +48,11 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	}
 	chain, binary, ok := binaryAggregationChain(binaryRequestExpr(r))
 	if !ok {
+		// Routed from under a label_replace, which the handler applies to the answer.
+		expr, _ := logqlpkg.Parse(stripOuterLabelReplace(binaryRequestQuery(r)))
+		chain, binary, ok = binaryAggregationChain(expr)
+	}
+	if !ok {
 		p.writeError(w, http.StatusBadRequest, "unsupported aggregation over a binary expression")
 		return true
 	}

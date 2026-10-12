@@ -58,7 +58,7 @@ gap:
   area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing'
   loki: 'pkg/logql/evaluator.go:791 newBinOpStepEvaluator, :955 vectorBinop, :1096 resultMetric, :400-630 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/syntax/ast.go:1944 MergeBinOp'
   proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
-  planned_test: 'TestCompat_AggregationOverBinary and TestCompat_AggregationOverBinaryMixedParsers (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser and TestAggregationOverBinaryMixedOffset (internal/proxy)'
+  planned_test: 'TestCompat_AggregationOverBinary and TestCompat_AggregationOverBinaryMixedParsers (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset and TestBinaryWithLabelReplaceOperandStaysBinary (internal/proxy)'
   note: 'The e2e is written and not yet run against the stack.'
   clusters:
     - f2066991
