@@ -470,7 +470,8 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Extract without() labels before translation.
 	// The proxy will post-process VL results to remove these labels from metric grouping.
 	var withoutLabels []string
-	logql, withoutLabels = extractWithoutLabels(logql)
+	var withoutOp string
+	logql, withoutOp, withoutLabels = extractWithoutLabels(logql)
 
 	// Strip "bool" modifier from comparison operators before translation.
 	// Loki: "A > bool B" returns 1/0 instead of filtering. Our applyOp always
@@ -485,12 +486,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
 	if binResult, ok := tryTranslateBinaryMetricExpr(logql, labelFn); ok {
-		return appendWithoutMarker(applyDerivedGroupings(binResult, caps, streamFields), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(binResult, caps, streamFields), withoutOp, withoutLabels), nil
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
 	if metricResult, ok := tryTranslateMetricQueryWithout(logql, labelFn, len(withoutLabels) > 0); ok {
-		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutLabels), nil
+		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutOp, withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
 		return "", &UnsupportedError{Msg: unwrapFunc + " requires `| unwrap <field>` for range aggregation", Func: unwrapFunc}
@@ -507,42 +508,102 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 }
 
 // WithoutMarkerSuffix is appended to translated queries that need without() post-processing.
-// Format: "...actual_query...__without__:pod,node"
+// Format: "...actual_query...__without__:<op>:pod,node", where <op> is the
+// aggregation of the `<op> without (...)` (sum, max, count, ...; empty when it
+// cannot be told), which decides how the series that share a label set once the
+// labels are dropped are folded, whatever wraps the aggregation.
 const WithoutMarkerSuffix = "__without__:"
 
-func appendWithoutMarker(query string, labels []string) string {
+func appendWithoutMarker(query, op string, labels []string) string {
 	if len(labels) == 0 {
 		return query
 	}
-	return query + WithoutMarkerSuffix + strings.Join(labels, ",")
+	return query + WithoutMarkerSuffix + op + ":" + strings.Join(labels, ",")
 }
 
-// ParseWithoutMarker extracts the without labels from a translated query.
-// Returns the clean query and the list of labels to exclude.
-func ParseWithoutMarker(query string) (cleanQuery string, excludeLabels []string) {
+// ParseWithoutMarker extracts the aggregation and the without labels from a
+// translated query. Returns the clean query, the operator of the `without`
+// aggregation (empty when unknown) and the list of labels to exclude.
+func ParseWithoutMarker(query string) (cleanQuery, op string, excludeLabels []string) {
 	idx := strings.LastIndex(query, WithoutMarkerSuffix)
 	if idx < 0 {
-		return query, nil
+		return query, "", nil
 	}
 	cleanQuery = query[:idx]
 	labelStr := query[idx+len(WithoutMarkerSuffix):]
+	// A label_replace, label_join or group marker appended after this one is
+	// not part of the label list: leave it in the clean query.
+	end := len(labelStr)
+	for _, other := range []string{groupMarker, labelReplacePrefix, labelJoinPrefix} {
+		if i := strings.Index(labelStr, other); i >= 0 && i < end {
+			end = i
+		}
+	}
+	cleanQuery += labelStr[end:]
+	labelStr = labelStr[:end]
+	if opEnd := strings.Index(labelStr, ":"); opEnd >= 0 {
+		op, labelStr = labelStr[:opEnd], labelStr[opEnd+1:]
+	}
 	for _, l := range strings.Split(labelStr, ",") {
 		l = strings.TrimSpace(l)
 		if l != "" {
 			excludeLabels = append(excludeLabels, l)
 		}
 	}
-	return cleanQuery, excludeLabels
+	return cleanQuery, op, excludeLabels
 }
 
-// extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker.
-// Called by the translator to attach metadata to the translated query.
-func extractWithoutLabels(logql string) (cleaned string, labels []string) {
-	m := withoutMarkerRE.FindStringSubmatch(logql)
-	if m == nil {
-		return logql, nil
+// withoutOpRE reads the aggregation name that ends a prefix.
+var withoutOpRE = regexp.MustCompile(`(sum|avg|min|max|count|stddev|stdvar|group|topk|bottomk)\s*$`)
+
+// withoutAggregationBefore returns the operator of the aggregation a `without`
+// clause at idx belongs to: `max without (pod) (...)` names it just before the
+// clause, `max(...) without (pod)` before the parenthesis the clause follows.
+func withoutAggregationBefore(logql string, idx int) string {
+	prefix := strings.TrimRight(logql[:idx], " \t")
+	if strings.HasSuffix(prefix, ")") {
+		depth, inQuote := 0, byte(0)
+		for i := len(prefix) - 1; i >= 0; i-- {
+			c := prefix[i]
+			switch {
+			case inQuote != 0:
+				if c == inQuote && (i == 0 || prefix[i-1] != '\\' || inQuote == '`') {
+					inQuote = 0
+				}
+			case c == '"' || c == '`':
+				inQuote = c
+			case c == ')':
+				depth++
+			case c == '(':
+				depth--
+				if depth == 0 {
+					prefix = strings.TrimRight(prefix[:i], " \t")
+					i = -1
+				}
+			}
+		}
 	}
-	labelStr := m[1]
+	m := withoutOpRE.FindStringSubmatchIndex(prefix)
+	if m == nil || (m[0] > 0 && isLabelNameByte(prefix[m[0]-1])) {
+		return ""
+	}
+	return prefix[m[2]:m[3]]
+}
+
+func isLabelNameByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+// extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker
+// and the operator of the aggregation they belong to.
+// Called by the translator to attach metadata to the translated query.
+func extractWithoutLabels(logql string) (cleaned, op string, labels []string) {
+	loc := withoutMarkerRE.FindStringSubmatchIndex(logql)
+	if loc == nil {
+		return logql, "", nil
+	}
+	op = withoutAggregationBefore(logql, loc[0])
+	labelStr := logql[loc[2]:loc[3]]
 	for _, l := range strings.Split(labelStr, ",") {
 		l = strings.TrimSpace(l)
 		if l != "" {
@@ -553,7 +614,7 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 	for strings.Contains(cleaned, "  ") {
 		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
 	}
-	return cleaned, labels
+	return cleaned, op, labels
 }
 
 // StoredLineField is the field TranslateLogQueryKeepingLine copies the

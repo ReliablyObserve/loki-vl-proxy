@@ -49,16 +49,16 @@ func TestSeriesLevelOuterAggregationsKeepSeriesIdentity(t *testing.T) {
 			// `without` keeps the identity in the outer pipe: the proxy drops
 			// the excluded labels and aggregates the rows that remain.
 			`count without (pod) (count_over_time({app="x"}[1m]))`,
-			`app:="x" | stats by (_stream, level) count() as __lvp_inner | stats by (_stream, level) count()` + WithoutMarkerSuffix + `pod`,
+			`app:="x" | stats by (_stream, level) count() as __lvp_inner | stats by (_stream, level) count()` + WithoutMarkerSuffix + `count:pod`,
 		},
 		{
 			`max without (pod) (count_over_time({app="x"}[1m]))`,
-			`app:="x" | stats by (_stream, level) count() as __lvp_inner | stats by (_stream, level) max(__lvp_inner)` + WithoutMarkerSuffix + `pod`,
+			`app:="x" | stats by (_stream, level) count() as __lvp_inner | stats by (_stream, level) max(__lvp_inner)` + WithoutMarkerSuffix + `max:pod`,
 		},
 		{
 			// sum without keeps the single pipe it always had.
 			`sum without (pod) (count_over_time({app="x"}[1m]))`,
-			`app:="x" | stats count()` + WithoutMarkerSuffix + `pod`,
+			`app:="x" | stats count()` + WithoutMarkerSuffix + `sum:pod`,
 		},
 		{
 			`max by (pod) (max_over_time({app="x"} | unwrap d [1m]))`,

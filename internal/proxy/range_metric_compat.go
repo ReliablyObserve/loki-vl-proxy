@@ -962,7 +962,9 @@ const vlDefaultMaxQueryLen = 16384
 // in when they rank. The series of the kept values are exact.
 func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	field := quoteLogsQLIdent(spec.GroupBy[0])
-	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	// The tenant's limit, not the raw-row budget of a request that folds its
+	// series: this ranks values and sends the limit to VictoriaLogs.
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	params := url.Values{}
 	params.Set("query", spec.BaseQuery+" | stats by ("+field+") count() as _c | sort by (_c desc) | limit "+strconv.Itoa(limit+1))
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
@@ -1207,7 +1209,7 @@ func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit i
 		if guarded {
 			return nil, errStatsGroupGuard
 		}
-		return nil, &seriesLimitError{limit: limit}
+		return nil, newSeriesLimitError(ctx, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -1963,8 +1965,8 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 // default of 500 (see queryLimitsFor).
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
-	if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
-		// The per-stream series are folded before Loki's limit applies.
+	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
+		// The series are folded before Loki's limit applies.
 		if budget, err := p.manualMetricRowBudget(); err == nil && budget > limit {
 			return budget
 		}
@@ -2024,7 +2026,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if maxSeries > 0 && len(series) > maxSeries {
-		return nil, &seriesLimitError{limit: maxSeries}
+		return nil, newSeriesLimitError(ctx, maxSeries)
 	}
 	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
@@ -2195,7 +2197,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
-		return nil, &seriesLimitError{limit: maxSeries[0]}
+		return nil, newSeriesLimitError(ctx, maxSeries[0])
 	}
 	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))

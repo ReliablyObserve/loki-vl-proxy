@@ -271,12 +271,17 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, withoutOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
+	if innerIsBinary {
+		// The operands of a binary expression fold and are limited on their own.
+		withoutLabels = nil
+	}
 	if len(withoutLabels) > 0 {
-		r = withWithoutFold(r)
+		r = p.withWithoutFold(r)
 	}
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
@@ -302,7 +307,13 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	if !dispatched {
 		if isStatsQuery(translatedInner) {
-			p.proxyStatsQuery(sc, r, translatedInner)
+			statsR := r
+			if len(withoutLabels) > 0 {
+				// The ranking wraps the folded series: the stats query must not apply
+				// it to the per-stream rows, which hold a different set than the fold.
+				statsR = cloneMetricQueryRequest(r, postAgg.inner)
+			}
+			p.proxyStatsQuery(sc, statsR, translatedInner)
 		} else {
 			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
 			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -311,7 +322,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutOp)
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -355,12 +366,12 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, withoutOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
 	if len(withoutLabels) > 0 {
-		r = withWithoutFold(r)
+		r = p.withWithoutFold(r)
 	}
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
@@ -400,7 +411,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutOp)
 	}
 
 	if sc.code >= http.StatusBadRequest {

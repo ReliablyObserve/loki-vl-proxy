@@ -530,3 +530,204 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 		}
 	}
 }
+
+// TestWithoutWrappedByAnOperator: the operator of a `<op> without (...)` decides
+// how the series that share a label set are folded, whatever wraps it. Every
+// pod holds a different value, so a fold by sum instead of the operator is
+// visible: a max without (pod) over pods valued 10 and 4 is 10, not 14.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestWithoutWrappedByAnOperator(t *testing.T) {
+	type wrapper struct {
+		name    string
+		wrap    func(inner string) string
+		instant bool                                                                 // only an instant query
+		anyKey  bool                                                                 // compared by value, not by label set
+		keep    func(want map[int64]map[string]float64) map[int64]map[string]float64 // the wrapper applied to Loki's answer
+	}
+	identity := func(w map[int64]map[string]float64) map[int64]map[string]float64 { return w }
+	wrappers := []wrapper{
+		{"topk(10)", func(q string) string { return "topk(10, " + q + ")" }, false, false, identity},
+		// Ties between label sets pick either: only the winning value is pinned.
+		{"topk(1)", func(q string) string { return "topk(1, " + q + ")" }, false, true, func(w map[int64]map[string]float64) map[int64]map[string]float64 {
+			out := map[int64]map[string]float64{}
+			for ts, groups := range w {
+				best := math.Inf(-1)
+				for _, v := range groups {
+					best = math.Max(best, v)
+				}
+				out[ts] = map[string]float64{"*": best}
+			}
+			return out
+		}},
+		{"sort", func(q string) string { return "sort(" + q + ")" }, true, false, identity},
+		{"label_replace", func(q string) string { return `label_replace(` + q + `, "dst", "$1", "app", "(.*)")` }, false, false, identity},
+		{"comparison", func(q string) string { return q + " > 0" }, false, false, func(w map[int64]map[string]float64) map[int64]map[string]float64 {
+			out := map[int64]map[string]float64{}
+			for ts, groups := range w {
+				for key, v := range groups {
+					if v > 0 {
+						if out[ts] == nil {
+							out[ts] = map[string]float64{}
+						}
+						out[ts][key] = v
+					}
+				}
+			}
+			return out
+		}},
+	}
+	type inner struct{ fn, op string }
+	inners := []inner{{"rate", "max"}, {"rate", "min"}, {"max_over_time", "max"}, {"min_over_time", "min"}, {"max_over_time", "count"}}
+	for _, version := range []string{"v1.52.0", "v1.40.0"} {
+		for _, w := range wrappers {
+			for _, in := range inners {
+				for _, instant := range []bool{true, false} {
+					if w.instant && !instant {
+						continue
+					}
+					name := fmt.Sprintf("%s/%s/%s_without(%s)/instant=%v", version, w.name, in.op, in.fn, instant)
+					t.Run(name, func(t *testing.T) {
+						rnd := rand.New(rand.NewSource(int64(len(name)) * 6101))
+						for i := 0; i < 8; i++ {
+							s := generateWithoutScenario(rnd, in.fn, in.op, "", instant)
+							// A value per pod that differs from every other, so the operators differ.
+							for j := range s.rows {
+								s.rows[j].value = float64(1+j%7) * 1.5
+							}
+							query := w.wrap(s.query())
+							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							got := runWithoutScenarioQ(t, emu, s, query)
+							want := w.keep(lokiWithout(s.rows, in.fn, in.op, int64(s.window), s.times()))
+							if w.anyKey {
+								rekey := func(m map[int64]map[string]float64) map[int64]map[string]float64 {
+									out := map[int64]map[string]float64{}
+									for ts, groups := range m {
+										for _, v := range groups {
+											if out[ts] == nil {
+												out[ts] = map[string]float64{}
+											}
+											out[ts]["*"] = v
+										}
+									}
+									return out
+								}
+								got = rekey(got)
+							}
+							mode := compareValues
+							switch {
+							case instant:
+							case in.fn != "rate":
+								mode = compareSubset
+							case version == "v1.40.0":
+								mode = compareSeries
+							}
+							compareWithout(t, fmt.Sprintf("%s #%d: %s", name, i, query), s, got, want, mode)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// TestWithoutBinaryOperands: the operands of a binary expression fold by their
+// own `without` and the expression joins them on the labels that remain, so
+// `sum without (pod) (rate(a)) / sum without (pod) (rate(b))` is a per-label-set
+// ratio, not the ratio of the totals. A count without folds once, not again over
+// the combined answer.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestWithoutBinaryOperands(t *testing.T) {
+	for _, version := range []string{"v1.52.0", "v1.40.0"} {
+		for _, instant := range []bool{true, false} {
+			name := fmt.Sprintf("%s/instant=%v", version, instant)
+			t.Run(name, func(t *testing.T) {
+				rnd := rand.New(rand.NewSource(int64(len(name)) * 4409))
+				for i := 0; i < 8; i++ {
+					s := generateWithoutScenario(rnd, "rate", "sum", "", instant)
+					for j := range s.rows {
+						s.rows[j].value = float64(1+j%7) * 1.5
+					}
+					if !instant {
+						// A binary range query joins its operands on a step-aligned axis.
+						s.start, s.end = s.start/int64(s.step)*int64(s.step), s.end/int64(s.step)*int64(s.step)
+					}
+					window := uwWindowText(s.window)
+					query := fmt.Sprintf(`sum without (pod) (rate({app="uw"} | unwrap amount [%s])) / sum without (pod) (rate({app="uw"} [%s]))`, window, window)
+					emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+					got := runWithoutScenarioQ(t, emu, s, query)
+					num := lokiWithout(s.rows, "rate", "sum", int64(s.window), s.times())
+					den := lokiWithout(s.rows, "count_rate", "sum", int64(s.window), s.times())
+					want := map[int64]map[string]float64{}
+					for ts, groups := range num {
+						for key, v := range groups {
+							if d, ok := den[ts][key]; ok && d != 0 {
+								if want[ts] == nil {
+									want[ts] = map[string]float64{}
+								}
+								want[ts][key] = v / d
+							}
+						}
+					}
+					mode := compareValues
+					if !instant && version == "v1.40.0" {
+						mode = compareSeries
+					}
+					compareWithout(t, fmt.Sprintf("%s #%d: %s", name, i, query), s, got, want, mode)
+				}
+			})
+		}
+	}
+}
+
+// TestWithoutFoldRowBudgetIsNotASeriesLimit: while a `without` request reads a
+// row per stream, the bound on those reads is the raw-row budget
+// (-manual-range-metric-row-limit), here above the tenant's series limit of 2, not that limit: tripping it
+// answers the row-limit error that names the flag, as a rejection (400), and
+// never Loki's series message carrying the budget.
+//
+// conformance: semantics/unwrap-sum-without-collapses, limits/series-limit-error
+func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	var rows []emuRow
+	for i := 0; i < 40; i++ {
+		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
+		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf("amount=%d", i+1)})
+	}
+	for _, query := range []string{
+		`sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
+		`sum without (pod) (rate({app="uw"} | logfmt | unwrap amount [5m]))`,
+		`sum without (pod) (count_over_time({app="uw"}[1m]))`,
+	} {
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/instant=%v", query, instant), func(t *testing.T) {
+				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+				backend := httptest.NewServer(emu.handler())
+				defer backend.Close()
+				p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: 2, RangeMetricRowLimit: 3})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				params := url.Values{"query": {query}}
+				target := "/loki/api/v1/query_range?"
+				if instant {
+					target = "/loki/api/v1/query?"
+					params.Set("time", strconv.FormatInt(base/1e9, 10))
+				} else {
+					params.Set("start", strconv.FormatInt(base/1e9-120, 10))
+					params.Set("end", strconv.FormatInt(base/1e9, 10))
+					params.Set("step", "60")
+				}
+				res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+				body := res.Body.String()
+				if res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit") {
+					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
+				}
+			})
+		}
+	}
+}

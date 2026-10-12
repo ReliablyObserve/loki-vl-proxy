@@ -64,9 +64,29 @@ const seriesLimitMessagePrefix = "maximum number of series ("
 // (logqlmodel.NewSeriesLimitError, HTTP 400), word for word: Grafana shows the
 // message to the user, so it stays Loki's. The proxy's limit is set by
 // -max-stats-query-series, which the log line names.
-type seriesLimitError struct{ limit int }
+type seriesLimitError struct {
+	limit int
+	// rowBudget marks the raw-row budget of a request that folds its series
+	// afterwards, not a series limit: it answers the row-limit message.
+	rowBudget bool
+}
+
+// newSeriesLimitError is the error of a metric result over limit series. While
+// a request folds its series afterwards (withWithoutFold) the reads before the
+// fold are bounded by the raw-row budget, and that is the limit they hit.
+func newSeriesLimitError(ctx context.Context, limit int) error {
+	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
+		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget == limit {
+			return &seriesLimitError{limit: limit, rowBudget: true}
+		}
+	}
+	return &seriesLimitError{limit: limit}
+}
 
 func (e *seriesLimitError) Error() string {
+	if e.rowBudget {
+		return fmt.Sprintf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", e.limit)
+	}
 	return fmt.Sprintf("%s%d) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()", seriesLimitMessagePrefix, e.limit)
 }
 
@@ -79,8 +99,9 @@ func isSeriesLimitError(err error) bool {
 // limit. Loki gives Grafana Logs Drilldown the first series with a warning
 // (pkg/logql/engine.go JoinSampleVector) and every other client an error.
 type seriesLimitScope struct {
-	drilldown bool
-	truncated atomic.Int64 // the limit that cut a Drilldown result; 0 = none
+	drilldown  bool
+	foldBudget int          // the raw-row budget of a request that folds its series afterwards; 0 = none
+	truncated  atomic.Int64 // the limit that cut a Drilldown result; 0 = none
 }
 
 type seriesLimitScopeKey struct{}
@@ -99,7 +120,7 @@ func seriesLimitReached(ctx context.Context, limit int) error {
 		scope.truncated.Store(int64(limit))
 		return nil
 	}
-	return &seriesLimitError{limit: limit}
+	return newSeriesLimitError(ctx, limit)
 }
 
 // logQLProducesSamples reports whether logql evaluates to samples (a matrix or
@@ -348,7 +369,7 @@ func seriesLimitCollecting(ctx context.Context, n, limit int) error {
 	if limit <= 0 || n < limit || requestKeepsPartialSeries(ctx) {
 		return nil
 	}
-	return &seriesLimitError{limit: limit}
+	return newSeriesLimitError(ctx, limit)
 }
 
 func (p *Proxy) manualMetricRowBudget() (int, error) {

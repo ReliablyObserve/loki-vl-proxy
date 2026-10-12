@@ -2350,7 +2350,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Extract without() labels and label-transform markers for post-processing.
-	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, withoutOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
@@ -2369,9 +2369,19 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
+	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
+	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
+	if isBinary {
+		// A binary expression evaluates its operands through this handler, which
+		// folds each by its own `without` and applies the series limit to it; what
+		// is left to do here is combining their answers.
+		withoutLabels = nil
+	}
+
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
 	if len(withoutLabels) > 0 {
-		r = withWithoutFold(r)
+		r = p.withWithoutFold(r)
 	}
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
@@ -2386,9 +2396,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
-	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
-	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
+	if isBinary {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
@@ -2418,7 +2426,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if capture != nil {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
-			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels, withoutAggregationOp(logqlQuery))
+			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels, withoutOp)
 		}
 		if isGroupQuery {
 			cacheOut = applyGroupNormalization(cacheOut)
@@ -2630,7 +2638,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract without() labels and label-transform markers for post-processing.
-	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, withoutOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
@@ -2651,16 +2659,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
-	if len(withoutLabels) > 0 {
-		r = withWithoutFold(r)
-	}
-	var bw *bufferedResponseWriter
-	if needsCapture {
-		bw = &bufferedResponseWriter{header: w.Header()}
-		sc = &statusCapture{ResponseWriter: bw, code: 200}
-	}
-
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
 	// A label_replace or label_join around a binary expression routes by that
 	// expression: its operands are evaluated, then the transform is applied below.
@@ -2669,7 +2667,24 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
-	if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
+	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
+	if isBinary {
+		// The operands of a binary expression fold and are limited on their own
+		// (see handleQueryRange); this handler only combines their answers.
+		withoutLabels = nil
+	}
+
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	if len(withoutLabels) > 0 {
+		r = p.withWithoutFold(r)
+	}
+	var bw *bufferedResponseWriter
+	if needsCapture {
+		bw = &bufferedResponseWriter{header: w.Header()}
+		sc = &statusCapture{ResponseWriter: bw, code: 200}
+	}
+
+	if isBinary {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {
@@ -2696,7 +2711,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	} else if bw != nil && needsCapture {
 		result := bw.body
 		if len(withoutLabels) > 0 {
-			result = applyWithoutGrouping(result, withoutLabels, withoutAggregationOp(logqlQuery))
+			result = applyWithoutGrouping(result, withoutLabels, withoutOp)
 		}
 		if isGroupQuery {
 			result = applyGroupNormalization(result)

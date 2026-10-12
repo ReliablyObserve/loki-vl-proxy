@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -34,24 +33,6 @@ func (w *bufferedResponseWriter) Write(b []byte) (int, error) {
 }
 func (w *bufferedResponseWriter) WriteHeader(code int) {
 	w.code = code
-}
-
-// applyWithoutGrouping removes excluded labels from metric results and re-aggregates.
-// This implements proper `without(label1, label2)` semantics:
-// - VL returns results with all labels
-// - We remove the excluded labels and sum values for series that now share the same key
-// withoutAggregationOp returns the outer aggregation of a `<op> without (...)`
-// query, which decides how the series that share a label set are combined.
-func withoutAggregationOp(logql string) string {
-	expr, err := logqlpkg.Parse(strings.TrimSpace(logql))
-	if err != nil {
-		return ""
-	}
-	aggregation, ok := expr.(*logqlpkg.VectorAggregation)
-	if !ok {
-		return ""
-	}
-	return strings.ToLower(string(aggregation.Op))
 }
 
 // withoutMerge is how the values of the series that share a label set after
@@ -99,25 +80,29 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	}
 }
 
-// withoutFoldKey marks a request whose series the proxy folds by `without`
-// once VictoriaLogs has answered (applyWithoutGrouping): VictoriaLogs returns a
-// row per stream, since a LogsQL `by` cannot name every label but the excluded
-// ones, and Loki counts max_query_series on the folded answer
-// (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). While it is set,
-// the series limit of the reads before the fold is the raw-row budget
-// (-manual-range-metric-row-limit), and capWithoutFold applies the tenant's
-// limit to the answer.
-type withoutFoldKey struct{}
-
-func withWithoutFold(r *http.Request) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), withoutFoldKey{}, true))
+// withWithoutFold marks a request whose series the proxy folds by `without` once
+// VictoriaLogs has answered (applyWithoutGrouping): VictoriaLogs returns a row
+// per stream, since a LogsQL `by` cannot name every label but the excluded ones,
+// and Loki counts max_query_series on the folded answer
+// (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). It reuses
+// foldedSumKey, the mark of an ungrouped sum folded afterwards: the reads before
+// the fold are bounded by the raw-row budget (-manual-range-metric-row-limit),
+// whose error they answer, and capWithoutFold applies the tenant's limit to the
+// answer.
+func (p *Proxy) withWithoutFold(r *http.Request) *http.Request {
+	if scope, _ := r.Context().Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil {
+		if budget, err := p.manualMetricRowBudget(); err == nil {
+			scope.foldBudget = budget
+		}
+	}
+	return r.WithContext(context.WithValue(r.Context(), foldedSumKey{}, true))
 }
 
 // capWithoutFold applies max_query_series to the folded answer of a
 // withWithoutFold request: Loki's error for a plain client, the busiest series
 // with Loki's warning for Logs Drilldown.
 func (p *Proxy) capWithoutFold(ctx context.Context, body []byte) ([]byte, error) {
-	ctx = context.WithValue(ctx, withoutFoldKey{}, false)
+	ctx = context.WithValue(ctx, foldedSumKey{}, false)
 	return capSeriesToLimit(ctx, body, p.resolvedMaxStatsQuerySeries(ctx))
 }
 
@@ -125,6 +110,11 @@ func (p *Proxy) capWithoutFold(ctx context.Context, body []byte) ([]byte, error)
 // response fold into one, an aggregation with no by() or without().
 const withoutAllLabels = "*"
 
+// applyWithoutGrouping removes excluded labels from metric results and folds the
+// series that now share a label set with op, the `without` aggregation:
+//   - VL returns a row per stream, with all its labels
+//   - the excluded labels are removed and the values of the series that share the
+//     key are combined as op says (sum when it is unknown)
 func applyWithoutGrouping(body []byte, excludeLabels []string, op string) []byte {
 	var resp struct {
 		Status string `json:"status"`

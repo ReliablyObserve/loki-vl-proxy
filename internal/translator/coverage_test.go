@@ -8,7 +8,10 @@ import (
 )
 
 func TestCoverage_ParseWithoutMarker(t *testing.T) {
-	clean, labels := ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `pod,node`)
+	clean, op, labels := ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `pod,node`)
+	if op != "" {
+		t.Fatalf("a marker without an operator has op %q", op)
+	}
 	if clean != `app:="api"` {
 		t.Fatalf("unexpected clean query: %q", clean)
 	}
@@ -16,8 +19,13 @@ func TestCoverage_ParseWithoutMarker(t *testing.T) {
 		t.Fatalf("unexpected labels: %#v", labels)
 	}
 
-	clean, labels = ParseWithoutMarker(`app:="api"`)
-	if clean != `app:="api"` || labels != nil {
+	clean, op, labels = ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `max:pod,node`)
+	if clean != `app:="api"` || op != "max" || len(labels) != 2 || labels[0] != "pod" || labels[1] != "node" {
+		t.Fatalf("marker with an operator: clean=%q op=%q labels=%#v", clean, op, labels)
+	}
+
+	clean, op, labels = ParseWithoutMarker(`app:="api"`)
+	if clean != `app:="api"` || op != "" || labels != nil {
 		t.Fatalf("expected unchanged query without marker, got clean=%q labels=%#v", clean, labels)
 	}
 }

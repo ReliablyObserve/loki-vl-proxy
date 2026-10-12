@@ -8,7 +8,7 @@ import (
 // lastStatsGrouping returns the by() list of the last stats pipe of a
 // translated query, "" when it has none.
 func lastStatsGrouping(query string) string {
-	query, _ = ParseWithoutMarker(query)
+	query, _, _ = ParseWithoutMarker(query)
 	idx := strings.LastIndex(query, "| stats ")
 	if idx < 0 {
 		return "<no stats>"
@@ -65,7 +65,7 @@ func TestWithoutKeepsSeriesInLastStatsPipe(t *testing.T) {
 			t.Errorf("%s: last stats pipe grouped by (%s), want (%s)\n%s", tc.logql, g, tc.want, got)
 		}
 		excluded := strings.ReplaceAll(tc.logql[strings.Index(tc.logql, "(")+1:strings.Index(tc.logql, ")")], " ", "")
-		if strings.Contains(tc.logql, "without") && !strings.HasSuffix(got, WithoutMarkerSuffix+excluded) {
+		if strings.Contains(tc.logql, "without") && !strings.HasSuffix(got, WithoutMarkerSuffix+tc.logql[:strings.Index(tc.logql, " ")]+":"+excluded) {
 			t.Errorf("%s: the without marker is missing: %s", tc.logql, got)
 		}
 	}
@@ -96,6 +96,35 @@ func TestKeepWithoutSeries(t *testing.T) {
 	} {
 		if got := keepWithoutSeries(base, tc.innerBy, tc.op, tc.without); got != tc.want {
 			t.Errorf("keepWithoutSeries(%q, %s, %v):\n got %s\nwant %s", tc.innerBy, tc.op, tc.without, got, tc.want)
+		}
+	}
+}
+
+// TestWithoutMarkerCarriesTheAggregation: the operator of the `without`
+// aggregation travels in the marker, so every consumer folds the series the
+// same way whatever wraps it (a label_replace, a comparison; topk, bottomk and
+// sort translate the aggregation they wrap on its own).
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestWithoutMarkerCarriesTheAggregation(t *testing.T) {
+	const inner = `{app="x"} | logfmt | unwrap amount [5m]`
+	for _, tc := range []struct{ logql, op string }{
+		{`sum without (pod) (max_over_time(` + inner + `))`, "sum"},
+		{`max without (pod) (max_over_time(` + inner + `))`, "max"},
+		{`min without (pod) (min_over_time(` + inner + `))`, "min"},
+		{`label_replace(max without (pod) (max_over_time(` + inner + `)), "d", "$1", "app", "(.*)")`, "max"},
+		{`count without (pod) (max_over_time(` + inner + `)) > 0`, "count"},
+		{`avg(max_over_time(` + inner + `)) without (pod)`, "avg"},
+		{`max(max_over_time({app="a(b"} | logfmt | unwrap amount [5m])) without (pod)`, "max"},
+		{`sum without (pod) (rate({app="x"}[5m]))`, "sum"},
+	} {
+		query, err := TranslateLogQL(tc.logql)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.logql, err)
+		}
+		_, op, labels := ParseWithoutMarker(query)
+		if op != tc.op || len(labels) != 1 || labels[0] != "pod" {
+			t.Fatalf("%s: marker op=%q labels=%v, want %q [pod]\n%s", tc.logql, op, labels, tc.op, query)
 		}
 	}
 }
