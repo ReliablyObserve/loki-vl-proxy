@@ -1593,46 +1593,76 @@
     }
    ]
   },
-  "unwrap-duration-seconds": {
-   "description": "unwrap duration_seconds(label) (PR for semantics/unwrap-duration-seconds): Loki converts it like duration(label), in seconds; the proxy answered an empty matrix. D1 is duration_seconds(ttl) over the cache-redis logfmt streams, D2 its duration(ttl) twin (the answers must be equal and D2 must not move), D3 and D4 are the instant forms. Run with the control set.",
+  "pattern-line-filter-anchoring": {
+   "description": "Pattern line filters keep the lines Loki's matcher accepts (semantics/pattern-line-filter-anchoring). The proxy sends an anchored regexp as a prefilter under |> and VictoriaLogs' extract pipe plus a filter on the extracted fields, so every selected row of a !> goes through extract. Log queries (limit 100) and count_over_time over the nginx access log, an include and an exclude of a pattern that matches half the lines, the Drilldown volume under an exclude (a concrete step per range), and a pattern that ends on a literal and so matches no line. Run with the control set.",
    "ranges": [
     "1h",
     "24h"
    ],
    "shapes": [
     {
-     "name": "D1 logfmt ttl duration_seconds rate by service",
-     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+     "name": "A1 nginx include GET, log query",
+     "query": "{service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_>\"",
      "covers": [
-      "semantics/unwrap-duration-seconds",
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
+    },
+    {
+     "name": "A2 nginx exclude GET, log query",
+     "query": "{service_name=\"nginx-ingress\"} !> \"<_> \\\"GET <_>\"",
+     "covers": [
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
+    },
+    {
+     "name": "A3 nginx include GET, count_over_time",
+     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_>\" [1m]))",
+     "covers": [
+      "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ]
     },
     {
-     "name": "D2 logfmt ttl duration rate by service",
-     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "name": "A4 nginx exclude GET, count_over_time",
+     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} !> \"<_> \\\"GET <_>\" [1m]))",
      "covers": [
-      "semantics/unwrap-duration-seconds",
+      "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ]
     },
     {
-     "name": "D3 logfmt ttl duration_seconds rate, instant",
-     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+     "name": "A5 drilldown exclude, volume by detected_level",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"nginx-ingress\"} !> \"<_> 200 <_>\" [$__auto]))",
      "covers": [
-      "semantics/unwrap-duration-seconds",
-      "loki_api_v1_query"
-     ],
-     "instant": true
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ]
     },
     {
-     "name": "D4 logfmt ttl duration rate, instant",
-     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "name": "A6 nginx include ends on a literal, log query",
+     "query": "{service_name=\"nginx-ingress\"} |> \"<_> HTTP/1.1\\\"\"",
      "covers": [
-      "semantics/unwrap-duration-seconds",
-      "loki_api_v1_query"
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
      ],
-     "instant": true
+     "logs": true,
+     "limit": 100
+    },
+    {
+     "name": "A7 nginx exclude ends on a literal, log query",
+     "query": "{service_name=\"nginx-ingress\"} !> \"<_> HTTP/1.1\\\"\"",
+     "covers": [
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
     }
    ]
   }

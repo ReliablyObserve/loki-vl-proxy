@@ -209,7 +209,7 @@ def main():
                         url = f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
                     else:
                         params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
-                                  "limit": 1000, "direction": "backward"}
+                                  "limit": shape.get("limit", 1000), "direction": "backward"}
                         url = f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
                     status, body, dt, t0 = request(url, shape.get("headers", {}), args.tenant, args.timeout)
                     time.sleep(0.3)
