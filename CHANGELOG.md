@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a Go map), so any choice is Loki's answer; the proxy takes label order so the
   answer is stable. The plain `topk(k, ...)` ranking was already per step; the
   registry row that described it as a global top k is closed with the grouped
-  spellings (#TBD).
+  spellings (#736).
 
 ## [2.11.2] - 2026-10-12
 
