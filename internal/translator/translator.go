@@ -466,6 +466,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 
+	// A vector aggregation over another one keeps each level's own grouping, so it
+	// is translated level by level before the without clauses are stripped.
+	if result, without, ok := tryTranslateVectorChain(logql, labelFn); ok {
+		return appendWithoutMarker(applyDerivedGroupings(result, caps, streamFields), without), nil
+	}
+
 	// Extract without() labels before translation.
 	// The proxy will post-process VL results to remove these labels from metric grouping.
 	var withoutLabels []string
@@ -1837,6 +1843,9 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
 func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
+	if chained, without, ok := tryTranslateVectorChain(logql, labelFn); ok && len(without) == 0 {
+		return chained, true
+	}
 	return tryTranslateMetricQueryWithout(logql, labelFn, false)
 }
 
