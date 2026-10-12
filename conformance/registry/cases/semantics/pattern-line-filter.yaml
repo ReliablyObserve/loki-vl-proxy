@@ -1,16 +1,40 @@
 id: semantics/pattern-line-filter
-title: An empty pattern line filter (`|> ""`, `!> ""`) selects the opposite lines (open)
+title: An empty pattern line filter (`|> ""`, `!> ""`) matches only the empty line, like Loki (fixed)
 proves:
   - loki_api_v1_query_range
+  - loki_api_v1_query
 consumer: explore
 why: |
   Loki's pattern filter keeps (`|>`) or drops (`!>`) the lines matching a
-  pattern. Only the empty pattern differs in the differential run:
-  `{namespace="prod"} |> ""` returns the page on the proxy where Loki returns
-  no line, and `!> ""` returns nothing where Loki returns the page. Non-empty
+  pattern. Only the empty pattern differed in the differential run:
+  `{namespace="prod"} |> ""` returned the page on the proxy where Loki returns
+  no line, and `!> ""` returned nothing where Loki returns the page. Non-empty
   patterns (`|> "<_> GET <_>"`, `!> "<_> GET <_>"`, `!> "foo <_>"`) agree with
   Loki; pattern alternatives with `or` are rejected (semantics/line-filter-or-
   alternatives).
+
+  An empty pattern is valid in Loki (it parses, there is no error): the lexer
+  makes `|>` and `!>` the PIPE_PATTERN and NPA tokens (pkg/logql/syntax/lex.go:26,29)
+  and LineFilterExpr.Filter hands the string to log.NewFilter, which builds a
+  patternFilter (pkg/logql/log/filter.go:618-621, newPatternFilterer:858-873).
+  pattern.ParseLineFilter returns a Matcher with no expression for an empty
+  input (pkg/logql/log/pattern/pattern.go:36-39) and Matcher.Test accepts only
+  an empty line then (`return len(in) == 0 && len(m.e) == 0`, pattern.go:124-128),
+  so `|> ""` keeps the empty lines (none in an ordinary stream) and `!> ""` is
+  its negation, every non-empty line. Unlike `|= ""` it is not a match-all
+  filter: log.isTrueFilter does not see a patternFilter, so `|> "" or "x"` keeps
+  the empty lines and the lines matching x.
+
+  Root cause: patternFilterValueToRegex (internal/translator/translator.go)
+  turned the empty pattern into `.*`, a match-all regexp, so `|> ""` kept every
+  line and `!> ""` dropped every line. The empty pattern is now `^$`, which
+  VictoriaLogs evaluates as the empty line, in log queries, metric queries
+  (count_over_time and friends push the filter into the stats query) and
+  instant queries alike; an empty alternative in an `or` chain stays an
+  ordinary alternative. A line filter written right after a pattern filter with no
+  pipe (`|> "" != "x"`) used to be read as part of the pattern operand, which
+  dropped both filters and returned every line; the operand now ends where the
+  next operator starts.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -28,13 +52,14 @@ compare:
   expect: |
     Loki's lines.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#743"
   impact: explore-visible
   effort: S
-  area: 'internal/translator pattern line filter'
-  loki: 'pkg/logql/syntax/lex.go:26,29 (NPA, PIPE_PATTERN); pkg/logql/log/filter.go pattern filter'
-  proxy: 'empty pattern matches every line'
-  planned_test: 'TestCompat_PatternLineFilter (test/e2e-compat, group semantics)'
+  area: 'internal/translator patternFilterValueToRegex'
+  loki: 'pkg/logql/syntax/lex.go:26,29 (NPA, PIPE_PATTERN); pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-39,124-128 (ParseLineFilter, Matcher.Test)'
+  proxy: 'the empty pattern is `^$` (the empty line), not match-all'
+  planned_test: 'TestCompat_PatternLineFilter (test/e2e-compat, group semantics); TestTranslateEmptyPatternLineFilter, TestEmptyPatternRegexpMatchesOnlyEmptyLine (internal/translator); TestEmptyPatternLineFilterReachesVictoriaLogs (internal/proxy)'
   clusters:
     - 90e7eb36
     - f131187f

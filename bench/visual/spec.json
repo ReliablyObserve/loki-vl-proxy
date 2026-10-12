@@ -331,6 +331,18 @@
    ]
   },
   {
+   "id": "explore-empty-pattern-filter",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} !> \"\" != \"GET\"",
+   "covers": [
+    "semantics/pattern-line-filter",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/pattern-line-filter"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

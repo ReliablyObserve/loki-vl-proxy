@@ -1,0 +1,172 @@
+{
+ "label": "patfilter-1h",
+ "date": "2026-10-12",
+ "set": "pattern-line-filter",
+ "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 4
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 1,
+  "pr": 2,
+  "loki": 2
+ },
+ "rows": [
+  {
+   "shape": "P1 api-gateway empty pattern",
+   "range": "1h",
+   "p50": {
+    "base": 0.023,
+    "pr": 0.007,
+    "loki": 0.011
+   },
+   "p95": {
+    "base": 0.029,
+    "pr": 0.007,
+    "loki": 0.02
+   },
+   "cold": {
+    "base": 0.035,
+    "pr": 0.011,
+    "loki": 0.081
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 20.93,
+    "pr": 20.93,
+    "loki": 20.93
+   },
+   "stale": [
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 3.29
+  },
+  {
+   "shape": "P2 api-gateway not empty pattern, line filter",
+   "range": "1h",
+   "p50": {
+    "base": 0.026,
+    "pr": 0.026,
+    "loki": 0.062
+   },
+   "p95": {
+    "base": 0.028,
+    "pr": 0.034,
+    "loki": 0.065
+   },
+   "cold": {
+    "base": 0.02,
+    "pr": 0.027,
+    "loki": 0.065
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 18.39,
+    "pr": 18.39,
+    "loki": 18.39
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "P3 nginx count_over_time, pattern with spaces",
+   "range": "1h",
+   "p50": {
+    "base": 0.006,
+    "pr": 0.006,
+    "loki": 0.005
+   },
+   "p95": {
+    "base": 0.007,
+    "pr": 0.007,
+    "loki": 0.011
+   },
+   "cold": {
+    "base": 0.006,
+    "pr": 0.01,
+    "loki": 0.022
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 18.39,
+    "pr": 18.39,
+    "loki": 7.77
+   },
+   "stale": [
+    "base",
+    "pr",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "P4 nginx count_over_time, GET request pattern",
+   "range": "1h",
+   "p50": {
+    "base": 0.006,
+    "pr": 0.008,
+    "loki": 0.004
+   },
+   "p95": {
+    "base": 0.008,
+    "pr": 0.01,
+    "loki": 0.005
+   },
+   "cold": {
+    "base": 0.007,
+    "pr": 0.006,
+    "loki": 0.014
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 8.12,
+    "pr": 8.12,
+    "loki": 8.12
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.75
+  }
+ ]
+}

@@ -799,23 +799,17 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			remaining = rest
 			continue
 		}
-		if strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") || strings.HasPrefix(remaining, "|>`") {
-			// Pattern filter match: |> "foo <_> bar" → ~"foo .* bar"
-			remaining = strings.TrimSpace(remaining[2:])
-			expr, rest := extractPipelineStage(remaining)
-			if translated := translatePatternLineFilter(expr, false); translated != "" {
-				parts = append(parts, translated)
+		if strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") || strings.HasPrefix(remaining, "|>`") ||
+			strings.HasPrefix(remaining, "!> ") || strings.HasPrefix(remaining, "!>\"") || strings.HasPrefix(remaining, "!>`") {
+			// Pattern filter: |> "foo <_> bar" → ~"foo .* bar", !> → NOT ~"foo .* bar".
+			// The operand and its `or` alternatives end where the next operator starts,
+			// so a line filter that follows (!=, !~, |=) is translated too.
+			negative := remaining[0] == '!'
+			values, rest, err := takePatternValues(strings.TrimSpace(remaining[2:]))
+			if err != nil {
+				return "", err
 			}
-			remaining = rest
-			continue
-		}
-		if strings.HasPrefix(remaining, "!> ") || strings.HasPrefix(remaining, "!>\"") || strings.HasPrefix(remaining, "!>`") {
-			// Negative pattern filter: !> "foo <_> bar" → NOT ~"foo .* bar"
-			remaining = strings.TrimSpace(remaining[2:])
-			expr, rest := extractPipelineStage(remaining)
-			if translated := translatePatternLineFilter(expr, true); translated != "" {
-				parts = append(parts, translated)
-			}
+			parts = append(parts, translatePatternLineFilter(values, negative))
 			remaining = rest
 			continue
 		}
@@ -3256,12 +3250,7 @@ func lokiMatchesEverything(text string, regex bool) bool {
 	return re.Op == syntax.OpEmptyMatch || re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyCharNotNL
 }
 
-func translatePatternLineFilter(expr string, negative bool) string {
-	values, ok := extractPatternFilterValues(expr)
-	if !ok || len(values) == 0 {
-		return ""
-	}
-
+func translatePatternLineFilter(values []string, negative bool) string {
 	regexes := make([]string, 0, len(values))
 	for _, value := range values {
 		regexes = append(regexes, patternFilterValueToRegex(value))
@@ -3278,41 +3267,36 @@ func translatePatternLineFilter(expr string, negative bool) string {
 	return "~" + strconv.Quote(combined)
 }
 
-func extractPatternFilterValues(expr string) ([]string, bool) {
-	remaining := strings.TrimSpace(expr)
-	if remaining == "" {
-		return nil, false
+// takePatternValues reads the operand of a pattern line filter and its `or`
+// alternatives (an ip("...") is plain pattern text, as in Loki's or chain) and
+// returns the rest of the query, which starts at the next operator.
+func takePatternValues(s string) (values []string, rest string, err error) {
+	head, rest := "", ""
+	if arg, after, ok := extractIPFilterArg(s); ok {
+		head, rest = arg, after
+	} else {
+		var quoted string
+		quoted, rest = extractQuotedValue(s)
+		if head, err = strconv.Unquote(quoted); err != nil {
+			return nil, "", fmt.Errorf("invalid line filter: %w", err)
+		}
 	}
-
-	values := make([]string, 0, 1)
-	for remaining != "" {
-		// An ip("...") alternative is plain pattern text, as in Loki's or chain.
-		quoted, rest := extractQuotedValue(remaining)
-		value, err := strconv.Unquote(quoted)
-		if arg, after, ok := extractIPFilterArg(remaining); ok {
-			value, err, rest = arg, nil, after
-		}
-		if err != nil {
-			return nil, false
-		}
-		values = append(values, value)
-
-		remaining = strings.TrimSpace(rest)
-		if remaining == "" {
-			break
-		}
-		if !strings.HasPrefix(remaining, "or ") {
-			return nil, false
-		}
-		remaining = strings.TrimSpace(remaining[2:])
+	alts, rest, err := takeOrAlternatives(rest)
+	if err != nil {
+		return nil, "", err
 	}
-
-	return values, len(values) > 0
+	values = []string{head}
+	for _, alt := range alts {
+		values = append(values, alt.text)
+	}
+	return values, rest, nil
 }
 
 func patternFilterValueToRegex(value string) string {
 	if value == "" {
-		return ".*"
+		// Loki's empty pattern is a matcher with no expression, which accepts
+		// only an empty line (pkg/logql/log/pattern ParseLineFilter, Test).
+		return "^$"
 	}
 
 	parts := strings.Split(value, "<_>")
