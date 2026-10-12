@@ -119,6 +119,8 @@ func TestUnwrapCountingQuery(t *testing.T) {
 			base + unwrapCountedGate("d", "duration") + " | stats by (app, __lvp_bad) sum(__lvp_v) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | filter __lvp_rate:* | stats by (app, __lvp_bad) sum(__lvp_rate)", true},
 		{"window phase between gate and stats", base + translator.UnwrapGateFor("b", "bytes") + windowPhaseFilter(time.Unix(1700000000, 0), 5*time.Minute, time.Minute) + " | stats by (_stream) max(__lvp_v) as c",
 			base + unwrapCountedGate("b", "bytes") + windowPhaseFilter(time.Unix(1700000000, 0), 5*time.Minute, time.Minute) + " | stats by (_stream, __lvp_bad) max(__lvp_v) as c", true},
+		{"first and last: the row's value is unpacked between the stats pipes", base + translator.UnwrapGate("v") + " | stats by (_stream, _msg) row_max(_time, __lvp_v) as __lvp_inner | unpack_json from __lvp_inner fields (__lvp_v) | math __lvp_v as __lvp_inner | stats sum(__lvp_inner)",
+			base + unwrapCountedGate("v", "") + " | stats by (_stream, _msg, __lvp_bad) row_max(_time, __lvp_v) as __lvp_inner | unpack_json from __lvp_inner fields (__lvp_v) | math __lvp_v as __lvp_inner | stats by (__lvp_bad) sum(__lvp_inner)", true},
 		{"a pipe that could drop the flagged groups", base + translator.UnwrapGate("v") + " | stats by (app) sum(__lvp_v) as c | sort by (c) desc | limit 5", "", false},
 		{"no gate", base + " | stats by (app) count()", "", false},
 		{"a gate without stats", base + translator.UnwrapGate("v"), "", false},
@@ -385,6 +387,15 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			// max_over_time takes no grouping from the outer sum: every label.
 			`{__error__="SampleExtractionErr", __error_details__="time: invalid duration \"abc\"", detected_level="unknown", n="1", service_name="pay", t="abc", v="x7"}`},
+		// first_over_time and last_over_time read the sample's row through row_min and
+		// row_max and unpack its value: the counter rides on that chain too, and Loki
+		// extracts every label for them (no grouping is pushed down).
+		{"last_over_time under a sum", "/loki/api/v1/query_range", rangeParams(`sum(last_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`),
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", n="1", service_name="pay", t="abc", v="x7"}`},
+		{"first_over_time under a grouped max, instant", "/loki/api/v1/query", url.Values{"query": {`max by (service_name) (first_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", n="1", service_name="pay", t="abc", v="x7"}`},
 		{"instant", "/loki/api/v1/query", url.Values{"query": {`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},

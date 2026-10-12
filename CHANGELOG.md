@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`first_over_time` and `last_over_time` with `unwrap` under `sum`, `avg`,
+  `min`, `max`, `count`, `topk` and `bottomk` answer 200 with Loki's series, and Loki's
+  values at an instant, instead of a 422 from VictoriaLogs (#728).** `sum(first_over_time({app="payment-service"} |
+  logfmt | unwrap amount [5m]))` is one series on Loki 3.7.7; the proxy sent
+  VictoriaLogs a `stats ... first(...)` / `last(...)` it has no such function
+  for and answered `422 cannot parse query ... "first"` on query_range and
+  query (measured on VictoriaLogs v1.52.0). The same translation broke
+  `max by (app) (last_over_time(...))`, the inner query of `topk` and
+  `bottomk`, a range-level `by (...)`, a query without a parser and a binary
+  operand. Loki's value is the first or the last sample, in timestamp order, of
+  each series in the window (`pkg/logql/range_vector.go:818-843`
+  `FirstOverTime`, `LastOverTime`), folded per step by the vector aggregation
+  (`pkg/logql/evaluator.go:400-529`). The proxy now reads each series' value
+  with `row_min(_time, v)` / `row_max(_time, v)` (in VictoriaLogs since v0.x;
+  v1.40 added the rule that a `row_*` result is a label, never a metric),
+  unpacks the row's value into a number (VictoriaLogs reads a `row_*` result as a
+  label, never as a metric) and aggregates it with the stats pipe that follows,
+  so the answer is VictoriaLogs stats alone, with no raw rows; `sum by (...)`
+  adds the per-series values instead of the rows of the group. The unwrap
+  conversion-error detection rides on the same chain, so a non-numeric value
+  still answers Loki's 400. The window a query_range point reads (the step-sized
+  bucket) and the series identity (the stream and the line) are those of
+  `avg_over_time`, `max_over_time` and `min_over_time` (so a query_range value is
+  not yet Loki's window value), tracked in
+  `semantics/unwrap-over-time-range-windows` and
+  `semantics/unwrap-per-series-identity-raw-rows`.
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

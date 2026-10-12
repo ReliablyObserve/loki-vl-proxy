@@ -169,7 +169,11 @@ type emuRec struct {
 var (
 	emuStatsRE = regexp.MustCompile(`^stats (?:by \(([^)]*)\) )?(.+)$`)
 	emuMathRE  = regexp.MustCompile(`^math (\w+)/([0-9.]+) as (\w+)$`)
-	emuFuncRE  = regexp.MustCompile(`^(\w+)\(([^)]*)\)(?: as (\w+))?$`)
+	// math <field> as <field>: the number the field holds, written to the result field.
+	emuMathCopyRE = regexp.MustCompile(`^math (\w+) as (\w+)$`)
+	// unpack_json from <field> fields (<name>): the named key of the JSON in the field.
+	emuUnpackJSONRE = regexp.MustCompile(`^unpack_json from (\w+) fields \((\w+)\)$`)
+	emuFuncRE       = regexp.MustCompile(`^(\w+)\(([^)]*)\)(?: as (\w+))?$`)
 
 	emuStreamLabelRE = regexp.MustCompile(`(\w+)="([^"]*)"`)
 	emuPhaseMathRE   = regexp.MustCompile(`^math \(\(_time - (\d+)\) % (\d+)\) as __lvp_window_phase$`)
@@ -254,6 +258,26 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		if m := emuMathCopyRE.FindStringSubmatch(pipe); m != nil {
+			for _, rec := range recs {
+				v, err := strconv.ParseFloat(rec.f[m[1]], 64)
+				if err != nil {
+					e.t.Fatalf("emulator: math reads %q of %s, not a number (a row_* result is JSON)", rec.f[m[1]], m[1])
+				}
+				rec.f[m[2]] = strconv.FormatFloat(v, 'f', -1, 64)
+			}
+			continue
+		}
+		if m := emuUnpackJSONRE.FindStringSubmatch(pipe); m != nil {
+			for _, rec := range recs {
+				var obj map[string]string
+				if err := json.Unmarshal([]byte(rec.f[m[1]]), &obj); err != nil {
+					e.t.Fatalf("emulator: unpack_json of %q: %v", rec.f[m[1]], err)
+				}
+				rec.f[m[2]] = obj[m[2]]
+			}
+			continue
+		}
 		m := emuStatsRE.FindStringSubmatch(pipe)
 		if m == nil {
 			e.t.Fatalf("emulator: unknown pipe %q in %s", pipe, r.FormValue("query"))
@@ -292,7 +316,7 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 		}
 		type fn struct{ kind, arg, alias string }
 		var fns []fn
-		for _, expr := range strings.Split(m[2], ", ") {
+		for _, expr := range splitStatsFuncs(m[2]) {
 			fm := emuFuncRE.FindStringSubmatch(strings.TrimSpace(expr))
 			if fm == nil {
 				e.t.Fatalf("emulator: unknown stats function %q in %s", expr, r.FormValue("query"))
@@ -304,8 +328,15 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 			fns = append(fns, fn{fm[1], fm[2], alias})
 		}
 		names = names[:0]
+		onlyRows := true
 		for _, f := range fns {
 			names = append(names, f.alias)
+			onlyRows = onlyRows && (f.kind == "row_min" || f.kind == "row_max")
+		}
+		if onlyRows && pipe == lastStatsPipe(pipes) {
+			// VictoriaLogs reads a row_* result as a label (GetStatsLabelsAddGroupingByTime).
+			http.Error(w, "missing metric fields in the results of query ["+r.FormValue("query")+"]", http.StatusBadRequest)
+			return
 		}
 		var next []emuRec
 		for _, id := range order {
@@ -315,6 +346,23 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 				f[k] = v
 			}
 			for _, fx := range fns {
+				if fx.kind == "row_min" || fx.kind == "row_max" {
+					// row_min(_time, f) is the row of the earliest sample (row_max the
+					// latest; the first row met wins a tie) as a JSON object of f.
+					src, only, _ := strings.Cut(fx.arg, ", ")
+					if src != "_time" || only == "" {
+						e.t.Fatalf("emulator: %s(%s)", fx.kind, fx.arg)
+					}
+					pick := 0
+					for i, rec := range g.recs {
+						if (fx.kind == "row_min" && rec.t < g.recs[pick].t) || (fx.kind == "row_max" && rec.t > g.recs[pick].t) {
+							pick = i
+						}
+					}
+					enc, _ := json.Marshal(map[string]string{only: g.recs[pick].f[only]})
+					f[fx.alias] = string(enc)
+					continue
+				}
 				var acc float64
 				for i, rec := range g.recs {
 					v, _ := strconv.ParseFloat(rec.f[fx.arg], 64)
@@ -409,6 +457,38 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": resultType, "result": result}})
+}
+
+// splitStatsFuncs splits the functions of a stats pipe at the commas outside
+// parentheses (row_min(_time, f) is one function).
+func splitStatsFuncs(funcs string) []string {
+	var out []string
+	depth, from := 0, 0
+	for i, c := range funcs {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.TrimSpace(funcs[from:i]))
+				from = i + 1
+			}
+		}
+	}
+	return append(out, strings.TrimSpace(funcs[from:]))
+}
+
+// lastStatsPipe is the last stats pipe of a query, the one VictoriaLogs reads the
+// labels and the metrics of.
+func lastStatsPipe(pipes []string) string {
+	for i := len(pipes) - 1; i >= 0; i-- {
+		if strings.HasPrefix(pipes[i], "stats ") {
+			return pipes[i]
+		}
+	}
+	return ""
 }
 
 func floorDiv(a, b int64) int64 {

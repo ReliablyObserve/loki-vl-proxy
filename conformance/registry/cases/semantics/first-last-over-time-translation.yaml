@@ -1,13 +1,21 @@
 id: semantics/first-last-over-time-translation
-title: first_over_time and last_over_time with offset or a line filter fail in VictoriaLogs (open)
+title: first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open)
 proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
   `first_over_time({...} | logfmt | unwrap value [1s] offset 2s) by (a)` and
-  `last_over_time({...} |~ ".+bar" | unwrap foo [1m])` answer 200 on Loki; the
-  proxy sends VictoriaLogs a query it rejects (HTTP 422 `cannot parse query
-  arg`).
+  `last_over_time({...} |~ ".+bar" | unwrap foo [1m])` answer 200 on Loki. The
+  proxy used to send VictoriaLogs `stats ... first(...)`/`last(...)`, which it
+  rejects (HTTP 422). Since semantics/unwrap-first-last-under-aggregation the
+  translation is `stats by (<group>) row_max(_time, __lvp_v) as __lvp_inner |
+  unpack_json ... | math ... | stats by (<group>) max(__lvp_inner)` (row_min for
+  first), the proxy strips the offset and shifts the request time, and a
+  differential test over the proxy with an emulated VictoriaLogs answers 200 for
+  both requests. The row stays open until the live comparison with Loki runs
+  (TestCompat_UnwrapFirstLastUnderAggregation, TestCompat_UnwrapFirstLastRangeLevelBy
+  in test/e2e-compat: written, not yet run; neither uses an offset or a line
+  filter, so the offset and the filter still need their own live case).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -31,7 +39,7 @@ gap:
   area: 'internal/translator first/last_over_time emission (row_min/row_max with offset and filters)'
   loki: 'pkg/logql/first_last_over_time.go'
   proxy: '422 VictoriaLogs parse error'
-  planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics)'
+  planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics); TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastRangeLevelBy (written, not yet run)'
   clusters:
     - 13f557ca
     - 20680725
