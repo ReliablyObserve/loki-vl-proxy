@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`group()`, `label_join()` and every other name Loki does not have are a 400
-  parse error, and keywords are accepted in any case (#TBD).** Loki 3.7.7 has
+  parse error, and keywords are accepted in any case (#748).** Loki 3.7.7 has
   no `group` aggregation and no `label_join`: its lexer makes a function token
   only of the names in `functionTokens` (the range operations, `sum` `avg`
   `max` `min` `count` `stddev` `stdvar` `bottomk` `topk` `sort` `sort_desc`
