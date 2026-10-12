@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // Sliding-window log metrics (count_over_time, rate, bytes_over_time,
@@ -55,13 +57,14 @@ type rangeTopKKey struct{}
 type rangeTopK struct {
 	k          int
 	descending bool
+	group      *logqlpkg.Grouping // k series are kept per group (nil: one group)
 }
 
 // withRangeTopK marks a range metric evaluation whose result feeds topk or
 // bottomk, so the evaluator ranks every series per step instead of truncating
 // to the busiest series first.
-func withRangeTopK(ctx context.Context, k int, descending bool) context.Context {
-	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending})
+func withRangeTopK(ctx context.Context, k int, descending bool, group *logqlpkg.Grouping) context.Context {
+	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending, group: group})
 }
 
 func rangeTopKFromContext(ctx context.Context) (rangeTopK, bool) {
@@ -490,10 +493,25 @@ func (h *topKHeap) better(a, b topKCandidate) bool {
 }
 
 // encodeTopK keeps, per step, the k series Loki's topk or bottomk selects
-// among every series, with one bounded heap per step.
+// among every series of each group, with one bounded heap per step and group.
 func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps int, topK rangeTopK, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	offsets := s.bySeries()
-	heaps := make([]*topKHeap, steps+1)
+	// Heaps exist only for the (step, group) pairs that hold a series.
+	type slot struct{ step, group int32 }
+	heaps := make(map[slot]*topKHeap)
+	groupOf := make([]int32, len(s.keys))
+	if topK.group != nil {
+		ids := map[string]int32{}
+		for series := range groupOf {
+			key := topKGroupKey(topK.group, s.metric(int32(series)))
+			id, ok := ids[key]
+			if !ok {
+				id = int32(len(ids))
+				ids[key] = id
+			}
+			groupOf[series] = id
+		}
+	}
 	for series := range s.keys {
 		if series%4096 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -502,10 +520,11 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 		}
 		slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
 			for k := seg.from; k < seg.to; k++ {
-				h := heaps[k]
+				at := slot{k, groupOf[series]}
+				h := heaps[at]
 				if h == nil {
 					h = &topKHeap{descending: topK.descending, keys: s.keys}
-					heaps[k] = h
+					heaps[at] = h
 				}
 				c := topKCandidate{series: int32(series), value: seg.value}
 				if h.Len() < topK.k {
@@ -518,12 +537,9 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 		})
 	}
 	points := make(map[int32][]slidingSegment)
-	for k, h := range heaps {
-		if h == nil {
-			continue
-		}
+	for at, h := range heaps {
 		for _, c := range h.items {
-			points[c.series] = append(points[c.series], slidingSegment{from: int32(k), to: int32(k) + 1, value: c.value})
+			points[c.series] = append(points[c.series], slidingSegment{from: at.step, to: at.step + 1, value: c.value})
 		}
 	}
 	out := make([]slidingOutputSeries, 0, len(points))
