@@ -388,6 +388,18 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 		{"instant", "/loki/api/v1/query", url.Values{"query": {`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},
+		// absent_over_time keeps no labels, so only the unwrapped one is a parser
+		// hint (syntax/extractor.go:44-48); its presence query is a rate over the
+		// same unwrap, which carries the counter. One 400, not a doubled body.
+		{"absent_over_time", "/loki/api/v1/query_range", rangeParams(`absent_over_time({service_name="pay"} | logfmt | unwrap v [5m])`),
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},
+		{"absent_over_time, instant", "/loki/api/v1/query", url.Values{"query": {`absent_over_time({service_name="pay"} | logfmt | unwrap v [5m])`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},
+		{"sum of absent_over_time", "/loki/api/v1/query_range", rangeParams(`sum(absent_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`),
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},
 		{"a JSON array VictoriaLogs renders as a string", "/loki/api/v1/query_range", rangeParams(`sum by (service_name) (sum_over_time({service_name="pay"} | json | unwrap v [5m]))`),
 			[]map[string]string{row(badTS, `{"v":[1,2]}`, map[string]string{"v": "[1,2]"})}, []map[string]string{row(badTS, `{"v":[1,2]}`, nil)}, ""},
 		{"a parsed key named like stored metadata", "/loki/api/v1/query_range", rangeParams(`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap x [5m]))`),

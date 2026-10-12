@@ -32,14 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Now the presence of samples comes from VictoriaLogs stats (an ungrouped
   `sum(count_over_time(...))`, or `sum(rate(...))` with an unwrapped label, whose
   line without the label is no sample), with the parser stage and its label
-  filters pushed down and no raw rows read, and the proxy inverts it on Loki's
-  step grid; vector aggregations fold the single series as Loki does (`by` and
-  `without` keep or drop labels, `count` is 1, `stddev` and `stdvar` are 0,
-  `topk` and `bottomk` keep it). A failed or degraded VictoriaLogs answer (an
-  error, Grafana's partial-result reply) is passed on, never inverted into a
-  series of ones that would fire every absence alert. Conversion errors and
-  parser error lines keep the behaviour of the other range functions
-  (#TBD).
+  filters pushed down (a label filter on a JSON-parsed field keeps using the
+  existing ordered-JSON route, which reads bounded rows only where VictoriaLogs'
+  unpack cannot give Loki's parse), and the proxy inverts it on Loki's step grid,
+  matching each step by index so a start with milliseconds still lines up;
+  vector aggregations fold the single series as Loki does (`by` and `without`
+  keep or drop labels, `count` is 1, `stddev` and `stdvar` are 0, `topk` and
+  `bottomk` keep it). A failed or degraded VictoriaLogs answer (an error,
+  Grafana's partial-result reply) is passed on, never inverted into a series of
+  ones that would fire every absence alert. An unwrapped value Loki's conversion
+  rejects now fails `absent_over_time` with Loki's 400 pipeline error, as it does
+  `rate`, where the proxy answered 200; parser error lines keep the behaviour of
+  `count_over_time` (#TBD).
+
+## [2.11.2] - 2026-10-12
 
 ### CI
 

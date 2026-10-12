@@ -33,7 +33,10 @@ import (
 // VictoriaLogs stats as one series with a point at each step whose window
 // holds a line, on Loki's window bounds and step grid
 // (semantics/unwrap-rate-ungrouped-sum-per-stream). The answer is those steps
-// inverted, on Loki's grid. No raw rows are read for it.
+// inverted, on Loki's grid. The proxy reads no rows of its own; a label filter
+// on a JSON-parsed field goes through the existing ordered-JSON metric route
+// (handleOrderedJSONMetric), which pushes the parse down to stats and reads
+// bounded rows only where VictoriaLogs' unpack cannot give Loki's parse.
 
 // absentOverTimeCompatSpec is an absent_over_time, possibly under vector
 // aggregations (outermost first).
@@ -290,13 +293,19 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 }
 
 // buildAbsentOverTimeMatrix is the matrix of the steps start, start+step, ...
-// end that are not in present.
+// end that are not in present. A presence point is matched to its step by
+// index, not by its exact nanosecond: it reaches here as float seconds, which at
+// today's epoch resolve only a few hundred nanoseconds.
 func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]bool, startNs, endNs, stepNs int64) []byte {
 	result := []lokiMatrixResult{}
 	if labels, value, ok := spec.series(); ok && stepNs > 0 {
+		has := make(map[int64]bool, len(present))
+		for ts := range present {
+			has[int64(math.Round(float64(ts-startNs)/float64(stepNs)))] = true
+		}
 		var values [][]any
-		for ts := startNs; ts <= endNs; ts += stepNs {
-			if !present[ts] {
+		for i, ts := int64(0), startNs; ts <= endNs; i, ts = i+1, ts+stepNs {
+			if !has[i] {
 				values = append(values, []any{float64(ts) / float64(time.Second), value})
 			}
 		}

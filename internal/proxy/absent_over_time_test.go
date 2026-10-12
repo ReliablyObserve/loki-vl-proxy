@@ -145,6 +145,7 @@ func TestAbsentOverTimeSeriesFoldEdgeTable(t *testing.T) {
 // vlRecorder answers every stats call with answer and records the queries.
 type vlRecorder struct {
 	mu      sync.Mutex
+	paths   []string
 	queries []string
 	answer  string
 	status  int
@@ -153,11 +154,12 @@ type vlRecorder struct {
 func (v *vlRecorder) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		v.mu.Lock()
+		v.paths = append(v.paths, r.URL.Path)
 		if strings.HasPrefix(r.URL.Path, "/select/logsql/stats_query") {
-			v.mu.Lock()
 			v.queries = append(v.queries, r.FormValue("query"))
-			v.mu.Unlock()
 		}
+		v.mu.Unlock()
 		if !strings.HasPrefix(r.URL.Path, "/select/logsql/stats_query") {
 			return // no rows, no labels
 		}
@@ -218,13 +220,14 @@ func TestAbsentOverTimeParserStageEdgeTable(t *testing.T) {
 		wantSeries  int
 		wantSteps   []int64
 		mustSend    string // a fragment of the VictoriaLogs query
+		rawRows     bool   // the existing JSON route may read rows to apply Loki's parse
 	}{
-		{"json, data present", `absent_over_time({service_name="api-gateway"} | json [1m])`, data, 0, nil, "stats"},
-		{"json then a label filter no line passes", `absent_over_time({service_name="api-gateway"} | json | nonexistant_field="foo" [1m])`, empty, 1, every, "nonexistant_field"},
-		{"json, no data at all", `absent_over_time({service_name="api-gateway"} | json [1m])`, empty, 1, every, "service_name"},
-		{"logfmt then a label filter, data present", `absent_over_time({service_name="api-gateway"} | logfmt | level="error" [1m])`, data, 0, nil, "level"},
-		{"line filter, data present", `absent_over_time({service_name="api-gateway"} |= "x" [1m])`, data, 0, nil, `"x"`},
-		{"selector, data present", `absent_over_time({service_name="api-gateway"}[1m])`, data, 0, nil, "service_name"},
+		{"json, data present", `absent_over_time({service_name="api-gateway"} | json [1m])`, data, 0, nil, "stats", false},
+		{"json then a label filter no line passes", `absent_over_time({service_name="api-gateway"} | json | nonexistant_field="foo" [1m])`, empty, 1, every, "nonexistant_field", true},
+		{"json, no data at all", `absent_over_time({service_name="api-gateway"} | json [1m])`, empty, 1, every, "service_name", false},
+		{"logfmt then a label filter, data present", `absent_over_time({service_name="api-gateway"} | logfmt | level="error" [1m])`, data, 0, nil, "level", false},
+		{"line filter, data present", `absent_over_time({service_name="api-gateway"} |= "x" [1m])`, data, 0, nil, `"x"`, false},
+		{"selector, data present", `absent_over_time({service_name="api-gateway"}[1m])`, data, 0, nil, "service_name", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			vl := &vlRecorder{answer: tc.answer}
@@ -245,6 +248,13 @@ func TestAbsentOverTimeParserStageEdgeTable(t *testing.T) {
 				for _, ts := range tc.wantSteps {
 					if got[0].points[ts] != "1" {
 						t.Fatalf("no 1 at %d: %v", ts/1e9, got[0].points)
+					}
+				}
+			}
+			if !tc.rawRows {
+				for _, path := range vl.paths {
+					if path == "/select/logsql/query" {
+						t.Fatalf("raw rows were read: %v", vl.paths)
 					}
 				}
 			}
