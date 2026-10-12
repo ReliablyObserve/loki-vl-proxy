@@ -67,7 +67,7 @@ compare:
     One series {service_name="api-gateway"} at every step.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#737"
   impact: explore-visible
   effort: S
   area: 'internal/proxy absent_over_time.go (parseAbsentOverTimeCompatSpec, presenceAnswer, buildAbsentOverTimeMatrix); parseBareParserMetricCompatSpecAST'
