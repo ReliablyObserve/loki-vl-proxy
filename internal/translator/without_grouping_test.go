@@ -54,6 +54,10 @@ func TestWithoutKeepsSeriesInLastStatsPipe(t *testing.T) {
 		{`sum(max_over_time({app="x"} | logfmt | unwrap amount [5m]))`, ""},
 		{`sum(rate({app="x"}[5m]))`, ""},
 		{`sum by (ns) (rate({app="x"}[5m]))`, "ns"},
+		// Not translated series by series: one row, as before (stddev and stdvar
+		// without keep their single pipe; their rows must never be added up).
+		{`stddev without (pod) (max_over_time({app="x"} | unwrap amount [1m]))`, ""},
+		{`stdvar without (pod) (rate({app="x"}[1m]))`, ""},
 		// Already a row per series before this change.
 		{`count without (pod) (count_over_time({app="x"}[1m]))`, "_stream, level"},
 	} {

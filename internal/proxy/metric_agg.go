@@ -370,6 +370,12 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	if parsedInner, _ := logqlpkg.Parse(postAgg.inner); parsedInner != nil {
+		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
+			// The operands of a binary expression fold on their own.
+			withoutLabels = nil
+		}
+	}
 	if len(withoutLabels) > 0 {
 		r = p.withWithoutFold(r)
 	}

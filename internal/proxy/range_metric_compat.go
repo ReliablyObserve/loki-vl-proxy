@@ -1966,9 +1966,12 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
-		// The series are folded before Loki's limit applies.
-		if budget, err := p.manualMetricRowBudget(); err == nil && budget > limit {
-			return budget
+		// A `without` request reads a row per stream and folds them before Loki's
+		// limit applies (withWithoutFold records the raw-row budget it reads
+		// under). An ungrouped sum folded afterwards records none and keeps the
+		// tenant's limit here.
+		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > limit {
+			return scope.foldBudget
 		}
 	}
 	return limit

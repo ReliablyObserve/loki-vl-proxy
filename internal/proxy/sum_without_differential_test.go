@@ -448,8 +448,25 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 				if code, body, _ := run(t, tc.rows, tc.query, instant, 1, false); code != http.StatusBadRequest || !strings.Contains(body, limitMsg) {
 					t.Fatalf("limit 1: %d %s, want Loki's 400 series limit error", code, body)
 				}
-				if code, body, n := run(t, tc.rows, tc.query, instant, 1, true); code != http.StatusOK || n != 1 || !strings.Contains(body, warning) {
+				code, body, n := run(t, tc.rows, tc.query, instant, 1, true)
+				if code != http.StatusOK || n != 1 || !strings.Contains(body, warning) {
 					t.Fatalf("limit 1, Logs Drilldown: %d with %d series, want 200 with one series and Loki's warning: %s", code, n, body)
+				}
+				// The series kept is the busiest of the folded answer, not the
+				// busiest stream's: a limit applied before the fold would keep a
+				// stream and fold it alone.
+				_, full, _ := run(t, tc.rows, tc.query, instant, 1000, false)
+				all, kept := seriesTotalsByNS(t, full), seriesTotalsByNS(t, body)
+				busiest, busiestTotal, tied := "", math.Inf(-1), false
+				for key, total := range all {
+					if total > busiestTotal {
+						busiest, busiestTotal, tied = key, total, false
+					} else if total == busiestTotal {
+						tied = true
+					}
+				}
+				if got, ok := kept[busiest]; !tied && (!ok || math.Abs(got-busiestTotal) > 1e-9*math.Max(1, busiestTotal)) {
+					t.Fatalf("limit 1, Logs Drilldown kept %v, want the busiest folded series {ns=%s} = %g of %v: %s", kept, busiest, busiestTotal, all, body)
 				}
 			})
 		}
@@ -546,6 +563,20 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 		keep    func(want map[int64]map[string]float64) map[int64]map[string]float64 // the wrapper applied to Loki's answer
 	}
 	identity := func(w map[int64]map[string]float64) map[int64]map[string]float64 { return w }
+	positive := func(w map[int64]map[string]float64) map[int64]map[string]float64 {
+		out := map[int64]map[string]float64{}
+		for ts, groups := range w {
+			for key, v := range groups {
+				if v > 0 {
+					if out[ts] == nil {
+						out[ts] = map[string]float64{}
+					}
+					out[ts][key] = v
+				}
+			}
+		}
+		return out
+	}
 	wrappers := []wrapper{
 		{"topk(10)", func(q string) string { return "topk(10, " + q + ")" }, false, false, identity},
 		// Ties between label sets pick either: only the winning value is pinned.
@@ -562,20 +593,10 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 		}},
 		{"sort", func(q string) string { return "sort(" + q + ")" }, true, false, identity},
 		{"label_replace", func(q string) string { return `label_replace(` + q + `, "dst", "$1", "app", "(.*)")` }, false, false, identity},
-		{"comparison", func(q string) string { return q + " > 0" }, false, false, func(w map[int64]map[string]float64) map[int64]map[string]float64 {
-			out := map[int64]map[string]float64{}
-			for ts, groups := range w {
-				for key, v := range groups {
-					if v > 0 {
-						if out[ts] == nil {
-							out[ts] = map[string]float64{}
-						}
-						out[ts][key] = v
-					}
-				}
-			}
-			return out
-		}},
+		// On query_range a topk over a binary expression is answered 502 with or
+		// without `without` (the binary marker reaches VictoriaLogs): instant only.
+		{"topk(10) of a comparison", func(q string) string { return "topk(10, " + q + " > 0)" }, true, false, positive},
+		{"comparison", func(q string) string { return q + " > 0" }, false, false, positive},
 	}
 	type inner struct{ fn, op string }
 	inners := []inner{{"rate", "max"}, {"rate", "min"}, {"max_over_time", "max"}, {"min_over_time", "min"}, {"max_over_time", "count"}}
@@ -699,6 +720,9 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 		`sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
 		`sum without (pod) (rate({app="uw"} | logfmt | unwrap amount [5m]))`,
 		`sum without (pod) (count_over_time({app="uw"}[1m]))`,
+		// An ungrouped sum folded afterwards (#716) keeps the tenant's limit for
+		// everything but the rows it reads: never the budget as a series limit.
+		`sum(rate({app="uw"} | logfmt | unwrap amount [5m]))`,
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", query, instant), func(t *testing.T) {
@@ -724,10 +748,43 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 				}
 				res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 				body := res.Body.String()
+				if !strings.HasPrefix(query, "sum without") && res.Code == http.StatusOK {
+					return // one series: it fits, whatever the rows
+				}
 				if res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit") {
 					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
 				}
 			})
 		}
 	}
+}
+
+// seriesTotalsByNS is the sum of the sample values of each series of a response,
+// keyed by its ns label.
+func seriesTotalsByNS(t *testing.T, body string) map[string]float64 {
+	t.Helper()
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+				Value  []any             `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("%v: %s", err, body)
+	}
+	out := map[string]float64{}
+	for _, series := range resp.Data.Result {
+		points := series.Values
+		if series.Value != nil {
+			points = [][]any{series.Value}
+		}
+		for _, point := range points {
+			v, _ := strconv.ParseFloat(point[1].(string), 64)
+			out[series.Metric["ns"]] += v
+		}
+	}
+	return out
 }
