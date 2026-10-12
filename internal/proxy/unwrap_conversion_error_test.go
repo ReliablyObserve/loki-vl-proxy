@@ -385,6 +385,10 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			// max_over_time takes no grouping from the outer sum: every label.
 			`{__error__="SampleExtractionErr", __error_details__="time: invalid duration \"abc\"", detected_level="unknown", n="1", service_name="pay", t="abc", v="x7"}`},
+		// duration_seconds is converted, so counted and failed, as duration().
+		{"duration_seconds conversion", "/loki/api/v1/query_range", rangeParams(`sum by (service_name) (max_over_time({service_name="pay"} | logfmt | unwrap duration_seconds(t) [5m]))`),
+			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
+			`{__error__="SampleExtractionErr", __error_details__="time: invalid duration \"abc\"", detected_level="unknown", n="1", service_name="pay", t="abc", v="x7"}`},
 		{"instant", "/loki/api/v1/query", url.Values{"query": {`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},

@@ -430,6 +430,7 @@ func TestExtractUnwrapField_ConversionWrappers(t *testing.T) {
 		{"plain field", `{app="x"} | unwrap latency [5m]`, "latency"},
 		{"duration wrapper", `{app="x"} | unwrap duration(response_time) [5m]`, "response_time"},
 		{"bytes wrapper", `{app="x"} | unwrap bytes(body_size) [5m]`, "body_size"},
+		{"duration_seconds wrapper", `{app="x"} | unwrap duration_seconds(response_time) [5m]`, "response_time"},
 		{"no unwrap", `{app="x"} [5m]`, ""},
 	}
 	for _, tc := range tests {

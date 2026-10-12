@@ -333,6 +333,10 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 	expr = strings.Trim(expr, "`\"")
 
 	switch {
+	case strings.HasPrefix(expr, "duration_seconds(") && strings.HasSuffix(expr, ")"):
+		// Loki converts it as duration() (syntax/extractor.go:63-71).
+		field = strings.TrimSpace(expr[len("duration_seconds(") : len(expr)-1])
+		conv = "duration"
 	case strings.HasPrefix(expr, "duration(") && strings.HasSuffix(expr, ")"):
 		field = strings.TrimSpace(expr[len("duration(") : len(expr)-1])
 		conv = "duration"

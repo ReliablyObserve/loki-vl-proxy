@@ -722,7 +722,7 @@ var (
 	absentOverTimeCompatRE         = regexp.MustCompile(`(?s)^\s*absent_over_time\(\s*(.*)\[([^][]+)\]\s*\)\s*$`)
 	bareParserMetricCompatRE       = regexp.MustCompile(`(?s)^\s*(count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time)\((.*)\[([^][]+)\]\)\s*$`)
 	bareParserQuantileCompatRE     = regexp.MustCompile(`(?s)^\s*quantile_over_time\(\s*([0-9.]+)\s*,\s*(.*)\[([^][]+)\]\)\s*$`)
-	bareParserUnwrapFieldRE        = regexp.MustCompile(`\|\s*unwrap\s+(?:(?:duration|bytes)\(([^)]+)\)|([A-Za-z0-9_.-]+))`)
+	bareParserUnwrapFieldRE        = regexp.MustCompile(`\|\s*unwrap\s+(?:(?:duration_seconds|duration|bytes)\(([^)]+)\)|([A-Za-z0-9_.-]+))`)
 	regexpExtractingParserStageRE  = regexp.MustCompile(`\|\s*regexp(?:\s+[^|]+)?`)
 	patternExtractingParserStageRE = regexp.MustCompile(`\|\s*pattern(?:\s+[^|]+)?`)
 	otherExtractingParserStageRE   = regexp.MustCompile(`\|\s*(?:unpack|extract|extract_regexp)(?:\s+[^|]+)?`)
@@ -833,7 +833,7 @@ func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpe
 		// rate over an unwrapped label is its sum per second.
 		for _, s := range lq.Pipeline {
 			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
-				unwrapField, unwrapConv = uw.Label, uw.Converter
+				unwrapField, unwrapConv = uw.Label, translator.UnwrapConv(uw.Converter)
 				break
 			}
 		}
@@ -852,7 +852,7 @@ func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpe
 		for _, s := range lq.Pipeline {
 			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
 				unwrapField = uw.Label
-				unwrapConv = uw.Converter
+				unwrapConv = translator.UnwrapConv(uw.Converter)
 				break
 			}
 		}
@@ -866,7 +866,7 @@ func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpe
 		for _, s := range lq.Pipeline {
 			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
 				unwrapField = uw.Label
-				unwrapConv = uw.Converter
+				unwrapConv = translator.UnwrapConv(uw.Converter)
 				break
 			}
 		}
@@ -989,7 +989,7 @@ func extractBareParserUnwrapField(query string) string {
 }
 
 // extractBareParserUnwrapExpr returns (field, conv) from a | unwrap expression.
-// conv is "duration" or "bytes" when a unit-conversion wrapper is present;
+// conv is "duration" (duration() and duration_seconds()) or "bytes" when a unit-conversion wrapper is present;
 // empty when the unwrap references a raw numeric field.
 func extractBareParserUnwrapExpr(query string) (field, conv string) {
 	matches := bareParserUnwrapFieldRE.FindStringSubmatch(query)
@@ -997,14 +997,14 @@ func extractBareParserUnwrapExpr(query string) (field, conv string) {
 		return "", ""
 	}
 	if f := strings.TrimSpace(matches[1]); f != "" {
-		// matches[1] is non-empty only when the duration()/bytes() wrapper is present.
+		// matches[1] is non-empty only when the duration()/duration_seconds()/bytes() wrapper is present.
 		return f, inferUnwrapConv(query)
 	}
 	return strings.TrimSpace(matches[2]), ""
 }
 
 func inferUnwrapConv(query string) string {
-	if strings.Contains(query, "duration(") {
+	if strings.Contains(query, "duration(") || strings.Contains(query, "duration_seconds(") {
 		return "duration"
 	}
 	if strings.Contains(query, "bytes(") {

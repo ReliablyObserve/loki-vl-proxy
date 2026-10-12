@@ -501,7 +501,7 @@ func TestUnwrapConversionErrorDifferential(t *testing.T) {
 		{text: `k="a"`, name: "k", op: "=", value: "a"},
 		{text: `k!="a"`, name: "k", op: "!=", value: "a"},
 	}
-	convs := []struct{ wrap, conv string }{{"%s", ""}, {"duration(%s)", "duration"}, {"bytes(%s)", "bytes"}}
+	convs := []struct{ wrap, conv string }{{"%s", ""}, {"duration(%s)", "duration"}, {"duration_seconds(%s)", "duration"}, {"bytes(%s)", "bytes"}}
 	ranges := []string{"30s", "1m", "2m", "5m"}
 	steps := []time.Duration{10 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute, 5 * time.Minute}
 	rng := rand.New(rand.NewSource(42))

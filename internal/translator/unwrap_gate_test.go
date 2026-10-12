@@ -81,6 +81,9 @@ func TestUnwrapGateOnTranslatedMetrics(t *testing.T) {
 		{"rate_counter", `rate_counter({app="x"} | unwrap b [1m])`, true, "__rate_counter__(__lvp_v)", ""},
 		{"rate is a sum per second", `sum by (a) (rate({app="x"} | unwrap b [1m]))`, true, "sum(__lvp_v) as __lvp_inner | math __lvp_inner/60 as __lvp_rate", ""},
 		{"duration is converted in seconds", `sum_over_time({app="x"} | unwrap duration(b) [1m])`, true, "| stats sum(__lvp_v)", "duration"},
+		{"duration_seconds is converted as duration", `sum by (a) (sum_over_time({app="x"} | logfmt | unwrap duration_seconds(b) [1m]))`, true, "sum(__lvp_v)", "duration"},
+		{"duration_seconds rate", `sum by (a) (rate({app="x"} | unwrap duration_seconds(b) [1m]))`, true, "sum(__lvp_v) as __lvp_inner | math __lvp_inner/60 as __lvp_rate", "duration"},
+		{"duration_seconds quantile", `quantile_over_time(0.9, {app="x"} | unwrap duration_seconds(b) [1m])`, true, "quantile(0.9, __lvp_v)", "duration"},
 		{"bytes are converted to bytes", `max_over_time({app="x"} | unwrap bytes(b) [1m])`, true, "| stats max(__lvp_v)", "bytes"},
 		{"rate of a conversion is a sum per second", `sum by (a) (rate({app="x"} | unwrap duration(b) [1m]))`, true, "sum(__lvp_v) as __lvp_inner | math __lvp_inner/60 as __lvp_rate", "duration"},
 		{"line rate counts lines", `sum by (a) (rate({app="x"} [1m]))`, false, "count() as __lvp_inner", ""},
@@ -190,6 +193,53 @@ func TestUnwrapBytesPatternAndExtract(t *testing.T) {
 		m := ex.FindStringSubmatch(v)
 		if m == nil || m[2] != prefix {
 			t.Errorf("extract of %q = %v, want prefix %q", v, m, prefix)
+		}
+	}
+}
+
+// Loki converts duration_seconds() with convertDuration, as duration()
+// (pkg/logql/syntax/extractor.go:63-71): the translation of one is the
+// translation of the other with the wrapper's name swapped, whichever aggregation
+// and range function it sits under.
+// conformance: semantics/unwrap-duration-seconds, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapDurationSecondsTranslatesAsDuration(t *testing.T) {
+	for _, shape := range []string{
+		`sum by (s) (sum_over_time({app="x"} | logfmt | unwrap %s(okdur) [5m]))`,
+		`sum(sum_over_time({app="x"} | logfmt | unwrap %s(okdur) [5m]))`,
+		`avg_over_time({app="x"} | json | unwrap %s(okdur) [5m])`,
+		`max by (s) (max_over_time({app="x"} | unwrap %s(okdur) | okdur > 1s [5m]))`,
+		`sum by (s) (rate({app="x"} | logfmt | unwrap %s(okdur) [5m]))`,
+		`quantile_over_time(0.9, {app="x"} | unwrap %s(okdur) [5m])`,
+		`stddev_over_time({app="x"} | unwrap %s(okdur) [5m])`,
+	} {
+		want, err := TranslateLogQL(strings.Replace(shape, "%s", "duration", 1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := TranslateLogQL(strings.Replace(shape, "%s", "duration_seconds", 1))
+		if err != nil {
+			t.Fatalf("%s: %v", shape, err)
+		}
+		if got != want {
+			t.Errorf("%s:\n duration_seconds: %s\n duration:         %s", shape, got, want)
+		}
+		if !strings.Contains(got, UnwrapGateFor("okdur", "duration")) {
+			t.Errorf("%s: the duration gate is missing in %q", shape, got)
+		}
+		if strings.Contains(got, "duration_seconds") {
+			t.Errorf("%s: the wrapper must not reach VictoriaLogs: %q", shape, got)
+		}
+	}
+}
+
+// UnwrapConv maps a parsed unwrap converter to the conversion the gate applies.
+func TestUnwrapConv(t *testing.T) {
+	for converter, want := range map[string]string{
+		"duration": "duration", "duration_seconds": "duration", "bytes": "bytes",
+		"": "", "unixEpochMillis": "unixEpochMillis",
+	} {
+		if got := UnwrapConv(converter); got != want {
+			t.Errorf("UnwrapConv(%q) = %q, want %q", converter, got, want)
 		}
 	}
 }
