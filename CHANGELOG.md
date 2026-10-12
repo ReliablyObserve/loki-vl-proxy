@@ -49,6 +49,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answer is stable. The plain `topk(k, ...)` ranking was already per step; the
   registry row that described it as a global top k is closed with the grouped
   spellings (#736).
+- **An aggregation around a `topk`, `bottomk` or `sort` folds what the ranking
+  kept at each step.** `sum(topk(3, sum by (app, pod) (count_over_time({env="production"}[5m]))))`,
+  `sum by (app) (topk(3, ...))`, `max(topk(...))`, `count(bottomk(...))` and
+  `sum(sort(...))` came back as a log stream response (resultType `streams`, 200)
+  on query_range and as `log queries are not supported as an instant query type`
+  (400) at an instant, and `topk(2, topk(3, ...))` and `topk(3, sort(...))` were a
+  404 on query_range and `unsupported instant aggregation target` at an instant.
+  Only a ranking written as the outermost layer reached the route that ranks the
+  series of VictoriaLogs. Loki evaluates each vector aggregation on the vector
+  its operand produced at one step (`pkg/logql/evaluator.go:435-529`,
+  `VectorAggEvaluator.Next`), so `sum(topk(3, x))` is, at every step, the sum of
+  the three best samples of that step, `sum by (app) (topk(3, x))` groups those
+  three by app, and `topk(2, topk(3, x))` is the best two of the best three
+  (`sort` and `sort_desc` keep every sample, so `topk(3, sort(x))` ranks the whole
+  vector). The proxy now takes the innermost `topk`, `bottomk`, `sort` or
+  `sort_desc` of the query as the ranking it already runs on VictoriaLogs' series
+  and applies the aggregations above it, innermost first, to the vector of every
+  step: `sum`, `avg`, `min`, `max` and `count` with `by` or `without` (in either
+  clause position, `by ()` included) fold the series, and a `topk`, `bottomk`,
+  `sort` or `sort_desc` ranks again. Loki counts `max_query_series` on the answer
+  of the whole query (`pkg/logql/engine.go`, `JoinSampleVector`), so with an
+  aggregation around the ranking neither the series that ranked at some step nor
+  the vector of an instant ranking are limited: the folded answer is, with the
+  error for a plain client and the partial result and warning for Logs Drilldown;
+  `sum(topk(3, ...))` over a long range no longer fails where Loki answers one
+  series. A `sum without (...)` inside the ranking now merges its series with its
+  own operator instead of the outermost one. Where several series tie at the k-th
+  place of a ranking Loki's choice follows Go map order, so the aggregations above
+  it can differ there; the proxy breaks the tie by label order. `stddev` and
+  `stdvar` around a ranking and a binary expression around the aggregation keep
+  their own routes (#TBD).
 
 ## [2.11.2] - 2026-10-12
 
