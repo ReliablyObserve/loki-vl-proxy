@@ -1,0 +1,40 @@
+id: semantics/binary-division-by-zero-nan
+title: A binary division or modulo by zero answers ±Inf where Loki answers NaN (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki 3.7.7 guards both operators: `/` and `%` with a zero right-hand value
+  answer NaN (pkg/logql/syntax/ast.go:1978-2006 MergeBinOp, "guard against
+  divide by zero"), for a vector against a vector and against a literal
+  alike, and a NaN sample is encoded as "NaN". The proxy's binary evaluator
+  computes `a / b` and `math.Mod(a, b)` as Go floats (internal/proxy
+  binary_matching.go binarySampleValue), so `x / 0` answers "+Inf" or "-Inf"
+  (`0 / 0` and `x % 0` are NaN in both). A dashboard dividing by a count that
+  can be zero, or by a sum of values that can be zero, draws a different value.
+  Under an aggregation the difference carries on: Loki's min and max skip a NaN
+  after the first value of a group (pkg/logql/evaluator.go VectorAggEvaluator.Next,
+  `group.value < s.F || math.IsNaN(group.value)`), while the proxy's fold
+  propagates it (vector_matching.go withoutMerge.combine, math.Min/math.Max).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (count_over_time({app="api-gateway"}[1m])) / 0'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    "NaN" for every series, as Loki answers.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy binary_matching.go binarySampleValue (/ and %); vector_matching.go withoutMerge.combine (min, max over NaN)'
+  loki: 'pkg/logql/syntax/ast.go:1978-2006 MergeBinOp; pkg/logql/evaluator.go VectorAggEvaluator.Next (min, max)'
+  proxy: '±Inf for x/0; min and max propagate NaN'
+  planned_test: 'TestCompat_BinaryDivisionByZero (test/e2e-compat, group core); a binarySampleValue edge table and the aggregation-over-binary differential with zero divisors (internal/proxy)'
+  clusters: []

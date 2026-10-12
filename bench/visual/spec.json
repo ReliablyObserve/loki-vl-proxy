@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-sum-by-over-binary",
+   "kind": "explore",
+   "query": "sum by (service_name) (rate({service_name=\"api-gateway\"}[$__auto]) / 2)",
+   "covers": [
+    "semantics/aggregation-over-binary-dropped",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/aggregation-over-binary-dropped"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

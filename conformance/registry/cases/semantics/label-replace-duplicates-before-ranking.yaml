@@ -1,0 +1,42 @@
+id: semantics/label-replace-duplicates-before-ranking
+title: topk, bottomk and stddev over label sets a label_replace made equal rank merged series on query_range (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  When a label_replace makes two series share a label set, Loki keeps both
+  samples at each step until the query ends: the vector aggregation above it
+  (topk, bottomk, stddev, stdvar) ranks or folds every sample, and only
+  JoinSampleVector files the survivors under one series (pkg/logql/evaluator.go
+  VectorAggEvaluator.Next, pkg/logql/engine.go vectorsToSeries). The proxy
+  transforms the series VictoriaLogs answered and merges the duplicates into one
+  series, with the points of each step in turn, before topk, bottomk or stddev
+  see them, so a step holds two points under one series and the ranking works on
+  that merged series (internal/proxy handleRangeMetricPostAggregation,
+  transformSeriesLabels). On an instant query the samples stay apart, so the
+  instant answer ranks as Loki does.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per step holding the larger of the two samples, as Loki ranks
+    them before it files them.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy metric_agg.go (handleRangeMetricPostAggregation) after transformSeriesLabels'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next; pkg/logql/engine.go:440-470 vectorsToSeries'
+  proxy: 'duplicates merged into one series before the ranking'
+  planned_test: 'TestCompat_LabelReplaceDuplicatesBeforeRanking (test/e2e-compat, group semantics)'
+  clusters: []

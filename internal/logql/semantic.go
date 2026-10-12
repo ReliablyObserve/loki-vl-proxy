@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strconv"
+	"unicode/utf8"
 )
 
 // errEmptyCompatibleMatchers is Loki's syntax.errAtleastOneEqualityMatcherRequired,
@@ -42,6 +43,9 @@ func validateSemantics(expr Expr, raw string) string {
 		if errors.As(err, &lokiErr) {
 			return lokiErr.Msg
 		}
+		if err := labelReplaceArgumentsError(x.Raw); err != nil {
+			return err.Error()
+		}
 		if inner != nil {
 			return validateSemantics(inner, raw)
 		}
@@ -72,6 +76,52 @@ func opaqueFirstArgument(call string) (Expr, error) {
 		return nil, nil
 	}
 	return inner, nil
+}
+
+// labelReplaceArgumentsError reports the parse error Loki raises for a
+// label_replace call that does not hold exactly four string arguments after its
+// expression (pkg/logql/syntax/syntax.y labelReplaceExpr), a string whose
+// escapes are invalid (the LogQL lexer unquotes it) included. It is nil for
+// any other call.
+func labelReplaceArgumentsError(call string) error {
+	p := &parser{sc: newScanner(call)}
+	p.advance()
+	if p.cur.Typ != TokIdent || p.cur.Val != "label_replace" {
+		return nil
+	}
+	if p.advance(); p.cur.Typ != TokLParen {
+		return nil
+	}
+	p.advance()
+	if _, err := p.parseExpr(); err != nil {
+		return nil // reported by opaqueFirstArgument
+	}
+	for i := 0; i < 4; i++ {
+		if p.cur.Typ != TokComma {
+			if i == 0 {
+				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
+			}
+			return p.syntaxErrorAt(",")
+		}
+		p.advance()
+		switch p.cur.Typ {
+		case TokString, TokRawString:
+		case TokError:
+			if p.cur.Val == "invalid quoted string" {
+				// Loki's lexer reports the start of the string.
+				before := p.sc.src[:p.pos()]
+				return newParseError(1, utf8.RuneCountInString(before)+1, "invalid char escape")
+			}
+			return p.syntaxErrorAt("STRING")
+		default:
+			return p.syntaxErrorAt("STRING")
+		}
+		p.advance()
+	}
+	if p.cur.Typ != TokRParen {
+		return p.syntaxErrorAt(")")
+	}
+	return nil
 }
 
 // validateLogQuerySemantics validates a log query. lineIndependent is true

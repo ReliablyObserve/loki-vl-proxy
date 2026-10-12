@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`label_replace` adds its destination label to instant answers, reads an
+  escaped regexp, and runs under `topk`, `sort` and a binary expression (#744).**
+  `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
+  "(.*)-.*")` came back from `/loki/api/v1/query` without `app_short` on every
+  series (also through nested `label_replace`), where Loki adds it
+  (`pkg/logql/evaluator.go` `LabelReplaceEvaluator.Next`): the proxy applied the
+  transform to range matrices only. It now rewrites the labels of a vector and
+  of a matrix alike, keeps the rest of the answer, and expands the replacement
+  the way Loki does (`$1`, `${1}`, `$name`, `$$`; an empty expansion removes the
+  destination), with the anchored regexp. Two series that end with one label
+  set stay two samples on an instant query and become one series on a range
+  query, as `JoinSampleVector` does, and no error is raised, as in Loki. Also
+  fixed: the string arguments are unquoted like the LogQL lexer does, so a
+  regexp written `"(\\w+)\\.(\\w+)"` matches (the backslashes used to be kept,
+  and the regexp never matched) and an escaped quote no longer ends the
+  argument; `topk`, `bottomk`, `sort` and `stddev` over a `label_replace` sent
+  the translator's marker to VictoriaLogs and now rank what the transform
+  produced; and a `label_replace` around a binary expression on `query_range`
+  sent the binary marker to VictoriaLogs, as the instant path used to. An
+  invalid regexp under those wrappers is Loki's `parse error : invalid regex in
+  label_replace` 400. `label_replace(sum without (level) (...), ...)` kept the
+  excluded label and lost the transform, because the `without` marker swallowed
+  the `label_replace` marker after it; and a call without the four string
+  arguments of Loki's grammar, or with an invalid escape in one, was taken for a
+  log query (an empty `streams` answer on `query_range`) and is now a 400 parse
+  error on both endpoints.
+- **An instant query is answered with its failure status and a resultType, as
+  Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
+  (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
+  HTTP 200 with an error body and no `resultType`, which Grafana and every client
+  decoding by type (`pkg/loghttp/query.go` `QueryResponse.UnmarshalJSON` fails on
+  a missing or unknown type) cannot read, where Loki answers `vector`
+  (`pkg/logql/engine.go` `evalSample`, `JoinSampleVector`; `pkg/querier/queryrange/marshal.go`
+  `ResultToResponse`). Two causes. A query the proxy post-processes (`without`,
+  `label_replace`, `label_join`) was buffered, and a failure of it (a
+  VictoriaLogs error, a series limit, a rejected query) was written with the
+  status dropped, so every such error reached the client as a 200; query_range
+  already sent the failing status, the instant path now does too. And a
+  `label_replace` or `label_join` around a binary expression sent the
+  translator's internal binary marker to VictoriaLogs as a LogsQL query; the
+  expression under the transform now routes like any binary expression, its
+  operands run as instant queries and combine, and the transform applies to the
+  result. Also on the instant endpoint: a scalar literal (`1`, `-1`) answers a
+  `scalar` as Loki's `evalLiteral` does, where it was rejected as a log query,
+  also under a multi-tenant `X-Scope-OrgID`; `vector(1)`, `vector(1) + 2` and
+  `vector(1) + vector(2)` are evaluated as constants (a literal division by zero
+  is NaN, as in Loki's `MergeBinOp`) and stamp their sample in seconds like
+  every other sample (`pkg/util/marshal/query.go` `NewVector`) where they
+  carried nanoseconds; the first argument of a `label_replace` or `label_join`
+  is split outside strings and brackets, so a `)` or `,` in a line filter or a
+  matcher no longer breaks the translation; and
+  a log query sent with every tenant filtered out by `__tenant_id__` is rejected
+  with Loki's 400 for a log query as an instant query, not answered with an
+  empty `streams`. An aggregation over a binary expression (`sum by (job) (a /
+  b)`) is still not evaluated as Loki does; where the proxy rejects it, it now
+  does so with an error status, no longer with a typeless 200.
+
+- **A `sum`, `avg`, `min`, `max` or `count` over a binary expression aggregates
+  the whole binary, as Loki does, instead of only its first operand.**
+  `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
+  answered the aggregated rate alone, `sum(rate({app="x"}[1m]) / 2)` lost the
+  `/ 2`, a comparison (`max(rate(...) > 0.5)`) filtered nothing, and `on()`,
+  `ignoring()` and `group_left` under an aggregation were ignored: all with a 200
+  and wrong values on query_range. On an instant query, a literal or a nested
+  binary as the first operand (`sum(2 * rate(...))`) answered 400 "log queries are
+  not supported as an instant query type". Loki 3.7.7 joins the operands per
+  series (`pkg/logql/evaluator.go:791` `newBinOpStepEvaluator`, `:955`
+  `vectorBinop`, `:1096` `resultMetric`; a comparison keeps the left value or,
+  with `bool`, answers 0 or 1) and then folds the joined series per step by the
+  aggregation's grouping (`VectorAggEvaluator.Next`, `:435-630`). The proxy sent
+  only a top-level binary to its binary evaluator; under an aggregation the
+  translator kept the first operand's stats chain and dropped the rest. Now
+  query and query_range send an aggregation (by, without or no grouping, nested
+  aggregations included) over a binary to the binary evaluator: each operand
+  stays a native VictoriaLogs stats query through its own handler, the proxy
+  joins the aggregated operand series and folds them per step, with no raw rows
+  and work bounded by the operands' series. An operand keeps its own parser when
+  the query names both `| json` and `| logfmt`, and an offset on one side only
+  is accepted as for a bare binary. A `label_replace` or `label_join` around
+  such an aggregation (the shape the differential corpus found on /query)
+  is evaluated the same way and the transform applies to the folded answer,
+  with each operand still reading the request's own parsers; a transform inside
+  an operand (`sum(label_replace(a, ...) / b)`) is applied by that operand, not
+  again to the answer. The series the proxy folds (this, and every `without`)
+  keep every label set apart, a value holding `,` or `=` included, and come in
+  Loki's order (`labels.Compare`) (#741).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

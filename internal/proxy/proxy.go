@@ -2260,6 +2260,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
+				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
+			}
 			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
@@ -2384,7 +2387,22 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	// A label_replace or label_join around a binary expression routes by that
+	// expression: its operands are evaluated, then the transform is applied below.
+	routedQuery := logqlQuery
+	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		routedQuery = stripLabelTransforms(logqlQuery)
+	}
+	if routedQuery != logqlQuery {
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
+	}
+	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
@@ -2397,6 +2415,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		} else {
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
+	} else if p.proxyBinaryAggregation(sc, r, parsedForRouting, "matrix") {
+		withoutLabels = nil // folded by the aggregation itself
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
@@ -2425,6 +2445,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			cacheOut = sortSeriesByLabels(cacheOut, false)
 		}
 		copyBackendHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
@@ -2494,6 +2517,10 @@ func (p *Proxy) detectedLevelCacheKey() string {
 	return "dl1-stored"
 }
 
+// lokiInstantLogQueryError is Loki's rejection of a log query sent to the
+// instant query endpoint (pkg/logqlmodel/error.go ErrUnsupportedSyntaxForInstantQuery).
+const lokiInstantLogQueryError = "log queries are not supported as an instant query type, please change your query to a range query type"
+
 // handleQuery translates Loki instant queries.
 //
 //nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
@@ -2506,7 +2533,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
-	if body, ok := evaluateConstantInstantVectorQuery(logqlQuery, r.FormValue("time")); ok {
+	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 		elapsed := time.Since(start)
@@ -2541,6 +2568,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
+				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
+			}
 			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
@@ -2644,7 +2674,22 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRoutingQ, _ := logqlpkg.Parse(logqlQuery)
+	// A label_replace or label_join around a binary expression routes by that
+	// expression: its operands are evaluated, then the transform is applied below.
+	routedQuery := logqlQuery
+	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		routedQuery = stripLabelTransforms(logqlQuery)
+	}
+	if routedQuery != logqlQuery {
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
+	}
+	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
@@ -2655,13 +2700,20 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		} else {
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
+	} else if p.proxyBinaryAggregation(sc, r, parsedForRoutingQ, "vector") {
+		withoutLabels = nil // folded by the aggregation itself
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {
-		p.writeError(sc, http.StatusBadRequest, "log queries are not supported as an instant query type, please change your query to a range query type")
+		p.writeError(sc, http.StatusBadRequest, lokiInstantLogQueryError)
 	}
 
-	if bw != nil && needsCapture {
+	if bw != nil && needsCapture && sc.code != http.StatusOK {
+		// A failed answer is no sample to post-process: send it with its own
+		// status, as query_range does. Sent with 200 it is an error body under
+		// a success status, with no resultType for the client to decode.
+		p.writeError(w, sc.code, p.redactBackendError(bw.body))
+	} else if bw != nil && needsCapture {
 		result := bw.body
 		if len(withoutLabels) > 0 {
 			result = applyWithoutGrouping(result, withoutLabels, withoutAggregationOp(logqlQuery))
@@ -2674,6 +2726,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			result = sortSeriesByLabels(result, queryIsSortable(logqlQuery))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)

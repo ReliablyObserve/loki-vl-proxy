@@ -525,6 +525,12 @@ func ParseWithoutMarker(query string) (cleanQuery string, excludeLabels []string
 	}
 	cleanQuery = query[:idx]
 	labelStr := query[idx+len(WithoutMarkerSuffix):]
+	// A marker appended after this one (label_replace, label_join, group)
+	// ends the label list and stays on the query for its own parser.
+	if end := strings.Index(labelStr, "__lvp_"); end >= 0 {
+		cleanQuery += labelStr[end:]
+		labelStr = labelStr[:end]
+	}
 	for _, l := range strings.Split(labelStr, ",") {
 		l = strings.TrimSpace(l)
 		if l != "" {
@@ -1740,23 +1746,46 @@ func convertGoTemplate(tmpl string) string {
 // returning (firstArg, rest, ok). rest is the text after the first comma at depth 0.
 // Input starts right after the opening '(' of the outer function.
 func splitFuncFirstArg(s string) (first, rest string, ok bool) {
+	n := FirstArgumentLen(s)
+	if n == len(s) {
+		return "", "", false
+	}
+	if s[n] == ',' {
+		return strings.TrimSpace(s[:n]), strings.TrimSpace(s[n+1:]), true
+	}
+	return strings.TrimSpace(s[:n]), "", true
+}
+
+// FirstArgumentLen is the length of the first argument of a call, given the
+// text after its '(': up to the first comma or unmatched ')' outside strings
+// (double-quoted with escapes, or backtick-quoted) and nested brackets. It is
+// len(s) when the call is not closed.
+func FirstArgumentLen(s string) int {
 	depth := 0
-	for i, c := range s {
-		switch c {
-		case '(':
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == '(' || c == '[' || c == '{':
 			depth++
-		case ')':
+		case c == ')' || c == ']' || c == '}':
 			if depth == 0 {
-				return strings.TrimSpace(s[:i]), "", true
+				return i
 			}
 			depth--
-		case ',':
-			if depth == 0 {
-				return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:]), true
-			}
+		case c == ',' && depth == 0:
+			return i
 		}
 	}
-	return "", "", false
+	return len(s)
 }
 
 // parseAllStringArgs parses all quoted string arguments (double- or back-tick-quoted)
@@ -1785,6 +1814,29 @@ func parseAllStringArgs(s string) []string {
 	return args
 }
 
+// parseUnquotedStringArgs reads the comma-separated string arguments that
+// follow the first argument of label_replace or label_join, unquoted as the
+// LogQL lexer does: a double-quoted string has its escapes resolved, a
+// backtick one is raw (pkg/logql/syntax/lex.go). It stops at ')' or at the
+// first argument that is not a valid string.
+func parseUnquotedStringArgs(s string) []string {
+	var args []string
+	for {
+		s = strings.TrimSpace(s)
+		quoted, err := strconv.QuotedPrefix(s)
+		if err != nil {
+			break
+		}
+		arg, err := strconv.Unquote(quoted)
+		if err != nil {
+			break
+		}
+		args = append(args, arg)
+		s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s[len(quoted):]), ","))
+	}
+	return args
+}
+
 // tryTranslateLabelReplace handles label_replace(v, "dst", "repl", "src", "regex").
 // It translates the inner expression and embeds a marker for proxy post-processing.
 func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string, bool) {
@@ -1796,7 +1848,7 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) != 4 {
 		return "", false
 	}
@@ -1821,7 +1873,7 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) < 3 { // dst + sep + at least one src
 		return "", false
 	}

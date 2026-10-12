@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string) bool {
@@ -33,6 +35,17 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	if len(filteredTenants) == 0 {
+		if endpoint == "query" {
+			// No tenant left to ask is no reason to answer `streams`: a log query is no instant query.
+			if _, err := logqlpkg.Parse(r.FormValue("query")); err != nil {
+				p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : %v", err))
+				return true
+			}
+			if !logQLProducesSamples(r.FormValue("query")) {
+				p.writeError(w, http.StatusBadRequest, lokiInstantLogQueryError)
+				return true
+			}
+		}
 		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
 		return true
 	}

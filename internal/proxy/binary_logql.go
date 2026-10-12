@@ -36,17 +36,21 @@ func nextBinaryEvaluation(r *http.Request) (*http.Request, error) {
 
 // Resolve original operands through the normal handlers: VL stats buckets do
 // not implement Loki's trailing range windows or parser-error semantics.
-func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
-	query := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+// binaryRequestQuery is the request's own LogQL with Grafana tokens resolved
+// and a uniform offset stripped, as binaryExprForRequest reads it.
+func binaryRequestQuery(r *http.Request) string {
+	query := stripIncompleteUnwrapStubs(r.FormValue("query"))
+	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	// The outer handler has already shifted uniform offsets. Mixed offsets
 	// remain on their individual operands and are applied by each child handler.
 	if _, stripped, err := extractLogQLOffset(query); err == nil {
 		query = stripped
 	}
-	expr, err := logqlpkg.Parse(query)
-	if err != nil {
-		return nil
-	}
+	return query
+}
+
+func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
+	expr := binaryRequestExpr(r)
 	for {
 		switch x := expr.(type) {
 		case *logqlpkg.BinOpExpr:
@@ -57,6 +61,15 @@ func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
 			return nil
 		}
 	}
+}
+
+// binaryRequestExpr parses the request's query.
+func binaryRequestExpr(r *http.Request) logqlpkg.Expr {
+	expr, err := logqlpkg.Parse(binaryRequestQuery(r))
+	if err != nil {
+		return nil
+	}
+	return expr
 }
 
 type binaryOperandResponse struct {

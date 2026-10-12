@@ -1,0 +1,78 @@
+id: semantics/aggregation-over-binary-dropped
+title: A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
+  and `sum(rate({app="x"}[1m]) / 2)` are evaluated by Loki 3.7.7 as the binary
+  per series, then the aggregation per step: newBinOpStepEvaluator joins the
+  operands' samples (pkg/logql/evaluator.go:791 and vectorBinop:955, matching
+  on every label or on()/ignoring() with group_left/group_right, resultMetric:1096;
+  a literal on either side through newLiteralStepEvaluator:1130; a comparison
+  keeps the left value or, with bool, answers 0/1, pkg/logql/syntax/ast.go:1944
+  MergeBinOp), and VectorAggEvaluator.Next (pkg/logql/evaluator.go:435-630)
+  folds the joined series by the grouping.
+
+  The proxy routed only a top-level binary to its binary evaluator. Under an
+  aggregation the query went to the translator, whose outer-aggregation
+  extraction (internal/translator/translator.go extractOuterAggregation and
+  applyOuterAggregation) kept the first operand's stats chain and dropped the
+  operator and the second operand: `/ count_over_time(...)`, `/ 2`, `> 0.5` and
+  `/ on (job) group_left ...` all vanished with a 200 and wrong values on
+  query_range; an instant query whose first operand was a literal (`sum(2 *
+  rate(...))`) or a nested binary was translated to a line search and answered
+  400 "log queries are not supported as an instant query type".
+
+  Fixed: the routing of query_range and query sends a sum, avg, min, max or
+  count (by, without or no grouping, nested) over a binary to the binary
+  evaluator (proxyBinaryAggregation): each operand stays a native VictoriaLogs
+  stats query through its own handler, the evaluator joins the aggregated
+  operand series, and applyWithoutGrouping folds the joined series per step
+  with the aggregation's operator. The expression is read from the request, so
+  an operand keeps its parser when the whole query names `| json` and `|
+  logfmt` (the discovered cluster below). A mixed offset (one side only) is
+  accepted as for a bare binary.
+
+  A label_replace or label_join around the aggregation, the discovered shape
+  (cluster f2066991 on /query), routes by the expression inside it on both
+  endpoints and the transform applies to the folded answer. The request is
+  cloned to the expression inside the transform from the request's own query,
+  so an operand keeps its parser; a transform inside an operand is applied by
+  that operand, not again to the answer. The folded series keep every label set
+  apart (escaped keys: `a="b,c=d"` is not `a="b",c="d"`) and come in Loki's
+  order (labels.Compare: name then value, label by label).
+
+  A start off the step grid is pinned for a binary with a literal; a join of
+  two vectors answers on the aligned grid, registered apart
+  (semantics/binary-step-grid).
+
+  Owed after the PRs that own them land: the series limit counted on the folded
+  answer (semantics/non-sum-vector-aggregation-unreduced's fold) and NaN-skipping
+  min and max (semantics/binary-division-by-zero-nan).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [resultType, series, values]
+  expect: |
+    Loki's vector: the binary per series, the aggregation per step, then the
+    label_replace; the same series and values as Loki.
+gap:
+  status: fixed
+  fixed_by: "#741"
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing; vector_matching.go (fold keys and order)'
+  loki: 'pkg/logql/evaluator.go:791 newBinOpStepEvaluator, :955 vectorBinop, :1096 resultMetric, :400-630 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/syntax/ast.go:1944 MergeBinOp'
+  proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
+  planned_test: 'TestCompat_AggregationOverBinary, TestCompat_AggregationOverBinaryMixedParsers and TestCompat_AggregationOverBinaryUnderLabelTransforms (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset, TestAggregationOverBinaryUnderLabelTransforms, TestBinaryWithLabelReplaceOperandStaysBinary, TestWithoutFoldLabelOrderAndKeys and TestLabelTransformsKeepVectorAndWarnings (internal/proxy)'
+  note: 'The e2e is written and not yet run against the stack.'
+  clusters:
+    - f2066991

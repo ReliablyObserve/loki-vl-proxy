@@ -1,0 +1,49 @@
+id: semantics/binary-step-grid
+title: A binary joining two vectors answers on the step-aligned grid, a binary with a literal at start+k*step (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki 3.7.7 evaluates a range query at start+k*step (pkg/logql/engine.go,
+  the step evaluator from params.Start()); its query frontend moves start and
+  end down to step multiples first only with `align_queries_with_step: true`
+  (pkg/querier/queryrange/queryrangebase/step_align.go StepAlignMiddleware),
+  which the compose stack's Loki sets (test/e2e-compat/loki-local-config.yaml)
+  and a default Loki does not.
+
+  The proxy evaluates a metric at start+k*step, as a default Loki does, except
+  where a binary joins two vectors: alignBinaryRangeRequest
+  (internal/proxy/binary_logql.go) moves that request to the aligned grid so a
+  sliding-window operand (start+k*step) and a tumbling one (VictoriaLogs'
+  epoch buckets) share an axis (TestBinaryMixedWindowsShareStepAlignedAxis).
+  A binary with a literal is not moved. So with a start off the step grid,
+  `sum(rate(a[1m]) / count_over_time(a[1m]))` answers at aligned times, which
+  is the stack Loki's answer but not a default Loki's, and `sum(rate(a[1m]) /
+  2)` at start+k*step, which is a default Loki's but not the stack's. Grafana
+  sends step-aligned starts for most ranges, which hides it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))'
+    start: '1800000017'
+    end: '1800000617'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Samples at start+k*step on a default Loki; at step multiples with
+    align_queries_with_step. One rule for every binary, whichever is chosen.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy binary_logql.go alignBinaryRangeRequest (vector joins only)'
+  loki: 'pkg/logql/engine.go step evaluation at start+k*step; pkg/querier/queryrange/queryrangebase/step_align.go StepAlignMiddleware (align_queries_with_step)'
+  proxy: 'vector joins aligned, literal binaries and single metrics at start+k*step'
+  planned_test: 'TestAggregationOverBinaryDifferential with a start off the step grid for vector joins (internal/proxy; skipped there today)'
+  clusters: []
