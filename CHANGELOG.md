@@ -7,68 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.14.1] - 2026-10-12
-
-### CI
-
-- **Release metadata pull requests are opened by a maintainer.** The release
-  workflows (`auto-release.yaml`, `release.yaml`) still compute the metadata and
-  push the signed `release/metadata-vX.Y.Z` branch, but no longer open or
-  auto-merge its pull request. A maintainer opens it from that branch, so the
-  pull request and the commit that lands on main carry the maintainer's
-  authorship.
-
-## [2.14.0] - 2026-10-12
-
 ### Fixed
 
-- **`unwrap duration_seconds(label)` is converted like `duration(label)`, as Loki
-  does, instead of answering an empty matrix.** `sum by (service_name)
-  (sum_over_time({service_name="cache-redis"} | logfmt | unwrap
-  duration_seconds(ttl) [5m]))` over `ttl=250ms` lines returned no series on the
-  proxy and 7.5 per window on Loki 3.7.7. Loki converts `duration_seconds()` with
-  `convertDuration` (`time.ParseDuration`, in seconds), the same function as
-  `duration()` (`pkg/logql/syntax/extractor.go:63-71`, `OpConvDurationSeconds`;
-  `pkg/logql/log/metrics_extraction.go` `convertDuration`). The translator
-  recognised only the `duration(` and `bytes(` wrappers, so it treated
-  `duration_seconds(ttl)` as the name of a label that no line has: nothing
-  matched the plain-number gate, and the conversion-error check, which counts the
-  rows the gate rejects, saw no duration to count. Now `duration_seconds()` takes
-  the duration route everywhere `duration()` does: the label is extracted,
-  gated by the `time.ParseDuration` syntax (`250ms`, `1.5s`, `1h`, `-1s`, `5.s`,
-  `.5s`) and converted to seconds by VictoriaLogs for the sum, rate, average,
-  maximum, minimum and quantile of a range, tumbling, sliding or instant window,
-  the raw evaluators convert it with `time.ParseDuration`, and a value Go rejects
-  (`abc`, `1d`, `42`) fails the query with Loki's 400 `SampleExtractionErr` text
-  unless a label filter after the unwrap drops the error. The proxy now answers
-  `duration_seconds(x)` with exactly the queries and answer of `duration(x)`.
-  The window of a sum, maximum or minimum over time on a range query is a
-  separate open difference that applies to either conversion. (#729)
-
-## [2.13.0] - 2026-10-12
-
-### Fixed
-
-- **An empty pattern line filter selects the lines Loki selects: `|> ""` keeps no
-  line of an ordinary stream and `!> ""` keeps them all.** `{namespace="prod"}
-  |> ""` returned the page on the proxy and no line on Loki 3.7.7, and
-  `{namespace="prod"} !> ""` returned nothing where Loki returns the page. An
-  empty pattern is valid in Loki: it parses without error and builds a pattern
-  matcher with no expression, which accepts only an empty line
-  (`pkg/logql/log/pattern/pattern.go` `ParseLineFilter`, `Matcher.Test`), so
-  `|> ""` keeps the empty lines and `!> ""` drops them. It is not the match-all
-  filter that `|= ""` is: `|> "" or "x"` keeps the empty lines and the lines that
-  match `x`. The proxy translated the empty pattern to the regexp `.*`, which
-  VictoriaLogs read as every line; it now sends `^$`, the empty line, in log
-  queries, in range and instant metric queries (the filter is part of the stats
-  query, nothing is filtered in the proxy), after a parser stage and inside an
-  `or` chain. A `!=`, `!~` or `!>` written right after a pattern filter, with no
-  pipe between them (`|> "a <_>" != "x"`), is a filter of its own again: the
-  proxy read it as part of the pattern, dropped both filters and returned every
-  line. Non-empty patterns are otherwise unchanged. Covered by the edge table
-  `TestTranslateEmptyPatternLineFilter`, `TestEmptyPatternLineFilterReachesVictoriaLogs`
-  for the log, range and instant paths, and `TestCompat_PatternLineFilter`
-  against Loki (#743).
+- **A scalar instant answer carries its sample time in integer milliseconds, as
+  Loki does, not in seconds (#TBD).** `GET /loki/api/v1/query?query=1` (and
+  `1 + 1`, `2 * (3 + 4)`, `1 > bool 2`) was answered `[1791811168.123,"1"]`;
+  Loki 3.7.7 answers `[1791811168123,"1"]`, while `vector(1)` is in seconds on
+  both. The engine keeps the scalar time in milliseconds (`pkg/logql/engine.go`
+  `evalLiteral`), the encoder of `pkg/util/marshal` would write seconds, but the
+  HTTP answer is written by the query frontend: `pkg/querier/queryrange/prometheus.go`
+  `marshalScalar` builds the time with `model.TimeFromUnix(TimestampMs)`, which
+  reads seconds, so the millisecond count is printed as is, whereas
+  `marshalVector` uses `model.Time(TimestampMs)`. The earlier fix (#735) followed
+  `pkg/util/marshal` and stamped seconds. Every scalar shape the proxy answers
+  without a backend (a literal, a binary operation of literals, a comparison
+  with `bool`) now carries the evaluation time truncated to the millisecond;
+  vector samples are unchanged. `1 / 0` is left as it is: Loki 3.7.7 answers a
+  500 `failed to enqueue request` after about 40 s (its frontend cannot ship
+  the folded NaN to the querier) where the proxy answers a 200 scalar `NaN`; that
+  difference awaits an owner decision. `TestCompat_InstantResultTypeAlwaysSet` now compares the
+  sample time and value of every constant against Loki
+  (`semantics/scalar-sample-time-units`).
 
 ## [2.12.0] - 2026-10-12
 

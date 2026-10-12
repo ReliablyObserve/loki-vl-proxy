@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
@@ -85,9 +86,10 @@ func binaryConstantResponse(r *http.Request, value float64, resultType string) (
 		if !ok {
 			return nil, fmt.Errorf("invalid scalar evaluation time")
 		}
-		// Loki encodes a scalar with model.Time(ms).String(): seconds with
-		// millisecond precision, the same unit as vector and matrix samples.
-		return json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "scalar", "result": []any{float64(ts/1e6) / 1e3, encoded}}})
+		// Loki's frontend marshalScalar passes the millisecond timestamp to
+		// model.TimeFromUnix (seconds), so a scalar is stamped in integer
+		// milliseconds, unlike the vector and matrix samples.
+		return json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "scalar", "result": []any{ts / int64(time.Millisecond), encoded}}})
 	}
 	start, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 	end, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))

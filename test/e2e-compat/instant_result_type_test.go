@@ -23,8 +23,9 @@ import (
 //
 // Each shape is asked of Loki and of the proxy. Both must answer, and answer
 // the same status and the same resultType; the series of the answers are
-// compared by the other registry items, not here.
-// conformance: semantics/instant-result-type-missing, loki_api_v1_query
+// compared by the other registry items, not here. The sample time and value of
+// the constants are compared too (semantics/scalar-sample-time-units).
+// conformance: semantics/instant-result-type-missing, semantics/scalar-sample-time-units, loki_api_v1_query
 func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 	ensureDataIngested(t)
 	waitForLokiMetricData(t)
@@ -67,6 +68,8 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 		{"scalar literal", `1`},
 		{"negative literal", `-1`},
 		{"scalar binary", `1 + 1`},
+		{"scalar nested binary", `2 * (3 + 4)`},
+		{"scalar comparison", `1 > bool 2`},
 		{"log selector", sel},
 	}
 
@@ -149,6 +152,57 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 			ts, _ := value[0].(float64)
 			if diff := ts - float64(at.UnixMilli())/1e3; diff < -1 || diff > 1 {
 				t.Errorf("%s: vector(1) is stamped %v, want the evaluation time %s in seconds", name, value[0], fmt.Sprint(float64(at.UnixMilli())/1e3))
+			}
+		}
+	})
+
+	// A scalar is stamped in integer milliseconds, a vector in seconds: Loki's
+	// query frontend hands the millisecond timestamp of a scalar to
+	// model.TimeFromUnix, which reads seconds (pkg/querier/queryrange
+	// /prometheus.go marshalScalar; marshalVector keeps model.Time(ms)). The
+	// same evaluation time must give the same sample time and value on both
+	// sides, to the millisecond, for every constant shape. `1 / 0` is left out:
+	// Loki fails to ship a folded NaN or Inf to its querier and answers 500.
+	t.Run("constant sample time", func(t *testing.T) {
+		at := time.Now().Truncate(time.Millisecond).Add(123456 * time.Nanosecond)
+		for _, tc := range []struct{ query, resultType string }{
+			{`1`, "scalar"},
+			{`-1`, "scalar"},
+			{`1 + 1`, "scalar"},
+			{`2 * (3 + 4)`, "scalar"},
+			{`1 > bool 2`, "scalar"},
+			{`vector(1)`, "vector"},
+			{`vector(1) + 2`, "vector"},
+		} {
+			sample := func(payload map[string]interface{}) (string, []interface{}) {
+				data, _ := payload["data"].(map[string]interface{})
+				rt, _ := data["resultType"].(string)
+				if rt == "scalar" {
+					point, _ := data["result"].([]interface{})
+					return rt, point
+				}
+				result, _ := data["result"].([]interface{})
+				if len(result) != 1 {
+					return rt, nil
+				}
+				first, _ := result[0].(map[string]interface{})
+				point, _ := first["value"].([]interface{})
+				return rt, point
+			}
+			lokiStatus, lokiBody, lokiPayload := ask(t, lokiURL, tc.query, "0", at)
+			proxyStatus, proxyBody, proxyPayload := ask(t, proxyURL, tc.query, "0", at)
+			if lokiStatus != http.StatusOK || proxyStatus != http.StatusOK {
+				t.Errorf("%s: HTTP loki=%d proxy=%d\nloki:  %s\nproxy: %s", tc.query, lokiStatus, proxyStatus, lokiBody, proxyBody)
+				continue
+			}
+			lokiType, lokiPoint := sample(lokiPayload)
+			proxyType, proxyPoint := sample(proxyPayload)
+			if lokiType != tc.resultType || proxyType != tc.resultType || len(lokiPoint) != 2 || len(proxyPoint) != 2 {
+				t.Errorf("%s: want one %s sample on both sides\nloki:  %s\nproxy: %s", tc.query, tc.resultType, lokiBody, proxyBody)
+				continue
+			}
+			if lokiPoint[0] != proxyPoint[0] || lokiPoint[1] != proxyPoint[1] {
+				t.Errorf("%s: sample loki=%v proxy=%v (the time is milliseconds for a scalar, seconds for a vector)\nloki:  %s\nproxy: %s", tc.query, lokiPoint, proxyPoint, lokiBody, proxyBody)
 			}
 		}
 	})

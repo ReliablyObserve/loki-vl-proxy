@@ -46,7 +46,8 @@ func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
 // evaluateConstantInstantQuery answers an instant query of constants, which has
 // no data behind it. vector(n), and a binary operation of two of them, is a
 // vector of one sample with no labels (Loki pkg/logql/engine.go evalVector); a
-// literal, or a binary operation of literals, is a scalar (evalLiteral).
+// literal, or a binary operation of literals, is a scalar (evalLiteral), whose
+// sample time is integer milliseconds (see constantInstantMillis).
 func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
 	parsed, err := logqlpkg.Parse(strings.TrimSpace(expr))
 	if err != nil {
@@ -63,17 +64,26 @@ func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
 		"status": "success",
 		"data": map[string]interface{}{
 			"resultType": "scalar",
-			"result":     []interface{}{constantInstantSeconds(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
+			"result":     []interface{}{constantInstantMillis(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
 		},
 	})
 	return result, true
 }
 
-// constantInstantSeconds is the evaluation time as a sample time: seconds with
-// millisecond precision (Loki pkg/util/marshal NewVector and NewScalar), not
-// the nanoseconds the request carries.
+// constantInstantSeconds is the evaluation time as a vector sample time: seconds
+// with millisecond precision (Loki pkg/querier/queryrange/prometheus.go
+// marshalVector, model.Time(ms)), not the nanoseconds the request carries.
 func constantInstantSeconds(timeParam string) float64 {
-	return float64(parseInstantVectorTime(timeParam)/int64(time.Millisecond)) / 1e3
+	return float64(constantInstantMillis(timeParam)) / 1e3
+}
+
+// constantInstantMillis is the evaluation time as a scalar sample time. Loki
+// answers it as integer milliseconds, not seconds: marshalScalar
+// (pkg/querier/queryrange/prometheus.go) hands the millisecond timestamp of
+// promql.Scalar.T (pkg/logql/engine.go evalLiteral) to model.TimeFromUnix,
+// which reads seconds, so model.Time.String prints the millisecond count.
+func constantInstantMillis(timeParam string) int64 {
+	return parseInstantVectorTime(timeParam) / int64(time.Millisecond)
 }
 
 func buildConstantVectorResponse(timeParam string, value float64) []byte {

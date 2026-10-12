@@ -225,6 +225,7 @@ func TestBinaryInstantUsesSingleDefaultTimestamp(t *testing.T) {
 	}
 }
 
+// conformance: semantics/scalar-sample-time-units, loki_api_v1_query
 func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	for _, tc := range []struct{ query, want string }{
@@ -253,7 +254,7 @@ func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 				}
 				if resultType == "vector" {
 					var point []any
-					if response.Data.ResultType != "scalar" || json.Unmarshal(response.Data.Result, &point) != nil || !reflect.DeepEqual(point, []any{float64(1700000000), tc.want}) {
+					if response.Data.ResultType != "scalar" || json.Unmarshal(response.Data.Result, &point) != nil || !reflect.DeepEqual(point, []any{float64(1700000000000), tc.want}) {
 						t.Fatalf("scalar response %s", w.Body)
 					}
 				} else {
