@@ -121,6 +121,9 @@ type instantMetricPostAgg struct {
 	name  string
 	inner string
 	k     int
+	// group is the by()/without() clause of topk and bottomk: k series are kept
+	// per group (nil: one group).
+	group *logqlpkg.Grouping
 }
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
@@ -151,6 +154,10 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 		}
 		return instantMetricPostAgg{name: name, inner: inner}, true
 	}
+	if postAgg, ok := parseTopKPostAgg(logql); ok {
+		return postAgg, true
+	}
+	// Spellings the typed parser rejects keep the textual split.
 	for _, name := range []string{"topk", "bottomk"} {
 		prefix := name + "("
 		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
@@ -172,6 +179,103 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 		return instantMetricPostAgg{name: name, inner: inner, k: k}, true
 	}
 	return instantMetricPostAgg{}, false
+}
+
+// parseTopKPostAgg splits topk and bottomk in every spelling Loki's grammar
+// accepts (pkg/logql/syntax/syntax.y:182-184): `topk(k, expr)`, `topk (k,
+// expr)`, `topk by (l) (k, expr)`, `topk without (l) (k, expr)` and
+// `topk(k, expr) by (l)`. The by()/without() clause ranks k series per group
+// of its labels (pkg/logql/evaluator.go VectorAggEvaluator.Next keeps one heap
+// per grouping key). The inner expression is the source text, not a
+// reserialised AST.
+func parseTopKPostAgg(logql string) (instantMetricPostAgg, bool) {
+	rest := strings.TrimSpace(logql)
+	name := ""
+	for _, candidate := range []string{"topk", "bottomk"} {
+		if strings.HasPrefix(rest, candidate) {
+			name, rest = candidate, strings.TrimSpace(rest[len(candidate):])
+			break
+		}
+	}
+	if name == "" {
+		return instantMetricPostAgg{}, false
+	}
+	leading := false
+	if i := strings.IndexByte(rest, '('); i > 0 {
+		// `by (l) (k, expr)`: the label list comes before the arguments.
+		close := closingParen(rest, i)
+		if close < 0 {
+			return instantMetricPostAgg{}, false
+		}
+		rest, leading = strings.TrimSpace(rest[close+1:]), true
+	}
+	if !strings.HasPrefix(rest, "(") {
+		return instantMetricPostAgg{}, false
+	}
+	close := closingParen(rest, 0)
+	if close < 0 || (leading && strings.TrimSpace(rest[close+1:]) != "") {
+		return instantMetricPostAgg{}, false
+	}
+	args := rest[1:close]
+	comma := topLevelCommaIndex(args)
+	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	va, ok := parsed.(*logqlpkg.VectorAggregation)
+	if err != nil || !ok || comma <= 0 || !va.HasParam || int(va.Param) <= 0 {
+		return instantMetricPostAgg{}, false
+	}
+	inner := strings.TrimSpace(args[comma+1:])
+	if inner == "" {
+		return instantMetricPostAgg{}, false
+	}
+	return instantMetricPostAgg{name: name, inner: inner, k: int(va.Param), group: va.Grouping}, true
+}
+
+// closingParen returns the index of the ")" that closes the "(" at s[open],
+// skipping quoted strings and raw strings, or -1.
+func closingParen(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '"', '`':
+			quote := s[i]
+			for i++; i < len(s) && s[i] != quote; i++ {
+				if quote == '"' && s[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// topKGroupKey identifies the group a series is ranked in: the values of the
+// by() labels, or every label but the without() ones and __name__. Without a
+// clause all series are one group.
+func topKGroupKey(group *logqlpkg.Grouping, metric map[string]string) string {
+	if group == nil || (!group.Without && len(group.Labels) == 0) {
+		return ""
+	}
+	kept := make(map[string]string, len(metric))
+	if group.Without {
+		for name, value := range metric {
+			kept[name] = value
+		}
+		delete(kept, "__name__")
+		for _, name := range group.Labels {
+			delete(kept, name)
+		}
+	} else {
+		for _, name := range group.Labels {
+			kept[name] = metric[name]
+		}
+	}
+	return canonicalLabelsKey(kept)
 }
 
 func topLevelCommaIndex(s string) int {
@@ -368,7 +472,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
 				// Rank every series per step from VictoriaLogs window stats
 				// instead of truncating to the busiest series first.
-				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk"))
+				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
 				handled = p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
 			}
 		}
@@ -486,7 +590,7 @@ func applyMatrixStddevAgg(body []byte, funcName string) []byte {
 // topk/bottomk use per-step selection; sort orders series by their last value.
 func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 	if postAgg.name == "topk" || postAgg.name == "bottomk" {
-		return applyTopKToMatrix(body, postAgg.k, postAgg.name == "topk")
+		return applyTopKToMatrix(body, postAgg.k, postAgg.name == "topk", postAgg.group)
 	}
 	var resp struct {
 		Status string `json:"status"`
@@ -671,8 +775,20 @@ func applyInstantSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 		}
 	})
 
-	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k < len(resp.Data.Result) {
-		resp.Data.Result = resp.Data.Result[:postAgg.k]
+	if postAgg.name == "topk" || postAgg.name == "bottomk" {
+		// The sort above ranks the whole vector; keep k of every group.
+		kept, seen := resp.Data.Result[:0], map[string]int{}
+		for _, sample := range resp.Data.Result {
+			metric := make(map[string]string, len(sample.Metric))
+			for name, value := range sample.Metric {
+				metric[name] = fmt.Sprint(value)
+			}
+			group := topKGroupKey(postAgg.group, metric)
+			if seen[group]++; seen[group] <= postAgg.k {
+				kept = append(kept, sample)
+			}
+		}
+		resp.Data.Result = kept
 	}
 
 	out, err := json.Marshal(resp)

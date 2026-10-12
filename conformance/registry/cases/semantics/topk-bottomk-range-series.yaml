@@ -1,5 +1,5 @@
 id: semantics/topk-bottomk-range-series
-title: topk/bottomk on query_range return k series overall, not the per-step top k (open)
+title: topk/bottomk on query_range rank every step in each by()/without() group, in every spelling, like Loki (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -9,6 +9,31 @@ why: |
   (count_over_time({env="production"}[5m])))` over an hour; 791 for `topk by
   (container) (5, ...)`). The proxy returns 3 (5) series. Instant topk
   matches.
+
+  Measured on cf738b80 with an emulated VictoriaLogs (the real handler, the
+  stats pipes of the window evaluator, 4 apps x 3 envs of generated lines with
+  gaps and changing leaders, unaligned start): the plain `topk(k, expr)` and
+  `bottomk(k, expr)` already ranked every step on their own (the bounded
+  per-step heap of sliding_window_stats.go encodeTopK and applyTopKToMatrix, in
+  place since the heavy-query protection work); the differential below found no
+  difference from a port of Loki's heap. What did differ was every other
+  spelling of Loki's grammar (pkg/logql/syntax/syntax.y:182-184): `topk by (l)
+  (k, e)` and `topk without (l) (k, e)` were taken for a log query (a `streams`
+  200 on query_range, a 400 at an instant), `topk (k, e)` with a space too, and
+  `topk(k, e) by (l)` was a 400 on query_range with a mangled inner expression.
+  Loki keeps one heap per grouping key and step (pkg/logql/evaluator.go:
+  443-494, :551-561), so the grouped spellings rank k series per group. Fixed:
+  parseTopKPostAgg reads the clause from the parsed query and the inner text as
+  written; encodeTopK, applyTopKToMatrix and the instant vector rank per step
+  and group (topKGroupKey: by() keeps the listed labels, a missing one is empty;
+  without() drops the listed labels and __name__). NaN ranks last for both
+  operators, as in Loki's heaps (pkg/logql/vector.go). Ties at the k-th place
+  follow Go map order in Loki (pkg/logql/range_vector.go keeps its window in a
+  map, evaluator.go's groups in another), so the series chosen there are not
+  reproducible; the proxy breaks them by label order and the tests compare the
+  selected values at such steps. This is also the likeliest reason for a plain
+  topk over generated data with equal counts returning fewer series than Loki's
+  union: Loki's per-step choice among equal values varies, the proxy's does not.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -26,13 +51,15 @@ compare:
   expect: |
     Loki's per-step union.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy topk/bottomk range ranking (cases limits/top-n-ranking-not-silent)'
-  loki: 'pkg/logql/evaluator.go:443-494 VectorAggEvaluator topk/bottomk per step'
-  proxy: 'global top k'
-  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics)'
+  area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey), metric_binary.go (applyTopKToMatrix, applyTopKToVector), sliding_window_stats.go (encodeTopK); cases limits/top-n-ranking-not-silent'
+  loki: 'pkg/logql/evaluator.go:443-494, :551-561, :596-621 VectorAggEvaluator topk/bottomk per step and grouping key; pkg/logql/vector.go heaps; pkg/logql/syntax/syntax.y:182-184'
+  proxy: 'every spelling parsed; k series per step and group, bounded heap over the VictoriaLogs window stats'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
+  note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
   clusters:
     - 23526b6c
     - 4f7b982a
