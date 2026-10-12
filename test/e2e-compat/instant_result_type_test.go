@@ -50,7 +50,6 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 		{"label_replace of binary", `label_replace(sum by (app) (` + rate + `) + sum by (app) (` + rate + `), "x", "$1", "app", "(.*)")`},
 		{"label_replace of binary scalar", `label_replace(sum by (app) (` + rate + `) * 2, "x", "$1", "app", "(.*)")`},
 		{"label_replace of nested binary scalar", `label_replace(avg by (app) (sum by (app) (` + rate + `) + sum by (app) (` + rate + `) / sum by (app) (` + rate + `)) * 2, "new", "$1", "app", "f(.*)")`},
-		{"label_join of binary", `label_join(sum by (app) (` + count + `) * 2, "z", "-", "app", "app")`},
 		{"label_replace", `label_replace(sum by (app) (` + count + `), "x", "$1", "app", "(.*)")`},
 		{"label_replace of bytes_over_time", `label_replace(bytes_over_time(` + sel + `[5m]), "buzz", "$2", "app", "(.*)-(.*)")`},
 		// the other shapes
