@@ -170,7 +170,10 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 							s.rows[j].ts += delta
 							s.rows[j].labels = nil
 							if version == "v1.40.0" && (s.rows[j].ts-s.start)%int64(s.step) == 0 {
-								s.rows[j].ts++ // the unshifted bucket edges put a line at t in the next window
+								// A line exactly at t falls in the next bucket without the
+								// offset argument ([T, T+W), Loki (T-W, T]): known, owned by
+								// semantics/unwrap-over-time-range-windows; kept off the edge here.
+								s.rows[j].ts++
 							}
 						}
 						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}

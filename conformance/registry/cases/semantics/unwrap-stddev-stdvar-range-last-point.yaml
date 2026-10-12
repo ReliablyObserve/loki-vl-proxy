@@ -1,0 +1,48 @@
+id: semantics/unwrap-stddev-stdvar-range-last-point
+title: stddev and stdvar over time with unwrap miss the sample at `end` (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (level) (stddev_over_time({service_name="api-gateway"} | json | unwrap
+  status | __error__="" [5m]))` over an hour at 60s has 61 samples on Loki
+  (start..end inclusive, pkg/logql/range_vector.go step iteration) and, by the
+  same cause as semantics/unwrap-range-last-point, 60 on the proxy: with parser
+  stages shouldUseManualRangeMetricCompat sends stddev and stdvar to the native
+  VictoriaLogs stats_query_range, whose bucket labelled T holds [T, T+step), and
+  logRangeFunctions does not list them, so the request is not fetched from
+  start-step and relabelled onto the evaluation times; the point labelled `end`
+  is the bucket after the last line. Found while fixing
+  semantics/unwrap-range-last-point (sum, avg, min, max over time), not measured
+  on a stack or covered by a test: the test emulator has no stddev function and
+  stdvar adds a math stage to the stats chain.
+
+  Another change (semantics/unwrap-over-time-range-windows) is reworking this
+  path and may cover stddev and stdvar; this row stays open until a test pins them.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (stddev_over_time({service_name="api-gateway"} | json | unwrap status | __error__="" [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [timestamps]
+  expect: |
+    61 samples including end.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy metric_binary.go logRangeFunctions / statsRateRangeEqualsStepShift (stddev_over_time, stdvar_over_time with unwrap)'
+  loki: 'pkg/logql/range_vector.go step iteration start..end inclusive; stddevOverTime, stdvarOverTime'
+  proxy: 'last step missing (native step bucket labelled by its start)'
+  planned_test: 'TestCompat_UnwrapRangeEndSample extended with stddev_over_time and stdvar_over_time (test/e2e-compat, group semantics)'
+  note: 'Found while fixing semantics/unwrap-range-last-point.'
+  clusters: []

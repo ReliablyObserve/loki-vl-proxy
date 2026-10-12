@@ -40,11 +40,13 @@ why: |
   not. That stays in semantics/unwrap-over-time-range-windows.
 
   Not covered, same defect: stddev_over_time and stdvar_over_time with unwrap take
-  the same native bucket path and still drop the sample at end.
+  the same native bucket path and still drop the sample at end
+  (semantics/unwrap-stddev-stdvar-range-last-point).
 
   Not changed: VictoriaLogs before v1.45 (no stats_query_range offset) with a
   start that is not a multiple of the step still labels the buckets on the epoch
-  grid, as before (tumblingBucketsAligned).
+  grid, as before (tumblingBucketsAligned;
+  semantics/native-buckets-epoch-grid-unaligned-start-v140).
 
   In the differential run this shows only as a secondary difference of
   requests whose primary difference is the parser series identity, so those
@@ -68,7 +70,7 @@ compare:
     61 samples including end.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#727"
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_binary.go (statsRateRangeEqualsStepShift, logRangeFunctions: unwrap sum/avg/min/max over time)'
