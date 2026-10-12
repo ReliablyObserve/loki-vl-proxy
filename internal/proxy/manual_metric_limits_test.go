@@ -12,25 +12,19 @@ import (
 	"time"
 )
 
-func TestGroupedQuantileRawRowLimit(t *testing.T) {
-	for _, rows := range []int{2, 3} {
+// quantile_over_time holds one count per value, bucket and series:
+// -manual-range-metric-row-limit bounds those counts, and one more fails the
+// query with the limit error, never a partial result.
+func TestGroupedQuantileCountLimit(t *testing.T) {
+	stamp := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	for _, values := range []int{2, 3} {
 		for _, endpoint := range []string{"query", "query_range"} {
-			t.Run(fmt.Sprintf("%s/rows=%d", endpoint, rows), func(t *testing.T) {
-				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path != "/select/logsql/query" {
-						http.NotFound(w, r)
-						return
-					}
-					if got := r.FormValue("limit"); got != "" {
-						t.Errorf("limit argument would force backend sorting: %s", got)
-					}
-					if got := r.FormValue("query"); !strings.HasSuffix(got, " | limit 3") {
-						t.Errorf("expected streaming overflow probe limit 3, got %s", got)
-					}
-					for i := 0; i < rows; i++ {
-						fmt.Fprintf(w, "{\"_time\":\"2026-09-14T12:00:00Z\",\"_msg\":\"sample\",\"latency\":%d,\"_stream\":\"{app=\\\"api\\\"}\"}\n", i+1)
-					}
-				}))
+			t.Run(fmt.Sprintf("%s/values=%d", endpoint, values), func(t *testing.T) {
+				emu := &vlEmulator{t: t, field: "latency"}
+				for i := 0; i < values; i++ {
+					emu.rows = append(emu.rows, emuRow{ts: stamp.UnixNano(), stream: `{app="api"}`, value: float64(i + 1)})
+				}
+				backend := httptest.NewServer(emu.handler())
 				defer backend.Close()
 				p := newGapTestProxy(t, backend.URL)
 				p.rangeMetricRowLimit = 2
@@ -45,12 +39,15 @@ func TestGroupedQuantileRawRowLimit(t *testing.T) {
 				} else {
 					p.handleQueryRange(rec, req)
 				}
-				if rows == 2 {
+				if values == 2 {
 					if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"1.5"`) {
-						t.Fatalf("complete exact-cap input rejected: %d %s", rec.Code, rec.Body.String())
+						t.Fatalf("counts at the limit rejected: %d %s", rec.Code, rec.Body.String())
 					}
-				} else if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "row limit exceeded") || strings.Contains(rec.Body.String(), `"result"`) {
-					t.Fatalf("truncation must return an error without partial samples: %d %s", rec.Code, rec.Body.String())
+				} else if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") || strings.Contains(rec.Body.String(), `"result"`) {
+					t.Fatalf("over the limit must return the limit error without partial samples: %d %s", rec.Code, rec.Body.String())
+				}
+				if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+					t.Fatalf("quantile read raw rows: %v", q)
 				}
 			})
 		}
