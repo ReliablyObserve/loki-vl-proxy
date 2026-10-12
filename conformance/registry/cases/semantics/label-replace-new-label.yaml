@@ -23,14 +23,15 @@ why: |
   name and raises no error for two series that end with one label set; pkg/
   logql/engine.go JoinSampleVector then keeps both samples of an instant vector
   and files the points of a range query's duplicates under one series, those of
-  each step in turn. label_join is no Loki v3.7.7 function (the lexer has
-  label_replace only); the proxy keeps accepting it.
+  each step in turn; both then sort by label set (sort.Sort(result) for a
+  range, sort.Slice with labels.Compare for an instant vector unless the query
+  sorts by value).
 
   Causes, reproduced against a simulated VictoriaLogs
   (internal/proxy/label_replace_semantics_test.go):
-  - The proxy applied the transform to a range matrix only (applyLabelReplace,
-    applyLabelJoin decoded `resultType: matrix`), so an instant vector was
-    returned untouched. It also re-encoded only the series, dropping the rest
+  - The proxy applied the transform to a range matrix only (applyLabelReplace
+    decoded `resultType: matrix` only), so an instant vector was returned
+    untouched. It also re-encoded only the series, dropping the rest
     of the answer, and it expanded the replacement with ReplaceAllString.
   - The translator took the string arguments of label_replace raw: `"\\."` was
     the regexp `\\.` (a backslash and any character), never matching, and an
@@ -49,14 +50,16 @@ why: |
   - A call without Loki's four string arguments, or with an invalid escape in a
     string, was taken for a log query (200 with no streams on query_range, a
     wrong 400 on query); it is now Loki's 400 parse error (the position and
-    wording of the message follow the proxy's other grammar errors).
+    wording of the message are Loki's: checked against its parser).
 
   Not changed (separate shapes, to register apart): an aggregation over a
   label_replace (`sum by (app_short) (label_replace(...))`) is evaluated by
   VictoriaLogs on a label it does not have; a label_replace around topk, sort,
   group or vector answers empty on query_range and 400 on query; a
   label_replace as an operand of a binary expression drops the operation;
-  label_join, which Loki v3.7.7 does not have, is accepted.
+  topk, bottomk and stddev on query_range merge the duplicate label sets a
+  label_replace produced before ranking, where Loki ranks the samples first
+  (semantics/label-replace-duplicates-before-ranking).
 request:
   method: GET
   path: /loki/api/v1/query

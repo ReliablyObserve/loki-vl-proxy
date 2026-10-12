@@ -2390,6 +2390,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
+	if routedQuery != logqlQuery {
+		r = cloneMetricQueryRequest(r, routedQuery)
+	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
@@ -2401,9 +2404,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
-			if routedQuery != logqlQuery {
-				r = cloneMetricQueryRequest(r, routedQuery)
-			}
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
@@ -2434,6 +2434,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			cacheOut = sortSeriesByLabels(cacheOut, false)
 		}
 		copyBackendHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
@@ -2663,6 +2666,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
+	if routedQuery != logqlQuery {
+		r = cloneMetricQueryRequest(r, routedQuery)
+	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
 	if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
@@ -2672,9 +2678,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
-			if routedQuery != logqlQuery {
-				r = cloneMetricQueryRequest(r, routedQuery)
-			}
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
@@ -2701,6 +2704,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			result = sortSeriesByLabels(result, queryIsSortable(logqlQuery))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)

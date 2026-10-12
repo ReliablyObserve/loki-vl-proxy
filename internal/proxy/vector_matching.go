@@ -709,6 +709,77 @@ func transformSeriesLabels(body []byte, fn func(map[string]string) map[string]st
 	return b
 }
 
+// sortSeriesByLabels orders the series of a matrix or vector answer as Loki
+// does after a label_replace: a range result by label set (pkg/logql/engine.go
+// JoinSampleVector, sort.Sort(result)), an instant vector the same way unless
+// the query sorts by value (sort, sort_desc: evaluator.go Sortable), in which
+// case sortable is set and the order is kept.
+func sortSeriesByLabels(body []byte, sortable bool) []byte {
+	var top, data map[string]json.RawMessage
+	if json.Unmarshal(body, &top) != nil || json.Unmarshal(top["data"], &data) != nil {
+		return body
+	}
+	var resultType string
+	var series []struct {
+		raw    json.RawMessage
+		metric map[string]string
+	}
+	var raws []json.RawMessage
+	_ = json.Unmarshal(data["resultType"], &resultType)
+	if (resultType != "matrix" && resultType != "vector") || (resultType == "vector" && sortable) || json.Unmarshal(data["result"], &raws) != nil {
+		return body
+	}
+	for _, raw := range raws {
+		var m struct {
+			Metric map[string]string `json:"metric"`
+		}
+		_ = json.Unmarshal(raw, &m)
+		series = append(series, struct {
+			raw    json.RawMessage
+			metric map[string]string
+		}{raw, m.Metric})
+	}
+	sort.SliceStable(series, func(i, j int) bool { return compareLabelSets(series[i].metric, series[j].metric) < 0 })
+	for i := range series {
+		raws[i] = series[i].raw
+	}
+	data["result"], _ = json.Marshal(raws)
+	top["data"], _ = json.Marshal(data)
+	if b, err := json.Marshal(top); err == nil {
+		return b
+	}
+	return body
+}
+
+var sortCallRE = regexp.MustCompile(`(^|[^\w])sort(_desc)?\s*\(`)
+
+// queryIsSortable reports whether a query orders by value (evaluator.go
+// Sortable: a sort or sort_desc anywhere in it).
+func queryIsSortable(logql string) bool { return sortCallRE.MatchString(logql) }
+
+// compareLabelSets is Prometheus' labels.Compare: label by label in name
+// order, the name first and then the value, a shorter prefix first.
+func compareLabelSets(a, b map[string]string) int {
+	names := func(m map[string]string) []string {
+		out := make([]string, 0, len(m))
+		for k := range m {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
+	}
+	na, nb := names(a), names(b)
+	for i := 0; i < len(na) && i < len(nb); i++ {
+		if na[i] != nb[i] {
+			return strings.Compare(na[i], nb[i])
+		}
+		if c := strings.Compare(a[na[i]], b[nb[i]]); c != 0 {
+			return c
+		}
+	}
+	return len(na) - len(nb)
+}
+
 // pointSeconds is the time of a sample point `[time, "value"]`.
 func pointSeconds(point json.RawMessage) float64 {
 	var p []any
@@ -750,7 +821,8 @@ func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
 
 // applyLabelJoin applies label_join to every series of a matrix or vector
 // answer: the destination label is the values of the source labels, the
-// absent ones skipped, joined by the separator.
+// absent ones skipped, joined by the separator. Loki v3.7.7 has no label_join;
+// accepting it is the open gap semantics/proxy-accepts-operators-not-in-loki.
 func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
 	return transformSeriesLabels(body, func(in map[string]string) map[string]string {
 		parts := make([]string, 0, len(spec.SrcLabels))
