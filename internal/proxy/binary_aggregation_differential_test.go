@@ -72,6 +72,14 @@ func (n *refNode) query(window string) string {
 	return q + " " + side(n.r)
 }
 
+// joinsVectors reports whether the expression joins two vectors anywhere.
+func (n *refNode) joinsVectors() bool {
+	if n.op == "" {
+		return false
+	}
+	return (n.l.scalar == nil && n.r.scalar == nil) || n.l.joinsVectors() || n.r.joinsVectors()
+}
+
 func refStreamLabels(stream string) map[string]string {
 	out := map[string]string{}
 	for _, m := range emuStreamLabelRE.FindAllStringSubmatch(stream, -1) {
@@ -382,9 +390,9 @@ func generateBinaryAggregation(rnd *rand.Rand) (*refNode, []refAggregation) {
 
 // TestAggregationOverBinaryDifferential: over generated rows (three streams in
 // two jobs, values including zero, lines on window edges), generated windows
-// (sliding, tumbling, longer and shorter than the step, instant) and generated
-// expressions, the proxy's answer to an aggregation over a binary is Loki's:
-// the same series, timestamps and values (to 1e-9 relative: sums of floats in
+// (sliding, tumbling, longer and shorter than the step, starting on and off the
+// step grid, instant) and generated expressions, the proxy's answer to an
+// aggregation over a binary is Loki's: the same series, timestamps and values (to 1e-9 relative: sums of floats in
 // another order), on VictoriaLogs v1.52 and v1.40.
 //
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
@@ -397,9 +405,22 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 				rnd := rand.New(rand.NewSource(int64(len(name))*6151 + 3))
 				for i := 0; i < 40; i++ {
 					s := generateUnwrapScenario(rnd, "rate", "", instant)
-					if s.step > 0 { // the binary evaluates on the step-aligned axis
+					if s.step > 0 && rnd.Intn(2) == 0 { // the other half starts off the step grid
 						s.start -= s.start % int64(s.step)
 						s.end -= s.end % int64(s.step)
+					}
+					expr, chain := generateBinaryAggregation(rnd)
+					times := s.times()
+					if s.step > 0 && expr.joinsVectors() {
+						// A join of two vectors evaluates on the step-aligned grid, as
+						// Loki's query frontend with align_queries_with_step (the
+						// compose stack's Loki); with a literal only, at
+						// start+k*step, as a Loki without it
+						// (TestBinaryMixedWindowsShareStepAlignedAxis).
+						aligned := s
+						aligned.start -= aligned.start % int64(s.step)
+						aligned.end -= aligned.end % int64(s.step)
+						times = aligned.times()
 					}
 					for j := range s.rows {
 						pod := s.rows[j].stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
@@ -407,17 +428,17 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 						if version == "v1.40.0" && s.step > 0 && s.rows[j].ts%1e9 == 0 {
 							// Before v1.45 VictoriaLogs has no stats_query_range offset: its
 							// epoch buckets [T, T+b) put a line exactly on a bucket edge T in
-							// the next window, not Loki's (T-range, T], on any operand alone.
+							// the next window, not Loki's (T-range, T], on any operand alone
+							// (versions/stats-bucket-label-v1.45).
 							s.rows[j].ts++
 						}
 					}
-					expr, chain := generateBinaryAggregation(rnd)
 					query := expr.query(uwWindowText(s.window))
 					for _, agg := range chain {
 						query = agg.wrap(query)
 					}
 					want := map[string]map[int64]float64{}
-					for _, ts := range s.times() {
+					for _, ts := range times {
 						samples, _, _ := expr.eval(s.rows, ts, int64(s.window))
 						for _, agg := range chain {
 							samples = agg.apply(samples)

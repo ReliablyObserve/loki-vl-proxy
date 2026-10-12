@@ -5,9 +5,11 @@ package e2e_compat
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Loki evaluates a vector aggregation over a binary expression by joining the
@@ -68,26 +70,70 @@ func TestCompat_AggregationOverBinary(t *testing.T) {
 }
 
 // TestCompat_AggregationOverBinaryMixedParsers: the registry's discovered shape
-// (cluster f2066991, inside its label_replace): the operands parse with
-// different parsers, JSON on one side and logfmt on the other, so the whole
-// query names both; each operand keeps its own. An instant query only: a
-// sum_over_time range query is registered apart
+// (cluster f2066991): a label_replace around an aggregation over a binary whose
+// operands parse with different parsers, JSON on one side and logfmt on the
+// other, so the whole query names both; each operand keeps its own and the
+// transform applies to the folded answer. The cluster's own /query is sent as
+// recorded (over the setup data it may be empty on both, so it pins the answer's
+// type and equality); the fixture's variant pins the values. An instant query
+// only: a sum_over_time range query is registered apart
 // (semantics/unwrap-over-time-range-windows).
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query
 func TestCompat_AggregationOverBinaryMixedParsers(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)
 	fx.waitForLoki(t)
+	t.Run("cluster f2066991", func(t *testing.T) {
+		at := time.Now()
+		loki := unwrapInstant(t, lokiURL, aggregationOverBinaryCluster, at)
+		proxy := unwrapInstant(t, proxyURL, aggregationOverBinaryCluster, at)
+		if !reflect.DeepEqual(loki, proxy) {
+			t.Fatalf("Loki %v, proxy %v", loki, proxy)
+		}
+		assertInstantVectorAt(t, aggregationOverBinaryCluster, at)
+	})
 	shape := unwrapSumShape{name: "instant", window: "5m", stop: unwrapSumShapes[len(unwrapSumShapes)-1].stop}
-	query := "sum by (route) (sum by (route) (sum_over_time(" + fx.selJSON + " | json | unwrap amount [5m])) / sum by (route) (count_over_time(" + fx.selLogfmt + " | logfmt [5m])))"
-	loki := shape.run(t, fx, lokiURL, query)
-	proxy := shape.run(t, fx, proxyURL, query)
-	compareUnwrapSumSeries(t, query, loki, proxy)
-	assertInstantVector(t, query, fx)
+	inner := "sum by (route) (sum by (route) (sum_over_time(" + fx.selJSON + " | json | unwrap amount [5m])) / sum by (route) (count_over_time(" + fx.selLogfmt + " | logfmt [5m])))"
+	for _, query := range []string{inner, `label_replace(` + inner + `, "dst", "$1", "route", "/(.*)")`} {
+		loki := shape.run(t, fx, lokiURL, query)
+		proxy := shape.run(t, fx, proxyURL, query)
+		compareUnwrapSumSeries(t, query, loki, proxy)
+		assertInstantVector(t, query, fx)
+	}
+}
+
+// aggregationOverBinaryCluster is the first query of cluster f2066991
+// (conformance/registry/generated/parity-discovery.json).
+const aggregationOverBinaryCluster = `label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )`
+
+// TestCompat_AggregationOverBinaryUnderLabelTransforms: a label_replace or a
+// label_join around an aggregation over a binary is applied to the folded
+// answer, on every window shape and at an instant.
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_AggregationOverBinaryUnderLabelTransforms(t *testing.T) {
+	fx := ensureUnwrapSumFixtures(t)
+	fx.waitForLoki(t)
+	for _, shape := range unwrapSumShapes {
+		amount := "sum by (app, route) (rate(" + fx.selLogfmt + " | logfmt | unwrap amount [" + shape.window + "]))"
+		lines := "sum by (app, route) (rate(" + fx.selLogfmt + " | logfmt [" + shape.window + "]))"
+		inner := "sum by (route) (" + amount + " / " + lines + ")"
+		for _, query := range []string{
+			`label_replace(` + inner + `, "dst", "$1", "route", "/(.*)")`,
+			`label_join(` + inner + `, "dst", "-", "route", "route")`,
+		} {
+			t.Run(shape.name+"/"+query, func(t *testing.T) {
+				compareUnwrapSumSeries(t, query, shape.run(t, fx, lokiURL, query), shape.run(t, fx, proxyURL, query))
+			})
+		}
+	}
 }
 
 func assertInstantVector(t *testing.T, query string, fx *unwrapSumFixtures) {
 	t.Helper()
-	at := fx.s0.Add(unwrapSumShapes[len(unwrapSumShapes)-1].stop)
+	assertInstantVectorAt(t, query, fx.s0.Add(unwrapSumShapes[len(unwrapSumShapes)-1].stop))
+}
+
+func assertInstantVectorAt(t *testing.T, query string, at time.Time) {
+	t.Helper()
 	params := url.Values{"query": {query}, "time": {strconv.FormatInt(at.UnixNano(), 10)}}
 	status, body, resp := doJSONGET(t, proxyURL+"/loki/api/v1/query?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 	if status != http.StatusOK || extractMap(resp, "data")["resultType"] != "vector" {

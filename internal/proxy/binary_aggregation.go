@@ -36,6 +36,11 @@ func binaryAggregationChain(expr logqlpkg.Expr) ([]*logqlpkg.VectorAggregation, 
 	return chain, binary, !leftScalar || !rightScalar
 }
 
+func isBinaryExpr(expr logqlpkg.Expr) bool {
+	_, ok := expr.(*logqlpkg.BinOpExpr)
+	return ok
+}
+
 // proxyBinaryAggregation answers a vector aggregation over a binary expression
 // when routed is one: each operand is its own VictoriaLogs stats query, joined
 // by the binary evaluator, and the aggregation folds the joined series per
@@ -48,12 +53,19 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	}
 	chain, binary, ok := binaryAggregationChain(binaryRequestExpr(r))
 	if !ok {
-		// Routed from under a label_replace, which the handler applies to the answer.
-		expr, _ := logqlpkg.Parse(stripOuterLabelReplace(binaryRequestQuery(r)))
+		// Routed from under a label_replace or label_join, which the handler
+		// applies to the folded answer.
+		expr, _ := logqlpkg.Parse(stripLabelTransforms(binaryRequestQuery(r)))
 		chain, binary, ok = binaryAggregationChain(expr)
 	}
 	if !ok {
-		p.writeError(w, http.StatusBadRequest, "unsupported aggregation over a binary expression")
+		// The request's own query does not parse as the routed one did: answer
+		// Loki's parse error for it.
+		msg := "unsupported aggregation over a binary expression"
+		if err := validateLogQLSyntax(binaryRequestQuery(r)); err != "" {
+			msg = truncateQueryError(err)
+		}
+		p.writeError(w, http.StatusBadRequest, msg)
 		return true
 	}
 	buf := &bufferedResponseWriter{}

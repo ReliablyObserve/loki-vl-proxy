@@ -2399,6 +2399,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
@@ -2682,6 +2686,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
 		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
 		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)

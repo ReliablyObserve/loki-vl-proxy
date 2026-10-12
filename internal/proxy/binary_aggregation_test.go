@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -59,7 +60,7 @@ func binaryAggregationAnswer(t *testing.T, emu *vlEmulator, query string, start,
 	}
 	got := map[string]map[int64]float64{}
 	for i, series := range resp.Data.Result {
-		if i > 0 && metricKeyStr(resp.Data.Result[i-1].Metric) >= metricKeyStr(series.Metric) {
+		if i > 0 && !testLokiLabelsLess(resp.Data.Result[i-1].Metric, series.Metric) {
 			t.Fatalf("%s: series out of Loki's label order: %s", query, res.Body)
 		}
 		key := binaryLabelKey(series.Metric)
@@ -209,7 +210,7 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 	}
 }
 
-// The registry's discovered shape (cluster f2066991, inside its label_replace):
+// The registry's discovered shape (cluster f2066991), with and without its label_replace:
 // one operand parses JSON, the other logfmt. Each operand reaches VictoriaLogs
 // with its own parser, though the whole query names both (the handler drops
 // one of two parsers it finds in a query), and the answer is a sample type on
@@ -217,23 +218,25 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 //
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query, loki_api_v1_query_range
 func TestAggregationOverBinaryKeepsEachOperandsParser(t *testing.T) {
-	const query = `sum by (job) ( sum_over_time( {app="uw"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({app="uw"} | logfmt | label_format foo=bar[5m]) )`
+	const inner = `sum by (job) ( sum_over_time( {app="uw"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({app="uw"} | logfmt | label_format foo=bar[5m]) )`
 	for _, step := range []time.Duration{0, time.Minute} {
-		emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
-		_, resultType := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-300e9, binaryAggregationAt, step)
-		if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
-			t.Fatalf("step=%v: resultType %q, want %q", step, resultType, want)
-		}
-		var jsonOperand, logfmtOperand bool
-		for _, call := range emu.calls {
-			if call.path == "/select/logsql/query" && strings.Contains(call.query, " / ") {
-				continue // the parser probe of the whole query string
+		for _, query := range []string{inner, `label_replace( ` + inner + `, "foo", "$1", "service", "(.*):.*" )`} {
+			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			_, resultType := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-300e9, binaryAggregationAt, step)
+			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
+				t.Fatalf("step=%v: resultType %q, want %q", step, resultType, want)
 			}
-			jsonOperand = jsonOperand || (strings.Contains(call.query, "unpack_json") && strings.Contains(call.query, "level=error"))
-			logfmtOperand = logfmtOperand || (strings.Contains(call.query, "unpack_logfmt") && !strings.Contains(call.query, "level=error"))
-		}
-		if !jsonOperand || !logfmtOperand {
-			t.Fatalf("step=%v: an operand lost its parser (json %v, logfmt %v): %v", step, jsonOperand, logfmtOperand, emu.calls)
+			var jsonOperand, logfmtOperand bool
+			for _, call := range emu.calls {
+				if call.path == "/select/logsql/query" && strings.Contains(call.query, " / ") {
+					continue // the parser probe of the whole query string
+				}
+				jsonOperand = jsonOperand || (strings.Contains(call.query, "unpack_json") && strings.Contains(call.query, "level=error"))
+				logfmtOperand = logfmtOperand || (strings.Contains(call.query, "unpack_logfmt") && !strings.Contains(call.query, "level=error"))
+			}
+			if !jsonOperand || !logfmtOperand {
+				t.Fatalf("step=%v: an operand lost its parser (json %v, logfmt %v): %v", step, jsonOperand, logfmtOperand, emu.calls)
+			}
 		}
 	}
 }
@@ -257,8 +260,8 @@ func TestAggregationOverBinaryMixedOffset(t *testing.T) {
 }
 
 // A top-level binary whose first operand is a label_replace stays on the binary
-// evaluator: only an aggregation routed from under a label_replace is read
-// without it.
+// evaluator, and the operand applies its own transform: only a transform around
+// the whole expression is applied to the binary's answer.
 //
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query
 func TestBinaryWithLabelReplaceOperandStaysBinary(t *testing.T) {
@@ -268,17 +271,24 @@ func TestBinaryWithLabelReplaceOperandStaysBinary(t *testing.T) {
 			`{"job":"a","pod":"p1"}`: 1, `{"job":"a","pod":"p2"}`: 1, `{"job":"b","pod":"p3"}`: 1},
 		`label_replace(` + count + `, "dst", "$1", "job", "(.*)") * on (job, pod) ` + count: {
 			`{"job":"a","pod":"p1"}`: 9, `{"job":"a","pod":"p2"}`: 1, `{"job":"b","pod":"p3"}`: 4},
+		`label_replace(` + count + `, "dst", "$1", "job", "(.*)") * 2`: {
+			`{"dst":"a","job":"a","pod":"p1"}`: 6, `{"dst":"a","job":"a","pod":"p2"}`: 2, `{"dst":"b","job":"b","pod":"p3"}`: 4},
+		`sum by (dst) (label_replace(` + count + `, "dst", "$1", "job", "(.*)") / ` + count + `)`: {},
+		`sum by (dst) (label_replace(` + count + `, "dst", "$1", "job", "(.*)") / ignoring (dst) group_left ` + count + `)`: {
+			`{"dst":"a"}`: 2, `{"dst":"b"}`: 1},
 	} {
-		emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
-		got, _ := binaryAggregationAnswer(t, emu, query, 0, binaryAggregationAt, 0)
-		flat := map[string]float64{}
-		for key, points := range got {
-			for _, v := range points {
-				flat[key] = v
+		for _, step := range []time.Duration{0, time.Minute} {
+			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt, binaryAggregationAt, step)
+			flat := map[string]float64{}
+			for key, points := range got {
+				for _, v := range points {
+					flat[key] = v
+				}
 			}
-		}
-		if !reflect.DeepEqual(flat, want) {
-			t.Fatalf("%s:\n got %v\nwant %v", query, flat, want)
+			if !reflect.DeepEqual(flat, want) {
+				t.Fatalf("step=%v %s:\n got %v\nwant %v", step, query, flat, want)
+			}
 		}
 	}
 }
@@ -303,5 +313,127 @@ func TestAggregationOverBinaryUniformOffset(t *testing.T) {
 	got, _ = binaryAggregationAnswer(t, emu, `max(`+rate+` / `+count+`)`, at-60e9, at, time.Minute)
 	if want := map[string]map[int64]float64{`{}`: {at / 1e9: 6.0 / 60}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("range: got %v, want %v", got, want)
+	}
+}
+
+// A label_replace or label_join around the aggregation (the discovered shape,
+// cluster f2066991) applies to the folded answer, on both endpoints: the
+// aggregation is not handed to the translator, which kept its first operand.
+//
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query, loki_api_v1_query_range
+func TestAggregationOverBinaryUnderLabelTransforms(t *testing.T) {
+	const (
+		count  = `sum by (job, pod) (rate({app="uw"}[1m]))`
+		amount = `sum by (job, pod) (rate({app="uw"} | unwrap amount [1m]))`
+	)
+	inner := `sum by (job) (` + amount + ` / ` + count + `)`
+	at := binaryAggregationAt / 1e9
+	for _, tc := range []struct {
+		query string
+		want  map[string]float64
+	}{
+		{`label_replace(` + inner + `, "dst", "$1", "job", "(.*)")`, map[string]float64{`{"dst":"a","job":"a"}`: 6, `{"dst":"b","job":"b"}`: 6}},
+		{`label_join(` + inner + `, "dst", "-", "job", "job")`, map[string]float64{`{"dst":"a-a","job":"a"}`: 6, `{"dst":"b-b","job":"b"}`: 6}},
+		{`label_replace(label_replace(` + inner + `, "dst", "$1", "job", "(.*)"), "job", "x", "", "")`, map[string]float64{`{"dst":"a","job":"x"}`: 6, `{"dst":"b","job":"x"}`: 6}},
+	} {
+		for _, step := range []time.Duration{0, time.Minute} {
+			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			got, _ := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt, step)
+			want := map[string]map[int64]float64{}
+			for key, v := range tc.want {
+				want[key] = map[int64]float64{at: v}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("step=%v %s:\n got %v\nwant %v", step, tc.query, got, want)
+			}
+		}
+	}
+}
+
+// testLokiLabelsLess is labels.Compare(a, b) < 0 (Prometheus model/labels),
+// written apart from the proxy's: the sorted (name, value) pairs compared in
+// turn, a shorter list first when one is a prefix of the other.
+func testLokiLabelsLess(a, b map[string]string) bool {
+	pairs := func(m map[string]string) [][2]string {
+		out := make([][2]string, 0, len(m))
+		for k, v := range m {
+			out = append(out, [2]string{k, v})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
+		return out
+	}
+	pa, pb := pairs(a), pairs(b)
+	for i := range pa {
+		if i == len(pb) {
+			return false
+		}
+		if pa[i] != pb[i] {
+			if pa[i][0] != pb[i][0] {
+				return pa[i][0] < pb[i][0]
+			}
+			return pa[i][1] < pb[i][1]
+		}
+	}
+	return len(pa) < len(pb)
+}
+
+// A fold keeps every label set apart, a label value with a comma and an equals
+// sign included, and answers the series in Loki's label order, which is not the
+// order of their `name=value,...` text.
+//
+// conformance: semantics/aggregation-over-binary-dropped
+func TestWithoutFoldLabelOrderAndKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		metric []map[string]string
+		want   []map[string]string
+	}{
+		{"a name that extends another", []map[string]string{{"a0": "y"}, {"a": "x"}}, []map[string]string{{"a": "x"}, {"a0": "y"}}},
+		{"a value that extends another", []map[string]string{{"route": "/a b"}, {"route": "/a", "status": "200"}}, []map[string]string{{"route": "/a", "status": "200"}, {"route": "/a b"}}},
+		{"a value with a comma and an equals sign", []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}, []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}},
+		{"a prefix first", []map[string]string{{"a": "x", "b": "y"}, {"a": "x"}}, []map[string]string{{"a": "x"}, {"a": "x", "b": "y"}}},
+	} {
+		for _, resultType := range []string{"vector", "matrix"} {
+			result := make([]map[string]any, 0, len(tc.metric))
+			for _, metric := range tc.metric {
+				entry := map[string]any{"metric": metric, "value": []any{1.0, "1"}}
+				if resultType == "matrix" {
+					entry = map[string]any{"metric": metric, "values": [][]any{{1.0, "1"}}}
+				}
+				result = append(result, entry)
+			}
+			body, _ := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": resultType, "result": result}})
+			var resp struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string `json:"metric"`
+						Value  []any             `json:"value"`
+						Values [][]any           `json:"values"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(applyWithoutGrouping(body, []string{"absent"}, "count"), &resp); err != nil {
+				t.Fatal(err)
+			}
+			var got []map[string]string
+			for _, series := range resp.Data.Result {
+				got = append(got, series.Metric)
+				point := series.Value
+				if resultType == "matrix" {
+					point = series.Values[0]
+				}
+				if point[1] != "1" {
+					t.Fatalf("%s %s: %v counts %v series, want 1 (folded with another)", tc.name, resultType, series.Metric, point[1])
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("%s %s: got %v, want %v", tc.name, resultType, got, tc.want)
+			}
+			for i := 1; i < len(tc.want); i++ {
+				if !testLokiLabelsLess(tc.want[i-1], tc.want[i]) {
+					t.Fatalf("%s: the expectation is not in Loki's order", tc.name)
+				}
+			}
+		}
 	}
 }
