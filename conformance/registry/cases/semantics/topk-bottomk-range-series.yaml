@@ -67,7 +67,7 @@ compare:
     order, so there the values must match and the series may differ.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#736"
   impact: explore-visible
   effort: M
   area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey), metric_binary.go (applyTopKToMatrix, applyTopKToVector), sliding_window_stats.go (encodeTopK); cases limits/top-n-ranking-not-silent'
