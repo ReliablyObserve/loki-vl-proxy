@@ -52,7 +52,7 @@ compare:
     Loki's series and values: the binary per series, then the aggregation per step.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#741"
   impact: explore-visible
   effort: M
   area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing'

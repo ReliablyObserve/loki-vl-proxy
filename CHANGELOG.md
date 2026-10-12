@@ -2607,7 +2607,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the query names both `| json` and `| logfmt` (the shape the differential
   corpus found inside a `label_replace`), an offset on one side only is accepted as for a
   bare binary, and the series of an aggregation folded by the proxy come in
-  Loki's label order (#TBD).
+  Loki's label order (#741).
 
 ## [2.11.2] - 2026-10-12
 
