@@ -29,6 +29,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sample time and value of every constant against Loki
   (`semantics/scalar-sample-time-units`).
 
+## [2.14.0] - 2026-10-12
+
+### Fixed
+
+- **`unwrap duration_seconds(label)` is converted like `duration(label)`, as Loki
+  does, instead of answering an empty matrix.** `sum by (service_name)
+  (sum_over_time({service_name="cache-redis"} | logfmt | unwrap
+  duration_seconds(ttl) [5m]))` over `ttl=250ms` lines returned no series on the
+  proxy and 7.5 per window on Loki 3.7.7. Loki converts `duration_seconds()` with
+  `convertDuration` (`time.ParseDuration`, in seconds), the same function as
+  `duration()` (`pkg/logql/syntax/extractor.go:63-71`, `OpConvDurationSeconds`;
+  `pkg/logql/log/metrics_extraction.go` `convertDuration`). The translator
+  recognised only the `duration(` and `bytes(` wrappers, so it treated
+  `duration_seconds(ttl)` as the name of a label that no line has: nothing
+  matched the plain-number gate, and the conversion-error check, which counts the
+  rows the gate rejects, saw no duration to count. Now `duration_seconds()` takes
+  the duration route everywhere `duration()` does: the label is extracted,
+  gated by the `time.ParseDuration` syntax (`250ms`, `1.5s`, `1h`, `-1s`, `5.s`,
+  `.5s`) and converted to seconds by VictoriaLogs for the sum, rate, average,
+  maximum, minimum and quantile of a range, tumbling, sliding or instant window,
+  the raw evaluators convert it with `time.ParseDuration`, and a value Go rejects
+  (`abc`, `1d`, `42`) fails the query with Loki's 400 `SampleExtractionErr` text
+  unless a label filter after the unwrap drops the error. The proxy now answers
+  `duration_seconds(x)` with exactly the queries and answer of `duration(x)`.
+  The window of a sum, maximum or minimum over time on a range query is a
+  separate open difference that applies to either conversion. (#729)
+
 ## [2.13.0] - 2026-10-12
 
 ### Fixed
