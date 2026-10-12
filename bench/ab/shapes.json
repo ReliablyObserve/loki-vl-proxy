@@ -1592,6 +1592,49 @@
      ]
     }
    ]
+  },
+  "unwrap-duration-seconds": {
+   "description": "unwrap duration_seconds(label) (PR for semantics/unwrap-duration-seconds): Loki converts it like duration(label), in seconds; the proxy answered an empty matrix. D1 is duration_seconds(ttl) over the cache-redis logfmt streams, D2 its duration(ttl) twin (the answers must be equal and D2 must not move), D3 and D4 are the instant forms. Run with the control set.",
+   "ranges": [
+    "1h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "D1 logfmt ttl duration_seconds rate by service",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "D2 logfmt ttl duration rate by service",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "D3 logfmt ttl duration_seconds rate, instant",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "D4 logfmt ttl duration rate, instant",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }

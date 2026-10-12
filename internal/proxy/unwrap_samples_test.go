@@ -109,6 +109,9 @@ func TestUnwrapConversionIsConvertedInTheStatsQuery(t *testing.T) {
 	for _, tc := range []struct{ name, query, conv, want string }{
 		{"duration", `sum by (app) (max_over_time({app="x"} | unwrap duration(v) [1m]))`, "duration", " | stats by (app, __lvp_bad) max(__lvp_v)"},
 		{"bytes", `sum by (app) (max_over_time({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"duration_seconds", `sum by (app) (max_over_time({app="x"} | unwrap duration_seconds(v) [1m]))`, "duration", " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"duration_seconds rate, sliding", `sum by (app) (rate({app="x"} | unwrap duration_seconds(v) [2m]))`, "duration", " | stats by (app, __lvp_bad) sum(__lvp_v) as c, count() as __sample_count"},
+		{"duration_seconds, bare parser buckets", `sum by (app) (sum_over_time({app="x"} | logfmt | unwrap duration_seconds(v) [2m]))`, "duration", " | stats by (app, __lvp_bad) sum(__lvp_v)"},
 		{"duration rate, sliding", `sum by (app) (rate({app="x"} | unwrap duration(v) [2m]))`, "duration", " | stats by (app, __lvp_bad) sum(__lvp_v) as c, count() as __sample_count"},
 		{"bytes rate, tumbling", `sum by (app) (rate({app="x"} | unwrap bytes(v) [1m]))`, "bytes", " | stats by (app, __lvp_bad) sum(__lvp_v) as __lvp_inner"},
 	} {
@@ -180,6 +183,8 @@ func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 		{"quantile grouped", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]))`, "20"},
 		{"rate_counter", `rate_counter({app="x"} | unwrap n [1m])`, "0.3333333333333333"},
 		{"quantile of a conversion", `quantile_over_time(0.5, {app="x"} | unwrap duration(d) [1m])`, "30"},
+		{"quantile of duration_seconds", `quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(d) [1m])`, "30"},
+		{"grouped quantile of duration_seconds", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(d) [1m]))`, "30"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newUnwrapFakeVL(t, rows)
@@ -316,5 +321,86 @@ func TestUnwrapGateIsNotAParserStage(t *testing.T) {
 	}
 	if !queryUsesParserStages(base + ` | extract_regexp "x" from y` + translator.UnwrapGateFor("f", "bytes")) {
 		t.Error("a real extract_regexp before the gate must still count")
+	}
+}
+
+// Loki converts duration_seconds() with convertDuration, as duration()
+// (pkg/logql/syntax/extractor.go:63-71). Every route of the proxy (native range,
+// bare-parser buckets, sliding and tumbling windows, the raw evaluators, an
+// instant query) must therefore send VictoriaLogs the very queries it sends for
+// duration(), gate and conversion-error counter included, and answer the same.
+// conformance: semantics/unwrap-duration-seconds, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapDurationSecondsRoutesLikeDuration(t *testing.T) {
+	t0 := time.Unix(1700000400, 0).UTC()
+	rows := []string{
+		unwrapRow(t0.Add(10*time.Second), map[string]string{"d": "250ms"}),
+		unwrapRow(t0.Add(20*time.Second), map[string]string{"d": "1.5s"}),
+		unwrapRow(t0.Add(30*time.Second), map[string]string{"d": "1h"}),
+	}
+	for _, shape := range []string{
+		`sum by (app) (sum_over_time({app="x"} | unwrap %s(d) [1m]))`,
+		`sum by (app) (sum_over_time({app="x"} | logfmt | unwrap %s(d) [1m]))`,
+		`sum by (app) (max_over_time({app="x"} | json | unwrap %s(d) [2m]))`,
+		`sum(sum_over_time({app="x"} | logfmt | unwrap %s(d) [5m]))`,
+		`max_over_time({app="x"} | logfmt | unwrap %s(d) [2m])`,
+		`avg_over_time({app="x"} | logfmt | unwrap %s(d) [1m])`,
+		`sum by (app) (rate({app="x"} | unwrap %s(d) [2m]))`,
+		`sum(rate({app="x"} | logfmt | unwrap %s(d) [1m]))`,
+		`rate_counter({app="x"} | unwrap %s(d) [1m])`,
+		`quantile_over_time(0.5, {app="x"} | unwrap %s(d) [1m])`,
+		`quantile_over_time(0.5, {app="x"} | logfmt | unwrap %s(d) [2m])`,
+		`stddev_over_time({app="x"} | unwrap %s(d) [1m])`,
+	} {
+		t.Run(shape, func(t *testing.T) {
+			type outcome struct {
+				code int
+				body string
+				vl   []unwrapFakeCall
+			}
+			run := func(conv string, instant bool) outcome {
+				srv, fake := newUnwrapFakeVL(t, rows)
+				p := newSlidingTestProxy(t, srv.URL)
+				query := strings.Replace(shape, "%s", conv, 1)
+				params := url.Values{"query": {query}, "time": {strconv.FormatInt(t0.Add(time.Minute).UnixNano(), 10)}}
+				path, handler := "/loki/api/v1/query", p.handleQuery
+				if !instant {
+					params = url.Values{"query": {query}, "start": {strconv.FormatInt(t0.UnixNano(), 10)}, "end": {strconv.FormatInt(t0.Add(10*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+					path, handler = "/loki/api/v1/query_range", p.handleQueryRange
+				}
+				rec := httptest.NewRecorder()
+				handler(rec, httptest.NewRequest(http.MethodGet, path+"?"+params.Encode(), nil))
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				return outcome{rec.Code, rec.Body.String(), append([]unwrapFakeCall(nil), fake.calls...)}
+			}
+			for _, instant := range []bool{false, true} {
+				want, got := run("duration", instant), run("duration_seconds", instant)
+				if got.code != want.code || got.body != want.body {
+					t.Errorf("instant=%v: answer differs\n duration_seconds: %d %s\n duration:         %d %s", instant, got.code, got.body, want.code, want.body)
+				}
+				if len(got.vl) != len(want.vl) {
+					t.Fatalf("instant=%v: %d VictoriaLogs calls, duration() makes %d", instant, len(got.vl), len(want.vl))
+				}
+				gated := false
+				for i := range got.vl {
+					if got.vl[i] != want.vl[i] {
+						t.Errorf("instant=%v: VictoriaLogs call %d differs\n duration_seconds: %v\n duration:         %v", instant, i, got.vl[i], want.vl[i])
+					}
+					gated = gated || strings.Contains(got.vl[i].query, translator.UnwrapGateFor("d", "duration")) ||
+						strings.Contains(got.vl[i].query, unwrapCountedGate("d", "duration"))
+					if strings.Contains(got.vl[i].query, "duration_seconds") {
+						t.Errorf("the wrapper must not reach VictoriaLogs: %q", got.vl[i].query)
+					}
+				}
+				// The raw evaluators read the rows and convert them in the proxy.
+				raw := false
+				for _, c := range got.vl {
+					raw = raw || c.path == "/select/logsql/query"
+				}
+				if !gated && !raw {
+					t.Errorf("instant=%v: neither the duration gate nor a raw read: %v", instant, got.vl)
+				}
+			}
+		})
 	}
 }

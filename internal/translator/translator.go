@@ -2708,7 +2708,7 @@ func extractQueryAndDuration(inner string) (query, duration string) {
 }
 
 func extractUnwrapField(inner string) string {
-	// Find | unwrap field_name or | unwrap duration(field) or | unwrap bytes(field)
+	// Find | unwrap field_name or | unwrap duration(field), duration_seconds(field) or bytes(field)
 	idx := strings.Index(inner, "| unwrap ")
 	if idx < 0 {
 		return ""
@@ -2722,10 +2722,12 @@ func extractUnwrapField(inner string) string {
 		rest = strings.TrimSpace(rest)
 	}
 
-	// Strip conversion wrappers: duration(field) → field, bytes(field) → field
-	for _, wrapper := range []string{"duration(", "bytes("} {
-		if strings.HasPrefix(rest, wrapper) && strings.HasSuffix(rest, ")") {
-			rest = rest[len(wrapper) : len(rest)-1]
+	// Strip conversion wrappers: duration(field), duration_seconds(field) and
+	// bytes(field) → field
+	for _, c := range unwrapConversions {
+		if strings.HasPrefix(rest, c.call) && strings.HasSuffix(rest, ")") {
+			rest = rest[len(c.call) : len(rest)-1]
+			break
 		}
 	}
 

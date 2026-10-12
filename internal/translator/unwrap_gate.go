@@ -138,11 +138,31 @@ func unwrapGateField(inner, field string) (gateField, conv string) {
 		return "", ""
 	}
 	rest := strings.TrimSpace(inner[idx+len("| unwrap "):])
-	switch {
-	case strings.HasPrefix(rest, "duration("):
-		return field, "duration"
-	case strings.HasPrefix(rest, "bytes("):
-		return field, "bytes"
+	for _, c := range unwrapConversions {
+		if strings.HasPrefix(rest, c.call) {
+			return field, c.conv
+		}
 	}
 	return field, ""
+}
+
+// unwrapConversions are the unwrap conversion functions and the conversion each
+// selects. Loki converts duration_seconds() with convertDuration, as duration()
+// (pkg/logql/syntax/extractor.go:63-71).
+var unwrapConversions = []struct{ call, conv string }{
+	{"duration_seconds(", "duration"},
+	{"duration(", "duration"},
+	{"bytes(", "bytes"},
+}
+
+// UnwrapConv returns the conversion ("duration" or "bytes") of the unwrap
+// function converter (a LogQL parser's UnwrapStage.Converter): duration_seconds
+// is converted as duration; any other function is returned unchanged.
+func UnwrapConv(converter string) string {
+	for _, c := range unwrapConversions {
+		if converter+"(" == c.call {
+			return c.conv
+		}
+	}
+	return converter
 }

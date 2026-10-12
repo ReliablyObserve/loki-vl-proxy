@@ -69,3 +69,69 @@ func TestConvertUnwrapMatchesLoki(t *testing.T) {
 		t.Errorf("bytes beyond uint64 must fail with humanize's text, got %v", err)
 	}
 }
+
+// Loki converts duration_seconds() with convertDuration, as duration()
+// (pkg/logql/syntax/extractor.go:63-71): one unwrap expression, parsed by every
+// route of the proxy, selects the "duration" conversion, and the conversion
+// accepts and rejects the values time.ParseDuration does.
+// conformance: semantics/unwrap-duration-seconds, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapDurationSecondsIsConvertedAsDuration(t *testing.T) {
+	for _, tc := range []struct{ expr, field, conv string }{
+		{"duration_seconds(okdur)", "okdur", "duration"},
+		{"duration(okdur)", "okdur", "duration"},
+		{"bytes(okdur)", "okdur", "bytes"},
+		{"okdur", "okdur", ""},
+		{"duration_seconds( okdur )", "okdur", "duration"},
+		{"duration_seconds(`okdur`)", "okdur", "duration"},
+	} {
+		field, conv := parseUnwrapExpression(tc.expr)
+		if field != tc.field || conv != tc.conv {
+			t.Errorf("parseUnwrapExpression(%q) = (%q, %q), want (%q, %q)", tc.expr, field, conv, tc.field, tc.conv)
+		}
+	}
+	for _, tc := range []struct{ query, field, conv string }{
+		{`{a="b"} | logfmt | unwrap duration_seconds(okdur) [5m]`, "okdur", "duration"},
+		{`{a="b"} | logfmt | unwrap duration(okdur) [5m]`, "okdur", "duration"},
+		{`{a="b"} | logfmt | unwrap bytes(okdur) [5m]`, "okdur", "bytes"},
+		{`{a="b"} | logfmt | unwrap okdur [5m]`, "okdur", ""},
+	} {
+		field, conv := extractBareParserUnwrapExpr(tc.query)
+		if field != tc.field || conv != tc.conv {
+			t.Errorf("extractBareParserUnwrapExpr(%q) = (%q, %q), want (%q, %q)", tc.query, field, conv, tc.field, tc.conv)
+		}
+	}
+
+	// The edge table of a duration value: the same answer through both names,
+	// and Go's time.ParseDuration text for a rejected one, as Loki puts it in
+	// __error_details__.
+	for _, tc := range []struct {
+		input   string
+		want    float64
+		errText string
+	}{
+		{"250ms", 0.25, ""},
+		{"1.5s", 1.5, ""},
+		{"1h", 3600, ""},
+		{"-1s", -1, ""},
+		{"5.s", 5, ""},
+		{".5s", 0.5, ""},
+		{"+2m", 120, ""},
+		{"0", 0, ""},
+		{"abc", 0, `time: invalid duration "abc"`},
+		{"1d", 0, `time: unknown unit "d" in duration "1d"`},
+		{"42", 0, `time: missing unit in duration "42"`},
+		{"", 0, `time: invalid duration ""`},
+	} {
+		_, conv := parseUnwrapExpression("duration_seconds(v)")
+		got, err := convertUnwrap(tc.input, conv)
+		if tc.errText != "" {
+			if err == nil || err.Error() != tc.errText {
+				t.Errorf("duration_seconds %q: error = %v, want %q", tc.input, err, tc.errText)
+			}
+			continue
+		}
+		if err != nil || math.Abs(got-tc.want) > 1e-9 {
+			t.Errorf("duration_seconds %q = (%v, %v), want %v", tc.input, got, err, tc.want)
+		}
+	}
+}

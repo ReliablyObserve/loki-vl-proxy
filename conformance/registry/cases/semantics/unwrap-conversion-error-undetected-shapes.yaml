@@ -21,8 +21,6 @@ why: |
   - a stats query whose stats pipe is followed by a pipe that could mix or drop
     the counted groups (`sort`, `limit`, `fields`), or that carries two unwrap
     gates: sent without the counter;
-  - `unwrap duration_seconds(x)`: the translator does not gate it
-    (semantics/unwrap-duration-seconds), so nothing is counted;
   - a line Loki's logfmt parser marks LogfmtParserErr with `__error__` among the
     parser hints (`sum by (__error__) (...)`): Loki preserves the error and does
     not fail; the proxy does not model logfmt parser errors and may fail it

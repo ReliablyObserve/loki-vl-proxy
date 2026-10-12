@@ -1,5 +1,5 @@
 id: semantics/unwrap-duration-seconds
-title: '`unwrap duration_seconds(label)` answers no data where Loki converts it like duration() (open)'
+title: '`unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed)'
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -10,13 +10,28 @@ why: |
   `sum by (service_name) (sum_over_time({...} | logfmt | unwrap
   duration_seconds(okdur) [5m]))` over okdur=250ms answers an empty matrix on
   the proxy and 7.5 per window on Loki 3.7.7 (measured on an isolated stack).
-  Its conversion errors are not detected either: nothing is gated, so nothing
-  is counted (semantics/unwrap-conversion-error-undetected-shapes).
+  Its conversion errors were not detected either: nothing was gated, so nothing
+  was counted (semantics/unwrap-conversion-error). The executable request below
+  is a `rate` of the same conversion, whose query_range values already match
+  Loki (see the note).
+
+  Root cause: extractUnwrapField and unwrapGateField (internal/translator),
+  inferUnwrapConv, bareParserUnwrapFieldRE and the UnwrapStage converters of the
+  bare-parser routes (internal/proxy/query_translation.go) and
+  parseUnwrapExpression (range_metric_compat.go) recognised the wrappers
+  `duration(` and `bytes(` only, so `duration_seconds(okdur)` stayed the field
+  name of a plain-number gate. Fixed: the translator's unwrapConversions table
+  selects the "duration" conversion for duration_seconds() as for duration()
+  (translator.UnwrapConv for the parsed converters), so the unwrapped field is
+  extracted, gated and converted by VictoriaLogs in seconds, the raw evaluators
+  convert it with time.ParseDuration, and the conversion-error counter
+  (unwrapCountingQuery) counts the rows the duration gate rejects, with Loki's
+  400 SampleExtractionErr text. The gate patterns are unchanged.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap duration_seconds(ttl) [5m]))'
+    query: 'sum by (service_name) (rate({service_name="cache-redis"} | logfmt | unwrap duration_seconds(ttl) [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'
@@ -26,13 +41,16 @@ compare:
   mode: exact
   fields: [series, values]
   expect: |
-    The values of `unwrap duration(ttl)`.
+    The values of `unwrap duration(ttl)`: one series per service, Loki's sum of
+    the converted seconds per second at every step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#729"
   impact: explore-visible
   effort: S
   area: 'internal/translator extractUnwrapField and unwrapGateField (duration_seconds conversion)'
   loki: 'pkg/logql/syntax/extractor.go:63-71'
-  proxy: 'empty matrix'
-  planned_test: 'TestCompat_UnwrapDurationSeconds (test/e2e-compat, group core)'
+  proxy: 'duration_seconds() is gated and converted by VictoriaLogs as duration()'
+  planned_test: 'TestCompat_UnwrapDurationSeconds (test/e2e-compat, group core: TestCompat_.*); translator TestUnwrapDurationSecondsTranslatesAsDuration, TestUnwrapGateOnTranslatedMetrics, TestExtractUnwrapField_ConversionWrappers, TestUnwrapConv; proxy TestUnwrapDurationSecondsIsConvertedAsDuration, TestUnwrapDurationSecondsRoutesLikeDuration, TestUnwrapConversionIsConvertedInTheStatsQuery, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential'
+  note: 'The request is a rate: the sum, max, min and quantile over time of a range query take the step-sized bucket, whatever the conversion (semantics/unwrap-over-time-range-windows, open), so the e2e compares their series and the proxy answering duration_seconds() as duration(), not their values.'
   clusters: []
