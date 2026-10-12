@@ -319,6 +319,9 @@ func unwrapCountingQuery(query string, accept func(field, conv string) bool) (re
 		case strings.HasPrefix(pipe, "stats "):
 			pipes[i] = "stats by (" + unwrapBadField + ") " + pipe[len("stats "):]
 		case strings.HasPrefix(pipe, "math "), strings.HasPrefix(pipe, "filter "):
+		case strings.HasPrefix(pipe, "unpack_json from __lvp_inner fields ("):
+			// The value of a first_over_time or last_over_time row (translator
+			// firstLastRowStats): the flag is a group key, which the unpack leaves.
 		default:
 			return query, "", "", "", false // sort, limit, fields, ...: could mix or drop the flagged groups
 		}

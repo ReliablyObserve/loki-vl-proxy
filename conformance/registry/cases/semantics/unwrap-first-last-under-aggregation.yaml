@@ -1,5 +1,5 @@
 id: semantics/unwrap-first-last-under-aggregation
-title: first_over_time and last_over_time with unwrap under sum fail with a VictoriaLogs 422 (open)
+title: first_over_time and last_over_time with unwrap under an aggregation answer 200 with Loki's series, and Loki's values at an instant (fixed)
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -12,6 +12,26 @@ why: |
   Measured on an isolated stack with VL v1.52.0, the same on main and with the
   unwrap conversion-error change. Related:
   semantics/first-last-over-time-translation (offset and line filters).
+
+  Root cause: VictoriaLogs has no first or last stats function, and the
+  translator mapped first_over_time and last_over_time to `first(v)` and
+  `last(v)` (internal/translator metricFuncs). The raw-row evaluator that reads
+  a bare parser query never sends them, but every other shape did: an outer
+  sum, avg, min, max, count (also with by), the inner of topk and bottomk, a
+  range-level by (...), a query without a parser, a binary operand.
+  Loki's value is the first or the last sample of each series in the window, in
+  timestamp order (pkg/logql/range_vector.go FirstOverTime and LastOverTime).
+  Fixed: the translation reads each series' value with row_min(_time, v) or
+  row_max(_time, v), which VictoriaLogs has had since v1.40, unpacks the row's
+  value into a number (`unpack_json ... fields (v)` then `math`; a row_* result is
+  a label to VictoriaLogs, never a metric) and aggregates it with the stats pipe
+  after it, so the whole query is VictoriaLogs stats: no raw rows, one value per
+  series. The unwrap conversion-error counter rides on the same chain.
+  Not changed: the window a query_range point reads is the step-sized bucket,
+  as for avg, max and min over time (semantics/unwrap-over-time-range-windows);
+  the series identity is the stream and the line, as for those functions
+  (semantics/unwrap-per-series-identity-raw-rows); offset and line filters stay
+  in semantics/first-last-over-time-translation.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -28,11 +48,12 @@ compare:
   expect: |
     HTTP 200, one series.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/translator first_over_time / last_over_time under a vector aggregation'
-  loki: 'pkg/logql/range_vector.go first/last'
-  proxy: '422 VictoriaLogs parse error'
-  planned_test: 'an e2e over sum(first_over_time|last_over_time(... | unwrap ...))'
+  area: 'internal/translator firstLastRowStats (first_over_time / last_over_time) and internal/proxy unwrapCountingQuery'
+  loki: 'pkg/logql/range_vector.go:818-843 FirstOverTime, LastOverTime; pkg/logql/evaluator.go:400-529 VectorAggEvaluator'
+  proxy: 'row_min / row_max per series, unpacked, then the outer stats pipe'
+  planned_test: 'TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastTopkBottomk (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeUnderAggregationInstantDifferential, TestFirstLastOverTimeUnderAggregationRange, TestFirstLastOverTimeTopkBottomkInstantDifferential, TestUnwrapConversionErrorAnswersLokiText (internal/proxy); TestFirstLastOverTimeUnderAggregationTranslatesToRowStats (internal/translator)'
   clusters: []
