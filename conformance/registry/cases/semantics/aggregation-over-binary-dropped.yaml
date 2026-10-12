@@ -1,37 +1,64 @@
 id: semantics/aggregation-over-binary-dropped
-title: An aggregation over a binary expression is translated to its first operand (open)
+title: A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed)
 proves:
+  - loki_api_v1_query_range
   - loki_api_v1_query
 consumer: explore
 why: |
-  `sum by (job) (rate(a[1m]) / count_over_time(a[1m]))` is a vector aggregation
-  over a binary operation on Loki (pkg/logql/evaluator.go VectorAggEvaluator
-  over a binary evaluator). The translator keeps the first operand only: the
-  right operand and the operator are dropped (`sum(rate(a[1m]) / 2)` loses the
-  `/ 2`), so an answered query has wrong values, and the shape of parity
-  cluster f2066991 (`| json | unwrap duration(latency)` over `/
-  count_over_time(...)` under label_replace) is rejected with 400 ("log queries
-  are not supported as an instant query type") where Loki answers a vector.
+  `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
+  and `sum(rate({app="x"}[1m]) / 2)` are evaluated by Loki 3.7.7 as the binary
+  per series, then the aggregation per step: newBinOpStepEvaluator joins the
+  operands' samples (pkg/logql/evaluator.go:791 and vectorBinop:955, matching
+  on every label or on()/ignoring() with group_left/group_right, resultMetric:1096;
+  a literal on either side through newLiteralStepEvaluator:1130; a comparison
+  keeps the left value or, with bool, answers 0/1, pkg/logql/syntax/ast.go:1944
+  MergeBinOp), and VectorAggEvaluator.Next (pkg/logql/evaluator.go:435-630)
+  folds the joined series by the grouping.
+
+  The proxy routed only a top-level binary to its binary evaluator. Under an
+  aggregation the query went to the translator, whose outer-aggregation
+  extraction (internal/translator/translator.go extractOuterAggregation and
+  applyOuterAggregation) kept the first operand's stats chain and dropped the
+  operator and the second operand: `/ count_over_time(...)`, `/ 2`, `> 0.5` and
+  `/ on (job) group_left ...` all vanished with a 200 and wrong values on
+  query_range; an instant query whose first operand was a literal (`sum(2 *
+  rate(...))`) or a nested binary was translated to a line search and answered
+  400 "log queries are not supported as an instant query type".
+
+  Fixed: the routing of query_range and query sends a sum, avg, min, max or
+  count (by, without or no grouping, nested) over a binary to the binary
+  evaluator (proxyBinaryAggregation): each operand stays a native VictoriaLogs
+  stats query through its own handler, the evaluator joins the aggregated
+  operand series, and applyWithoutGrouping folds the joined series per step
+  with the aggregation's operator. The expression is read from the request, so
+  an operand keeps its parser when the whole query names `| json` and `|
+  logfmt` (the discovered cluster below). A mixed offset (one side only) is
+  accepted as for a bare binary, and the folded series are in Loki's label
+  order.
 request:
   method: GET
-  path: /loki/api/v1/query
+  path: /loki/api/v1/query_range
   params:
     query: 'sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
   headers:
     X-Scope-OrgID: "0"
-    X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
-  fields: [series, values]
+  fields: [resultType, series, values]
   expect: |
-    Loki's vector: the quotient per stream, summed by job.
+    Loki's series and values: the binary per series, then the aggregation per step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/translator extractOuterAggregation and internal/proxy handleQuery routing of an aggregation over a binary expression'
-  loki: 'pkg/logql/evaluator.go VectorAggEvaluator over a binary evaluator'
-  proxy: 'first operand only, or a 400'
-  planned_test: 'TestCompat_AggregationOverBinary (test/e2e-compat, group semantics)'
+  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing'
+  loki: 'pkg/logql/evaluator.go:791 newBinOpStepEvaluator, :955 vectorBinop, :1096 resultMetric, :400-630 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/syntax/ast.go:1944 MergeBinOp'
+  proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
+  planned_test: 'TestCompat_AggregationOverBinary and TestCompat_AggregationOverBinaryMixedParsers (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser and TestAggregationOverBinaryMixedOffset (internal/proxy)'
+  note: 'The e2e is written and not yet run against the stack.'
   clusters:
     - f2066991
