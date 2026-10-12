@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.1] - 2026-10-12
+
 ### CI
 
 - **Release metadata pull requests are opened by a maintainer.** The release
