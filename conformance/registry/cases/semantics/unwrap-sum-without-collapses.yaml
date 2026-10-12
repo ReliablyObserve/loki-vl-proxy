@@ -52,10 +52,19 @@ why: |
   streams outnumbered the limit even when the answer fit. A `without` request
   now reads the per-stream rows under the raw-row budget
   (-manual-range-metric-row-limit, default 1000000: past it the client reads
-  Loki's series message with that number; the response-size bounds of those
-  reads are unchanged) and capWithoutFold applies the tenant's limit to the folded answer: Loki's
-  400 for a plain client, the busiest series with Loki's warning for Logs
-  Drilldown, on query_range, at an instant and under topk/sort/stddev/stdvar.
+  the row-limit error naming that flag, a 400; the response-size bounds of those
+  reads are unchanged) and capWithoutFold applies the tenant's limit to the
+  folded answer: Loki's 400 for a plain client, the busiest series with Loki's
+  warning for Logs Drilldown, on query_range, at an instant and around a
+  topk/bottomk/sort, a label_replace or a comparison. A binary expression
+  evaluates its operands through the handler, which folds and limits each; the
+  parent only combines them (a limit counted on the combined answer only, as
+  Loki does, stays open: series-limits-and-partial-results).
+
+  Operator: the marker the translator appends records the operator of the
+  `without` aggregation (`__without__:<op>:pod`), so every consumer folds the
+  series that share a label set with it, whatever wraps the aggregation. A fold
+  by sum of a max, min, count or avg gave 14 for pods valued 10 and 4.
   A failing instant `without` (or group/label_replace/label_join) query keeps
   its status instead of answering 200 with an error body.
 

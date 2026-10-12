@@ -18,9 +18,10 @@ why: |
   `sum without (pod) (count_over_time({app="wide"}[1m]))` over many pods fits a
   limit its per-stream rows exceed. The proxy applies the limit the same way:
   a `without` query reads the per-stream rows under the raw-row budget
-  (`-manual-range-metric-row-limit`, past it the client reads this same message
-  with that number) and the tenant's limit is applied to the folded answer, on
-  query_range, at an instant and under topk, sort, stddev and stdvar
+  (`-manual-range-metric-row-limit`, past it the client reads that flag's
+  row-limit error, a 400) and the tenant's limit is applied to the folded
+  answer, on query_range, at an instant and around a topk, sort, label_replace
+  or comparison
   (semantics/unwrap-sum-without-collapses, TestSumWithoutSeriesLimitOnFoldedAnswer).
   A failing instant `without`, `group`, `label_replace` or `label_join` query keeps
   the error's status instead of answering 200 with an error body.
