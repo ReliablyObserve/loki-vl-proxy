@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`quantile_over_time` over an unwrap answers 6 hour, 24 hour and 7 day
+  ranges with Loki's values, without reading raw log rows, and a vector
+  aggregation over it folds per-series quantiles as Loki does.**
+  `quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap
+  duration_ms [1m]) by (service_name)` answered on Loki 3.7.7 at 6h, 24h and
+  7d, while the proxy failed from 6h on with 502 `manual metric response exceeds
+  67108864 bytes` (the log generator's data, about 1,050 lines a minute). The
+  proxy read every raw row of the range, because VictoriaLogs' own `quantile`
+  stats function is not Loki's: it answers the sorted value at rank
+  `int(phi*n)` without interpolation and keeps a random sample above 10,000
+  values per shard, where Loki sorts every sample of the window `(t-range, t]`
+  and interpolates at rank `phi*(n-1)` (`pkg/logql/range_vector.go:465-487`),
+  and a quantile of buckets cannot be combined into a sliding window. Now
+  VictoriaLogs answers what it can answer exactly, and the proxy does only what
+  it cannot: VictoriaLogs counts the rows of every converted value per anchored
+  bucket (`stats by (<series>, __lvp_v) count()`, the unwrap gate's value, so
+  `duration()`, `bytes()`, `__error__` and the conversion-error check behave as
+  before), and the proxy merges the buckets of each window, tumbling or
+  sliding, and interpolates like Loki, on query_range and on instant queries
+  (`stats_query`, every VictoriaLogs version). The answer grows with the
+  distinct values per bucket and series, at most with the rows; it is read
+  within `-backend-max-buffered-response-bytes` and holds at most
+  `-manual-range-metric-row-limit` counts, each over with its documented error.
+  On VictoriaLogs before v1.45 a range whose first window is off the bucket grid
+  still uses the raw evaluator, as every bucketed metric does there. Two older
+  quantile answers are fixed on the way: a vector aggregation over the
+  quantile (`sum by (ns) (quantile_over_time(...))`) took one quantile over the
+  whole group's samples, where Loki takes one per series (stream) and folds them
+  (`pkg/logql/evaluator.go` `newVectorAggEvaluator`; only a range aggregation's
+  own `by (...)` groups the samples, `pkg/logql/syntax/extractor.go`), and an
+  ungrouped `sum`, `avg`, `min`, `max` or `count` over it answered `[]` or one
+  series per stream. A range aggregation's `by (...)` asks VictoriaLogs for the
+  counts of its group fields alone, so the answer does not grow with the
+  streams (the log generator's pods rotate every batch). After a parser, Loki's
+  series also carry the parsed labels, while the proxy's per-stream series do
+  not, as for the other per-series functions
+  (`semantics/unwrap-per-series-identity-raw-rows`, unchanged); an ungrouped
+  quantile after a parser keeps the raw evaluator for that reason (#731).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

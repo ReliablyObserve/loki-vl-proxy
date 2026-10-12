@@ -164,10 +164,11 @@ func TestUnwrapStatsQueriesCarryTheSampleGate(t *testing.T) {
 	}
 }
 
-// A tumbling window (range == step) of a function VictoriaLogs has no exact
-// stats for (rate_counter, quantile) is answered by the raw evaluator, which
-// converts duration() and bytes() with Go's own functions,, as it is for a sliding one: the gate's own math pipe must not make
-// the query look like a rate pipeline the native stats route can run.
+// A tumbling window (range == step) of rate_counter, which VictoriaLogs has no
+// exact stats for, is answered by the raw evaluator, which converts duration()
+// and bytes() with Go's own functions, as it is for a sliding one: the gate's
+// own math pipe must not make the query look like a rate pipeline the native
+// stats route can run.
 func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 	t0 := time.Unix(1700000400, 0).UTC()
 	rows := []string{
@@ -176,10 +177,7 @@ func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 		unwrapRow(t0.Add(30*time.Second), map[string]string{"n": "30", "d": "15s"}),
 	}
 	for _, tc := range []struct{ name, query, want string }{
-		{"quantile", `quantile_over_time(0.5, {app="x"} | unwrap n [1m])`, "20"},
-		{"quantile grouped", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]))`, "20"},
 		{"rate_counter", `rate_counter({app="x"} | unwrap n [1m])`, "0.3333333333333333"},
-		{"quantile of a conversion", `quantile_over_time(0.5, {app="x"} | unwrap duration(d) [1m])`, "30"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newUnwrapFakeVL(t, rows)
@@ -198,25 +196,44 @@ func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 	}
 }
 
-// quantile reads the unwrapped field, not the gate's alias: the raw evaluator
-// sees the ungated query and converts the value itself.
-func TestUnwrapQuantileReadsTheUnwrappedValues(t *testing.T) {
+// quantile_over_time reads VictoriaLogs' row counts of the gate's converted
+// value (duration() and bytes() in Loki's syntax, rejected values counted
+// apart), tumbling or sliding, and never the rows themselves.
+func TestUnwrapQuantileReadsValueCounts(t *testing.T) {
 	t0 := time.Unix(1700000400, 0).UTC()
-	rows := []string{
-		unwrapRow(t0.Add(10*time.Second), map[string]string{"n": "10"}),
-		unwrapRow(t0.Add(20*time.Second), map[string]string{"n": "20"}),
-		unwrapRow(t0.Add(30*time.Second), map[string]string{"n": "30"}),
-		unwrapRow(t0.Add(35*time.Second), map[string]string{"other": "no n here"}),
-	}
-	srv, fake := newUnwrapFakeVL(t, rows)
-	p := newSlidingTestProxy(t, srv.URL)
-	// A 2m window at a 1m step is a sliding window: the raw evaluator.
-	got := unwrapRangeValues(t, p, `quantile_over_time(0.5, {app="x"} | unwrap n [2m])`, t0.Add(time.Minute), t0.Add(time.Minute), time.Minute)
-	if len(got) != 1 || got[0] != "20" {
-		t.Fatalf("got %v, want [20]", got)
-	}
-	if q := fake.query("/select/logsql/query"); q == "" || strings.Contains(q, translator.UnwrapValueAlias) {
-		t.Fatalf("expected the raw evaluator on the ungated query, got %q", q)
+	for _, tc := range []struct {
+		name, query, gate, by, want string
+	}{
+		{"tumbling", `quantile_over_time(0.5, {app="x"} | unwrap n [1m])`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
+		{"sliding", `quantile_over_time(0.5, {app="x"} | unwrap n [2m])`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
+		// A vector aggregation folds per-stream quantiles: VictoriaLogs groups by stream.
+		{"summed per stream", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]))`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
+		// A range aggregation's own grouping groups the samples.
+		{"range grouping", `quantile_over_time(0.5, {app="x"} | unwrap n [1m]) by (app)`, unwrapCountedGate("n", ""), "app, ", "20"},
+		{"duration", `quantile_over_time(0.5, {app="x"} | unwrap duration(n) [1m])`, unwrapCountedGate("n", "duration"), "_stream, level, ", "20"},
+		{"bytes", `quantile_over_time(0.5, {app="x"} | unwrap bytes(n) [1m])`, unwrapCountedGate("n", "bytes"), "_stream, level, ", "20"},
+		{"error filter", `quantile_over_time(0.5, {app="x"} | unwrap n | __error__="" [1m])`, translator.UnwrapGate("n"), "_stream, level, ", "20"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			emu := &vlEmulator{t: t, field: "n"}
+			for _, sec := range []int{10, 20, 30} {
+				emu.rows = append(emu.rows, emuRow{ts: t0.Add(time.Duration(sec) * time.Second).UnixNano(), stream: `{app="x"}`, value: float64(sec)})
+			}
+			srv := httptest.NewServer(emu.handler())
+			defer srv.Close()
+			p := newSlidingTestProxy(t, srv.URL)
+			got := unwrapRangeValues(t, p, tc.query, t0.Add(time.Minute), t0.Add(time.Minute), time.Minute)
+			if len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("got %v, want [%s]", got, tc.want)
+			}
+			queries := emu.endpointCalls("/select/logsql/stats_query_range")
+			if len(queries) != 1 || !strings.Contains(queries[0], tc.gate+" | stats by ("+tc.by+translator.UnwrapValueAlias) || !strings.HasSuffix(queries[0], ") count() as "+quantileCountName) {
+				t.Fatalf("expected the value counts behind the gate, got %q", queries)
+			}
+			if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+				t.Fatalf("quantile read raw rows: %q", q)
+			}
+		})
 	}
 }
 

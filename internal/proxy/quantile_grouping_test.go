@@ -13,7 +13,7 @@ import (
 )
 
 // Loki's range_vector.go uses (evaluation-window, evaluation] and interpolates
-// adjacent ranked samples. Distinct message/stream identities must merge before
+// adjacent ranked samples, here from VictoriaLogs' value counts per bucket. Distinct message/stream identities must merge before
 // the quantile is calculated when the query has an explicit range grouping.
 func TestGroupedQuantileExactWindows(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
@@ -26,37 +26,22 @@ func TestGroupedQuantileExactWindows(t *testing.T) {
 	} {
 		for _, step := range []int{60, 300, 600} {
 			t.Run(fmt.Sprintf("%s/step=%d", tc.grouping, step), func(t *testing.T) {
-				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path != "/select/logsql/query" {
-						t.Errorf("unexpected backend endpoint %s", r.URL.Path)
-						http.Error(w, "unexpected endpoint", http.StatusInternalServerError)
-						return
-					}
-					for i, sample := range []struct {
-						sec, value int
-						level      string
-					}{
-						{-300, 1000, "info"}, // excluded lower boundary at first evaluation
-						{-240, 10, "info"}, {-60, 30, "info"}, {0, 50, "info"}, {60, 90, "info"},
-						{-60, 100, "error"}, {0, 200, "error"}, {60, 400, "error"},
-					} {
-						// Model VL's exclusive end instead of returning samples that
-						// the real backend would exclude from an instant lookback.
-						fetchEnd, err := parseTimestamp(r.FormValue("end"))
-						if err != nil {
-							t.Errorf("invalid backend end %q: %v", r.FormValue("end"), err)
-							return
-						}
-						if !base.Add(time.Duration(sample.sec) * time.Second).Before(fetchEnd) {
-							continue
-						}
-						_ = json.NewEncoder(w).Encode(map[string]interface{}{
-							"_time":   base.Add(time.Duration(sample.sec) * time.Second).Format(time.RFC3339Nano),
-							"_stream": fmt.Sprintf(`{app="api",pod="pod-%d",level=%q}`, i, sample.level),
-							"_msg":    fmt.Sprintf(`{"latency":%d}`, sample.value), "latency": sample.value, "level": sample.level,
-						})
-					}
-				}))
+				emu := &vlEmulator{t: t, field: "latency"}
+				for i, sample := range []struct {
+					sec, value int
+					level      string
+				}{
+					{-300, 1000, "info"}, // excluded lower boundary at first evaluation
+					{-240, 10, "info"}, {-60, 30, "info"}, {0, 50, "info"}, {60, 90, "info"},
+					{-60, 100, "error"}, {0, 200, "error"}, {60, 400, "error"},
+				} {
+					emu.rows = append(emu.rows, emuRow{
+						ts:     base.Add(time.Duration(sample.sec) * time.Second).UnixNano(),
+						stream: fmt.Sprintf(`{app="api",pod="pod-%d",level=%q}`, i, sample.level),
+						value:  float64(sample.value),
+					})
+				}
+				backend := httptest.NewServer(emu.handler())
 				defer backend.Close()
 				p := newGapTestProxy(t, backend.URL)
 				params := url.Values{
