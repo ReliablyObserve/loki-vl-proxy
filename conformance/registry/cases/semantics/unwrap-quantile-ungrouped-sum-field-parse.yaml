@@ -1,0 +1,55 @@
+id: semantics/unwrap-quantile-ungrouped-sum-field-parse
+title: sum and sum without over quantile_over_time with unwrap answer a series, not an empty result, like Loki (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum(quantile_over_time(0.5, {app=~"uwsum-lf-.+"} | logfmt | unwrap amount [5m]))`
+  answers one series on Loki 3.7.7 (60.75 on the e2e fixtures at the measured
+  instant). The proxy answers HTTP 200 with an empty result on query_range and at
+  an instant, and `sum without (route) (quantile_over_time(...))` answers an empty
+  result where Loki answers a series per stream and parsed label set (measured with
+  VictoriaLogs v1.52.0; the same on 428ae7c5 and on 784b4e9c, so neither
+  semantics/unwrap-rate-ungrouped-sum-per-stream nor
+  semantics/unwrap-sum-without-collapses introduced it).
+
+  Cause: the stats compat parser reads the field of a stats function from the
+  first `(` to the last `)` of the pipe (parseStatsCompatSpec,
+  internal/proxy/range_metric_compat.go). The translation of a quantile under an
+  outer sum is `stats by (...) quantile(0.5, field) as __lvp_inner | stats
+  sum(__lvp_inner)`; the first `(` and the last `)` of the second pipe enclose
+  `0.5, field) as __lvp_inner | stats sum(__lvp_inner`, a field name that no row
+  has, so every sample is dropped. A probe that cut the field at the first `)`
+  after the quantile spec restored the series.
+
+  Another change (the quantile value-count pushdown,
+  semantics/unwrap-quantile-response-limit) is expected to replace this path for
+  a quantile under an outer aggregation; the row stays open until that change
+  lands and the e2e below passes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(quantile_over_time(0.95, {app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series, values]
+  expect: |
+    One series with Loki's sum of the per-series quantiles; sum without keeps a series per remaining label set.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy parseStatsCompatSpec (Field from the first "(" to the last ")") and the quantile route of shouldUseManualRangeMetricCompat'
+  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime; pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (sum folds the per-series quantiles)'
+  proxy: 'an empty 200: the second stats pipe is read as the field of the quantile'
+  planned_test: 'TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) over sum and sum without, logfmt and json, range and instant'
+  note: 'Found while fixing semantics/unwrap-sum-without-collapses; present on 428ae7c5 and 784b4e9c. Expected to be fixed by the quantile value-count pushdown branch (semantics/unwrap-quantile-response-limit); verify there, keep the row open until the e2e passes.'
+  clusters: []

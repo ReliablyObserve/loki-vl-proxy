@@ -1,0 +1,53 @@
+id: semantics/unwrap-quantile-sum-by-group-quantile
+title: sum by over quantile_over_time with unwrap adds the per-series quantiles instead of taking the group quantile, like Loki (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (app) (quantile_over_time(0.5, {app=~"uwsum-lf-.+"} | logfmt | unwrap amount [5m]))`
+  folds, on Loki 3.7.7, the quantile of every series (stream plus parsed labels)
+  of an app with sum: 20.25, 19.625 and 20.875 for the three apps of the e2e
+  fixtures at the measured instant. The proxy answers the quantile of all the
+  samples of the app, 6.75 for each of them (VictoriaLogs v1.52.0; query_range and
+  instant alike). On generator data an earlier measurement had the proxy at 12 and
+  13 where Loki answers 36 and 39 for the same shape.
+
+  `quantile_over_time` is evaluated per series under a vector aggregation; only
+  the range aggregation's own `by (...)` groups the samples before the quantile
+  (pkg/logql/syntax/extractor.go). The proxy moves the outer `by (app)` into the
+  quantile's grouping (unwrapInnerGrouping), which turns "sum of quantiles of
+  series" into "quantile of the group". The three route series of an app give 3 x
+  6.75 = 20.25 on Loki for the first app, which is the ratio seen above.
+
+  Another change (the quantile value-count pushdown,
+  semantics/unwrap-quantile-response-limit) is expected to keep the per-series
+  identity and fold the quantiles in the proxy; the row stays open until that
+  lands and the e2e below passes. Related: semantics/unwrap-per-series-identity-raw-rows
+  (the same fold for avg, max, min and rate_counter).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (namespace) (quantile_over_time(0.95, {app="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's sum of the per-series quantiles per namespace.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator unwrapInnerGrouping (an outer by moved into the quantile) and the raw evaluator of quantile_over_time'
+  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime; pkg/logql/syntax/extractor.go:21-60 (a range by groups the samples); pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (a vector aggregation folds per-series values)'
+  proxy: 'the quantile of the group of samples instead of the sum of the per-series quantiles'
+  planned_test: 'TestCompat_UnwrapQuantileOuterSum (test/e2e-compat, group core) over sum by and sum without, logfmt and json, range and instant'
+  note: 'Found while fixing semantics/unwrap-sum-without-collapses. Expected to be fixed by the quantile value-count pushdown branch (semantics/unwrap-quantile-response-limit); verify there, keep the row open until the e2e passes.'
+  clusters: []
