@@ -187,6 +187,7 @@
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
+      "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -214,6 +215,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -232,8 +234,11 @@
     ],
     "metric-series-identity": [
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
+      "internal/proxy/vector_agg_fold_test.go",
+      "internal/proxy/vector_agg_series_differential_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
+      "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -435,6 +440,12 @@
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
     ],
+    "semantics/non-sum-vector-aggregation-unreduced": [
+      "internal/proxy/instant_unwrap_sum_test.go",
+      "internal/proxy/vector_agg_fold_test.go",
+      "internal/proxy/vector_agg_series_differential_test.go",
+      "test/e2e-compat/non_sum_vector_aggregation_range_test.go"
+    ],
     "semantics/offset-sample-timestamps": [
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -537,6 +548,7 @@
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
+      "internal/proxy/vector_agg_series_differential_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
@@ -633,7 +645,8 @@
       "loki_api_v1_index_stats"
     ],
     "internal/proxy/instant_unwrap_sum_test.go": [
-      "profiles/sanitized-json-key-grouping"
+      "profiles/sanitized-json-key-grouping",
+      "semantics/non-sum-vector-aggregation-unreduced"
     ],
     "internal/proxy/label_empty_run_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -852,6 +865,15 @@
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/vector_agg_fold_test.go": [
+      "metric-series-identity",
+      "semantics/non-sum-vector-aggregation-unreduced"
+    ],
+    "internal/proxy/vector_agg_series_differential_test.go": [
+      "metric-series-identity",
+      "semantics/non-sum-vector-aggregation-unreduced",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/volume_test.go": [
       "drilldown/index_volume/single-sample-returns-vector",
       "loki_api_v1_index_volume",
@@ -982,6 +1004,12 @@
       "loki_api_v1_label_name_values",
       "loki_api_v1_labels"
     ],
+    "test/e2e-compat/non_sum_vector_aggregation_range_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/non-sum-vector-aggregation-unreduced"
+    ],
     "test/e2e-compat/parenthesized_range_or_filters_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1064,7 +1092,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 99,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1145,7 +1173,6 @@
     "semantics/label-replace-new-label",
     "semantics/log-entries-differ-same-count",
     "semantics/logfmt-existence-filter-ungrouped-sum",
-    "semantics/non-sum-vector-aggregation-unreduced",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/parse-error-text-parity",
     "semantics/pattern-line-filter",
@@ -1172,5 +1199,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 106
+  "wired_items": 107
 }

@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-max-by-count-over-time-sliding",
+   "kind": "explore",
+   "query": "max by (service_name) (count_over_time({service_name=\"api-gateway\"}[5m]))",
+   "covers": [
+    "semantics/non-sum-vector-aggregation-unreduced",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/non-sum-vector-aggregation-unreduced"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
