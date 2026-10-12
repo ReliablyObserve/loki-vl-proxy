@@ -72,20 +72,6 @@ func binaryRequestExpr(r *http.Request) logqlpkg.Expr {
 	return expr
 }
 
-// binaryRequestQuery is the request's query as the handler reads it before
-// rewriting it: incomplete unwrap stubs dropped, Grafana range tokens resolved
-// and a uniform offset stripped.
-func binaryRequestQuery(r *http.Request) string {
-	query := stripIncompleteUnwrapStubs(r.FormValue("query"))
-	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	// The outer handler has already shifted uniform offsets. Mixed offsets
-	// remain on their individual operands and are applied by each child handler.
-	if _, stripped, err := extractLogQLOffset(query); err == nil {
-		query = stripped
-	}
-	return query
-}
-
 type binaryOperandResponse struct {
 	header http.Header
 	body   bytes.Buffer
