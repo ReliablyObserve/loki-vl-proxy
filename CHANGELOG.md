@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.2] - 2026-10-12
+
 ### Fixed
 
 - **A scalar instant answer carries its sample time in integer milliseconds, as
