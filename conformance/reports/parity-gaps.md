@@ -161,4 +161,5 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/count-values-unsupported` — count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed) | #860 | 0 | 0 |
+| `semantics/proxy-accepts-operators-not-in-loki` — group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed) | #748 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

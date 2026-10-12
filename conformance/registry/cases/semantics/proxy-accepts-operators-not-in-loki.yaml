@@ -64,7 +64,7 @@ compare:
     lower-case form.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#748"
   impact: api-only
   effort: S
   area: 'internal/logql scanner (keyword case) + parser (opaque calls) + semantic (label_replace argument position); internal/proxy lowercaseQueryKeywords'
