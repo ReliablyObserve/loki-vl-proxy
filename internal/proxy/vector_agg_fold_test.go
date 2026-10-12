@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -65,6 +66,15 @@ func TestSeriesAggregationChain(t *testing.T) {
 			t.Errorf("%s: chain %q, want %q", tc.query, got, tc.want)
 		}
 	}
+}
+
+// nan builds one series per value, all sampled at 60.
+func nan(values []float64) []foldSeries {
+	var out []foldSeries
+	for i, v := range values {
+		out = append(out, foldSeries{map[string]string{"pod": fmt.Sprint("p", i)}, [][2]float64{{60, v}}})
+	}
+	return out
 }
 
 // foldCase is a matrix (or vector) answer of the evaluator and the fold of one
@@ -180,6 +190,10 @@ func TestFoldByGroupingEdgeCases(t *testing.T) {
 			{map[string]string{"zone": "x"}, [][2]float64{pt(60, 4), pt(120, 4), pt(180, 12)}},
 			{map[string]string{"zone": "y"}, [][2]float64{pt(120, 10)}},
 		}},
+		{"max skips a NaN first", "max", nil, nan([]float64{math.NaN(), 3, math.NaN()}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, 3)}}}},
+		{"min skips a NaN in the middle", "min", nil, nan([]float64{5, math.NaN(), 3}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, 3)}}}},
+		{"max of NaN only is NaN", "max", nil, nan([]float64{math.NaN(), math.NaN()}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, math.NaN())}}}},
+		{"min of NaN only is NaN", "min", nil, nan([]float64{math.NaN(), math.NaN()}), []foldSeries{{map[string]string{}, [][2]float64{pt(60, math.NaN())}}}},
 		{"no series", "max", nil, nil, nil},
 	} {
 		for _, instant := range []bool{false, true} {
@@ -310,6 +324,34 @@ func TestVectorAggregationOverRateCounterFolds(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// The without fold combines values the same way: a NaN never wins a min or max.
+//
+// conformance: semantics/non-sum-vector-aggregation-unreduced
+func TestApplyWithoutGroupingNaNMinMax(t *testing.T) {
+	for _, tc := range []struct {
+		op     string
+		values []float64
+		want   string
+	}{
+		{"max", []float64{math.NaN(), 3, math.NaN()}, "3"},
+		{"min", []float64{4, math.NaN(), 3}, "3"},
+		{"min", []float64{math.NaN(), 2, 3}, "2"},
+		{"max", []float64{math.NaN(), math.NaN()}, "NaN"},
+	} {
+		for _, instant := range []bool{false, true} {
+			series := nan(tc.values)
+			for i := range series {
+				series[i].metric = map[string]string{"app": "a", "pod": series[i].metric["pod"]}
+			}
+			body := applyWithoutGrouping(foldBody(series, instant), []string{"pod"}, tc.op)
+			got := foldResult(t, body)
+			if len(got) != 1 || fmt.Sprint(got[0].points[0][1]) != tc.want {
+				t.Errorf("%s %v instant=%v: got %v, want %s", tc.op, tc.values, instant, got, tc.want)
+			}
 		}
 	}
 }
