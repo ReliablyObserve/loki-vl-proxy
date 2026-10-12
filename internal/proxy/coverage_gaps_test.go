@@ -278,7 +278,7 @@ func TestParseTimestampToUnix(t *testing.T) {
 	}
 }
 
-func TestEvaluateConstantInstantVectorQuery(t *testing.T) {
+func TestEvaluateConstantInstantQuery(t *testing.T) {
 	tests := []struct {
 		name       string
 		query      string
@@ -287,18 +287,18 @@ func TestEvaluateConstantInstantVectorQuery(t *testing.T) {
 		wantTS     float64
 		expectEval bool
 	}{
-		{name: "vector literal", query: `vector(1)`, timeParam: "4", wantValue: "1", wantTS: 4_000_000_000, expectEval: true},
-		{name: "binary add", query: `vector(1)+vector(1)`, timeParam: "4", wantValue: "2", wantTS: 4_000_000_000, expectEval: true},
-		{name: "binary divide", query: `vector(9) / vector(3)`, timeParam: "4", wantValue: "3", wantTS: 4_000_000_000, expectEval: true},
+		{name: "vector literal", query: `vector(1)`, timeParam: "4", wantValue: "1", wantTS: 4, expectEval: true},
+		{name: "binary add", query: `vector(1)+vector(1)`, timeParam: "4", wantValue: "2", wantTS: 4, expectEval: true},
+		{name: "binary divide", query: `vector(9) / vector(3)`, timeParam: "4", wantValue: "3", wantTS: 4, expectEval: true},
 		{name: "divide by zero", query: `vector(1)/vector(0)`, timeParam: "4", expectEval: false},
 		{name: "non vector", query: `{app="api"}`, timeParam: "4", expectEval: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, ok := evaluateConstantInstantVectorQuery(tt.query, tt.timeParam)
+			body, ok := evaluateConstantInstantQuery(tt.query, tt.timeParam)
 			if ok != tt.expectEval {
-				t.Fatalf("evaluateConstantInstantVectorQuery(%q) ok=%v, want %v", tt.query, ok, tt.expectEval)
+				t.Fatalf("evaluateConstantInstantQuery(%q) ok=%v, want %v", tt.query, ok, tt.expectEval)
 			}
 			if !tt.expectEval {
 				return

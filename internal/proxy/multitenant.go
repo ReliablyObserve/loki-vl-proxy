@@ -33,6 +33,11 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	if len(filteredTenants) == 0 {
+		if endpoint == "query" && !logQLProducesSamples(r.FormValue("query")) {
+			// No tenant left to ask is no reason to answer `streams`: a log query is no instant query.
+			p.writeError(w, http.StatusBadRequest, lokiInstantLogQueryError)
+			return true
+		}
 		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
 		return true
 	}

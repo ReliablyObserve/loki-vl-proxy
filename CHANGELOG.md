@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An instant query is answered with its failure status and a resultType, as
+  Loki does, not with a 200 that has neither (#TBD).** `stdvar without (app)
+  (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
+  HTTP 200 with an error body and no `resultType`, which Grafana and every client
+  decoding by type (`pkg/loghttp/query.go` `QueryResponse.UnmarshalJSON` fails on
+  a missing or unknown type) cannot read, where Loki answers `vector`
+  (`pkg/logql/engine.go` `evalSample`, `JoinSampleVector`; `pkg/querier/queryrange/marshal.go`
+  `ResultToResponse`). Two causes. A query the proxy post-processes (`without`,
+  `label_replace`, `label_join`) was buffered, and a failure of it (a
+  VictoriaLogs error, a series limit, a rejected query) was written with the
+  status dropped, so every such error reached the client as a 200; query_range
+  already sent the failing status, the instant path now does too. And a
+  `label_replace` or `label_join` around a binary expression sent the
+  translator's internal binary marker to VictoriaLogs as a LogsQL query; the
+  expression under the transform now routes like any binary expression, its
+  operands run as instant queries and combine, and the transform applies to the
+  result. Also on the instant endpoint: a scalar literal (`1`, `-1`) answers a
+  `scalar` as Loki's `evalLiteral` does, where it was rejected as a log query,
+  also under a multi-tenant `X-Scope-OrgID`; `vector(1)` and `vector(1) +
+  vector(2)` stamp their sample in seconds like every other sample
+  (`pkg/util/marshal/query.go` `NewVector`) where they carried nanoseconds; and
+  a log query sent with every tenant filtered out by `__tenant_id__` is rejected
+  with Loki's 400 for a log query as an instant query, not answered with an
+  empty `streams`. An aggregation over a binary expression (`sum by (job) (a /
+  b)`) is still not evaluated as Loki does; where the proxy rejects it, it now
+  does so with an error status, no longer with a typeless 200.
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

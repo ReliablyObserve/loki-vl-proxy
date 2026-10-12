@@ -44,7 +44,11 @@ func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
 	return expr, count
 }
 
-func evaluateConstantInstantVectorQuery(expr, timeParam string) ([]byte, bool) {
+// evaluateConstantInstantQuery answers an instant query of constants, which has
+// no data behind it. vector(n), and a binary operation of two of them, is a
+// vector of one sample with no labels (Loki pkg/logql/engine.go evalVector); a
+// literal, or a binary operation of literals, is a scalar (evalLiteral).
+func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return nil, false
@@ -74,11 +78,30 @@ func evaluateConstantInstantVectorQuery(expr, timeParam string) ([]byte, bool) {
 		return buildConstantVectorResponse(timeParam, value), true
 	}
 
+	if parsed, err := logqlpkg.Parse(expr); err == nil {
+		if value, ok := binaryScalarValue(parsed, 0); ok {
+			result, _ := json.Marshal(map[string]interface{}{
+				"status": "success",
+				"data": map[string]interface{}{
+					"resultType": "scalar",
+					"result":     []interface{}{constantInstantSeconds(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
+				},
+			})
+			return result, true
+		}
+	}
+
 	return nil, false
 }
 
+// constantInstantSeconds is the evaluation time as a sample time: seconds with
+// millisecond precision (Loki pkg/util/marshal NewVector and NewScalar), not
+// the nanoseconds the request carries.
+func constantInstantSeconds(timeParam string) float64 {
+	return float64(parseInstantVectorTime(timeParam)/int64(time.Millisecond)) / 1e3
+}
+
 func buildConstantVectorResponse(timeParam string, value float64) []byte {
-	ts := parseInstantVectorTime(timeParam)
 	result, _ := json.Marshal(map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
@@ -86,7 +109,7 @@ func buildConstantVectorResponse(timeParam string, value float64) []byte {
 			"result": []map[string]interface{}{
 				{
 					"metric": map[string]string{},
-					"value":  []interface{}{ts, strconv.FormatFloat(value, 'f', -1, 64)},
+					"value":  []interface{}{constantInstantSeconds(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
 				},
 			},
 			"stats": map[string]interface{}{},

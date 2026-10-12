@@ -130,9 +130,23 @@ func parseSingleFieldCountSpec(logsqlQuery string) (statsCompatSpec, bool) {
 // parseOriginalRangeMetricSpec to reach the actual metric function even when
 // the query is wrapped in one or more label_replace() calls.
 func stripOuterLabelReplace(logql string) string {
+	return stripOuterCalls(logql, "label_replace(")
+}
+
+// stripLabelTransforms is stripOuterLabelReplace for label_join as well: the
+// metric expression under the label transforms of a query.
+func stripLabelTransforms(logql string) string {
+	return stripOuterCalls(logql, "label_replace(", "label_join(")
+}
+
+func stripOuterCalls(logql string, prefixes ...string) string {
 	for {
 		logql = strings.TrimSpace(logql)
-		if !strings.HasPrefix(logql, "label_replace(") {
+		wrapped := false
+		for _, prefix := range prefixes {
+			wrapped = wrapped || strings.HasPrefix(logql, prefix)
+		}
+		if !wrapped {
 			break
 		}
 		idx := strings.Index(logql, "(")
