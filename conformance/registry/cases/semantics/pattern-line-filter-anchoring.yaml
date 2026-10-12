@@ -49,7 +49,9 @@ why: |
   the line, so no character before the occurrence is needed), `(?s)L$` and not
   `(?s)L.` and not `^L$` (the first occurrence ends the line and is not the
   whole line), and `(?s)L$` and not `(?s)L.` (the first occurrence ends the
-  line). Any other pattern still goes through extract.
+  line). Any other pattern still goes through extract; under `|>` a plain
+  regexp per literal runs first (a necessary condition that skips the blocks
+  without the text), then the anchored regexp.
   extract with `plain:` and html-unescaped texts, the field
   filters `:*` and `:""`, and `delete prefix*` exist on every supported
   VictoriaLogs version.

@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters with no `extract`: the first occurrence of the literal decides, and a
   later one ends later, so `<_>L<_>` is `(?s)L.` and not `^L`, `<_>L` is
   `(?s)L$` and not `(?s)L.` and not `^L$`, each behind the plain regexp for
-  `L`, which VictoriaLogs answers as a substring search. Covered by `TestPatternLineFilterAnchoringEdges`, a
+  `L`, which VictoriaLogs answers as a substring search; under `|>` a pattern
+  that still needs `extract` has the same plain filter for each of its literals
+  in front of the anchored regexp. Covered by `TestPatternLineFilterAnchoringEdges`, a
   differential of the translated query against a port of Loki's matcher
   (`TestPatternLineFilterAnchoringDifferential`) and its seeded corpus of
   638 filters on 2,530 lines (`TestPatternLineFilterAnchoringCorpus`, 1.6M
