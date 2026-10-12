@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A zero divisor of `/` and `%` is NaN, like Loki.** `sum(rate({app="api"}[5m])) / 0`,
+  `5 / <a series whose value is 0>`, `-1 / 0` and `1 / 0` answered `+Inf` or `-Inf`
+  (IEEE division), and the fallback sample arithmetic used when a query is not
+  parsed as a binary expression answered `0` for `/` and `%`. Loki routes every binary operation through
+  `syntax.MergeBinOp`, which returns NaN for a zero right operand of `/` and `%`
+  whatever the numerator is, for a literal fold (`1 / 0`), a vector against a
+  literal and two vectors alike. The proxy now returns NaN in every sample
+  arithmetic path; comparisons (with and without `bool`), `^`, NaN and infinite
+  operands already matched Loki and are pinned against a direct port of
+  `MergeBinOp` by an operator by operand edge table. Aggregations over a
+  division by zero are not changed here. (#745)
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
