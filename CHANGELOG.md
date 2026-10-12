@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unless a label filter after the unwrap drops the error. The proxy now answers
   `duration_seconds(x)` with exactly the queries and answer of `duration(x)`.
   The window of a sum, maximum or minimum over time on a range query is a
-  separate open difference that applies to either conversion. (#TBD)
+  separate open difference that applies to either conversion. (#729)
 
 ## [2.11.2] - 2026-10-12
 

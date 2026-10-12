@@ -45,7 +45,7 @@ compare:
     the converted seconds per second at every step.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#729"
   impact: explore-visible
   effort: S
   area: 'internal/translator extractUnwrapField and unwrapGateField (duration_seconds conversion)'
