@@ -421,7 +421,16 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
+	// A bare outer aggregation without by() collapses all streams into one empty-label
+	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
+	// collectRangeMetricSamples produces a single series — not one per stream.
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+		spec.ByExplicit = true
+	}
+	// Native step buckets answer an unwrap range function only for a range equal
+	// to the step; any other range merges the windows from anchored buckets.
+	unwrapWindows := !rangeEqualsStep && hasOrigSpec && unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, r.FormValue("query"))
+	if !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -431,12 +440,6 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
-	}
-	// A bare outer aggregation without by() collapses all streams into one empty-label
-	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
-	// collectRangeMetricSamples produces a single series — not one per stream.
-	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
-		spec.ByExplicit = true
 	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.
@@ -612,6 +615,8 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 
 	// Parser stages present — native VL stats is safe for unwrap-based aggregations
 	// (parse failures self-filter via absent fields) and for non-sliding windows.
+	// Sum, avg, max and min over a range other than the step merge their windows
+	// from anchored buckets instead (unwrapWindowBuckets).
 	switch manualFunc {
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false
@@ -752,18 +757,14 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	fetchEnd := endTS
-	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
-		// VL's raw-query end is exclusive; Loki includes the evaluation time.
-		fetchEnd = fetchEnd.Add(time.Nanosecond)
-	}
+	fetchEnd, window := manualRawBounds(manualFunc, endTS, origSpec.Window)
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
 		return true
 	}
 
-	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.manualSeriesLimit(r.Context()))
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, window, p.manualSeriesLimit(r.Context()))
 	if err != nil {
 		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
 		return true
@@ -771,6 +772,23 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
+}
+
+// manualRawBounds returns the raw evaluator's fetch end and evaluation window
+// for a range metric. VL's raw-query end is exclusive; Loki includes the
+// evaluation time. The evaluator reads the unwrap functions merged from buckets
+// (other than a rate, which excludes the lower edge itself) over [t-window, t];
+// one nanosecond less is Loki's window (t-range, t] (pkg/logql/range_vector.go
+// batchRangeVectorIterator.load), as on the bucket route.
+func manualRawBounds(manualFunc string, end time.Time, window time.Duration) (time.Time, time.Duration) {
+	merged := isUnwrapBucketFunc(manualFunc)
+	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) || merged {
+		end = end.Add(time.Nanosecond)
+	}
+	if merged && !isLogRangeWindowFunc(manualFunc) {
+		window -= time.Nanosecond
+	}
+	return end, window
 }
 
 // maxStatsBucketResponseBytes bounds one stats_query_range bucket response of
@@ -803,6 +821,9 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 		}
 		for i := range entry.PresentBuckets {
 			entry.PresentBuckets[i] += int64(shift)
+		}
+		for i := range entry.Counts {
+			entry.Counts[i].ts += int64(shift)
 		}
 		series[key] = entry
 	}
@@ -1261,8 +1282,11 @@ func (p *Proxy) collectRangeMetricHits(
 		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	// An ungrouped sum folds these series into one afterwards (foldUngroupedSum):
+	// Loki counts its limit on that one; the response bytes stay bounded.
+	limit := p.manualSeriesLimit(ctx)
 	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
+	keepCounts := withPresence && unwrapBucketKeepsCounts(statsAggFunc)
 	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, withPresence)
 	if err != nil {
 		return nil, err
@@ -1326,29 +1350,15 @@ func (p *Proxy) collectRangeMetricHits(
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
 			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
+			if keepCounts {
+				entry.Counts = append(entry.Counts, bucketSamples(res.GetArray("values"), start, hitStep)...)
+				sort.Slice(entry.Counts, func(i, j int) bool { return entry.Counts[i].ts < entry.Counts[j].ts })
+			}
 			seriesMap[seriesKey] = entry
 			continue
 		}
 
-		values := res.GetArray("values")
-		samples := make([]rangeMetricSample, 0, len(values))
-		for _, pair := range values {
-			arr := pair.GetArray()
-			if len(arr) < 2 {
-				continue
-			}
-			ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
-			if !tsOK {
-				continue
-			}
-			valStr := string(arr[1].GetStringBytes())
-			val, valErr := strconv.ParseFloat(valStr, 64)
-			if valErr != nil {
-				continue
-			}
-			samples = append(samples, rangeMetricSample{ts: ts, value: val})
-		}
-
+		samples := bucketSamples(res.GetArray("values"), start, hitStep)
 		if existing, ok := seriesMap[seriesKey]; ok {
 			existing.Samples = append(existing.Samples, samples...)
 			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
@@ -1360,6 +1370,28 @@ func (p *Proxy) collectRangeMetricHits(
 	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
 	// busiest series (complete, with byte values and presence) and a warning.
 	return capSeriesForRequest(ctx, seriesMap, limit)
+}
+
+// bucketSamples reads the [timestamp, value] pairs of one stats_query_range
+// series as samples on the start+k*hitStep grid.
+func bucketSamples(values []*fj.Value, start time.Time, hitStep time.Duration) []rangeMetricSample {
+	samples := make([]rangeMetricSample, 0, len(values))
+	for _, pair := range values {
+		arr := pair.GetArray()
+		if len(arr) < 2 {
+			continue
+		}
+		ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
+		if !tsOK {
+			continue
+		}
+		val, valErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+		if valErr != nil {
+			continue
+		}
+		samples = append(samples, rangeMetricSample{ts: ts, value: val})
+	}
+	return samples
 }
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
@@ -1833,6 +1865,9 @@ type manualSeriesSamples struct {
 	// ascending left edges of buckets holding lines. Non-nil (possibly empty) only
 	// for byte sums; raw log samples retain their compact shape.
 	PresentBuckets []int64
+	// Counts holds the line count of every present bucket, ascending, for the
+	// unwrap functions that merge sums with their counts (avg over time).
+	Counts []rangeMetricSample
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2057,6 +2092,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
+	mergedUnwrap := isUnwrapBucketFunc(manualFunc)
 
 	keys := make([]string, 0, len(series))
 	for key := range series {
@@ -2094,13 +2130,15 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStartNS })
 			hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= tNS })
 			sum := prefix[hi] - prefix[lo]
-			if manualFunc == "unwrap_rate" {
+			if mergedUnwrap {
 				// Unwrap values are floats: one infinity would turn every later
 				// prefix difference into NaN, and large values lose precision to
-				// cancellation, so each window is summed on its own.
+				// cancellation, so each window is merged on its own.
 				sum = 0
-				for _, sample := range samples[lo:hi] {
-					sum += sample.value
+				if lo < hi {
+					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], windowSamples(seriesEntry.Counts, windowStartNS, tNS))
+				} else if manualFunc != "unwrap_rate" && manualFunc != "sum" {
+					continue // no partial aggregate to take an extreme or a mean of
 				}
 			}
 			hasLines := sum != 0

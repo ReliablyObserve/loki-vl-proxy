@@ -779,7 +779,9 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 // start-W and relabel buckets onto Loki's evaluation timestamps: a log range
 // function (rate, bytes_rate, count_over_time, bytes_over_time) with range==step,
 // or sum, avg, min or max over time with unwrap, whose native bucket is the step
-// whatever the range. The returned spec's Window is that bucket width.
+// whatever the range. The returned spec's Window is that bucket width. A range
+// other than the step reaches it only in the forms the window evaluator does not
+// answer (unwrapWindowBuckets), where the bucket is the window's last step.
 // The parsed expression is walked, so outer aggregations like
 // sum by(x)(count_over_time(...)) are detected, grouped or not, and function
 // names inside string literals are not.

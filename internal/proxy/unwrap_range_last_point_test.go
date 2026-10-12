@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http/httptest"
 	"net/url"
@@ -84,9 +85,10 @@ func sortedTimes(points map[int64]float64) []int64 {
 // TestUnwrapOverTimeRangeEmitsEndSample: whatever the window (tumbling,
 // sliding, shorter than the step) and the function, a source whose lines stop
 // at `end` answers every evaluation time from start to end inclusive, with the
-// end not a multiple of the step away from start too.
+// end not a multiple of the step away from start too, and Loki's value there
+// (semantics/unwrap-over-time-range-windows).
 //
-// conformance: semantics/unwrap-range-last-point, window-bounds-and-step-alignment
+// conformance: semantics/unwrap-range-last-point, semantics/unwrap-over-time-range-windows, window-bounds-and-step-alignment
 func TestUnwrapOverTimeRangeEmitsEndSample(t *testing.T) {
 	const base = int64(1_800_000_000)
 	shapes := []struct {
@@ -120,11 +122,22 @@ func TestUnwrapOverTimeRangeEmitsEndSample(t *testing.T) {
 						query := fmt.Sprintf(`sum by (pod) (%s({app="uw"} | %s | unwrap amount | __error__="" [%s]))`, fn, parser, uwWindowText(shape.window))
 						got := unwrapRangeResult(t, emu, query, startSec, endSec, stepSec)
 						want := evaluationTimes(startSec, endSec, stepSec)
+						var wantNs []int64
+						for _, ts := range want {
+							wantNs = append(wantNs, ts*1e9)
+						}
+						values := lokiOverTimeGroups(rows, fn, int64(shape.window), 0, wantNs, owPod)
 						for _, pod := range []string{"a", "b"} {
 							times := sortedTimes(got[pod])
 							if fmt.Sprint(times) != fmt.Sprint(want) {
 								t.Fatalf("pod %s: %d samples, first %d last %d; Loki has %d, first %d last %d\nquery %s",
 									pod, len(times), first(times)-startSec, last(times)-startSec, len(want), 0, want[len(want)-1]-startSec, query)
+							}
+							// The values are Loki's window (t-range, t] too, whatever the range.
+							for _, ts := range want {
+								if w, g := values[pod][ts*1e9], got[pod][ts]; math.Abs(g-w) > 1e-9*math.Max(1, math.Abs(w)) {
+									t.Fatalf("pod %s at %d: got %g, Loki has %g\nquery %s", pod, ts-startSec, g, w, query)
+								}
 							}
 						}
 					})

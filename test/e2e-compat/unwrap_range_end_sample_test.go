@@ -15,8 +15,9 @@ import (
 // just before the 30 minute mark and every shape ends there, so the sample at
 // `end` is the one a bucket labelled by its start leaves out: sum, avg, max and
 // min over time with unwrap answered one point short (semantics/unwrap-range-last-point).
-// Only the timestamps are compared; the values of these functions over a sliding
-// window are registered apart (semantics/unwrap-over-time-range-windows).
+// Only the timestamps are compared: a route group holds three series here, so
+// the values of avg, max and min follow the series identity; the window values
+// are compared per series by TestCompat_UnwrapOverTimeRangeWindows.
 
 type unwrapEndShape struct {
 	name          string
