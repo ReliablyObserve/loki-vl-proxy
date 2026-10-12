@@ -284,10 +284,11 @@ func TestInstantTopKByHandler(t *testing.T) {
 	defer backend.Close()
 	p := newGapTestProxy(t, backend.URL)
 	for query, want := range map[string]int{
-		`topk by (env) (1, ` + topKInner + `)`:         2,
-		`topk(1, ` + topKInner + `) by (env)`:          2,
-		`topk(3, ` + topKInner + `)`:                   3,
-		`bottomk without (app) (1, ` + topKInner + `)`: 2,
+		`topk by (env) (1, ` + topKInner + `)`:            2,
+		`topk(1, ` + topKInner + `) by (env)`:             2,
+		`topk(3, ` + topKInner + `)`:                      3,
+		`topk by (env) (1, count_over_time({a="b"}[5m]))`: 2,
+		`bottomk without (app) (1, ` + topKInner + `)`:    2,
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {query}, "time": {"1700000000"}}.Encode(), nil)
 		rec := httptest.NewRecorder()
