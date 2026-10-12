@@ -79,7 +79,13 @@ func TestUnwrapGateRange(t *testing.T) {
 	if got := UnwrapInRange("bytes"); got != "__lvp_v:<"+strconv.FormatFloat(math.MaxUint64, 'f', -1, 64) && got != "__lvp_v:<18446744073709551616" {
 		t.Errorf("bytes: %q", got)
 	}
-	lim := strconv.FormatFloat(float64(math.MaxInt64)/1e9, 'g', -1, 64)
+	lim := strconv.FormatFloat(float64(math.MaxInt64)/1e9, 'f', -1, 64)
+	if lim != "9223372036.854776" || strings.ContainsAny(lim, "eE") {
+		t.Errorf("the duration limit is spelled without an exponent: %s", lim)
+	}
+	if f, _ := strconv.ParseFloat(lim, 64); f != float64(math.MaxInt64)/1e9 {
+		t.Errorf("the duration limit %s must read back as the same float64", lim)
+	}
 	if got := UnwrapInRange("duration"); got != "__lvp_v:>-"+lim+" __lvp_v:<"+lim {
 		t.Errorf("duration: %q want limit %s", got, lim)
 	}

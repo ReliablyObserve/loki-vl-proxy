@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An unwrapped value that Loki converts now makes the sample Loki makes
   (hexadecimal floats, `infinity`, `nan`, `1e308`, digit separators, comma and
   space forms of `bytes()`), and one that overflows fails the query like Loki
-  (#TBD).** The unwrap gate keeps the rows whose value converts in Loki's syntax
+  (#730).** The unwrap gate keeps the rows whose value converts in Loki's syntax
   with a regular expression sent to VictoriaLogs, and it differed from
   `strconv.ParseFloat`, `time.ParseDuration` and `humanize.ParseBytes`
   (`pkg/logql/log/metrics_extraction.go:316-338`) on a few values. Loki made a
@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was kept and read as NaN. The gate pattern is now the syntax of the Go
   functions (VictoriaLogs' `math` pipe reads a hexadecimal float, `1e308` and
   `1e1_0` as Go does; `infinity`, which it does not read, is shortened to `inf`
-  on a copy in the blocks that hold it, and a duration's leading zeros are
+  on a copy in the blocks that hold it (found by a phrase filter; the counting gate
+  classifies it only on the rows the rest of the grammar refused), and a duration's leading zeros are
   stripped) and ends with a range filter on the converted value: VictoriaLogs
   answers NaN for a float that overflows, saturates a duration at int64
   nanoseconds and computes a size in float64, so the filter drops the rows Loki

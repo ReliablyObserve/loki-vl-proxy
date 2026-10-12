@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -574,6 +576,10 @@ func TestUnwrapCountedGateFlagsOverflow(t *testing.T) {
 			t.Errorf("conv %q: the counting gate must flag a value out of range and read its NaN as 0: %s", conv, gate)
 		}
 		_, convert := translator.UnwrapGateParts("v", conv)
+		if conv == "" {
+			// The plain conversion shortens infinity for the rows classified as it.
+			convert = translator.UnwrapPlainConvert("v", unwrapBadField+`:="`+unwrapInfinityFlag+`"`)
+		}
 		if !strings.Contains(gate, convert) {
 			t.Errorf("conv %q: the counting gate must convert as the gate does", conv)
 		}
@@ -811,5 +817,58 @@ func TestUnwrapInfinityAndInstantNaNReachTheAnswer(t *testing.T) {
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"NaN"`) {
 			t.Fatalf("%s: an instant window holding a nan must be NaN: %d %s", q, rec.Code, rec.Body)
 		}
+	}
+}
+
+// A check that only counts the nan values records nothing, so identical concurrent
+// stats calls of two requests share one backend call and both read the stripped
+// answer; a check with a probe reports hits to its own request and keeps its own.
+// conformance: semantics/unwrap-gate-parsefloat-divergences
+func TestUnwrapNaNOnlyChecksShareTheBackendCall(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		check     func() *unwrapCheck
+		wantCalls int32
+	}{
+		{"no probe", func() *unwrapCheck { return &unwrapCheck{} }, 1},
+		{"a probe", func() *unwrapCheck { return &unwrapCheck{probes: []unwrapErrorProbe{{label: "v"}}} }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			release := make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				<-release
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"value":[100,"5"]}]}}`))
+			}))
+			t.Cleanup(srv.Close)
+			p := newTestProxy(t, srv.URL)
+			query := `app:="a"` + translator.UnwrapGate("v") + " | stats by (app) sum(__lvp_v) as c"
+			bodies := make([]string, 2)
+			var wg sync.WaitGroup
+			for i := range bodies {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					ctx := context.WithValue(context.Background(), unwrapCheckKey{}, tc.check())
+					_, body, err := p.vlPostCoalesced(ctx, "k", "/select/logsql/stats_query", url.Values{"query": {query}})
+					if err != nil {
+						t.Error(err)
+					}
+					bodies[i] = string(body)
+				}()
+			}
+			time.Sleep(300 * time.Millisecond)
+			close(release)
+			wg.Wait()
+			if got := calls.Load(); got != tc.wantCalls {
+				t.Fatalf("backend calls = %d, want %d", got, tc.wantCalls)
+			}
+			for i, body := range bodies {
+				if strings.Contains(body, unwrapBadField) || !strings.Contains(body, `"app":"a"`) {
+					t.Fatalf("request %d did not read the stripped answer: %s", i, body)
+				}
+			}
+		})
 	}
 }
