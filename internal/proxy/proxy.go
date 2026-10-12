@@ -2349,11 +2349,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	// Extract without() labels and label-transform markers for post-processing.
+	// Extract without() labels and label_replace markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
-	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
-	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
@@ -2369,7 +2367,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || len(labelReplaceSpecs) > 0
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
@@ -2417,14 +2415,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels, withoutAggregationOp(logqlQuery))
 		}
-		if isGroupQuery {
-			cacheOut = applyGroupNormalization(cacheOut)
-		}
 		for _, spec := range labelReplaceSpecs {
 			cacheOut = applyLabelReplace(cacheOut, spec)
-		}
-		if labelJoinSpec != nil {
-			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
 		copyBackendHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
@@ -2614,11 +2606,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract without() labels and label-transform markers for post-processing.
+	// Extract without() labels and label_replace markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
-	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
-	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
@@ -2636,7 +2626,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || len(labelReplaceSpecs) > 0
 	var bw *bufferedResponseWriter
 	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
@@ -2666,14 +2656,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if len(withoutLabels) > 0 {
 			result = applyWithoutGrouping(result, withoutLabels, withoutAggregationOp(logqlQuery))
 		}
-		if isGroupQuery {
-			result = applyGroupNormalization(result)
-		}
 		for _, spec := range labelReplaceSpecs {
 			result = applyLabelReplace(result, spec)
-		}
-		if labelJoinSpec != nil {
-			result = applyLabelJoin(result, *labelJoinSpec)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)

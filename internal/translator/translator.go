@@ -30,9 +30,7 @@ const emptyByGrouping = "__lvp_by_empty__"
 // Marker suffixes embedded in translated queries for proxy post-processing.
 // The proxy strips them before forwarding to VL and applies the corresponding transform.
 const (
-	groupMarker        = "__lvp_group__"
 	labelReplacePrefix = "__lvp_lr:"
-	labelJoinPrefix    = "__lvp_lj:"
 )
 
 // LabelReplaceSpec holds the parsed arguments of a label_replace() expression.
@@ -41,22 +39,6 @@ type LabelReplaceSpec struct {
 	Replacement string
 	SrcLabel    string
 	Regex       string
-}
-
-// LabelJoinSpec holds the parsed arguments of a label_join() expression.
-type LabelJoinSpec struct {
-	DstLabel  string
-	Separator string
-	SrcLabels []string
-}
-
-// ParseGroupMarker reports whether the translated query carries a group-normalization
-// marker, and returns the clean query (marker stripped).
-func ParseGroupMarker(query string) (string, bool) {
-	if strings.HasSuffix(query, groupMarker) {
-		return query[:len(query)-len(groupMarker)], true
-	}
-	return query, false
 }
 
 // ParseLabelReplaceMarker extracts a label_replace spec embedded in a translated query.
@@ -121,38 +103,6 @@ func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 		query = query[:idx] + query[idx+len(labelReplacePrefix)+endIdx+len("__"):]
 	}
 	return query, specs
-}
-
-// ParseLabelJoinMarker extracts a label_join spec embedded in a translated query.
-// Returns the clean query (marker stripped) and the spec, or nil if absent.
-func ParseLabelJoinMarker(query string) (string, *LabelJoinSpec) {
-	idx := strings.LastIndex(query, labelJoinPrefix)
-	if idx < 0 {
-		return query, nil
-	}
-	payload := strings.TrimSuffix(query[idx+len(labelJoinPrefix):], "__")
-	b, err := base64.StdEncoding.DecodeString(payload)
-	if err != nil {
-		return query, nil
-	}
-	s := string(b)
-	n1 := strings.IndexByte(s, 0)
-	if n1 < 0 {
-		return query, nil
-	}
-	dst := s[:n1]
-	rest := s[n1+1:]
-	n2 := strings.IndexByte(rest, 0)
-	if n2 < 0 {
-		return query, nil
-	}
-	sep := rest[:n2]
-	srcsRaw := rest[n2+1:]
-	var srcs []string
-	if srcsRaw != "" {
-		srcs = strings.Split(srcsRaw, "\x01")
-	}
-	return query[:idx], &LabelJoinSpec{DstLabel: dst, Separator: sep, SrcLabels: srcs}
 }
 
 // DropCondition represents a matcher-form conditional drop from `| drop field=value`.
@@ -456,13 +406,10 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return "*", nil
 	}
 
-	// label_replace and label_join are transform wrappers around a complete metric
+	// label_replace is a transform wrapper around a complete metric
 	// expression. Handle them before the without/binary/metric path so the inner
 	// expression is translated correctly and the marker is appended last.
 	if result, ok := tryTranslateLabelReplace(logql, labelFn); ok {
-		return applyDerivedGroupings(result, caps, streamFields), nil
-	}
-	if result, ok := tryTranslateLabelJoin(logql, labelFn); ok {
 		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 
@@ -1810,31 +1757,6 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	return translated + labelReplacePrefix + payload + "__", true
 }
 
-// tryTranslateLabelJoin handles label_join(v, "dst", "sep", "src1", ...).
-// It translates the inner expression and embeds a marker for proxy post-processing.
-func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bool) {
-	const prefix = "label_join("
-	if !strings.HasPrefix(logql, prefix) {
-		return "", false
-	}
-	inner, rest, ok := splitFuncFirstArg(logql[len(prefix):])
-	if !ok {
-		return "", false
-	}
-	args := parseAllStringArgs(rest)
-	if len(args) < 3 { // dst + sep + at least one src
-		return "", false
-	}
-	translated, err := translateLogQLFull(inner, labelFn, nil, logsql.Capabilities{})
-	if err != nil {
-		return "", false
-	}
-	payload := base64.StdEncoding.EncodeToString([]byte(
-		args[0] + "\x00" + args[1] + "\x00" + strings.Join(args[2:], "\x01"),
-	))
-	return translated + labelJoinPrefix + payload + "__", true
-}
-
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
 func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
 	return tryTranslateMetricQueryWithout(logql, labelFn, false)
@@ -1869,13 +1791,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 	// Try to match outer aggregation: sum(...) by (labels)
 	outerAgg, innerExpr, byLabels := extractOuterAggregation(logql)
 
-	// group() returns 1 for every series that has data. Translate the inner metric
-	// normally (for grouping/presence), then the proxy normalises all values to 1.
-	isGroup := outerAgg == "group"
-	if isGroup {
-		outerAgg = ""
-	}
-
 	// count_values() groups by the VALUES of the inner metric — VL has no equivalent.
 	if outerAgg == "count_values" {
 		return "", false // caught by the count_values guard in translateLogQLFull
@@ -1888,9 +1803,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 
 	// Special handling for quantile_over_time(phi, {query} | unwrap field [duration])
 	if result, ok := tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels, labelFn); ok {
-		if isGroup {
-			return result + groupMarker, true
-		}
 		return result, true
 	}
 
@@ -1934,9 +1846,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 				}
 			}
 			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, rateExpr, duration, outerAgg, byLabels, labelFn, hasWithout, rateGate, rateConv); ok {
-				if isGroup {
-					return rateResult + groupMarker, true
-				}
 				return rateResult, true
 			}
 		}
@@ -2006,9 +1915,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 				// aggregates the rows of each remaining label set.
 				result = addByClauseLast(result, innerBy, nil)
 			}
-			if isGroup {
-				return result + groupMarker, true
-			}
 			return result, true
 		} else {
 			result = logsqlQuery + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: logsqlFunc}}}}.String()
@@ -2022,9 +1928,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			}
 		}
 
-		if isGroup {
-			return result + groupMarker, true
-		}
 		return result, true
 	}
 
@@ -2036,9 +1939,6 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			// Alias the last stats result so the outer aggregation can reference it.
 			innerAliased := translatedInner + " as __lvp_inner"
 			if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
-				if isGroup {
-					return outerResult + groupMarker, true
-				}
 				return outerResult, true
 			}
 		}
@@ -2265,8 +2165,8 @@ var (
 	withoutMarkerRE = regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
 	goTemplateRE    = regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
 	vectorMatchRE   = regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
-	aggByBeforeRE   = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
-	aggFuncRE       = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s*\(`)
+	aggByBeforeRE   = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
+	aggFuncRE       = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|count_values)\s*\(`)
 	aggByAfterRE    = regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
 	durationPartRE  = regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
 )
