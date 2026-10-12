@@ -65,9 +65,9 @@ gap:
   fixed_by: "#747"
   impact: drilldown-visible
   effort: M
-  area: 'internal/translator translatePatternLineFilter; internal/proxy queryUsesParserStages'
+  area: 'internal/translator/translator.go translatePatternLineFilter; internal/proxy/range_metric_compat.go queryUsesParserStages'
   loki: 'pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-52,124-165 (ParseLineFilter, Matcher.Test); pkg/logql/log/pattern/lexer.rl, expr.y (captures and literals)'
   proxy: 'superset regexp prefilter plus extract into scratch fields and a filter on them, evaluated by VictoriaLogs for log and metric queries'
-  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
-  note: 'Generated patterns and lines also matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks). The e2e is written and not yet run.'
+  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential, TestPatternLineFilterAnchoringCorpus (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
+  note: 'The 638 generated and fixed filters (seed 7) on 2,530 lines matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks; 101,528 on the base build), and TestPatternLineFilterAnchoringCorpus replays the same corpus without storage (0 mismatches of 1,614,140 verdicts; 101,414 on the base translation). The e2e passes against Loki 3.7.7 on VictoriaLogs v1.52.0 and v1.47.0. Consecutive and named captures, which Loki rejects with a 400, are the open row semantics/pattern-line-filter-invalid-captures.'
   clusters: []

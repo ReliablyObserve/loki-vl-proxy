@@ -33,7 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read. `<_>` and `literal<_>` patterns, which a regexp matches exactly, keep
   the plain regexp. Covered by `TestPatternLineFilterAnchoringEdges`, a
   differential of the translated query against a port of Loki's matcher
-  (`TestPatternLineFilterAnchoringDifferential`),
+  (`TestPatternLineFilterAnchoringDifferential`) and its seeded corpus of
+  638 filters on 2,530 lines (`TestPatternLineFilterAnchoringCorpus`, 1.6M
+  verdicts, none different from Loki's; 101,414 on the previous build),
   `TestPatternLineFilterAnchoringReachesVictoriaLogs` for the log, range and
   instant paths, `TestPatternLineFilterAnchoringDetectedFields` for the
   Drilldown Fields tab, and `TestCompat_PatternLineFilterAnchoring` against

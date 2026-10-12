@@ -862,9 +862,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.15,
+      "cold": 0.133,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -876,7 +876,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.117
+      "warm_p50": 0.17
     },
     {
       "baseline": "main",
@@ -938,9 +938,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.11,
+      "cold": 0.129,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -952,7 +952,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.146
     },
     {
       "baseline": "main",
@@ -1244,9 +1244,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.733,
+      "cold": 0.802,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -1258,7 +1258,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.746
+      "warm_p50": 0.696
     },
     {
       "baseline": "main",
@@ -5936,44 +5936,6 @@
       "valid": true,
       "verdict_vs_baseline": "same",
       "warm_p50": 0.016
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.003,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "instant",
-      "set": "unwrap-duration-seconds",
-      "shape": "D3 logfmt ttl duration_seconds rate, instant",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.004
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.004,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "instant",
-      "set": "unwrap-duration-seconds",
-      "shape": "D4 logfmt ttl duration rate, instant",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.003
     }
   ],
   "loki_api_v1_query_range": [
@@ -6683,9 +6645,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.127,
+      "cold": 0.108,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6697,7 +6659,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.036
+      "warm_p50": 0.038
     },
     {
       "baseline": "main",
@@ -6759,9 +6721,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.021,
+      "cold": 0.046,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6773,7 +6735,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.034
+      "warm_p50": 0.028
     },
     {
       "baseline": "main",
@@ -6835,9 +6797,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.032,
+      "cold": 0.035,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6849,7 +6811,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.042
+      "warm_p50": 0.044
     },
     {
       "baseline": "main",
@@ -6911,9 +6873,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.733,
+      "cold": 0.802,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6925,7 +6887,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.746
+      "warm_p50": 0.696
     },
     {
       "baseline": "main",
@@ -6987,9 +6949,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.685,
+      "cold": 0.683,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7001,7 +6963,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.678
+      "warm_p50": 0.673
     },
     {
       "baseline": "main",
@@ -7063,9 +7025,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.072,
+      "cold": 0.066,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7077,7 +7039,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.07
+      "warm_p50": 0.067
     },
     {
       "baseline": "main",
@@ -7139,9 +7101,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.097,
+      "cold": 0.161,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7153,7 +7115,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.094
+      "warm_p50": 0.095
     },
     {
       "baseline": "main",
@@ -7215,9 +7177,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.076,
+      "cold": 0.055,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7229,7 +7191,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.061
+      "warm_p50": 0.058
     },
     {
       "baseline": "main",
@@ -7291,9 +7253,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.26,
+      "cold": 0.272,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7305,7 +7267,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.284
+      "warm_p50": 0.286
     },
     {
       "baseline": "main",
@@ -7367,9 +7329,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.168,
+      "cold": 0.182,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7381,7 +7343,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.19
+      "warm_p50": 0.162
     },
     {
       "baseline": "main",
@@ -7443,9 +7405,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.098,
+      "cold": 0.069,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7457,7 +7419,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.071
+      "warm_p50": 0.069
     },
     {
       "baseline": "main",
@@ -7519,9 +7481,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.15,
+      "cold": 0.133,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7533,7 +7495,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.117
+      "warm_p50": 0.17
     },
     {
       "baseline": "main",
@@ -7595,9 +7557,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.076,
+      "cold": 0.067,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7609,7 +7571,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.084
+      "warm_p50": 0.096
     },
     {
       "baseline": "main",
@@ -7671,9 +7633,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.11,
+      "cold": 0.129,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7685,7 +7647,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.146
     },
     {
       "baseline": "main",
@@ -7747,9 +7709,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.297,
+      "cold": 0.309,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7761,7 +7723,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.329
+      "warm_p50": 0.32
     },
     {
       "baseline": "main",
@@ -7825,7 +7787,7 @@
       "baseline_status": "400",
       "cold": 0.002,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7899,9 +7861,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.215,
+      "cold": 1.279,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7913,7 +7875,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.226
+      "warm_p50": 1.376
     },
     {
       "baseline": "main",
@@ -12934,78 +12896,268 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.017,
+      "cold": 0.01,
       "date": "2026-10-12",
-      "label": "dursec-1h",
+      "label": "patanchor-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.017,
+      "loki_cold": 0.018,
+      "loki_warm_p50": 0.019,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A1 nginx include GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.012
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.239,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A1 nginx include GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.022
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
       "loki_warm_p50": 0.007,
       "parity_vs_loki": "same",
       "range": "1h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D1 logfmt ttl duration_seconds rate by service",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A2 nginx exclude GET, log query",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.176,
+      "cold": 0.093,
       "date": "2026-10-12",
-      "label": "dursec-24h",
+      "label": "patanchor-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
       "parity_vs_loki": "n/a",
       "range": "24h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D1 logfmt ttl duration_seconds rate by service",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A2 nginx exclude GET, log query",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.169
+      "warm_p50": 0.013
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.011,
+      "cold": 0.009,
       "date": "2026-10-12",
-      "label": "dursec-1h",
+      "label": "patanchor-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.006,
+      "loki_cold": 0.012,
+      "loki_warm_p50": 0.004,
       "parity_vs_loki": "same",
       "range": "1h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D2 logfmt ttl duration rate by service",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A3 nginx include GET, count_over_time",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
+      "warm_p50": 0.009
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.164,
+      "cold": 0.144,
       "date": "2026-10-12",
-      "label": "dursec-24h",
+      "label": "patanchor-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
       "parity_vs_loki": "n/a",
       "range": "24h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D2 logfmt ttl duration rate by service",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A3 nginx include GET, count_over_time",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.184
+      "warm_p50": 0.16
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.008,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
+      "loki_warm_p50": 0.005,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A4 nginx exclude GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.007
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.092,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A4 nginx exclude GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.102
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.01,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
+      "loki_warm_p50": 0.004,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A5 drilldown exclude, volume by detected_level",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.009
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.1,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A5 drilldown exclude, volume by detected_level",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.101
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.01,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.01,
+      "loki_warm_p50": 0.003,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A6 nginx include ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.008
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.171,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A6 nginx include ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.012
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.009,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.007,
+      "loki_warm_p50": 0.007,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A7 nginx exclude ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.009
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.018,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A7 nginx exclude ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.011
     }
   ],
   "metric-series-identity": [
@@ -13031,9 +13183,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.097,
+      "cold": 0.161,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -13045,7 +13197,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.094
+      "warm_p50": 0.095
     },
     {
       "baseline": "main",
@@ -13622,9 +13774,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.097,
+      "cold": 0.161,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -13636,7 +13788,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.094
+      "warm_p50": 0.095
     },
     {
       "baseline": "main",
@@ -13698,9 +13850,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.076,
+      "cold": 0.055,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -13712,7 +13864,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.061
+      "warm_p50": 0.058
     },
     {
       "baseline": "main",
@@ -13774,9 +13926,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.26,
+      "cold": 0.272,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -13788,7 +13940,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.284
+      "warm_p50": 0.286
     },
     {
       "baseline": "main",
@@ -13852,9 +14004,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.168,
+      "cold": 0.182,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -13866,7 +14018,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.19
+      "warm_p50": 0.162
     },
     {
       "baseline": "main",
@@ -14618,7 +14770,7 @@
       "baseline_status": "400",
       "cold": 0.002,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16233,9 +16385,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.021,
+      "cold": 0.046,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16247,7 +16399,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.034
+      "warm_p50": 0.028
     },
     {
       "baseline": "main",
@@ -16311,7 +16463,7 @@
       "baseline_status": "400",
       "cold": 0.002,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16672,9 +16824,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.032,
+      "cold": 0.035,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16686,7 +16838,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.042
+      "warm_p50": 0.044
     },
     {
       "baseline": "main",
@@ -16748,9 +16900,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.685,
+      "cold": 0.683,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16762,7 +16914,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.678
+      "warm_p50": 0.673
     },
     {
       "baseline": "main",
@@ -16824,9 +16976,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.215,
+      "cold": 1.279,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16838,7 +16990,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.226
+      "warm_p50": 1.376
     },
     {
       "baseline": "main",
@@ -18223,9 +18375,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.26,
+      "cold": 0.272,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18237,7 +18389,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.284
+      "warm_p50": 0.286
     },
     {
       "baseline": "main",
@@ -18301,9 +18453,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.097,
+      "cold": 0.161,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18315,7 +18467,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.094
+      "warm_p50": 0.095
     },
     {
       "baseline": "main",
@@ -18379,9 +18531,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.076,
+      "cold": 0.055,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18393,7 +18545,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.061
+      "warm_p50": 0.058
     },
     {
       "baseline": "main",
@@ -18455,9 +18607,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.168,
+      "cold": 0.182,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18469,7 +18621,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.19
+      "warm_p50": 0.162
     },
     {
       "baseline": "main",
@@ -23822,6 +23974,274 @@
       "warm_p50": 0.008
     }
   ],
+  "semantics/pattern-line-filter-anchoring": [
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.01,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.018,
+      "loki_warm_p50": 0.019,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A1 nginx include GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.012
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.239,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A1 nginx include GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.022
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
+      "loki_warm_p50": 0.007,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A2 nginx exclude GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.008
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.093,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A2 nginx exclude GET, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.013
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.009,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.012,
+      "loki_warm_p50": 0.004,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A3 nginx include GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.009
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.144,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A3 nginx include GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.16
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.008,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
+      "loki_warm_p50": 0.005,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A4 nginx exclude GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.007
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.092,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A4 nginx exclude GET, count_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.102
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.01,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.014,
+      "loki_warm_p50": 0.004,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A5 drilldown exclude, volume by detected_level",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.009
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.1,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A5 drilldown exclude, volume by detected_level",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.101
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.01,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.01,
+      "loki_warm_p50": 0.003,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A6 nginx include ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.008
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.171,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A6 nginx include ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.012
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.009,
+      "date": "2026-10-12",
+      "label": "patanchor-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.007,
+      "loki_warm_p50": 0.007,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A7 nginx exclude ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.009
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.018,
+      "date": "2026-10-12",
+      "label": "patanchor-24h",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "pattern-line-filter-anchoring",
+      "shape": "A7 nginx exclude ends on a literal, log query",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.011
+    }
+  ],
   "semantics/plain-name-after-parser-reads-stream-label": [
     {
       "baseline": "main",
@@ -24774,122 +25194,6 @@
       "valid": true,
       "verdict_vs_baseline": "same",
       "warm_p50": 11.608
-    }
-  ],
-  "semantics/unwrap-duration-seconds": [
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.017,
-      "date": "2026-10-12",
-      "label": "dursec-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.007,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D1 logfmt ttl duration_seconds rate by service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.176,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D1 logfmt ttl duration_seconds rate by service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.169
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.011,
-      "date": "2026-10-12",
-      "label": "dursec-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.006,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D2 logfmt ttl duration rate by service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.164,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-duration-seconds",
-      "shape": "D2 logfmt ttl duration rate by service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.184
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.003,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "instant",
-      "set": "unwrap-duration-seconds",
-      "shape": "D3 logfmt ttl duration_seconds rate, instant",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.004
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.004,
-      "date": "2026-10-12",
-      "label": "dursec-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "instant",
-      "set": "unwrap-duration-seconds",
-      "shape": "D4 logfmt ttl duration rate, instant",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.003
     }
   ],
   "semantics/unwrap-rate-ungrouped-sum-per-stream": [
@@ -26289,9 +26593,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.15,
+      "cold": 0.133,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26303,7 +26607,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.117
+      "warm_p50": 0.17
     },
     {
       "baseline": "main",
@@ -26365,9 +26669,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.11,
+      "cold": 0.129,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26379,7 +26683,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.146
     },
     {
       "baseline": "main",
@@ -26519,9 +26823,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.733,
+      "cold": 0.802,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26533,7 +26837,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.746
+      "warm_p50": 0.696
     },
     {
       "baseline": "main",
@@ -26595,9 +26899,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.685,
+      "cold": 0.683,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26609,7 +26913,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.678
+      "warm_p50": 0.673
     },
     {
       "baseline": "main",
@@ -26671,9 +26975,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.072,
+      "cold": 0.066,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26685,7 +26989,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.07
+      "warm_p50": 0.067
     },
     {
       "baseline": "main",
@@ -26747,9 +27051,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.098,
+      "cold": 0.069,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26761,7 +27065,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.071
+      "warm_p50": 0.069
     },
     {
       "baseline": "main",
@@ -26823,9 +27127,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.076,
+      "cold": 0.067,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26837,7 +27141,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.084
+      "warm_p50": 0.096
     },
     {
       "baseline": "main",
@@ -26899,9 +27203,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.297,
+      "cold": 0.309,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patanchor-control-24h",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -26913,7 +27217,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.329
+      "warm_p50": 0.32
     },
     {
       "baseline": "main",

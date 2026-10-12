@@ -1,0 +1,54 @@
+id: semantics/pattern-line-filter-invalid-captures
+title: A pattern line filter with consecutive or named captures is a 400 on Loki; the proxy answers it (open)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki parses the pattern of a `|>` or `!>` filter with pattern.ParseLineFilter
+  (pkg/logql/log/pattern/pattern.go:36-52), which rejects two captures in a row
+  (validateNoConsecutiveCaptures) and any capture that has a name
+  (validateNoNamedCaptures; only `<_>` is allowed), so the query is a 400 before
+  any data is read:
+  `|> "<_><_>"` answers `parse error : stage '|> "<_><_>"' : found consecutive
+  capture '<_><_>': invalid expression`, and `|> "<foo>"` and `|> "<_> <foo>"`
+  answer `parse error : stage '|> "<foo>"' : named captures are not allowed:
+  found '<foo>'` (Loki 3.7.7, measured on an isolated stack).
+
+  The proxy validates neither. Measured on VictoriaLogs v1.52.0 against the same
+  data, base build and this branch: `|> "<_><_>"` was a 200 with every line and
+  is now a 400 whose text is VictoriaLogs' extract error ("missing delimiter
+  between <__lvp_pf0_1> and <__lvp_pf0_2>", with the proxy's scratch field
+  names), so the status agrees with Loki by accident and the body does not;
+  `|> "<foo>"` and `|> "<_> <foo>"` were a 200 with no line (the name read as
+  literal text) and are now a 200 with every line (the name read as a capture).
+  None of the three is a query Loki answers, so no valid query changed.
+
+  The fix is a check of the pattern operands where the filter is translated
+  (planPatternLineFilter): two adjacent captures, and a `<name>` capture other
+  than `<_>`, return Loki's parse error text.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} |> "<_><_>"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 parse error.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/translator/translator.go planPatternLineFilter (patterns are translated without validation)'
+  loki: 'pkg/logql/log/pattern/pattern.go:36-52 (ParseLineFilter, validateNoConsecutiveCaptures, validateNoNamedCaptures)'
+  proxy: '`<_><_>` a 400 with VictoriaLogs'' extract error text; `<foo>` a 200 reading the name as a capture (was: as literal text)'
+  planned_test: 'TestCompat_PatternLineFilterInvalidCaptures (test/e2e-compat, group core)'
+  clusters: []
