@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sample time and value of every constant against Loki
   (`semantics/scalar-sample-time-units`).
 
+## [2.14.1] - 2026-10-12
+
+### CI
+
+- **Release metadata pull requests are opened by a maintainer.** The release
+  workflows (`auto-release.yaml`, `release.yaml`) still compute the metadata and
+  push the signed `release/metadata-vX.Y.Z` branch, but no longer open or
+  auto-merge its pull request. A maintainer opens it from that branch, so the
+  pull request and the commit that lands on main carry the maintainer's
+  authorship.
+
 ## [2.14.0] - 2026-10-12
 
 ### Fixed
