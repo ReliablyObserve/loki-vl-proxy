@@ -72,8 +72,10 @@ compare:
     app_short on every series.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#744"
   impact: explore-visible
+  visual: none
+  visual_reason: 'the visible difference is on instant queries; the visual harness captures Explore range panels (queryType range), where label_replace already matched, so the fix is proven by the instant tests and the e2e against Loki'
   effort: S
   area: 'internal/proxy vector_matching.go (transformSeriesLabels, applyLabelReplace, applyLabelJoin), metric_agg.go (post-aggregation markers), internal/translator parseUnquotedStringArgs'
   loki: 'pkg/logql/syntax/ast.go mustNewLabelReplaceExpr; pkg/logql/evaluator.go:1249-1315 LabelReplaceEvaluator; pkg/logql/engine.go:530-600 JoinSampleVector, vectorsToSeries'
