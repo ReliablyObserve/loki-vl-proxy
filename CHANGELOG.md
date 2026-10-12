@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones that would fire every absence alert. An unwrapped value Loki's conversion
   rejects now fails `absent_over_time` with Loki's 400 pipeline error, as it does
   `rate`, where the proxy answered 200; parser error lines keep the behaviour of
-  `count_over_time` (#TBD).
+  `count_over_time` (#737).
 
 ## [2.11.2] - 2026-10-12
 
