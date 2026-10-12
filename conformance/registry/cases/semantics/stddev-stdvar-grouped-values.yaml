@@ -33,8 +33,8 @@ why: |
   or matrix with its resultType.
 
   Where it is computed: VictoriaLogs computes the per-series values with its
-  native stats (the operand is the unchanged bare range query, tumbling, sliding
-  or instant, with its own windows). The fold across series is the proxy's, over
+  native stats (the operand is the bare range query, tumbling, sliding or
+  instant, with its own windows). The fold across series is the proxy's, over
   the stats output (one value per series per step; no log rows are read): VL has
   no stdvar, and its stddev stats function exists only from v1.49.0 (v1.40-v1.48
   have none) and would leave the sliding-window evaluator, which reads the first
@@ -45,14 +45,19 @@ why: |
   and avg use (first stats pipe grouped by the listed labels and the stream, final
   pipe dropped), so the series carry the label on tumbling and instant queries.
 
-  Not changed (separate): a stddev or stdvar nested in another expression or
-  under a binary operator (`sum(stddev by (app) (...))`, `stddev by (app) (...) / 2`)
-  still takes the translator's single-pipe form; a `by` a parsed label on a
-  sliding range query (the manual range evaluator names a series by stream and
-  level and adds a parsed label only for a sum's grouping), and the parsed labels
-  of an ungrouped or `without` fold (a series is the stream, not the stream and
-  parsed labels). The series cap applies to the operand's per-series answer,
-  where Loki counts it on the folded answer.
+  The series limit is counted on the groups, as Loki does (pkg/logql/engine.go):
+  the operand's own answer is bounded by a ceiling (foldedGroupsSeriesCeiling)
+  and max_query_series applies to the folded answer, so 600 streams in 3 apps are
+  3 series. A `sort`, `topk` or `stddev` over a `without` operand merges the
+  operand's series with the operand's own aggregation (withoutAggregationOp of the
+  operand, not of the outer query). The ungrouped values now follow Loki's
+  Welford update, so they can differ from the earlier two-pass values in the
+  last digits.
+
+  Not changed, registered open: a stddev or stdvar nested in another expression or
+  under a binary operator (semantics/stddev-stdvar-nested-or-binary), and the
+  parsed labels of the operand's series
+  (semantics/stddev-stdvar-parsed-label-series-identity).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -77,7 +82,7 @@ gap:
   area: 'internal/proxy metric_agg.go (parseStddevStdvarQuery, applyMatrixStddevAgg, applyInstantStddevAgg)'
   loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next (stddev and stdvar at :541-546, :591-595)'
   proxy: 'the per-series values of the operand from VictoriaLogs, folded per group and step'
-  planned_test: 'TestCompat_StddevStdvarGrouped, TestCompat_StddevStdvarGroupedInstantResultType and TestCompat_StddevStdvarGroupedRegistryQueries (test/e2e-compat, group core; written, not yet run); TestStddevStdvarGroupedDifferential, TestStddevStdvarGroupedByParsedLabelDifferential, TestStddevStdvarFoldEdgeCases, TestParseStddevStdvarPostAgg and TestStdvarWithoutInstantAlwaysAnswersAVector (internal/proxy)'
+  planned_test: 'TestCompat_StddevStdvarGrouped, TestCompat_StddevStdvarGroupedInstantResultType and TestCompat_StddevStdvarGroupedRegistryQueries (test/e2e-compat, group core; written, not yet run); TestStddevStdvarGroupedDifferential, TestStddevStdvarGroupedByParsedLabelDifferential, TestStddevStdvarFoldEdgeCases, TestParseStddevStdvarPostAgg, TestStdvarWithoutInstantAlwaysAnswersAVector, TestStddevStdvarCountsSeriesLimitOnTheGroups and TestPostAggregationMergesWithoutByTheOperandsOperator (internal/proxy)'
   note: 'Measured on origin/main 1cf58b45. The differential test runs the real handler against an emulated VictoriaLogs (v1.52, v1.40 and no version) with a reference written from Loki v3.7.7 VectorAggEvaluator; the live e2e vs Loki is written and still to be run.'
   clusters:
     - 44bf1425
