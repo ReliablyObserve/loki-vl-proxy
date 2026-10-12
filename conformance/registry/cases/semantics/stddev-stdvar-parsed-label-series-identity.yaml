@@ -1,0 +1,49 @@
+id: semantics/stddev-stdvar-parsed-label-series-identity
+title: stddev and stdvar over a parser operand fold series that lack the parsed labels (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A series of `count_over_time({env="production"} | logfmt [5m])` is the stream
+  and every label the parser extracts (pkg/logql/log/metrics_extraction.go), and
+  Loki's stddev and stdvar fold those series (pkg/logql/evaluator.go
+  VectorAggEvaluator.Next). The proxy's operand series are the stream and level:
+  VictoriaLogs stats name no parsed label unless a `by` lists it. So
+  `stddev by (app) (count_over_time({env="production"} | logfmt [1m]))` gives
+  app=a 0 where Loki gives 0.816 (the routes of the app are separate series on
+  Loki, one on the proxy), and the same holds for an ungrouped or `without` fold
+  over a parser operand.
+
+  A `by` a parsed label is translated with that label in the operand's first
+  stats group on tumbling and instant queries (semantics/stddev-stdvar-grouped-
+  values). On a sliding range query the manual range evaluator names a series by
+  stream and level and adds a parsed label only for a sum's grouping, so the
+  series carry no route and every series falls into one group with no labels. On
+  VictoriaLogs v1.40 with a start off the epoch grid the raw-row path loses the
+  parsed label for a plain `sum by (route)` too.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'stddev by (app) (count_over_time({env="production"} | logfmt [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's groups and values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range_metric_compat.go (buildMetricSeriesEntry, buildManualMetricLabels), metric_agg.go translatePostAggOperand'
+  loki: 'pkg/logql/log/metrics_extraction.go series labels; pkg/logql/evaluator.go VectorAggEvaluator.Next'
+  proxy: 'operand series are the stream and level; parsed labels are missing'
+  planned_test: 'TestCompat_StddevStdvarParserOperand (test/e2e-compat, group core)'
+  clusters: []

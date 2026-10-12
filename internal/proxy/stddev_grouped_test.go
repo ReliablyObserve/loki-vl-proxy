@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -48,12 +49,14 @@ func TestParseStddevStdvarPostAgg(t *testing.T) {
 		{query: `stddev_over_time({env="x"} | unwrap n [5m])`},
 		{query: `sum by (app) (` + op + `)`},
 		{query: `stddev by (app) (` + op + `) / 2`},
+		{query: `stddev(` + op + `) / sum(` + op + `)`},
+		{query: `stdvar(` + op + `) + stddev(` + op + `)`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			got, ok := parseInstantMetricPostAggQuery(tc.query)
 			if tc.name == "" {
-				if ok && (got.name == "stddev" || got.name == "stdvar") {
-					t.Fatalf("parsed as %+v", got)
+				if ok {
+					t.Fatalf("parsed as %+v, want a query this route does not take", got)
 				}
 				return
 			}
@@ -362,6 +365,111 @@ func TestStdvarWithoutInstantAlwaysAnswersAVector(t *testing.T) {
 			for _, s := range resp.Data.Result {
 				if s.Metric["pod"] == "" || s.Metric["app"] != "" || s.Value[1] != "0" {
 					t.Fatalf("series %v = %v, want a pod series of variance 0 without app", s.Metric, s.Value)
+				}
+			}
+		})
+	}
+}
+
+func foldedStdRequest(t *testing.T, p *Proxy, query string, ranged bool) (int, []byte) {
+	t.Helper()
+	params := url.Values{"query": {query}}
+	target := "/loki/api/v1/query?"
+	if ranged {
+		target = "/loki/api/v1/query_range?"
+		params.Set("start", "1800000000")
+		params.Set("end", "1800000300")
+		params.Set("step", "60")
+	} else {
+		params.Set("time", "1800000300")
+	}
+	res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	return res.Code, res.Body.Bytes()
+}
+
+func foldedStdProxy(t *testing.T, rows []emuRow) *Proxy {
+	t.Helper()
+	emu := &vlEmulator{t: t, rows: rows, field: "amount"}
+	backend := httptest.NewServer(emu.handler())
+	t.Cleanup(backend.Close)
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// Loki counts max_query_series on the answer of the aggregation
+// (pkg/logql/engine.go), so 600 streams in 3 apps are 3 series, while 600 groups
+// are over the limit. The operand's own series are not what the limit counts.
+//
+// conformance: semantics/stddev-stdvar-grouped-values
+func TestStddevStdvarCountsSeriesLimitOnTheGroups(t *testing.T) {
+	var rows []emuRow
+	for i := 0; i < 600; i++ {
+		rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(i%5)*1e9 + int64(i), stream: fmt.Sprintf(`{app=%q,pod="p%d"}`, []string{"a", "b", "c"}[i%3], i), value: 1, msg: "line"})
+	}
+	p := foldedStdProxy(t, rows)
+	for _, ranged := range []bool{false, true} {
+		for _, op := range []string{"stddev", "stdvar"} {
+			t.Run(fmt.Sprintf("%s/ranged=%v", op, ranged), func(t *testing.T) {
+				code, body := foldedStdRequest(t, p, op+` by (app) (count_over_time({env="production"}[5m]))`, ranged)
+				var resp struct {
+					Data struct {
+						Result []json.RawMessage `json:"result"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(body, &resp); err != nil || code != 200 || len(resp.Data.Result) != 3 {
+					t.Fatalf("%d (%v): %d series, want 3 groups: %s", code, err, len(resp.Data.Result), body)
+				}
+				code, body = foldedStdRequest(t, p, op+` by (pod) (count_over_time({env="production"}[5m]))`, ranged)
+				if code != 400 || !strings.Contains(string(body), "max_query_series") && !strings.Contains(string(body), "series") {
+					t.Fatalf("%d: 600 groups want the series limit error: %s", code, body)
+				}
+			})
+		}
+	}
+}
+
+// An outer aggregation over a `without` operand merges the operand's series with
+// the operand's own aggregation (max here), not with the outer one's: Loki's
+// stddev(max without (pod) (x)) is the deviation of the per-app maxima.
+//
+// conformance: semantics/stddev-stdvar-grouped-values
+func TestPostAggregationMergesWithoutByTheOperandsOperator(t *testing.T) {
+	// pods p0..p2 of app a hold 1, 2 and 6 lines, p4 and p5 of app c 3 and 5.
+	var rows []emuRow
+	for pod, n := range map[int]int{0: 1, 1: 2, 2: 6, 4: 3, 5: 5} {
+		for i := 0; i < n; i++ {
+			rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(10+pod*10+i)*1e9, stream: stdStreamText(stdStreams[pod]), value: 1, msg: "line"})
+		}
+	}
+	p := foldedStdProxy(t, rows)
+	for _, tc := range []struct {
+		query string
+		want  []float64 // values in the answer's order
+	}{
+		// The per-app maxima are 6 and 5 (sums would be 9 and 8, minima 1 and 3).
+		{`stddev(max without (pod) (count_over_time({env="production"}[5m])))`, []float64{0.5}},
+		{`stdvar(min without (pod) (count_over_time({env="production"}[5m])))`, []float64{1}},
+		{`sort_desc(max without (pod) (count_over_time({env="production"}[5m])))`, []float64{6, 5}},
+		{`topk(1, max without (pod) (count_over_time({env="production"}[5m])))`, []float64{6}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			code, body := foldedStdRequest(t, p, tc.query, false)
+			var resp struct {
+				Data struct {
+					Result []struct {
+						Value []any `json:"value"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil || code != 200 || len(resp.Data.Result) != len(tc.want) {
+				t.Fatalf("%d (%v): %s", code, err, body)
+			}
+			for i, w := range tc.want {
+				if got := fmt.Sprint(resp.Data.Result[i].Value[1]); !closeFold(got, strconv.FormatFloat(w, 'f', -1, 64)) {
+					t.Fatalf("result %d = %s, want %v: %s", i, got, w, body)
 				}
 			}
 		})

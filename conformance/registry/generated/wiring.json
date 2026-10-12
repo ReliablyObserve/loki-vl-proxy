@@ -552,7 +552,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 299,
+  "registry_items": 301,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1178,6 +1178,8 @@
     "semantics/proxy-accepts-invalid-logql",
     "semantics/proxy-rejects-valid-logql",
     "semantics/repeated-label-filter-replaced-across-label-format",
+    "semantics/stddev-stdvar-nested-or-binary",
+    "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/tail-history-start-limit",
     "semantics/topk-bottomk-range-series",
     "semantics/two-parsers-keep-one",

@@ -30,15 +30,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   group, present at the steps where one of its series has a point, with the
   labels `by` keeps or `without` leaves, an empty input an empty vector or matrix
   with its `resultType`, NaN and infinity propagating as in Loki, and `stdvar`
-  computed as the variance itself instead of the square of the deviation.
+  computed as the variance itself instead of the square of the deviation. The
+  values of the ungrouped form now follow Loki's update too (Welford's), so they
+  can differ from the earlier two-pass computation in the last digits.
   VictoriaLogs computes the operand's per-series values with its native stats
   (tumbling, sliding and instant, on every supported line); the fold across series
   is the proxy's, over those values and never over log rows, because VictoriaLogs
   has no `stdvar` and its `stddev` exists only from v1.49.0. A `by` a label a
   parser extracts translates the operand with that label in its first stats
-  group, as `count`, `min`, `max` and `avg` do. Not changed: a `stddev` or
-  `stdvar` nested in another expression or under a binary operator, and a `by` a
-  parsed label on a sliding range query.
+  group, as `count`, `min`, `max` and `avg` do (a rate's math pipe keeps a
+  series-level stats after it, so the answer holds one metric per series). Loki
+  counts `max_query_series` on the folded answer, and so does the proxy now:
+  600 streams in 3 apps answer 3 series. A `sort`, `topk` or `stddev` over a
+  `without` operand merges the operand's series with the operand's own aggregation
+  (`stddev(max without (pod) (...))` took the sum of the pods, not the maximum).
+  Not changed, registered open: a `stddev` or `stdvar` nested in another
+  expression or under a binary operator
+  (`semantics/stddev-stdvar-nested-or-binary`), and the parsed labels of the
+  operand's series, which a `by` a parsed label on a sliding range query and a
+  `without` or ungrouped fold over a parser need
+  (`semantics/stddev-stdvar-parsed-label-series-identity`).
 
 ## [2.11.2] - 2026-10-12
 

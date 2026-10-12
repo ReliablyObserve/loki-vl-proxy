@@ -102,15 +102,17 @@ func stdStreamText(labels map[string]string) string {
 	return fmt.Sprintf(`{app=%q,pod=%q}`, labels["app"], labels["pod"])
 }
 
-// lokiGroupedStd is the reference: for every evaluation time, the count of each
-// series' lines in (t-window, t], folded per group by VectorAggEvaluator.
+// lokiGroupedStd is the reference: for every evaluation time, the value of the
+// range function fn (count_over_time, rate, bytes_over_time or bytes_rate) of
+// each series' lines in (t-window, t], folded per group by VectorAggEvaluator.
 // Result: group -> time -> value.
-func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g stdGrouping) map[string]map[int64]float64 {
+func lokiGroupedStd(rows []emuRow, window int64, times []int64, fn, op string, g stdGrouping) map[string]map[int64]float64 {
 	// A row's series: its stream and, when a parser extracted it, its route.
 	out := map[string]map[int64]float64{}
 	for _, t := range times {
 		counts := map[string]float64{}
 		series := map[string]map[string]string{}
+		bytes := map[string]float64{}
 		for _, row := range rows {
 			if row.ts <= t-window || row.ts > t {
 				continue
@@ -119,6 +121,7 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g std
 				if stdStreamText(s) == row.stream {
 					key := row.stream + row.labels["route"]
 					counts[key]++
+					bytes[key] += float64(len(row.msg))
 					series[key] = lokiSeriesLabels(s)
 					if route := row.labels["route"]; route != "" {
 						series[key]["route"] = route
@@ -128,7 +131,13 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g std
 		}
 		type acc struct{ mean, m2, n float64 }
 		groups := map[string]*acc{}
-		for stream, value := range counts {
+		for stream, count := range counts {
+			value := map[string]float64{
+				"count_over_time": count,
+				"rate":            count / (float64(window) / 1e9),
+				"bytes_over_time": bytes[stream],
+				"bytes_rate":      bytes[stream] / (float64(window) / 1e9),
+			}[fn]
 			key := canonicalLabels(g.groupLabels(series[stream]))
 			a := groups[key]
 			if a == nil {
@@ -156,7 +165,8 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g std
 
 type stdScenario struct {
 	op         string
-	parser     bool // the operand is `{...} | logfmt`, and each line carries a route
+	fn         string // the range function; "" is count_over_time
+	parser     bool   // the operand is `{...} | logfmt`, and each line carries a route
 	grouping   stdGrouping
 	window     time.Duration
 	step       time.Duration // 0: instant
@@ -175,12 +185,19 @@ func (s stdScenario) times() []int64 {
 	return out
 }
 
+func (s stdScenario) function() string {
+	if s.fn == "" {
+		return "count_over_time"
+	}
+	return s.fn
+}
+
 func (s stdScenario) query() string {
 	pipeline := ""
 	if s.parser {
 		pipeline = " | logfmt "
 	}
-	return s.grouping.wrap(s.op, fmt.Sprintf(`count_over_time({env="production"}%s[%s])`, pipeline, uwWindowText(s.window)))
+	return s.grouping.wrap(s.op, fmt.Sprintf(`%s({env="production"}%s[%s])`, s.function(), pipeline, uwWindowText(s.window)))
 }
 
 // generateStdScenario draws rows around the evaluation times. A line exactly
@@ -357,7 +374,7 @@ func TestStddevStdvarGroupedDifferential(t *testing.T) {
 						for i := 0; i < 8; i++ {
 							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", false)
 							got := runStdScenario(t, s, version)
-							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), op, g)
+							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), s.function(), op, g)
 							compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
 						}
 					})
@@ -381,22 +398,25 @@ func TestStddevStdvarGroupedByParsedLabelDifferential(t *testing.T) {
 		{kind: "by", labels: []string{"app", "route"}},
 	}
 	for _, version := range []string{"", "v1.52.0"} {
-		for _, op := range []string{"stddev", "stdvar"} {
-			for _, g := range groupings {
-				for _, mode := range []string{"tumbling", "instant"} {
-					name := fmt.Sprintf("%s/%s/by %v/%s", version, op, g.labels, mode)
-					if g.trailing {
-						name += "/trailing"
-					}
-					t.Run(name, func(t *testing.T) {
-						rnd := rand.New(rand.NewSource(int64(len(name))*104729 + int64(len(g.labels))))
-						for i := 0; i < 6; i++ {
-							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", true)
-							got := runStdScenario(t, s, version)
-							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), op, g)
-							compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
+		for _, fn := range []string{"count_over_time", "rate", "bytes_over_time", "bytes_rate"} {
+			for _, op := range []string{"stddev", "stdvar"} {
+				for _, g := range groupings {
+					for _, mode := range []string{"tumbling", "instant"} {
+						name := fmt.Sprintf("%s/%s/%s/by %v/%s", version, fn, op, g.labels, mode)
+						if g.trailing {
+							name += "/trailing"
 						}
-					})
+						t.Run(name, func(t *testing.T) {
+							rnd := rand.New(rand.NewSource(int64(len(name))*104729 + int64(len(g.labels))))
+							for i := 0; i < 6; i++ {
+								s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", true)
+								s.fn = fn
+								got := runStdScenario(t, s, version)
+								want := lokiGroupedStd(s.rows, int64(s.window), s.times(), s.function(), op, g)
+								compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
+							}
+						})
+					}
 				}
 			}
 		}

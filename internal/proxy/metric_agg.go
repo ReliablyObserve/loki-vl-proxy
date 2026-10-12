@@ -156,24 +156,73 @@ func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 	return instantMetricPostAgg{name: string(agg.Op), inner: strings.TrimSpace(rest[1:end]), grouping: agg.Grouping}, true
 }
 
-var postAggParserStageRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)
+// foldedGroupsKey marks a stddev or stdvar whose operand's series are folded
+// into groups by the proxy: Loki counts max_query_series on that answer
+// (pkg/logql/engine.go), so the operand's own answer is bounded by
+// foldedGroupsSeriesCeiling instead and the limit applies to the groups.
+type foldedGroupsKey struct{}
+
+// foldedGroupsSeriesCeiling bounds the series of a folded operand; a tenant
+// limit above it keeps its own.
+const foldedGroupsSeriesCeiling = 20000
+
+// foldAcrossSeries marks r as the request of a stddev or stdvar fold: the
+// manual range evaluator stops counting its series (as for foldUngroupedSum, the
+// raw-row budget still bounds the memory) and the stats readers count up to
+// foldedGroupsSeriesCeiling.
+func foldAcrossSeries(r *http.Request, postAgg instantMetricPostAgg) *http.Request {
+	if postAgg.name != "stddev" && postAgg.name != "stdvar" {
+		return r
+	}
+	ctx := context.WithValue(r.Context(), foldedSumKey{}, true)
+	return r.WithContext(context.WithValue(ctx, foldedGroupsKey{}, true))
+}
+
+// capFoldedGroups applies the tenant's series limit to the groups a stddev or
+// stdvar answers, Loki's error for a plain client and the busiest series with
+// its warning for Logs Drilldown. It reports false after writing the error.
+func (p *Proxy) capFoldedGroups(w http.ResponseWriter, r *http.Request, body []byte, postAgg instantMetricPostAgg, limit int) ([]byte, bool) {
+	if postAgg.name != "stddev" && postAgg.name != "stdvar" {
+		return body, true
+	}
+	capped, err := capSeriesToLimit(r.Context(), body, limit)
+	if err != nil {
+		p.writeError(w, badRequestStatusOr(err, http.StatusBadRequest), err.Error())
+		return nil, false
+	}
+	return capped, true
+}
+
+var (
+	postAggParserStageRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)
+	postAggFirstByRE     = regexp.MustCompile(`\| stats by \(([^)]*)\)`)
+	postAggMathAliasRE   = regexp.MustCompile(`\| math [^|]* as (\w+)`)
+)
 
 // translatePostAggOperand translates the operand of a post-aggregation. The
 // operand of a stddev or stdvar `by` a parsed label is translated as the
 // series-level form the vector aggregations count, min, max and avg use, whose
 // first stats pipe groups by the listed labels and the series identity; the
-// final stats pipe is dropped, as the fold across the series is the proxy's,
-// and so is the alias of a function no math pipe reads (the shape of a bare
-// range aggregation, which the manual range evaluator knows).
+// final stats pipe is dropped, as the fold across the series is the proxy's.
+// What is left must answer one metric per series, the shape of a bare range
+// aggregation, which the manual range evaluator knows: the alias of a function
+// no math pipe reads is removed, and a rate's math pipe (a second metric in a
+// stats_query answer) is followed by a series-level stats over its result, the
+// shape of a grouped rate.
 func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetricPostAgg) (string, error) {
 	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
 		translated, err := p.translateQueryWithContext(ctx, "max by ("+strings.Join(g.Labels, ", ")+") ("+postAgg.inner+")")
 		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
 			operand := translated[:i]
-			if !strings.Contains(operand[strings.Index(operand, "| stats "):], "| math ") {
-				operand = strings.TrimSuffix(operand, " as __lvp_inner")
+			first := strings.Index(operand, "| stats ")
+			by := postAggFirstByRE.FindStringSubmatch(operand[first:])
+			math := postAggMathAliasRE.FindAllStringSubmatch(operand[first:], -1)
+			switch {
+			case len(math) == 0:
+				return strings.TrimSuffix(operand, " as __lvp_inner"), nil
+			case by != nil:
+				return operand + " | stats by (" + by[1] + ") sum(" + math[len(math)-1][1] + ")", nil
 			}
-			return operand, nil
 		}
 	}
 	return p.translateQueryWithContext(ctx, postAgg.inner)
@@ -224,17 +273,6 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	// across the returned series of each group.
 	if postAgg, ok := parseStddevStdvarQuery(logql); ok {
 		return postAgg, true
-	}
-	for _, name := range []string{"stddev", "stdvar"} {
-		prefix := name + "("
-		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
-			continue
-		}
-		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
-		if inner == "" {
-			return instantMetricPostAgg{}, false
-		}
-		return instantMetricPostAgg{name: name, inner: inner}, true
 	}
 	for _, name := range []string{"topk", "bottomk"} {
 		prefix := name + "("
@@ -352,6 +390,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	seriesLimit := p.resolvedMaxStatsQuerySeries(r.Context())
+	r = foldAcrossSeries(r, postAgg)
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -385,7 +425,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(postAgg.inner))
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -402,6 +442,11 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	result := applyInstantVectorPostAggregation(bw.body, postAgg)
+	result, ok := p.capFoldedGroups(w, r, result, postAgg, seriesLimit)
+	if !ok {
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -425,6 +470,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	seriesLimit := p.resolvedMaxStatsQuerySeries(r.Context())
+	r = foldAcrossSeries(r, postAgg)
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
@@ -463,7 +510,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(postAgg.inner))
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -480,6 +527,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	result := applyMatrixPostAggregation(bw.body, postAgg)
+	result, ok := p.capFoldedGroups(w, r, result, postAgg, seriesLimit)
+	if !ok {
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
