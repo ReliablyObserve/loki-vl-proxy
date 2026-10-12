@@ -40,7 +40,7 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 		{`count_over_time({namespace="prod"} |> "" != "x" [5m])`, `namespace:="prod" ~"^$" NOT ~"x" | stats count()`},
 		{`count_over_time({namespace="prod"} !> "" [5m])`, `namespace:="prod" NOT ~"^$" | stats count()`},
 		// Non-empty patterns follow Loki's matcher (semantics/pattern-line-filter-anchoring).
-		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" (_msg:~" GET " _msg:~"(?s). GET ." NOT _msg:~"^ GET ")`},
+		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" (_msg:~" GET " _msg:~"(?s) GET ." NOT _msg:~"^ GET ")`},
 		{`{namespace="prod"} !> "foo <_>"`, `namespace:="prod" NOT ~"(?s)foo .+"`},
 	}
 	for _, c := range cases {

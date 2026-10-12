@@ -3435,18 +3435,22 @@ func planPatternLineFilter(value string, id int) patternLineFilterAlt {
 // keeps exactly the lines Loki's Matcher.Test accepts for a pattern with one
 // literal L, or "" for any other pattern. L is searched once, at its first
 // occurrence, and a later occurrence ends later, so "some occurrence is followed
-// by a character" is the same as "the first one is". With "after" = the regexp
-// (?s)L. (an occurrence followed by a character):
+// by a character" is the same as "the first one is". With "after" = (?s)L. (an
+// occurrence followed by a character) and "start" = ^L (one at the start, which
+// is then the first):
 //
-//	<_>L<_>  the first occurrence is not at the start and is followed by a
-//	         character: (?s).L.  and not ^L  (an occurrence at the start is the
-//	         first one)
-//	<_>L     the first occurrence is not at the start and ends the line: the
-//	         line ends with L after a character, (?s).L$, and no occurrence is
-//	         followed by a character (one that was would come first)
-//	L        the first occurrence ends the line: (?s)L$ and no "after"
+//	<_>L<_>  not start, and after (no occurrence is at the start, so one
+//	         followed by a character needs no character before it)
+//	<_>L     the line ends with L, not after (so that is the only occurrence,
+//	         and it is the first), and the line is not L alone: ^L$
+//	L        the line ends with L and not after
 //
-// <_> and L<_> are plain regexps and are not handled here.
+// <_> and L<_> are plain regexps and are not handled here. The plain regexp
+// for L comes first: VictoriaLogs answers it as a substring search and prunes
+// the blocks that do not hold L. The regexps are written without a leading
+// `.`, which keeps VictoriaLogs from reading the literal ahead (a count over
+// 518,500 rows: 64 ms for the plain filter, 67 ms for these, 134 ms with `.L.`
+// and 130 ms for the extract form).
 func exactSingleLiteralPatternFilter(nodes []linePatternNode) string {
 	var lit string
 	var lead, trail bool
@@ -3471,15 +3475,11 @@ func exactSingleLiteralPatternFilter(nodes []linePatternNode) string {
 	}
 	q := regexp.QuoteMeta(lit)
 	re := func(s string) string { return "_msg:~" + strconv.Quote(s) }
-	// The plain regexp for L comes first: VictoriaLogs answers it as a
-	// substring search and prunes the blocks that do not hold L, where the
-	// anchored regexps below run on every row (2x the time of the plain
-	// filter on 500k rows).
 	switch {
 	case lead && trail:
-		return re(q) + " " + re("(?s)."+q+".") + " NOT " + re("^"+q)
+		return re(q) + " " + re("(?s)"+q+".") + " NOT " + re("^"+q)
 	case lead:
-		return re(q) + " " + re("(?s)."+q+"$") + " NOT " + re("(?s)"+q+".")
+		return re(q) + " " + re("(?s)"+q+"$") + " NOT " + re("(?s)"+q+".") + " NOT " + re("^"+q+"$")
 	default:
 		return re(q) + " " + re("(?s)"+q+"$") + " NOT " + re("(?s)"+q+".")
 	}
