@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vectorBinop, matchingSignature, resultMetric and MergeBinOp, an edge table for
   `ignoring` over a label absent on both sides, on one side and on the right
   only, and handler tests on range and instant queries; the live comparison with
-  Loki is `TestCompat_BinaryIgnoringAbsentLabel` (#TBD). Not changed: the query
+  Loki is `TestCompat_BinaryIgnoringAbsentLabel` (#742). Not changed: the query
   from the conformance row `semantics/binary-ignoring-matching`, `sum by
   (cluster) (sum by (cluster) (rate(..)) + ignoring(machine) sum by (cluster,
   machine) (rate(..)))`, still answers the first operand's raw count (about 150
