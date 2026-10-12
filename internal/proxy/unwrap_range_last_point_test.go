@@ -100,7 +100,7 @@ func TestUnwrapOverTimeRangeEmitsEndSample(t *testing.T) {
 		{"window-shorter-than-step", 30 * time.Second, time.Minute, 3600},
 		{"end-off-the-step-grid", 5 * time.Minute, time.Minute, 3617},
 	}
-	for _, version := range []string{"", "v1.52.0", "v1.40.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
 		for _, parser := range []string{"json", "logfmt"} {
 			for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 				for _, shape := range shapes {
@@ -155,7 +155,7 @@ func last(v []int64) int64 {
 //
 // conformance: semantics/unwrap-range-last-point, window-bounds-and-step-alignment
 func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
-	for _, version := range []string{"", "v1.52.0", "v1.40.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
 		for _, parser := range []string{"json", "logfmt"} {
 			for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
 				name := fmt.Sprintf("%s/%s/%s", version, parser, fn)
@@ -164,14 +164,8 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 					for i := 0; i < 20; i++ {
 						s := generateUnwrapScenario(rnd, fn, parser, false)
 						s.window = s.step
-						delta := -(s.start % int64(s.step)) // an epoch-aligned start: the only one v1.40 can place buckets on
-						s.start, s.end = s.start+delta, s.end+delta
 						for j := range s.rows {
-							s.rows[j].ts += delta
 							s.rows[j].labels = nil
-							if version == "v1.40.0" && (s.rows[j].ts-s.start)%int64(s.step) == 0 {
-								s.rows[j].ts++ // the unshifted bucket edges put a line at t in the next window
-							}
 						}
 						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
 						query := fmt.Sprintf(`sum by (pod) (%s({app="uw"} | %s | unwrap amount | __error__="" [%s]))`, fn, parser, uwWindowText(s.window))
