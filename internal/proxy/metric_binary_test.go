@@ -34,7 +34,7 @@ func TestParseTopKWrapper(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotK, gotDesc, gotOK := parseTopKWrapper(tc.logql)
+			gotK, gotDesc, _, gotOK := parseTopKWrapper(tc.logql)
 			if gotOK != tc.wantOK {
 				t.Errorf("parseTopKWrapper(%q) ok=%v, want %v", tc.logql, gotOK, tc.wantOK)
 				return
@@ -60,7 +60,7 @@ func TestApplyTopKToMatrix(t *testing.T) {
 		`]}}`)
 
 	// topk(2) → keep "high" and "mid" (max 12 and 6), drop "low" (max 2).
-	got := applyTopKToMatrix(input, 2, true)
+	got := applyTopKToMatrix(input, 2, true, nil)
 	var resp struct {
 		Data struct {
 			Result []struct {
@@ -83,7 +83,7 @@ func TestApplyTopKToMatrix(t *testing.T) {
 	}
 
 	// bottomk(1) → keep "low" (max 2), drop others.
-	got2 := applyTopKToMatrix(input, 1, false)
+	got2 := applyTopKToMatrix(input, 1, false, nil)
 	var resp2 struct {
 		Data struct {
 			Result []struct {
@@ -102,7 +102,7 @@ func TestApplyTopKToMatrix(t *testing.T) {
 	}
 
 	// k >= number of series → return all.
-	got3 := applyTopKToMatrix(input, 10, true)
+	got3 := applyTopKToMatrix(input, 10, true, nil)
 	var resp3 struct {
 		Data struct {
 			Result []struct{} `json:"result"`
@@ -123,7 +123,7 @@ func TestApplyTopKToVector(t *testing.T) {
 		`{"metric":{"app":"c"},"value":[1700000300,"1.0"]}` +
 		`]}}`)
 
-	got := applyTopKToVector(input, 2, true)
+	got := applyTopKToVector(input, 2, true, nil)
 	var resp struct {
 		Data struct {
 			Result []struct {
