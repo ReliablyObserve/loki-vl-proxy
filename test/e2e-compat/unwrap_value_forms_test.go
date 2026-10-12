@@ -116,9 +116,16 @@ func TestCompat_UnwrapValueFormsParity(t *testing.T) {
 		}
 		pipeline := sel + ` | logfmt | form="` + f.name + `" | ` + unwrap
 		for _, shape := range []struct{ name, window string }{{"tumbling", "1m"}, {"sliding", "5m"}} {
-			for _, function := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "rate"} {
-				for _, outer := range []string{"", "sum by (service_name)", "max by (service_name)", "sum"} {
-					nan := strings.HasPrefix(f.name, "nan")
+			// The core group shares one timeout: the spellings run three functions and two
+			// outers (the conversion is the same for every function); the nan forms, whose
+			// result depends on the function, run the whole matrix.
+			functions, outers := []string{"sum_over_time", "max_over_time", "rate"}, []string{"", "sum by (service_name)"}
+			nan := strings.HasPrefix(f.name, "nan")
+			if nan {
+				functions, outers = []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "rate"}, []string{"", "sum by (service_name)", "max by (service_name)", "sum"}
+			}
+			for _, function := range functions {
+				for _, outer := range outers {
 					if nan && (outer == "max by (service_name)" || (f.name == "nan only" && (function == "max_over_time" || function == "min_over_time"))) {
 						// Registered residuals (semantics/unwrap-gate-parsefloat-divergences): a
 						// window whose every sample is nan under max or min over time, and a

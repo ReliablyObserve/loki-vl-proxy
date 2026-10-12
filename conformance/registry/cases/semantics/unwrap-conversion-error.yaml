@@ -83,11 +83,18 @@ why: |
   route records the status sent, once. VictoriaLogs features: `format if`,
   `filter ... or ...`, `stats by`, all used by the gate since v1.40.
 
+  A value that is a number by syntax and overflows (`1e309`, `1000e307`,
+  `0x1p2000`, `2562048h`, `19EB`: ParseFloat's range error, ParseDuration's
+  overflow, ParseBytes's "too large") is reported too, since
+  semantics/unwrap-gate-parsefloat-divergences: the counting gate flags a value
+  whose converted column is out of range (translator.UnwrapInRange) like one
+  outside the syntax, and the lookup (unwrapLookupQuery) reads both. `+nan` and
+  `-nan`, which Go rejects, are reported (they were skipped).
+
   Not changed: semantics/unwrap-conversion-error-postfilter-forms,
   semantics/unwrap-conversion-error-stored-value-overwritten,
   semantics/unwrap-conversion-error-undetected-shapes,
-  semantics/unwrap-conversion-error-parser-divergence, values whose conversion
-  overflows (semantics/unwrap-gate-parsefloat-divergences), and which failing
+  semantics/unwrap-conversion-error-parser-divergence, and which failing
   line is named (Loki's choice depends on its shards; compared by shape). As
   for any metric, an identical request ending near now within
   -recent-tail-refresh-max-staleness is answered from the response cache.

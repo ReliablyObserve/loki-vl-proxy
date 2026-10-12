@@ -6,13 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // The bytes gate keeps exactly the values humanize.ParseBytes (Loki's
-// convertBytes; parseHumanBytes is its port) accepts, plus the sizes of 2^64
-// bytes or more (its "too large" error), which the range filter after the math
-// pipe drops (translator.UnwrapInRange). The inputs are short strings of digits,
+// convertBytes; parseHumanBytes is its port, checked here against go-humanize
+// v1.0.1 itself on every input) accepts, plus the sizes of 2^64 bytes or more
+// (its "too large" error), which the range filter after the math pipe drops
+// (translator.UnwrapInRange). The inputs are short strings of digits,
 // dots, commas, spaces, the Unicode spaces TrimSpace trims, the unit letters and
 // the two non-ASCII letters strings.ToLower folds into them (the Kelvin sign and
 // U+0130); any disagreement is a new divergence a later rewrite of the gate must
@@ -35,7 +38,12 @@ func TestUnwrapBytesPatternAgreesWithParseBytesOnGeneratedInputs(t *testing.T) {
 			}
 		}
 		v := b.String()
-		_, err := parseHumanBytes(v)
+		got, err := parseHumanBytes(v)
+		// The port is what the raw evaluators run; it must be the function Loki calls
+		// (go-humanize v1.0.1, the version Loki pins), error text included.
+		if wantBytes, wantErr := humanize.ParseBytes(v); got != wantBytes || (err == nil) != (wantErr == nil) || (err != nil && err.Error() != wantErr.Error()) {
+			t.Fatalf("%q: parseHumanBytes = %v, %v; humanize.ParseBytes = %v, %v", v, got, err, wantBytes, wantErr)
+		}
 		want := err == nil || strings.HasPrefix(err.Error(), "too large")
 		if keeps := re.MatchString(v); keeps != want {
 			t.Fatalf("%q: gate keeps=%v, ParseBytes err=%v", v, keeps, err)

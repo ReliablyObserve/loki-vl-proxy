@@ -353,6 +353,10 @@ func unwrapCountedGate(field, conv string) string { return unwrapCountedGateMode
 // unwrapNaNFlag marks a nan value in unwrapBadField; its value is 0.
 const unwrapNaNFlag = "2"
 
+// unwrapInfinityFlag marks the word infinity, which the math pipe does not read,
+// until it is shortened to inf; the flag is then reset to "0".
+const unwrapInfinityFlag = "3"
+
 // unwrapNaNPattern is the nan strconv.ParseFloat reads (case-insensitive, unsigned).
 const unwrapNaNPattern = `^(?i:nan)$`
 
@@ -360,39 +364,49 @@ const unwrapNaNPattern = `^(?i:nan)$`
 // (errors) or, without, dropped as the plain gate does (a query whose
 // `__error__=""` filter drops the error): a plain gate keeps counting the nan
 // values, which the gate drops and VictoriaLogs' stats cannot carry
-// (unwrapNaNCounted).
+// (unwrapNaN). The word infinity and the nan are classified only on the rows the
+// rest of the grammar refused, so a row of numbers costs one regular expression,
+// as in the plain gate.
 func unwrapCountedGateMode(field, conv string, errors bool) string {
 	q := strconv.Quote(field)
-	_, convert := translator.UnwrapGateParts(field, conv)
 	bad := unwrapBadField
-	nan := conv == ""
-	gate := " | format if (" + q + ":~" + strconv.Quote(translator.UnwrapPattern(conv)) + `) "0" as ` + bad
-	keep := bad + `:="0"`
-	if nan {
-		gate += " | format if (-" + bad + `:="0" ` + q + ":~" + strconv.Quote(unwrapNaNPattern) + `) "` + unwrapNaNFlag + `" as ` + bad
-		keep += " or " + bad + `:="` + unwrapNaNFlag + `"`
+	plain := conv == ""
+	flag := func(f string) string { return bad + `:="` + f + `"` }
+	gate := " | format if (" + q + ":~" + strconv.Quote(translator.UnwrapPatternWithoutInfinity(conv)) + `) "0" as ` + bad
+	keep := flag("0")
+	refused := "-" + flag("0") // the rows the grammar refused
+	if plain {
+		gate += " | format if (" + refused + " " + q + ":~" + strconv.Quote(translator.UnwrapInfinityPattern) + `) "` + unwrapInfinityFlag + `" as ` + bad
+		refused += " -" + flag(unwrapInfinityFlag)
+		gate += " | format if (" + refused + " " + q + ":~" + strconv.Quote(unwrapNaNPattern) + `) "` + unwrapNaNFlag + `" as ` + bad
+		refused += " -" + flag(unwrapNaNFlag)
+		keep += " or " + flag(unwrapInfinityFlag) + " or " + flag(unwrapNaNFlag)
 	}
 	if errors {
-		rejected := q + ":*"
-		if nan {
-			rejected = "-" + bad + `:="` + unwrapNaNFlag + `" ` + rejected
-		}
-		gate += " | format if (-" + bad + `:="0" ` + rejected + `) "1" as ` + bad
-		keep += " or " + bad + `:="1"`
+		gate += " | format if (" + refused + " " + q + `:*) "1" as ` + bad
+		keep += " or " + flag("1")
 	}
-	gate += " | filter " + keep + convert
-	inRange := translator.UnwrapInRange(conv)
-	if errors {
-		gate += " | format if (" + bad + `:="0" -(` + inRange + `)) "1" as ` + bad
-	} else if nan {
-		gate += " | filter " + bad + `:="` + unwrapNaNFlag + `" or (` + inRange + ")"
+	gate += " | filter " + keep
+	if plain {
+		gate += translator.UnwrapPlainConvert(field, flag(unwrapInfinityFlag)) + " | format if (" + flag(unwrapInfinityFlag) + `) "0" as ` + bad
 	} else {
+		_, convert := translator.UnwrapGateParts(field, conv)
+		gate += convert
+	}
+	inRange := translator.UnwrapInRange(conv)
+	switch {
+	case errors:
+		gate += " | format if (" + flag("0") + " -(" + inRange + `)) "1" as ` + bad
+	case plain:
+		gate += " | filter " + flag(unwrapNaNFlag) + " or (" + inRange + ")"
+	default:
 		gate += " | filter " + inRange
 	}
 	// A flagged row's value is NaN (the math pipe reads no number in it): 0 instead,
-	// so the stats keep a point for its group. The math pipe keeps the float column;
-	// a format pipe would rewrite it as text, which the stats read only up to 27
-	// characters (a value of 1e30 or 1e-30 would not count).
+	// so the stats keep a point for its group. The math pipe keeps the converted
+	// column a float; a format pipe would rewrite it as text that the stats parse
+	// again (VictoriaLogs' fast reader takes 27 characters and falls back to
+	// strconv.ParseFloat beyond them, but the text is a second rounding to avoid).
 	return gate + " | math " + translator.UnwrapValueAlias + " default 0 as " + translator.UnwrapValueAlias
 }
 
@@ -429,7 +443,8 @@ type unwrapNaN struct {
 	counts map[string]bool // aliases of the count functions, which add up
 }
 
-// unwrapNaNFor reads the stats pipes of a rewritten query.
+// unwrapNaNFor reads the stats pipes of a rewritten query. A stdvar is a stddev
+// and a square in the translation, so it is covered by the stddev case.
 func unwrapNaNFor(query string) *unwrapNaN {
 	n := &unwrapNaN{poison: true, counts: map[string]bool{"__sample_count": true}}
 	seen := false
@@ -1339,6 +1354,8 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 	if len(probes) == 0 {
 		// No conversion error reaches the result, but the nan values the gate drops
 		// still count (unwrapNaN): the stats queries are rewritten, nothing else.
+		// No vlName: it only maps the unwrapped labels of the probes to VictoriaLogs
+		// fields, and there is no probe.
 		c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step}
 		return r.WithContext(context.WithValue(r.Context(), unwrapCheckKey{}, c)), nil
 	}

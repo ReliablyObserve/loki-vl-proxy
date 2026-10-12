@@ -1,5 +1,5 @@
 id: semantics/unwrap-gate-parsefloat-divergences
-title: The unwrap sample gate differs from Loki's conversions on two narrow forms (open)
+title: The unwrap sample gate differs from Loki's conversions on a few narrow forms (open)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
@@ -35,7 +35,10 @@ why: |
     `1e1_0` exactly as Go does (it calls strconv.ParseFloat), so the value needs
     no help. It answers NaN for `infinity` (it reads only `inf`): the gate
     shortens the word on a copy (`replace_regexp if (...)`, which VictoriaLogs
-    skips for a block that holds none).
+    skips for a block that holds none). The plain gate selects the word with the
+    phrase filter `__lvp_n:i(infinity)`, not a regular expression per row; the
+    counting gate classifies it (flag 3) and the nan (flag 2) only on the rows the
+    rest of the grammar refused, so a row of numbers costs one regular expression.
   - The expression is syntactic, so an overflow cannot be told apart by it (the
     magnitude of a mantissa and its exponent are added, which a regular
     expression cannot do for unbounded input). The math pipe can: it answers NaN

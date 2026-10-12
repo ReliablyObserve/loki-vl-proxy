@@ -38,8 +38,12 @@ const (
 	// UnwrapGateFor spells it inf. Left out (registered in
 	// semantics/unwrap-gate-parsefloat-divergences): nan.
 	UnwrapNumberPattern = `^[+-]?(?:` + unwrapDecimalFloat + `|` + unwrapHexFloat + `)$|^[+-]?(?i:inf(?:inity)?)$`
-	unwrapDecimalFloat  = `(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?`
-	unwrapHexFloat      = `0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*(?:[.](?:[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)?)?|[.][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)[pP][+-]?[0-9]+(?:_[0-9]+)*`
+	// UnwrapInfinityPattern is the word the math pipe does not read; the counting
+	// gate classifies it, on the rows the rest of the grammar refused.
+	UnwrapInfinityPattern = `^[+-]?(?i:infinity)$`
+	unwrapFiniteNumber    = `^[+-]?(?:` + unwrapDecimalFloat + `|` + unwrapHexFloat + `)$|^[+-]?(?i:inf)$`
+	unwrapDecimalFloat    = `(?:[0-9]+(?:_[0-9]+)*(?:[.](?:[0-9]+(?:_[0-9]+)*)?)?|[.][0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?`
+	unwrapHexFloat        = `0[xX](?:_?[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*(?:[.](?:[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)?)?|[.][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)[pP][+-]?[0-9]+(?:_[0-9]+)*`
 	// UnwrapDurationPattern is time.ParseDuration's syntax: a sign, then "0" or
 	// terms of a number and one of ns, us, µs (U+00B5 and U+03BC), ms, s, m, h. A
 	// duration beyond int64 nanoseconds (2562048h) matches it and is dropped by the
@@ -60,8 +64,9 @@ const (
 
 // unwrapDurationLimit is the saturation value of VictoriaLogs' duration reading in
 // seconds: int64 nanoseconds, where time.ParseDuration reports an overflow. The
-// shortest decimal that reads back as the same float64 is the filter threshold.
-var unwrapDurationLimit = strconv.FormatFloat(float64(math.MaxInt64)/1e9, 'g', -1, 64)
+// shortest decimal that reads back as the same float64 (written without an
+// exponent) is the filter threshold.
+var unwrapDurationLimit = strconv.FormatFloat(float64(math.MaxInt64)/1e9, 'f', -1, 64)
 
 // UnwrapInRange returns the LogsQL filter a converted value (UnwrapValueAlias) of
 // the unwrap conversion conv ("" a plain number, "duration" or "bytes") satisfies
@@ -104,6 +109,24 @@ func UnwrapPattern(conv string) string {
 // the math pipe reads a bare name such as max, abs or rand as a function, and
 // stops a bare name at a minus or a slash.
 func UnwrapGate(field string) string { return UnwrapGateFor(field, "") }
+
+// UnwrapPatternWithoutInfinity is UnwrapPattern without the word infinity, which
+// the counting gate classifies apart (UnwrapInfinityPattern).
+func UnwrapPatternWithoutInfinity(conv string) string {
+	if conv == "" {
+		return unwrapFiniteNumber
+	}
+	return UnwrapPattern(conv)
+}
+
+// UnwrapPlainConvert returns the pipes that convert a plain unwrapped value into
+// UnwrapValueAlias. The math pipe does not read "infinity" (it reads inf): the
+// word is shortened on a copy, for the rows infinityIf selects.
+func UnwrapPlainConvert(field, infinityIf string) string {
+	return " | copy " + strconv.Quote(field) + " as __lvp_n" +
+		" | replace_regexp if (" + infinityIf + `) ("(?i)inity$","") at __lvp_n` +
+		" | math __lvp_n as " + UnwrapValueAlias
+}
 
 // UnwrapGateFor is UnwrapGate for the unwrap conversion conv: "" (a plain
 // number), "duration" or "bytes".
@@ -151,11 +174,9 @@ func UnwrapGateParts(field, conv string) (match, convert string) {
 			` | format if (__lvp_i:*) "1024" as __lvp_b` +
 			" | math floor(__lvp_n * (__lvp_b ^ __lvp_e)) as " + UnwrapValueAlias
 	}
-	// The math pipe does not read "infinity" (it reads inf): the word is shortened on
-	// a copy, and only in the blocks that hold it.
-	return match, " | copy " + q + " as __lvp_n" +
-		` | replace_regexp if (__lvp_n:~"(?i)inity$") ("(?i)inity$","") at __lvp_n` +
-		" | math __lvp_n as " + UnwrapValueAlias
+	// The case-insensitive phrase filter selects the word without a regular expression
+	// per row; the rows that hold none (a block of numbers) pass through untouched.
+	return match, UnwrapPlainConvert(field, "__lvp_n:i(infinity)")
 }
 
 // unwrapGateMarkerRE reads the quoted field of the filter that starts a gate.
