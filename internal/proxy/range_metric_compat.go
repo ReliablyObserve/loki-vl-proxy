@@ -1738,7 +1738,7 @@ func withoutDerivedLevelChain(query string) string {
 }
 
 func queryUsesParserStages(baseQuery string) bool {
-	baseQuery = withoutDerivedLevelChain(baseQuery)
+	baseQuery = translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery))
 	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
 	// parser stage of the query.
 	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {

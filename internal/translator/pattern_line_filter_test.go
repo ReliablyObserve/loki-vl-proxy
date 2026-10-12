@@ -23,25 +23,25 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 		{`{namespace="prod"} |> "" != "x"`, `namespace:="prod" ~"^$" NOT ~"x"`},
 		{`{namespace="prod"} |> "" !~ "x"`, `namespace:="prod" ~"^$" NOT ~"x"`},
 		{`{namespace="prod"} !> "" != "x"`, `namespace:="prod" NOT ~"^$" NOT ~"x"`},
-		{`{namespace="prod"} !> "" !~ "x" !> "a <_>"`, `namespace:="prod" NOT ~"^$" NOT ~"x" NOT ~"a .*"`},
-		{`{namespace="prod"} |> "a <_>" or "" != "x" or "y"`, `namespace:="prod" ~"(?:a .*)|(?:^$)" NOT ~"x|y"`},
+		{`{namespace="prod"} !> "" !~ "x" !> "a <_>"`, `namespace:="prod" NOT ~"^$" NOT ~"x" NOT ~"(?s)a .+"`},
+		{`{namespace="prod"} |> "a <_>" or "" != "x" or "y"`, `namespace:="prod" ~"(?:(?s)a .+)|(?:^$)" NOT ~"x|y"`},
 		{`{namespace="prod"} | json |> "" != "x"`, `namespace:="prod" | unpack_json | filter ~"^$" NOT ~"x"`},
-		{`{namespace="prod"} |> "a <_>" != "x"`, `namespace:="prod" ~"a .*" NOT ~"x"`},
-		{`{namespace="prod"} |> "a" OR "b"`, `namespace:="prod" ~"(?:a)|(?:b)"`},
-		{`{namespace="prod"} !> "" |> "GET <_>"`, `namespace:="prod" NOT ~"^$" ~"GET .*"`},
+		{`{namespace="prod"} |> "a <_>" != "x"`, `namespace:="prod" ~"(?s)a .+" NOT ~"x"`},
+		{`{namespace="prod"} |> "a" OR "b"`, `namespace:="prod" ~"(?:a$)|(?:b$)" | extract "a<plain:__lvp_pf0_r>" from _msg | extract "b<plain:__lvp_pf1_r>" from _msg | filter (_msg:~"a$" __lvp_pf0_r:"") or (_msg:~"b$" __lvp_pf1_r:"") | delete __lvp_pf*`},
+		{`{namespace="prod"} !> "" |> "GET <_>"`, `namespace:="prod" NOT ~"^$" ~"(?s)GET .+"`},
 		{`{namespace="prod"} | json !> ""`, `namespace:="prod" | unpack_json | filter NOT ~"^$"`},
 		{`{namespace="prod"} | json |> "" | level="info"`, `namespace:="prod" | unpack_json | filter ~"^$" | filter level:="info"`},
 		// An empty alternative is an ordinary pattern: it never matches a non-empty line, and
 		// (unlike an empty |= operand) it is not dropped from the chain.
-		{`{namespace="prod"} |> "" or "a <_>"`, `namespace:="prod" ~"(?:^$)|(?:a .*)"`},
-		{`{namespace="prod"} !> "a <_>" or ""`, `namespace:="prod" NOT ~"(?:a .*)|(?:^$)"`},
+		{`{namespace="prod"} |> "" or "a <_>"`, `namespace:="prod" ~"(?:^$)|(?:(?s)a .+)"`},
+		{`{namespace="prod"} !> "a <_>" or ""`, `namespace:="prod" NOT ~"(?:(?s)a .+)|(?:^$)"`},
 		// Metric queries push the same filter down to the stats.
 		{`count_over_time({namespace="prod"} |> "" [5m])`, `namespace:="prod" ~"^$" | stats count()`},
 		{`count_over_time({namespace="prod"} |> "" != "x" [5m])`, `namespace:="prod" ~"^$" NOT ~"x" | stats count()`},
 		{`count_over_time({namespace="prod"} !> "" [5m])`, `namespace:="prod" NOT ~"^$" | stats count()`},
-		// Non-empty patterns are unchanged.
-		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" ~".* GET .*"`},
-		{`{namespace="prod"} !> "foo <_>"`, `namespace:="prod" NOT ~"foo .*"`},
+		// Non-empty patterns follow Loki's matcher (semantics/pattern-line-filter-anchoring).
+		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" ~"(?s)^.+ GET .+" | extract "<plain:__lvp_pf0_1> GET <plain:__lvp_pf0_2>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_2:* | delete __lvp_pf*`},
+		{`{namespace="prod"} !> "foo <_>"`, `namespace:="prod" NOT ~"(?s)foo .+"`},
 	}
 	for _, c := range cases {
 		got, err := TranslateLogQL(c.logql)
@@ -59,7 +59,7 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 // pattern accepts only the empty line (pattern.Matcher.Test).
 // conformance: semantics/pattern-line-filter
 func TestEmptyPatternRegexpMatchesOnlyEmptyLine(t *testing.T) {
-	re := regexp.MustCompile(patternFilterValueToRegex(""))
+	re := regexp.MustCompile(planPatternLineFilter("", 0).re)
 	for line, want := range map[string]bool{
 		"":                 true,
 		" ":                false,

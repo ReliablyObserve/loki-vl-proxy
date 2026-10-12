@@ -1,0 +1,73 @@
+id: semantics/pattern-line-filter-anchoring
+title: A pattern line filter (`|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  Logs Drilldown's pattern include and exclude send `|>` and `!>` filters built
+  from the patterns Loki detected, many of which end on a literal
+  (`<_> GET <_> 200`). The proxy translated a pattern into an unanchored
+  regexp with `<_>` as `.*`, so Drilldown showed lines Loki rejects under an
+  include, hid lines Loki keeps under an exclude, and the logs volume counted
+  them. Measured with Loki's own pattern package: `<_> bar` on `x bar y`, `foo`
+  on `foo bar` and `<_>a<_>` on `a` are false in Loki and were kept by the
+  proxy; `foo <_>` on `foo bar` is true on both.
+
+  Loki builds a patternFilter (pkg/logql/log/filter.go:618-621,858-873) whose
+  pattern.ParseLineFilter rejects consecutive and named captures
+  (pkg/logql/log/pattern/pattern.go:36-52) and whose Matcher.Test
+  (pattern.go:124-165) is a single left-to-right scan: each literal is searched
+  once, at its first occurrence after the previous one (a leading literal may
+  start anywhere, so `foo` matches `xfoo`); a literal found right where the
+  previous one ended means an empty capture and rejects the line; a pattern
+  ending on a literal must end the line there, one ending on a capture must
+  leave a non-empty rest. The lexer makes `<_>` and other `<name>` tokens
+  captures and every other rune a literal (lexer.rl, expr.y). Because the scan
+  never backtracks, `<_>a<_>` rejects `aab` (the first `a` is at offset 0) and
+  `<_> bar` rejects `x bar bar`, where a regexp matches a later occurrence. A
+  regexp is exact only for `<_>` and `literal<_>`.
+
+  VictoriaLogs' extract pipe performs the same scan (lib/logstorage/pattern.go
+  apply: the first text anywhere, each next text at its first occurrence, the
+  last field takes the rest). The proxy now sends, per alternative, an
+  anchored superset regexp as a prefilter under `|>` (`(?s)`, `.+` per capture,
+  `$` after a trailing literal), then `| extract` into scratch fields
+  (`<plain:...>`, so a quoted capture is not unquoted; literals html-escaped,
+  since extract unescapes its texts and reads `<` as a field), a `| filter` that
+  needs every capture non-empty and the text after a trailing literal empty
+  (negated for `!>`, or-ed over `or` alternatives), and `| delete` of the
+  scratch fields. VictoriaLogs computes the exact result: log queries keep
+  their limit, metric queries keep the filter inside stats_query_range and
+  stats_query, and the extract no longer counts as a parser stage for the
+  metric path selection, so no raw rows are read. `<_>` and `literal<_>` keep
+  the plain regexp. extract with `plain:` and html-unescaped texts, field
+  filters `:*` and `:""`, and `delete prefix*` exist on every supported
+  VictoriaLogs version.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} !> "<_> GET <_> 200"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines.
+gap:
+  status: fixed
+  fixed_by: "#TBD"
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/translator translatePatternLineFilter; internal/proxy queryUsesParserStages'
+  loki: 'pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-52,124-165 (ParseLineFilter, Matcher.Test); pkg/logql/log/pattern/lexer.rl, expr.y (captures and literals)'
+  proxy: 'superset regexp prefilter plus extract into scratch fields and a filter on them, evaluated by VictoriaLogs for log and metric queries'
+  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs (internal/proxy)'
+  note: 'Generated patterns and lines also matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks). The e2e is written and not yet run.'
+  clusters: []

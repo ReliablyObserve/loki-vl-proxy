@@ -7,70 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.14.2] - 2026-10-12
-
-### Fixed
-
-- **A scalar instant answer carries its sample time in integer milliseconds, as
-  Loki does, not in seconds (#752).** `GET /loki/api/v1/query?query=1` (and
-  `1 + 1`, `2 * (3 + 4)`, `1 > bool 2`) was answered `[1791811168.123,"1"]`;
-  Loki 3.7.7 answers `[1791811168123,"1"]`, while `vector(1)` is in seconds on
-  both. The engine keeps the scalar time in milliseconds (`pkg/logql/engine.go`
-  `evalLiteral`), the encoder of `pkg/util/marshal` would write seconds, but the
-  HTTP answer is written by the query frontend: `pkg/querier/queryrange/prometheus.go`
-  `marshalScalar` builds the time with `model.TimeFromUnix(TimestampMs)`, which
-  reads seconds, so the millisecond count is printed as is, whereas
-  `marshalVector` uses `model.Time(TimestampMs)`. The earlier fix (#735) followed
-  `pkg/util/marshal` and stamped seconds. Every scalar shape the proxy answers
-  without a backend (a literal, a binary operation of literals, a comparison
-  with `bool`) now carries the evaluation time truncated to the millisecond;
-  vector samples are unchanged. `1 / 0` is left as it is: Loki 3.7.7 answers a
-  500 `failed to enqueue request` after about 40 s (its frontend cannot ship
-  the folded NaN to the querier) where the proxy answers a 200 scalar `NaN`; that
-  difference awaits an owner decision. `TestCompat_InstantResultTypeAlwaysSet` now compares the
-  sample time and value of every constant against Loki
-  (`semantics/scalar-sample-time-units`).
-
-## [2.14.1] - 2026-10-12
-
-### CI
-
-- **Release metadata pull requests are opened by a maintainer.** The release
-  workflows (`auto-release.yaml`, `release.yaml`) still compute the metadata and
-  push the signed `release/metadata-vX.Y.Z` branch, but no longer open or
-  auto-merge its pull request. A maintainer opens it from that branch, so the
-  pull request and the commit that lands on main carry the maintainer's
-  authorship.
-
-## [2.14.0] - 2026-10-12
-
-### Fixed
-
-- **`unwrap duration_seconds(label)` is converted like `duration(label)`, as Loki
-  does, instead of answering an empty matrix.** `sum by (service_name)
-  (sum_over_time({service_name="cache-redis"} | logfmt | unwrap
-  duration_seconds(ttl) [5m]))` over `ttl=250ms` lines returned no series on the
-  proxy and 7.5 per window on Loki 3.7.7. Loki converts `duration_seconds()` with
-  `convertDuration` (`time.ParseDuration`, in seconds), the same function as
-  `duration()` (`pkg/logql/syntax/extractor.go:63-71`, `OpConvDurationSeconds`;
-  `pkg/logql/log/metrics_extraction.go` `convertDuration`). The translator
-  recognised only the `duration(` and `bytes(` wrappers, so it treated
-  `duration_seconds(ttl)` as the name of a label that no line has: nothing
-  matched the plain-number gate, and the conversion-error check, which counts the
-  rows the gate rejects, saw no duration to count. Now `duration_seconds()` takes
-  the duration route everywhere `duration()` does: the label is extracted,
-  gated by the `time.ParseDuration` syntax (`250ms`, `1.5s`, `1h`, `-1s`, `5.s`,
-  `.5s`) and converted to seconds by VictoriaLogs for the sum, rate, average,
-  maximum, minimum and quantile of a range, tumbling, sliding or instant window,
-  the raw evaluators convert it with `time.ParseDuration`, and a value Go rejects
-  (`abc`, `1d`, `42`) fails the query with Loki's 400 `SampleExtractionErr` text
-  unless a label filter after the unwrap drops the error. The proxy now answers
-  `duration_seconds(x)` with exactly the queries and answer of `duration(x)`.
-  The window of a sum, maximum or minimum over time on a range query is a
-  separate open difference that applies to either conversion. (#729)
-
-## [2.13.0] - 2026-10-12
-
 ### Fixed
 
 - **An empty pattern line filter selects the lines Loki selects: `|> ""` keeps no
@@ -94,40 +30,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the log, range and instant paths, and `TestCompat_PatternLineFilter`
   against Loki (#743).
 
-## [2.12.0] - 2026-10-12
-
-### Fixed
-
-- **An instant query is answered with its failure status and a resultType, as
-  Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
-  (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
-  HTTP 200 with an error body and no `resultType`, which Grafana and every client
-  decoding by type (`pkg/loghttp/query.go` `QueryResponse.UnmarshalJSON` fails on
-  a missing or unknown type) cannot read, where Loki answers `vector`
-  (`pkg/logql/engine.go` `evalSample`, `JoinSampleVector`; `pkg/querier/queryrange/marshal.go`
-  `ResultToResponse`). Two causes. A query the proxy post-processes (`without`,
-  `label_replace`, `label_join`) was buffered, and a failure of it (a
-  VictoriaLogs error, a series limit, a rejected query) was written with the
-  status dropped, so every such error reached the client as a 200; query_range
-  already sent the failing status, the instant path now does too. And a
-  `label_replace` or `label_join` around a binary expression sent the
-  translator's internal binary marker to VictoriaLogs as a LogsQL query; the
-  expression under the transform now routes like any binary expression, its
-  operands run as instant queries and combine, and the transform applies to the
-  result. Also on the instant endpoint: a scalar literal (`1`, `-1`) answers a
-  `scalar` as Loki's `evalLiteral` does, where it was rejected as a log query,
-  also under a multi-tenant `X-Scope-OrgID`; `vector(1)`, `vector(1) + 2` and
-  `vector(1) + vector(2)` are evaluated as constants (a literal division by zero
-  is NaN, as in Loki's `MergeBinOp`) and stamp their sample in seconds like
-  every other sample (`pkg/util/marshal/query.go` `NewVector`) where they
-  carried nanoseconds; the first argument of a `label_replace` or `label_join`
-  is split outside strings and brackets, so a `)` or `,` in a line filter or a
-  matcher no longer breaks the translation; and
-  a log query sent with every tenant filtered out by `__tenant_id__` is rejected
-  with Loki's 400 for a log query as an instant query, not answered with an
-  empty `streams`. An aggregation over a binary expression (`sum by (job) (a /
-  b)`) is still not evaluated as Loki does; where the proxy rejects it, it now
-  does so with an error status, no longer with a typeless 200.
+- **Pattern line filters (`|>`, `!>`) keep exactly the lines Loki's pattern
+  matcher accepts, so Logs Drilldown's pattern include and exclude show Loki's
+  lines and volume.** `|> "<_> bar"` kept `x bar y`, `|> "foo"` kept
+  `foo bar` and `|> "<_>a<_>"` kept `a`, all lines Loki 3.7.7 rejects, and
+  `!>` hid them. Drilldown builds these filters from detected patterns, many of
+  which end on a literal (`<_> GET <_> 200`). Loki's `Matcher.Test`
+  (`pkg/logql/log/pattern/pattern.go`) scans the line once: each literal is
+  searched at its first occurrence after the previous one, every capture must
+  be non-empty, and a pattern that ends on a literal must end the line there
+  (a leading literal may start anywhere: `foo` matches `xfoo`). The proxy sent
+  an unanchored regexp with `<_>` as `.*`, which also backtracks to later
+  occurrences (`<_>a<_>` matched `aab`, which Loki rejects because the first
+  `a` is at the start). VictoriaLogs' `extract` pipe scans the same way, so
+  the proxy now sends an anchored regexp prefilter for `|>`, then `extract`
+  into scratch fields (`plain:` placeholders, html-escaped literals), a filter
+  that needs every capture non-empty and nothing after a trailing literal
+  (negated for `!>`, or-ed over `or` alternatives) and a `delete` of the
+  scratch fields. VictoriaLogs computes the exact result on every supported
+  version: log queries keep their `limit`, and range and instant metric
+  queries (the Drilldown volume included) keep the filter inside the stats
+  query; that `extract` is not taken for a parser stage, so no raw rows are
+  read. `<_>` and `literal<_>` patterns, which a regexp matches exactly, keep
+  the plain regexp. Covered by `TestPatternLineFilterAnchoringEdges`, a
+  differential of the translated query against a port of Loki's matcher
+  (`TestPatternLineFilterAnchoringDifferential`),
+  `TestPatternLineFilterAnchoringReachesVictoriaLogs` for the log, range and
+  instant paths, and `TestCompat_PatternLineFilterAnchoring` against Loki
+  (#TBD).
 
 ## [2.11.2] - 2026-10-12
 

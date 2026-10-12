@@ -6,6 +6,7 @@ package translator
 import (
 	"encoding/base64"
 	"fmt"
+	"html"
 	"net"
 	"regexp"
 	"regexp/syntax"
@@ -666,6 +667,8 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// definedLabels are the names pattern and label_format stages create; they
 	// are query-local and never a sanitized parser key.
 	definedLabels := make(map[string]bool)
+	// patternFilters numbers the pattern line filter alternatives that extract.
+	patternFilters := 0
 	pipelineLabelFn := func(label string) string {
 		if captureLabels[label] || labelFn == nil {
 			return label
@@ -801,7 +804,8 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		}
 		if strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") || strings.HasPrefix(remaining, "|>`") ||
 			strings.HasPrefix(remaining, "!> ") || strings.HasPrefix(remaining, "!>\"") || strings.HasPrefix(remaining, "!>`") {
-			// Pattern filter: |> "foo <_> bar" → ~"foo .* bar", !> → NOT ~"foo .* bar".
+			// Pattern filter: |> and !> keep or drop the lines Loki's pattern matcher
+			// accepts (see translatePatternLineFilter).
 			// The operand and its `or` alternatives end where the next operator starts,
 			// so a line filter that follows (!=, !~, |=) is translated too.
 			negative := remaining[0] == '!'
@@ -809,7 +813,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if err != nil {
 				return "", err
 			}
-			parts = append(parts, translatePatternLineFilter(values, negative))
+			parts = append(parts, translatePatternLineFilter(values, negative, &patternFilters)...)
 			remaining = rest
 			continue
 		}
@@ -3252,21 +3256,193 @@ func lokiMatchesEverything(text string, regex bool) bool {
 	return re.Op == syntax.OpEmptyMatch || re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyCharNotNL
 }
 
-func translatePatternLineFilter(values []string, negative bool) string {
-	regexes := make([]string, 0, len(values))
-	for _, value := range values {
-		regexes = append(regexes, patternFilterValueToRegex(value))
-	}
+// patternFilterScratch prefixes the fields the extract pipe of a pattern line
+// filter writes; the filter deletes them once it has read them.
+const patternFilterScratch = "__lvp_pf"
 
+// translatePatternLineFilter translates a pattern line filter (|> or !>) and
+// its `or` alternatives into parts of the LogsQL query.
+//
+// Loki keeps a line when pattern.Matcher.Test accepts it
+// (pkg/logql/log/pattern/pattern.go:124-165): each literal is searched once,
+// at its first occurrence after the previous one (a leading literal may start
+// anywhere in the line), every capture must be non-empty, and a pattern that
+// ends on a literal must end the line there. A regexp backtracks to later
+// occurrences, so it is exact only for `<_>` and `literal<_>`. VictoriaLogs'
+// extract pipe searches each text at its first occurrence as Test does
+// (lib/logstorage/pattern.go apply), so the other patterns extract the line
+// into scratch fields, one per capture plus the text after a trailing
+// literal, and keep it when every capture is non-empty and that text is
+// empty. Under |> the regexp, a superset of Loki's lines, stays in front as a
+// prefilter. seq numbers the alternatives that extract, so their fields stay
+// apart across the query.
+func translatePatternLineFilter(values []string, negative bool, seq *int) []string {
+	alts := make([]patternLineFilterAlt, len(values))
+	regexes := make([]string, len(values))
+	exact := true
+	for i, value := range values {
+		alts[i] = planPatternLineFilter(value, *seq)
+		regexes[i] = alts[i].re
+		if alts[i].extract != "" {
+			exact = false
+			*seq++
+		}
+	}
 	combined := regexes[0]
 	if len(regexes) > 1 {
 		combined = "(?:" + strings.Join(regexes, ")|(?:") + ")"
 	}
-
-	if negative {
-		return "NOT ~" + strconv.Quote(combined)
+	if exact {
+		if negative {
+			return []string{"NOT ~" + strconv.Quote(combined)}
+		}
+		return []string{"~" + strconv.Quote(combined)}
 	}
-	return "~" + strconv.Quote(combined)
+
+	var pipes, conds []string
+	for _, alt := range alts {
+		if alt.extract == "" {
+			conds = append(conds, "_msg:~"+strconv.Quote(alt.re))
+			continue
+		}
+		pipes = append(pipes, "| extract "+strconv.Quote(alt.extract)+" from _msg")
+		conds = append(conds, alt.cond)
+	}
+	keep := conds[0]
+	if len(conds) > 1 {
+		keep = "(" + strings.Join(conds, ") or (") + ")"
+	}
+	if negative {
+		keep = "NOT (" + keep + ")"
+	}
+	pipes = append(pipes, "| filter "+keep, "| delete "+patternFilterScratch+"*")
+	pipe := strings.Join(pipes, " ")
+	if negative {
+		return []string{pipe}
+	}
+	return []string{"~" + strconv.Quote(combined), pipe}
+}
+
+// patternFilterExtractRE matches the extract pipe of a pattern line filter.
+var patternFilterExtractRE = regexp.MustCompile(`\| extract "(?:[^"\\]|\\.)*<plain:` + patternFilterScratch + `[0-9]+_(?:[0-9]+|r)>(?:[^"\\]|\\.)*" from _msg`)
+
+// WithoutPatternLineFilterExtracts returns query without the extract pipes of
+// its pattern line filters, for the heuristics that look for parser stages: a
+// line filter parses nothing in Loki, so it adds no labels to a metric series.
+func WithoutPatternLineFilterExtracts(query string) string {
+	if !strings.Contains(query, patternFilterScratch) {
+		return query
+	}
+	return patternFilterExtractRE.ReplaceAllString(query, "")
+}
+
+// patternLineFilterAlt is one pattern alternative: re is a regexp on the line
+// that accepts every line Loki accepts and is exact when extract is empty;
+// otherwise extract is the extract pipe pattern and cond the filter on its
+// fields that keeps exactly Loki's lines.
+type patternLineFilterAlt struct {
+	re, extract, cond string
+}
+
+func planPatternLineFilter(value string, id int) patternLineFilterAlt {
+	if value == "" {
+		// Loki's empty pattern is a matcher with no expression, which accepts
+		// only an empty line (pkg/logql/log/pattern ParseLineFilter, Test).
+		return patternLineFilterAlt{re: "^$"}
+	}
+	nodes := linePatternNodes(value)
+	var re, ext strings.Builder
+	var cond []string
+	captures := 0
+	field := func(suffix string) string {
+		return patternFilterScratch + strconv.Itoa(id) + "_" + suffix
+	}
+	for i, n := range nodes {
+		if !n.capture {
+			re.WriteString(regexp.QuoteMeta(n.text))
+			// extract reads `<` as the start of a field and html-unescapes
+			// its texts; plain: keeps a quoted capture as it is in the line.
+			ext.WriteString(html.EscapeString(n.text))
+			continue
+		}
+		if i == 0 {
+			re.WriteString("^")
+		}
+		re.WriteString(".+")
+		captures++
+		f := field(strconv.Itoa(captures))
+		ext.WriteString("<plain:" + f + ">")
+		cond = append(cond, f+":*")
+	}
+	if !nodes[len(nodes)-1].capture {
+		re.WriteString("$")
+		f := field("r")
+		ext.WriteString("<plain:" + f + ">")
+		cond = append(cond, f+`:""`)
+	}
+	alt := patternLineFilterAlt{re: re.String()}
+	if captures > 0 {
+		alt.re = "(?s)" + alt.re
+	}
+	if (len(nodes) == 1 && nodes[0].capture) || (len(nodes) == 2 && !nodes[0].capture && nodes[1].capture) {
+		return alt
+	}
+	if captures == 0 {
+		// A literal alone leaves the trailing field empty when the line does
+		// not hold it at all; the regexp says it does.
+		cond = append([]string{"_msg:~" + strconv.Quote(alt.re)}, cond...)
+	}
+	alt.extract = ext.String()
+	alt.cond = strings.Join(cond, " ")
+	return alt
+}
+
+// linePatternNode is a literal or a capture of a Loki pattern.
+type linePatternNode struct {
+	text    string
+	capture bool
+}
+
+// linePatternNodes splits a pattern like Loki's pattern lexer
+// (pkg/logql/log/pattern/lexer.rl): <name>, a letter or underscore then
+// letters, digits and underscores, is a capture, every other rune is literal.
+func linePatternNodes(p string) []linePatternNode {
+	var nodes []linePatternNode
+	lit := 0
+	for i := 0; i < len(p); i++ {
+		n := linePatternCaptureLen(p[i:])
+		if n == 0 {
+			continue
+		}
+		if lit < i {
+			nodes = append(nodes, linePatternNode{text: p[lit:i]})
+		}
+		nodes = append(nodes, linePatternNode{capture: true})
+		i += n - 1
+		lit = i + 1
+	}
+	if lit < len(p) {
+		nodes = append(nodes, linePatternNode{text: p[lit:]})
+	}
+	return nodes
+}
+
+func linePatternCaptureLen(s string) int {
+	word := func(c byte, digits bool) bool {
+		return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (digits && c >= '0' && c <= '9')
+	}
+	if len(s) < 3 || s[0] != '<' || !word(s[1], false) {
+		return 0
+	}
+	for j := 2; j < len(s); j++ {
+		if s[j] == '>' {
+			return j + 1
+		}
+		if !word(s[j], true) {
+			return 0
+		}
+	}
+	return 0
 }
 
 // takePatternValues reads the operand of a pattern line filter and its `or`
@@ -3292,20 +3468,6 @@ func takePatternValues(s string) (values []string, rest string, err error) {
 		values = append(values, alt.text)
 	}
 	return values, rest, nil
-}
-
-func patternFilterValueToRegex(value string) string {
-	if value == "" {
-		// Loki's empty pattern is a matcher with no expression, which accepts
-		// only an empty line (pkg/logql/log/pattern ParseLineFilter, Test).
-		return "^$"
-	}
-
-	parts := strings.Split(value, "<_>")
-	for i, part := range parts {
-		parts[i] = regexp.QuoteMeta(part)
-	}
-	return strings.Join(parts, ".*")
 }
 
 // splitStreamMatchers splits stream selector content like `app="x",level="error"`

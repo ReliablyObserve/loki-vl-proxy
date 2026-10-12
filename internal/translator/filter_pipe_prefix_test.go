@@ -18,7 +18,7 @@ func TestTranslateLogQL_BareFilterAfterPipeGetsFilterPrefix(t *testing.T) {
 		{`{app="api"} |= "x" | json |= "y"`, `app:="api" ~"x" | unpack_json | filter ~"y"`},
 		{`{app="api"} | logfmt |= "y" != "z"`, `app:="api" | unpack_logfmt | filter ~"y" NOT ~"z"`},
 		{`{app="api"} | json |~ "y.*"`, `app:="api" | unpack_json | filter ~"y.*"`},
-		{`{app="api"} | json |> "<_> err <_>"`, `app:="api" | unpack_json | filter ~".* err .*"`},
+		{`{app="api"} | json |> "<_> err <_>"`, `app:="api" | unpack_json | filter ~"(?s)^.+ err .+" | extract "<plain:__lvp_pf0_1> err <plain:__lvp_pf0_2>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_2:* | delete __lvp_pf*`},
 		{`{app="api"} | keep level |= "y"`, `app:="api" | fields _time, _msg, _stream, level | filter ~"y"`},
 		{`{app="api"} | drop status |= "y" != "z"`, `app:="api" | delete status | filter ~"y" NOT ~"z"`},
 		{`{app="api"} | line_format "{{.status}}" |= "y"`, `app:="api" | format "<status>" | filter ~"y"`},
@@ -33,7 +33,7 @@ func TestTranslateLogQL_BareFilterAfterPipeGetsFilterPrefix(t *testing.T) {
 		{`{app="api"} | level="" | json`, `app:="api" -level:* | unpack_json`},
 		{`{app="api"} | logfmt | status>200 |= "y" | level="x"`, `app:="api" | unpack_logfmt | filter status:>200 ~"y" | filter level:="x"`},
 		{`{app="api"} | json | detected_level="error" |= "y"`, `app:="api" | unpack_json | filter level:="error" ~"y"`},
-		{`{env="production"} | detected_level="error" !> "level=error msg=<_>"`, `env:="production" | unpack_logfmt | filter level:="error" NOT ~"level=error msg=.*"`},
+		{`{env="production"} | detected_level="error" !> "level=error msg=<_>"`, `env:="production" | unpack_logfmt | filter level:="error" NOT ~"(?s)level=error msg=.+"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.logql, func(t *testing.T) {

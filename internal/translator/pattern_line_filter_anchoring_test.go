@@ -1,0 +1,501 @@
+package translator
+
+import (
+	"html"
+	"math/rand"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// This file pins the pattern line filters (|> and !>) to Loki's verdict per
+// line. The reference is a port of Loki v3.7.7 pkg/logql/log/pattern:
+// the lexer (lexer.rl: <(alpha|_)(alnum|_)*> is a capture, every other rune a
+// literal, adjacent literals merged by expr.y) and Matcher.Test
+// (pattern.go:124-165): each literal is searched once, at its first occurrence
+// after the previous one; a capture must be non-empty, and a pattern ending on
+// a literal must consume the line to its end.
+//
+// The translated LogsQL is evaluated the way VictoriaLogs does, by a small
+// evaluator of the filters and pipes the translation emits: regexp filters on
+// _msg, the extract pipe (a port of VictoriaLogs lib/logstorage/pattern.go
+// parsePatternSteps and apply, which search each text at its first occurrence
+// like Loki), `field:*` (non-empty), `field:""` (empty or missing), NOT, or and
+// implicit and. The regexps are compiled without DotNL, so the translation must
+// carry its own (?s).
+
+type lokiPatternNode struct {
+	lit     string
+	capture bool
+}
+
+// lokiPatternNodes is the Loki pattern lexer and parser (lexer.rl, expr.y).
+func lokiPatternNodes(p string) []lokiPatternNode {
+	var nodes []lokiPatternNode
+	isAlpha := func(c byte) bool { return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
+	for i := 0; i < len(p); {
+		if p[i] == '<' && i+1 < len(p) && isAlpha(p[i+1]) {
+			j := i + 2
+			for j < len(p) && (isAlpha(p[j]) || (p[j] >= '0' && p[j] <= '9')) {
+				j++
+			}
+			if j < len(p) && p[j] == '>' {
+				nodes = append(nodes, lokiPatternNode{lit: p[i+1 : j], capture: true})
+				i = j + 1
+				continue
+			}
+		}
+		if n := len(nodes); n > 0 && !nodes[n-1].capture {
+			nodes[n-1].lit += p[i : i+1]
+		} else {
+			nodes = append(nodes, lokiPatternNode{lit: p[i : i+1]})
+		}
+		i++
+	}
+	return nodes
+}
+
+// lokiPatternTest is pattern.Matcher.Test (pkg/logql/log/pattern/pattern.go:124-165).
+func lokiPatternTest(pattern, line string) bool {
+	e := lokiPatternNodes(pattern)
+	if len(line) == 0 || len(e) == 0 {
+		return len(line) == 0 && len(e) == 0
+	}
+	off := 0
+	for i, n := range e {
+		if n.capture {
+			continue
+		}
+		j := strings.Index(line[off:], n.lit)
+		if j == -1 {
+			return false
+		}
+		if i != 0 && j == 0 {
+			return false
+		}
+		off += j + len(n.lit)
+	}
+	reqRem := e[len(e)-1].capture
+	hasRem := off != len(line)
+	return reqRem == hasRem
+}
+
+// vlExtract is VictoriaLogs' extract pipe on one value (lib/logstorage/pattern.go
+// parsePatternSteps and apply, v1.43-v1.52), for `<plain:name>` and `<_>` fields.
+func vlExtract(t *testing.T, ptn, s string) map[string]string {
+	t.Helper()
+	type step struct{ prefix, field, opt string }
+	var steps []step
+	n := strings.IndexByte(ptn, '<')
+	if n < 0 {
+		steps = append(steps, step{prefix: ptn})
+	} else {
+		prefix, rest := ptn[:n], ptn[n+1:]
+		for {
+			m := strings.IndexByte(rest, '>')
+			if m < 0 {
+				t.Fatalf("extract pattern %q: missing '>'", ptn)
+			}
+			field := rest[:m]
+			rest = rest[m+1:]
+			if field == "_" || field == "*" {
+				field = ""
+			}
+			steps = append(steps, step{prefix: prefix, field: field})
+			if rest == "" {
+				break
+			}
+			m = strings.IndexByte(rest, '<')
+			if m < 0 {
+				steps = append(steps, step{prefix: rest})
+				break
+			}
+			prefix, rest = rest[:m], rest[m+1:]
+		}
+	}
+	for i := range steps {
+		steps[i].prefix = html.UnescapeString(steps[i].prefix)
+		if k := strings.IndexByte(steps[i].field, ':'); k >= 0 {
+			steps[i].opt = strings.TrimSpace(steps[i].field[:k])
+			steps[i].field = steps[i].field[k+1:]
+		}
+		steps[i].field = strings.TrimSpace(steps[i].field)
+		if i > 0 && steps[i].prefix == "" {
+			t.Fatalf("extract pattern %q: missing delimiter between fields", ptn)
+		}
+		if steps[i].field != "" && steps[i].opt != "plain" {
+			t.Fatalf("extract pattern %q: field %q unquotes quoted values, Loki does not", ptn, steps[i].field)
+		}
+	}
+	matches := make([]string, len(steps))
+	out := func() map[string]string {
+		m := map[string]string{}
+		for i, st := range steps {
+			if st.field != "" {
+				m[st.field] = matches[i]
+			}
+		}
+		return m
+	}
+	idx := func(s, prefix string) int {
+		if prefix == "" {
+			return 0
+		}
+		return strings.Index(s, prefix)
+	}
+	k := idx(s, steps[0].prefix)
+	if k < 0 {
+		return out()
+	}
+	s = s[k+len(steps[0].prefix):]
+	for i := range steps {
+		next := ""
+		if i+1 < len(steps) {
+			next = steps[i+1].prefix
+		}
+		if next == "" {
+			matches[i] = s
+			return out()
+		}
+		k := idx(s, next)
+		if k < 0 {
+			return out()
+		}
+		matches[i] = s[:k]
+		s = s[k+len(next):]
+	}
+	return out()
+}
+
+// logsqlRow evaluates the translated query on one line.
+type logsqlRow struct {
+	t      *testing.T
+	fields map[string]string
+}
+
+func splitTopLevel(t *testing.T, s, sep string) []string {
+	t.Helper()
+	var out []string
+	inQuote := false
+	start := 0
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && inQuote:
+			i++
+		case s[i] == '"':
+			inQuote = !inQuote
+		case !inQuote && strings.HasPrefix(s[i:], sep):
+			out = append(out, s[start:i])
+			start = i + len(sep)
+			i += len(sep) - 1
+		}
+	}
+	return append(out, s[start:])
+}
+
+// evalLogsQLLine reports whether VictoriaLogs keeps the line under query, and
+// the fields the query leaves on the row.
+func evalLogsQLLine(t *testing.T, query, line string) (bool, map[string]string) {
+	t.Helper()
+	row := &logsqlRow{t: t, fields: map[string]string{"_msg": line}}
+	for i, stage := range splitTopLevel(t, query, " | ") {
+		stage = strings.TrimSpace(stage)
+		switch {
+		case i == 0 || strings.HasPrefix(stage, "filter "):
+			expr := strings.TrimPrefix(stage, "filter ")
+			p := &filterParser{t: t, s: expr}
+			ok := p.parseOr(row)
+			if p.pos != len(p.s) {
+				t.Fatalf("filter %q: unparsed tail %q", expr, p.s[p.pos:])
+			}
+			if !ok {
+				return false, row.fields
+			}
+		case strings.HasPrefix(stage, "extract "):
+			rest := strings.TrimPrefix(stage, "extract ")
+			q, err := strconv.QuotedPrefix(rest)
+			if err != nil {
+				t.Fatalf("extract stage %q: %v", stage, err)
+			}
+			if tail := strings.TrimSpace(rest[len(q):]); tail != "from _msg" {
+				t.Fatalf("extract stage %q: want `from _msg`, got %q", stage, tail)
+			}
+			ptn, _ := strconv.Unquote(q)
+			for k, v := range vlExtract(t, ptn, row.fields["_msg"]) {
+				row.fields[k] = v
+			}
+		case strings.HasPrefix(stage, "delete "):
+			for _, f := range strings.Split(strings.TrimPrefix(stage, "delete "), ",") {
+				f = strings.TrimSpace(f)
+				for k := range row.fields {
+					if k == f || (strings.HasSuffix(f, "*") && strings.HasPrefix(k, strings.TrimSuffix(f, "*"))) {
+						delete(row.fields, k)
+					}
+				}
+			}
+		default:
+			t.Fatalf("unexpected stage %q in %q", stage, query)
+		}
+	}
+	return true, row.fields
+}
+
+type filterParser struct {
+	t   *testing.T
+	s   string
+	pos int
+}
+
+func (p *filterParser) skip() {
+	for p.pos < len(p.s) && p.s[p.pos] == ' ' {
+		p.pos++
+	}
+}
+
+func (p *filterParser) peekWord(w string) bool {
+	p.skip()
+	return strings.HasPrefix(p.s[p.pos:], w+" ") || strings.HasPrefix(p.s[p.pos:], w+"(")
+}
+
+func (p *filterParser) parseOr(row *logsqlRow) bool {
+	v := p.parseAnd(row)
+	for p.peekWord("or") {
+		p.pos += 2
+		w := p.parseAnd(row)
+		v = v || w
+	}
+	return v
+}
+
+func (p *filterParser) parseAnd(row *logsqlRow) bool {
+	v := p.parseUnary(row)
+	for {
+		p.skip()
+		if p.pos >= len(p.s) || p.s[p.pos] == ')' || p.peekWord("or") {
+			return v
+		}
+		if p.peekWord("and") {
+			p.pos += 3
+		}
+		w := p.parseUnary(row)
+		v = v && w
+	}
+}
+
+func (p *filterParser) parseUnary(row *logsqlRow) bool {
+	p.skip()
+	if p.peekWord("NOT") {
+		p.pos += 3
+		return !p.parseUnary(row)
+	}
+	if p.s[p.pos] == '(' {
+		p.pos++
+		v := p.parseOr(row)
+		p.skip()
+		if p.pos >= len(p.s) || p.s[p.pos] != ')' {
+			p.t.Fatalf("filter %q: missing ')'", p.s)
+		}
+		p.pos++
+		return v
+	}
+	field := "_msg"
+	if p.s[p.pos] != '~' {
+		k := strings.IndexByte(p.s[p.pos:], ':')
+		if k < 0 {
+			p.t.Fatalf("filter %q: cannot parse at %q", p.s, p.s[p.pos:])
+		}
+		field = p.s[p.pos : p.pos+k]
+		p.pos += k + 1
+	}
+	rest := p.s[p.pos:]
+	switch {
+	case strings.HasPrefix(rest, "*"):
+		p.pos++
+		return row.fields[field] != ""
+	case strings.HasPrefix(rest, `""`):
+		p.pos += 2
+		return row.fields[field] == ""
+	case strings.HasPrefix(rest, "~"):
+		q, err := strconv.QuotedPrefix(rest[1:])
+		if err != nil {
+			p.t.Fatalf("filter %q: %v", p.s, err)
+		}
+		p.pos += 1 + len(q)
+		re, _ := strconv.Unquote(q)
+		return regexp.MustCompile(re).MatchString(row.fields[field])
+	}
+	p.t.Fatalf("filter %q: unsupported filter at %q", p.s, rest)
+	return false
+}
+
+// translatedPatternVerdict translates `{app="x"} <op> <operands>` and evaluates
+// it on line.
+func translatedPatternVerdict(t *testing.T, op string, patterns []string, line string) (bool, string) {
+	t.Helper()
+	quoted := make([]string, len(patterns))
+	for i, p := range patterns {
+		quoted[i] = strconv.Quote(p)
+	}
+	logql := `{app="x"} ` + op + " " + strings.Join(quoted, " or ")
+	got, err := TranslateLogQL(logql)
+	if err != nil {
+		t.Fatalf("%s: %v", logql, err)
+	}
+	q := strings.TrimSpace(strings.TrimPrefix(got, `app:="x"`))
+	if strings.HasPrefix(q, "| ") {
+		// No bare filter before the first pipe: every line enters it.
+		q = `~"" ` + q
+	}
+	keep, fields := evalLogsQLLine(t, q, line)
+	for k := range fields {
+		if keep && k != "_msg" {
+			t.Fatalf("%s leaves the scratch field %q on the row: %s", logql, k, got)
+		}
+	}
+	return keep, got
+}
+
+func lokiPatternVerdict(op string, patterns []string, line string) bool {
+	matched := false
+	for _, p := range patterns {
+		matched = matched || lokiPatternTest(p, line)
+	}
+	if op == "!>" {
+		return !matched
+	}
+	return matched
+}
+
+// conformance: semantics/pattern-line-filter-anchoring
+func TestPatternLineFilterAnchoringEdges(t *testing.T) {
+	cases := []struct {
+		pattern, line string
+		loki          bool
+	}{
+		// The measured differences.
+		{"<_> bar", "x bar y", false},
+		{"foo", "foo bar", false},
+		{"<_>a<_>", "a", false},
+		{"foo <_>", "foo bar", true},
+		// A literal is searched once, at its first occurrence.
+		{"<_>a<_>", "aab", false},
+		{"<_> bar", "x bar bar", false},
+		{"<_> bar", "x bar", true},
+		{"<_> bar <_>", " bar x bar y", false},
+		{"<_>x", "axbx", false},
+		{"aa", "aaa", false},
+		// A leading literal may start anywhere in the line.
+		{"foo", "xfoo", true},
+		{"foo", "foofoo", false},
+		{"foo <_>", "xfoo bar", true},
+		{"foo <_>", "foo ", false},
+		// Captures must be non-empty, including a leading and a trailing one.
+		{"<_>", "", false},
+		{"<_>", "x", true},
+		{"<_> <_>", " a", false},
+		{"<_> <_>", "a  b", true},
+		{"<_> <_>", "a ", false},
+		{"<_>bar", "bar", false},
+		// Multi-line lines: a capture spans newlines.
+		{"<_> end", "first\nsecond end", true},
+		{"start <_>", "start\nx", false},
+		{"start<_>", "start\nx", true},
+		// A quoted capture is plain text, never unquoted.
+		{`<_> bar`, `"q" x bar`, true},
+		{`key=<_> next`, `key="a b" next`, true},
+		{`key=<_> next`, `key='a' next`, true},
+		// HTML-like text is literal.
+		{"a < b<_>", "a < b c", true},
+		{"<_>&amp;<_>", "x&amp;y", true},
+		{"<_>&amp;<_>", "x&y", false},
+		{"<_>&lt;", "x&lt;", true},
+		{"<_>&lt;", "x<", false},
+		{"<a b> <_>", "<a b> c", true},
+		{"<_>\"<_>", "a\"b", true},
+		{"<_>`<_>", "a`b", true},
+		{`<_>\<_>`, `a\b`, true},
+		// Empty pattern.
+		{"", "", true},
+		{"", "x", false},
+	}
+	for _, c := range cases {
+		if got := lokiPatternTest(c.pattern, c.line); got != c.loki {
+			t.Fatalf("reference port: Test(%q, %q) = %v, Loki %v", c.pattern, c.line, got, c.loki)
+		}
+		for _, op := range []string{"|>", "!>"} {
+			want := lokiPatternVerdict(op, []string{c.pattern}, c.line)
+			got, query := translatedPatternVerdict(t, op, []string{c.pattern}, c.line)
+			if got != want {
+				t.Errorf("%s %q on %q: proxy keeps=%v, Loki keeps=%v\n  LogsQL: %s", op, c.pattern, c.line, got, want, query)
+			}
+		}
+	}
+}
+
+// conformance: semantics/pattern-line-filter-anchoring
+func TestPatternLineFilterAnchoringDifferential(t *testing.T) {
+	literals := []string{"a", "b", " ", "ab", "ba", "aa", " a", "a ", "\n", `"`, "<", "&", "&lt;", "<b", "x<y", "\\"}
+	alphabet := []string{"a", "b", " ", "\n", `"`, "'", "<", "&", "x", "lt;", ">"}
+	rng := rand.New(rand.NewSource(20261012))
+	genPattern := func() string {
+		var b strings.Builder
+		nodes := 1 + rng.Intn(5)
+		capture := rng.Intn(2) == 0
+		for i := 0; i < nodes; i++ {
+			if capture {
+				b.WriteString("<_>")
+			} else {
+				b.WriteString(literals[rng.Intn(len(literals))])
+			}
+			capture = !capture
+		}
+		return b.String()
+	}
+	genLine := func(parts []string) string {
+		var b strings.Builder
+		for n := rng.Intn(9); n > 0; n-- {
+			if len(parts) > 0 && rng.Intn(3) == 0 {
+				b.WriteString(parts[rng.Intn(len(parts))])
+			} else {
+				b.WriteString(alphabet[rng.Intn(len(alphabet))])
+			}
+		}
+		return b.String()
+	}
+	iterations := 3000
+	if testing.Short() {
+		iterations = 800
+	}
+	mismatches := 0
+	for i := 0; i < iterations; i++ {
+		patterns := []string{genPattern()}
+		if rng.Intn(4) == 0 {
+			patterns = append(patterns, genPattern())
+		}
+		var lits []string
+		for _, p := range patterns {
+			for _, n := range lokiPatternNodes(p) {
+				if !n.capture {
+					lits = append(lits, n.lit)
+				}
+			}
+		}
+		for j := 0; j < 12; j++ {
+			line := genLine(lits)
+			for _, op := range []string{"|>", "!>"} {
+				want := lokiPatternVerdict(op, patterns, line)
+				got, query := translatedPatternVerdict(t, op, patterns, line)
+				if got != want {
+					mismatches++
+					if mismatches <= 20 {
+						t.Errorf("%s %q on %q: proxy keeps=%v, Loki keeps=%v\n  LogsQL: %s", op, patterns, line, got, want, query)
+					}
+				}
+			}
+		}
+	}
+	if mismatches > 0 {
+		t.Errorf("%d mismatches against Loki's pattern.Matcher.Test", mismatches)
+	}
+}
