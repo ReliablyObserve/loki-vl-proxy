@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-10-12
+
 ### Fixed
 
 - **An instant query is answered with its failure status and a resultType, as
