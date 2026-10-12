@@ -3471,13 +3471,17 @@ func exactSingleLiteralPatternFilter(nodes []linePatternNode) string {
 	}
 	q := regexp.QuoteMeta(lit)
 	re := func(s string) string { return "_msg:~" + strconv.Quote(s) }
+	// The plain regexp for L comes first: VictoriaLogs answers it as a
+	// substring search and prunes the blocks that do not hold L, where the
+	// anchored regexps below run on every row (2x the time of the plain
+	// filter on 500k rows).
 	switch {
 	case lead && trail:
-		return re("(?s)."+q+".") + " NOT " + re("^"+q)
+		return re(q) + " " + re("(?s)."+q+".") + " NOT " + re("^"+q)
 	case lead:
-		return re("(?s)."+q+"$") + " NOT " + re("(?s)"+q+".")
+		return re(q) + " " + re("(?s)."+q+"$") + " NOT " + re("(?s)"+q+".")
 	default:
-		return re("(?s)"+q+"$") + " NOT " + re("(?s)"+q+".")
+		return re(q) + " " + re("(?s)"+q+"$") + " NOT " + re("(?s)"+q+".")
 	}
 }
 

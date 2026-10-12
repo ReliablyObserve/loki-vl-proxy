@@ -13,8 +13,8 @@ func TestTranslateLineFilterOrAlternatives(t *testing.T) {
 		// Regex and pattern alternatives stay grouped so each keeps its own anchors and flags.
 		{`{app="x"} |~ "^a" or "(?i)b"`, `app:="x" ~"(?:^a)|(?:(?i)b)"`},
 		{`{app="x"} !~ "a" or "b" or "c"`, `app:="x" NOT ~"(?:a)|(?:b)|(?:c)"`},
-		{`{app="x"} |> "<_>a" or "<_>b"`, `app:="x" ((_msg:~"(?s).a$" NOT _msg:~"(?s)a.") or (_msg:~"(?s).b$" NOT _msg:~"(?s)b."))`},
-		{`{app="x"} !> "<_>a" or "<_>b"`, `app:="x" NOT ((_msg:~"(?s).a$" NOT _msg:~"(?s)a.") or (_msg:~"(?s).b$" NOT _msg:~"(?s)b."))`},
+		{`{app="x"} |> "<_>a" or "<_>b"`, `app:="x" ((_msg:~"a" _msg:~"(?s).a$" NOT _msg:~"(?s)a.") or (_msg:~"b" _msg:~"(?s).b$" NOT _msg:~"(?s)b."))`},
+		{`{app="x"} !> "<_>a" or "<_>b"`, `app:="x" NOT ((_msg:~"a" _msg:~"(?s).a$" NOT _msg:~"(?s)a.") or (_msg:~"b" _msg:~"(?s).b$" NOT _msg:~"(?s)b."))`},
 		// ip(): plain text under |=, |~ and |> (Loki's or chain ignores the Op), an ip match under !=.
 		{`{app="x"} |= "a" or ip("1.2.3.4")`, `app:="x" ~"a|1\\.2\\.3\\.4"`},
 		{`{app="x"} |= ip("1.2.3.4") or "a"`, `app:="x" ~"1\\.2\\.3\\.4|a"`},
