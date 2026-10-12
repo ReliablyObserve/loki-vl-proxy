@@ -29,6 +29,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sample time and value of every constant against Loki
   (`semantics/scalar-sample-time-units`).
 
+## [2.13.0] - 2026-10-12
+
+### Fixed
+
+- **An empty pattern line filter selects the lines Loki selects: `|> ""` keeps no
+  line of an ordinary stream and `!> ""` keeps them all.** `{namespace="prod"}
+  |> ""` returned the page on the proxy and no line on Loki 3.7.7, and
+  `{namespace="prod"} !> ""` returned nothing where Loki returns the page. An
+  empty pattern is valid in Loki: it parses without error and builds a pattern
+  matcher with no expression, which accepts only an empty line
+  (`pkg/logql/log/pattern/pattern.go` `ParseLineFilter`, `Matcher.Test`), so
+  `|> ""` keeps the empty lines and `!> ""` drops them. It is not the match-all
+  filter that `|= ""` is: `|> "" or "x"` keeps the empty lines and the lines that
+  match `x`. The proxy translated the empty pattern to the regexp `.*`, which
+  VictoriaLogs read as every line; it now sends `^$`, the empty line, in log
+  queries, in range and instant metric queries (the filter is part of the stats
+  query, nothing is filtered in the proxy), after a parser stage and inside an
+  `or` chain. A `!=`, `!~` or `!>` written right after a pattern filter, with no
+  pipe between them (`|> "a <_>" != "x"`), is a filter of its own again: the
+  proxy read it as part of the pattern, dropped both filters and returned every
+  line. Non-empty patterns are otherwise unchanged. Covered by the edge table
+  `TestTranslateEmptyPatternLineFilter`, `TestEmptyPatternLineFilterReachesVictoriaLogs`
+  for the log, range and instant paths, and `TestCompat_PatternLineFilter`
+  against Loki (#743).
+
 ## [2.12.0] - 2026-10-12
 
 ### Fixed
