@@ -60,8 +60,10 @@ compare:
     vector.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#735"
   impact: grafana-datasource
+  visual: none
+  visual_reason: 'instant queries only; the visual harness captures Explore range panels (queryType range), so the fix is proven by the instant resultType table and the e2e against Loki'
   effort: S
   area: 'internal/proxy handleQuery (captured post-processing status, label transform routing, constants), multitenant.go'
   loki: 'pkg/logql/engine.go evalSample/evalLiteral/evalVector, JoinSampleVector; pkg/querier/queryrange/marshal.go ResultToResponse; pkg/querier/http.go InstantQueryHandler; pkg/loghttp/query.go UnmarshalJSON'

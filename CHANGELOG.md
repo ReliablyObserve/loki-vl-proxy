@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **An instant query is answered with its failure status and a resultType, as
-  Loki does, not with a 200 that has neither (#TBD).** `stdvar without (app)
+  Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
   (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
   HTTP 200 with an error body and no `resultType`, which Grafana and every client
   decoding by type (`pkg/loghttp/query.go` `QueryResponse.UnmarshalJSON` fails on
