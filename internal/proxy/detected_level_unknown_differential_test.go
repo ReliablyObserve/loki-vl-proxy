@@ -86,6 +86,7 @@ func dlNormalise(v string) string {
 
 type dlScenario struct {
 	query      string
+	drop       []string // labels a `| drop` stage of the query removes
 	window     time.Duration
 	step       time.Duration // 0: instant
 	start, end int64         // ns, evaluation times
@@ -116,7 +117,7 @@ func (s dlScenario) times() []int64 {
 func (s dlScenario) emuRows() []emuRow {
 	out := make([]emuRow, len(s.rows))
 	for i, r := range s.rows {
-		out[i] = emuRow{ts: r.ts, stream: r.stream, msg: r.msg}
+		out[i] = emuRow{ts: r.ts, stream: r.stream, msg: r.msg, value: 1}
 		if r.msg == "" {
 			out[i].msg = fmt.Sprintf("line %d", i)
 		}
@@ -147,11 +148,12 @@ func dlStreamLabels(stream string) map[string]string {
 }
 
 // lokiDetectedLevelAnswer is the reference. kind is the metric: "" (a bare
-// count_over_time), "rate" (a bare rate) or the vector aggregation around
+// count_over_time), "rate" (a bare rate), "unwrap" (a bare avg_over_time over
+// an unwrapped label whose value is 1) or the vector aggregation around
 // count_over_time: "sum by (detected_level)", "count by (detected_level)",
 // "sum without (pod)"... A series is the stream labels, the level when the row
 // has one, and detected_level.
-func lokiDetectedLevelAnswer(rows []dlRow, kind string, window int64, times []int64) map[string]*dlSeries {
+func lokiDetectedLevelAnswer(rows []dlRow, kind string, drop []string, window int64, times []int64) map[string]*dlSeries {
 	out := map[string]*dlSeries{}
 	add := func(labels map[string]string, t int64, v float64) {
 		key := dlKey(labels)
@@ -177,6 +179,9 @@ func lokiDetectedLevelAnswer(rows []dlRow, kind string, window int64, times []in
 				labels["level"] = r.level
 			}
 			labels["detected_level"] = dlDerive(r.level, r.msg)
+			for _, name := range drop {
+				delete(labels, name)
+			}
 			key := dlKey(labels)
 			perSeries[key]++
 			identity[key] = labels
@@ -188,10 +193,18 @@ func lokiDetectedLevelAnswer(rows []dlRow, kind string, window int64, times []in
 				add(labels, t, v)
 			case "rate":
 				add(labels, t, v/(float64(window)/1e9))
-			case "sum by (detected_level)":
-				add(map[string]string{"detected_level": labels["detected_level"]}, t, v)
-			case "count by (detected_level)":
-				add(map[string]string{"detected_level": labels["detected_level"]}, t, 1)
+			case "unwrap":
+				add(labels, t, 1)
+			case "sum by (detected_level)", "count by (detected_level)":
+				by := map[string]string{}
+				if dl := labels["detected_level"]; dl != "" { // a dropped label is no group
+					by["detected_level"] = dl
+				}
+				if kind == "sum by (detected_level)" {
+					add(by, t, v)
+				} else {
+					add(by, t, 1)
+				}
 			case "sum without (pod)", "sum without (pod, detected_level)", "sum without (level)":
 				drop := strings.Split(strings.TrimSuffix(strings.TrimPrefix(kind, "sum without ("), ")"), ", ")
 				rest := map[string]string{}
@@ -209,26 +222,30 @@ func lokiDetectedLevelAnswer(rows []dlRow, kind string, window int64, times []in
 	return out
 }
 
-func dlQuery(kind, window string) string {
-	inner := fmt.Sprintf(`count_over_time({app="dl"}[%s])`, window)
+func dlQuery(kind, window, pipe string) string {
+	inner := fmt.Sprintf(`count_over_time({app="dl"}%s[%s])`, pipe, window)
 	switch kind {
 	case "":
 		return inner
 	case "rate":
-		return fmt.Sprintf(`rate({app="dl"}[%s])`, window)
+		return fmt.Sprintf(`rate({app="dl"}%s[%s])`, pipe, window)
+	case "unwrap":
+		return fmt.Sprintf(`avg_over_time({app="dl"}%s | unwrap amount [%s])`, pipe, window)
 	}
 	return fmt.Sprintf("%s (%s)", kind, inner)
 }
 
 // dlKinds are the metric shapes under test. count by over a sliding window is
 // left out: the sliding route does not reduce count, min, max and avg yet
-// (semantics/non-sum-vector-aggregation-unreduced, a separate gap).
+// (semantics/non-sum-vector-aggregation-unreduced, a separate gap); an unwrap
+// range function is left to the instant route, as its tumbling and sliding
+// windows are labelled at other times than Loki's
+// (semantics/unwrap-over-time-range-windows, a separate gap).
 func dlKinds(route string) []string {
-	kinds := []string{"", "rate", "sum by (detected_level)", "count by (detected_level)", "sum without (pod)", "sum without (pod, detected_level)", "sum without (level)"}
-	if route == "sliding" {
-		return slices.DeleteFunc(kinds, func(k string) bool { return strings.HasPrefix(k, "count") })
-	}
-	return kinds
+	kinds := []string{"", "rate", "unwrap", "sum by (detected_level)", "count by (detected_level)", "sum without (pod)", "sum without (pod, detected_level)", "sum without (level)"}
+	return slices.DeleteFunc(kinds, func(k string) bool {
+		return route == "sliding" && strings.HasPrefix(k, "count") || route != "instant" && k == "unwrap"
+	})
 }
 
 func generateDLScenario(rnd *rand.Rand, kind, route string) dlScenario {
@@ -247,7 +264,7 @@ func generateDLScenario(rnd *rand.Rand, kind, route string) dlScenario {
 	if s.step > 0 {
 		s.end = s.start + int64(1+rnd.Intn(4))*int64(s.step)
 	}
-	s.query = dlQuery(kind, strconv.Itoa(int(w/time.Minute))+"m")
+	s.query = dlQuery(kind, strconv.Itoa(int(w/time.Minute))+"m", "")
 	streams := []string{`{app="dl",pod="a"}`, `{app="dl",pod="b"}`}
 	levels := []string{"", "", "", "info", "error", "warn"}
 	// Lines without a stored level: Loki reads the line.
@@ -394,7 +411,7 @@ func TestDetectedLevelUnknownAcrossRoutes(t *testing.T) {
 					for i := 0; i < 12; i++ {
 						s := generateDLScenario(rnd, kind, route)
 						got := runDLScenario(t, s, version)
-						want := lokiDetectedLevelAnswer(s.rows, kind, int64(s.window), s.times())
+						want := lokiDetectedLevelAnswer(s.rows, kind, s.drop, int64(s.window), s.times())
 						compareDLAnswer(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
 					}
 				})
@@ -425,24 +442,32 @@ func TestDetectedLevelUnknownEdgeTable(t *testing.T) {
 		{"stored level beats the line", []dlRow{{in(10), a, "info", "ERROR: boom"}}},
 		{"one stream, every spelling of a level source", []dlRow{{in(10), a, "debug", ""}, {in(20), a, "", "level=debug"}, {in(30), a, "", `{"level":"debug"}`}, {in(40), a, "", "DEBUG x"}}},
 	}
+	// A `| drop` stage removes the label from the series after the derivation,
+	// as in Loki, whichever route answers.
+	pipes := []struct {
+		text string
+		drop []string
+	}{{"", nil}, {" | drop detected_level", []string{"detected_level"}}, {" | drop level", []string{"level"}}}
 	for _, tc := range cases {
-		for _, route := range []string{"instant", "tumbling", "sliding"} {
-			for _, kind := range dlKinds(route) {
-				t.Run(fmt.Sprintf("%s/%q/%s", tc.name, kind, route), func(t *testing.T) {
-					s := dlScenario{window: time.Minute, start: base + int64(time.Minute), rows: tc.rows}
-					switch route {
-					case "instant":
-						s.end = s.start
-					case "tumbling":
-						s.step, s.end = time.Minute, s.start+int64(time.Minute)
-					case "sliding":
-						s.step, s.end = 30*time.Second, s.start+int64(time.Minute)
-					}
-					s.query = dlQuery(kind, "1m")
-					got := runDLScenario(t, s, "")
-					want := lokiDetectedLevelAnswer(s.rows, kind, int64(s.window), s.times())
-					compareDLAnswer(t, tc.name, s, got, want)
-				})
+		for _, pipe := range pipes {
+			for _, route := range []string{"instant", "tumbling", "sliding"} {
+				for _, kind := range dlKinds(route) {
+					t.Run(fmt.Sprintf("%s%s/%q/%s", tc.name, pipe.text, kind, route), func(t *testing.T) {
+						s := dlScenario{window: time.Minute, start: base + int64(time.Minute), rows: tc.rows, drop: pipe.drop}
+						switch route {
+						case "instant":
+							s.end = s.start
+						case "tumbling":
+							s.step, s.end = time.Minute, s.start+int64(time.Minute)
+						case "sliding":
+							s.step, s.end = 30*time.Second, s.start+int64(time.Minute)
+						}
+						s.query = dlQuery(kind, "1m", pipe.text)
+						got := runDLScenario(t, s, "")
+						want := lokiDetectedLevelAnswer(s.rows, kind, s.drop, int64(s.window), s.times())
+						compareDLAnswer(t, tc.name, s, got, want)
+					})
+				}
 			}
 		}
 	}
@@ -458,4 +483,24 @@ func withoutDetectedLevelShape(query string) string {
 		}
 	}
 	return strings.ReplaceAll(query, ", detected_level)", ")")
+}
+
+// A stats query without its internal clean-up pipes counts the same lines; a
+// delete of a label the client dropped changes what the stats group by, so it
+// stays (the tumbling and instant routes used to remove every delete pipe).
+func TestStripInternalDeletePipes(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"parse error fields", `app:="x" | unpack_json | delete __error__, __error_details__`, `app:="x" | unpack_json`},
+		{"detected_level scratch fields", `app:="x" | format "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_* | filter a:b`, `app:="x" | format "<__dl>" as detected_level | filter a:b`},
+		{"a dropped label stays", `app:="x" | delete detected_level`, `app:="x" | delete detected_level`},
+		{"a dropped label next to an internal field stays whole", `app:="x" | delete __error__, level | filter a:b`, `app:="x" | delete __error__, level | filter a:b`},
+		{"internal pipe, then a dropped label", `app:="x" | delete __error__ | delete level`, `app:="x" | delete level`},
+		{"no delete", `app:="x" | filter a:b`, `app:="x" | filter a:b`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.TrimSpace(stripInternalDeletePipes(tc.in)); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
 }

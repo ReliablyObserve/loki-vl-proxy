@@ -5,7 +5,7 @@ proves:
   - metric-series-identity
   - loki_api_v1_query_range
   - loki_api_v1_query
-consumer: drilldown
+consumer: explore
 why: |
   Loki attaches detected_level to every entry at ingest and falls back to
   "unknown" (pkg/distributor/field_detection.go: LogLevelUnknown; the rule order
@@ -38,18 +38,36 @@ why: |
   pipe that groups by `_stream` and `level` (the translator's series-identity
   grouping for a bare range aggregation, a without() grouping and the inner
   stage of count, min, max and avg, and the proxy's stream-identity clause for a
-  bare metric) also groups by detected_level, and the detected_level pipe chain
-  (stored level fields, severity_number, the JSON, logfmt and keyword reading of
-  the line, else "unknown") is inserted before the query's own pipes, once, so a
-  `| drop detected_level` or `| keep` stage still removes it afterwards, as in
-  Loki. The sliding window evaluator reads the value VictoriaLogs computed
-  instead of its level field. The pipes exist on every supported VictoriaLogs
-  line (the by (detected_level) groupings already send them). Not changed: unwrap
-  queries keep their series identity (semantics/unwrap-per-series-identity-raw-rows),
-  queries with a parser stage are answered by the raw-row evaluators, which label
-  rows from their level field, and the documented index/volume extension
-  (profiles/volume-detected-level-extension) still names lines without a level
-  detected_level="".
+  bare metric, including a bare unwrap function and the captures of `| regexp`,
+  `| pattern` and `| logfmt`) also groups by detected_level, and the detected_level
+  pipe chain (stored level fields, severity_number, the JSON, logfmt and keyword
+  reading of the line, else "unknown") is inserted before the query's own pipes,
+  once. The window evaluator and the raw-row evaluator read the value VictoriaLogs
+  computed instead of the level field, and an empty value means a stage removed
+  the label. The instant and tumbling routes no longer fill detected_level from
+  level after the answer when VictoriaLogs returned the key. The direct stats
+  route also stopped removing every `| delete` pipe from the query (it meant to
+  remove only the parse-error fields), which had silently ignored a
+  `| drop detected_level` or `| drop level` on the instant and tumbling routes
+  while the sliding route honoured it.
+
+  Not changed: aggregations over unwrap keep their series identity (the inner
+  stage of `sum(avg_over_time(... | unwrap x [r]))`, see
+  semantics/unwrap-per-series-identity-raw-rows); a bare `| json` metric is
+  answered by evaluators that label rows from their own fields; unwrap range
+  functions over a tumbling or sliding window are labelled at other times than
+  Loki's (semantics/unwrap-over-time-range-windows); `count`, `min`, `max` and
+  `avg` over a sliding window are not reduced
+  (semantics/non-sum-vector-aggregation-unreduced); the documented index/volume
+  extension (profiles/volume-detected-level-extension) still names lines without a
+  level detected_level="". Costs the change brings: the detected_level pipes run
+  for every bare or without() metric (the JSON, logfmt and keyword reading only
+  for rows with no stored level) and ignore -detected-level-body-scan, as the
+  by (detected_level) groupings already do; a stream whose lines get several
+  levels is several series, as in Loki, so -max-stats-query-series is reached
+  earlier. The pipes are the ones every supported VictoriaLogs line already
+  receives for by (detected_level): `format ... keep_original_fields` (by v1.35),
+  `<lc:field>` and `delete prefix*` (v1.24 and earlier) are all older than v1.40.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -70,11 +88,11 @@ compare:
 gap:
   status: fixed
   fixed_by: "#TBD"
-  impact: drilldown-visible
+  impact: explore-visible
   effort: M
-  area: 'internal/translator ApplyStreamIdentityDetectedLevel (applyDerivedGroupings); internal/proxy addStatsByStreamClause, collectRangeMetricHits'
-  loki: 'pkg/distributor/field_detection.go (LogLevelUnknown); pkg/logql/log/metrics_extraction.go streamLineSampleExtractor.Process; pkg/logql/log/labels.go GroupedLabels'
+  area: 'internal/translator ApplyStreamIdentityDetectedLevel (applyDerivedGroupings); internal/proxy addStatsByStreamClause, stripInternalDeletePipes, collectRangeMetricHits, collectRangeMetricSamples'
+  loki: 'pkg/distributor/field_detection.go:188,202 (LogLevelUnknown); pkg/logql/log/metrics_extraction.go:102-121 streamLineSampleExtractor.Process; pkg/logql/log/labels.go:664-688 GroupedLabels'
   proxy: 'series grouped by _stream, level and detected_level; the detected_level chain computed by VictoriaLogs'
-  planned_test: 'TestCompat_DetectedLevelUnknownInStatsAnswers (test/e2e-compat, group core); TestDetectedLevelUnknownAcrossRoutes, TestDetectedLevelUnknownEdgeTable (internal/proxy); TestStreamIdentityGroupsByDetectedLevel (internal/translator)'
+  planned_test: 'TestCompat_DetectedLevelUnknownInStatsAnswers (test/e2e-compat, group core); TestDetectedLevelUnknownAcrossRoutes, TestDetectedLevelUnknownEdgeTable (internal/proxy); TestStreamIdentityGroupsByDetectedLevel (internal/translator); TestStripInternalDeletePipes, TestParserCaptures_BareMetricGroupsByDetectedLevel (internal/proxy)'
   note: 'Found while fixing non-sum vector aggregations. Reproduced with the unit differential on origin/main b20a550f; the e2e against Loki is written, not yet run.'
   clusters: []

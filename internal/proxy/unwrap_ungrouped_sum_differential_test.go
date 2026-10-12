@@ -189,6 +189,9 @@ func (e *vlEmulator) serveRaw(w http.ResponseWriter, r *http.Request) {
 		for k, v := range row.labels {
 			fields[k] = v
 		}
+		if e.deriveLevel != nil && strings.Contains(r.FormValue("query"), `format "<__dl>" as detected_level`) {
+			fields["detected_level"] = e.deriveLevel(fields["level"], fields["_msg"])
+		}
 		line, _ := json.Marshal(fields)
 		_, _ = w.Write(append(line, '\n'))
 	}
@@ -258,12 +261,23 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	// parsers keep every generated row (all values are numbers), and the window
 	// phase filter of a window shorter than the step keeps the lines inside one.
 	var phaseAnchor, phaseStep, phaseWindow int64
-	derivedLevel := false
+	// fieldOps are the pipes before the first stats pipe that change fields, in
+	// order: the translator's detected_level chain ends by writing the field (the
+	// emulator applies Loki's rule to the row instead of running its pipes), and
+	// a delete pipe removes the fields it names (`| drop detected_level`).
+	var fieldOps []func(f map[string]string)
 	for _, pipe := range pipes[:first] {
-		// The translator's detected_level chain ends by writing the field: the
-		// emulator applies Loki's rule to the row instead of running the pipes.
-		if pipe == `format "<__dl>" as detected_level` {
-			derivedLevel = true
+		if pipe == `format "<__dl>" as detected_level` && e.deriveLevel != nil {
+			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.deriveLevel(f["level"], f["_msg"]) })
+		}
+		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
+			fieldOps = append(fieldOps, func(f map[string]string) {
+				for _, name := range strings.Split(names, ", ") {
+					if !strings.HasSuffix(name, "*") {
+						delete(f, name)
+					}
+				}
+			})
 		}
 		if m := emuPhaseMathRE.FindStringSubmatch(pipe); m != nil {
 			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
@@ -308,8 +322,8 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 		for k, v := range row.labels {
 			f[k] = v
 		}
-		if derivedLevel {
-			f["detected_level"] = e.deriveLevel(f["level"], f["_msg"])
+		for _, op := range fieldOps {
+			op(f)
 		}
 		recs = append(recs, emuRec{t: row.ts, f: f})
 	}
