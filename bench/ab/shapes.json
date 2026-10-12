@@ -2539,6 +2539,70 @@
     }
    ]
   },
+  "label-replace": {
+   "description": "label_replace adds its label to instant answers, to post-aggregated series and around a bare range function or a `| json` metric (PR for semantics/label-replace-new-label). L1 instant and L2 range are the registry row's form over a sum by; L3 is the transform under topk (ranked after the transform, as Loki evaluates it); L4 is an instant label_replace over a bare count_over_time (one series per stream, not one total); L5 and L6 are the transform over a `| json` metric that drops __error__ (answered by the evaluator that owns JSON parser errors). Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "L1 label_replace over sum by rate, instant",
+     "query": "label_replace(sum by (service_name) (rate({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L2 label_replace over sum by rate",
+     "query": "label_replace(sum by (service_name) (rate({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L3 topk over label_replace over sum by count",
+     "query": "topk(3, label_replace(sum by (service_name) (count_over_time({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\"))",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L4 label_replace over bare count_over_time, instant",
+     "query": "label_replace(count_over_time({service_name=\"api-gateway\"}[5m]), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L5 label_replace over json sum by, instant",
+     "query": "label_replace(sum by (service_name) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "semantics/pipeline-error-text-parity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L6 label_replace over json sum by",
+     "query": "label_replace(sum by (service_name) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "semantics/pipeline-error-text-parity",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
   "nested-aggregation": {
    "description": "A vector aggregation over another one keeps every level's own `by` (semantics/nested-aggregation-outer-by-native-routes, with the `without` levels of semantics/without-over-inner-aggregation-collapses and semantics/without-nested-under-aggregation): the translator sent the nest to VictoriaLogs as one outer aggregation and dropped the outer grouping, so an instant query and a tumbling window (range == step, `[$__auto]`) answered one series without labels where Loki answers one per group. N1-N8 are range queries over tumbling windows (two-level nests of sum, max, min, avg and count, a three-level chain, a `| json` and a `| logfmt` inner level, a `without` over a level that names its labels), N9-N13 the same forms as instant queries, N13 with an innermost `without`, N14-N15 sliding windows (range 5m over the step), which the proxy folds from the innermost level's series (a nest of sums goes through the same fold). N16 is the innermost `without` on a tumbling window, which VictoriaLogs folds itself when the excluded labels are plain names (the proxy folds the series rows otherwise: a parser, an underscore or derived label, a sliding window). The selector leaves out the OTel-instrumented streams and the otel-collector: Loki carries their structured metadata (trace_id, span_id) in the series, so an inner level grouped by pod counts per line there, a series identity difference that predates the nest fix and is not what this set measures. Run with the control set.",
    "ranges": [
