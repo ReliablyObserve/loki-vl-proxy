@@ -418,7 +418,7 @@
   {
    "id": "explore-unwrap-max-over-time-end-sample",
    "kind": "explore",
-   "query": "sum by (level) (max_over_time({service_name=\"api-gateway\"} | json | unwrap status | __error__=\"\" [$__auto]))",
+   "query": "max by (level) (max_over_time({service_name=\"api-gateway\"} | json | unwrap status | __error__=\"\" [$__auto]))",
    "covers": [
     "semantics/unwrap-range-last-point",
     "semantics/unwrap-over-time-range-windows",
