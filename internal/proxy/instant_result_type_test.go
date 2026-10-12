@@ -199,7 +199,20 @@ type instantAnswer struct {
 	raw map[string]json.RawMessage
 }
 
+// instantClients are the header sets of the clients that read an instant
+// answer: a bare client, Grafana's Explore and Logs Drilldown. Grafana-sourced
+// requests take their own failure and series-limit branches.
+var instantClients = map[string]map[string]string{
+	"curl":      nil,
+	"explore":   {"User-Agent": "Grafana/13.0.1", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana"},
+	"drilldown": {"User-Agent": "Grafana/13.0.1", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana-lokiexplore-app"},
+}
+
 func askInstant(t *testing.T, p *Proxy, q, orgID string, extra url.Values) instantAnswer {
+	return askInstantAs(t, p, q, orgID, extra, nil)
+}
+
+func askInstantAs(t *testing.T, p *Proxy, q, orgID string, extra url.Values, headers map[string]string) instantAnswer {
 	t.Helper()
 	params := url.Values{"query": {q}, "time": {"1704067200"}}
 	for k, v := range extra {
@@ -208,6 +221,9 @@ func askInstant(t *testing.T, p *Proxy, q, orgID string, extra url.Values) insta
 	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+params.Encode(), nil)
 	req.Header.Set("X-Scope-OrgID", orgID)
 	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
 	p.handleQuery(rec, req)
 	a := instantAnswer{code: rec.Code, body: rec.Body.Bytes()}
@@ -299,19 +315,23 @@ func TestInstantQueryAlwaysHasLokiResultType(t *testing.T) {
 	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
 			p := newTestProxy(t, instantBackend(t, mode).URL)
-			for _, shape := range instantShapes() {
-				t.Run(shape.name, func(t *testing.T) {
-					a := askInstant(t, p, shape.query, "0", nil)
-					// A backend that fails fails the query; a literal or vector()
-					// has no backend to fail. A log selector is rejected whatever
-					// the backend says.
-					mayFail := mode == instantBackendBad400 || mode == instantBackendDown500 || shape.want == "error" || instantRejectedShapes[shape.name]
-					if shape.want == "scalar" || strings.HasPrefix(shape.query, "vector(") {
-						mayFail = false
-					}
-					requireInstantAnswer(t, string(mode)+" "+shape.query, a, shape.want, mayFail)
-					if shape.want == "error" && a.code != http.StatusBadRequest {
-						t.Errorf("%s: HTTP %d, want 400", shape.query, a.code)
+			for client, headers := range instantClients {
+				t.Run(client, func(t *testing.T) {
+					for _, shape := range instantShapes() {
+						t.Run(shape.name, func(t *testing.T) {
+							a := askInstantAs(t, p, shape.query, "0", nil, headers)
+							// A backend that fails fails the query; a literal or vector()
+							// has no backend to fail. A log selector is rejected whatever
+							// the backend says.
+							mayFail := mode == instantBackendBad400 || mode == instantBackendDown500 || shape.want == "error" || instantRejectedShapes[shape.name]
+							if shape.want == "scalar" || strings.HasPrefix(shape.query, "vector(") {
+								mayFail = false
+							}
+							requireInstantAnswer(t, string(mode)+" "+client+" "+shape.query, a, shape.want, mayFail)
+							if shape.want == "error" && a.code != http.StatusBadRequest {
+								t.Errorf("%s: HTTP %d, want 400", shape.query, a.code)
+							}
+						})
 					}
 				})
 			}

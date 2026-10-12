@@ -108,18 +108,29 @@ func TestCompat_InstantResultTypeAlwaysSet(t *testing.T) {
 	}
 
 	// Several tenants merge their answers: a vector stays a vector, a log
-	// query stays rejected, and a constant needs no tenant.
+	// query stays rejected, and a constant needs no tenant. The compose Loki is
+	// not configured for multi-tenant queries, so this asks the proxy alone for
+	// the type Loki gives the expression.
 	t.Run("multi-tenant", func(t *testing.T) {
-		for _, query := range []string{
-			`sum by (app) (` + count + `)`,
-			`label_replace(sum by (app) (` + rate + `) * 2, "x", "$1", "app", "(.*)")`,
-			`stdvar without (app) (` + count + `)`,
-			`vector(1)`,
-			`1`,
-			`1 + 1`,
-			sel,
+		for query, want := range map[string]string{
+			`sum by (app) (` + count + `)`:                                             "vector",
+			`label_replace(sum by (app) (` + rate + `) * 2, "x", "$1", "app", "(.*)")`: "vector",
+			`stdvar without (app) (` + count + `)`:                                     "vector",
+			`vector(1)`:                                                                "vector",
+			`1`:                                                                        "scalar",
+			`1 + 1`:                                                                    "scalar",
+			sel:                                                                        "",
 		} {
-			check(t, query, "0|fake")
+			status, body, payload := ask(t, proxyURL, query, "0|fake", time.Now())
+			if want == "" {
+				if status != http.StatusBadRequest {
+					t.Errorf("%s: HTTP %d, want Loki's 400 for a log query as an instant query: %s", query, status, body)
+				}
+				continue
+			}
+			if status != http.StatusOK || resultType(payload) != want {
+				t.Errorf("%s: HTTP %d resultType %q, want 200 %s: %s", query, status, resultType(payload), want, body)
+			}
 		}
 	})
 
