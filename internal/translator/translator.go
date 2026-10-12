@@ -467,6 +467,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return applyDerivedGroupings(result, caps, streamFields), nil
 	}
 
+	// A vector aggregation over another one keeps each level's own grouping, so it
+	// is translated level by level before the without clauses are stripped.
+	if result, without, foldOp, ok := tryTranslateVectorChain(logql, labelFn); ok {
+		return appendWithoutMarker(applyDerivedGroupings(result, caps, streamFields), foldOp, without), nil
+	}
+
 	// Extract without() labels before translation.
 	// The proxy will post-process VL results to remove these labels from metric grouping.
 	withoutOp := foldingWithoutOp(logql)
@@ -610,6 +616,20 @@ func foldingWithoutOp(logql string) string {
 // FoldingWithoutOp returns the operator of the `<op> without (...)` the proxy
 // folds when logql is that expression, or "" (see foldingWithoutOp).
 func FoldingWithoutOp(logql string) string { return foldingWithoutOp(logql) }
+
+// PeelWithoutWrappers returns the expression under the ranking, sorting and
+// label transforms the proxy applies to a folded answer (see foldingWithoutOp),
+// or logql itself when none wraps it.
+func PeelWithoutWrappers(logql string) string {
+	s := strings.TrimSpace(logql)
+	for {
+		inner, ok := peelWithoutWrapper(s)
+		if !ok {
+			return s
+		}
+		s = inner
+	}
+}
 
 // peelWithoutWrapper returns the expression a ranking, sorting or label
 // transform wraps, when s is exactly that call.
@@ -1960,6 +1980,9 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
 func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
+	if chained, without, _, ok := tryTranslateVectorChain(logql, labelFn); ok && len(without) == 0 {
+		return chained, true
+	}
 	return tryTranslateMetricQueryWithout(logql, labelFn, false, false)
 }
 

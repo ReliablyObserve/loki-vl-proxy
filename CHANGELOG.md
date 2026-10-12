@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A vector aggregation over another one keeps every level's own `by`.**
+  `min by (zone) (avg by (pod, zone) (count_over_time({...}[5m])))` is one series
+  per zone on Loki: the evaluator folds the innermost level first and each level
+  keeps exactly its own grouping labels (a listed label the level's input lacks is
+  absent from the result). On an instant query and on a tumbling window
+  (range equal to the step) the proxy returned one series without labels, because
+  the translation of the outer level ignored its `by`; `sum by (zone) (sum by (pod,
+  zone) (...))` and the middle level of a three-level nest lost theirs too, and a
+  `without` anywhere but the outermost level was applied to the whole answer with
+  the outermost operator. A nest of sum, avg, min, max and count over a range
+  aggregation is now one VictoriaLogs query with a stats pipe per level, each
+  grouped by its own labels (`stats by (pod, zone, _stream, level) count() as a |
+  stats by (pod, zone) avg(a) as b | stats by (zone) min(b)`), so the answer comes
+  from VictoriaLogs and is Loki's for every pair and triple of the five operators:
+  a label an inner level did not keep is dropped from the outer `by`, and a
+  `without` over a level whose labels are named becomes the `by` of what is left.
+  An innermost `without` groups by the series' own labels, which VictoriaLogs
+  cannot list, so the proxy reads the series rows and folds every level over them
+  in Loki's order (`pkg/logql/evaluator.go:435-529`). On a sliding window (range
+  different from the step) the proxy evaluates the first stats pipe, the series of
+  the innermost level, and folds every level over them (the count, min, max and
+  avg fold of the vector aggregations, now also for a nest of sums and for a
+  static `without` level); the series keep the innermost level's labels, where
+  they took the outermost level's by position, and a nest spelled
+  `sum(sum(rate(...)) by (pod, zone)) by (zone)` reads its range function (it
+  was a count, not divided by the window). The same fold answers the shapes that
+  were registered as open: `sum without (pod) (sum by (pod, ns) (rate(...)))`,
+  `max(sum without (pod) (rate(...)))` and `sum by (ns) (sum without (pod)
+  (rate(...)))` (a series per `ns` and the largest per-`ns` sum; the instant
+  and range answers were the sum of every `ns`), also under `topk` and `sort`.
+  The sliding answers are asserted for `count_over_time` and `rate`; the window
+  values of an over-time unwrap function there are the open row
+  `semantics/unwrap-over-time-range-windows`. Not covered: a `group`, `topk`,
+  `stddev` or `stdvar` level inside the nest.
+  Registry:
+  `semantics/nested-aggregation-outer-by-native-routes`,
+  `semantics/without-nested-under-aggregation`,
+  `semantics/without-over-inner-aggregation-collapses` (#746).
+
+
 ## [2.35.0] - 2026-10-26
 
 ### Performance

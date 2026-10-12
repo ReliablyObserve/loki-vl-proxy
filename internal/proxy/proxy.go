@@ -2497,7 +2497,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if capture != nil {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
-			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels, withoutOp)
+			cacheOut = applyWithoutChain(cacheOut, withoutLabels, logqlQuery, withoutOp)
 		}
 		if isGroupQuery {
 			cacheOut = applyGroupNormalization(cacheOut)
@@ -2784,7 +2784,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	} else if bw != nil && needsCapture {
 		result := bw.body
 		if len(withoutLabels) > 0 {
-			result = applyWithoutGrouping(result, withoutLabels, withoutOp)
+			result = applyWithoutChain(result, withoutLabels, logqlQuery, withoutOp)
 		}
 		if isGroupQuery {
 			result = applyGroupNormalization(result)
