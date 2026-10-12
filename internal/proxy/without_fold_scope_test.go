@@ -23,6 +23,9 @@ import (
 // it was before the fold existed: the answers below are the ones the proxy gave
 // then, byte for byte, not Loki's: the shapes whose answers differ from Loki's are
 // open rows of the registry (semantics/without-*).
+// The max_over_time answers are the ones the proxy gave then, preceded by one more
+// sample at `start`: the old values sit one step later, the last one on `end`
+// (semantics/unwrap-range-last-point).
 
 // withoutScopeAnswer runs query through the real handler against the emulated
 // VictoriaLogs and returns the answer as "status: series ..." with the series
@@ -111,36 +114,36 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		want  [4]string
 	}{
 		{`topk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=12 {app=uw,ns=y,service_name=uw}=24`, `400 series limit (1)`, `200 {app=uw,ns=y,service_name=uw}=40`, `200 {app=uw,ns=y,service_name=uw}=40`}},
+			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,12 {app=uw,ns=y,service_name=uw}=24`, `400 series limit (1)`, `200 {app=uw,ns=y,service_name=uw}=40`, `200 {app=uw,ns=y,service_name=uw}=40`}},
 		{`bottomk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=17 {app=uw,ns=y,service_name=uw}=5`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=33`, `200 {app=uw,ns=x,service_name=uw}=33`}},
+			[4]string{`200 {app=uw,ns=x,service_name=uw}=17 {app=uw,ns=y,service_name=uw}=29,5`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=33`, `200 {app=uw,ns=x,service_name=uw}=33`}},
 		{`topk without (pod) (1, rate({app="uw"}[5m]))`,
 			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=2,5 {app=uw,detected_level=unknown,ns=y,service_name=uw}=4`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`}},
 		{`max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=164,68`, `200 {}=164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
 		{`sum by (ns) (sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=164,68`, `200 {}=164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
 		{`sum by (ns) (sum without (pod) (rate({app="uw"}[5m])))`,
 			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=8,12,20 {app=uw,detected_level=unknown,ns=y,service_name=uw}=8,16,20`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
 		{`max(sum without (pod) (rate({app="uw"}[5m])))`,
 			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=2,3,5 {app=uw,detected_level=unknown,ns=y,service_name=uw}=2,4,5`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
 		{`topk(2, max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))))`,
-			[4]string{`200 {}=164,68`, `200 {}=164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
 		{`sort(max(sum without (pod) (rate({app="uw"}[5m]))))`,
 			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=8,12,20 {app=uw,detected_level=unknown,ns=y,service_name=uw}=8,16,20`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
 		// The shapes the fold answers (sum, min, max, avg, count without, the
 		// outermost aggregation, also under a ranking): a series per remaining
 		// label set, limited on the folded answer.
 		{`max without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=20,12 {app=uw,ns=y,service_name=uw}=24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,20,12 {app=uw,ns=y,service_name=uw}=32,24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
 		// stddev and stdvar wrap the folded series: the deviation of the two ns
 		// sums (138 and 154) is 8, of the two ns maxima (36 and 40) the variance is 4.
 		{`stddev(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=8,8`, `200 {}=8,8`, `200 {}=8`, `200 {}=8`}},
+			[4]string{`200 {}=8,8,8`, `200 {}=8,8,8`, `200 {}=8`, `200 {}=8`}},
 		{`stdvar(max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=4,4`, `200 {}=4,4`, `200 {}=4`, `200 {}=4`}},
+			[4]string{`200 {}=4,4,4`, `200 {}=4,4,4`, `200 {}=4`, `200 {}=4`}},
 		{`topk(5, max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=20,12 {app=uw,ns=y,service_name=uw}=24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,20,12 {app=uw,ns=y,service_name=uw}=32,24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
 	} {
 		for i, name := range []string{"query_range", "query_range/limit 1", "query", "query/limit 1"} {
 			t.Run(fmt.Sprintf("%s/%s", tc.query, name), func(t *testing.T) {

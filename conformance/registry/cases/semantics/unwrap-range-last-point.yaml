@@ -1,5 +1,5 @@
 id: semantics/unwrap-range-last-point
-title: A grouped unwrap range metric misses the sample at `end` (open)
+title: A grouped unwrap range metric has the sample at `end`, like Loki (fixed)
 proves:
   - window-bounds-and-step-alignment
   - loki_api_v1_query_range
@@ -7,18 +7,44 @@ consumer: explore
 why: |
   `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap
   status | __error__="" [5m]))` over an hour at 60s has 61 samples on Loki
-  (start..end inclusive) and 60 on the proxy, which drops the sample at end;
-  the same for sum_over_time and avg_over_time by app over `| json | unwrap
-  duration_ms`.
+  (start..end inclusive, pkg/logql/range_vector.go step iteration) and had 60 on
+  the proxy, which dropped the sample at end; the same for sum_over_time and
+  avg_over_time by app over `| json | unwrap duration_ms`, and for min_over_time.
 
-  The raw evaluator that a sliding unwrap `rate` falls back to above the 11,000-bucket
-  threshold (and, before VictoriaLogs v1.45, for a start off the epoch grid) read
-  [T-range, T] for it: `unwrap_rate` was not in isLogRangeWindowFunc. Fixed with
-  semantics/unwrap-rate-ungrouped-sum-per-stream: it reads (T-range, T] now, pinned
-  for the ungrouped and the grouped sum by TestUngroupedSumUnwrapDifferential and
-  TestGroupedSumUnwrapRateRawWindow. The other unwrap functions (sum, avg, max, min
-  over time) are not served by that evaluator on query_range and stay open here
-  and in semantics/unwrap-over-time-range-windows.
+  Root cause: sum, avg, max and min over time with unwrap are answered by
+  VictoriaLogs' native stats_query_range, whose bucket labelled T holds the lines
+  of [T, T+step). Loki's sample at T is the window (T-range, T]. The proxy sent
+  the request's start and end through unchanged (buildStatsQueryRangeParams
+  extends the end by one step), so the point labelled `end` was the bucket after
+  `end`: a log source that stops at `end` (live data, queried at now) has no line
+  there and the sample was missing. Log range functions (rate, count_over_time,
+  bytes functions) with range == step already fetch from start-step, relabel every
+  bucket onto the evaluation time it closes and keep [start, end]
+  (statsRateRangeEqualsStepShift, relabelSnappedTumblingStatsQueryRange); their
+  sliding windows are evaluated from anchored buckets by the window evaluator,
+  which reads (t-range, t].
+
+  Fixed: statsRateRangeEqualsStepShift also covers sum, avg, min and max over time
+  with unwrap, for any range (logRangeFunctions classifies them): the request is
+  fetched on anchored step buckets (edge, edge+step] from start-step and relabelled
+  to the evaluation time each closes. A source with a line in every step has a
+  sample at start, start+step, ... end. For a range equal to the step that bucket
+  is exactly Loki's window, so the samples and the values are Loki's (the
+  tumbling half of semantics/unwrap-over-time-range-windows is thereby fixed too,
+  pinned by TestUnwrapOverTimeTumblingMatchesLoki). For a range longer or shorter
+  than the step the point is the step-sized bucket and not the window (now the
+  last step of it, (t-step, t], instead of the step after t), so its value
+  differs and whether a step has a sample follows the step bucket and not (t-range,
+  t]: a source with a line every few minutes under [5m] at step 60 misses the steps
+  whose last minute is empty, and a [30s] range at step 60 has samples Loki does
+  not. That stays in semantics/unwrap-over-time-range-windows.
+
+  Not covered, same defect: stddev_over_time and stdvar_over_time with unwrap take
+  the same native bucket path and still drop the sample at end.
+
+  Not changed: VictoriaLogs before v1.45 (no stats_query_range offset) with a
+  start that is not a multiple of the step still labels the buckets on the epoch
+  grid, as before (tumblingBucketsAligned).
 
   In the differential run this shows only as a secondary difference of
   requests whose primary difference is the parser series identity, so those
@@ -41,11 +67,12 @@ compare:
   expect: |
     61 samples including end.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy range-metric unwrap path (end bucket)'
-  loki: 'pkg/logql/range_vector.go step iteration start..end inclusive'
-  proxy: 'last step missing'
-  planned_test: 'TestCompat_UnwrapRangeEndSample (test/e2e-compat, group semantics)'
+  area: 'internal/proxy metric_binary.go (statsRateRangeEqualsStepShift, logRangeFunctions: unwrap sum/avg/min/max over time)'
+  loki: 'pkg/logql/range_vector.go step iteration start..end inclusive; range_vector.go:102-189 batchRangeVectorIterator window (t-range, t]'
+  proxy: 'native step buckets fetched from start-step and relabelled onto the evaluation times, start..end inclusive'
+  planned_test: 'TestUnwrapOverTimeRangeEmitsEndSample and TestUnwrapOverTimeTumblingMatchesLoki (internal/proxy); TestCompat_UnwrapRangeEndSample (test/e2e-compat, group semantics)'
   clusters: []
