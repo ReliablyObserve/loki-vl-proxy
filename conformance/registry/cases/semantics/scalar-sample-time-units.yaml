@@ -57,7 +57,7 @@ compare:
     [1791811168123,"1"] for a scalar; [1791811168.123,"1"] for vector(1).
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#752"
   impact: grafana-datasource
   visual: none
   visual_reason: 'instant scalar literals only; no Explore range panel renders them, the fix is proven by the sample-time comparison against Loki in the e2e'

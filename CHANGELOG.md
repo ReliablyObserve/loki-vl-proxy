@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A scalar instant answer carries its sample time in integer milliseconds, as
-  Loki does, not in seconds (#TBD).** `GET /loki/api/v1/query?query=1` (and
+  Loki does, not in seconds (#752).** `GET /loki/api/v1/query?query=1` (and
   `1 + 1`, `2 * (3 + 4)`, `1 > bool 2`) was answered `[1791811168.123,"1"]`;
   Loki 3.7.7 answers `[1791811168123,"1"]`, while `vector(1)` is in seconds on
   both. The engine keeps the scalar time in milliseconds (`pkg/logql/engine.go`
