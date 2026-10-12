@@ -56,11 +56,13 @@ func TestInstantUnwrapSumCollapsesStreams(t *testing.T) {
 	}
 }
 
-// Only the additive outer sum merges the per-stream values; every other outer
-// operator still reads one value per stream.
+// Every outer operator but the additive sum reads one value per stream, and
+// folds those values into the one series without labels that Loki's bare
+// aggregation makes (pkg/logql/evaluator.go VectorAggEvaluator.Next): the number
+// of streams for count, their largest and mean value for max and avg.
 //
-// conformance: profiles/sanitized-json-key-grouping
-func TestInstantUnwrapOtherAggregationsKeepPerStreamValues(t *testing.T) {
+// conformance: profiles/sanitized-json-key-grouping, semantics/non-sum-vector-aggregation-unreduced
+func TestInstantUnwrapOtherAggregationsFoldPerStreamValues(t *testing.T) {
 	rows := `{"_time":"2026-01-01T00:59:00Z","_msg":"{\"code\":200}","_stream":"{app=\"web\",pod=\"a\"}","app":"web","pod":"a","code":"200"}` + "\n" +
 		`{"_time":"2026-01-01T00:59:01Z","_msg":"{\"code\":201}","_stream":"{app=\"web\",pod=\"b\"}","app":"web","pod":"b","code":"201"}` + "\n"
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,10 +75,10 @@ func TestInstantUnwrapOtherAggregationsKeepPerStreamValues(t *testing.T) {
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
-	for _, query := range []string{
-		`count(sum_over_time({app="web"} | json | unwrap code [1h]))`,
-		`max(sum_over_time({app="web"} | json | unwrap code [1h]))`,
-		`avg(sum_over_time({app="web"} | json | unwrap code [1h]))`,
+	for query, want := range map[string]string{
+		`count(sum_over_time({app="web"} | json | unwrap code [1h]))`: "2",
+		`max(sum_over_time({app="web"} | json | unwrap code [1h]))`:   "201",
+		`avg(sum_over_time({app="web"} | json | unwrap code [1h]))`:   "200.5",
 	} {
 		q := url.Values{"query": {query}, "time": {"1767229200"}}
 		res := doCompatProxyRequest(p, "/loki/api/v1/query?"+q.Encode(), nil)
@@ -87,14 +89,15 @@ func TestInstantUnwrapOtherAggregationsKeepPerStreamValues(t *testing.T) {
 			Data struct {
 				Result []struct {
 					Metric map[string]string `json:"metric"`
+					Value  []any             `json:"value"`
 				} `json:"result"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
 			t.Fatal(err)
 		}
-		if len(resp.Data.Result) == 1 && len(resp.Data.Result[0].Metric) == 0 {
-			t.Fatalf("%s was collapsed into one unlabelled series like a sum: %s", query, res.Body)
+		if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Metric) != 0 || resp.Data.Result[0].Value[1] != want {
+			t.Fatalf("%s: want one unlabelled series worth %s: %s", query, want, res.Body)
 		}
 	}
 }
