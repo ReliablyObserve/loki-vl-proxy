@@ -481,3 +481,52 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 		}
 	}
 }
+
+// TestInstantAggregationFailureIsRedacted: an instant query that is rewritten
+// after VictoriaLogs answers (without, group, label_replace, label_join) and
+// whose backend call fails keeps the failure's status and answers it in Loki's
+// error format, with the backend's echo of the query removed, as query_range does.
+//
+// conformance: semantics/unwrap-sum-without-collapses, loki_api_v1_query
+func TestInstantAggregationFailureIsRedacted(t *testing.T) {
+	const sel = `{app="billing"}`
+	for _, backendStatus := range []int{http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		for _, query := range []string{
+			`sum without (pod) (count_over_time(` + sel + `[5m]))`,
+			`sum without (pod) (max_over_time(` + sel + ` | logfmt | unwrap amount [5m]))`,
+			`group(count_over_time(` + sel + `[5m]))`,
+			`label_replace(sum by (app) (count_over_time(` + sel + `[5m])), "dst", "$1", "app", "(.*)")`,
+		} {
+			t.Run(fmt.Sprintf("%d/%s", backendStatus, query), func(t *testing.T) {
+				vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Error(w, vlParseErrorBody, backendStatus)
+				}))
+				defer vl.Close()
+				p, err := New(Config{BackendURL: vl.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {query}}.Encode(), nil)
+				w := httptest.NewRecorder()
+				p.handleQuery(w, req)
+				if backendStatus == http.StatusBadRequest {
+					assertLokiBadData(t, w)
+					return
+				}
+				if w.Code < 400 {
+					t.Fatalf("backend %d: status %d, want the failure kept: %s", backendStatus, w.Code, w.Body.String())
+				}
+				var body struct {
+					Status string `json:"status"`
+					Error  string `json:"error"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Status != "error" || body.Error == "" {
+					t.Fatalf("backend %d: not Loki's error format: %v %s", backendStatus, err, w.Body.String())
+				}
+				if strings.Contains(w.Body.String(), "billing-secret-value") {
+					t.Fatalf("backend %d: the query echo reached the client: %s", backendStatus, w.Body.String())
+				}
+			})
+		}
+	}
+}
