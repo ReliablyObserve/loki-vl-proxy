@@ -843,12 +843,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.014,
+      "cold": 0.015,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.205,
-      "loki_warm_p50": 0.018,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -919,12 +919,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.011,
+      "cold": 0.013,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.194,
-      "loki_warm_p50": 0.012,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.013,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -933,7 +933,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
+      "warm_p50": 0.01
     },
     {
       "baseline": "base",
@@ -1225,12 +1225,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.035,
+      "cold": 0.037,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.252,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.335,
+      "loki_warm_p50": 0.021,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -1239,7 +1239,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.045
+      "warm_p50": 0.044
     },
     {
       "baseline": "base",
@@ -1301,21 +1301,21 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.223,
+      "cold": 0.2,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
+      "loki_cold": 0.043,
+      "loki_warm_p50": 0.044,
+      "parity_vs_loki": "same",
       "range": "instant",
       "set": "control",
       "shape": "instant json volume",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_cold": true,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.192
+      "warm_p50": 0.191
     },
     {
       "baseline": "main",
@@ -5771,11 +5771,11 @@
       "baseline_status": "200",
       "cold": 0.004,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
+      "loki_cold": 0.032,
+      "loki_warm_p50": 0.033,
+      "parity_vs_loki": "same",
       "range": "instant",
       "set": "control",
       "shape": "instant ungrouped rate",
@@ -5783,45 +5783,45 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.004
+      "warm_p50": 0.005
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.223,
+      "cold": 0.2,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
+      "loki_cold": 0.043,
+      "loki_warm_p50": 0.044,
+      "parity_vs_loki": "same",
       "range": "instant",
       "set": "control",
       "shape": "instant json volume",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.192
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.178,
-      "date": "2026-10-12",
-      "label": "dursec-control-24h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "instant",
-      "set": "control",
-      "shape": "instant json filtered",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_cold": true,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
       "warm_p50": 0.191
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.17,
+      "date": "2026-10-12",
+      "label": "patfilter-control-1h",
+      "loki_cache_served": false,
+      "loki_cold": 0.036,
+      "loki_warm_p50": 0.033,
+      "parity_vs_loki": "same",
+      "range": "instant",
+      "set": "control",
+      "shape": "instant json filtered",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.166
     },
     {
       "baseline": "main",
@@ -6664,12 +6664,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.029,
+      "cold": 0.025,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.023,
-      "loki_warm_p50": 0.02,
+      "loki_cold": 0.02,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6678,7 +6678,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.026
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
@@ -6740,12 +6740,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.053,
+      "cold": 0.046,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.035,
-      "loki_warm_p50": 0.032,
+      "loki_cold": 0.031,
+      "loki_warm_p50": 0.033,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6816,12 +6816,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.058,
+      "cold": 0.047,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.028,
+      "loki_cold": 0.031,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6830,7 +6830,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.046
+      "warm_p50": 0.047
     },
     {
       "baseline": "base",
@@ -6892,12 +6892,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.035,
+      "cold": 0.037,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.252,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.335,
+      "loki_warm_p50": 0.021,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6906,7 +6906,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.045
+      "warm_p50": 0.044
     },
     {
       "baseline": "base",
@@ -6968,12 +6968,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.051,
+      "cold": 0.057,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.377,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.472,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7046,10 +7046,10 @@
       "baseline_status": "200",
       "cold": 0.007,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.226,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.274,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7120,12 +7120,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
+      "cold": 0.011,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.223,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.288,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7134,7 +7134,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.013
+      "warm_p50": 0.011
     },
     {
       "baseline": "base",
@@ -7196,12 +7196,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
+      "cold": 0.009,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.211,
-      "loki_warm_p50": 0.035,
+      "loki_cold": 0.262,
+      "loki_warm_p50": 0.036,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7210,7 +7210,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
@@ -7272,12 +7272,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
+      "cold": 0.035,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.236,
-      "loki_warm_p50": 0.041,
+      "loki_cold": 0.312,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7286,7 +7286,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.022
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
@@ -7348,12 +7348,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
+      "cold": 0.021,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.273,
-      "loki_warm_p50": 0.037,
+      "loki_cold": 0.287,
+      "loki_warm_p50": 0.039,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -7362,7 +7362,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.019
+      "warm_p50": 0.02
     },
     {
       "baseline": "base",
@@ -7424,12 +7424,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.007,
+      "cold": 0.008,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.213,
-      "loki_warm_p50": 0.018,
+      "loki_cold": 0.282,
+      "loki_warm_p50": 0.017,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7438,7 +7438,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.007
+      "warm_p50": 0.006
     },
     {
       "baseline": "base",
@@ -7500,12 +7500,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.014,
+      "cold": 0.015,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.205,
-      "loki_warm_p50": 0.018,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7576,11 +7576,11 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
+      "cold": 0.007,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.203,
+      "loki_cold": 0.274,
       "loki_warm_p50": 0.011,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -7590,7 +7590,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.007
     },
     {
       "baseline": "base",
@@ -7652,12 +7652,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.011,
+      "cold": 0.013,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.194,
-      "loki_warm_p50": 0.012,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.013,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7666,7 +7666,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
+      "warm_p50": 0.01
     },
     {
       "baseline": "base",
@@ -7728,12 +7728,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
+      "cold": 0.027,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.196,
-      "loki_warm_p50": 0.012,
+      "loki_cold": 0.281,
+      "loki_warm_p50": 0.01,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7742,7 +7742,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.018
+      "warm_p50": 0.02
     },
     {
       "baseline": "base",
@@ -7804,12 +7804,12 @@
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.004,
+      "cold": 0.003,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.054,
-      "loki_warm_p50": 0.055,
+      "loki_cold": 0.063,
+      "loki_warm_p50": 0.062,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7818,7 +7818,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
@@ -7880,12 +7880,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.082,
+      "cold": 0.075,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.355,
-      "loki_warm_p50": 0.027,
+      "loki_cold": 0.462,
+      "loki_warm_p50": 0.034,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7894,7 +7894,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.069
+      "warm_p50": 0.073
     },
     {
       "baseline": "base",
@@ -12936,12 +12936,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
+      "cold": 0.011,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.223,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.288,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -12950,7 +12950,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.013
+      "warm_p50": 0.011
     },
     {
       "baseline": "base",
@@ -13527,12 +13527,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
+      "cold": 0.011,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.223,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.288,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -13541,7 +13541,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.013
+      "warm_p50": 0.011
     },
     {
       "baseline": "base",
@@ -13603,12 +13603,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
+      "cold": 0.009,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.211,
-      "loki_warm_p50": 0.035,
+      "loki_cold": 0.262,
+      "loki_warm_p50": 0.036,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -13617,7 +13617,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
@@ -13679,12 +13679,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
+      "cold": 0.035,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.236,
-      "loki_warm_p50": 0.041,
+      "loki_cold": 0.312,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -13693,7 +13693,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.022
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
@@ -13757,12 +13757,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
+      "cold": 0.021,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.273,
-      "loki_warm_p50": 0.037,
+      "loki_cold": 0.287,
+      "loki_warm_p50": 0.039,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -13771,7 +13771,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.019
+      "warm_p50": 0.02
     },
     {
       "baseline": "base",
@@ -14521,12 +14521,12 @@
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.004,
+      "cold": 0.003,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.054,
-      "loki_warm_p50": 0.055,
+      "loki_cold": 0.063,
+      "loki_warm_p50": 0.062,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -14535,7 +14535,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
@@ -16138,12 +16138,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.053,
+      "cold": 0.046,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.035,
-      "loki_warm_p50": 0.032,
+      "loki_cold": 0.031,
+      "loki_warm_p50": 0.033,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16214,12 +16214,12 @@
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.004,
+      "cold": 0.003,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.054,
-      "loki_warm_p50": 0.055,
+      "loki_cold": 0.063,
+      "loki_warm_p50": 0.062,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16228,7 +16228,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
@@ -16577,12 +16577,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.058,
+      "cold": 0.047,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.028,
+      "loki_cold": 0.031,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16591,7 +16591,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.046
+      "warm_p50": 0.047
     },
     {
       "baseline": "base",
@@ -16653,12 +16653,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.051,
+      "cold": 0.057,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.377,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.472,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16729,12 +16729,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.082,
+      "cold": 0.075,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.355,
-      "loki_warm_p50": 0.027,
+      "loki_cold": 0.462,
+      "loki_warm_p50": 0.034,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16743,7 +16743,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.069
+      "warm_p50": 0.073
     },
     {
       "baseline": "base",
@@ -18128,12 +18128,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
+      "cold": 0.035,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.236,
-      "loki_warm_p50": 0.041,
+      "loki_cold": 0.312,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -18142,7 +18142,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.022
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
@@ -18206,12 +18206,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
+      "cold": 0.011,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.223,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.288,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -18220,7 +18220,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.013
+      "warm_p50": 0.011
     },
     {
       "baseline": "base",
@@ -18284,12 +18284,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
+      "cold": 0.009,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.211,
-      "loki_warm_p50": 0.035,
+      "loki_cold": 0.262,
+      "loki_warm_p50": 0.036,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -18298,7 +18298,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
@@ -18360,12 +18360,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
+      "cold": 0.021,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.273,
-      "loki_warm_p50": 0.037,
+      "loki_cold": 0.287,
+      "loki_warm_p50": 0.039,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -18374,7 +18374,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.019
+      "warm_p50": 0.02
     },
     {
       "baseline": "base",
@@ -18438,11 +18438,11 @@
       "baseline_status": "200",
       "cold": 0.004,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
+      "loki_cold": 0.032,
+      "loki_warm_p50": 0.033,
+      "parity_vs_loki": "same",
       "range": "instant",
       "set": "control",
       "shape": "instant ungrouped rate",
@@ -18450,7 +18450,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.004
+      "warm_p50": 0.005
     }
   ],
   "semantics/extracted-suffix-collision": [
@@ -19721,21 +19721,21 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.178,
+      "cold": 0.17,
       "date": "2026-10-12",
-      "label": "dursec-control-24h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
+      "loki_cold": 0.036,
+      "loki_warm_p50": 0.033,
+      "parity_vs_loki": "same",
       "range": "instant",
       "set": "control",
       "shape": "instant json filtered",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_cold": true,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.191
+      "warm_p50": 0.166
     }
   ],
   "semantics/json-label-spelling-probe": [
@@ -26116,12 +26116,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.014,
+      "cold": 0.015,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.205,
-      "loki_warm_p50": 0.018,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26192,12 +26192,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.011,
+      "cold": 0.013,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.194,
-      "loki_warm_p50": 0.012,
+      "loki_cold": 0.271,
+      "loki_warm_p50": 0.013,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26206,7 +26206,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.011
+      "warm_p50": 0.01
     },
     {
       "baseline": "base",
@@ -26346,12 +26346,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.035,
+      "cold": 0.037,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.252,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.335,
+      "loki_warm_p50": 0.021,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26360,7 +26360,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.045
+      "warm_p50": 0.044
     },
     {
       "baseline": "base",
@@ -26422,12 +26422,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.051,
+      "cold": 0.057,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.377,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.472,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26500,10 +26500,10 @@
       "baseline_status": "200",
       "cold": 0.007,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.226,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.274,
+      "loki_warm_p50": 0.018,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26574,12 +26574,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.007,
+      "cold": 0.008,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.213,
-      "loki_warm_p50": 0.018,
+      "loki_cold": 0.282,
+      "loki_warm_p50": 0.017,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26588,7 +26588,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.007
+      "warm_p50": 0.006
     },
     {
       "baseline": "base",
@@ -26650,11 +26650,11 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
+      "cold": 0.007,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.203,
+      "loki_cold": 0.274,
       "loki_warm_p50": 0.011,
       "parity_vs_loki": "same",
       "range": "1h",
@@ -26664,7 +26664,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.007
     },
     {
       "baseline": "base",
@@ -26726,12 +26726,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
+      "cold": 0.027,
       "date": "2026-10-12",
-      "label": "dursec-control-1h",
+      "label": "patfilter-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.196,
-      "loki_warm_p50": 0.012,
+      "loki_cold": 0.281,
+      "loki_warm_p50": 0.01,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -26740,7 +26740,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.018
+      "warm_p50": 0.02
     },
     {
       "baseline": "base",
