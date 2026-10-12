@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,51 +19,43 @@ import (
 // the volume of lines the range holds: it keeps the samples of one window per
 // series and interpolates between adjacent ranked samples
 // (pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile). The proxy
-// reads every raw row of the range into one buffered response and fails with
-// 502 "manual metric response exceeds" once the rows outgrow
+// used to read every raw row of the range into one buffered response and failed
+// with 502 "manual metric response exceeds" once the rows outgrew
 // -backend-max-buffered-response-bytes (6h of generator data at the default).
-// The test scales that down: the rows of a few minutes exceed a small body
-// limit, and the answer must still be Loki's per-window p95.
+// The test scales that down: the rows of a few minutes are several times a
+// small body limit, and so would be counts per stream (the generator's pods
+// rotate, so a stream holds a couple of lines), while the counts of the
+// range aggregation's group fit it; the answer is Loki's per-window p95
+// without a raw row read.
 func TestUnwrapQuantileResponseLimit(t *testing.T) {
-	if os.Getenv("LVP_OPEN_GAP_TESTS") == "" {
-		t.Skip("semantics/unwrap-quantile-response-limit is open: VictoriaLogs' quantile is not Loki's (rank floor(phi*n), no interpolation, sampled above 10k values); set LVP_OPEN_GAP_TESTS=1 to reproduce")
-	}
 	base := time.Unix(1700000400, 0).UTC() // minute-aligned
 	const minutes, perMinute = 5, 40
-	padding := strings.Repeat("x", 200)
 	want := map[int64]float64{}
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			http.Error(w, "unexpected endpoint "+r.URL.Path, http.StatusNotFound)
-			return
+	emu := &vlEmulator{t: t, field: "duration_ms"}
+	padding := strings.Repeat("x", 200)
+	for m := 0; m < minutes; m++ {
+		for i := 0; i < perMinute; i++ {
+			value := (i*37)%perMinute + 1 + m
+			emu.rows = append(emu.rows, emuRow{
+				ts: base.Add(time.Duration(m)*time.Minute + time.Duration(i+1)*time.Second).UnixNano(),
+				// The log generator's pods rotate every batch: one stream per two lines.
+				stream: fmt.Sprintf(`{service_name="api-gateway",pod="api-gateway-%d-%d",level="info"}`, m, i/2),
+				value:  float64(value),
+				msg:    fmt.Sprintf(`{"duration_ms":%d,"pad":%q}`, value, padding),
+			})
 		}
-		for m := 0; m < minutes; m++ {
-			for i := 0; i < perMinute; i++ {
-				ts := base.Add(time.Duration(m)*time.Minute + time.Duration(i+1)*time.Second)
-				value := (i*37)%perMinute + 1 + m
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{
-					"_time":        ts.Format(time.RFC3339Nano),
-					"_stream":      `{service_name="api-gateway",level="info"}`,
-					"service_name": "api-gateway",
-					"_msg":         fmt.Sprintf(`{"duration_ms":%d,"pad":%q}`, value, padding),
-					"duration_ms":  strconv.Itoa(value),
-					"pad":          padding,
-				})
-			}
-		}
-	}))
+	}
+	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
 
 	// Window (t-1m, t] at t = base+(m+1)m holds the values 1+m .. 40+m once
 	// each: Loki's p95 is rank 0.95*39 = 37.05 between 38+m and 39+m.
-	rank := 0.95 * (perMinute - 1)
-	weight := rank - math.Floor(rank)
 	for m := 0; m < minutes; m++ {
-		want[base.Add(time.Duration(m+1)*time.Minute).Unix()] = float64(38+m)*(1-weight) + float64(39+m)*weight
+		want[base.Add(time.Duration(m+1)*time.Minute).Unix()] = 38.05 + float64(m)
 	}
 
 	p := newGapTestProxy(t, backend.URL)
-	p.execLimits.BufferedBackendBodyBytes = 16 << 10 // the rows hold ~60 KiB
+	p.execLimits.BufferedBackendBodyBytes = 16 << 10 // the raw rows hold ~60 KiB
 	params := url.Values{
 		"query": {`quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap duration_ms [1m]) by (service_name)`},
 		"start": {base.Add(time.Minute).Format(time.RFC3339Nano)},
@@ -97,9 +88,12 @@ func TestUnwrapQuantileResponseLimit(t *testing.T) {
 	for _, point := range got {
 		ts := int64(point[0].(float64))
 		value, _ := strconv.ParseFloat(point[1].(string), 64)
-		// Tolerate the last bit: arm64 may fuse the interpolation's multiply-add.
+		// The last bit may differ: a platform may fuse the interpolation's multiply-add.
 		if w, ok := want[ts]; !ok || math.Abs(value-w) > 1e-9 {
 			t.Errorf("t=%d: want %v, got %v", ts, want[ts], value)
 		}
+	}
+	if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+		t.Fatalf("quantile read raw rows: %q", q)
 	}
 }

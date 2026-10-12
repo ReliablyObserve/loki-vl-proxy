@@ -1,15 +1,21 @@
 id: semantics/unwrap-quantile-response-limit
-title: quantile_over_time over a JSON unwrap fails at the manual metric response limit from 6 hours (open)
+title: quantile_over_time over a JSON unwrap answers long ranges from VictoriaLogs value counts, like Loki (fixed)
 proves:
   - loki_api_v1_query_range
+  - loki_api_v1_query
+  - metric-series-identity
 consumer: explore
 why: |
   `quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap duration_ms [1m]) by (service_name)`
-  answers on Loki 3.7.7 at 6h, 24h and 7d. The proxy evaluates quantiles from
-  raw rows and answers 502 `manual metric response exceeds 67108864 bytes;
+  answers on Loki 3.7.7 at 6h, 24h and 7d. The proxy evaluated quantiles from
+  raw rows and answered 502 `manual metric response exceeds 67108864 bytes;
   narrow the query` from 6h on generator data (bench/ab set
   unwrap-conversion-error, shape E2), on main and with the unwrap
-  conversion-error change alike.
+  conversion-error change alike. Fixed: VictoriaLogs counts the rows of every
+  converted value per anchored bucket and the proxy interpolates over the
+  counts of each window, as Loki's Quantile does over the samples; a vector
+  aggregation over the quantile folds per-stream quantiles, and only the range
+  aggregation's own by (...) groups the samples.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -26,17 +32,32 @@ compare:
   expect: |
     HTTP 200 with Loki's series.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: L
-  area: 'internal/proxy raw-row quantile evaluator (manual metric response cap)'
-  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile (sorted samples of the window, linear interpolation at rank phi*(n-1)); :804-816 QuantileOverTime'
-  proxy: '502 at the manual metric response limit (range_metric_compat.go collectRangeMetricSamples reads every raw row; checkManualMetricRead)'
-  planned_test: 'TestUnwrapQuantileResponseLimit (internal/proxy, skipped while open; LVP_OPEN_GAP_TESTS=1 reproduces the 502); bench/ab set unwrap-conversion-error E2 at 6h/24h/7d'
+  area: 'internal/proxy quantile_histogram.go (collectQuantileHistogram, quantileOfCounts, quantileOuter), range_metric_compat.go (proxyManualRangeMetricRange, proxyManualRangeMetricInstant)'
+  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile (sorted samples of the window, linear interpolation at rank phi*(n-1)); pkg/logql/syntax/extractor.go:21-60 (a range by groups the samples); pkg/logql/evaluator.go newVectorAggEvaluator (a vector aggregation folds per-series values)'
+  proxy: 'VictoriaLogs counts the rows per converted value and anchored bucket; the proxy merges the buckets of each window and interpolates like Loki'
+  planned_test: 'TestUnwrapQuantileResponseLimit, TestQuantileOfCountsEdges, TestQuantileWindowMergesBuckets, TestQuantileHistogramDifferential, TestQuantileHistogramOuterAggregationDifferential, TestQuantileHistogramWithoutStatsRangeOffset (internal/proxy); TestCompat_UnwrapQuantile (test/e2e-compat, group core)'
   note: |
-    VictoriaLogs' quantile stats function is not a drop-in: it returns the
-    sorted value at index int(phi*n) with no interpolation (Loki interpolates
-    at phi*(n-1)), it keeps a random 10,000-value reservoir per shard above
-    that, and a quantile of buckets cannot be combined into a sliding window.
-    Same code from v1.24 (VictoriaMetrics repo) through v1.50.0.
+    VictoriaLogs' quantile stats function is not Loki's: it returns the sorted
+    value at index int(phi*n) with no interpolation, keeps a random
+    10,000-value reservoir per shard above that, and a quantile of buckets does
+    not combine into a sliding window (lib/logstorage/stats_quantile.go, the
+    same from v1.24 to v1.50). VictoriaLogs answers what it answers exactly
+    instead, `stats by (<series fields>, __lvp_v) count()` per anchored bucket
+    (stats_query_range; stats_query for an instant query), and the proxy merges
+    the counts of each window and interpolates. The answer is as large as the
+    distinct values per bucket and series, bounded by
+    -backend-max-buffered-response-bytes and -manual-range-metric-row-limit;
+    the (series, value) series of the stats_query_range answer are not cut at
+    -max-stats-query-series, which bounds the series the response returns.
+    A range aggregation's by (...) groups the counts by its fields alone; the
+    per-series forms (no range grouping, under a vector aggregation or not)
+    group them by stream, and after a parser Loki's series also carry the
+    parsed labels (semantics/unwrap-per-series-identity-raw-rows, unchanged).
+    Not changed: an ungrouped quantile after a parser keeps the raw evaluator
+    (Loki's series are every parsed label set), and so does a range on
+    VictoriaLogs before v1.45 whose first window is off the bucket grid.
   clusters: []

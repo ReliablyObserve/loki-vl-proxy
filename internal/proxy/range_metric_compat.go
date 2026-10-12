@@ -438,6 +438,11 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
 		spec.ByExplicit = true
 	}
+	if manualFunc == "quantile" {
+		if shaped, shapedSpec, ok := p.withQuantileShape(r, originalLogql, spec); ok {
+			return p.proxyManualRangeMetricRange(w, shaped, shapedSpec, origSpec, manualFunc)
+		}
+	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.
 	return foldUngroupedSum(w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
@@ -522,8 +527,13 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
 		spec.ByExplicit = true
 	}
+	if manualFunc == "quantile" {
+		if shaped, shapedSpec, ok := p.withQuantileShape(r, originalLogql, spec); ok {
+			return p.proxyManualRangeMetricInstant(w, shaped, shapedSpec, origSpec, manualFunc)
+		}
+	}
 	return foldUngroupedSum(w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
-		return p.proxyManualRangeMetricInstant(w, r, withoutUnwrapGate(spec), origSpec, manualFunc)
+		return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 	})
 }
 
@@ -589,7 +599,8 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	manualFunc = strings.TrimSpace(manualFunc)
 	// Loki interpolates between adjacent ranked samples. VL's quantile uses a
 	// different rank selection, and its range endpoint uses tumbling buckets.
-	// Use the existing exact sample evaluator for both instant and range queries.
+	// The proxy evaluates quantiles from VictoriaLogs' value counts per bucket
+	// (collectQuantileHistogram), rate_counter from raw rows.
 	if manualFunc == "rate_counter" || manualFunc == "quantile" {
 		return true
 	}
@@ -663,6 +674,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// sentinel (stats endpoint can group by stream labels; sentinel means caller
 	// needs VL to enumerate all distinct streams — skip), (3) labels are explicit
 	// (non-empty groupBy or byExplicit aggregate-all).
+	// quantile_over_time reads VictoriaLogs' counts of the converted value.
+	gated, quantileCounts := spec, readsQuantileCounts(manualFunc, spec.BaseQuery)
 	spec, rawSpec, statsAggFunc := unwrapManualSpecs(spec, manualFunc)
 	switch field {
 	case "__count__":
@@ -686,6 +699,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		// 5m range need 2.4s buckets: 252k per series over 7 days).
 		spec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
 		rawSpec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
+		gated.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = p.slidingStatsBucket(startTS, step, step)
 	}
@@ -693,13 +707,15 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		p.writeSlidingWindowStatsRange(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
 		return true
 	}
-	if !bucketsOK {
-		statsAggFunc = ""
-	} else if bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold {
-		// More buckets than Loki's 11,000-point limit: VictoriaLogs would build
-		// every point in memory. The raw evaluator is bounded by
-		// -manual-range-metric-row-limit, so it answers instead.
-		statsAggFunc = ""
+	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {
+		// No bucket grid, or more buckets than Loki's 11,000-point limit:
+		// VictoriaLogs would build every point in memory. The raw evaluator is
+		// bounded by -manual-range-metric-row-limit, so it answers instead.
+		statsAggFunc, quantileCounts = "", false
+	}
+	if quantileCounts {
+		p.writeQuantileHistogramRange(w, r.Context(), gated, quantile, fetchStart, startTS, endTS, step, origSpec.Window, bucket, sampleShift)
+		return true
 	}
 	// Drilldown burst coalescer: groups ~30 per-field field-presence count_over_time
 	// queries into a single fused VL conditional-stats call. Detects byExplicit
@@ -888,6 +904,23 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
+	if readsQuantileCounts(manualFunc, spec.BaseQuery) {
+		series, err := p.collectQuantileHistogram(r.Context(), spec, evalTS.Add(-origSpec.Window), evalTS, 0)
+		if err != nil {
+			p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+			return true
+		}
+		result, err := buildQuantileHistogramVector(r.Context(), quantile, series, evalTS, origSpec.Window)
+		if err != nil {
+			p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+			return true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+		return true
+	}
+	// The raw evaluator reads rows whole and converts the value itself.
+	spec = withoutUnwrapGate(spec)
 	fetchEnd := evalTS
 	if manualFunc == "quantile" || isLogRangeWindowFunc(manualFunc) {
 		fetchEnd = fetchEnd.Add(time.Nanosecond)
@@ -1088,6 +1121,10 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 		if !ok {
 			return "", 0, fmt.Errorf("invalid quantile query")
 		}
+		// The field ends the first stats function: a pipe after it (the outer
+		// aggregation's own stats) is not part of it.
+		field, _, _ = strings.Cut(field, ")")
+		field = strings.TrimSpace(field)
 		if field == translator.UnwrapValueAlias {
 			// The gated translation aggregates the converted value.
 			field = origSpec.UnwrapField
@@ -1297,24 +1334,7 @@ func (p *Proxy) collectRangeMetricHits(
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
 		} else {
-			metric = make(map[string]string)
-			metricObj.Visit(func(k []byte, mv *fj.Value) {
-				key := string(k)
-				if key == "__name__" {
-					return
-				}
-				// Loki never keeps an empty label value; VictoriaLogs groups an
-				// absent field as "".
-				value := string(mv.GetStringBytes())
-				if value == "" {
-					return
-				}
-				lokiKey, ok := vlToLoki[key]
-				if !ok {
-					lokiKey = p.labelTranslator.ToLoki(key)
-				}
-				metric[lokiKey] = value
-			})
+			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
 		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
@@ -1355,6 +1375,30 @@ func (p *Proxy) collectRangeMetricHits(
 	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
 	// busiest series (complete, with byte values and presence) and a warning.
 	return capSeriesForRequest(ctx, seriesMap, limit)
+}
+
+// statsGroupMetric returns the Loki labels of a stats result's group: its
+// fields by their Loki names (vlToLoki, else the label translator), without
+// __name__ and the proxy's own __lvp_ fields. Loki never keeps an empty label
+// value; VictoriaLogs groups an absent field as "".
+func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]string) map[string]string {
+	metric := make(map[string]string)
+	metricObj.Visit(func(k []byte, mv *fj.Value) {
+		key := string(k)
+		if key == "__name__" || strings.HasPrefix(key, "__lvp_") {
+			return
+		}
+		value := string(mv.GetStringBytes())
+		if value == "" {
+			return
+		}
+		lokiKey, ok := vlToLoki[key]
+		if !ok {
+			lokiKey = p.labelTranslator.ToLoki(key)
+		}
+		metric[lokiKey] = value
+	})
+	return metric
 }
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
@@ -1478,45 +1522,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		streamStr := string(v.GetStringBytes("_stream"))
 		levelStr := strings.TrimSpace(string(v.GetStringBytes("level")))
 
-		var seriesEntry *metricSeriesCacheEntry
-
-		if !includeParsedLabels || len(groupBy) == 0 {
-			// Hot path: series identity depends only on _stream + level.
-			// Build once per unique (stream, level) pair and reuse across all matching lines.
-			cacheKey := streamStr + "|" + levelStr
-			seriesEntry = seriesCache[cacheKey]
-			if seriesEntry == nil {
-				seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
-				seriesCache[cacheKey] = seriesEntry
-			}
-		} else {
-			// Slow path: by(...) includes parsed fields extracted per entry.
-			// Extend the cache key with the extracted field values so entries with
-			// the same parsed-field values still hit the cache.
-			cacheKey := p.buildParsedGroupByCacheKey(streamStr, levelStr, v, groupBy)
-			seriesEntry = seriesCache[cacheKey]
-			if seriesEntry == nil {
-				base := p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
-				// Copy base metric labels and inject per-entry parsed fields.
-				metricLabels := make(map[string]string, len(base.metricLabels))
-				for k, val := range base.metricLabels {
-					metricLabels[k] = val
-				}
-				// Only inject parsed labels that appear in the explicit by(...) list.
-				// Adding ALL parsed fields (old behaviour) creates one series per unique
-				// JSON-object combination — O(N) series for N distinct log entries.
-				// Loki groups by stream labels only when no by(...) is present; parsed
-				// fields become metric dimensions only when explicitly named in by(...).
-				addGroupByParsedLabelsFJ(metricLabels, v, groupBy)
-				translatedParsed := p.labelTranslator.TranslateLabelsMap(metricLabels)
-				seriesEntry = &metricSeriesCacheEntry{
-					metricLabels: metricLabels,
-					translated:   translatedParsed,
-					key:          canonicalLabelsKey(translatedParsed),
-				}
-				seriesCache[cacheKey] = seriesEntry
-			}
-		}
+		seriesEntry := p.manualSeriesEntry(seriesCache, v, streamStr, levelStr, groupBy, origGroupBy, byExplicit, includeParsedLabels)
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
@@ -1544,6 +1550,51 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	}
 
 	return capSeriesForRequest(ctx, seriesMap, p.manualSeriesLimit(ctx))
+}
+
+// manualSeriesEntry returns the series of a row (a raw row, or a stats group
+// read the same way): the stream and level labels, plus, when
+// includeParsedLabels is set and the query groups, the by(...) fields the row
+// holds beyond them. seriesCache holds the entries built in this request.
+func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry, v *fj.Value, streamStr, levelStr string, groupBy, origGroupBy []string, byExplicit, includeParsedLabels bool) *metricSeriesCacheEntry {
+	if !includeParsedLabels || len(groupBy) == 0 {
+		// Hot path: series identity depends only on _stream + level.
+		// Build once per unique (stream, level) pair and reuse across all matching lines.
+		cacheKey := streamStr + "|" + levelStr
+		seriesEntry := seriesCache[cacheKey]
+		if seriesEntry == nil {
+			seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+			seriesCache[cacheKey] = seriesEntry
+		}
+		return seriesEntry
+	}
+	// Slow path: by(...) includes parsed fields extracted per entry.
+	// Extend the cache key with the extracted field values so entries with
+	// the same parsed-field values still hit the cache.
+	cacheKey := p.buildParsedGroupByCacheKey(streamStr, levelStr, v, groupBy)
+	seriesEntry := seriesCache[cacheKey]
+	if seriesEntry == nil {
+		base := p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+		// Copy base metric labels and inject per-entry parsed fields.
+		metricLabels := make(map[string]string, len(base.metricLabels))
+		for k, val := range base.metricLabels {
+			metricLabels[k] = val
+		}
+		// Only inject parsed labels that appear in the explicit by(...) list.
+		// Adding ALL parsed fields (old behaviour) creates one series per unique
+		// JSON-object combination — O(N) series for N distinct log entries.
+		// Loki groups by stream labels only when no by(...) is present; parsed
+		// fields become metric dimensions only when explicitly named in by(...).
+		addGroupByParsedLabelsFJ(metricLabels, v, groupBy)
+		translatedParsed := p.labelTranslator.TranslateLabelsMap(metricLabels)
+		seriesEntry = &metricSeriesCacheEntry{
+			metricLabels: metricLabels,
+			translated:   translatedParsed,
+			key:          canonicalLabelsKey(translatedParsed),
+		}
+		seriesCache[cacheKey] = seriesEntry
+	}
+	return seriesEntry
 }
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
@@ -1971,6 +2022,40 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	if maxSeries > 0 && len(series) > maxSeries {
 		return nil, &seriesLimitError{limit: maxSeries}
 	}
+	keys := make([]string, 0, len(series))
+	sorted := make(map[string]bool, len(series))
+	for key, entry := range series {
+		keys = append(keys, key)
+		samples := entry.Samples
+		sorted[key] = sort.SliceIsSorted(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
+	}
+	sort.Strings(keys)
+	metric := func(key string) map[string]string { return series[key].Metric }
+	value := func(key string, windowStart, windowEnd int64) (float64, bool) {
+		samples := series[key].Samples
+		if sorted[key] {
+			// Narrow time-ordered samples to [windowStart, windowEnd]; the
+			// aggregator applies the exact window bounds to that slice.
+			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStart })
+			hi := lo + sort.Search(len(samples)-lo, func(i int) bool { return samples[lo+i].ts > windowEnd })
+			samples = samples[lo:hi]
+		}
+		return aggregateManualWindow(functionName, quantile, samples, windowStart, windowEnd, window.Seconds())
+	}
+	return encodeWindowMatrix(ctx, keys, metric, value, start, end, step, window)
+}
+
+// encodeWindowMatrix evaluates every series (keys, in order) at each step of
+// [start, end] over the window (t-window, t] and encodes the Loki matrix. value
+// answers a series' window given its edges in nanoseconds; false leaves the
+// step out, as Loki does for a window without samples.
+func encodeWindowMatrix(ctx context.Context, keys []string, metric func(key string) map[string]string, value func(key string, windowStart, windowEnd int64) (float64, bool), start, end time.Time, step, window time.Duration) ([]byte, error) {
+	if outer := quantileOuterFrom(ctx); outer != nil {
+		var err error
+		if keys, metric, value, err = outer.fold(ctx, keys, metric, value); err != nil {
+			return nil, err
+		}
+	}
 	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
 		return encodeBinarySeriesContext(ctx, nil, "matrix", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
@@ -1980,15 +2065,6 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	}
 
 	perSeries := make(map[string]*binaryMatchedSeries)
-	keys := make([]string, 0, len(series))
-	sorted := make(map[string]bool, len(series))
-	for key, entry := range series {
-		keys = append(keys, key)
-		samples := entry.Samples
-		sorted[key] = sort.SliceIsSorted(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
-	}
-	sort.Strings(keys)
-
 	for t := start; !t.After(end); t = t.Add(step) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -1999,16 +2075,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			seriesEntry := series[key]
-			samples := seriesEntry.Samples
-			if sorted[key] {
-				// Narrow time-ordered samples to [windowStart, windowEnd]; the
-				// aggregator applies the exact window bounds to that slice.
-				lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStart })
-				hi := lo + sort.Search(len(samples)-lo, func(i int) bool { return samples[lo+i].ts > windowEnd })
-				samples = samples[lo:hi]
-			}
-			value, ok := aggregateManualWindow(functionName, quantile, samples, windowStart, windowEnd, window.Seconds())
+			v, ok := value(key, windowStart, windowEnd)
 			if !ok {
 				continue
 			}
@@ -2018,14 +2085,15 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 
 			dst := perSeries[key]
 			if dst == nil {
-				if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+				labels := metric(key)
+				if err := checkBinaryOutputLabels(ctx, labels); err != nil {
 					return nil, err
 				}
-				dst = &binaryMatchedSeries{labels: seriesEntry.Metric}
+				dst = &binaryMatchedSeries{labels: labels}
 				perSeries[key] = dst
 			}
 
-			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
+			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(v, 'f', -1, 64)})
 		}
 	}
 
@@ -2142,13 +2210,28 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
 		return nil, &seriesLimitError{limit: maxSeries[0]}
 	}
-	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))
 	for key := range series {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	metric := func(key string) map[string]string { return series[key].Metric }
+	value := func(key string, windowStart, windowEnd int64) (float64, bool) {
+		return aggregateManualWindow(functionName, quantile, series[key].Samples, windowStart, windowEnd, window.Seconds())
+	}
+	return encodeWindowVector(ctx, keys, metric, value, evalTime, window)
+}
 
+// encodeWindowVector is encodeWindowMatrix for an instant query: one window
+// (evalTime-window, evalTime].
+func encodeWindowVector(ctx context.Context, keys []string, metric func(key string) map[string]string, value func(key string, windowStart, windowEnd int64) (float64, bool), evalTime time.Time, window time.Duration) ([]byte, error) {
+	if outer := quantileOuterFrom(ctx); outer != nil {
+		var err error
+		if keys, metric, value, err = outer.fold(ctx, keys, metric, value); err != nil {
+			return nil, err
+		}
+	}
+	ctx = binaryEvaluationContext(ctx)
 	windowStart := evalTime.Add(-window).UnixNano()
 	windowEnd := evalTime.UnixNano()
 	results := make(map[string]*binaryMatchedSeries)
@@ -2157,18 +2240,18 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		seriesEntry := series[key]
-		value, ok := aggregateManualWindow(functionName, quantile, seriesEntry.Samples, windowStart, windowEnd, window.Seconds())
+		v, ok := value(key, windowStart, windowEnd)
 		if !ok {
 			continue
 		}
 		if err := checkBinaryOutputSample(ctx); err != nil {
 			return nil, err
 		}
-		if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+		labels := metric(key)
+		if err := checkBinaryOutputLabels(ctx, labels); err != nil {
 			return nil, err
 		}
-		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)}}}
+		results[key] = &binaryMatchedSeries{labels: labels, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(v, 'f', -1, 64)}}}
 	}
 
 	return encodeBinarySeriesContext(ctx, results, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
