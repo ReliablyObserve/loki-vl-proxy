@@ -1740,23 +1740,46 @@ func convertGoTemplate(tmpl string) string {
 // returning (firstArg, rest, ok). rest is the text after the first comma at depth 0.
 // Input starts right after the opening '(' of the outer function.
 func splitFuncFirstArg(s string) (first, rest string, ok bool) {
+	n := FirstArgumentLen(s)
+	if n == len(s) {
+		return "", "", false
+	}
+	if s[n] == ',' {
+		return strings.TrimSpace(s[:n]), strings.TrimSpace(s[n+1:]), true
+	}
+	return strings.TrimSpace(s[:n]), "", true
+}
+
+// FirstArgumentLen is the length of the first argument of a call, given the
+// text after its '(': up to the first comma or unmatched ')' outside strings
+// (double-quoted with escapes, or backtick-quoted) and nested brackets. It is
+// len(s) when the call is not closed.
+func FirstArgumentLen(s string) int {
 	depth := 0
-	for i, c := range s {
-		switch c {
-		case '(':
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == '(' || c == '[' || c == '{':
 			depth++
-		case ')':
+		case c == ')' || c == ']' || c == '}':
 			if depth == 0 {
-				return strings.TrimSpace(s[:i]), "", true
+				return i
 			}
 			depth--
-		case ',':
-			if depth == 0 {
-				return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:]), true
-			}
+		case c == ',' && depth == 0:
+			return i
 		}
 	}
-	return "", "", false
+	return len(s)
 }
 
 // parseAllStringArgs parses all quoted string arguments (double- or back-tick-quoted)

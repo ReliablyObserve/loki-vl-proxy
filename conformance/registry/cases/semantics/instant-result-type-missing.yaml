@@ -1,13 +1,50 @@
 id: semantics/instant-result-type-missing
-title: Some instant binary/label_replace answers carry no resultType (open)
+title: An instant query answers its failure status and a resultType, like Loki (fixed)
 proves:
   - loki_api_v1_query
 consumer: grafana-datasource
 why: |
-  Loki answers every instant metric query with `resultType: vector`. For
-  `label_replace(avg by (app) (sum by (app) (rate(...)) + sum by (app)
-  (rate(...))), ...)` and `stdvar without (app) (...)` the proxy's 200 answer
-  has no resultType, which Grafana and API clients cannot decode.
+  Loki answers every metric instant query with `resultType: vector`, a scalar
+  literal with `scalar`, and rejects a log query with 400 (pkg/logql/engine.go
+  evalSample ends in JoinSampleVector, which returns the vector for an instant
+  query; evalLiteral returns a promql.Scalar; evalVector a one-sample vector;
+  pkg/querier/queryrange/marshal.go ResultToResponse labels promql.Vector
+  loghttp.ResultTypeVector and promql.Scalar loghttp.ResultTypeScalar;
+  pkg/querier/http.go InstantQueryHandler fails a log selector with
+  ErrUnsupportedSyntaxForInstantQuery, HTTP 400). Its own decoder, and the
+  Grafana Loki datasource, read the answer by that type
+  (pkg/loghttp/query.go QueryResponse.UnmarshalJSON: a missing or unknown
+  resultType is an error).
+
+  The proxy's 200 answer for `label_replace(avg by (app) (sum by (app) (rate(...))
+  + sum by (app) (rate(...))) ...)` and `stdvar without (app) (...)` had no
+  resultType (parity run of 2026-10-05, clusters 307bbdd1, f2066991, ce65447e:
+  both sides 200, "vector vs None"). Two causes, both reproduced against a
+  simulated VictoriaLogs (internal/proxy/instant_result_type_test.go):
+  - A query the proxy post-processes (`without`, `label_replace`,
+    `label_join`) is buffered by handleQuery, and the buffered answer was
+    written with the failing status dropped: any VictoriaLogs error, series
+    limit or rejection became a 200 whose body is the error, with no data. The
+    range handler already sent the failing status; the instant handler now
+    does too.
+  - A `label_replace` or `label_join` around a binary expression translated to
+    `__binary__:<op>:<left>|||<right>` plus the transform marker. With the
+    marker stripped, the AST routing saw an opaque expression, found a stats
+    pipe in the text and sent the binary marker to VictoriaLogs as a query. The
+    expression under the transform (stripLabelTransforms) now routes like any
+    binary expression.
+  Found on the way, same endpoint, same symptom class: a scalar literal (`1`)
+  was rejected as a log query (Loki: scalar) and a scalar under a multi-tenant
+  X-Scope-OrgID merged to an empty result; vector() carried nanosecond sample
+  times; a log query with every tenant filtered out answered an empty `streams`
+  (Loki: 400).
+
+  Not fixed here, registered separately: an aggregation over a binary
+  expression (`sum by (job) (a / b)`) is translated to its first operand only,
+  so the value is wrong when it is answered and the shape of cluster f2066991
+  (`| json | unwrap duration(latency)` over `/ count_over_time`) is rejected
+  with a 400; and the same `__binary__` marker still reaches
+  stats_query_range on query_range for a label_replace around a binary.
 request:
   method: GET
   path: /loki/api/v1/query
@@ -22,13 +59,16 @@ compare:
   expect: |
     vector.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#735"
   impact: grafana-datasource
+  visual: none
+  visual_reason: 'instant queries only; the visual harness captures Explore range panels (queryType range), so the fix is proven by the instant resultType table and the e2e against Loki'
   effort: S
-  area: 'internal/proxy instant response assembly (binary/label_replace/without paths)'
-  loki: 'pkg/logqlmodel result types; pkg/util/marshal query response'
-  proxy: 'resultType missing'
-  planned_test: 'TestCompat_InstantResultTypeAlwaysSet (test/e2e-compat, group semantics)'
+  area: 'internal/proxy handleQuery (captured post-processing status, label transform routing, constants), multitenant.go'
+  loki: 'pkg/logql/engine.go evalSample/evalLiteral/evalVector, JoinSampleVector; pkg/querier/queryrange/marshal.go ResultToResponse; pkg/querier/http.go InstantQueryHandler; pkg/loghttp/query.go UnmarshalJSON'
+  proxy: 'the failing status of a post-processed instant query is kept; a label transform over a binary expression evaluates the expression; literals answer scalar'
+  planned_test: 'TestCompat_InstantResultTypeAlwaysSet (test/e2e-compat, group semantics); TestInstantQueryAlwaysHasLokiResultType, TestInstantQueryPostProcessedBackendFailureKeepsStatus, TestInstantConstantsCarrySecondsTimestamps, TestInstantQueryMultiTenantResultTypes and TestInstantLabelTransformOfBinaryEvaluatesTheBinary (internal/proxy)'
+  note: 'The e2e is written and not yet run against the compose stack. Cluster f2066991 is not claimed here: its queries no longer answer a typeless 200 but the proxy still answers 400 where Loki answers a vector; it belongs to semantics/aggregation-over-binary-dropped. Cluster ce65447e is owned by semantics/stddev-stdvar-grouped-values; its typeless answer is fixed here, its values are not.'
   clusters:
     - 307bbdd1
-    - f2066991

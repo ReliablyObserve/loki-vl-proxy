@@ -1,0 +1,37 @@
+id: semantics/aggregation-over-binary-dropped
+title: An aggregation over a binary expression is translated to its first operand (open)
+proves:
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum by (job) (rate(a[1m]) / count_over_time(a[1m]))` is a vector aggregation
+  over a binary operation on Loki (pkg/logql/evaluator.go VectorAggEvaluator
+  over a binary evaluator). The translator keeps the first operand only: the
+  right operand and the operator are dropped (`sum(rate(a[1m]) / 2)` loses the
+  `/ 2`), so an answered query has wrong values, and the shape of parity
+  cluster f2066991 (`| json | unwrap duration(latency)` over `/
+  count_over_time(...)` under label_replace) is rejected with 400 ("log queries
+  are not supported as an instant query type") where Loki answers a vector.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's vector: the quotient per stream, summed by job.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator extractOuterAggregation and internal/proxy handleQuery routing of an aggregation over a binary expression'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator over a binary evaluator'
+  proxy: 'first operand only, or a 400'
+  planned_test: 'TestCompat_AggregationOverBinary (test/e2e-compat, group semantics)'
+  clusters:
+    - f2066991

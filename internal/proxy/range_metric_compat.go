@@ -130,39 +130,39 @@ func parseSingleFieldCountSpec(logsqlQuery string) (statsCompatSpec, bool) {
 // parseOriginalRangeMetricSpec to reach the actual metric function even when
 // the query is wrapped in one or more label_replace() calls.
 func stripOuterLabelReplace(logql string) string {
+	return stripOuterCalls(logql, "label_replace(")
+}
+
+// stripLabelTransforms is stripOuterLabelReplace for label_join as well: the
+// metric expression under the label transforms of a query.
+func stripLabelTransforms(logql string) string {
+	return stripOuterCalls(logql, "label_replace(", "label_join(")
+}
+
+func stripOuterCalls(logql string, prefixes ...string) string {
 	for {
 		logql = strings.TrimSpace(logql)
-		if !strings.HasPrefix(logql, "label_replace(") {
-			break
-		}
-		idx := strings.Index(logql, "(")
-		if idx < 0 {
-			break
-		}
-		depth := 0
-		commaAt := -1
-		for i := idx + 1; i < len(logql); i++ {
-			c := logql[i]
-			switch {
-			case c == '(':
-				depth++
-			case c == ')':
-				if depth == 0 {
-					goto done
+		inner, ok := "", false
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(logql, prefix) {
+				// The first argument, up to the comma outside strings and brackets,
+				// of a call that is the whole expression: `label_replace(a, ...) / b`
+				// is a binary, not a transform.
+				args := logql[len(prefix):]
+				inner, ok = logqlpkg.FirstArgument(args)
+				end := len(inner)
+				for end < len(args) && args[end] == ',' {
+					end += 1 + translator.FirstArgumentLen(args[end+1:])
 				}
-				depth--
-			case c == ',' && depth == 0:
-				commaAt = i
-				goto done
+				ok = ok && end < len(args) && strings.TrimSpace(args[end+1:]) == ""
+				break
 			}
 		}
-	done:
-		if commaAt < 0 {
-			break
+		if !ok {
+			return logql
 		}
-		logql = strings.TrimSpace(logql[idx+1 : commaAt])
+		logql = inner
 	}
-	return logql
 }
 
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {

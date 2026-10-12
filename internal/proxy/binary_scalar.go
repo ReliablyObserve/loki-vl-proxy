@@ -3,33 +3,63 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
+// binaryScalarValue is the value of a scalar expression: literals and
+// arithmetic of them, which Loki folds into one literal.
 func binaryScalarValue(expr logqlpkg.Expr, depth int) (float64, bool) {
+	value, isVector, ok := binaryConstantValue(expr, depth)
+	return value, ok && !isVector
+}
+
+// binaryConstantValue folds an expression of literals and vector(n) into its
+// value, and says whether any operand was a vector(n), making the result a
+// one-sample vector with no labels instead of a scalar. A division by zero is
+// NaN, as in Loki's MergeBinOp (pkg/logql/syntax/ast.go). A comparison with a
+// vector operand needs the bool modifier and the generic binary path.
+func binaryConstantValue(expr logqlpkg.Expr, depth int) (value float64, isVector, ok bool) {
 	if depth >= 64 {
-		return 0, false
+		return 0, false, false
 	}
 	switch e := expr.(type) {
 	case *logqlpkg.LiteralExpr:
-		return e.Value, true
+		return e.Value, false, true
+	case *logqlpkg.OpaqueMetricExpr:
+		if matches := vectorLiteralRE.FindStringSubmatch(e.Raw); len(matches) == 2 {
+			if value, err := strconv.ParseFloat(strings.TrimSpace(matches[1]), 64); err == nil {
+				return value, true, true
+			}
+		}
 	case *logqlpkg.BinOpExpr:
 		if e.VectorMatching != nil || e.Op == "and" || e.Op == "or" || e.Op == "unless" {
-			return 0, false
+			return 0, false, false
 		}
-		left, leftOK := binaryScalarValue(e.Left, depth+1)
-		right, rightOK := binaryScalarValue(e.Right, depth+1)
-		if !leftOK || !rightOK {
-			return 0, false
+		left, leftVector, leftOK := binaryConstantValue(e.Left, depth+1)
+		right, rightVector, rightOK := binaryConstantValue(e.Right, depth+1)
+		if !leftOK || !rightOK || ((leftVector || rightVector) && isComparisonOp(e.Op)) {
+			return 0, false, false
+		}
+		if e.Op == "/" && right == 0 {
+			return math.NaN(), leftVector || rightVector, true
 		}
 		value, _ := binarySampleValue(left, right, e.Op, true)
-		return value, true
-	default:
-		return 0, false
+		return value, leftVector || rightVector, true
 	}
+	return 0, false, false
+}
+
+func isComparisonOp(op string) bool {
+	switch op {
+	case "==", "!=", ">", "<", ">=", "<=":
+		return true
+	}
+	return false
 }
 
 func binaryConstantVectorResponse(r *http.Request, value float64, resultType string) ([]byte, error) {
