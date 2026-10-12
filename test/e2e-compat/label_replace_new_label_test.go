@@ -1,0 +1,173 @@
+//go:build e2e
+
+package e2e_compat
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+// label_replace sets, rewrites or removes one label of every series its
+// expression yields (pkg/logql/evaluator.go LabelReplaceEvaluator.Next): the
+// regexp is anchored, a series it does not match is left alone, an empty
+// replacement removes the destination, and series that end with one label set
+// are not an error (pkg/logql/engine.go JoinSampleVector files their points
+// under one series on a range query, keeps each sample on an instant query).
+//
+// The proxy's instant answers lacked the destination label (the transform only
+// ran on range matrices), an escaped regexp such as `\.` never matched, and a
+// label_replace around a binary expression on query_range sent the proxy's
+// internal binary marker to VictoriaLogs.
+//
+// Every shape is asked of Loki and of the proxy on query_range and on query.
+// Both must answer the same status; when they answer, the same result type, the
+// same label sets (and, on query, the same number of samples per label set). The
+// values and the points per step are compared by the other registry items.
+// conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_LabelReplaceNewLabel(t *testing.T) {
+	ensureDataIngested(t)
+	waitForLokiMetricData(t)
+
+	sel := `{env="production"}`
+	count := `count_over_time(` + sel + `[5m])`
+	rate := `rate(` + sel + `[5m])`
+	agg := `sum by (app) (` + count + `)`
+	lr := func(inner, dst, repl, src, re string) string {
+		return fmt.Sprintf(`label_replace(%s, %q, %q, %q, %q)`, inner, dst, repl, src, re)
+	}
+	shapes := []struct {
+		name  string
+		query string
+		// points compares the points per series of a range answer as well:
+		// where two series end with one label set, Loki files the points of
+		// both under one series.
+		points bool
+	}{
+		// the request of the registry row, its bare form, and the clusters' forms
+		{"row", `label_replace(sum by (app) (rate({app="api-gateway"}[5m])), "app_short", "$1", "app", "(.*)-.*")`, false},
+		{"bare rate", `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app", "(.*)-.*")`, false},
+		{"bare count_over_time", lr(count, "app_short", "$1", "app", "(.*)-.*"), false},
+		{"bytes_over_time", lr(`bytes_over_time(`+sel+`[5m])`, "buzz", "$2", "app", "(.*)-(.*)"), false},
+		{"nested", lr(lr(agg, "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)"), false},
+		{"nested, the outer reads the inner's label", lr(lr(agg, "a1", "$1", "app", "(.*)-.*"), "a2", "x$1", "a1", "(.*)"), false},
+		{"nested, three deep", lr(lr(lr(agg, "a", "$1", "app", "(.*)-.*"), "b", "$1$1", "a", "(.*)"), "c", "${1}!", "b", "(.*)"), false},
+		// regexp and replacement rules
+		{"anchored: a prefix does not match", lr(agg, "d", "x", "app", "api"), false},
+		{"anchored: the whole value", lr(agg, "d", "x", "app", "api-gateway"), false},
+		{"no match keeps the series", lr(agg, "new_label", "default", "app", "^nonexistent$"), false},
+		{"escaped regexp", lr(agg, "d", "$1", "app", `([a-z]+)\-(\w+)`), false},
+		{"escaped dot never matches a hyphen", lr(agg, "d", "$1", "app", `(\w+)\.(\w+)`), false},
+		{"named group", lr(agg, "d", "${head}", "app", `(?P<head>[a-z]+)-.*`), false},
+		{"bare group name swallows the suffix", lr(agg, "d", "$1x", "app", "(.*)-.*"), false},
+		{"two groups", lr(agg, "d", "$2/$1", "app", "([a-z]+)-([a-z]+)"), false},
+		{"constant replacement", lr(agg, "d", "const", "app", ".*"), false},
+		{"missing source, empty-matching regexp", lr(agg, "d", "dflt", "nope", "(.*)"), false},
+		{"missing source, non-empty regexp", lr(agg, "d", "dflt", "nope", ".+"), false},
+		{"empty replacement removes the destination", lr(agg, "app", "", "app", "api-gateway"), false},
+		{"destination equal to the source", lr(agg, "app", "$1", "app", "(.*)-.*"), false},
+		{"two series with one label set", lr(agg, "app", "all", "app", ".+"), true},
+		{"all labels removed", lr(agg, "app", "", "app", ".*"), true},
+		{"label names are not validated", lr(agg, "1bad", "x", "app", ".*"), false},
+		// around and with other expressions
+		{"over a binary expression", lr(agg+` * 2`, "app_short", "$1", "app", "(.*)-.*"), false},
+		{"over a binary of two aggregations", lr(agg+` / `+agg, "app_short", "$1", "app", "(.*)-.*"), false},
+		{"over a rate aggregation", lr(`sum by (app) (`+rate+`)`, "app_short", "$1", "app", "(.*)-.*"), false},
+		{"over a parser", lr(`sum by (app) (count_over_time(`+sel+` | json [5m]))`, "app_short", "$1", "app", "(.*)-.*"), false},
+		{"under sort", `sort(` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false},
+		{"under topk", `topk(2, ` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false},
+		// an invalid regexp is Loki's parse error
+		{"invalid regexp", lr(agg, "new", "$1", "app", "[invalid"), false},
+		{"invalid regexp, nested", lr(lr(agg, "d", "$1", "app", "(.*)"), "e", "$1", "d", "(unclosed"), false},
+		{"invalid regexp under topk", `topk(2, ` + lr(agg, "new", "$1", "app", "*bad") + `)`, false},
+		// a call the grammar rejects
+		{"invalid escape in a string", `label_replace(` + agg + `, "d", "$1", "app", "(.+):\d+")`, false},
+		{"three string arguments", `label_replace(` + agg + `, "d", "$1", "app")`, false},
+		{"five string arguments", `label_replace(` + agg + `, "d", "$1", "app", "x", "y")`, false},
+	}
+
+	// labelCounts reads a decoded answer as {label set: samples}: an instant
+	// vector's samples per label set, a range series' points when points is
+	// set and 1 otherwise (the points per step are other registry items').
+	labelCounts := func(payload map[string]interface{}, instant, points bool) map[string]int {
+		out := map[string]int{}
+		data, _ := payload["data"].(map[string]interface{})
+		result, _ := data["result"].([]interface{})
+		for _, item := range result {
+			series, _ := item.(map[string]interface{})
+			metric, _ := series["metric"].(map[string]interface{})
+			key := canonicalMetricKey(metric)
+			if instant {
+				out[key]++
+				continue
+			}
+			values, _ := series["values"].([]interface{})
+			if points {
+				out[key] += len(values)
+			} else {
+				out[key] = 1
+			}
+		}
+		return out
+	}
+	resultType := func(payload map[string]interface{}) string {
+		data, _ := payload["data"].(map[string]interface{})
+		rt, _ := data["resultType"].(string)
+		return rt
+	}
+	render := func(m map[string]int) string {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, fmt.Sprintf("%s x%d", k, m[k]))
+		}
+		sort.Strings(keys)
+		return strings.Join(keys, "\n  ")
+	}
+
+	for _, shape := range shapes {
+		for _, endpoint := range []string{"query_range", "query"} {
+			t.Run(shape.name+"/"+endpoint, func(t *testing.T) {
+				instant := endpoint == "query"
+				at := time.Now().UTC().Truncate(time.Minute)
+				params := url.Values{"query": {shape.query}}
+				if instant {
+					params.Set("time", fmt.Sprintf("%d", at.UnixNano()))
+				} else {
+					params.Set("start", fmt.Sprintf("%d", at.Add(-15*time.Minute).UnixNano()))
+					params.Set("end", fmt.Sprintf("%d", at.UnixNano()))
+					params.Set("step", "60")
+				}
+				headers := map[string]string{"X-Scope-OrgID": "0", "X-Loki-Response-Encoding-Flags": "categorize-labels"}
+				full := "/loki/api/v1/" + endpoint + "?" + params.Encode()
+				lokiStatus, lokiBody, lokiPayload := doJSONGET(t, lokiURL+full, headers)
+				proxyStatus, proxyBody, proxyPayload := doJSONGET(t, proxyURL+full, headers)
+				if lokiStatus != proxyStatus {
+					t.Fatalf("HTTP status loki=%d proxy=%d\nloki:  %s\nproxy: %s", lokiStatus, proxyStatus, lokiBody, proxyBody)
+				}
+				if lokiStatus != http.StatusOK {
+					if lokiStatus == http.StatusBadRequest && !strings.Contains(proxyBody, "parse error") {
+						t.Errorf("the proxy's 400 is not Loki's parse error\nloki:  %s\nproxy: %s", lokiBody, proxyBody)
+					}
+					if strings.Contains(shape.name, "invalid regexp") && !strings.Contains(proxyBody, "invalid regex in label_replace") {
+						t.Errorf("the proxy's error is not Loki's invalid regex error\nloki:  %s\nproxy: %s", lokiBody, proxyBody)
+					}
+					return
+				}
+				if lt, pt := resultType(lokiPayload), resultType(proxyPayload); lt != pt {
+					t.Fatalf("resultType loki=%q proxy=%q\nloki:  %s\nproxy: %s", lt, pt, lokiBody, proxyBody)
+				}
+				lokiSeries, proxySeries := labelCounts(lokiPayload, instant, shape.points), labelCounts(proxyPayload, instant, shape.points)
+				if len(lokiSeries) == 0 {
+					t.Skipf("Loki answered no series for %s; nothing to compare", shape.query)
+				}
+				if render(lokiSeries) != render(proxySeries) {
+					t.Errorf("label sets differ\nloki:\n  %s\nproxy:\n  %s", render(lokiSeries), render(proxySeries))
+				}
+			})
+		}
+	}
+}

@@ -462,13 +462,14 @@ func toStreams(series map[string]string) map[string][]float64 {
 	return out
 }
 
-// TestInstantLabelReplaceOnAVectorAddsNoLabel: label_replace around a vector
-// aggregation at an instant keeps the series as they are, where Loki adds the
-// destination label (LabelReplaceEvaluator.Next sets dst on every sample whose
-// source label matches). query_range adds it.
+// TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant: label_replace around a
+// vector aggregation sets the destination label on every series whose source
+// label matches, on an instant query as on query_range. Loki evaluates the
+// call per step on the vector its operand answers
+// (pkg/logql/evaluator.go:387, LabelReplaceEvaluator.Next at :1279-1309).
 //
 // conformance: semantics/label-replace-instant-vector
-func TestInstantLabelReplaceOnAVectorAddsNoLabel(t *testing.T) {
+func TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant(t *testing.T) {
 	const query = `label_replace(sum by (ns) (max_over_time({app="uw"} | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")`
 	for _, instant := range []bool{false, true} {
 		t.Run(fmt.Sprintf("instant=%v", instant), func(t *testing.T) {
@@ -479,21 +480,21 @@ func TestInstantLabelReplaceOnAVectorAddsNoLabel(t *testing.T) {
 			if got.code != http.StatusOK {
 				t.Fatalf("%d %s", got.code, got.raw)
 			}
-			hasDst := strings.Contains(got.raw, `"dst":"x"`) && strings.Contains(got.raw, `"dst":"y"`)
-			if hasDst == instant {
-				t.Fatalf("instant=%v: dst on the series is %v, want %v (instant adds none until the row semantics/label-replace-instant-vector is fixed)\n%s", instant, hasDst, !instant, got.raw)
+			if !strings.Contains(got.raw, `"dst":"x"`) || !strings.Contains(got.raw, `"dst":"y"`) {
+				t.Fatalf("instant=%v: want dst=x and dst=y on the series, as Loki answers\n%s", instant, got.raw)
 			}
 		})
 	}
 }
 
-// TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker: query_range does not
-// strip the label_replace around a binary expression the way an instant query
-// does, so the binary marker of the translation reaches VictoriaLogs as a query
-// it cannot parse. Loki evaluates the binary expression and replaces the label.
+// TestLabelReplaceOfABinaryExpressionRoutesByTheBinary: a label_replace around
+// a binary expression evaluates the binary, then replaces the label, on
+// query_range as on an instant query (pkg/logql/evaluator.go:385-388). The
+// translator's binary marker never reaches VictoriaLogs as a query it cannot
+// parse.
 //
 // conformance: semantics/label-replace-range-binary-marker
-func TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker(t *testing.T) {
+func TestLabelReplaceOfABinaryExpressionRoutesByTheBinary(t *testing.T) {
 	const query = `label_replace(sum by (ns) (rate({app="uw"}[5m])) / sum by (ns) (rate({app="uw"}[5m])), "dst", "$1", "ns", "(.*)")`
 	var (
 		mu      sync.Mutex
@@ -521,15 +522,8 @@ func TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker(t *testing.T) {
 		mu.Lock()
 		sent := strings.Join(queries, "\n")
 		mu.Unlock()
-		marker := strings.Contains(sent, "__binary__:")
-		if instant && (got.code != http.StatusOK || marker) {
-			t.Fatalf("instant: %d, binary marker sent=%v: %s", got.code, marker, got.raw)
-		}
-		if !instant && (got.code == http.StatusOK || !marker) {
-			t.Fatalf("query_range: %d, binary marker sent=%v, want the marker sent to VictoriaLogs and an error (open row semantics/label-replace-range-binary-marker): %s", got.code, marker, got.raw)
-		}
-		if !instant {
-			t.Logf("query_range answers %d %s", got.code, strings.TrimSpace(got.raw))
+		if marker := strings.Contains(sent, "__binary__:"); got.code != http.StatusOK || marker {
+			t.Fatalf("instant=%v: %d, binary marker sent=%v, want 200 and no marker: %s", instant, got.code, marker, got.raw)
 		}
 	}
 }

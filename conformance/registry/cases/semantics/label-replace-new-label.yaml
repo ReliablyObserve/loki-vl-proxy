@@ -1,20 +1,67 @@
 id: semantics/label-replace-new-label
-title: label_replace does not add a new destination label (open)
+title: label_replace adds its destination label to every series, instant and range (fixed)
 proves:
+  - loki_api_v1_query
   - loki_api_v1_query_range
 consumer: explore
 why: |
   `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
   "(.*)-.*")` adds `app_short` to every series on Loki; the proxy's series
-  lack the new label (also through nested label_replace).
+  lacked the new label (also through nested label_replace), in the instant
+  answers of the parity run (cluster a9d4f85c, endpoint query). The
+  query_range form of the row's query already carried the label on the base
+  commit (checked against a simulated VictoriaLogs); the instant form did not,
+  so the request below is the instant one.
+
+  Loki v3.7.7: pkg/logql/syntax/ast.go mustNewLabelReplaceExpr compiles the
+  regexp as `^(?:regex)$` (an invalid one is the parse error "invalid regex in
+  label_replace: ..."); pkg/logql/evaluator.go LabelReplaceEvaluator.Next reads
+  the source label (empty when absent), leaves a series the regexp does not
+  match as it is, and otherwise expands the replacement with
+  Regexp.ExpandString ($1, ${1}, $name, ${name}, $$), deleting the destination
+  and setting it only when the expansion is not empty. It validates no label
+  name and raises no error for two series that end with one label set; pkg/
+  logql/engine.go JoinSampleVector then keeps both samples of an instant vector
+  and files the points of a range query's duplicates under one series, those of
+  each step in turn. label_join is no Loki v3.7.7 function (the lexer has
+  label_replace only); the proxy keeps accepting it.
+
+  Causes, reproduced against a simulated VictoriaLogs
+  (internal/proxy/label_replace_semantics_test.go):
+  - The proxy applied the transform to a range matrix only (applyLabelReplace,
+    applyLabelJoin decoded `resultType: matrix`), so an instant vector was
+    returned untouched. It also re-encoded only the series, dropping the rest
+    of the answer, and it expanded the replacement with ReplaceAllString.
+  - The translator took the string arguments of label_replace raw: `"\\."` was
+    the regexp `\\.` (a backslash and any character), never matching, and an
+    escaped quote ended the argument. They are now unquoted as the LogQL lexer
+    does (double-quoted: escapes resolved; backtick: raw).
+  - topk, bottomk, sort and stddev over a label_replace sent the translator's
+    marker to VictoriaLogs as part of the LogsQL query; the transform now runs on
+    what VictoriaLogs answered, before the ranking.
+  - A label_replace around a binary expression on query_range sent the binary
+    marker to VictoriaLogs (the instant path was fixed by the instant-result-type
+    gap); the range path now routes by the expression under the transform too.
+
+  - `label_replace(sum without (level) (...))` lost its transform and kept the
+    excluded label: the without marker's label list swallowed the label_replace
+    marker that follows it.
+  - A call without Loki's four string arguments, or with an invalid escape in a
+    string, was taken for a log query (200 with no streams on query_range, a
+    wrong 400 on query); it is now Loki's 400 parse error (the position and
+    wording of the message follow the proxy's other grammar errors).
+
+  Not changed (separate shapes, to register apart): an aggregation over a
+  label_replace (`sum by (app_short) (label_replace(...))`) is evaluated by
+  VictoriaLogs on a label it does not have; a label_replace around topk, sort,
+  group or vector answers empty on query_range and 400 on query; a
+  label_replace as an operand of a binary expression drops the operation;
+  label_join, which Loki v3.7.7 does not have, is accepted.
 request:
   method: GET
-  path: /loki/api/v1/query_range
+  path: /loki/api/v1/query
   params:
     query: 'label_replace(sum by (app) (rate({app="api-gateway"}[5m])), "app_short", "$1", "app", "(.*)-.*")'
-    start: 'now-1h'
-    end: 'now'
-    step: '60'
   headers:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
@@ -24,12 +71,13 @@ compare:
   expect: |
     app_short on every series.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy label_replace post-processing'
-  loki: 'pkg/logql/evaluator.go:387, :1253 label_replace evaluator'
-  proxy: 'destination label missing'
-  planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics)'
+  area: 'internal/proxy vector_matching.go (transformSeriesLabels, applyLabelReplace, applyLabelJoin), metric_agg.go (post-aggregation markers), internal/translator parseUnquotedStringArgs'
+  loki: 'pkg/logql/syntax/ast.go mustNewLabelReplaceExpr; pkg/logql/evaluator.go:1249-1315 LabelReplaceEvaluator; pkg/logql/engine.go:530-600 JoinSampleVector, vectorsToSeries'
+  proxy: 'the transform runs on the series VictoriaLogs aggregated, matrix and vector alike'
+  planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceEdgeTable, TestLabelReplaceOnInstantAndRange, TestLabelReplaceDifferential, TestLabelReplaceUnderPostAggregation, TestLabelReplaceInvalidRegexp (internal/proxy); TestLabelReplaceStringArgumentsAreUnquoted (internal/translator)'
   clusters:
     - a9d4f85c
