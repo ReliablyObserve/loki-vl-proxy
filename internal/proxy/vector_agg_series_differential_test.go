@@ -58,9 +58,11 @@ type vaScenario struct {
 	version    string
 	// withLevel compares detected_level too: the stats routes of VictoriaLogs
 	// answer no detected_level label for streams without a level, the evaluator
-	// of the proxy answers "unknown" (registered apart), so the other cases
+	// of the proxy answers "unknown" (a separate gap), so the other cases
 	// leave it out of both sides.
 	withLevel bool
+	// divisor, when set, divides the aggregation by a scalar: `<aggregation> / 2`.
+	divisor float64
 }
 
 var vaStreams = []string{
@@ -90,22 +92,10 @@ func (s vaScenario) query() string {
 	for _, stage := range s.stages {
 		q = stage.String() + " (" + q + ")"
 	}
-	return q
-}
-
-// dropEdgeRows removes the lines exactly on an edge of a window (t-window, t].
-func (s *vaScenario) dropEdgeRows() {
-	var kept []emuRow
-next:
-	for _, row := range s.rows {
-		for _, t := range s.times() {
-			if row.ts == t-int64(s.window) || row.ts == t {
-				continue next
-			}
-		}
-		kept = append(kept, row)
+	if s.divisor != 0 {
+		q += " / " + strconv.FormatFloat(s.divisor, 'f', -1, 64)
 	}
-	s.rows = kept
+	return q
 }
 
 func (s vaScenario) String() string {
@@ -252,6 +242,9 @@ func lokiVectorAgg(s vaScenario) (map[string]map[int64]float64, map[string]map[s
 			vec = lokiFold(vec, stage)
 		}
 		for _, series := range vec {
+			if s.divisor != 0 {
+				series.value /= s.divisor
+			}
 			key := labelsKey(series.labels)
 			if out[key] == nil {
 				out[key] = map[int64]float64{}
@@ -275,7 +268,7 @@ func streamLabel(stream, label string) string {
 func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
 	t.Helper()
 	backend := httptest.NewServer(emu.handler())
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,12 +374,7 @@ func firstOf(m map[string]map[string]string) map[string]string {
 // and without; and nested (sum, count, max over a grouped
 // max, count or sum). Window shapes: tumbling, sliding, shorter and longer than
 // the step, a range that is not a multiple of the step. VictoriaLogs lines:
-// v1.52 with the stats offset argument, an unknown version, and v1.40.
-//
-// On v1.40 (no stats offset argument) a per-series sliding window misplaces a
-// line exactly on its edge, with any operator (`sum by (pod)` too, and a rate
-// there reads the wrong edge sample too), a divergence registered apart: v1.40
-// runs count_over_time without a line on a window edge.
+// v1.52 and v1.49, and an unknown version.
 //
 // conformance: semantics/non-sum-vector-aggregation-unreduced, metric-series-identity, window-bounds-and-step-alignment
 func TestVectorAggregationOverRangeFunctionDifferential(t *testing.T) {
@@ -411,12 +399,9 @@ func TestVectorAggregationOverRangeFunctionDifferential(t *testing.T) {
 		[]vaStage{{op: "sum", by: []string{"pod"}}, {op: "max"}},
 		[]vaStage{{op: "max", by: []string{"pod"}}, {op: "count"}},
 	)
-	for _, version := range []string{"", "v1.52.0", "v1.40.0"} {
+	for _, version := range []string{"", "v1.52.0", "v1.49.0"} {
 		for _, stages := range cases {
 			for _, fn := range []string{"count_over_time", "rate"} {
-				if version == "v1.40.0" && fn == "rate" {
-					continue
-				}
 				for _, parser := range []string{"", "logfmt"} {
 					for _, instant := range []bool{false, true} {
 						name := fmt.Sprintf("version=%s/%s/instant=%v", version, vaScenario{stages: stages, fn: fn, parser: parser, window: time.Minute}.query(), instant)
@@ -425,9 +410,6 @@ func TestVectorAggregationOverRangeFunctionDifferential(t *testing.T) {
 							for i := 0; i < 8; i++ {
 								s := generateVectorAggScenario(rnd, fn, stages, instant)
 								s.version, s.parser = version, parser
-								if version == "v1.40.0" {
-									s.dropEdgeRows()
-								}
 								runVectorAggScenario(t, fmt.Sprintf("#%d", i), s)
 							}
 						})
@@ -439,7 +421,7 @@ func TestVectorAggregationOverRangeFunctionDifferential(t *testing.T) {
 }
 
 // The stats routes of VictoriaLogs answer a grouped outer aggregation of a nested
-// one with neither its labels (registered apart), and a detected_level they
+// one with neither its labels (a separate gap), and a detected_level they
 // have none of; a sliding window is the proxy's evaluator, which keeps both: the
 // fold reads the Loki-facing names (detected_level is level in VictoriaLogs),
 // "unknown" for streams without a level, and groups nested aggregations by
@@ -462,6 +444,33 @@ func TestVectorAggregationGroupedLabelsSlidingWindow(t *testing.T) {
 				for i := 0; i < 8; i++ {
 					s := generateVectorAggScenario(rnd, "rate", stages, false)
 					s.window, s.parser, s.withLevel = 5*time.Minute, parser, true
+					runVectorAggScenario(t, fmt.Sprintf("#%d", i), s)
+				}
+			})
+		}
+	}
+}
+
+// A binary operation with a scalar keeps the series of the aggregation under it:
+// the sides of a binary expression are evaluated by the same routes.
+//
+// conformance: semantics/non-sum-vector-aggregation-unreduced, metric-series-identity
+func TestVectorAggregationUnderBinaryScalar(t *testing.T) {
+	for _, stages := range [][]vaStage{
+		{{op: "max"}},
+		{{op: "count", by: []string{"zone"}}},
+		{{op: "avg", by: []string{"pod"}}},
+		{{op: "min", by: []string{"baz"}}},
+	} {
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%v/instant=%v", stages, instant), func(t *testing.T) {
+				rnd := rand.New(rand.NewSource(int64(len(stages[0].by))*977 + 5))
+				for i := 0; i < 8; i++ {
+					s := generateVectorAggScenario(rnd, "rate", stages, instant)
+					s.divisor = 2
+					if !instant {
+						s.window = 5 * time.Minute
+					}
 					runVectorAggScenario(t, fmt.Sprintf("#%d", i), s)
 				}
 			})
