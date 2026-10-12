@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `without` over a level whose labels are named becomes the `by` of what is left.
   An innermost `without` groups by the series' own labels, which VictoriaLogs
   cannot list, so the proxy reads the series rows and folds every level over them
-  in Loki's order (#TBD).
+  in Loki's order (#746).
 
 ## [2.11.2] - 2026-10-12
 

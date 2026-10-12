@@ -57,7 +57,7 @@ compare:
     One series per zone, valued by the lowest of the per-pod averages.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#746"
   impact: explore-visible
   effort: M
   area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain)'
