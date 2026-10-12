@@ -10,11 +10,6 @@ why: |
   evaluator reads, and never scans the rows again. Shapes where neither carries
   the counter answer as before (200 without the rows that do not convert):
 
-  - `absent_over_time({app="payment-service"} | logfmt | unwrap tx_id [5m])`
-    and `sum(absent_over_time({app="payment-service"} | logfmt | unwrap tx_id [5m]))`:
-    Loki 3.7.7 400 on query_range and query, the proxy 200 (19728 per-row
-    series, or one); absent_over_time is not counted (its own series
-    difference is semantics/absent-over-time-semantics);
   - `label_replace(sum by (service_name) (sum_over_time({...} | json | unwrap s [5m])), "x", "$1", "service_name", "(.*)")`
     and `label_join(...)`: the parser keeps them opaque, so no aggregation is
     checked (Loki 3.7.7 400, proxy 200, measured on an isolated stack);
@@ -62,5 +57,5 @@ gap:
   area: 'internal/proxy/unwrap_conversion_error.go unwrapErrorProbes (opaque expressions), unwrapCountingQuery (pipes after stats), unwrapLokiLabels (pipeline stages)'
   loki: 'pkg/logql/evaluator.go:726-733'
   proxy: '200 without the rows that do not convert'
-  planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (absent_over_time, label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
+  planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
   clusters: []

@@ -218,6 +218,8 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 		{"json string that looks like an array", rangePath, window(`sum by (service_name) (sum_over_time(` + jsonSel + ` | json | unwrap f [5m]))`), 400},
 		{"json text", rangePath, window(`sum by (service_name) (sum_over_time(` + jsonSel + ` | json | unwrap s [5m]))`), 400},
 
+		{"absent_over_time", rangePath, window(`absent_over_time(` + sel + ` | logfmt | unwrap t [5m])`), 400},
+		{"absent_over_time under sum, instant", instantPath, instant(`sum(absent_over_time(`+sel+` | logfmt | unwrap t [5m]))`, 20*time.Minute), 400},
 		{"quantile under sum", rangePath, window(`sum(quantile_over_time(0.5, ` + sel + ` | logfmt | unwrap t [5m]))`), 400},
 		{"quantile under max, instant", instantPath, instant(`max(quantile_over_time(0.5, `+sel+` | logfmt | unwrap t [5m]))`, 20*time.Minute), 400},
 		{"parser hints keep no name_extracted of a grouping label", rangePath, window(`sum by (x) (sum_over_time(` + collSel + ` | logfmt | unwrap z [5m]))`), 400},
@@ -280,7 +282,6 @@ func TestCompat_UnwrapConversionErrorParity(t *testing.T) {
 	// Shapes Loki fails that the detection leaves out (registered, open): the
 	// test checks Loki still fails them and skips with the case named.
 	for _, tc := range []struct{ name, query, open string }{
-		{"absent_over_time", `absent_over_time(` + sel + ` | logfmt | unwrap t [5m])`, "semantics/unwrap-conversion-error-undetected-shapes"},
 		{"label_replace around the metric", `label_replace(sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap t [5m])), "x", "$1", "service_name", "(.*)")`, "semantics/unwrap-conversion-error-undetected-shapes"},
 		{"a comparison after the unwrap", `sum_over_time(` + sel + ` | logfmt | unwrap v | v > 3 [5m])`, "semantics/unwrap-conversion-error-postfilter-forms"},
 	} {
