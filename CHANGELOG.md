@@ -2248,10 +2248,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the log, range and instant paths, and `TestCompat_PatternLineFilter`
   against Loki (#743).
 
-## [2.12.0] - 2026-10-12
-
-### Fixed
-
 - **`label_replace` adds its destination label to instant answers, reads an
   escaped regexp, and runs under `topk`, `sort` and a binary expression (#744).**
   `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
@@ -2278,6 +2274,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments of Loki's grammar, or with an invalid escape in one, was taken for a
   log query (an empty `streams` answer on `query_range`) and is now a 400 parse
   error on both endpoints.
+
+## [2.12.0] - 2026-10-12
+
+### Fixed
+
 - **An instant query is answered with its failure status and a resultType, as
   Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
   (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as

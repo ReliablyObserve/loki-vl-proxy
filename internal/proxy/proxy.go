@@ -2502,7 +2502,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
 	if routedQuery != logqlQuery {
-		r = cloneMetricQueryRequest(r, routedQuery)
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
@@ -2806,7 +2808,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
 	if routedQuery != logqlQuery {
-		r = cloneMetricQueryRequest(r, routedQuery)
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
