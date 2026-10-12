@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than `sum` (`max by`, `avg by`, ...) around these functions
   (`semantics/manual-range-outer-aggregation-dropped`), and
   `stddev_over_time`/`stdvar_over_time`. `semantics/unwrap-over-time-range-windows`
-  fixed (#TBD).
+  fixed (#740).
 - **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
   `unwrap` answer the sample at `end` on query_range, as Loki does.**
   `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap

@@ -80,7 +80,7 @@ compare:
     One series, Loki's window sum at every step.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#740"
   impact: explore-visible
   effort: M
   area: 'internal/proxy range_metric_compat.go handleStatsCompatRange, buildHitsRangeMetricMatrix, collectRangeMetricHits; unwrap_samples.go unwrapWindowBuckets, unwrapBucketAgg, mergeUnwrapBuckets'
