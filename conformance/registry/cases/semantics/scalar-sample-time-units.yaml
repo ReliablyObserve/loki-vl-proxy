@@ -1,0 +1,69 @@
+id: semantics/scalar-sample-time-units
+title: A scalar instant answer is stamped in integer milliseconds, like Loki (fixed)
+proves:
+  - loki_api_v1_query
+consumer: grafana-datasource
+why: |
+  `/loki/api/v1/query?query=1&time=1791811168123456789` is answered by Loki
+  3.7.7 (measured on an isolated instance, the compose config) with
+  `{"resultType":"scalar","result":[1791811168123,"1"]}`: the sample time is the
+  count of milliseconds, not seconds. `1 + 1`, `2 * (3 + 4)` and
+  `1 > bool 2` are stamped the same way. `vector(1)` and `1 + vector(1)` are
+  stamped `1791811168.123`, in seconds.
+
+  The cause is the query frontend's own encoder, not the engine's. The engine
+  keeps the time as milliseconds (pkg/logql/engine.go evalLiteral:
+  `T: q.params.Start().UnixNano() / int64(time.Millisecond)`), and the encoder
+  of pkg/util/marshal (encodeScalar, `model.Time(v.T).String()`) would write
+  seconds, but the HTTP answer does not go through it: ResultToResponse
+  (pkg/querier/queryrange/marshal.go) turns the promql.Scalar into a
+  LokiPromResponse, and LokiPromResponse.marshalScalar
+  (pkg/querier/queryrange/prometheus.go) builds the time with
+  `model.TimeFromUnix(r.Samples[0].TimestampMs)`. TimeFromUnix takes seconds,
+  so the millisecond count is multiplied by 1000 and model.Time.String divides
+  it by 1000 again: the millisecond count is printed as if it were seconds.
+  marshalVector uses `model.Time(TimestampMs)` and is correct, which is why a
+  vector is in seconds.
+
+  The proxy stamped a scalar with seconds (`[1791811168.123,"1"]`), written
+  from the reading of pkg/util/marshal that the frontend does not follow (#735).
+  A client that reads the scalar time as seconds reads a date in the year
+  58000; one that reads it as Loki's wire format (the Grafana Loki datasource
+  decodes through loghttp.Scalar, which parses a number) now gets the same
+  number. The value and the resultType were already Loki's.
+
+  Not covered here: `1 / 0`, `0 / 0` and `-1 / 0`. Loki folds a division of
+  literals through MergeBinOp, which makes a division by zero NaN
+  (pkg/logql/syntax/ast.go mustNewBinOpExpr -> reduceBinOp -> MergeBinOp,
+  OpTypeDiv). Loki 3.7.7 with the compose config answers HTTP 500
+  `failed to enqueue request` after about 40 s for these queries (its frontend
+  retries the grpc send, which fails with `grpc: error while marshaling:
+  unsupported value: NaN`), while the proxy answers 200 with a scalar `NaN`
+  (stamped in milliseconds like the other scalars). Whether to follow that
+  failure is an owner decision, not made here.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: '1'
+    time: '1791811168123456789'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [data.result]
+  expect: |
+    [1791811168123,"1"] for a scalar; [1791811168.123,"1"] for vector(1).
+gap:
+  status: fixed
+  fixed_by: "#752"
+  impact: grafana-datasource
+  visual: none
+  visual_reason: 'instant scalar literals only; no Explore range panel renders them, the fix is proven by the sample-time comparison against Loki in the e2e'
+  effort: S
+  area: 'internal/proxy evaluateConstantInstantQuery (metric_agg.go), binaryConstantResponse (binary_scalar.go)'
+  loki: 'pkg/logql/engine.go:700-702 evalLiteral; pkg/querier/queryrange/marshal.go:97-112 ResultToResponse; pkg/querier/queryrange/codec.go:1221-1227,1761-1772 DecodeResponse/toProtoScalar; pkg/querier/queryrange/prometheus.go:163-176 marshalScalar (model.TimeFromUnix) vs :90-102 marshalVector'
+  proxy: 'a scalar answer carries the evaluation time as integer milliseconds; vector() keeps seconds'
+  planned_test: 'TestCompat_InstantResultTypeAlwaysSet (test/e2e-compat, subtest constant sample time); TestInstantConstantsCarrySecondsTimestamps and TestBinaryScalarSubtreesAndIEEEValues (internal/proxy)'
+  note: 'The e2e ran against an isolated Loki 3.7.7 and VictoriaLogs v1.52.0 with a proxy built from the branch.'

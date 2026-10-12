@@ -28,8 +28,11 @@ import (
 //     vector, whatever the expression (queryrange/codec.go NewEmptyResponse,
 //     LokiInstantRequest).
 //
-// The sample time of a vector or scalar is seconds (model.Time, millisecond
-// precision), not nanoseconds (pkg/util/marshal/query.go NewVector, NewScalar).
+// The sample time of a vector is seconds with millisecond precision, not
+// nanoseconds (queryrange/prometheus.go marshalVector, model.Time(ms)); the
+// time of a scalar is integer milliseconds, because marshalScalar hands the
+// millisecond timestamp to model.TimeFromUnix, which reads seconds
+// (queryrange/prometheus.go marshalScalar).
 
 type instantBackendMode string
 
@@ -277,18 +280,18 @@ func requireInstantAnswer(t *testing.T, label string, a instantAnswer, want stri
 }
 
 // requireInstantResultShape checks the result against loghttp's types: a vector
-// sample is {metric, value:[seconds, "v"]}, a scalar is [seconds, "v"].
+// sample is {metric, value:[seconds, "v"]}, a scalar is [milliseconds, "v"].
 func requireInstantResultShape(t *testing.T, label string, a instantAnswer, want string) {
 	t.Helper()
-	checkPoint := func(raw json.RawMessage) {
+	checkPoint := func(raw json.RawMessage, lo, hi float64, unit string) {
 		var point []any
 		if err := json.Unmarshal(raw, &point); err != nil || len(point) != 2 {
 			t.Errorf("%s: sample point %s is not [time, value]\n%s", label, raw, a.body)
 			return
 		}
 		ts, ok := point[0].(float64)
-		if !ok || ts < 1e9 || ts > 1e11 {
-			t.Errorf("%s: sample time %v is not seconds since the epoch\n%s", label, point[0], a.body)
+		if !ok || ts < lo || ts > hi {
+			t.Errorf("%s: sample time %v is not %s since the epoch\n%s", label, point[0], unit, a.body)
 		}
 		if _, ok := point[1].(string); !ok {
 			t.Errorf("%s: sample value %v is not a string\n%s", label, point[1], a.body)
@@ -300,7 +303,7 @@ func requireInstantResultShape(t *testing.T, label string, a instantAnswer, want
 			Result json.RawMessage `json:"result"`
 		}
 		_ = json.Unmarshal(a.raw["data"], &data)
-		checkPoint(data.Result)
+		checkPoint(data.Result, 1e12, 1e14, "milliseconds")
 	case "vector":
 		for _, item := range a.resp.Data.Result {
 			var sample struct {
@@ -312,7 +315,7 @@ func requireInstantResultShape(t *testing.T, label string, a instantAnswer, want
 				t.Errorf("%s: %s is not a vector sample {metric, value}\n%s", label, item, a.body)
 				continue
 			}
-			checkPoint(sample.Value)
+			checkPoint(sample.Value, 1e9, 1e11, "seconds")
 		}
 	}
 }
@@ -370,9 +373,11 @@ func TestInstantQueryPostProcessedBackendFailureKeepsStatus(t *testing.T) {
 	}
 }
 
-// Sample times of vector() are seconds, like every other sample, and the
-// scalar of a literal follows pkg/util/marshal NewScalar.
-// conformance: semantics/instant-result-type-missing, loki_api_v1_query
+// Sample times of vector() are seconds, like every other vector sample. The
+// time of a scalar is integer milliseconds, as Loki's query frontend writes it
+// (queryrange/prometheus.go marshalScalar passes the millisecond timestamp to
+// model.TimeFromUnix), which a live Loki 3.7.7 answers as [1791811168123,"1"].
+// conformance: semantics/instant-result-type-missing, semantics/scalar-sample-time-units, loki_api_v1_query
 func TestInstantConstantsCarrySecondsTimestamps(t *testing.T) {
 	p := newTestProxy(t, instantBackend(t, instantBackendData).URL)
 	for _, tc := range []struct{ query, time string }{
@@ -390,6 +395,42 @@ func TestInstantConstantsCarrySecondsTimestamps(t *testing.T) {
 		}
 		requireInstantAnswer(t, tc.query+" at "+tc.time, a, want, false)
 	}
+	// the exact sample time, as the JSON text a client reads
+	for _, tc := range []struct{ query, time, want string }{
+		{`1`, "1704067200", `[1704067200000,"1"]`},
+		{`1`, "1704067200.5", `[1704067200500,"1"]`},
+		{`1`, "1704067200123456789", `[1704067200123,"1"]`},
+		{`1`, "2024-01-01T00:00:00.789Z", `[1704067200789,"1"]`},
+		{`-1`, "1704067200", `[1704067200000,"-1"]`},
+		{`1 + 1`, "1704067200123456789", `[1704067200123,"2"]`},
+		{`2 * (3 + 4)`, "1704067200", `[1704067200000,"14"]`},
+		{`1 > bool 2`, "1704067200", `[1704067200000,"0"]`},
+	} {
+		a := askInstant(t, p, tc.query, "0", url.Values{"time": {tc.time}})
+		var data struct {
+			ResultType string          `json:"resultType"`
+			Result     json.RawMessage `json:"result"`
+		}
+		_ = json.Unmarshal(a.raw["data"], &data)
+		if data.ResultType != "scalar" || string(data.Result) != tc.want {
+			t.Errorf("%s at %s: scalar %s %s, want scalar %s", tc.query, tc.time, data.ResultType, data.Result, tc.want)
+		}
+	}
+	for _, tc := range []struct{ query, time, want string }{
+		{`vector(1)`, "1704067200123456789", `[1704067200.123,"1"]`},
+		{`vector(1) + 1`, "1704067200", `[1704067200,"2"]`},
+	} {
+		a := askInstant(t, p, tc.query, "0", url.Values{"time": {tc.time}})
+		var data struct {
+			Result []struct {
+				Value json.RawMessage `json:"value"`
+			} `json:"result"`
+		}
+		_ = json.Unmarshal(a.raw["data"], &data)
+		if len(data.Result) != 1 || string(data.Result[0].Value) != tc.want {
+			t.Errorf("%s at %s: vector %s, want value %s", tc.query, tc.time, a.body, tc.want)
+		}
+	}
 	// without a time, the evaluation time is now
 	req := httptest.NewRequest("GET", "/loki/api/v1/query?query="+url.QueryEscape(`1`), nil)
 	req.Header.Set("X-Scope-OrgID", "0")
@@ -404,7 +445,7 @@ func TestInstantConstantsCarrySecondsTimestamps(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Data.ResultType != "scalar" || len(got.Data.Result) != 2 {
 		t.Fatalf("scalar literal without time: HTTP %d %s", rec.Code, rec.Body.String())
 	}
-	if ts, _ := got.Data.Result[0].(float64); time.Since(time.Unix(int64(ts), 0)) > time.Minute {
+	if ts, _ := got.Data.Result[0].(float64); time.Since(time.UnixMilli(int64(ts))) > time.Minute {
 		t.Fatalf("scalar literal without time is stamped %v, want now", got.Data.Result[0])
 	}
 }
