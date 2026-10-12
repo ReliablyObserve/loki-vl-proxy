@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A vector-to-vector join fails with Loki's exact error text, at the step where
+  Loki fails.** When the right operand of `A + ignoring(machine) B` held several
+  series for one match key the proxy answered `found duplicate series on the
+  right hand-side; many-to-many matching not allowed: ...`, with a space after
+  the semicolon; Loki v3.7.7 joins the two halves with `;` alone
+  (pkg/logql/evaluator.go vectorBinop, :974-975), so a client matching the
+  message saw a different string (the `multiple matches for labels` texts already
+  matched). Loki joins one evaluation at a time and stops at the first whose
+  join fails (pkg/logql/engine.go reads the evaluator's error after every step);
+  the proxy checked the right-hand duplicates of every step before the left-hand
+  ones and before the group-label collisions, so a range query that fails at
+  several steps could name another error than Loki. The join now raises the error
+  of the earliest failing step, right-hand duplicates before left-hand multiple
+  matches inside a step. Pinned by a differential test over 6,000 generated
+  operand pairs and modifier sets (none, `on`, `ignoring`, `group_left`,
+  `group_right`, with and without `bool`) against a reference written from
+  vectorBinop, matchingSignature, resultMetric and MergeBinOp, an edge table for
+  `ignoring` over a label absent on both sides, on one side and on the right
+  only, and handler tests on range and instant queries; the live comparison with
+  Loki is `TestCompat_BinaryIgnoringAbsentLabel` (#742). Not changed: the query
+  from the conformance row `semantics/binary-ignoring-matching`, `sum by
+  (cluster) (sum by (cluster) (rate(..)) + ignoring(machine) sum by (cluster,
+  machine) (rate(..)))`, still answers the first operand's raw count (about 150
+  times Loki's value) because an outer aggregation over a binary expression is
+  translated from its first operand; the join itself matches Loki, and the row
+  stays open for that path.
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
