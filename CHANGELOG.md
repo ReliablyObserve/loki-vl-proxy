@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arithmetic path; comparisons (with and without `bool`), `^`, NaN and infinite
   operands already matched Loki and are pinned against a direct port of
   `MergeBinOp` by an operator by operand edge table. Aggregations over a
-  division by zero are not changed here. (#TBD)
+  division by zero are not changed here. (#745)
 
 ## [2.11.2] - 2026-10-12
 
