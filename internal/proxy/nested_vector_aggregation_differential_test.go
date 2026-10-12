@@ -126,7 +126,7 @@ next:
 // range query's start on its step grid: VictoriaLogs v1.40 has no stats offset
 // argument, so only an epoch-aligned tumbling window is answered by its buckets
 // (the proxy's window evaluator reads any other, a different route).
-func generateNestedScenario(rnd *rand.Rand, fn string, levels []nvLevel, instant, aligned bool) nvScenario {
+func generateNestedScenario(rnd *rand.Rand, fn string, levels []nvLevel, instant, aligned bool, sliding ...bool) nvScenario {
 	steps := []time.Duration{30 * time.Second, time.Minute, 90 * time.Second}
 	windows := []time.Duration{30 * time.Second, time.Minute, 90 * time.Second, 5 * time.Minute}
 	s := nvScenario{levels: levels, fn: fn, window: windows[rnd.Intn(len(windows))], trailingBy: rnd.Intn(2) == 0}
@@ -134,6 +134,11 @@ func generateNestedScenario(rnd *rand.Rand, fn string, levels []nvLevel, instant
 	if !instant {
 		s.step = steps[rnd.Intn(len(steps))]
 		s.window = s.step // a tumbling window: range == step
+		if len(sliding) > 0 && sliding[0] {
+			// A sliding window: the range differs from the step, the windows overlap
+			// or leave gaps, and the proxy evaluates it from the rows.
+			s.window = []time.Duration{2 * s.step, 5 * time.Minute, s.step / 2}[rnd.Intn(3)]
+		}
 	}
 	s.start = base + int64(rnd.Intn(600))*1e9
 	if aligned && !instant {
@@ -296,10 +301,16 @@ func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 	emu := &vlEmulator{t: t, rows: s.rows, version: s.version, field: "amount"}
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	responseCache := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: backend.URL, Cache: responseCache, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
+		responseCache.Close()
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+		responseCache.Close()
+	})
 	if emu.version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
@@ -375,7 +386,7 @@ func runNestedScenario(t *testing.T, label string, s nvScenario, fold bool) {
 			}
 		}
 	}
-	if fold {
+	if fold || (s.step != 0 && s.window != s.step) {
 		return
 	}
 	// Computed by VictoriaLogs: stats only, and only the final groups come back.
@@ -433,12 +444,16 @@ func runNestedMatrix(t *testing.T, cases [][]nvLevel, iterations int, fold bool)
 					continue
 				}
 				for _, parser := range []string{"", "logfmt"} {
-					for _, instant := range []bool{false, true} {
-						name := fmt.Sprintf("version=%s/%s/instant=%v", version, nvScenario{levels: levels, fn: fn, parser: parser, window: time.Minute}.query(), instant)
+					for _, mode := range []string{"tumbling", "instant", "sliding"} {
+						instant, sliding := mode == "instant", mode == "sliding"
+						if sliding && version != "v1.52.0" {
+							continue // the window evaluator reads rows: one version covers it
+						}
+						name := fmt.Sprintf("version=%s/%s/%s", version, nvScenario{levels: levels, fn: fn, parser: parser, window: time.Minute}.query(), mode)
 						t.Run(name, func(t *testing.T) {
 							rnd := rand.New(rand.NewSource(int64(len(name))*7919 + int64(name[len(name)-3]) + 31))
 							for i := 0; i < iterations; i++ {
-								s := generateNestedScenario(rnd, fn, levels, instant, version == "v1.40.0")
+								s := generateNestedScenario(rnd, fn, levels, instant, version == "v1.40.0", sliding)
 								s.version, s.parser = version, parser
 								if version == "v1.40.0" {
 									s.dropEdgeRows()
