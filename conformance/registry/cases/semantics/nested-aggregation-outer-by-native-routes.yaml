@@ -1,0 +1,68 @@
+id: semantics/nested-aggregation-outer-by-native-routes
+title: A vector aggregation over another one keeps every level's own by on the native routes (fixed)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `min by (zone) (avg by (pod, zone) (count_over_time({app="x"}[5m])))` is one
+  series per zone on Loki 3.7.7: the evaluator folds the innermost level first
+  and every level keeps exactly its own grouping labels (pkg/logql/evaluator.go
+  VectorAggEvaluator.Next:435-529: `by` keeps the listed labels a series has,
+  `without` drops the listed ones; a listed label the input series lack is
+  absent from the result). The native routes, which send the translated query
+  to VictoriaLogs (an instant query, a tumbling window with range == step), got
+  one series without labels: the translator's recursive branch for a vector
+  aggregation over another one translated the inner level and applied the outer
+  operator with applyOuterAggregation, which has no grouping argument, so the
+  outer `by` was dropped. The same dropped it for `sum by (zone) (sum by (pod,
+  zone) (...))`, for a middle level of three, and a `without` anywhere but the
+  outermost level was applied to the whole answer with the outermost operator
+  (the without marker holds one list and the proxy folds once).
+
+  Fixed: a nest of sum, avg, min, max and count over a range aggregation is a
+  chain of stats pipes with one pipe per level, each with its own `by`:
+  `stats by (pod, zone, _stream, level) count() as a | stats by (pod, zone)
+  avg(a) as b | stats by (zone) min(b)`. Every pipe after the first reads the
+  rows of the previous one, one row per Loki series of that level, so the chain
+  is exact for every combination of the five operators (a mean of means is
+  unweighted in both) and VictoriaLogs groups every stats pipe by the time
+  bucket itself (addByTimeFieldToStatsPipes, read in the v1.43 and v1.50
+  sources; v1.40 already runs the two-pipe series-level chain, and the
+  differential covers it with a step-aligned start, the only tumbling window a
+  backend without the stats offset argument answers by its buckets: any other
+  start goes to the proxy's window evaluator, a different route). A level above the first can keep only labels the
+  previous level kept, so its `by` list is cut to those at translation time (a
+  label the inner group lacks is absent in Loki and an empty group value in
+  VictoriaLogs: both leave no label) and a `without` is subtracted from them: a
+  static `by`. Only an innermost `without` has labels VictoriaLogs cannot list
+  (the series' own), so that query keeps the series rows and the proxy folds
+  every level over them, innermost first (applyWithoutChain, applyWithoutGrouping
+  with Loki's operator per level). Levels the chain does not model (group,
+  topk, stddev, stdvar) and the sliding windows of the proxy's window evaluator
+  keep their own paths (semantics/non-sum-vector-aggregation-unreduced).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'min by (zone) (avg by (pod, zone) (count_over_time({app="x"}[5m])))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per zone, valued by the lowest of the per-pod averages.
+gap:
+  status: fixed
+  fixed_by: "#746"
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain)'
+  loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (each level keeps its own grouping)'
+  proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy'
+  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator)'
+  note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows of the proxy evaluator are the proxy-side fold of semantics/non-sum-vector-aggregation-unreduced.'
+  clusters: []

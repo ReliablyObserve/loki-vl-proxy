@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-nested-aggregation-outer-by",
+   "kind": "explore",
+   "query": "min by (service_name) (avg by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "covers": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/nested-aggregation-outer-by-native-routes"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

@@ -187,6 +187,7 @@
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -214,6 +215,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -231,9 +233,12 @@
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
+      "internal/proxy/nested_vector_aggregation_differential_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
+      "internal/translator/nested_vector_chain_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -435,6 +440,12 @@
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
     ],
+    "semantics/nested-aggregation-outer-by-native-routes": [
+      "internal/proxy/nested_vector_aggregation_differential_test.go",
+      "internal/proxy/nested_vector_fold_test.go",
+      "internal/translator/nested_vector_chain_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go"
+    ],
     "semantics/offset-sample-timestamps": [
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
@@ -541,7 +552,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 299,
+  "registry_items": 300,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -713,6 +724,13 @@
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit"
     ],
+    "internal/proxy/nested_vector_aggregation_differential_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
+    "internal/proxy/nested_vector_fold_test.go": [
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
     "internal/proxy/ordered_json_conditional_unpack_test.go": [
       "parsed-label-series-identity",
       "parser-json",
@@ -874,6 +892,10 @@
     "internal/translator/line_filter_or_test.go": [
       "semantics/line-filter-or-alternatives"
     ],
+    "internal/translator/nested_vector_chain_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
     "internal/translator/parsed_key_variants_test.go": [
       "profiles/sanitized-json-key-filter",
       "profiles/sanitized-json-key-grouping"
@@ -982,6 +1004,12 @@
       "loki_api_v1_label_name_values",
       "loki_api_v1_labels"
     ],
+    "test/e2e-compat/nested_vector_aggregation_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
     "test/e2e-compat/parenthesized_range_or_filters_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1064,7 +1092,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 100,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1172,5 +1200,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 106
+  "wired_items": 107
 }

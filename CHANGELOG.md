@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A vector aggregation over another one keeps every level's own `by`.**
+  `min by (zone) (avg by (pod, zone) (count_over_time({...}[5m])))` is one series
+  per zone on Loki: the evaluator folds the innermost level first and each level
+  keeps exactly its own grouping labels (a listed label the level's input lacks is
+  absent from the result). On an instant query and on a tumbling window
+  (range equal to the step) the proxy returned one series without labels, because
+  the translation of the outer level ignored its `by`; `sum by (zone) (sum by (pod,
+  zone) (...))` and the middle level of a three-level nest lost theirs too, and a
+  `without` anywhere but the outermost level was applied to the whole answer with
+  the outermost operator. A nest of sum, avg, min, max and count over a range
+  aggregation is now one VictoriaLogs query with a stats pipe per level, each
+  grouped by its own labels (`stats by (pod, zone, _stream, level) count() as a |
+  stats by (pod, zone) avg(a) as b | stats by (zone) min(b)`), so the answer comes
+  from VictoriaLogs and is Loki's for every pair and triple of the five operators:
+  a label an inner level did not keep is dropped from the outer `by`, and a
+  `without` over a level whose labels are named becomes the `by` of what is left.
+  An innermost `without` groups by the series' own labels, which VictoriaLogs
+  cannot list, so the proxy reads the series rows and folds every level over them
+  in Loki's order (#746).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
