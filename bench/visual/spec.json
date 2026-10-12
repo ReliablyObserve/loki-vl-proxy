@@ -343,15 +343,16 @@
    ]
   },
   {
-   "id": "explore-unwrap-duration-seconds",
+   "id": "explore-pattern-filter-anchored",
    "kind": "explore",
-   "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+   "query": "{service_name=\"api-gateway\"} !> \"<_> 200\"",
    "covers": [
-    "semantics/unwrap-duration-seconds",
+    "semantics/pattern-line-filter-anchoring",
+    "semantics/pattern-line-filter",
     "loki_api_v1_query_range"
    ],
    "fixes": [
-    "semantics/unwrap-duration-seconds"
+    "semantics/pattern-line-filter-anchoring"
    ]
   },
   {
