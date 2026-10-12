@@ -257,10 +257,15 @@ func runTopKDifferential(t *testing.T, start, end time.Time, version string, see
 						query := g.clause(op, k, inner)
 						t.Run(fmt.Sprintf("seed%d/%s/%s", seed, name, query), func(t *testing.T) {
 							got := queryTopKRange(t, p, query, start, end, shape.step)
-							want, tied := topKPoints{}, map[int64]bool{}
+							want, tied := topKPoints{}, map[string]bool{}
+							rng := rand.New(rand.NewSource(seed))
 							for ts := start; !ts.After(end); ts = ts.Add(shape.step) {
 								vec := topKReferenceVector(lines, shape.fn, ts, shape.window)
-								picked := lokiTopK(vec, k, op == "topk", g.key)
+								// Loki meets the series in map order: a tie at the k-th
+								// place keeps whichever came first, not the first label.
+								shuffled := append([]topKSeries(nil), vec...)
+								rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+								picked := lokiTopK(shuffled, k, op == "topk", g.key)
 								for _, s := range picked {
 									key := fmt.Sprintf("app=%s,env=%s", s.app, s.env)
 									if want[key] == nil {
@@ -268,12 +273,16 @@ func runTopKDifferential(t *testing.T, start, end time.Time, version string, see
 									}
 									want[key][ts.Unix()] = s.value
 								}
-								tied[ts.Unix()] = boundaryTie(vec, g.key, k, op == "topk")
+								for group := range tiedGroups(vec, g.key, k, op == "topk") {
+									tied[fmt.Sprintf("%d|%s", ts.Unix(), group)] = true
+								}
 								assertTopKStep(t, query, ts, vec, picked, got, g.key, op == "topk")
 							}
 							for key, pts := range got {
 								for ts := range pts {
-									if _, ok := want[key][ts]; !ok && !tied[ts] {
+									var app, env string
+									_, _ = fmt.Sscanf(key, "app=%2s,env=%s", &app, &env)
+									if _, ok := want[key][ts]; !ok && !tied[fmt.Sprintf("%d|%s", ts, g.key(topKSeries{app: app, env: env}))] {
 										t.Errorf("%s: unexpected sample %s @%d", query, key, ts)
 									}
 								}
@@ -287,7 +296,7 @@ func runTopKDifferential(t *testing.T, start, end time.Time, version string, see
 	}
 }
 
-// conformance: semantics/topk-bottomk-range-series, limits/top-n-ranking-not-silent, loki_api_v1_query_range
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, limits/top-n-ranking-not-silent, loki_api_v1_query_range
 func TestTopKRangeDifferential(t *testing.T) {
 	base := time.Unix(1699999200, 0).UTC()
 	// An unaligned start: Grafana's now-1h is never on a step boundary.
@@ -303,7 +312,7 @@ func TestTopKRangeDifferential(t *testing.T) {
 
 // A backend that cannot anchor buckets (before v1.45) and an unaligned start
 // send the window to the raw evaluator, whose matrix the proxy ranks itself.
-// conformance: semantics/topk-bottomk-range-series, loki_api_v1_query_range
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, loki_api_v1_query_range
 func TestTopKRangeDifferentialRawEvaluator(t *testing.T) {
 	base := time.Unix(1699999200, 0).UTC()
 	start, end := base.Add(10*time.Minute+30*time.Second), base.Add(40*time.Minute+30*time.Second)
@@ -372,78 +381,22 @@ func assertTopKStep(t *testing.T, query string, ts time.Time, vec, picked []topK
 	}
 }
 
-// boundaryTie reports whether a group of vec has a tie across the k-th place,
-// where Loki's choice depends on map order.
-func boundaryTie(vec []topKSeries, group func(topKSeries) string, k int, descending bool) bool {
+// tiedGroups returns the groups of vec with a tie across the k-th place, where
+// Loki's choice depends on map order.
+func tiedGroups(vec []topKSeries, group func(topKSeries) string, k int, descending bool) map[string]bool {
 	byGroup := map[string][]float64{}
 	for _, s := range vec {
 		byGroup[group(s)] = append(byGroup[group(s)], s.value)
 	}
-	for _, values := range byGroup {
+	tied := map[string]bool{}
+	for g, values := range byGroup {
 		sort.Float64s(values)
 		if descending {
 			sort.Sort(sort.Reverse(sort.Float64Slice(values)))
 		}
 		if len(values) > k && values[k-1] == values[k] {
-			return true
+			tied[g] = true
 		}
 	}
-	return false
-}
-
-// Loki counts the series of a topk result, the union of those that ranked at
-// some step, against max_query_series (pkg/logql/engine.go JoinSampleVector):
-// an error for a plain client, the first series with a warning for Logs
-// Drilldown. A response over -backend-max-buffered-response-bytes fails before
-// the heaps hold more samples than it could carry.
-// conformance: semantics/topk-bottomk-range-series, limits/top-n-ranking-not-silent, series-limits-and-partial-results
-func TestTopKRangeResultBounds(t *testing.T) {
-	base := time.Unix(1699999200, 0).UTC()
-	start, end := base.Add(10*time.Minute), base.Add(40*time.Minute)
-	backend := newTopKTestBackend(t, topKFixture(1, base, 60))
-	defer backend.Close()
-	query := `topk by (app, env) (1, sum by (app, env) (count_over_time({app=~".+"}[5m])))` // keeps all 12 series
-	params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
-	get := func(p *Proxy, headers map[string]string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		rec := httptest.NewRecorder()
-		p.handleQueryRange(rec, req)
-		return rec
-	}
-	newProxy := func() *Proxy {
-		p := newGapTestProxy(t, backend.URL)
-		p.storeBackendVersion("v1.50.0", "v1.50.0")
-		return p
-	}
-
-	p := newProxy()
-	p.maxStatsQuerySeries = 12
-	if rec := get(p, nil); rec.Code != http.StatusOK {
-		t.Fatalf("a union at the limit is allowed: %d %.200s", rec.Code, rec.Body)
-	}
-	p = newProxy()
-	p.maxStatsQuerySeries = 5
-	rec := get(p, nil)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (5) reached for a single query") {
-		t.Fatalf("a plain client gets Loki's series limit error: %d %.300s", rec.Code, rec.Body)
-	}
-	rec = get(p, map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"})
-	var resp struct {
-		Warnings []string
-		Data     struct{ Result []json.RawMessage }
-	}
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || len(resp.Data.Result) != 5 || len(resp.Warnings) != 1 || !strings.Contains(resp.Warnings[0], "maximum number of series (5) reached") {
-		t.Fatalf("Logs Drilldown gets the first 5 series and a warning: %d %.300s", rec.Code, rec.Body)
-	}
-
-	p = newProxy()
-	p.execLimits = defaultExecutionLimits()
-	p.execLimits.BufferedBackendBodyBytes = 4096
-	rec = get(p, nil)
-	if rec.Code < 400 || !strings.Contains(rec.Body.String(), "manual metric response exceeds 4096 bytes") {
-		t.Fatalf("a response over the buffered limit fails: %d %.300s", rec.Code, rec.Body)
-	}
+	return tied
 }

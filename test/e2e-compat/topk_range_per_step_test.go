@@ -118,7 +118,7 @@ func assertTopKRangeParity(t *testing.T, query string, inner, loki, proxy map[st
 // ranked at some step, with their samples at those steps only. The leaders of
 // the fixture change from minute to minute, so a ranking over the whole range,
 // or a spelling the proxy took for a log query, fails here.
-// conformance: semantics/topk-bottomk-range-series, limits/top-n-ranking-not-silent, loki_api_v1_query_range
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, limits/top-n-ranking-not-silent, loki_api_v1_query_range
 func TestCompat_TopkRangePerStep(t *testing.T) {
 	id := time.Now().UnixNano()
 	s0 := time.Now().Add(-3 * time.Hour).Truncate(time.Hour)
