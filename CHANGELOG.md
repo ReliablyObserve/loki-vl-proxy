@@ -7,31 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.11.2] - 2026-10-12
-
-### CI
-
-- **The race-enabled unit tests get a 20 minute timeout.** `internal/proxy` alone
-  ran 577-602 s under `-race` with coverage on the hosted runners (main, the
-  v2.11.1 metadata PR and dependency PRs alike), against Go's default 10 minute
-  per-binary timeout, so a slower runner failed the `test` job with `panic: test
-  timed out` on changes that did not touch the tests that were running. The step
-  now passes `-timeout=20m`.
-
-## [2.11.1] - 2026-10-12
-
-### Documentation
-
-- **Contributing guide: where to compute Loki's result.** A new "Compatibility
-  Rules" section states the order every change follows: use VictoriaLogs when one
-  of its queries gives Loki's exact result; when it cannot, complete the result in
-  the proxy (post-processing, merging buckets, interpolation, re-aggregation or a
-  bounded extra query) rather than answering differently from Loki or with an
-  approximation; keep proxy-side work bounded, with raw-row evaluation as the last
-  resort.
-
-## [2.11.0] - 2026-10-12
-
 ### Fixed
 
 - **An unwrapped value that Loki converts now makes the sample Loki makes
@@ -72,11 +47,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max` replace a NaN by the next sample as Loki's do. Checked against the Go
   functions by running the gate and the counting gate through VictoriaLogs
   v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both
-  block layouts). Still registered
+  block layouts). The plain unwrap gate gained a `copy`, a conditional
+  `replace_regexp` and a range filter, and the query of an unwrap whose error is
+  dropped now carries the counting gate's flag pipes and a `__lvp_bad` group key
+  (owed an A/B against main). Still registered
   (`semantics/unwrap-gate-parsefloat-divergences`): a duration within about a
   microsecond of int64 nanoseconds, a window made only of nan values under
   `max_over_time` or `min_over_time`, and a `max`, `min` or `count` of series
   that `sum`, `avg`, `stddev` or `rate` made NaN.
+
+## [2.11.2] - 2026-10-12
+
+### CI
+
+- **The race-enabled unit tests get a 20 minute timeout.** `internal/proxy` alone
+  ran 577-602 s under `-race` with coverage on the hosted runners (main, the
+  v2.11.1 metadata PR and dependency PRs alike), against Go's default 10 minute
+  per-binary timeout, so a slower runner failed the `test` job with `panic: test
+  timed out` on changes that did not touch the tests that were running. The step
+  now passes `-timeout=20m`.
+
+## [2.11.1] - 2026-10-12
+
+### Documentation
+
+- **Contributing guide: where to compute Loki's result.** A new "Compatibility
+  Rules" section states the order every change follows: use VictoriaLogs when one
+  of its queries gives Loki's exact result; when it cannot, complete the result in
+  the proxy (post-processing, merging buckets, interpolation, re-aggregation or a
+  bounded extra query) rather than answering differently from Loki or with an
+  approximation; keep proxy-side work bounded, with raw-row evaluation as the last
+  resort.
+
+## [2.11.0] - 2026-10-12
+
+### Fixed
 
 - **An ungrouped `sum` over `rate` with `unwrap` answers one series on query_range
   and on a `| json` instant query, as Loki does, instead of one series per
