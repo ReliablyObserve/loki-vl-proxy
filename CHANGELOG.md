@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`first_over_time` and `last_over_time` with `unwrap` under `sum`, `avg`,
   `min`, `max`, `count`, `topk` and `bottomk` answer 200 with Loki's series, and Loki's
-  values at an instant, instead of a 422 from VictoriaLogs (#TBD).** `sum(first_over_time({app="payment-service"} |
+  values at an instant, instead of a 422 from VictoriaLogs (#728).** `sum(first_over_time({app="payment-service"} |
   logfmt | unwrap amount [5m]))` is one series on Loki 3.7.7; the proxy sent
   VictoriaLogs a `stats ... first(...)` / `last(...)` it has no such function
   for and answered `422 cannot parse query ... "first"` on query_range and
