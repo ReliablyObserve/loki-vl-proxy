@@ -450,7 +450,9 @@ func proxyDiffFails(t *testing.T, rows []diffRow, query, parser, label string, p
 		}
 		vlUnpack(parser, row.line, fields)
 		value := fields[label]
-		if value == "" || accepted.MatchString(value) {
+		// VictoriaLogs flags a value outside the accepted syntax and one that is a
+		// number by syntax but overflows (the range filter of the counting gate).
+		if _, convErr := convertUnwrap(value, probe.conv); value == "" || (accepted.MatchString(value) && (convErr == nil || strings.EqualFold(value, "nan"))) {
 			continue
 		}
 		vlPasses := true
@@ -484,10 +486,11 @@ func proxyDiffFails(t *testing.T, rows []diffRow, query, parser, label string, p
 // conformance: semantics/unwrap-conversion-error, semantics/unwrap-conversion-error-postfilter-forms, semantics/unwrap-conversion-error-stored-value-overwritten, parser-error-and-label-collision
 func TestUnwrapConversionErrorDifferential(t *testing.T) {
 	values := []string{
-		"3", "-1.5", "1e3", "0x1p4", "1_000", ".5", // numbers
+		"3", "-1.5", "1e3", "0x1p4", "1_000", ".5", "1e308", "NaN", // numbers
 		"abc", "x7", "1.2.3", "0x1", // text
+		"1e309", "0x1p2000", "2562048h", "19EB", // syntactically numbers that overflow: Loki fails on them
 		"1.5s", "250ms", "1d", // durations, and a Go reject
-		"2KiB", "1kb", "lots", // byte sizes, and a reject
+		"2KiB", "1kb", "lots", ",5", // byte sizes, and a reject
 	}
 	jsonValues := []string{`[1,2]`, `null`, `true`, `{"x":1}`, `"[1,2]"`, `5`, `"7"`, `"abc"`, `""`}
 	pres := []string{"", ` | __error__=""`, ` | drop __error__`, ` | k!="zz"`}

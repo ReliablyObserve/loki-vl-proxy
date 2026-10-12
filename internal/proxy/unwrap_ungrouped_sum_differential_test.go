@@ -166,6 +166,10 @@ type emuRec struct {
 	f map[string]string
 }
 
+// emuPresentRE is a presence filter on a computed field: the translator adds it
+// behind a copy of the value.
+var emuPresentRE = regexp.MustCompile(`^filter (\w+):\*$`)
+
 var (
 	emuStatsRE = regexp.MustCompile(`^stats (?:by \(([^)]*)\) )?(.+)$`)
 	emuMathRE  = regexp.MustCompile(`^math (\w+)/([0-9.]+) as (\w+)$`)
@@ -276,6 +280,16 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 				}
 				rec.f[m[2]] = obj[m[2]]
 			}
+			continue
+		}
+		if m := emuPresentRE.FindStringSubmatch(pipe); m != nil {
+			kept := recs[:0]
+			for _, rec := range recs {
+				if rec.f[m[1]] != "" {
+					kept = append(kept, rec)
+				}
+			}
+			recs = kept
 			continue
 		}
 		m := emuStatsRE.FindStringSubmatch(pipe)

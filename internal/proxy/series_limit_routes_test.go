@@ -34,8 +34,8 @@ const seriesLimitLineMsg = `{"pipeline":"logs/loki","latency":"2"}`
 var (
 	seriesLimitStatsRE = regexp.MustCompile(`\| stats (?:by \(([^)]*)\) )?(.+?)(?: \| .*)?$`)
 	seriesLimitAggRE   = regexp.MustCompile(`^(count|sum_len|sum|max|min)\(([^)]*)\)(?: as ([A-Za-z_]+))?$`)
-	// The unwrap bucket query converts the unwrapped field with a math pipe.
-	seriesLimitUnwrapRE = regexp.MustCompile(`\| math "([^"]+)" as __lvp_v`)
+	// The unwrap bucket query converts the unwrapped field (copied, then a math pipe).
+	seriesLimitUnwrapRE = regexp.MustCompile(`\| copy "([^"]+)" as __lvp_n`)
 )
 
 // seriesLimitFakeVL answers every VictoriaLogs endpoint the metric routes use,
@@ -178,6 +178,8 @@ func (f *seriesLimitFakeVL) statsQueryRange(query string, start, end, step, offs
 			for _, field := range by {
 				if field == "_stream" {
 					metric[field] = line.stream()
+				} else if field == unwrapBadField {
+					metric[field] = "0" // the counting gate flags every row it keeps "0"
 				} else if um := seriesLimitUnwrapRE.FindStringSubmatch(query); field == "__lvp_v" && um != nil {
 					metric[field] = line.fields()[um[1]] // the value counts of quantile_over_time
 				} else {
