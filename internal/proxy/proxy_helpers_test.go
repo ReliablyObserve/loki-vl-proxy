@@ -319,15 +319,31 @@ func TestProxyHelpers_BareParserMetricWindowValue_RateCounterHandlesResets(t *te
 	}
 }
 
-func TestProxyHelpers_StatsResponseIsEmpty(t *testing.T) {
-	if !statsResponseIsEmpty([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)) {
-		t.Fatal("expected empty vector result to count as absent")
+// A count of zero is no sample; an unwrapped sum of zero is one.
+//
+// conformance: semantics/absent-over-time-semantics
+func TestProxyHelpers_PresenceSteps(t *testing.T) {
+	empty := []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
+	zero := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[123,"0"]}]}}`)
+	some := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[123,"2"]}]}}`)
+	matrix := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[60,"1"],[120,"0"],[180.5,"3"]]}]}}`)
+	if got := presenceSteps(empty, false); len(got) != 0 {
+		t.Fatalf("empty result has steps: %v", got)
 	}
-	if !statsResponseIsEmpty([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[123,"0"]}]}}`)) {
-		t.Fatal("expected zero-valued vector result to count as absent")
+	if got := presenceSteps(zero, false); len(got) != 0 {
+		t.Fatalf("a count of zero is no sample: %v", got)
 	}
-	if statsResponseIsEmpty([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[123,"2"]}]}}`)) {
-		t.Fatal("expected positive-valued vector result not to count as absent")
+	if got := presenceSteps(zero, true); !got[123e9] {
+		t.Fatalf("an unwrapped sum of zero is a sample: %v", got)
+	}
+	if got := presenceSteps(some, false); !got[123e9] {
+		t.Fatalf("a positive count is a sample: %v", got)
+	}
+	if got := presenceSteps(matrix, false); len(got) != 2 || !got[60e9] || !got[180500e6] {
+		t.Fatalf("matrix steps: %v", got)
+	}
+	if got := presenceSteps([]byte(`not json`), false); len(got) != 0 {
+		t.Fatalf("garbage has steps: %v", got)
 	}
 }
 
