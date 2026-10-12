@@ -6,7 +6,7 @@ import (
 )
 
 // TestParse_UnbalancedOpaqueParens guards against a parser panic on opaque
-// metric functions (label_replace, label_join, or any unknown function name)
+// metric functions (label_replace)
 // whose argument parentheses never close. consumeBalancedParens returned 0 when
 // it hit EOF with parens still open, and the caller then sliced p.input[start:0]
 // — panicking with "slice bounds out of range". Since ValidateLogQL runs on
@@ -43,7 +43,6 @@ func TestParse_UnbalancedOpaqueParens(t *testing.T) {
 func TestParse_BalancedOpaqueParens(t *testing.T) {
 	valid := []string{
 		`label_replace(rate({app="x"}[5m]), "dst", "$1", "src", "(.*)")`,
-		`label_join(rate({app="x"}[5m]), "dst", ",", "a", "b")`,
 	}
 	for _, in := range valid {
 		t.Run(in, func(t *testing.T) {

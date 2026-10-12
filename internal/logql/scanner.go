@@ -2,6 +2,7 @@ package logql
 
 import (
 	"strconv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -391,6 +392,30 @@ func (s *scanner) scanRawString() Token {
 	return Token{Typ: TokRawString, Val: val}
 }
 
+// readsAsKeyword reports whether Loki's lexer reads the lower-cased word at the
+// scanner position as a keyword: any of lokiKeywords, or a function name
+// (lex.go functionTokens) that a call follows (lex.go isFunction), so a label
+// called Rate or Count stays a label.
+func (s *scanner) readsAsKeyword(lower string) bool {
+	if lokiKeywords[lower] {
+		return true
+	}
+	if !rangeAggNames[lower] && !vectorAggNames[lower] && !unwrapConversions[lower] && lower != "vector" {
+		return false
+	}
+	i := skipSpace(s.src, s.pos)
+	if i < len(s.src) && s.src[i] == '(' {
+		return true
+	}
+	for _, grouping := range [...]string{"by", "without"} {
+		if len(s.src)-i >= len(grouping) && strings.EqualFold(s.src[i:i+len(grouping)], grouping) {
+			j := skipSpace(s.src, i+len(grouping))
+			return j < len(s.src) && s.src[j] == '('
+		}
+	}
+	return false
+}
+
 func (s *scanner) scanIdent() Token {
 	start := s.pos
 	for {
@@ -401,6 +426,9 @@ func (s *scanner) scanIdent() Token {
 		s.pos += size
 	}
 	val := s.src[start:s.pos]
+	if lower := strings.ToLower(val); lower != val && s.readsAsKeyword(lower) {
+		val = lower
+	}
 	switch val {
 	case "by":
 		return Token{Typ: TokBy, Val: val}

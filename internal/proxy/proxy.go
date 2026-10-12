@@ -1737,9 +1737,9 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
-					p.lokiQueryParamValidation(endpoint,
+					lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
-							p.compatCacheMiddleware(endpoint, route, h)))))))
+							p.compatCacheMiddleware(endpoint, route, h))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the

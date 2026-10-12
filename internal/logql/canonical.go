@@ -6,8 +6,10 @@ import "strings"
 // expression into the plain `{selector} pipeline [range]` form the translator
 // handles: parentheses around a log query or a log range, and a pipeline or
 // unwrap written after the range (`({a} | json)[5m]`, `rate({a}[5m] | json)`).
-// Every other query is returned unchanged, without parsing it.
+// Every other query is returned unchanged, without parsing it. It also writes
+// the keywords in lower case (LowercaseKeywords).
 func CanonicalizeLogRanges(query string) string {
+	query = LowercaseKeywords(query)
 	if !hasAlternativeLogRange(query) {
 		return query
 	}
@@ -22,6 +24,34 @@ func CanonicalizeLogRanges(query string) string {
 		out = append(out, query[last:r.start]...)
 		out = append(out, r.text...)
 		last = r.end
+	}
+	return string(append(out, query[last:]...))
+}
+
+// LowercaseKeywords writes in lower case the words Loki's lexer reads without
+// regard to case (pkg/logql/syntax/lex.go lower-cases a word before it looks it
+// up): SUM, TOPK(3, ...), RATE(...), BY, OFFSET, UNWRAP and the like. Names,
+// strings and label names that are not keywords keep their spelling. The
+// translator and the handlers match the lower-case spelling.
+func LowercaseKeywords(query string) string {
+	upper := false
+	for i := 0; i < len(query) && !upper; i++ {
+		upper = query[i] >= 'A' && query[i] <= 'Z'
+	}
+	if !upper {
+		return query
+	}
+	var out []byte
+	last := 0
+	s := newScanner(query)
+	for tok := s.next(); tok.Typ != TokEOF; tok = s.next() {
+		if span := query[s.start:s.pos]; span != tok.Val && strings.EqualFold(span, tok.Val) {
+			out = append(append(out, query[last:s.start]...), tok.Val...)
+			last = s.pos
+		}
+	}
+	if out == nil {
+		return query
 	}
 	return string(append(out, query[last:]...))
 }
