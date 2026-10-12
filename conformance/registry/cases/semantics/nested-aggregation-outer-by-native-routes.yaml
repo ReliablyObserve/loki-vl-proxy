@@ -27,8 +27,12 @@ why: |
   avg(a) as b | stats by (zone) min(b)`. Every pipe after the first reads the
   rows of the previous one, one row per Loki series of that level, so the chain
   is exact for every combination of the five operators (a mean of means is
-  unweighted in both) and VictoriaLogs groups every pipe by the time bucket
-  itself (v1.40 and later). A level above the first can keep only labels the
+  unweighted in both) and VictoriaLogs groups every stats pipe by the time
+  bucket itself (addByTimeFieldToStatsPipes, read in the v1.43 and v1.50
+  sources; v1.40 already runs the two-pipe series-level chain, and the
+  differential covers it with a step-aligned start, the only tumbling window a
+  backend without the stats offset argument answers by its buckets: any other
+  start goes to the proxy's window evaluator, a different route). A level above the first can keep only labels the
   previous level kept, so its `by` list is cut to those at translation time (a
   label the inner group lacks is absent in Loki and an empty group value in
   VictoriaLogs: both leave no label) and a `without` is subtracted from them: a
@@ -59,6 +63,6 @@ gap:
   area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain)'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (each level keeps its own grouping)'
   proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy'
-  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, group semantics); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator)'
+  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator)'
   note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows of the proxy evaluator are the proxy-side fold of semantics/non-sum-vector-aggregation-unreduced.'
   clusters: []
