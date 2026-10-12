@@ -396,103 +396,132 @@ func validateVectorMatchCardinality(leftBody, rightBody []byte, onLabels []strin
 }
 
 func validateVectorMatchCardinalityContext(ctx context.Context, leftBody, rightBody []byte, onLabels []string, ignoringLabels []string, allowGroupLeft, allowGroupRight bool) error {
+	_, err := firstVectorMatchFailure(ctx, leftBody, rightBody, onLabels, ignoringLabels, allowGroupLeft, allowGroupRight)
+	return err
+}
+
+// vectorMatchCounts counts, for every evaluation time, how many series of a
+// response share each match key: the non-empty on() labels, or every non-empty
+// label but the ignoring() ones.
+func vectorMatchCounts(ctx context.Context, body []byte, onLabels, ignoringLabels []string) (map[float64]map[string]int, error) {
+	var response struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	result := make(map[float64]map[string]int)
 	if err := ctx.Err(); err != nil {
-		return err
+		return result, err
 	}
-	// Loki checks each evaluation independently. Streams which never overlap
-	// must not create a false many-to-one error across the whole range.
-	type evaluationKey struct {
-		labels string
-		time   float64
+	if json.Unmarshal(body, &response) != nil {
+		return result, nil
 	}
-	var countErr error
-	counts := func(body []byte) map[evaluationKey]int {
-		var response struct {
-			Data struct {
-				Result []struct {
-					Metric map[string]string `json:"metric"`
-					Value  []interface{}     `json:"value"`
-					Values [][]interface{}   `json:"values"`
-				} `json:"result"`
-			} `json:"data"`
+	ignore := make(map[string]bool, len(ignoringLabels))
+	for _, label := range ignoringLabels {
+		ignore[label] = true
+	}
+	for _, series := range response.Data.Result {
+		if err := ctx.Err(); err != nil {
+			return result, err
 		}
-		result := make(map[evaluationKey]int)
-		if countErr = ctx.Err(); countErr != nil {
-			return result
-		}
-		if json.Unmarshal(body, &response) != nil {
-			return result
-		}
-		ignore := make(map[string]bool, len(ignoringLabels))
-		for _, label := range ignoringLabels {
-			ignore[label] = true
-		}
-		for _, series := range response.Data.Result {
-			if countErr = ctx.Err(); countErr != nil {
-				return result
-			}
-			labels := make(map[string]string, len(series.Metric))
-			if onLabels != nil {
-				for _, label := range onLabels {
-					if value := series.Metric[label]; value != "" {
-						labels[label] = value
-					}
-				}
-			} else {
-				for label, value := range series.Metric {
-					if !ignore[label] && value != "" {
-						labels[label] = value
-					}
+		labels := make(map[string]string, len(series.Metric))
+		if onLabels != nil {
+			for _, label := range onLabels {
+				if value := series.Metric[label]; value != "" {
+					labels[label] = value
 				}
 			}
-			encoded, _ := json.Marshal(labels)
-			key := string(encoded)
-			values := series.Values
-			if len(series.Value) == 2 {
-				values = append(values, series.Value)
-			}
-			for _, value := range values {
-				if countErr = ctx.Err(); countErr != nil {
-					return result
-				}
-				if len(value) != 2 {
-					continue
-				}
-				if ts, ok := value[0].(float64); ok {
-					result[evaluationKey{key, ts}]++
+		} else {
+			for label, value := range series.Metric {
+				if !ignore[label] && value != "" {
+					labels[label] = value
 				}
 			}
 		}
-		return result
+		encoded, _ := json.Marshal(labels)
+		key := string(encoded)
+		values := series.Values
+		if len(series.Value) == 2 {
+			values = append(values, series.Value)
+		}
+		for _, value := range values {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			if len(value) != 2 {
+				continue
+			}
+			if ts, ok := value[0].(float64); ok {
+				if result[ts] == nil {
+					result[ts] = make(map[string]int)
+				}
+				result[ts][key]++
+			}
+		}
 	}
-	leftCounts, rightCounts := counts(leftBody), counts(rightBody)
-	if countErr != nil {
-		return countErr
+	return result, nil
+}
+
+// firstVectorMatchFailure returns the first evaluation, by time, whose join
+// Loki rejects for its cardinality, with the error it raises there. Any other
+// error (a cancelled context) is returned with no evaluation.
+func firstVectorMatchFailure(ctx context.Context, leftBody, rightBody []byte, onLabels []string, ignoringLabels []string, allowGroupLeft, allowGroupRight bool) (float64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
+	// Loki joins one evaluation at a time and stops at the first one that
+	// fails (pkg/logql/engine.go reads the evaluator's error after every
+	// step), so the checks run per evaluation, oldest first. Streams which
+	// never overlap must not create a false many-to-one error across the
+	// whole range.
+	leftCounts, err := vectorMatchCounts(ctx, leftBody, onLabels, ignoringLabels)
+	if err != nil {
+		return 0, err
+	}
+	rightCounts, err := vectorMatchCounts(ctx, rightBody, onLabels, ignoringLabels)
+	if err != nil {
+		return 0, err
+	}
+	axis := make([]float64, 0, len(leftCounts)+len(rightCounts))
+	for ts := range leftCounts {
+		axis = append(axis, ts)
+	}
+	for ts := range rightCounts {
+		if _, both := leftCounts[ts]; !both {
+			axis = append(axis, ts)
+		}
+	}
+	sort.Float64s(axis)
 	// The "one" side must be unique even without a matching sample.
 	oneSide, side := rightCounts, "right"
 	if allowGroupRight {
 		oneSide, side = leftCounts, "left"
 	}
-	for _, count := range oneSide {
+	for _, ts := range axis {
 		if err := ctx.Err(); err != nil {
-			return err
+			return 0, err
 		}
-		if count > 1 {
-			return vectorMatchError(fmt.Sprintf("found duplicate series on the %s hand-side; many-to-many matching not allowed: matching labels must be unique on one side", side))
-		}
-	}
-	if !allowGroupLeft && !allowGroupRight {
-		for key, count := range leftCounts {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if count > 1 && rightCounts[key] > 0 {
-				return vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
+		for _, count := range oneSide[ts] {
+			if count > 1 {
+				// Loki's text joins the two halves with ";" and no space
+				// (pkg/logql/evaluator.go:974-975).
+				return ts, vectorMatchError(fmt.Sprintf("found duplicate series on the %s hand-side;many-to-many matching not allowed: matching labels must be unique on one side", side))
 			}
 		}
+		if allowGroupLeft || allowGroupRight {
+			continue
+		}
+		for key, count := range leftCounts[ts] {
+			if count > 1 && rightCounts[ts][key] > 0 {
+				return ts, vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
+			}
+		}
 	}
-	return nil
+	return 0, nil
 }
 
 // applyOnMatching joins two metric results by a specified label subset.

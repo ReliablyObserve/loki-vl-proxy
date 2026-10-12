@@ -179,8 +179,12 @@ func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op
 			return nil, err
 		}
 	}
-	if err := validateBinaryVectorCardinality(ctx, left, right, op, vm, false, false); err != nil {
-		return nil, err
+	// Loki joins one evaluation at a time and stops at the first that fails:
+	// the cardinality failure is raised where it falls, not before an
+	// earlier evaluation's own error.
+	cardinalityTS, cardinalityErr := validateBinaryVectorCardinality(ctx, left, right, op, vm, false, false)
+	if _, rejected := cardinalityErr.(vectorMatchError); cardinalityErr != nil && !rejected {
+		return nil, cardinalityErr
 	}
 	lhs, err := binarySamplesByTime(ctx, left)
 	if err != nil {
@@ -206,6 +210,9 @@ func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op
 	for _, ts := range axis {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if cardinalityErr != nil && ts == cardinalityTS {
+			return nil, cardinalityErr
 		}
 		appendSample := func(sample binarySample) error {
 			if err := checkBinaryOutputSample(ctx); err != nil {
