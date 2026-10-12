@@ -516,7 +516,7 @@ func (l *LiteralExpr) String() string {
 func (l *LiteralExpr) expr() {}
 
 // OpaqueMetricExpr holds the raw text of a metric-level function call that the
-// parser does not understand (e.g. label_replace, label_join). It passes
+// parser does not understand (label_replace, vector, approx_topk). It passes
 // through to VictoriaLogs without modification.
 type OpaqueMetricExpr struct {
 	Raw string

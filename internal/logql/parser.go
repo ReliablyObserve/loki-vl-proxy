@@ -82,6 +82,10 @@ var vectorOps = map[string]VectorOp{
 	"sort_desc": VectorSortDesc,
 }
 
+// opaqueMetricFunctions are the metric-level calls the parser keeps as raw text
+// (OpaqueMetricExpr): the ones in Loki's grammar that vectorOps and rangeOps do not cover.
+var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": true, "approx_topk": true}
+
 // rangeOps maps function names to RangeOp constants.
 var rangeOps = map[string]RangeOp{
 	"rate":               RangeRate,
@@ -207,18 +211,16 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return ra, nil
 		}
-		// Loki v3.7.7 has no count_values (vector ops: syntax/ast.go:1243-1254,
-		// token map syntax/lex.go:114-125, vectorOp production
-		// syntax/syntax.y:477-490): its parser rejects the name as an IDENTIFIER
-		// wherever an expression starts, whatever follows.
-		if p.cur.Val == "count_values" {
+		// Loki's grammar has three more metric-level calls (syntax.y
+		// labelReplaceExpr, vectorExpr, vectorOp APPROX_TOPK); any other name
+		// is an IDENTIFIER it cannot place (group, label_join, abs, ...).
+		name := p.cur.Val
+		if !opaqueMetricFunctions[name] {
 			return nil, p.syntaxErrorAt("")
 		}
-		// Unknown metric-level function (e.g. label_replace, label_join):
-		// capture the full raw text and return it as-is so VictoriaLogs
+		// Capture the full raw text and return it as-is so VictoriaLogs
 		// receives the original expression unchanged.
 		startPos := p.sc.pos - len(p.cur.Val)
-		name := p.cur.Val
 		p.advance()
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('

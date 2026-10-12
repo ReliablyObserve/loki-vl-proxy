@@ -64,6 +64,24 @@ var (
 	hdrValZstdGzip = []string{"zstd, gzip"}
 )
 
+// lowercaseQueryKeywords writes the keywords of the query parameter in lower
+// case before any handler reads it. Loki's lexer is case-insensitive for them
+// (SUM BY, TOPK(...), RATE(...), OFFSET), and the translator and the handlers
+// match the lower-case spelling.
+func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if query := r.FormValue("query"); query != "" {
+			if lower := logql.LowercaseKeywords(query); lower != query {
+				r.Form.Set("query", lower)
+				if r.PostForm.Has("query") {
+					r.PostForm.Set("query", lower)
+				}
+			}
+		}
+		next(w, r)
+	}
+}
+
 // validateQuery checks query string length and returns a sanitized version.
 // It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {

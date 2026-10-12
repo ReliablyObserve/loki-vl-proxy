@@ -6,6 +6,7 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"unicode/utf8"
+	"strings"
 )
 
 // errEmptyCompatibleMatchers is Loki's syntax.errAtleastOneEqualityMatcherRequired,
@@ -38,7 +39,7 @@ func validateSemantics(expr Expr, raw string) string {
 	case *OpaqueMetricExpr:
 		// label_replace(inner, ...) and similar wrappers: Loki validates the
 		// wrapped sample expression like any other.
-		inner, err := opaqueFirstArgument(x.Raw)
+		inner, err := opaqueFirstArgument(raw, x.Raw)
 		var lokiErr *ParseError
 		if errors.As(err, &lokiErr) {
 			return lokiErr.Msg
@@ -54,11 +55,17 @@ func validateSemantics(expr Expr, raw string) string {
 }
 
 // opaqueFirstArgument parses the leading expression argument of an opaque
-// metric function call such as `label_replace(rate({app="a"}[5m]), ...)`.
-// It returns a nil Expr when the call has no parseable expression argument,
-// and the parse error when that argument is itself rejected.
-func opaqueFirstArgument(call string) (Expr, error) {
-	p := &parser{sc: newScanner(call)}
+// metric function call such as `label_replace(rate({app="a"}[5m]), ...)`, read
+// from query where call stands so that an error carries the line and column
+// Loki reports for the whole query. It returns a nil Expr when the call has no
+// parseable expression argument, and the parse error when that argument is
+// itself rejected.
+func opaqueFirstArgument(query, call string) (Expr, error) {
+	src, pos := query, strings.Index(query, call)
+	if pos < 0 {
+		src, pos = call, 0
+	}
+	p := &parser{sc: &scanner{src: src, pos: pos}}
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil

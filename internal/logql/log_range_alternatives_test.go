@@ -39,7 +39,7 @@ func TestCanonicalizeLogRanges(t *testing.T) {
 		// Any white space around the offset still takes the pipeline after the range along.
 		{"rate({app=\"x\"}[5m]\noffset 1h | json)", "rate({app=\"x\"} | json [5m]\noffset 1h)"},
 		{"rate({app=\"x\"}[5m] offset\t1h\n| json)", "rate({app=\"x\"} | json [5m] offset\t1h)"},
-		// The first argument of label_replace / label_join is a metric expression.
+		// The first argument of label_replace is a metric expression.
 		{`label_replace(rate(({app="x"} |= "x, (")[1m]), "a", "$1", "b", "(.*)")`, `label_replace(rate({app="x"} |= "x, (" [1m]), "a", "$1", "b", "(.*)")`},
 		{`label_replace(sum by (a) (rate(({app="x"} |= "x")[1m])), "a", "b", "c", "d") > 1`, `label_replace(sum by (a) (rate({app="x"} |= "x" [1m])), "a", "b", "c", "d") > 1`},
 		// Canonical forms and strings that merely look like the alternative ones stay as they are.
