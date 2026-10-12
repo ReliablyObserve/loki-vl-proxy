@@ -497,3 +497,56 @@ func TestInstantQueryMultiTenantNoTenantUnparseable(t *testing.T) {
 		t.Fatalf("HTTP %d %s, want 400 with a parse error", rec.Code, rec.Body.String())
 	}
 }
+
+// A label transform is stripped only when the call is the whole expression:
+// with an operator or another call around it, the expression is not a transform.
+func TestStripLabelTransformsWholeCallOnly(t *testing.T) {
+	for _, in := range []string{
+		`label_replace(a, "d","$1","s","(.*)") / b`,
+		`label_replace(a, "d","$1","s","(.*)") + label_replace(b, "d","$1","s","(.*)")`,
+		`sum(label_replace(a, "d","$1","s","(.*)"))`,
+		`label_join(a, "d","-","s") * 2`,
+		`label_replace(a, "d","$1","s","(.*)") / label_replace(b, "x",")","s",".*")`,
+	} {
+		if got := stripLabelTransforms(in); got != in {
+			t.Errorf("stripLabelTransforms(%q) = %q, want it unchanged", in, got)
+		}
+	}
+	for _, tc := range []struct{ in, want string }{
+		{`label_replace(a, "d","$1","s","(.*)")`, `a`},
+		{`  label_replace(a, "d","$1","s","(.*)")  `, `a`},
+		{`label_replace(label_join(a + b, "z","-","s"), "d","$1","s","(.*)")`, `a + b`},
+	} {
+		if got := stripLabelTransforms(tc.in); got != tc.want {
+			t.Errorf("stripLabelTransforms(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A label_replace as an operand of a binary expression leaves the binary
+// expression to evaluate: the answer is not the operand alone.
+// conformance: semantics/instant-result-type-missing, loki_api_v1_query
+func TestInstantBinaryOfLabelReplaceEvaluatesTheBinary(t *testing.T) {
+	p := newTestProxy(t, instantBackend(t, instantBackendData).URL)
+	lr := `label_replace(sum by (app) (count_over_time(` + instantNS + `[1m])), "x", "$1", "app", "(.*)")`
+	for q, want := range map[string]map[string]string{
+		lr + ` / 2`:     {"a": "2.5", "b": "3.5"},
+		lr + ` + ` + lr: {"a": "10", "b": "14"},
+		`2 * ` + lr:     {"a": "10", "b": "14"},
+	} {
+		a := askInstant(t, p, q, "0", nil)
+		requireInstantAnswer(t, q, a, "vector", false)
+		got := map[string]string{}
+		for _, item := range a.resp.Data.Result {
+			var sample struct {
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
+			}
+			_ = json.Unmarshal(item, &sample)
+			got[sample.Metric["app"]], _ = sample.Value[1].(string)
+		}
+		if len(got) != len(want) || got["a"] != want["a"] || got["b"] != want["b"] {
+			t.Errorf("%s: values by app %v, want %v\n%s", q, got, want, a.body)
+		}
+	}
+}

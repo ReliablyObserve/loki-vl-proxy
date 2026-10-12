@@ -145,8 +145,16 @@ func stripOuterCalls(logql string, prefixes ...string) string {
 		inner, ok := "", false
 		for _, prefix := range prefixes {
 			if strings.HasPrefix(logql, prefix) {
-				// The first argument, up to the comma outside strings and brackets.
-				inner, ok = logqlpkg.FirstArgument(logql[len(prefix):])
+				// The first argument, up to the comma outside strings and brackets,
+				// of a call that is the whole expression: `label_replace(a, ...) / b`
+				// is a binary, not a transform.
+				args := logql[len(prefix):]
+				inner, ok = logqlpkg.FirstArgument(args)
+				end := len(inner)
+				for end < len(args) && args[end] == ',' {
+					end += 1 + translator.FirstArgumentLen(args[end+1:])
+				}
+				ok = ok && end < len(args) && strings.TrimSpace(args[end+1:]) == ""
 				break
 			}
 		}
