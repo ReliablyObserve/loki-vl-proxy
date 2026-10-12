@@ -1,0 +1,51 @@
+id: semantics/manual-range-outer-aggregation-dropped
+title: An outer aggregation other than sum around a sliding range metric is dropped on query_range (open)
+proves:
+  - window-bounds-and-step-alignment
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki applies the outer vector aggregation to the range aggregation's series
+  at every step (pkg/logql/evaluator.go newVectorAggEvaluator,
+  VectorAggEvaluator.Next): `max by (pod) (count_over_time({app="x"}[5m]))`
+  is one series per pod holding the largest stream count. The window evaluator
+  that answers a range other than the step (proxyManualRangeMetricRange) reads
+  only the first stats pipe of the translation (`stats by (pod, _stream, level)
+  count() | stats by (pod) max(...)`) and applies at most an outer sum
+  (foldUngroupedSum), so the answer is a series per stream with every stream
+  label: with VictoriaLogs v1.52 emulated, two streams of pod a at step 60 over
+  [5m] gave two series (counts 7 and 8 alternating) where Loki has one series
+  {pod="a"} with the larger. The same for rate and the bytes functions, for
+  `avg by`, `min by`, `count by`, and for rate with unwrap. Sum, avg, max and min
+  over time with unwrap keep their native step buckets for such outer
+  aggregations (semantics/unwrap-over-time-range-windows) until this is fixed;
+  then they can take the window merge too. Branch
+  fix/non-sum-vector-aggregation-unreduced (#734, foldVectorAggregations) likely
+  fixes it. Found with an emulated VictoriaLogs while fixing
+  semantics/unwrap-over-time-range-windows (not measured on a stack).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'max by (level) (count_over_time({service_name="api-gateway"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per level, the largest per-stream count at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range_metric_compat.go proxyManualRangeMetricRange / foldUngroupedSum (outer aggregations other than sum)'
+  loki: 'pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next'
+  proxy: 'a series per stream; the outer aggregation is not applied'
+  planned_test: 'a max by / avg by / count by case over count_over_time, rate and sum_over_time with unwrap at range != step in a differential (internal/proxy) and an e2e vs Loki (test/e2e-compat)'
+  note: 'Likely fixed by #734 (foldVectorAggregations); after it merges, unwrapWindowBuckets can route non-sum outer aggregations to the window merge.'
+  clusters: []

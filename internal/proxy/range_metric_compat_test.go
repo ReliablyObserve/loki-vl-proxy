@@ -50,11 +50,12 @@ func TestQueryRange_AvgOverTimeByEmptyReturnsSingleSeries(t *testing.T) {
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		// avg_over_time with by() routes to VL stats_query_range.
-		// VL returns a Prometheus-compatible matrix with one series (no labels).
+		// avg_over_time with by() over a range other than the step reads VL
+		// stats_query_range buckets of the sum and the sample count, one series
+		// each (no labels).
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"data":{"resultType":"matrix","result":[{"metric":{},"values":[[%d,"0.7"]]}]}}`,
-			base.Add(60*time.Second).Unix())
+		_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c"},"values":[[%d,"0.7"]]},{"metric":{"__name__":"__sample_count"},"values":[[%d,"1"]]}]}}`,
+			base.Add(60*time.Second).Unix(), base.Add(60*time.Second).Unix())
 	}))
 	defer vlBackend.Close()
 

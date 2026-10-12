@@ -331,6 +331,33 @@
    ]
   },
   {
+   "id": "explore-unwrap-max-over-time-end-sample",
+   "kind": "explore",
+   "query": "max by (level) (max_over_time({service_name=\"api-gateway\"} | json | unwrap status | __error__=\"\" [$__auto]))",
+   "covers": [
+    "semantics/unwrap-range-last-point",
+    "semantics/unwrap-over-time-range-windows",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-range-last-point"
+   ]
+  },
+  {
+   "id": "explore-unwrap-avg-over-time-sliding-window",
+   "kind": "explore",
+   "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+   "covers": [
+    "semantics/unwrap-over-time-range-windows",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-over-time-range-windows"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

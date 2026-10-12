@@ -1,0 +1,48 @@
+id: semantics/native-buckets-epoch-grid-unaligned-start-v140
+title: stddev and stdvar over time are labelled on the epoch grid for a start off it on VictoriaLogs before v1.45 (open)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates a range query at start, start+step, ... (align_queries_with_step
+  is off by default, pkg/querier/queryrange/queryrangebase/roundtrip.go:49), so
+  a start that is not a multiple of the step gives timestamps off the epoch
+  grid. VictoriaLogs before v1.45 has no stats_query_range offset argument, so
+  its buckets sit on k*step from the epoch (tumblingBucketsAligned is false for
+  such a start), and a range metric answered from native step buckets without
+  the window evaluator (sum, avg, min, max over time with unwrap; stddev and
+  stdvar) is labelled on the epoch grid: with VictoriaLogs v1.40 and
+  start = base+13s at step 60 the first label was the epoch minute, not the
+  start. The count and bytes functions and rate fall back to the window evaluator
+  in that case, and so do sum, avg, min and max over time with unwrap since
+  semantics/unwrap-over-time-range-windows (its raw-row fallback reads Loki's
+  windows); stddev and stdvar have no fallback. Found with an emulated
+  VictoriaLogs while fixing semantics/unwrap-range-last-point (not measured on a
+  stack). Grafana aligns start to the step, so only direct API clients with an
+  off-grid start on v1.40-v1.44 see it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (stddev_over_time({service_name="api-gateway"} | json | unwrap status | __error__="" [1m]))'
+    start: 'now-1h+13s'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [timestamps]
+  expect: |
+    Timestamps on start+k*step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy range_metric_compat.go shouldUseManualRangeMetricCompat / tumblingBucketsAligned (VictoriaLogs before v1.45)'
+  loki: 'pkg/logql/range_vector.go step iteration from start; pkg/querier/queryrange/queryrangebase/roundtrip.go:49 align_queries_with_step=false'
+  proxy: 'bucket labels on the epoch grid'
+  planned_test: 'a v1.40 case in TestCompat_UnwrapRangeEndSample with an off-grid start (test/e2e-compat, group semantics), run on the v1.40 stack'
+  note: 'Found while fixing semantics/unwrap-range-last-point.'
+  clusters: []

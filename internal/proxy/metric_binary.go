@@ -775,11 +775,16 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 }
 
 // statsRateRangeEqualsStepShift detects whether every range aggregation of the
-// query is a log range function (rate, bytes_rate, count_over_time,
-// bytes_over_time) with range==step so that the caller can fetch from start-W
-// and relabel buckets onto Loki's evaluation timestamps. The parsed expression
-// is walked, so outer aggregations like sum by(x)(count_over_time(...)) are
-// detected, grouped or not, and function names inside string literals are not.
+// query is answered from native step buckets, so that the caller can fetch from
+// start-W and relabel buckets onto Loki's evaluation timestamps: a log range
+// function (rate, bytes_rate, count_over_time, bytes_over_time) with range==step,
+// or sum, avg, min or max over time with unwrap, whose native bucket is the step
+// whatever the range. The returned spec's Window is that bucket width. A range
+// other than the step reaches it only in the forms the window evaluator does not
+// answer (unwrapWindowBuckets), where the bucket is the window's last step.
+// The parsed expression is walked, so outer aggregations like
+// sum by(x)(count_over_time(...)) are detected, grouped or not, and function
+// names inside string literals are not.
 // Logs Drilldown requests are relabelled like any other: Loki answers them on
 // its evaluation timestamps.
 // NOTE: binary metric expressions are evaluated per operand through the normal
@@ -795,14 +800,15 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	if err != nil {
 		return
 	}
-	found, _, logRangeOnly := logRangeFunctions(expr)
+	found, _, logRangeOnly, unwrapOnly := logRangeFunctions(expr)
 	if !found || !logRangeOnly {
 		return
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
-	if !stepOk || spec.Window != step {
+	if !stepOk || (!unwrapOnly && spec.Window != step) {
 		return
 	}
+	spec.Window = step
 	startNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
 	if !hasStart {
 		return
@@ -811,33 +817,38 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 }
 
 // logRangeFunctions walks a metric expression. found reports at least one range
-// aggregation, hasRate a rate or bytes_rate, and logRangeOnly that every range
+// aggregation, hasRate a rate or bytes_rate, logRangeOnly that every range
 // aggregation is rate, bytes_rate, count_over_time or bytes_over_time over a
-// log query and every other node is an aggregation, binary operation or
-// literal.
-func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly bool) {
+// log query, or sum, avg, min or max over time over an unwrapped label, and every
+// other node is an aggregation, binary operation or literal. unwrapOnly reports
+// that every range aggregation is of the unwrap kind.
+func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrapOnly bool) {
 	switch e := expr.(type) {
 	case *logqlpkg.RangeAggregation:
-		if _, isLog := e.Inner.(*logqlpkg.LogQuery); !isLog {
-			return true, false, false
+		lq, isLog := e.Inner.(*logqlpkg.LogQuery)
+		if !isLog {
+			return true, false, false, false
 		}
 		switch e.Op {
 		case logqlpkg.RangeRate, logqlpkg.RangeBytesRate:
-			return true, true, true
+			return true, true, true, false
 		case logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesOverTime:
-			return true, false, true
+			return true, false, true, false
+		case logqlpkg.RangeSumOverTime, logqlpkg.RangeAvgOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeMaxOverTime:
+			unwrapped := hasUnwrapStage(lq)
+			return true, false, unwrapped, unwrapped
 		}
-		return true, false, false
+		return true, false, false, false
 	case *logqlpkg.VectorAggregation:
 		return logRangeFunctions(e.Inner)
 	case *logqlpkg.BinOpExpr:
-		lf, lr, lo := logRangeFunctions(e.Left)
-		rf, rr, ro := logRangeFunctions(e.Right)
-		return lf || rf, lr || rr, lo && ro
+		lf, lr, lo, lu := logRangeFunctions(e.Left)
+		rf, rr, ro, ru := logRangeFunctions(e.Right)
+		return lf || rf, lr || rr, lo && ro, lu && ru
 	case *logqlpkg.LiteralExpr:
-		return false, false, true
+		return false, false, true, true
 	}
-	return false, false, false
+	return false, false, false, false
 }
 
 // statsQRFJPool pools fastjson.Parser instances for trimStatsQueryRange* hot paths.

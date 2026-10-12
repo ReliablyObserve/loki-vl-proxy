@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
+  `unwrap` answer Loki's window `(t-range, t]` on query_range for a range longer
+  or shorter than the step, as Loki does.** `sum(sum_over_time({app="payment-service"}
+  | logfmt | unwrap amount [5m]))` at step 60 s returned about a fifth of Loki
+  3.7.7's value at every step (Loki 9.84307e+06, proxy 2.00257e+06 on the log
+  generator's data, VictoriaLogs v1.52.0): each point was one VictoriaLogs step
+  bucket instead of the five steps of the window, and the same for avg, max and
+  min over `| json | unwrap duration_ms` grouped `by (level)`. On
+  sparse data even the samples differed: a line every 4.5 minutes at step 60 s
+  has a sample at all 61 steps of an hour under `[5m]` on Loki and had 13 on the
+  proxy, and 7 under `[30s]` where the proxy had 13. Loki loads every range
+  aggregation over the window `(t-range, t]`, lower edge excluded
+  (`pkg/logql/range_vector.go:148-189` `batchRangeVectorIterator.load`), and
+  takes the sum, mean, maximum or minimum of its samples
+  (`range_vector.go:371-425`). VictoriaLogs cannot evaluate overlapping or
+  shorter windows itself, but its per-bucket partial aggregates merge exactly, so
+  it now returns, per series and per bucket anchored at the request
+  (`gcd(step, range)` wide, or one step with the lines outside the windows
+  filtered out for a range shorter than the step), the sum, maximum or minimum of
+  the unwrapped values with their sample count, and the proxy merges the buckets
+  of each window: their sum (avg: over the window's sample count), their maximum
+  or their minimum, with a sample only where the window holds a line. This is the
+  window evaluator `rate` with unwrap already uses (no raw rows, the unwrap
+  conversion check and its error unchanged); an ungrouped `sum` over avg, max or
+  min folds the per-stream windows and counts as one series against
+  `-max-stats-query-series`, as in Loki. Instant queries, `offset` handling and
+  a range equal to the step (its own step buckets) are unchanged. VictoriaLogs
+  before v1.45 with a start off the epoch grid of the bucket, and more than
+  11,000 buckets, use the raw-row evaluator as `count_over_time` does, reading
+  `(t-range, t]` for these functions; that includes a range equal to the step
+  with a start off the step grid on those versions, which used to read
+  epoch-grid buckets one step off. Still on step buckets: an ungrouped `sum` or a
+  `without` of avg, max or min over a parser query (VictoriaLogs groups those by
+  stream and line, which no bucket merge bounds;
+  `semantics/unwrap-over-time-parser-series-windows`), an outer aggregation other
+  than `sum` (`max by`, `avg by`, ...) around these functions
+  (`semantics/manual-range-outer-aggregation-dropped`), and
+  `stddev_over_time`/`stdvar_over_time`. `semantics/unwrap-over-time-range-windows`
+  fixed (#740).
+- **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
+  `unwrap` answer the sample at `end` on query_range, as Loki does.**
+  `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap
+  status | __error__="" [5m]))` over an hour at step 60 s has 61 samples on Loki
+  3.7.7 (`start` to `end` inclusive) and the proxy returned 60, so a graph ending
+  at now stopped one step short; the same for `sum_over_time` and `avg_over_time`
+  over `| json | unwrap duration_ms`. VictoriaLogs labels a step bucket by its
+  start, so the point at `end` was the bucket after the last line. The request is
+  now fetched one step earlier and every bucket relabelled onto the evaluation
+  time it closes, as `rate` and `count_over_time` already are. For a range equal
+  to the step the samples and values are Loki's; for another range the point is
+  still the step-sized bucket, not the window, which stays registered as
+  `semantics/unwrap-over-time-range-windows`. Registry:
+  `semantics/unwrap-range-last-point` fixed (#727).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
