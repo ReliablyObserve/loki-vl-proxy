@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label no stream has, 10,656 against 1; the same for `min`, `count` and `avg`
   with or without `by`, and for these nested in another aggregation
   (`sum(max(rate(...)))`), so Grafana drew a line per stream and the response
-  grew with the stream count (#TBD). Loki folds the series of the inner
+  grew with the stream count (#734). Loki folds the series of the inner
   vector per step: each falls into the group its labels name (`by` keeps the
   listed labels, no grouping keeps none), and the group takes the number of
   series (`count`), their mean (`avg`), or the extreme of their values

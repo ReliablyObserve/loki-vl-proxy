@@ -68,7 +68,7 @@ compare:
     One series, Loki's maximum per step.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#734"
   impact: explore-visible
   effort: M
   area: 'internal/proxy vector_agg_fold.go (foldVectorAggregations, called from handleStatsCompatRange and handleStatsCompatInstant); range_metric_compat.go parseOriginalRangeMetricSpec'
