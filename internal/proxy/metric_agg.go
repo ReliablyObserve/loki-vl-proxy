@@ -203,8 +203,11 @@ func preserveMetricStreamIdentity(originalLogQL, translatedLogsQL string, withou
 	if strings.Contains(translatedLogsQL, "| stats by (") {
 		return translatedLogsQL
 	}
-	if len(withoutLabels) > 0 || isBareMetricFunctionQuery(strings.TrimSpace(originalLogQL)) {
-		return addStatsByStreamClause(translatedLogsQL, logqlpkg.ParserCaptureLabels(originalLogQL))
+	// A label_replace or label_join around the metric does not change which
+	// series it yields: the identity is that of the expression under it.
+	metric := stripLabelTransforms(originalLogQL)
+	if len(withoutLabels) > 0 || isBareMetricFunctionQuery(strings.TrimSpace(metric)) {
+		return addStatsByStreamClause(translatedLogsQL, logqlpkg.ParserCaptureLabels(metric))
 	}
 	return translatedLogsQL
 }
@@ -262,6 +265,12 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		return
 	}
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, transforms, regexErr := parseLabelTransformMarkers(translatedInner)
+	if regexErr != "" {
+		p.writeError(w, http.StatusBadRequest, regexErr)
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return
+	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
@@ -300,6 +309,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
 	}
+	if sc.code < http.StatusBadRequest {
+		bw.body = transforms.apply(bw.body)
+	}
 
 	if sc.code >= http.StatusBadRequest {
 		copyHeaders(w.Header(), bw.Header())
@@ -335,6 +347,12 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		return
 	}
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, transforms, regexErr := parseLabelTransformMarkers(translatedInner)
+	if regexErr != "" {
+		p.writeError(w, http.StatusBadRequest, regexErr)
+		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return
+	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
@@ -377,6 +395,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+	}
+	if sc.code < http.StatusBadRequest {
+		bw.body = transforms.apply(bw.body)
 	}
 
 	if sc.code >= http.StatusBadRequest {

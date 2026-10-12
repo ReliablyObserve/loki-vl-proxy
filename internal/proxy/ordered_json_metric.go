@@ -98,10 +98,47 @@ type orderedJSONMetricPlan struct {
 	parser string
 }
 
+// handleOrderedJSONMetricUnderTransform answers a label_replace or label_join
+// around a metric that the ordered JSON evaluator owns: the evaluator answers
+// the expression under the transforms, as Loki evaluates it, and the transforms
+// are applied to what it answered. A query it does not own, or whose transform
+// arguments are invalid, is left to the general path (which reports them).
+func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *http.Request, requestStart time.Time, query, inner string, isRange bool) bool {
+	if _, ok := compileOrderedJSONMetric(inner); !ok {
+		return false
+	}
+	translated, err := p.translateQueryWithContext(r.Context(), query)
+	if err != nil {
+		return false
+	}
+	_, transforms, invalid := parseLabelTransformMarkers(translated)
+	if invalid != "" || (len(transforms.replaces) == 0 && transforms.join == nil) {
+		return false
+	}
+	buffered := &bufferedResponseWriter{header: make(http.Header)}
+	if !p.handleOrderedJSONMetric(buffered, cloneMetricQueryRequest(r, inner), requestStart, inner, isRange) {
+		return false
+	}
+	body := buffered.body
+	if buffered.code == 0 || buffered.code == http.StatusOK {
+		body = sortSeriesByLabels(transforms.apply(body), !isRange && queryIsSortable(query))
+	}
+	copyBackendHeaders(w.Header(), buffered.Header())
+	w.Header().Set("Content-Type", "application/json")
+	if buffered.code != 0 {
+		w.WriteHeader(buffered.code)
+	}
+	_, _ = w.Write(body)
+	return true
+}
+
 // handleOrderedJSONMetric uses the existing metric accumulators, but executes
 // parser-dependent stages before reducing rows to samples. VictoriaLogs does not
 // attach Loki's parser error labels, so pushing those filters into VL loses rows.
 func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, requestStart time.Time, query string, isRange bool) bool {
+	if inner := stripLabelTransforms(query); inner != query {
+		return p.handleOrderedJSONMetricUnderTransform(w, r, requestStart, query, inner, isRange)
+	}
 	plan, ok := compileOrderedJSONMetric(query)
 	if !ok {
 		return false

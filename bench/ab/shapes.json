@@ -1592,6 +1592,70 @@
      ]
     }
    ]
+  },
+  "label-replace": {
+   "description": "label_replace adds its label to instant answers, to post-aggregated series and around a bare range function or a `| json` metric (PR for semantics/label-replace-new-label). L1 instant and L2 range are the registry row's form over a sum by; L3 is the transform under topk (ranked after the transform, as Loki evaluates it); L4 is an instant label_replace over a bare count_over_time (one series per stream, not one total); L5 and L6 are the transform over a `| json` metric that drops __error__ (answered by the evaluator that owns JSON parser errors). Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "L1 label_replace over sum by rate, instant",
+     "query": "label_replace(sum by (service_name) (rate({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L2 label_replace over sum by rate",
+     "query": "label_replace(sum by (service_name) (rate({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L3 topk over label_replace over sum by count",
+     "query": "topk(3, label_replace(sum by (service_name) (count_over_time({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\"))",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L4 label_replace over bare count_over_time, instant",
+     "query": "label_replace(count_over_time({service_name=\"api-gateway\"}[5m]), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L5 label_replace over json sum by, instant",
+     "query": "label_replace(sum by (service_name) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "semantics/pipeline-error-text-parity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "L6 label_replace over json sum by",
+     "query": "label_replace(sum by (service_name) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+     "covers": [
+      "semantics/label-replace-new-label",
+      "semantics/pipeline-error-text-parity",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }
