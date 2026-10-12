@@ -1594,7 +1594,7 @@
    ]
   },
   "pattern-line-filter-anchoring": {
-   "description": "Pattern line filters keep the lines Loki's matcher accepts (semantics/pattern-line-filter-anchoring). The proxy sends an anchored regexp as a prefilter under |> and VictoriaLogs' extract pipe plus a filter on the extracted fields, so every selected row of a !> goes through extract. Log queries (limit 100) and count_over_time over the nginx access log, an include and an exclude of a pattern that matches half the lines, the Drilldown volume under an exclude (a concrete step per range), and a pattern that ends on a literal and so matches no line. Run with the control set.",
+   "description": "Pattern line filters keep the lines Loki's matcher accepts (semantics/pattern-line-filter-anchoring). The proxy sends an anchored regexp as a prefilter under |> and VictoriaLogs' extract pipe plus a filter on the extracted fields, so every selected row of a !> goes through extract. Log queries (limit 100) and count_over_time over the nginx access log, an include and an exclude of a pattern that matches half the lines, the Drilldown volume under an exclude (a concrete step per range), a pattern that ends on a literal and so matches no line, and two-literal patterns (A8 matches the GET request lines, A9 ends on a literal and matches none). Run with the control set.",
    "ranges": [
     "1h",
     "24h"
@@ -1663,6 +1663,22 @@
      ],
      "logs": true,
      "limit": 100
+    },
+    {
+     "name": "A8 nginx include two literals, count_over_time",
+     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_> HTTP/1.1\\\" <_>\" [1m]))",
+     "covers": [
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "A9 nginx include two literals, ends on a literal, count_over_time",
+     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_> HTTP/1.1\\\"\" [1m]))",
+     "covers": [
+      "semantics/pattern-line-filter-anchoring",
+      "loki_api_v1_query_range"
+     ]
     }
    ]
   }

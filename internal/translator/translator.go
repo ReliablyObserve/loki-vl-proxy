@@ -3347,7 +3347,34 @@ func translatePatternLineFilter(values []string, negative bool, seq *int) []stri
 	if negative {
 		return []string{pipe}
 	}
-	return []string{"~" + strconv.Quote(combined), pipe}
+	return append(patternLiteralPrefilter(alts), "~"+strconv.Quote(combined), pipe)
+}
+
+// patternLiteralPrefilter returns plain regexp filters for the literals of the
+// alternatives, to run before the anchored regexp: a line that matches an
+// alternative holds all its literals, so these are necessary conditions, and
+// VictoriaLogs answers a plain regexp as a substring search that skips the
+// blocks without the text, where the anchored regexp runs on every row. With
+// several alternatives it is one "or" of their literals, and none when an
+// alternative has no literal (<_>), which any line can match.
+func patternLiteralPrefilter(alts []patternLineFilterAlt) []string {
+	groups := make([][]string, len(alts))
+	for i, alt := range alts {
+		if len(alt.lits) == 0 {
+			return nil
+		}
+		for _, lit := range alt.lits {
+			groups[i] = append(groups[i], "_msg:~"+strconv.Quote(regexp.QuoteMeta(lit)))
+		}
+	}
+	if len(groups) == 1 {
+		return groups[0]
+	}
+	terms := make([]string, len(groups))
+	for i, g := range groups {
+		terms[i] = strings.Join(g, " ")
+	}
+	return []string{"((" + strings.Join(terms, ") or (") + "))"}
 }
 
 // patternFilterExtractRE matches the extract pipe of a pattern line filter.
@@ -3369,6 +3396,10 @@ func WithoutPatternLineFilterExtracts(query string) string {
 // fields that keeps exactly Loki's lines.
 type patternLineFilterAlt struct {
 	re, extract, cond string
+	// lits are the distinct literals of the pattern: a line that holds none of
+	// them cannot match, which the prefilter in front of extract says with
+	// plain filters.
+	lits []string
 	// exact, when set, is a LogsQL filter (no pipe) that keeps exactly Loki's
 	// lines; re is then only the superset regexp, and extract is empty.
 	exact string
@@ -3381,6 +3412,12 @@ func planPatternLineFilter(value string, id int) patternLineFilterAlt {
 		return patternLineFilterAlt{re: "^$"}
 	}
 	nodes := linePatternNodes(value)
+	var lits []string
+	for _, n := range nodes {
+		if !n.capture && !slices.Contains(lits, n.text) {
+			lits = append(lits, n.text)
+		}
+	}
 	var re, ext strings.Builder
 	var cond []string
 	captures := 0
@@ -3410,7 +3447,7 @@ func planPatternLineFilter(value string, id int) patternLineFilterAlt {
 		ext.WriteString("<plain:" + f + ">")
 		cond = append(cond, f+`:""`)
 	}
-	alt := patternLineFilterAlt{re: re.String()}
+	alt := patternLineFilterAlt{re: re.String(), lits: lits}
 	if captures > 0 {
 		alt.re = "(?s)" + alt.re
 	}

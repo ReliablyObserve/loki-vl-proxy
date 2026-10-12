@@ -23,7 +23,7 @@ func TestPatternAndTranslatorHelperBehaviors(t *testing.T) {
 		t.Fatalf("unexpected empty pattern translation %+v", got)
 	}
 	seq := 0
-	if got := strings.Join(translatePatternLineFilter([]string{`foo<_>bar`, `baz<_>`}, false, &seq), " "); got != `~"(?:(?s)foo.+bar$)|(?:(?s)baz.+)" | extract "foo<plain:__lvp_pf0_1>bar<plain:__lvp_pf0_r>" from _msg | filter (__lvp_pf0_1:* __lvp_pf0_r:"") or (_msg:~"(?s)baz.+") | delete __lvp_pf*` || seq != 1 {
+	if got := strings.Join(translatePatternLineFilter([]string{`foo<_>bar`, `baz<_>`}, false, &seq), " "); got != `((_msg:~"foo" _msg:~"bar") or (_msg:~"baz")) ~"(?:(?s)foo.+bar$)|(?:(?s)baz.+)" | extract "foo<plain:__lvp_pf0_1>bar<plain:__lvp_pf0_r>" from _msg | filter (__lvp_pf0_1:* __lvp_pf0_r:"") or (_msg:~"(?s)baz.+") | delete __lvp_pf*` || seq != 1 {
 		t.Fatalf("unexpected translated pattern line filter %q (seq %d)", got, seq)
 	}
 	if got := strings.Join(translatePatternLineFilter([]string{`foo<_>`}, true, &seq), " "); got != `NOT ~"(?s)foo.+"` || seq != 1 {

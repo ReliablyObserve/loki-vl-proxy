@@ -3283,7 +3283,7 @@ func TestTranslation_DrilldownPatternQueryForwarded(t *testing.T) {
 	logql := `{app="web"} |> ` + "`" + `GET <_> 500` + "`" + ` | pattern ` + "`" + `GET <field_1> 500` + "`" + ` | keep field_1 | line_format ""`
 	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
 
-	want := `app:="web" ~"(?s)GET .+ 500$" | extract "GET <plain:__lvp_pf0_1> 500<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf* | extract "GET <field_1> 500" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	want := `app:="web" _msg:~"GET " _msg:~" 500" ~"(?s)GET .+ 500$" | extract "GET <plain:__lvp_pf0_1> 500<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf* | extract "GET <field_1> 500" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
 	if receivedQuery != want {
 		t.Fatalf("expected translated drilldown pattern query,\n got: %q\nwant: %q", receivedQuery, want)
 	}
@@ -3301,7 +3301,7 @@ func TestTranslation_DrilldownPatternStatsQueryForwarded(t *testing.T) {
 	logql := `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`
 	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
 
-	want := `foo:="bar" ~"(?s)test .+ pattern$" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf* | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	want := `foo:="bar" _msg:~"test " _msg:~" pattern" ~"(?s)test .+ pattern$" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf* | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
 	if receivedQuery != want {
 		t.Fatalf("expected translated drilldown pattern stats query, got %q", receivedQuery)
 	}

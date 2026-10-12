@@ -697,3 +697,33 @@ func TestPatternLineFilterSingleLiteralNeedsNoPipe(t *testing.T) {
 		}
 	}
 }
+
+// TestPatternLineFilterLiteralPrefilterOrder pins the order of a |> pattern
+// that needs extract: a plain filter per literal, then the anchored regexp,
+// then the extract pipe. VictoriaLogs answers a plain regexp as a substring
+// search that skips the blocks without the text, so it must run first; the
+// plain filters are necessary conditions, so the answer does not change (the
+// corpus tests above evaluate them too). `!>` takes none, and an alternative
+// without a literal (`<_>`) takes them away from the whole chain.
+func TestPatternLineFilterLiteralPrefilterOrder(t *testing.T) {
+	for _, tc := range []struct{ op, pattern, want string }{
+		{"|>", `<_> "GET <_> HTTP/1.1" <_>`, `_msg:~" \"GET " _msg:~" HTTP/1\\.1\" " ~"(?s)^.+ \"GET .+ HTTP/1\\.1\" .+" | extract`},
+		{"|>", `<_>a<_>a<_>`, `_msg:~"a" ~"(?s)^.+a.+a.+" | extract`},
+		{"!>", `<_> "GET <_> HTTP/1.1" <_>`, `app:="x" | extract`},
+	} {
+		got, err := TranslateLogQL(`{app="x"} ` + tc.op + " " + strconv.Quote(tc.pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s %q: want %q in %s", tc.op, tc.pattern, tc.want, got)
+		}
+	}
+	got, err := TranslateLogQL(`{app="x"} |> "<_> a <_> b <_>" or "<_>"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, `_msg:~" a "`) {
+		t.Errorf("an alternative without a literal takes the literal prefilter away from the chain: %s", got)
+	}
+}
