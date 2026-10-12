@@ -1550,6 +1550,139 @@
      ]
     }
    ]
+  },
+  "unwrap-gate": {
+   "description": "Unwrap value gate (semantics/unwrap-gate-parsefloat-divergences): every unwrap query now carries the gate's per-row pipes (a copy, a conditional replace_regexp, a range filter after math, a counting stats group), so the common path must stay within noise of main. G1-G2 plain unwrap, G3-G4 with `| __error__=\"\"`, G5-G6 sum by over rate, G7-G8 duration() and bytes(), G9 max, G10 every production stream, G11-G12 instant. All hold clean numbers, so the shapes measure the gate's cost, not an error path. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "G1 logfmt amount sum_over_time, no filter",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G2 json duration_ms sum_over_time, no filter",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G3 logfmt amount sum_over_time, error filter",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G4 json duration_ms sum_over_time, error filter",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G5 logfmt amount sum by rate",
+     "query": "sum by (service_name) (rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G6 json duration_ms sum by rate",
+     "query": "sum by (service_name) (rate({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G7 duration() of a unit string",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G8 bytes() of a number",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"cache-redis\"} | logfmt | unwrap bytes(size_bytes) [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G9 json duration_ms max_over_time",
+     "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G10 logfmt latency_ms sum_over_time, production",
+     "query": "sum by (service_name) (sum_over_time({env=\"production\"} | logfmt | unwrap latency_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "G11 logfmt amount sum_over_time, instant",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "G12 json duration_ms sum_over_time, instant",
+     "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-conversion-error",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }

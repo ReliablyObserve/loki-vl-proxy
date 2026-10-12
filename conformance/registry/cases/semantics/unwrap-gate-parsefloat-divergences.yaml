@@ -1,41 +1,132 @@
 id: semantics/unwrap-gate-parsefloat-divergences
-title: The unwrap sample gate drops a few values Loki's conversions accept or reject (open)
+title: The unwrap sample gate differs from Loki's conversions on a few narrow forms (open)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  The translator gate (translator.UnwrapGateFor) keeps the rows whose value converts
-  in Loki's syntax, with a regular expression, because VictoriaLogs' stats parse
-  values their own way. The expressions match the syntax of strconv.ParseFloat,
-  time.ParseDuration and humanize.ParseBytes except for these values, which differ
-  from Loki:
+  The translator gate (translator.UnwrapGateFor) keeps the rows whose value
+  converts in Loki's syntax, with a regular expression, because VictoriaLogs'
+  stats parse values their own way (pkg/logql/log/metrics_extraction.go:316-338
+  convertFloat = strconv.ParseFloat, convertDuration = time.ParseDuration,
+  convertBytes = humanize.ParseBytes). It used to differ from them on these
+  values (checked against the Go functions on VictoriaLogs v1.43.1 and v1.50.0,
+  every value below in both block layouts of the storage):
 
-  - Loki makes a sample, the gate drops the row: hexadecimal floats (`0x1p4`),
-    `infinity`, `nan` / `NaN` (Loki's sum is NaN; VictoriaLogs' sum restarts at a
-    NaN), a plain exponent of 308 (`1e308`) or with digit separators (`1e1_0`);
-    for bytes(), a number that starts with a comma (`,5`), a comma after the point
-    (`1.5,0`, which Go reads as 1) and a no-break space before the unit.
+  - Loki makes a sample, the gate dropped the row: hexadecimal floats (`0x1p4`),
+    `infinity`, `nan` / `NaN`, a plain exponent of 308 (`1e308`) or with digit
+    separators (`1e1_0`); for bytes(), a number that starts with a comma (`,5`),
+    a comma after the point (`1.5,0`, which Go reads as 1.5) and any Unicode
+    space around the unit (no-break space, em space, U+0085; strings.TrimSpace),
+    and the Kelvin sign and U+0130 as unit letters (strings.ToLower folds them).
   - Loki makes no sample (overflow or range error, SampleExtractionErr), the gate
-    keeps the row: a plain value whose mantissa is large enough to overflow float64
-    with an exponent of at most 307 (`1000e307`), a duration beyond int64
-    nanoseconds (`2562048h`; VictoriaLogs saturates at 9.2e9 seconds), a byte size
-    at or above 2^64 (`19EB`; VictoriaLogs answers 1.9e19 or saturates).
+    kept the row: `1000e307`, `1e309`, `0x1p2000`, a duration beyond int64
+    nanoseconds (`2562048h`), a byte size at or above 2^64 (`19EB`); and the
+    unwrap conversion-error detection (semantics/unwrap-conversion-error) did not
+    report them, so Loki failed these queries where the proxy answered 200.
+  - A duration with a leading zero (`01m`, `063h`) was kept and read as NaN:
+    VictoriaLogs' duration reader rejects it. Found while closing the list above.
 
-  The unwrap conversion-error detection (semantics/unwrap-conversion-error) skips the
-  values in the first list and every decimal with an exponent, so it never
-  reports a value Loki converts; the overflowing forms (`1e309`, `1.8e308`,
-  `0x1p2000`, the second list) are not reported either, and Loki fails those
-  queries where the proxy answers 200.
+  Fixed (internal/translator/unwrap_gate.go, internal/proxy/unwrap_conversion_error.go):
 
-  Checked against Go's functions on VictoriaLogs v1.40.0 and v1.52.0: every other
-  form of the lists in internal/translator/unwrap_gate_test.go converts to Go's value
-  (including `5 kB`, `1PB`, `1EiB`, `5.s`, `.5s`, `-.5ms`, `100μs`, `1e-310`, `1e-400`).
+  - UnwrapNumberPattern is the syntax of ParseFloat: decimal and hexadecimal
+    floats with Go's digit separators (also in the exponent) and `inf` /
+    `infinity`. VictoriaLogs' math pipe reads a hexadecimal float, `1e308` and
+    `1e1_0` exactly as Go does (it calls strconv.ParseFloat), so the value needs
+    no help. It answers NaN for `infinity` (it reads only `inf`): the gate
+    shortens the word on a copy (`replace_regexp if (...)`, which VictoriaLogs
+    skips for a block that holds none). The plain gate selects the word with the
+    phrase filter `__lvp_n:i(infinity)`, not a regular expression per row; the
+    counting gate classifies it (flag 3) and the nan (flag 2) only on the rows the
+    rest of the grammar refused, so a row of numbers costs one regular expression.
+  - The expression is syntactic, so an overflow cannot be told apart by it (the
+    magnitude of a mantissa and its exponent are added, which a regular
+    expression cannot do for unbounded input). The math pipe can: it answers NaN
+    for a float that overflows, saturates a duration at int64 nanoseconds (the
+    limit of ParseDuration) and computes a size in float64 as ParseBytes does
+    (limit float64(MaxUint64)). The gate ends with a range filter on the
+    converted value (translator.UnwrapInRange: `__lvp_v:<=inf`, a symmetric
+    duration bound, `__lvp_v:<18446744073709551616`) that drops the row.
+  - The counting gate flags the same rows (`format if (__lvp_bad:="0"
+    -(<range>)) "1"`), so the detection reports `1e309`, `1.8e308`, `0x1p2000`,
+    `2562048h` and `19EB` and Loki's 400 is answered; it no longer skips every
+    decimal with an exponent, only `nan`. The lookup that confirms a hit reads
+    the rows the counting gate flags (unwrapLookupQuery), the out-of-syntax and
+    the overflowing ones alike, and re-derives Loki's value with Go.
+  - UnwrapBytesPattern is humanize.ParseBytes's: commas anywhere in the digit run,
+    unicode.IsSpace around the unit, the two non-ASCII unit letters; the gate
+    strips commas and the same spaces before reading the number and the unit.
+  - A duration's leading zeros are stripped (`replace_regexp`) before the math
+    pipe reads it.
+  - `nan` is a NaN sample for Loki: sum, avg, stddev, stdvar and rate over a window
+    that holds one are NaN (range_vector.go sumOverTime, avgOverTime,
+    stddevOverTime, rateLogs) and so are the vector aggregations of those
+    series; max and min over time skip it unless every sample is NaN
+    (maxOverTime, minOverTime). VictoriaLogs' sum cannot carry a NaN
+    (stats_sum.go: a NaN state is "no value yet", so the next row replaces the sum
+    and the accumulated total is lost), and two stats stages cannot propagate it.
+    So the gate cannot read it, and the proxy handles it on the answer: a plain
+    gate always counts, the nan rows pass the gate flagged `__lvp_bad="2"` with
+    the value 0 and are grouped apart in every stats pipe, and when every stats
+    function of the query poisons its result (sum, avg, stddev; a sample count
+    adds up) the value of the series that has a nan group at a time is NaN, a
+    series made only of nan rows included (unwrapNaN, stripUnwrapFlags). The
+    sliding windows the proxy folds from buckets then carry the NaN (the bucket
+    reader accepts NaN and infinities of an unwrap, which it used to skip), and
+    the raw evaluators' min and max follow Loki's NaN replacement (lokiMinMax).
+    Cost, measured (bench/ab set unwrap-gate and the control set, VictoriaLogs
+    v1.52.0, 2.4 M lines, 5 runs; a plain unwrap, `| __error__=""` unwrap,
+    sum by over rate and max stay within the noise of the harness (up to about
+    10 to 15 percent on 50 to 150 ms queries); a duration() unwrap
+    is about 8 to 16 ms (25 percent) slower on a 60 to 80 ms query and bytes()
+    about 4 to 8 ms (6 to 11 percent); the control set is unchanged):
+    the plain gate gained a `copy`, a `replace_regexp if` (a
+    pass-through for a block that holds no `infinity`) and a range filter after
+    the math pipe; a plain unwrap whose error is dropped (`| __error__=""`) now
+    sends the nan-counting gate (`format if` on the syntax, `format if` on the
+    nan word, a filter, the same copy/replace/math, a filter, `math ... default
+    0`) and a `__lvp_bad` group key in every stats pipe, where it sent the plain
+    gate; a plain unwrap whose error is not dropped gained the nan `format if`
+    and the `math default`. A duration or bytes unwrap gained the range filter
+    (and the leading-zero strip for a duration) only.
+
+  Still different (why VictoriaLogs cannot, and what the proxy does not do):
+
+  - An ungrouped `sum(...)` over `sum_over_time` or `avg_over_time` of a series
+    that holds a nan, on an instant query: Loki answers NaN, the proxy answers the
+    sum of the numbers (or no series when the window holds only nan rows). The
+    grouped form, `sum by (service_name) (...)`, and a rate answer NaN. Found by
+    TestCompat_UnwrapValueFormsParity (8 subtests on v1.40, v1.47 and v1.52,
+    with the same failure on main).
+
+  - A stats query the proxy cannot rewrite exactly (a `sort` or `limit` after the
+    stats pipe, two gates in one query) is sent with the plain gate: its nan rows
+    are dropped, and its overflowing values are dropped without the error.
+
+  - A duration within about a microsecond of int64 nanoseconds (292.47 years,
+    `9223372036854775807ns`, `2562047h47m16.854775807s`): Loki converts it,
+    VictoriaLogs saturates every duration beyond the limit to the limit and the
+    float64 it hands to the math pipe cannot tell the largest valid duration from
+    an overflow (adjacent float64 values at 9.2e9 seconds are 1.9 microseconds
+    apart), so the range filter drops it and, with the error counted, the lookup
+    re-reads it with Go and finds it converts. A proxy-side read needs the raw
+    string per row, which is the raw-row evaluation the proxy does not do for a
+    metric.
+  - The nan rows are exact for a query whose every function poisons its result. They
+    are dropped (what max and min over time do for a window that has a number)
+    in a query that mixes a poisoning function with max, min or a count of
+    series (`max by (a) (sum_over_time(...))`: Loki ignores the NaN series, the
+    proxy takes the sum of the series' numbers), and a window made only of nan
+    rows under max_over_time or min_over_time is absent where Loki's is NaN. The
+    first needs the identity of the inner series after VictoriaLogs' stats, which
+    its two-stage stats do not keep; the second needs the window of the output
+    point, but the buckets VictoriaLogs answers are not windows when the range is
+    not the step.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'max_over_time({service_name="api-gateway"} | json | unwrap latency [1m])'
+    query: 'sum_over_time({service_name="api-gateway"} | json | unwrap latency [1m])'
     start: 'now-1h'
     end: 'now'
     step: '60'
@@ -45,13 +136,15 @@ compare:
   mode: observed
   fields: [series, values]
   expect: |
-    A line whose value is one of the listed forms makes the sample Loki makes.
+    A line whose value is one of the listed forms makes the sample Loki makes, an
+    overflowing value fails the query like Loki.
 gap:
   status: open
   impact: edge
   effort: S
-  area: 'internal/translator/unwrap_gate.go (UnwrapNumberPattern, UnwrapDurationPattern, UnwrapBytesPattern)'
-  loki: 'pkg/logql/log/metrics_extraction.go:316-338 convertFloat, convertDuration, convertBytes'
-  proxy: 'rows with these values are dropped (or kept, for an overflow) by the gate'
-  planned_test: 'TestUnwrapNumberPatternMatchesParseFloat (internal/translator) pins the known differences'
+  area: 'internal/translator/unwrap_gate.go (UnwrapNumberPattern, UnwrapDurationPattern, UnwrapBytesPattern, UnwrapInRange); internal/proxy/unwrap_conversion_error.go (unwrapCountedGateMode, unwrapNaN)'
+  loki: 'pkg/logql/log/metrics_extraction.go:316-338 convertFloat, convertDuration, convertBytes; pkg/logql/range_vector.go sumOverTime, avgOverTime, maxOverTime, minOverTime, stddevOverTime'
+  proxy: 'a duration within a microsecond of int64 nanoseconds is dropped; a nan under max/min only windows, mixed max/min/count chains and an ungrouped instant sum over sum_over_time or avg_over_time is dropped'
+  planned_test: 'TestUnwrapNumberPatternMatchesParseFloat, TestUnwrapGateRange, TestUnwrapDurationPatternMatchesParseDuration, TestUnwrapBytesPatternAndExtract and the generated-input tests (internal/translator, internal/proxy); TestUnwrapCountedGateFlagsOverflow, TestUnwrapNaNGroupsReachTheAnswer, TestUnwrapNaNReachesTheLokiAnswer, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential (internal/proxy); TestCompat_UnwrapValueFormsParity (rate on query_range, the over-time functions on grouped instants) and TestCompat_UnwrapOverflowParity (test/e2e-compat)'
+  note: 'Every form of the lists was checked against the Go functions through the gate and the counting gate executed by VictoriaLogs v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both block layouts); run live against Loki on VictoriaLogs v1.40.0, v1.47.0 and v1.52.0 (TestCompat_UnwrapOverflowParity passes on all three; TestCompat_UnwrapValueFormsParity passes except the ungrouped nan sum above, with the ungrouped over-time series skipped as registered apart).'
   clusters: []

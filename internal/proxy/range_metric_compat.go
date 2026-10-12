@@ -2199,6 +2199,19 @@ func manualWindowValues(samples []rangeMetricSample, windowStart, windowEnd int6
 	return values
 }
 
+// lokiMinMax folds v into a running minimum and maximum as Loki's minOverTime
+// and maxOverTime do: a NaN is replaced by the next sample, and never replaces
+// one.
+func lokiMinMax(minVal, maxVal, v float64) (float64, float64) {
+	if v < minVal || math.IsNaN(minVal) {
+		minVal = v
+	}
+	if v > maxVal || math.IsNaN(maxVal) {
+		maxVal = v
+	}
+	return minVal, maxVal
+}
+
 func aggregateManualWindow(functionName string, quantile float64, samples []rangeMetricSample, windowStart, windowEnd int64, windowSeconds float64) (float64, bool) {
 	// Slice-dependent functions: build filtered slice, then aggregate.
 	switch functionName {
@@ -2252,12 +2265,7 @@ func aggregateManualWindow(functionName string, quantile float64, samples []rang
 			maxVal = v
 			hasFirst = true
 		} else {
-			if v < minVal {
-				minVal = v
-			}
-			if v > maxVal {
-				maxVal = v
-			}
+			minVal, maxVal = lokiMinMax(minVal, maxVal, v)
 		}
 		lastVal = v
 	}

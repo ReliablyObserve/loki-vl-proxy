@@ -1450,7 +1450,10 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 			}
 			ts, tsOK := snapSlidingBucketTimestamp(arr[0], fetchStart, bucket)
 			val, valErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
-			if !tsOK || valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
+			// An unwrapped value can be NaN or infinite, as Loki's (nan and inf convert):
+			// the nan groups of the counting gate carry the NaN (unwrapNaN), and the
+			// gate keeps the rows with an infinity, so the window sums carry both.
+			if !tsOK || valErr != nil || (spec.unwrapField == "" && (math.IsNaN(val) || math.IsInf(val, 0))) {
 				continue
 			}
 			entry.Samples = append(entry.Samples, rangeMetricSample{ts: ts, value: val})

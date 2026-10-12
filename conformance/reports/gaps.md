@@ -125,14 +125,9 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `parser-logfmt` | 4 | 2.40s (logfmt count by level, filter, drop, 24h) | 0.01s |
-| `severity-detected-level-derivation` | 11 | 1.59s (logfmt volume, 24h) | 0.01s |
-| `explore-logs-volume-json` | 7 | 1.26s (json volume no filters, 24h) | 0.01s |
-| `operator-topk` | 1 | 0.62s (topk rate by app, 24h) | 0.01s |
-| `range_function-rate` | 2 | 0.62s (topk rate by app, 24h) | 0.01s |
+| `explore-logs-volume-json` | 6 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `operator-sum` | 3 | 0.56s (bytes_over_time by app, 24h) | 0.03s |
-| `range_function-bytes-over-time` | 1 | 0.56s (bytes_over_time by app, 24h) | 0.03s |
+| `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
@@ -140,12 +135,9 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 3 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
-| `drilldown-service-landing` | 2 | 0.19s (drilldown service landing, 24h) | 0.01s |
-| `service-name-derivation` | 2 | 0.19s (drilldown service landing, 24h) | 0.01s |
+| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
+| `parser-logfmt` | 1 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
-| `metric-series-identity` | 1 | 0.16s (stream-label count by app, 24h) | 0.01s |
-| `range_function-count-over-time` | 1 | 0.16s (stream-label count by app, 24h) | 0.01s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
 | `semantics/unwrap-sample-validity` | 1 | 0.10s (U13 logfmt latency_ms over every service, 1h) | 0.00s |
 | `backend-admission-and-heavy-query-queueing` | 2 | 0.12s (drilldown landing volume, 7d) | 0.03s |

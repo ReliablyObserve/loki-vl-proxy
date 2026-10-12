@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An unwrapped value that Loki converts now makes the sample Loki makes
+  (hexadecimal floats, `infinity`, `nan`, `1e308`, digit separators, comma and
+  space forms of `bytes()`), and one that overflows fails the query like Loki
+  (#730).** The unwrap gate keeps the rows whose value converts in Loki's syntax
+  with a regular expression sent to VictoriaLogs, and it differed from
+  `strconv.ParseFloat`, `time.ParseDuration` and `humanize.ParseBytes`
+  (`pkg/logql/log/metrics_extraction.go:316-338`) on a few values. Loki made a
+  sample, the proxy dropped the row, so a `sum_over_time` over `0x1p4`, `1e1_0`,
+  `1e308` or `infinity` missed it; for `bytes()` the same held for `,5`, `1.5,0`
+  and any Unicode space around the unit (`5<NBSP>kB`, U+0085, the Kelvin sign as
+  `K`), which Go's `strings.TrimSpace` and `strings.ToLower` accept. Loki made no
+  sample of a value whose conversion overflows (`1e309`, `1000e307`, `0x1p2000`,
+  a duration beyond int64 nanoseconds such as `2562048h`, a size of 2^64 bytes
+  or more such as `19EB`) and failed the query with `SampleExtractionErr` unless
+  the error is dropped after the unwrap; the proxy kept the row with whatever
+  VictoriaLogs read and answered 200. A duration with a leading zero (`01m`)
+  was kept and read as NaN. The gate pattern is now the syntax of the Go
+  functions (VictoriaLogs' `math` pipe reads a hexadecimal float, `1e308` and
+  `1e1_0` as Go does; `infinity`, which it does not read, is shortened to `inf`
+  on a copy in the blocks that hold it (found by a phrase filter; the counting gate
+  classifies it only on the rows the rest of the grammar refused), and a duration's leading zeros are
+  stripped) and ends with a range filter on the converted value: VictoriaLogs
+  answers NaN for a float that overflows, saturates a duration at int64
+  nanoseconds and computes a size in float64, so the filter drops the rows Loki
+  makes no sample of. The conversion-error detection flags the same rows, so the
+  proxy answers Loki's 400 (`strconv.ParseFloat: parsing "1e309": value out of
+  range`, `time: invalid duration "2562048h"`, `too large: 19EB`) and no longer
+  skips every decimal with an exponent. A `nan` value is a NaN sample for Loki
+  (`sum_over_time`, `avg_over_time`, `stddev_over_time` and `rate` over a window
+  that holds one are NaN, `max` and `min` skip it); VictoriaLogs' `sum` restarts
+  at a NaN, so the gate lets the nan rows through flagged apart, grouped apart in
+  every stats pipe, and the proxy sets the value of the series that has one at a
+  step to NaN when every function of the query poisons its result (and keeps the
+  sample count of a rate). The bucket reader that folds sliding windows kept
+  skipping NaN and infinite values of an unwrap; it now carries them, so a
+  window holding `inf` is `+Inf` as in Loki, and the raw evaluators' `min` and
+  `max` replace a NaN by the next sample as Loki's do. Checked against the Go
+  functions by running the gate and the counting gate through VictoriaLogs
+  v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both
+  block layouts). The plain unwrap gate gained a `copy`, a conditional
+  `replace_regexp` and a range filter, and the query of an unwrap whose error is
+  dropped now carries the counting gate's flag pipes and a `__lvp_bad` group key
+  (A/B against main on 2.4 M lines: a plain unwrap and a `| __error__=""` unwrap
+  within the noise of the harness (up to about 10 to 15 percent on queries of 50
+  to 150 ms), a `duration()` unwrap about 25 percent (8 to 16 ms) and a
+  `bytes()` unwrap about 6 to 11 percent slower on queries of 60 to 80 ms, the
+  control set unchanged). Still registered
+  (`semantics/unwrap-gate-parsefloat-divergences`): a duration within about a
+  microsecond of int64 nanoseconds, a window made only of nan values under
+  `max_over_time` or `min_over_time`, a `max`, `min` or `count` of series
+  that `sum`, `avg`, `stddev` or `rate` made NaN, and an ungrouped instant
+  `sum(...)` over `sum_over_time` or `avg_over_time` of a series that holds a nan.
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
