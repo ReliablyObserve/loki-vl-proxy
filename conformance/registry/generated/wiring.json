@@ -732,6 +732,11 @@
     "semantics/topk-bottomk-without-strips-label": [
       "internal/proxy/without_open_shapes_test.go"
     ],
+    "semantics/topk-grouped-spellings": [
+      "internal/proxy/topk_range_differential_test.go",
+      "internal/proxy/topk_range_edge_test.go",
+      "test/e2e-compat/topk_range_per_step_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -843,7 +848,6 @@
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/tenant_query_limits_test.go",
-      "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -922,7 +926,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 342,
+  "registry_items": 343,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1389,12 +1393,13 @@
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
       "semantics/topk-bottomk-range-series",
-      "series-limits-and-partial-results"
+      "semantics/topk-grouped-spellings"
     ],
     "internal/proxy/topk_range_edge_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
-      "semantics/topk-bottomk-range-series"
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
     ],
     "internal/proxy/tumbling_axis_parity_test.go": [
       "limits/drilldown-partial-with-warning",
@@ -1804,7 +1809,8 @@
     "test/e2e-compat/topk_range_per_step_test.go": [
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
-      "semantics/topk-bottomk-range-series"
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
     ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [
       "loki_api_v1_query",
@@ -1990,5 +1996,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 168
+  "wired_items": 169
 }

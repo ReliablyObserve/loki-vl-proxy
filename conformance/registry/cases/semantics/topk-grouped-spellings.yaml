@@ -1,0 +1,70 @@
+id: semantics/topk-grouped-spellings
+title: topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki keeps one heap per grouping key and step (pkg/logql/evaluator.go:443-494,
+  :551-561, :596-621), so `topk by (container) (5, ...)` keeps the 5 best
+  samples of every container at every step: the recorded parity run has Loki at
+  791 series on a range and 45 at an instant where the proxy returned 5.
+
+  Cause, measured on cf738b80 with an emulated VictoriaLogs (the real handler,
+  the stats pipes of the window evaluator, 4 apps x 3 envs of generated lines
+  with gaps and changing leaders, unaligned start): only the spelling
+  `topk(k, expr)` was recognised (the text `topk(` up to the last `)`).
+  `topk by (l) (k, e)` and `topk without (l) (k, e)` were taken for a log query
+  (a `streams` 200 on query_range, a 400 at an instant), `topk (k, e)` with a
+  space too, and `topk(k, e) by (l)` was a 400 on query_range with a mangled
+  inner expression. The wrapper the stats handlers read ignored the clause, so
+  an instant grouped topk was cut to k series in total. Grammar:
+  pkg/logql/syntax/syntax.y:182-184.
+
+  Fixed: parseTopKPostAgg reads the clause from the parsed query and the inner
+  text as written; a query the typed parser reads as something else (a binary
+  expression around a topk) is never taken for one. encodeTopK, applyTopKToMatrix,
+  applyTopKToVector and the instant sort rank per step and group (topKGroupKey:
+  by() keeps the listed labels, a missing one is empty; without() drops the
+  listed labels and __name__) with one comparison, topKCompare: NaN ranks after
+  every number and never blocks one (pkg/logql/vector.go). Ties at the k-th place
+  follow Go map order in Loki (pkg/logql/range_vector.go keeps its window in a
+  map), so the series chosen there are not reproducible; the proxy breaks them
+  by label order and the tests compare the selected values at such steps. On the
+  window-stats route the union of the series that ranked counts against
+  -max-stats-query-series (Loki: an error; Drilldown: Loki keeps the series it
+  met first and stops at that step, the proxy keeps the limit's worth with the
+  most selected samples over the range, with the same warning); the route over
+  a finished matrix still limits the inner metric before ranking.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk by (container) (5, sum by (container, pod) (count_over_time({env="production"}[5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    At every step and for every container, the 5 best samples, and the union of
+    the series that ranked at some step with their samples at those steps only.
+    Where several series tie at the 5th place Loki's choice follows Go map
+    order, so there the values must match and the series may differ.
+gap:
+  status: fixed
+  fixed_by: "#736"
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey, topKCompare), metric_binary.go (applyTopKToMatrix, applyTopKToVector), sliding_window_stats.go (encodeTopK)'
+  loki: 'pkg/logql/evaluator.go:443-494, :551-561, :596-621 VectorAggEvaluator topk/bottomk per step and grouping key; pkg/logql/vector.go heaps; pkg/logql/syntax/syntax.y:182-184'
+  proxy: 'every spelling parsed; k series per step and group, bounded heap over the VictoriaLogs window stats'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKRangeResultBounds, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
+  note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
+  clusters:
+    - 23526b6c
+    - 4f7b982a

@@ -116,7 +116,8 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/non-sum-vector-aggregation-unreduced` — max, min, count and avg over a range function are one series per group on query_range, like Loki (fixed) | #734 | 24 | 92 |
 | `semantics/parenthesized-log-range` — A parenthesized log expression under a range function evaluates like the plain form | #669 | 41 | 77 |
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
-| `semantics/topk-bottomk-range-series` — topk/bottomk on query_range rank every step in each by()/without() group, in every spelling, like Loki (fixed) | #736 | 7 | 29 |
+| `semantics/topk-bottomk-range-series` — A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed) | #736 | 5 | 15 |
+| `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 2 | 14 |
 | `semantics/plain-name-after-parser-reads-stream-label` — A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed) | #676 | 4 | 6 |
 | `semantics/pattern-line-filter` — An empty pattern line filter (`\|> ""`, `!> ""`) matches only the empty line, like Loki (fixed) | #743 | 2 | 2 |
 | `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
