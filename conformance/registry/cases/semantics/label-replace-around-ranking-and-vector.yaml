@@ -1,0 +1,40 @@
+id: semantics/label-replace-around-ranking-and-vector
+title: label_replace around topk, sort or vector() fails on the proxy and answers on Loki (open)
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates `label_replace(topk(2, sum by (service_name) (rate({env="production"}[5m]))),
+  "svc_short", "$1", "service_name", "(.*)-.*")`, the same call around `sort(...)` and
+  `label_replace(vector(1), "a", "$1", "b", "(.*)")`: the label_replace evaluator
+  transforms the series of any vector expression below it (pkg/logql/evaluator.go
+  LabelReplaceEvaluator.Next). The proxy answers a 400 on query ("log queries are
+  not supported as an instant query type") and, on query_range, a 400 from
+  VictoriaLogs' parser for topk and sort and an empty `streams` answer for
+  vector(). The transform is applied to a stats answer, and these inner expressions
+  are not routed as stats queries by the label_replace path (the other direction,
+  a label_replace under topk or sort, is handled and compared by
+  TestCompat_LabelReplaceNewLabel). The base commit answers the same.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'label_replace(topk(2, sum by (service_name) (rate({env="production"}[5m]))), "svc_short", "$1", "service_name", "(.*)-.*")'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    The ranked series with svc_short added, as Loki answers.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy proxy.go (handleQuery, handleQueryRange routing of a label_replace whose inner expression is topk, sort or vector)'
+  loki: 'pkg/logql/evaluator.go LabelReplaceEvaluator.Next over VectorAggEvaluator, vector()'
+  proxy: '400 on query; 400 (topk, sort) or empty streams (vector) on query_range'
+  planned_test: 'TestCompat_LabelReplaceAroundRankingAndVector (test/e2e-compat, group semantics)'
+  clusters: []

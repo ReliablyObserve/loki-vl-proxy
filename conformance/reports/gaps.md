@@ -137,6 +137,8 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
 | `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
+| `semantics/label-replace-new-label` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s |
+| `semantics/pipeline-error-text-parity` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s |
 | `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
