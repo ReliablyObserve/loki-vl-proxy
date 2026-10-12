@@ -216,6 +216,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
@@ -255,6 +256,7 @@
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
@@ -290,6 +292,8 @@
     "metric-series-identity": [
       "internal/proxy/extraction_list_outside_without_test.go",
       "internal/proxy/first_last_unwrap_differential_test.go",
+      "internal/proxy/nested_vector_aggregation_differential_test.go",
+      "internal/proxy/nested_vector_fold_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/sum_without_extraction_list_test.go",
       "internal/proxy/sum_without_label_collision_test.go",
@@ -297,10 +301,12 @@
       "internal/proxy/vector_agg_fold_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
       "internal/proxy/without_open_shapes_test.go",
+      "internal/translator/nested_vector_chain_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
       "internal/translator/without_grouping_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
@@ -575,6 +581,13 @@
       "internal/proxy/recent_tail_bypass_clamp_test.go",
       "test/e2e-compat/label_freshness_e2e_test.go"
     ],
+    "semantics/nested-aggregation-outer-by-native-routes": [
+      "internal/proxy/nested_vector_aggregation_differential_test.go",
+      "internal/proxy/nested_vector_fold_test.go",
+      "internal/proxy/without_open_shapes_test.go",
+      "internal/translator/nested_vector_chain_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go"
+    ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
       "internal/proxy/vector_agg_fold_test.go",
@@ -713,10 +726,12 @@
     ],
     "semantics/without-nested-under-aggregation": [
       "internal/proxy/without_open_shapes_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go"
     ],
     "semantics/without-over-inner-aggregation-collapses": [
-      "internal/proxy/without_open_shapes_test.go"
+      "internal/proxy/without_open_shapes_test.go",
+      "test/e2e-compat/nested_vector_aggregation_test.go"
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
@@ -797,7 +812,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 327,
+  "registry_items": 328,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1058,6 +1073,14 @@
       "semantics/tenant-label-default-aliases",
       "tenant-label-isolation"
     ],
+    "internal/proxy/nested_vector_aggregation_differential_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
+    "internal/proxy/nested_vector_fold_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
+    ],
     "internal/proxy/ordered_json_conditional_unpack_test.go": [
       "parsed-label-series-identity",
       "parser-json",
@@ -1288,6 +1311,7 @@
       "metric-series-identity",
       "semantics/label-replace-instant-vector",
       "semantics/label-replace-range-binary-marker",
+      "semantics/nested-aggregation-outer-by-native-routes",
       "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-sum-without-collapses",
       "semantics/without-comparison-inside-ignored",
@@ -1317,6 +1341,10 @@
     ],
     "internal/translator/line_filter_or_test.go": [
       "semantics/line-filter-or-alternatives"
+    ],
+    "internal/translator/nested_vector_chain_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes"
     ],
     "internal/translator/parsed_key_variants_test.go": [
       "profiles/sanitized-json-key-filter",
@@ -1481,6 +1509,14 @@
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache"
     ],
+    "test/e2e-compat/nested_vector_aggregation_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "semantics/without-nested-under-aggregation",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
     "test/e2e-compat/non_sum_vector_aggregation_range_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1622,7 +1658,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 164,
+  "tests_with_markers": 168,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1720,5 +1756,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 151
+  "wired_items": 152
 }

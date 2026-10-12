@@ -39,9 +39,18 @@ why: |
   static `by`. Only an innermost `without` has labels VictoriaLogs cannot list
   (the series' own), so that query keeps the series rows and the proxy folds
   every level over them, innermost first (applyWithoutChain, applyWithoutGrouping
-  with Loki's operator per level). Levels the chain does not model (group,
-  topk, stddev, stdvar) and the sliding windows of the proxy's window evaluator
-  keep their own paths (semantics/non-sum-vector-aggregation-unreduced).
+  with Loki's operator per level). On a sliding window (range != step) the
+  proxy evaluates the first stats pipe, the series of the innermost level, and
+  folds every level over them (foldVectorAggregations, semantics/non-sum-vector-
+  aggregation-unreduced), a static `without` level included; the innermost
+  level's labels name those series. A `without` nested under an outer
+  aggregation, and a `without` over an inner `sum by`, are the same chain
+  (semantics/without-nested-under-aggregation,
+  semantics/without-over-inner-aggregation-collapses). The sliding differential
+  covers count_over_time and rate; the window values of an over-time unwrap
+  function there are the open row semantics/unwrap-over-time-range-windows.
+  Levels the chain does not model (group, topk, stddev, stdvar) keep their own
+  paths.
 request:
   method: GET
   path: /loki/api/v1/query
@@ -57,12 +66,12 @@ compare:
     One series per zone, valued by the lowest of the per-pod averages.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#746"
   impact: explore-visible
   effort: M
-  area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain)'
+  area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain) + vector_agg_fold.go (seriesAggregationChain, innermostByLabels)'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (each level keeps its own grouping)'
-  proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy'
-  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator)'
-  note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows of the proxy evaluator are the proxy-side fold of semantics/non-sum-vector-aggregation-unreduced.'
+  proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy; a sliding window folds every level over the innermost level series'
+  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator); TestWithoutNestedAggregationMatchesLoki (internal/proxy)'
+  note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows are covered by the same differential (window != step, count_over_time and rate).'
   clusters: []

@@ -1,5 +1,5 @@
 id: semantics/without-nested-under-aggregation
-title: a without nested under an outer aggregation answers the wrong series and values (open)
+title: a without nested under an outer aggregation folds level by level, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -7,8 +7,13 @@ proves:
 consumer: explore
 why: |
   `max(sum without (pod) (rate({app="payment-service"} | logfmt | unwrap amount [5m])))`
-  is one series `{}` valued with the largest per-ns sum on Loki; the proxy answers
-  one series valued with the sum of every ns (instant 2.73333 against Loki's
+  is one series `{}` valued with the largest per-ns sum on Loki. The proxy now folds
+  every level, innermost first, over the series rows of the `without`
+  (semantics/nested-aggregation-outer-by-native-routes): the `max` and the
+  `sum by (ns)` read the per-ns sums, on an instant query, a tumbling window and
+  a sliding one over rate and count_over_time (TestWithoutNestedAggregationMatchesLoki,
+  TestWithoutFoldIsLimitedToTheOperatorsItProves). What follows is the
+  measurement before the fix: the proxy answered one series valued with the sum of every ns (instant 2.73333 against Loki's
   1.5, the larger of {ns=x} = 1.23333 and {ns=y} = 1.5) and 0.74,0.26 on
   query_range against Loki's 0.92,1.41333,1.5. `sum by (ns) (sum without (pod) (...))`
   is a series per ns on Loki ({ns=x} = 1.23333, {ns=y} = 1.5 at an instant);
@@ -24,10 +29,15 @@ why: |
 
   On the e2e fixtures (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant),
   `max(sum without (route) (rate({app=~"uwsum-lf-.+"} | logfmt amount, route | unwrap amount [5m])))`
-  is 0.6917 on Loki (the largest of three streams' sums) and 2.025 on the proxy (their total);
-  TestCompat_UnwrapSumWithoutUnderMaxStillDiffers pins both. `min` over the
-  same inner differs the same way (Loki 0.6583, proxy 2.025), while `sum`,
-  `stddev`, `stdvar` and `topk(2, ...)` over it match Loki.
+  was 0.6917 on Loki (the largest of three streams' sums) and 2.025 on the proxy (their
+  total). `min` over the same inner differed the same way (Loki 0.6583, proxy 2.025),
+  while `sum`, `stddev`, `stdvar` and `topk(2, ...)` over it matched Loki.
+  TestCompat_UnwrapSumWithoutUnderAnotherAggregation now holds max, min, avg and
+  count over it to Loki too (pending its run against Loki).
+
+  Covered on a sliding window (range != step) for rate and count_over_time;
+  the window values of an over-time unwrap function there are the open row
+  semantics/unwrap-over-time-range-windows, which a nest over one inherits.
 
 request:
   method: GET
@@ -45,12 +55,13 @@ compare:
   expect: |
     One series valued with the largest per-ns sum (max), and a series per ns for sum by (ns).
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#746"
   impact: explore-visible
   effort: M
   area: 'internal/translator tryTranslateMetricQueryWithout (nested aggregations with a without clause); internal/proxy applyWithoutGrouping'
   loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (the outer aggregation takes the vector the inner without produced)'
-  proxy: 'the inner without is not folded per label set; the outer aggregation reads one folded series'
-  planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, max and sum by over a without, range and instant), TestWithoutFoldIsLimitedToTheOperatorsItProves (the answers kept as before the fold); an e2e test vs Loki in group core when fixed'
+  proxy: 'every level is folded over the series rows of the without, innermost first'
+  planned_test: 'TestWithoutNestedAggregationMatchesLoki (internal/proxy, max and sum by over a without, range and instant), TestWithoutFoldIsLimitedToTheOperatorsItProves; TestCompat_UnwrapSumWithoutUnderAnotherAggregation (test/e2e-compat, max, min, avg and count over a without)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/without-over-inner-aggregation-collapses.'
   clusters: []
