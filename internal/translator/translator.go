@@ -525,6 +525,12 @@ func ParseWithoutMarker(query string) (cleanQuery string, excludeLabels []string
 	}
 	cleanQuery = query[:idx]
 	labelStr := query[idx+len(WithoutMarkerSuffix):]
+	// A marker appended after this one (label_replace, label_join, group)
+	// ends the label list and stays on the query for its own parser.
+	if end := strings.Index(labelStr, "__lvp_"); end >= 0 {
+		cleanQuery += labelStr[end:]
+		labelStr = labelStr[:end]
+	}
 	for _, l := range strings.Split(labelStr, ",") {
 		l = strings.TrimSpace(l)
 		if l != "" {
@@ -1802,6 +1808,29 @@ func parseAllStringArgs(s string) []string {
 	return args
 }
 
+// parseUnquotedStringArgs reads the comma-separated string arguments that
+// follow the first argument of label_replace or label_join, unquoted as the
+// LogQL lexer does: a double-quoted string has its escapes resolved, a
+// backtick one is raw (pkg/logql/syntax/lex.go). It stops at ')' or at the
+// first argument that is not a valid string.
+func parseUnquotedStringArgs(s string) []string {
+	var args []string
+	for {
+		s = strings.TrimSpace(s)
+		quoted, err := strconv.QuotedPrefix(s)
+		if err != nil {
+			break
+		}
+		arg, err := strconv.Unquote(quoted)
+		if err != nil {
+			break
+		}
+		args = append(args, arg)
+		s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s[len(quoted):]), ","))
+	}
+	return args
+}
+
 // tryTranslateLabelReplace handles label_replace(v, "dst", "repl", "src", "regex").
 // It translates the inner expression and embeds a marker for proxy post-processing.
 func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string, bool) {
@@ -1813,7 +1842,7 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) != 4 {
 		return "", false
 	}
@@ -1838,7 +1867,7 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) < 3 { // dst + sep + at least one src
 		return "", false
 	}

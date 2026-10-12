@@ -184,3 +184,15 @@ func TestCoverage_AddByClause_DeduplicatesTranslatedLabels(t *testing.T) {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}
 }
+
+// A marker appended after the without marker ends its label list and stays on
+// the query, so the label_replace, label_join and group markers of a
+// `label_replace(sum without (pod) (...), ...)` still reach their parsers.
+func TestParseWithoutMarkerBeforeOtherMarkers(t *testing.T) {
+	for _, tail := range []string{"__lvp_lr:YQBiAGMAZA==__", "__lvp_lj:YQBiAGM=__", "__lvp_group__"} {
+		clean, labels := ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `pod,node` + tail)
+		if clean != `app:="api"`+tail || len(labels) != 2 || labels[0] != "pod" || labels[1] != "node" {
+			t.Errorf("tail %q: clean=%q labels=%v, want the marker kept and the labels pod,node", tail, clean, labels)
+		}
+	}
+}

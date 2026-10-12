@@ -871,6 +871,33 @@ func TestLabelReplaceTranslation(t *testing.T) {
 	}
 }
 
+// The string arguments of label_replace are LogQL strings: a double-quoted one
+// is unescaped (pkg/logql/syntax/lex.go), so "\\." is the regexp \. and not a
+// backslash followed by any character; a backtick one is taken as it is.
+func TestLabelReplaceStringArgumentsAreUnquoted(t *testing.T) {
+	for _, tc := range []struct{ name, in, dst, repl, src, regex string }{
+		{"escaped dot", `label_replace(rate({app="api"}[5m]), "d", "$1", "s", "(\\w+)\\.(\\w+)")`, "d", "$1", "s", `(\w+)\.(\w+)`},
+		{"escaped quote", `label_replace(rate({app="api"}[5m]), "d", "a\"b", "s", "x")`, "d", `a"b`, "s", "x"},
+		{"backtick is raw", "label_replace(rate({app=\"api\"}[5m]), `d`, `$1`, `s`, `(\\w+)\\.`)", "d", "$1", "s", `(\w+)\.`},
+		{"escaped newline", `label_replace(rate({app="api"}[5m]), "d", "a\nb", "s", "x")`, "d", "a\nb", "s", "x"},
+		{"comma and paren in a string", `label_replace(rate({app="api"}[5m]), "d", "a,b)", "s", "(x),(y)")`, "d", "a,b)", "s", "(x),(y)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := TranslateLogQL(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, spec := ParseLabelReplaceMarker(result)
+			if spec == nil {
+				t.Fatalf("no marker in %q", result)
+			}
+			if spec.DstLabel != tc.dst || spec.Replacement != tc.repl || spec.SrcLabel != tc.src || spec.Regex != tc.regex {
+				t.Fatalf("spec %+v, want dst=%q repl=%q src=%q regex=%q", *spec, tc.dst, tc.repl, tc.src, tc.regex)
+			}
+		})
+	}
+}
+
 func TestParseAllLabelReplaceMarkers(t *testing.T) {
 	t.Run("single marker", func(t *testing.T) {
 		q := `label_replace(rate({app="api"}[5m]), "host", "$1", "instance", "(.*):.+")`
