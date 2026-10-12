@@ -1,0 +1,40 @@
+id: semantics/label-replace-aggregation-over-transform
+title: An aggregation over a label_replace fails on the proxy and answers on Loki (open)
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (svc_short) (label_replace(sum by (service_name) (rate({env="production"}[5m])),
+  "svc_short", "$1", "service_name", "(.*)-.*"))` is a valid Loki query: the vector
+  aggregation groups what the label_replace evaluator yields
+  (pkg/logql/evaluator.go VectorAggEvaluator over LabelReplaceEvaluator), and Loki
+  answers one series per `svc_short` on both endpoints. The proxy answers a 400 on
+  both: the instant query with "log queries are not supported as an instant query
+  type", query_range with a parse error from VictoriaLogs (the translated query
+  still carries the transform's marker). The base commit answers the same, so the
+  difference is not new: the transform is parsed for the outermost expression of a
+  query, and one that sits under another aggregation is not run in the proxy.
+  An aggregation that does not read the new label is not affected.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (svc_short) (label_replace(sum by (service_name) (rate({env="production"}[5m])), "svc_short", "$1", "service_name", "(.*)-.*"))'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, series labels, values]
+  expect: |
+    One series per svc_short, as Loki answers, on query and query_range.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy proxy.go (handleQuery, handleQueryRange: markers are parsed once, for the outermost expression), vector_matching.go (labelTransforms)'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next over LabelReplaceEvaluator.Next'
+  proxy: '400 from the proxy (instant) or from VictoriaLogs (range): the aggregation is not evaluated over the transformed series'
+  planned_test: 'TestCompat_AggregationOverLabelReplace (test/e2e-compat, group semantics)'
+  clusters: []
