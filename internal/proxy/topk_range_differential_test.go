@@ -390,3 +390,60 @@ func boundaryTie(vec []topKSeries, group func(topKSeries) string, k int, descend
 	}
 	return false
 }
+
+// Loki counts the series of a topk result, the union of those that ranked at
+// some step, against max_query_series (pkg/logql/engine.go JoinSampleVector):
+// an error for a plain client, the first series with a warning for Logs
+// Drilldown. A response over -backend-max-buffered-response-bytes fails before
+// the heaps hold more samples than it could carry.
+// conformance: semantics/topk-bottomk-range-series, limits/top-n-ranking-not-silent, series-limits-and-partial-results
+func TestTopKRangeResultBounds(t *testing.T) {
+	base := time.Unix(1699999200, 0).UTC()
+	start, end := base.Add(10*time.Minute), base.Add(40*time.Minute)
+	backend := newTopKTestBackend(t, topKFixture(1, base, 60))
+	defer backend.Close()
+	query := `topk by (app, env) (1, sum by (app, env) (count_over_time({app=~".+"}[5m])))` // keeps all 12 series
+	params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
+	get := func(p *Proxy, headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, req)
+		return rec
+	}
+	newProxy := func() *Proxy {
+		p := newGapTestProxy(t, backend.URL)
+		p.storeBackendVersion("v1.50.0", "v1.50.0")
+		return p
+	}
+
+	p := newProxy()
+	p.maxStatsQuerySeries = 12
+	if rec := get(p, nil); rec.Code != http.StatusOK {
+		t.Fatalf("a union at the limit is allowed: %d %.200s", rec.Code, rec.Body)
+	}
+	p = newProxy()
+	p.maxStatsQuerySeries = 5
+	rec := get(p, nil)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (5) reached for a single query") {
+		t.Fatalf("a plain client gets Loki's series limit error: %d %.300s", rec.Code, rec.Body)
+	}
+	rec = get(p, map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"})
+	var resp struct {
+		Warnings []string
+		Data     struct{ Result []json.RawMessage }
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || len(resp.Data.Result) != 5 || len(resp.Warnings) != 1 || !strings.Contains(resp.Warnings[0], "maximum number of series (5) reached") {
+		t.Fatalf("Logs Drilldown gets the first 5 series and a warning: %d %.300s", rec.Code, rec.Body)
+	}
+
+	p = newProxy()
+	p.execLimits = defaultExecutionLimits()
+	p.execLimits.BufferedBackendBodyBytes = 4096
+	rec = get(p, nil)
+	if rec.Code < 400 || !strings.Contains(rec.Body.String(), "manual metric response exceeds 4096 bytes") {
+		t.Fatalf("a response over the buffered limit fails: %d %.300s", rec.Code, rec.Body)
+	}
+}
