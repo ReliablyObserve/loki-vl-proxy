@@ -1973,17 +1973,48 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 				return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, baseStddev), true
 			}
 
-			if seriesAgg, ok := seriesLevelOuterAggregation(outerAgg); ok && byLabels != "" {
-				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query)), "__lvp_inner", gate, gateConv)
+			// first_over_time and last_over_time read each series' value through a
+			// row function and unpack it (see firstLastRowStats).
+			seriesExpr, seriesUnpack, firstLast := firstLastRowStats(funcName, statsExpr)
+			// seriesValues is one value per series, grouped by what the query groups by.
+			seriesValues := func(by string) string {
+				if by == "" {
+					by = defaultRateInnerGrouping(query)
+				}
+				return buildStatsQueryGated(logsqlQuery, seriesExpr, by, "__lvp_inner", gate, gateConv) + seriesUnpack +
+					" | stats by (" + strings.ReplaceAll(by, emptyByGrouping, "") + ") max(__lvp_inner)"
+			}
+
+			seriesAgg, seriesAggOK := seriesLevelOuterAggregation(outerAgg)
+			if fn, pow2 := outerAggregationStatsFn(outerAgg); firstLast && !seriesAggOK && fn != "" && !pow2 {
+				// sum by (...) and stddev by (...) aggregate the per-series values, not
+				// the rows of the group. stdvar, topk and bottomk with a grouping are not
+				// translated (they stay the stats function VictoriaLogs rejects, a loud
+				// error, rather than an answer that drops the aggregation).
+				seriesAgg, seriesAggOK = fn+"(__lvp_inner)", true
+			}
+			if seriesAggOK && byLabels != "" {
+				identity := defaultRateInnerGrouping(query)
+				if firstLast {
+					// The same series identity as the ungrouped aggregation.
+					identity = unwrapInnerGrouping(query, "", outerAgg, labelFn, false, "")
+				}
+				innerAliased := buildStatsQueryGated(logsqlQuery, seriesExpr, joinByLabels(innerBy, identity), "__lvp_inner", gate, gateConv) + seriesUnpack
 				result = addByClauseLast(innerAliased+" "+logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String(), byLabels, labelFn)
 				unwrapByLabelsEmbedded = true
 			} else if outerAgg != "" && byLabels == "" {
-				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
+				innerAliased := buildStatsQueryGated(logsqlQuery, seriesExpr, innerBy, "__lvp_inner", gate, gateConv) + seriesUnpack
 				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
 					result = outerResult
+				} else if firstLast {
+					result = seriesValues(innerBy)
 				} else {
 					result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				}
+			} else if firstLast && outerAgg == "" {
+				// A bare function or a range-level by (...): the series' values.
+				result = seriesValues(innerBy)
+				unwrapByLabelsEmbedded = true
 			} else {
 				result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				// buildStatsQuery already embedded byLabels via innerBy
@@ -2045,6 +2076,28 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 	}
 
 	return "", false
+}
+
+// firstLastRowStats is the stats function and the pipes after it that read one
+// value per series for first_over_time and last_over_time. VictoriaLogs has no
+// first or last stats function: Loki's value is the sample with the earliest
+// (first) or the latest (last) timestamp of the series in the window
+// (pkg/logql/range_vector.go FirstOverTime, LastOverTime), which row_min(_time, v)
+// and row_max(_time, v) return as a JSON row. VictoriaLogs reads a row_* result
+// as a label, never as a metric, so the row's value is unpacked into a number
+// that the stats pipe after it aggregates. ok is false for any other function.
+func firstLastRowStats(funcName, statsExpr string) (expr, unpack string, ok bool) {
+	var row string
+	switch funcName {
+	case "first_over_time":
+		row = "row_min"
+	case "last_over_time":
+		row = "row_max"
+	default:
+		return statsExpr, "", false
+	}
+	field := statsExpr[strings.Index(statsExpr, "(")+1 : len(statsExpr)-1]
+	return row + "(_time, " + field + ")", " | unpack_json from __lvp_inner fields (" + UnwrapValueAlias + ") | math " + UnwrapValueAlias + " as __lvp_inner", true
 }
 
 func defaultRateInnerGrouping(query string) string {
