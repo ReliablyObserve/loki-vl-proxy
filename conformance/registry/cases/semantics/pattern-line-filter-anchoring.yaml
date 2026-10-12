@@ -68,6 +68,6 @@ gap:
   area: 'internal/translator translatePatternLineFilter; internal/proxy queryUsesParserStages'
   loki: 'pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-52,124-165 (ParseLineFilter, Matcher.Test); pkg/logql/log/pattern/lexer.rl, expr.y (captures and literals)'
   proxy: 'superset regexp prefilter plus extract into scratch fields and a filter on them, evaluated by VictoriaLogs for log and metric queries'
-  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs (internal/proxy)'
+  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
   note: 'Generated patterns and lines also matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks). The e2e is written and not yet run.'
   clusters: []

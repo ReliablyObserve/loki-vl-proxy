@@ -56,8 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differential of the translated query against a port of Loki's matcher
   (`TestPatternLineFilterAnchoringDifferential`),
   `TestPatternLineFilterAnchoringReachesVictoriaLogs` for the log, range and
-  instant paths, and `TestCompat_PatternLineFilterAnchoring` against Loki
-  (#TBD).
+  instant paths, `TestPatternLineFilterAnchoringDetectedFields` for the
+  Drilldown Fields tab, and `TestCompat_PatternLineFilterAnchoring` against
+  Loki (#TBD).
 
 ## [2.11.2] - 2026-10-12
 

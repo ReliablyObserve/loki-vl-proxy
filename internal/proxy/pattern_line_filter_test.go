@@ -183,3 +183,44 @@ func TestPatternLineFilterIsNotAParserStage(t *testing.T) {
 		}
 	}
 }
+
+// Drilldown's Fields tab sends the active pattern include with
+// /detected_fields: the field listing reads the lines Loki's matcher keeps,
+// and the scratch fields of the filter are deleted before VictoriaLogs lists
+// field names.
+// conformance: semantics/pattern-line-filter-anchoring
+func TestPatternLineFilterAnchoringDetectedFields(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		mu.Lock()
+		seen = append(seen, r.URL.Path+" "+r.FormValue("query"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	defer vl.Close()
+	p := newGapTestProxy(t, vl.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	params := url.Values{"query": {`{namespace="prod"} |> "<_> GET <_> 200"`}, "start": {"1700000000"}, "end": {"1700000600"}}
+	rec := httptest.NewRecorder()
+	p.handleDetectedFields(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/detected_fields?"+params.Encode(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	want := `| extract "<plain:__lvp_pf0_1> GET <plain:__lvp_pf0_2> 200<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_2:* __lvp_pf0_r:"" | delete __lvp_pf*`
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 {
+		t.Fatal("no VictoriaLogs request")
+	}
+	for _, q := range seen {
+		if !strings.Contains(q, want) {
+			t.Errorf("VictoriaLogs request without the exact pattern filter: %s", q)
+		}
+	}
+	if strings.Contains(rec.Body.String(), "__lvp_pf") {
+		t.Errorf("scratch field listed: %s", rec.Body.String())
+	}
+}
