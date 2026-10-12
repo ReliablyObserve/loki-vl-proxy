@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.11.2] - 2026-10-12
+### Fixed
+
+- **`stddev` and `stdvar` with `by` or `without` take the deviation and variance
+  of the series in each group, as Loki does, instead of the group's line count
+  (#TBD).** `stddev by (app) (count_over_time({env="production"}[5m]))` answered
+  1829 for auth-service where Loki 3.7.7 answers 28.0 (the total count of the
+  app's lines; `stdvar` alike, on query_range and instant queries), and some
+  instant `stdvar without (app) (...)` forms answered no `resultType`. Loki's
+  `stddev` and `stdvar` are vector aggregations: at each step every series of the
+  operand falls into the group `by` keeps or `without` leaves, and the group takes
+  the population standard deviation or variance of the series' values with
+  Welford's update, 0 for a group of one series (`pkg/logql/evaluator.go`
+  `VectorAggEvaluator.Next`). `stddev_over_time` and `stdvar_over_time`, which work
+  over the samples inside one window, are a different function and are unchanged.
+  Only the ungrouped `stddev(` / `stdvar(` form reached the route that runs the
+  operand and folds its series; a grouping clause, in either position, went to the
+  translator, which had no series-level form for them and emitted
+  `stats by (app) count()`. The route now reads the operand and the grouping from
+  the parsed query (`by`, `without`, `by ()`, `without ()`, before or after the
+  operand) and folds the operand's series per group and step: one series per
+  group, present at the steps where one of its series has a point, with the
+  labels `by` keeps or `without` leaves, an empty input an empty vector or matrix
+  with its `resultType`, NaN and infinity propagating as in Loki, and `stdvar`
+  computed as the variance itself instead of the square of the deviation.
+  VictoriaLogs computes the operand's per-series values with its native stats
+  (tumbling, sliding and instant, on every supported line); the fold across series
+  is the proxy's, over those values and never over log rows, because VictoriaLogs
+  has no `stdvar` and its `stddev` exists only from v1.49.0. Not changed: a
+  `stddev` or `stdvar` nested in another expression or under a binary operator.
 
 ### CI
 

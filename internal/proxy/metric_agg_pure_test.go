@@ -7,37 +7,30 @@ import (
 	"testing"
 )
 
-func TestPopulationStddev_EmptyReturnsZero(t *testing.T) {
-	if got := populationStddev(nil); got != 0 {
-		t.Fatalf("expected 0 for empty slice, got %v", got)
+func accumulate(vals ...float64) *stddevAccumulator {
+	a := &stddevAccumulator{}
+	for _, v := range vals {
+		a.add(v)
 	}
-	if got := populationStddev([]float64{}); got != 0 {
-		t.Fatalf("expected 0 for zero-length slice, got %v", got)
+	return a
+}
+
+func TestStddevAccumulator_SingleValueIsZero(t *testing.T) {
+	for _, op := range []string{"stddev", "stdvar"} {
+		if got := accumulate(42).result(op); got != 0 {
+			t.Fatalf("%s of one value: want 0, got %v", op, got)
+		}
 	}
 }
 
-func TestPopulationStddev_SingleValueIsZero(t *testing.T) {
-	if got := populationStddev([]float64{42}); got != 0 {
-		t.Fatalf("expected 0 for single-value slice, got %v", got)
-	}
-}
-
-func TestPopulationStddev_KnownDataset(t *testing.T) {
-	// Population stddev of {2,4,4,4,5,5,7,9} is 2.0 (classic textbook example).
+func TestStddevAccumulator_KnownDataset(t *testing.T) {
+	// Population stddev of {2,4,4,4,5,5,7,9} is 2.0 and the variance 4.0 (classic textbook example).
 	vals := []float64{2, 4, 4, 4, 5, 5, 7, 9}
-	got := populationStddev(vals)
-	if math.Abs(got-2.0) > 1e-9 {
-		t.Fatalf("populationStddev want 2.0, got %v", got)
+	if got := accumulate(vals...).result("stddev"); math.Abs(got-2.0) > 1e-9 {
+		t.Fatalf("stddev want 2.0, got %v", got)
 	}
-}
-
-func TestPopulationVariance_IsStddevSquared(t *testing.T) {
-	vals := []float64{2, 4, 4, 4, 5, 5, 7, 9}
-	if got := populationVariance(vals); math.Abs(got-4.0) > 1e-9 {
-		t.Fatalf("populationVariance want 4.0, got %v", got)
-	}
-	if got := populationVariance(nil); got != 0 {
-		t.Fatalf("populationVariance(nil) want 0, got %v", got)
+	if got := accumulate(vals...).result("stdvar"); math.Abs(got-4.0) > 1e-9 {
+		t.Fatalf("stdvar want 4.0, got %v", got)
 	}
 }
 
@@ -71,21 +64,21 @@ func TestApplyConstantBinaryOp_AllOps(t *testing.T) {
 
 func TestApplyMatrixStddevAgg_PassesThroughOnDecodeError(t *testing.T) {
 	bad := []byte(`not-json`)
-	if got := applyMatrixStddevAgg(bad, "stddev"); string(got) != string(bad) {
+	if got := applyMatrixStddevAgg(bad, "stddev", nil); string(got) != string(bad) {
 		t.Fatalf("non-JSON input must pass through unchanged, got %s", got)
 	}
 }
 
 func TestApplyMatrixStddevAgg_PassesThroughOnNonMatrix(t *testing.T) {
 	body := []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
-	if got := applyMatrixStddevAgg(body, "stddev"); string(got) != string(body) {
+	if got := applyMatrixStddevAgg(body, "stddev", nil); string(got) != string(body) {
 		t.Fatalf("vector input must pass through unchanged")
 	}
 }
 
 func TestApplyMatrixStddevAgg_PassesThroughOnNonSuccess(t *testing.T) {
 	body := []byte(`{"status":"error","data":{"resultType":"matrix","result":[]}}`)
-	if got := applyMatrixStddevAgg(body, "stddev"); string(got) != string(body) {
+	if got := applyMatrixStddevAgg(body, "stddev", nil); string(got) != string(body) {
 		t.Fatalf("non-success input must pass through unchanged")
 	}
 }
@@ -100,7 +93,7 @@ func TestApplyMatrixStddevAgg_ComputesPerTimestamp(t *testing.T) {
 	    {"metric":{"app":"b"},"values":[[10,"1"],[20,"8"],[30,"4"]]}
 	  ]}
 	}`)
-	out := applyMatrixStddevAgg(in, "stddev")
+	out := applyMatrixStddevAgg(in, "stddev", nil)
 
 	var parsed struct {
 		Status string `json:"status"`
@@ -134,8 +127,8 @@ func TestApplyMatrixStddevAgg_StdvarBranch(t *testing.T) {
 	    {"metric":{"app":"b"},"values":[[10,"6"]]}
 	  ]}
 	}`)
-	out := applyMatrixStddevAgg(in, "stdvar")
-	// populationVariance({2,6}) = ((2-4)^2 + (6-4)^2)/2 = 4
+	out := applyMatrixStddevAgg(in, "stdvar", nil)
+	// the variance of {2,6} = ((2-4)^2 + (6-4)^2)/2 = 4
 	if want := `"4"`; !strings.Contains(string(out), want) {
 		t.Fatalf("expected stdvar=4 in output, got %s", out)
 	}
@@ -145,20 +138,20 @@ func TestApplyMatrixStddevAgg_StdvarBranch(t *testing.T) {
 
 func TestApplyInstantStddevAgg_PassesThroughOnDecodeError(t *testing.T) {
 	bad := []byte(`not-json`)
-	if got := applyInstantStddevAgg(bad, "stddev"); string(got) != string(bad) {
+	if got := applyInstantStddevAgg(bad, "stddev", nil); string(got) != string(bad) {
 		t.Fatalf("non-JSON input must pass through unchanged, got %s", got)
 	}
 }
 
 func TestApplyInstantStddevAgg_PassesThroughOnNonVector(t *testing.T) {
 	body := []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
-	if got := applyInstantStddevAgg(body, "stddev"); string(got) != string(body) {
+	if got := applyInstantStddevAgg(body, "stddev", nil); string(got) != string(body) {
 		t.Fatalf("matrix input must pass through unchanged")
 	}
 }
 
 func TestApplyInstantStddevAgg_ComputesAcrossSeries(t *testing.T) {
-	// populationStddev({2,4,4,4,5,5,7,9}) = 2.0
+	// the stddev of {2,4,4,4,5,5,7,9} is 2.0
 	in := []byte(`{
 	  "status":"success",
 	  "data":{"resultType":"vector","result":[
@@ -172,7 +165,7 @@ func TestApplyInstantStddevAgg_ComputesAcrossSeries(t *testing.T) {
 	    {"metric":{"a":"s"},"value":[10,"9"]}
 	  ]}
 	}`)
-	out := applyInstantStddevAgg(in, "stddev")
+	out := applyInstantStddevAgg(in, "stddev", nil)
 	if !strings.Contains(string(out), `"2"`) {
 		t.Fatalf("expected stddev=2 in output, got %s", out)
 	}
@@ -186,7 +179,7 @@ func TestApplyInstantStddevAgg_StdvarBranch(t *testing.T) {
 	    {"metric":{},"value":[10,"6"]}
 	  ]}
 	}`)
-	out := applyInstantStddevAgg(in, "stdvar")
+	out := applyInstantStddevAgg(in, "stdvar", nil)
 	if !strings.Contains(string(out), `"4"`) {
 		t.Fatalf("expected stdvar=4 in output, got %s", out)
 	}
