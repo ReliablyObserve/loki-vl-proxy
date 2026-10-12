@@ -41,7 +41,16 @@ why: |
   their limit, metric queries keep the filter inside stats_query_range and
   stats_query, and the extract no longer counts as a parser stage for the
   metric path selection, so no raw rows are read. `<_>` and `literal<_>` keep
-  the plain regexp. extract with `plain:` and html-unescaped texts, field
+  the plain regexp, and the patterns with one literal that Drilldown sends most
+  (`literal`, `<_>literal`, `<_>literal<_>`) need no pipe: a later occurrence
+  ends later, so "the first occurrence is followed by a character" is "some
+  occurrence is", and the filters, each behind the plain regexp for L (a
+  substring search in VictoriaLogs), are `(?s)L.` and not `^L` (nothing starts
+  the line, so no character before the occurrence is needed), `(?s)L$` and not
+  `(?s)L.` and not `^L$` (the first occurrence ends the line and is not the
+  whole line), and `(?s)L$` and not `(?s)L.` (the first occurrence ends the
+  line). Any other pattern still goes through extract.
+  extract with `plain:` and html-unescaped texts, the field
   filters `:*` and `:""`, and `delete prefix*` exist on every supported
   VictoriaLogs version.
 request:
@@ -68,6 +77,6 @@ gap:
   area: 'internal/translator/translator.go translatePatternLineFilter; internal/proxy/range_metric_compat.go queryUsesParserStages'
   loki: 'pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-52,124-165 (ParseLineFilter, Matcher.Test); pkg/logql/log/pattern/lexer.rl, expr.y (captures and literals)'
   proxy: 'superset regexp prefilter plus extract into scratch fields and a filter on them, evaluated by VictoriaLogs for log and metric queries'
-  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential, TestPatternLineFilterAnchoringCorpus (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
-  note: 'The 638 generated and fixed filters (seed 7) on 2,530 lines matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks; 101,528 on the base build), and TestPatternLineFilterAnchoringCorpus replays the same corpus without storage (0 mismatches of 1,614,140 verdicts; 101,414 on the base translation). The e2e passes against Loki 3.7.7 on VictoriaLogs v1.52.0 and v1.47.0. Consecutive and named captures, which Loki rejects with a 400, are the open row semantics/pattern-line-filter-invalid-captures.'
+  planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential, TestPatternLineFilterAnchoringCorpus, TestPatternLineFilterSingleLiteralShapes (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
+  note: 'The 638 generated and fixed filters (seed 7) on 2,530 lines matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks; 101,528 on the base build), and TestPatternLineFilterAnchoringCorpus replays the same corpus without storage (0 mismatches of 1,614,140 verdicts; 101,414 on the base translation), and TestPatternLineFilterSingleLiteralShapes checks the pipe-free single-literal forms on every line over small alphabets (1,792,980 verdicts, overlapping literals included). The e2e passes against Loki 3.7.7 on VictoriaLogs v1.52.0 and v1.47.0. Consecutive and named captures, which Loki rejects with a 400, are the open row semantics/pattern-line-filter-invalid-captures.'
   clusters: []

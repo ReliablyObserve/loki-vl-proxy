@@ -18,8 +18,8 @@
  "result_differs_from_reference": 0,
  "result_differs_preexisting": 0,
  "stale_answers": {
-  "base": 1,
-  "pr": 1,
+  "base": 2,
+  "pr": 2,
   "loki": 0
  },
  "rows": [
@@ -27,140 +27,140 @@
    "shape": "A1 nginx include GET, log query",
    "range": "24h",
    "p50": {
-    "base": 0.017,
-    "pr": 0.022
+    "base": 0.02,
+    "pr": 0.02
    },
    "p95": {
-    "base": 0.035,
-    "pr": 0.028
+    "base": 0.061,
+    "pr": 0.059
    },
    "cold": {
-    "base": 0.18,
-    "pr": 0.239
+    "base": 0.417,
+    "pr": 0.325
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 208.75,
-    "pr": 208.75
+    "base": 264.45,
+    "pr": 264.45
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.77
+   "speedup": 1.0
   },
   {
    "shape": "A2 nginx exclude GET, log query",
    "range": "24h",
    "p50": {
-    "base": 0.014,
-    "pr": 0.013
+    "base": 0.02,
+    "pr": 0.019
    },
    "p95": {
-    "base": 0.016,
-    "pr": 0.023
+    "base": 0.025,
+    "pr": 0.02
    },
    "cold": {
-    "base": 0.127,
-    "pr": 0.093
+    "base": 0.188,
+    "pr": 0.215
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 154.1,
-    "pr": 154.1
+    "base": 128.73,
+    "pr": 128.73
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.08
+   "speedup": 1.05
   },
   {
    "shape": "A3 nginx include GET, count_over_time",
    "range": "24h",
    "p50": {
-    "base": 0.091,
-    "pr": 0.16
+    "base": 0.149,
+    "pr": 0.157
    },
    "p95": {
-    "base": 0.105,
-    "pr": 0.173
+    "base": 0.179,
+    "pr": 0.192
    },
    "cold": {
-    "base": 0.09,
-    "pr": 0.144
+    "base": 0.106,
+    "pr": 0.103
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 235.96,
-    "pr": 235.96
+    "base": 247.36,
+    "pr": 247.36
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.57
+   "speedup": 0.95
   },
   {
    "shape": "A4 nginx exclude GET, count_over_time",
    "range": "24h",
    "p50": {
-    "base": 0.094,
-    "pr": 0.102
+    "base": 0.151,
+    "pr": 0.146
    },
    "p95": {
-    "base": 0.105,
-    "pr": 0.107
+    "base": 0.213,
+    "pr": 0.178
    },
    "cold": {
-    "base": 0.097,
-    "pr": 0.092
+    "base": 0.191,
+    "pr": 0.143
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 235.96,
-    "pr": 235.96
+    "base": 289.21,
+    "pr": 289.21
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.92
+   "speedup": 1.03
   },
   {
    "shape": "A5 drilldown exclude, volume by detected_level",
    "range": "24h",
    "p50": {
-    "base": 0.1,
-    "pr": 0.101
+    "base": 0.136,
+    "pr": 0.137
    },
    "p95": {
-    "base": 0.13,
-    "pr": 0.115
+    "base": 0.166,
+    "pr": 0.144
    },
    "cold": {
-    "base": 0.1,
-    "pr": 0.1
+    "base": 0.132,
+    "pr": 0.141
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 145.69,
-    "pr": 145.69
+    "base": 258.15,
+    "pr": 258.15
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
@@ -172,65 +172,67 @@
    "shape": "A6 nginx include ends on a literal, log query",
    "range": "24h",
    "p50": {
-    "base": 0.014,
-    "pr": 0.012
+    "base": 0.02,
+    "pr": 0.013
    },
    "p95": {
-    "base": 0.018,
+    "base": 0.035,
     "pr": 0.016
    },
    "cold": {
-    "base": 0.127,
-    "pr": 0.171
+    "base": 0.237,
+    "pr": 0.226
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 214.07,
-    "pr": 214.07
+    "base": 245.55,
+    "pr": 245.55
    },
    "stale": [
+    "base",
     "pr"
    ],
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 1.17
+   "speedup": 1.54
   },
   {
    "shape": "A7 nginx exclude ends on a literal, log query",
    "range": "24h",
    "p50": {
-    "base": 0.009,
-    "pr": 0.011
+    "base": 0.014,
+    "pr": 0.026
    },
    "p95": {
-    "base": 0.012,
-    "pr": 0.016
+    "base": 0.017,
+    "pr": 0.037
    },
    "cold": {
-    "base": 0.111,
-    "pr": 0.018
+    "base": 0.129,
+    "pr": 0.195
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 86.77,
-    "pr": 86.77
+    "base": 47.33,
+    "pr": 47.33
    },
    "stale": [
-    "base"
+    "base",
+    "pr"
    ],
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.82
+   "speedup": 0.54
   }
  ]
 }

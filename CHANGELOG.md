@@ -31,11 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queries (the Drilldown volume included) keep the filter inside the stats
   query; that `extract` is not taken for a parser stage, so no raw rows are
   read. `<_>` and `literal<_>` patterns, which a regexp matches exactly, keep
-  the plain regexp. Covered by `TestPatternLineFilterAnchoringEdges`, a
+  the plain regexp, and the patterns with one literal (`literal`,
+  `<_>literal`, `<_>literal<_>`, the ones Drilldown sends most) are plain
+  filters with no `extract`: the first occurrence of the literal decides, and a
+  later one ends later, so `<_>L<_>` is `(?s)L.` and not `^L`, `<_>L` is
+  `(?s)L$` and not `(?s)L.` and not `^L$`, each behind the plain regexp for
+  `L`, which VictoriaLogs answers as a substring search. Covered by `TestPatternLineFilterAnchoringEdges`, a
   differential of the translated query against a port of Loki's matcher
   (`TestPatternLineFilterAnchoringDifferential`) and its seeded corpus of
   638 filters on 2,530 lines (`TestPatternLineFilterAnchoringCorpus`, 1.6M
   verdicts, none different from Loki's; 101,414 on the previous build),
+  `TestPatternLineFilterSingleLiteralShapes` (the single-literal filters on
+  every line over small alphabets, 1.8M verdicts),
   `TestPatternLineFilterAnchoringReachesVictoriaLogs` for the log, range and
   instant paths, `TestPatternLineFilterAnchoringDetectedFields` for the
   Drilldown Fields tab, and `TestCompat_PatternLineFilterAnchoring` against

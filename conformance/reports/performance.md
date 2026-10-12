@@ -114,7 +114,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.00s / 0.00s | differs |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 17 fixed, 8 same | worst 0.07s / 0.04s (6h) | 0.28s / 0.01s | same |
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.03s / 0.03s (1h) | 0.07s / 0.06s | same |
-| `semantics/pattern-line-filter-anchoring` | 7 × 2 ranges | 14 same | worst 0.24s / 0.02s (24h) | — / — | same |
+| `semantics/pattern-line-filter-anchoring` | 7 × 2 ranges | 14 same | worst 0.33s / 0.02s (24h) | — / — | same |
 | `semantics/plain-name-after-parser-reads-stream-label` | 9 × 3 ranges | 17 same | worst 0.12s / 0.06s (1h) | 0.09s / 0.07s | same; 1 slower than Loki cold |
 | `semantics/unwrap-conversion-error` | 9 × 5 ranges | 2 faster, 8 fixed, 23 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 15 slower than Loki cold |
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 8 faster, 6 fixed, 13 same | worst 1.18s / 1.06s (7d) | — / — | differs |
