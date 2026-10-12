@@ -1,0 +1,75 @@
+id: semantics/proxy-accepts-operators-not-in-loki
+title: group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki 3.7.7 has no `group` aggregation and no `label_join`: its lexer makes a
+  function token only of the names in pkg/logql/syntax/lex.go functionTokens
+  (the range operations, sum avg max min count stddev stdvar bottomk topk sort
+  sort_desc approx_topk, vector, label_replace and the unwrap conversions), so
+  any other name is an IDENTIFIER the grammar cannot place (syntax.y vectorOp,
+  rangeOp, labelReplaceExpr, vectorExpr). `group(count_over_time({...}[5m]))`
+  and `label_join(...)` are HTTP 400 `parse error at line 1, col 1: syntax
+  error: unexpected IDENTIFIER`, and so is every PromQL name Loki lacks (abs,
+  clamp, round, ceil, sqrt, ln, scalar, time, quantile, count_values, ...),
+  with the column of the name wherever it stands (`sum(group(...))` is col 5).
+  The proxy's parser kept any unknown `name(...)` as an opaque metric call
+  (OpaqueMetricExpr) for the translator, which implemented group (every value
+  1) and label_join as proxy-only extensions: a client got an answer where
+  Loki answers 400, and a client written against the proxy broke on Loki.
+
+  The other direction: Loki's lexer lower-cases a word before it looks it up
+  (lex.go Lex: tokenTextLower, tokenNext), so `TOPK(3, X)`, `SUM BY (a) (X)`,
+  `RATE(...)`, `OFFSET`, `UNWRAP`, `AND`, `ON`, `GROUP_LEFT`, `BOOL` and the
+  parser keywords are the keywords they spell. A function name counts only when
+  a call follows (lex.go isFunction: "(" or by/without and "("), so a label
+  called Rate or Count stays a label. The proxy matched the lower-case
+  spelling only: `TOPK(...)` fell through the opaque path and answered a
+  `streams` result, `SUM BY (app) (...)` was a parse error.
+
+  Fixed in internal/logql: the scanner reads a keyword in any case (the
+  keyword and function-name sets the dotted-name check already uses), the parser
+  keeps opaque only label_replace, vector and approx_topk and reports any other
+  name as Loki does (the column of the name, relative to the whole query also
+  inside a label_replace argument), and LowercaseKeywords writes the keywords
+  in lower case in the `query` parameter before a handler reads it, so the
+  translator and every handler see the spelling they match. The group
+  post-processing and label_join code (translator markers, proxy response
+  rewriting) became unreachable and was removed.
+
+  Not changed (separate causes, still open): a name Loki rejects with a
+  different grammar error (`sum({app="a"})` col 14 unexpected ")", `avg_over_time`
+  without unwrap "invalid aggregation", `approx_topk by (...)` "grouping not
+  allowed"); keyword-named labels in a selector (`{by="x"}`), whose proxy text
+  is its own; and leading white space, which the proxy trims before it
+  reports a column.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'group(count_over_time({app="api-gateway"}[5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 `parse error at line 1, col 1: syntax error: unexpected
+    IDENTIFIER`, byte for byte; `TOPK(3, RATE({...}[5m]))` answers like the
+    lower-case form.
+gap:
+  status: fixed
+  fixed_by: "#748"
+  impact: api-only
+  effort: S
+  area: 'internal/logql scanner (keyword case) + parser (opaque calls) + semantic (label_replace argument position); internal/proxy lowercaseQueryKeywords'
+  loki: 'pkg/logql/syntax/lex.go:95-137 functionTokens, :226-252 Lex lower-casing, :398 isFunction; syntax.y:477-490 vectorOp, :492-508 rangeOp'
+  proxy: '400 with Loki''s text; keywords accepted in any case'
+  planned_test: 'TestCompat_OperatorsNotInLokiRejected and TestCompat_UppercaseKeywordsMatchLoki (test/e2e-compat, group semantics); TestValidateLogQL_NamesLokiDoesNotKnowAreRejected, TestValidateLogQL_KeywordsAreCaseInsensitive and TestLowercaseKeywords (internal/logql); TestUnknownLogQLNamesRejectedLikeLoki and TestUppercaseKeywordsSendTheLowercaseBackendRequests (internal/proxy)'
+  note: 'Messages from Loki v3.7.7 syntax.ParseExpr, run on the same queries. The e2e vs Loki is written, not yet run.'
+  clusters: []

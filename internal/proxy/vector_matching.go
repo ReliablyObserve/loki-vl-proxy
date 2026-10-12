@@ -624,7 +624,7 @@ func applyArithmeticOp(left, right float64, op string) float64 {
 	}
 }
 
-// --- group() / label_replace() / label_join() post-processing ---
+// --- label_replace() post-processing ---
 
 // matrixResponseRW is a minimal struct for parsing and re-encoding a Loki matrix response.
 type matrixResponseRW struct {
@@ -636,27 +636,6 @@ type matrixResponseRW struct {
 			Values [][]interface{}   `json:"values"`
 		} `json:"result"`
 	} `json:"data"`
-}
-
-// applyGroupNormalization sets every sample value in a matrix response to "1",
-// implementing group() semantics (return 1 for each series that has data).
-func applyGroupNormalization(body []byte) []byte {
-	var resp matrixResponseRW
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
-		return body
-	}
-	for i := range resp.Data.Result {
-		for j := range resp.Data.Result[i].Values {
-			if len(resp.Data.Result[i].Values[j]) >= 2 {
-				resp.Data.Result[i].Values[j][1] = "1"
-			}
-		}
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 // applyLabelReplace applies label_replace semantics to all series in a matrix response.
@@ -682,29 +661,6 @@ func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
 				delete(resp.Data.Result[i].Metric, spec.DstLabel)
 			}
 		}
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return out
-}
-
-// applyLabelJoin applies label_join semantics to all series in a matrix response.
-// dst_label is set to the src_labels values joined by separator.
-func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
-	var resp matrixResponseRW
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
-		return body
-	}
-	for i, s := range resp.Data.Result {
-		parts := make([]string, 0, len(spec.SrcLabels))
-		for _, src := range spec.SrcLabels {
-			if v := s.Metric[src]; v != "" {
-				parts = append(parts, v)
-			}
-		}
-		resp.Data.Result[i].Metric[spec.DstLabel] = strings.Join(parts, spec.Separator)
 	}
 	out, err := json.Marshal(resp)
 	if err != nil {

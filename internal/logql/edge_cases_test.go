@@ -874,7 +874,7 @@ func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
 	}
 }
 
-// ─── label_replace / label_join – extended coverage ──────────────────────────
+// ─── label_replace – extended coverage ──────────────────────────────────────
 
 func TestEdge_LabelReplace_Extended(t *testing.T) {
 	valid := []string{
@@ -888,16 +888,8 @@ func TestEdge_LabelReplace_Extended(t *testing.T) {
 		`label_replace(sum by(app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`,
 		// label_replace on vector agg
 		`label_replace(avg by(level)(rate({app="a"}[5m])), "lvl", "$1", "level", "(.*)")`,
-		// label_join with two labels
-		`label_join(sum by(app, level)(count_over_time({env="production"}[5m])), "combined", "/", "app", "level")`,
-		// label_join with single label
-		`label_join(sum by(app)(rate({env="production"}[5m])), "svc_copy", "_", "app")`,
-		// label_join with three labels
-		`label_join(sum by(app, env, level)(count_over_time({env="production"}[5m])), "full", ".", "app", "env", "level")`,
 		// nested label_replace
 		`label_replace(label_replace(rate({app="a"}[5m]), "a", "$1", "b", "(.*)"), "c", "x", "d", "(.*)")`,
-		// label_join of label_replace output
-		`label_join(label_replace(sum by(app)(rate({app="a"}[5m])), "svc", "$1", "app", "(.*)"), "combined", "/", "svc", "env")`,
 		// label_replace inside topk
 		`topk(5, label_replace(sum by(app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)"))`,
 	}

@@ -46,7 +46,7 @@ flowchart TD
         LQ["*LogQuery\n(stream + pipeline)"]
         RA["*RangeAggregation\n(rate, max_over_time…)"]
         BE["*BinOpExpr\n(left op right)"]
-        OM["*OpaqueMetricExpr\n(label_replace, label_join…)"]
+        OM["*OpaqueMetricExpr\n(label_replace, vector…)"]
         VA["*VectorAggregation\n(sum by, topk…)"]
     end
 
@@ -128,7 +128,7 @@ Expr (interface)
 ├── *VectorAggregation       sum by (label) (rate(...)) / topk(5, ...)
 ├── *BinOpExpr               left op right, optional VectorMatching
 ├── *LiteralExpr             scalar 3.14
-└── *OpaqueMetricExpr        label_replace(...), label_join(...) — raw pass-through
+└── *OpaqueMetricExpr        label_replace(...), vector(...) — raw pass-through
 ```
 
 ### Opaque pass-through nodes
@@ -137,7 +137,7 @@ Two node types capture content without parsing it:
 
 - **`LabelFilterStage`** / **`LabelFormatStage`** — the inner expression grammar for `| level > 1` or `| label_format dst=src` is complex and context-dependent. These stages capture the raw text after the keyword so the translator sees exactly what Loki would see.
 
-- **`OpaqueMetricExpr`** — metric-level functions that aren't yet expressible in the AST (e.g. `label_replace`, `label_join`). The parser captures the full raw text including balanced parentheses and returns it verbatim so VictoriaLogs receives the original expression unchanged.
+- **`OpaqueMetricExpr`** — metric-level functions that aren't yet expressible in the AST (`label_replace`, `vector`, `approx_topk`; any other name is a Loki parse error). The parser captures the full raw text including balanced parentheses and returns it verbatim so VictoriaLogs receives the original expression unchanged.
 
 ## Scanner
 
@@ -262,7 +262,7 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 | `*RangeAggregation` | any | `errFallthrough` | Metric path via string translator |
 | `*VectorAggregation` | any | `errFallthrough` | Metric path via string translator |
 | `*BinOpExpr` | any | `errFallthrough` | Binary metric path |
-| `*OpaqueMetricExpr` | any | raw pass-through | `label_replace`, `label_join` etc. |
+| `*OpaqueMetricExpr` | any | raw pass-through | `label_replace`, `vector`, `approx_topk` |
 
 `errFallthrough` is a package-private sentinel — callers route to `TranslateLogQLWithCapabilities` unchanged.
 
