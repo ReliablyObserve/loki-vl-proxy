@@ -403,6 +403,7 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 			name := fmt.Sprintf("version=%s/instant=%v", version, instant)
 			t.Run(name, func(t *testing.T) {
 				rnd := rand.New(rand.NewSource(int64(len(name))*6151 + 3))
+				offGrid := 0
 				for i := 0; i < 40; i++ {
 					s := generateUnwrapScenario(rnd, "rate", "", instant)
 					if s.step > 0 && rnd.Intn(2) == 0 { // the other half starts off the step grid
@@ -410,17 +411,10 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 						s.end -= s.end % int64(s.step)
 					}
 					expr, chain := generateBinaryAggregation(rnd)
-					times := s.times()
-					if s.step > 0 && expr.joinsVectors() {
-						// A join of two vectors evaluates on the step-aligned grid, as
-						// Loki's query frontend with align_queries_with_step (the
-						// compose stack's Loki); with a literal only, at
-						// start+k*step, as a Loki without it
-						// (TestBinaryMixedWindowsShareStepAlignedAxis).
-						aligned := s
-						aligned.start -= aligned.start % int64(s.step)
-						aligned.end -= aligned.end % int64(s.step)
-						times = aligned.times()
+					if s.step > 0 && s.start%int64(s.step) != 0 && expr.joinsVectors() {
+						// Loki evaluates at start+k*step; a join of two vectors evaluates
+						// on the step-aligned grid instead (semantics/binary-step-grid).
+						continue
 					}
 					for j := range s.rows {
 						pod := s.rows[j].stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
@@ -438,7 +432,7 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 						query = agg.wrap(query)
 					}
 					want := map[string]map[int64]float64{}
-					for _, ts := range times {
+					for _, ts := range s.times() {
 						samples, _, _ := expr.eval(s.rows, ts, int64(s.window))
 						for _, agg := range chain {
 							samples = agg.apply(samples)
@@ -455,6 +449,12 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 					got, _ := binaryAggregationAnswer(t, emu, query, s.start, s.end, s.step)
 					label := fmt.Sprintf("%s #%d %s step=%v window=%v rows=%d", name, i, query, s.step, s.window, len(s.rows))
 					compareBinaryAggregation(t, label, got, want)
+					if s.step > 0 && s.start%int64(s.step) != 0 {
+						offGrid++
+					}
+				}
+				if !instant && offGrid == 0 {
+					t.Fatal("no scenario started off the step grid")
 				}
 			})
 		}

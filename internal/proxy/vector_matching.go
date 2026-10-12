@@ -570,6 +570,9 @@ func excludeKey(metric map[string]string, exclude map[string]bool) string {
 	return strings.Join(parts, ",")
 }
 
+// metricKeyStr is a label set as sorted `name=value` text joined by commas. It
+// is not a unique key (a value may hold `,` or `=`): a fold keys by
+// binaryLabelKey.
 func metricKeyStr(metric map[string]string) string {
 	var parts []string
 	for k, v := range metric {
