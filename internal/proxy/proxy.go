@@ -2384,7 +2384,13 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	// A label_replace or label_join around a binary expression routes by that
+	// expression: its operands are evaluated, then the transform is applied below.
+	routedQuery := logqlQuery
+	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		routedQuery = stripLabelTransforms(logqlQuery)
+	}
+	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
 		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
@@ -2395,6 +2401,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
+			if routedQuery != logqlQuery {
+				r = cloneMetricQueryRequest(r, routedQuery)
+			}
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {

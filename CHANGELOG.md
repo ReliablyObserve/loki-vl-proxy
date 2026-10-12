@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`label_replace` adds its destination label to instant answers, reads an
+  escaped regexp, and runs under `topk`, `sort` and a binary expression (#TBD).**
+  `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
+  "(.*)-.*")` came back from `/loki/api/v1/query` without `app_short` on every
+  series (also through nested `label_replace`), where Loki adds it
+  (`pkg/logql/evaluator.go` `LabelReplaceEvaluator.Next`): the proxy applied the
+  transform to range matrices only. It now rewrites the labels of a vector and
+  of a matrix alike, keeps the rest of the answer, and expands the replacement
+  the way Loki does (`$1`, `${1}`, `$name`, `$$`; an empty expansion removes the
+  destination), with the anchored regexp. Two series that end with one label
+  set stay two samples on an instant query and become one series on a range
+  query, as `JoinSampleVector` does, and no error is raised, as in Loki. Also
+  fixed: the string arguments are unquoted like the LogQL lexer does, so a
+  regexp written `"(\\w+)\\.(\\w+)"` matches (the backslashes used to be kept,
+  and the regexp never matched) and an escaped quote no longer ends the
+  argument; `topk`, `bottomk`, `sort` and `stddev` over a `label_replace` sent
+  the translator's marker to VictoriaLogs and now rank what the transform
+  produced; and a `label_replace` around a binary expression on `query_range`
+  sent the binary marker to VictoriaLogs, as the instant path used to. An
+  invalid regexp under those wrappers is Loki's `parse error : invalid regex in
+  label_replace` 400. `label_replace(sum without (level) (...), ...)` kept the
+  excluded label and lost the transform, because the `without` marker swallowed
+  the `label_replace` marker after it; and a call without the four string
+  arguments of Loki's grammar, or with an invalid escape in one, was taken for a
+  log query (an empty `streams` answer on `query_range`) and is now a 400 parse
+  error on both endpoints.
 - **An instant query is answered with its failure status and a resultType, as
   Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
   (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
