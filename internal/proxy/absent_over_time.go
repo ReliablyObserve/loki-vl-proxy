@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // absent_over_time (Loki v3.7.7).
@@ -45,12 +48,33 @@ type absentOverTimeCompatSpec struct {
 	rangeWindow    time.Duration
 	rangeWindowStr string
 	aggs           []*logqlpkg.VectorAggregation
+	// labelReplaces are the label_replace calls around it, outermost first.
+	labelReplaces []translator.LabelReplaceSpec
+	// err is Loki's parse error for a form it rejects; the handlers answer 400.
+	err string
 }
 
+// errAbsentGrouping is Loki's rejection of `absent_over_time(...) by (...)`
+// (pkg/logql/syntax/ast.go:1439-1447 RangeAggregationExpr.validate, wrapped as a
+// ParseError at :1409).
+const errAbsentGrouping = "parse error : grouping not allowed for absent_over_time aggregation"
+
 // parseAbsentOverTimeCompatSpec reads absent_over_time(<log query>[range]),
-// alone or under vector aggregations. A sort around it is not folded here.
+// alone or under vector aggregations and label_replace calls.
 func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool) {
 	query := strings.TrimSpace(logql)
+	var replaces []translator.LabelReplaceSpec
+	for {
+		inner, spec, ok := translator.SplitLabelReplace(query)
+		if !ok {
+			break
+		}
+		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
+			return absentOverTimeCompatSpec{}, false // the label_replace handlers report it
+		}
+		replaces = append(replaces, spec)
+		query = strings.TrimSpace(inner)
+	}
 	var aggs []*logqlpkg.VectorAggregation
 	var absent *logqlpkg.RangeAggregation
 	if expr, err := logqlpkg.Parse(query); err == nil {
@@ -60,9 +84,6 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 			if !ok {
 				break
 			}
-			if agg.Op == logqlpkg.VectorSort || agg.Op == logqlpkg.VectorSortDesc {
-				return absentOverTimeCompatSpec{}, false
-			}
 			aggs = append(aggs, agg)
 			node = agg.Inner
 		}
@@ -70,13 +91,16 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 		if !ok || ra.Op != logqlpkg.RangeAbsentOverTime {
 			return absentOverTimeCompatSpec{}, false
 		}
+		if ra.Grouping != nil {
+			return absentOverTimeCompatSpec{err: errAbsentGrouping}, true
+		}
 		absent = ra
 		query = ra.String()
 	} else if !absentOverTimeCompatRE.MatchString(query) {
 		return absentOverTimeCompatSpec{}, false
 	}
 	matches := absentOverTimeCompatRE.FindStringSubmatch(query)
-	if len(matches) != 3 || (absent != nil && absent.Grouping != nil) {
+	if len(matches) != 3 || (absent == nil && len(aggs) > 0) {
 		return absentOverTimeCompatSpec{}, false
 	}
 	window, ok := parsePositiveStepDuration(matches[2])
@@ -87,7 +111,18 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	if baseQuery == "" {
 		return absentOverTimeCompatSpec{}, false
 	}
-	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window, rangeWindowStr: matches[2], aggs: aggs}, true
+	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window, rangeWindowStr: matches[2], aggs: aggs, labelReplaces: replaces}, true
+}
+
+// invalid returns the message of the 400 a spec the handlers cannot answer gets.
+func (s absentOverTimeCompatSpec) invalid() string {
+	switch {
+	case s.err != "":
+		return s.err
+	case s.rangeWindowStr == "":
+		return "absent_over_time: missing range window"
+	}
+	return ""
 }
 
 // unwrapped reports whether the log query unwraps a label.
@@ -135,13 +170,16 @@ func absentOverTimeLabels(baseQuery string) map[string]string {
 // series folds the one absent series through the vector aggregations, as
 // VectorAggEvaluator folds a single series (pkg/logql/evaluator.go:435-529):
 // the grouping keeps or drops labels, count is 1, stddev and stdvar are 0, sum,
-// avg, min and max keep the value, topk and bottomk keep the series whole (none
-// for k < 1). ok is false when no series is left.
+// avg, min and max keep the value, topk, bottomk and sort keep the series whole
+// (none for k < 1), and label_replace then rewrites its labels. ok is false when
+// no series is left.
 func (s absentOverTimeCompatSpec) series() (labels map[string]string, value string, ok bool) {
 	labels, value = absentOverTimeLabels(s.baseQuery), "1"
 	for i := len(s.aggs) - 1; i >= 0; i-- {
 		agg := s.aggs[i]
 		switch agg.Op {
+		case logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+			continue // a sort keeps the series whole (evaluator.go:506-516)
 		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
 			if int(agg.Param) < 1 {
 				return nil, "", false
@@ -171,14 +209,20 @@ func (s absentOverTimeCompatSpec) series() (labels map[string]string, value stri
 		}
 		labels = kept
 	}
+	for i := len(s.labelReplaces) - 1; i >= 0; i-- {
+		spec := s.labelReplaces[i]
+		replaceLabel(labels, regexp.MustCompile("^(?:"+spec.Regex+")$"), spec)
+	}
 	return labels, value, true
 }
 
 // absentPresenceDegraded reports a presence answer that is a stand-in for a
-// failed or suppressed one (an empty 200 with a partial-result warning, the
-// split-residual suppression): inverting it would claim data is absent.
-func absentPresenceDegraded(h http.Header) bool {
-	return h.Get("Warning") != "" || h.Get("X-Proxy-Drilldown-Path") != "" || h.Get("X-Proxy-Upstream-Status") != ""
+// failed or suppressed one: the partial-result reply (headers), the split
+// residual suppression, and the series-limit partial whose warning is in the
+// body (the body is authoritative, http_utils.go writeDrilldownPartialFromUpstream).
+// Inverting it would claim data is absent.
+func absentPresenceDegraded(h http.Header, body []byte) bool {
+	return h.Get("Warning") != "" || h.Get("X-Proxy-Drilldown-Path") != "" || h.Get("X-Proxy-Upstream-Status") != "" || hasTopLevelWarnings(body)
 }
 
 // presenceAnswer runs the presence query through the metric path (handle is
@@ -188,7 +232,7 @@ func (p *Proxy) presenceAnswer(w http.ResponseWriter, r *http.Request, spec abse
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: http.StatusOK}
 	handle(sc, cloneMetricQueryRequest(r, spec.presenceQuery()))
-	if sc.code != http.StatusOK || absentPresenceDegraded(bw.header) {
+	if sc.code != http.StatusOK || absentPresenceDegraded(bw.header, bw.body) {
 		copyHeaders(w.Header(), bw.header)
 		w.WriteHeader(sc.code)
 		_, _ = w.Write(bw.body)
@@ -233,7 +277,8 @@ func presenceSteps(body []byte, unwrapped bool) map[int64]bool {
 }
 
 // finishAbsent writes the answer. The request itself was counted by the
-// presence query's handler; only the query as the client wrote it is tracked.
+// presence query's handler, which also tracked the presence query; the query as
+// the client wrote it is tracked here.
 func (p *Proxy) finishAbsent(w http.ResponseWriter, endpoint, originalQuery string, start time.Time, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
@@ -243,8 +288,8 @@ func (p *Proxy) finishAbsent(w http.ResponseWriter, endpoint, originalQuery stri
 // proxyAbsentOverTimeQuery answers absent_over_time at /query: the series at
 // the evaluation time when no sample is in (time-range, time], nothing otherwise.
 func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	if spec.rangeWindowStr == "" {
-		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+	if msg := spec.invalid(); msg != "" {
+		p.writeError(w, http.StatusBadRequest, msg)
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
@@ -271,8 +316,8 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 // series valued 1 at each step start, start+step, ... end whose window holds no
 // sample, no series when every window holds one.
 func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	if spec.rangeWindowStr == "" {
-		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+	if msg := spec.invalid(); msg != "" {
+		p.writeError(w, http.StatusBadRequest, msg)
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
@@ -315,4 +360,105 @@ func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]
 	}
 	out, _ := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": result}})
 	return out
+}
+
+// isAbsentOverTimeQuery reports whether the query is one the absent handlers
+// answer, offset or not.
+func isAbsentOverTimeQuery(query string) bool {
+	_, stripped, err := extractLogQLOffset(query)
+	if err != nil {
+		return false
+	}
+	spec, ok := parseAbsentOverTimeCompatSpec(stripped)
+	return ok && spec.err == ""
+}
+
+// mergeAbsentMultiTenant merges the per-tenant answers of an absent_over_time.
+// Loki's multi-tenant querier merges the tenants' samples into one iterator
+// before the evaluator runs (pkg/querier/multi_tenant_querier.go SelectSamples),
+// so a step is absent only when no tenant has a sample, and the series carries
+// the selector's labels alone, never __tenant_id__ (evaluator.go absentLabels).
+// A tenant's answer holds a step exactly when it has no sample there, so the
+// merged answer is the steps every tenant holds, per series. Samples are
+// compared by label set and value, which the tenants share.
+func mergeAbsentMultiTenant(recorders []*httptest.ResponseRecorder) ([]byte, error) {
+	type point struct {
+		ts    string
+		value string
+	}
+	var resultType string
+	var order []string
+	metrics := map[string]map[string]string{}
+	counts := map[string]map[point]int{} // series key -> point -> tenants holding it
+	seen := map[string]int{}             // series key -> tenants holding the series
+	points := map[string][][]any{}       // series key -> samples in first-seen order
+	for _, rec := range recorders {
+		var resp struct {
+			Data struct {
+				ResultType string            `json:"resultType"`
+				Result     []json.RawMessage `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, err
+		}
+		resultType = resp.Data.ResultType
+		for _, raw := range resp.Data.Result {
+			var item struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+				Value  []any             `json:"value"`
+			}
+			if err := json.Unmarshal(raw, &item); err != nil {
+				return nil, err
+			}
+			key, _ := json.Marshal(item.Metric)
+			k := string(key)
+			if _, ok := metrics[k]; !ok {
+				metrics[k] = item.Metric
+				counts[k] = map[point]int{}
+				order = append(order, k)
+			}
+			seen[k]++
+			vs := item.Values
+			if item.Value != nil {
+				vs = [][]any{item.Value}
+			}
+			for _, v := range vs {
+				if len(v) < 2 {
+					continue
+				}
+				pt := point{fmt.Sprint(v[0]), fmt.Sprint(v[1])}
+				if counts[k][pt] == 0 {
+					points[k] = append(points[k], v)
+				}
+				counts[k][pt]++
+			}
+		}
+	}
+	matrix, vector := []lokiMatrixResult{}, []lokiVectorResult{}
+	for _, k := range order {
+		if seen[k] != len(recorders) {
+			continue
+		}
+		var held [][]any
+		for _, v := range points[k] {
+			if counts[k][point{fmt.Sprint(v[0]), fmt.Sprint(v[1])}] == len(recorders) {
+				held = append(held, v)
+			}
+		}
+		if len(held) == 0 {
+			continue
+		}
+		if resultType == "vector" {
+			vector = append(vector, lokiVectorResult{Metric: metrics[k], Value: held[0]})
+		} else {
+			matrix = append(matrix, lokiMatrixResult{Metric: metrics[k], Values: held})
+		}
+	}
+	var result any = matrix
+	if resultType == "vector" {
+		result = vector
+	}
+	return json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": resultType, "result": result}})
 }

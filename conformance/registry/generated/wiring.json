@@ -531,9 +531,11 @@
       "test/e2e-compat/detected_level_corpus_test.go"
     ],
     "status-400": [
+      "internal/proxy/absent_over_time_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/volume_test.go",
+      "test/e2e-compat/absent_over_time_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go"
     ],
     "tenant-query-limits": [
@@ -584,7 +586,8 @@
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/absent_over_time_test.go": [
-      "semantics/absent-over-time-semantics"
+      "semantics/absent-over-time-semantics",
+      "status-400"
     ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -924,6 +927,7 @@
       "loki_api_v1_query_range",
       "metric-series-identity",
       "semantics/absent-over-time-semantics",
+      "status-400",
       "window-bounds-and-step-alignment"
     ],
     "test/e2e-compat/bad_request_status_parity_test.go": [

@@ -117,7 +117,14 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	body, contentType, err := mergeMultiTenantResponses(endpoint, successTenants, recorders)
+	var body []byte
+	var contentType string
+	if (endpoint == "query" || endpoint == "query_range") && isAbsentOverTimeQuery(filteredReq.FormValue("query")) {
+		body, err = mergeAbsentMultiTenant(recorders)
+		contentType = "application/json"
+	} else {
+		body, contentType, err = mergeMultiTenantResponses(endpoint, successTenants, recorders)
+	}
 	if err != nil {
 		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 		return true

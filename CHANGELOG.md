@@ -43,7 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ones that would fire every absence alert. An unwrapped value Loki's conversion
   rejects now fails `absent_over_time` with Loki's 400 pipeline error, as it does
   `rate`, where the proxy answered 200; parser error lines keep the behaviour of
-  `count_over_time` (#737).
+  `count_over_time`. A `sort`/`sort_desc` around it keeps the series whole instead of
+  answering the inner count, a `label_replace` around it rewrites the absent
+  series' labels, and `absent_over_time(...) by (app)` is Loki's 400 `grouping not
+  allowed for absent_over_time aggregation` instead of a 200 with counts. A
+  multi-tenant request (`X-Scope-OrgID: a|b`) used to answer a `__tenant_id__`
+  series at every step of an empty tenant even when another tenant had data;
+  Loki's multi-tenant querier merges the tenants' samples before the evaluator
+  runs, so a step is absent only when no tenant has a line there and the series
+  never carries `__tenant_id__`, which the proxy now matches. A Drilldown
+  series-limit partial (the warning is in the body) is passed on, not inverted
+  (#737).
 
 ## [2.11.2] - 2026-10-12
 

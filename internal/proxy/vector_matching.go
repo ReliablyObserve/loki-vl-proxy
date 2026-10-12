@@ -672,22 +672,29 @@ func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
 		return body
 	}
 	for i, s := range resp.Data.Result {
-		src := s.Metric[spec.SrcLabel]
-		// Prometheus semantics: if regex matches, apply replacement; if not, series unchanged.
-		if re.MatchString(src) {
-			newVal := re.ReplaceAllString(src, spec.Replacement)
-			if newVal != "" {
-				resp.Data.Result[i].Metric[spec.DstLabel] = newVal
-			} else {
-				delete(resp.Data.Result[i].Metric, spec.DstLabel)
-			}
-		}
+		replaceLabel(s.Metric, re, spec)
+		resp.Data.Result[i].Metric = s.Metric
 	}
 	out, err := json.Marshal(resp)
 	if err != nil {
 		return body
 	}
 	return out
+}
+
+// replaceLabel applies label_replace to one label set. Prometheus semantics: if
+// the regex matches the source value, the replacement is set (or the label
+// removed when it is empty); if not, the labels are unchanged.
+func replaceLabel(metric map[string]string, re *regexp.Regexp, spec translator.LabelReplaceSpec) {
+	src := metric[spec.SrcLabel]
+	if !re.MatchString(src) {
+		return
+	}
+	if newVal := re.ReplaceAllString(src, spec.Replacement); newVal != "" {
+		metric[spec.DstLabel] = newVal
+	} else {
+		delete(metric, spec.DstLabel)
+	}
 }
 
 // applyLabelJoin applies label_join semantics to all series in a matrix response.
