@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operands run as instant queries and combine, and the transform applies to the
   result. Also on the instant endpoint: a scalar literal (`1`, `-1`) answers a
   `scalar` as Loki's `evalLiteral` does, where it was rejected as a log query,
-  also under a multi-tenant `X-Scope-OrgID`; `vector(1)` and `vector(1) +
-  vector(2)` stamp their sample in seconds like every other sample
-  (`pkg/util/marshal/query.go` `NewVector`) where they carried nanoseconds; and
+  also under a multi-tenant `X-Scope-OrgID`; `vector(1)`, `vector(1) + 2` and
+  `vector(1) + vector(2)` are evaluated as constants (a literal division by zero
+  is NaN, as in Loki's `MergeBinOp`) and stamp their sample in seconds like
+  every other sample (`pkg/util/marshal/query.go` `NewVector`) where they
+  carried nanoseconds; the first argument of a `label_replace` or `label_join`
+  is split outside strings and brackets, so a `)` or `,` in a line filter or a
+  matcher no longer breaks the translation; and
   a log query sent with every tenant filtered out by `__tenant_id__` is rejected
   with Loki's 400 for a log query as an instant query, not answered with an
   empty `streams`. An aggregation over a binary expression (`sum by (job) (a /

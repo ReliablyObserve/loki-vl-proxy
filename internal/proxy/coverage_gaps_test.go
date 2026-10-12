@@ -290,7 +290,11 @@ func TestEvaluateConstantInstantQuery(t *testing.T) {
 		{name: "vector literal", query: `vector(1)`, timeParam: "4", wantValue: "1", wantTS: 4, expectEval: true},
 		{name: "binary add", query: `vector(1)+vector(1)`, timeParam: "4", wantValue: "2", wantTS: 4, expectEval: true},
 		{name: "binary divide", query: `vector(9) / vector(3)`, timeParam: "4", wantValue: "3", wantTS: 4, expectEval: true},
-		{name: "divide by zero", query: `vector(1)/vector(0)`, timeParam: "4", expectEval: false},
+		{name: "divide by zero is NaN like Loki", query: `vector(1)/vector(0)`, timeParam: "4", wantValue: "NaN", wantTS: 4, expectEval: true},
+		{name: "vector plus scalar", query: `vector(1) + 2`, timeParam: "4", wantValue: "3", wantTS: 4, expectEval: true},
+		{name: "scalar times vector", query: `3 * vector(2)`, timeParam: "4", wantValue: "6", wantTS: 4, expectEval: true},
+		{name: "vector divided by scalar zero", query: `vector(1) / 0`, timeParam: "4", wantValue: "NaN", wantTS: 4, expectEval: true},
+		{name: "vector comparison needs the generic path", query: `vector(1) > 0`, timeParam: "4", expectEval: false},
 		{name: "non vector", query: `{app="api"}`, timeParam: "4", expectEval: false},
 	}
 

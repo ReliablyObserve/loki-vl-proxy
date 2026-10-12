@@ -171,10 +171,18 @@ func instantShapes() []instantShape {
 		{"parity f2066991 unwrap ratio", `label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )`, "vector"},
 		{"parity f2066991 offset", `label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] offset 1h ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m] offset 1h) ), "foo", "$1", "service", "(.*):.*" )`, "vector"},
 		{"parity ce65447e stdvar without", `stdvar without (app) (count_over_time(({namespace="prod"} |~".+bar")[1m]))`, "vector"},
+		// a quote or bracket in the expression under a label transform
+		{"label_replace of binary with a quoted paren", `label_replace(rate(` + instantNS + ` |= ")" [5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, "vector"},
+		{"label_replace of binary with a regex paren", `label_replace(rate({a=~"x\\(y"}[5m]) + rate({b="z"}[5m]), "d", "$1", "app", "(.*)")`, "vector"},
+		{"label_replace of binary with a backtick", "label_replace(rate(" + instantNS + " |= `,)` [5m]) + rate({b=\"z\"}[5m]), \"d\", \"$1\", \"app\", \"(.*)\")", "vector"},
 		// constants
 		{"vector()", `vector(1)`, "vector"},
 		{"vector binary", `vector(1) + vector(2)`, "vector"},
 		{"vector compared", `vector(1) > bool 0`, "vector"},
+		{"vector plus scalar", `vector(1) + 2`, "vector"},
+		{"scalar plus vector", `1 + vector(2)`, "vector"},
+		{"vector divided by zero", `vector(1) / 0`, "vector"},
+		{"scalar divided by zero", `1 / 0`, "scalar"},
 		{"scalar literal", `1`, "scalar"},
 		{"negative literal", `-1`, "scalar"},
 		{"scalar binary", `1 + 1`, "scalar"},
@@ -460,10 +468,32 @@ func TestStripLabelTransforms(t *testing.T) {
 		{`label_join(sum by (a, b) (rate({a="b"}[1m])), "z", "-", "a", "b")`, `sum by (a, b) (rate({a="b"}[1m]))`},
 		{`label_join(label_replace( x + y , "x", "$1", "a", "(.*)"), "z", "-", "a")`, `x + y`},
 		{`label_replace(rate({a="b"}[1m])`, `label_replace(rate({a="b"}[1m])`}, // no argument list: left as it is
+		// strings and brackets hide their commas and parentheses
+		{`label_replace(rate({a=") , ("}[5m]), "d","$1","s","(.*)")`, `rate({a=") , ("}[5m])`},
+		{`label_replace(rate({a="x"} |= ")" [5m]) + rate({b="z"}[5m]), "d","$1","s","(.*)")`, `rate({a="x"} |= ")" [5m]) + rate({b="z"}[5m])`},
+		{`label_replace(rate({a=~"x(y"}[5m]) + rate({b="z"}[5m]), "d","$1","s","(.*)")`, `rate({a=~"x(y"}[5m]) + rate({b="z"}[5m])`},
+		{"label_replace(rate({a=\"x\"} |= `,)(` [5m]) + rate({b=\"z\"}[5m]), \"d\",\"$1\",\"s\",\"(.*)\")", "rate({a=\"x\"} |= `,)(` [5m]) + rate({b=\"z\"}[5m])"},
+		{`label_join(label_replace(rate({a="\",)"}[5m]), "d","$1","s","(.*)"), "z", "-", "a")`, `rate({a="\",)"}[5m])`},
 		{`label_replace(`, `label_replace(`},
 	} {
 		if got := stripLabelTransforms(tc.in); got != tc.want {
 			t.Errorf("stripLabelTransforms(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// With every tenant filtered out, an unparseable query is a parse error, not a
+// log query.
+// conformance: semantics/instant-result-type-missing, loki_api_v1_query
+func TestInstantQueryMultiTenantNoTenantUnparseable(t *testing.T) {
+	p := newTestProxy(t, instantBackend(t, instantBackendData).URL)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+url.Values{"query": {`{__tenant_id__="nobody"} | json | (`}, "time": {"1704067200"}}.Encode(), nil)
+	req.Header.Set("X-Scope-OrgID", "a|b")
+	rec := httptest.NewRecorder()
+	if !p.handleMultiTenantFanout(rec, req, "query") {
+		t.Fatal("the fanout did not answer")
+	}
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "parse error") || strings.Contains(rec.Body.String(), "instant query type") {
+		t.Fatalf("HTTP %d %s, want 400 with a parse error", rec.Code, rec.Body.String())
 	}
 }

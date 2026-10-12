@@ -142,41 +142,19 @@ func stripLabelTransforms(logql string) string {
 func stripOuterCalls(logql string, prefixes ...string) string {
 	for {
 		logql = strings.TrimSpace(logql)
-		wrapped := false
+		inner, ok := "", false
 		for _, prefix := range prefixes {
-			wrapped = wrapped || strings.HasPrefix(logql, prefix)
-		}
-		if !wrapped {
-			break
-		}
-		idx := strings.Index(logql, "(")
-		if idx < 0 {
-			break
-		}
-		depth := 0
-		commaAt := -1
-		for i := idx + 1; i < len(logql); i++ {
-			c := logql[i]
-			switch {
-			case c == '(':
-				depth++
-			case c == ')':
-				if depth == 0 {
-					goto done
-				}
-				depth--
-			case c == ',' && depth == 0:
-				commaAt = i
-				goto done
+			if strings.HasPrefix(logql, prefix) {
+				// The first argument, up to the comma outside strings and brackets.
+				inner, ok = logqlpkg.FirstArgument(logql[len(prefix):])
+				break
 			}
 		}
-	done:
-		if commaAt < 0 {
-			break
+		if !ok {
+			return logql
 		}
-		logql = strings.TrimSpace(logql[idx+1 : commaAt])
+		logql = inner
 	}
-	return logql
 }
 
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {

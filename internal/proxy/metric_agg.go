@@ -17,7 +17,6 @@ import (
 
 var (
 	vectorLiteralRE = regexp.MustCompile(`^\s*vector\(\s*([^)]+?)\s*\)\s*$`)
-	vectorBinaryRE  = regexp.MustCompile(`^\s*vector\(\s*([^)]+?)\s*\)\s*([+\-*/])\s*vector\(\s*([^)]+?)\s*\)\s*$`)
 )
 
 // unwrapEmptySumWithout preserves every series for an explicit sum without().
@@ -49,49 +48,25 @@ func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
 // vector of one sample with no labels (Loki pkg/logql/engine.go evalVector); a
 // literal, or a binary operation of literals, is a scalar (evalLiteral).
 func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
-	expr = strings.TrimSpace(expr)
-	if expr == "" {
+	parsed, err := logqlpkg.Parse(strings.TrimSpace(expr))
+	if err != nil {
 		return nil, false
 	}
-
-	if matches := vectorLiteralRE.FindStringSubmatch(expr); len(matches) == 2 {
-		value, err := strconv.ParseFloat(strings.TrimSpace(matches[1]), 64)
-		if err != nil {
-			return nil, false
-		}
+	value, isVector, ok := binaryConstantValue(parsed, 0)
+	if !ok {
+		return nil, false
+	}
+	if isVector {
 		return buildConstantVectorResponse(timeParam, value), true
 	}
-
-	if matches := vectorBinaryRE.FindStringSubmatch(expr); len(matches) == 4 {
-		left, err := strconv.ParseFloat(strings.TrimSpace(matches[1]), 64)
-		if err != nil {
-			return nil, false
-		}
-		right, err := strconv.ParseFloat(strings.TrimSpace(matches[3]), 64)
-		if err != nil {
-			return nil, false
-		}
-		value, ok := applyConstantBinaryOp(left, right, matches[2])
-		if !ok {
-			return nil, false
-		}
-		return buildConstantVectorResponse(timeParam, value), true
-	}
-
-	if parsed, err := logqlpkg.Parse(expr); err == nil {
-		if value, ok := binaryScalarValue(parsed, 0); ok {
-			result, _ := json.Marshal(map[string]interface{}{
-				"status": "success",
-				"data": map[string]interface{}{
-					"resultType": "scalar",
-					"result":     []interface{}{constantInstantSeconds(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
-				},
-			})
-			return result, true
-		}
-	}
-
-	return nil, false
+	result, _ := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "scalar",
+			"result":     []interface{}{constantInstantSeconds(timeParam), strconv.FormatFloat(value, 'f', -1, 64)},
+		},
+	})
+	return result, true
 }
 
 // constantInstantSeconds is the evaluation time as a sample time: seconds with

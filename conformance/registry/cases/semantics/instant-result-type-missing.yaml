@@ -67,7 +67,6 @@ gap:
   loki: 'pkg/logql/engine.go evalSample/evalLiteral/evalVector, JoinSampleVector; pkg/querier/queryrange/marshal.go ResultToResponse; pkg/querier/http.go InstantQueryHandler; pkg/loghttp/query.go UnmarshalJSON'
   proxy: 'the failing status of a post-processed instant query is kept; a label transform over a binary expression evaluates the expression; literals answer scalar'
   planned_test: 'TestCompat_InstantResultTypeAlwaysSet (test/e2e-compat, group semantics); TestInstantQueryAlwaysHasLokiResultType, TestInstantQueryPostProcessedBackendFailureKeepsStatus, TestInstantConstantsCarrySecondsTimestamps, TestInstantQueryMultiTenantResultTypes and TestInstantLabelTransformOfBinaryEvaluatesTheBinary (internal/proxy)'
-  note: 'The e2e is written and not yet run against the compose stack. Cluster f2066991 stays claimed here until the aggregation-over-binary row is registered: its queries no longer answer a typeless 200 but are still rejected (400) or answered from their first operand only. Cluster ce65447e is owned by semantics/stddev-stdvar-grouped-values; its typeless answer is fixed here, its values are not.'
+  note: 'The e2e is written and not yet run against the compose stack. Cluster f2066991 is not claimed here: its queries no longer answer a typeless 200 but the proxy still answers 400 where Loki answers a vector; it belongs to semantics/aggregation-over-binary-dropped. Cluster ce65447e is owned by semantics/stddev-stdvar-grouped-values; its typeless answer is fixed here, its values are not.'
   clusters:
     - 307bbdd1
-    - f2066991
