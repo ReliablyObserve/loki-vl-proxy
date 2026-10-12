@@ -40,10 +40,19 @@ why: |
   have none) and would leave the sliding-window evaluator, which reads the first
   stats pipe, without the fold. Nothing is version-gated.
 
+  A `by` a label a parser extracts (`stddev by (route) (count_over_time({..} |
+  logfmt [5m]))`) translates the operand as the series-level form count, min, max
+  and avg use (first stats pipe grouped by the listed labels and the stream, final
+  pipe dropped), so the series carry the label on tumbling and instant queries.
+
   Not changed (separate): a stddev or stdvar nested in another expression or
   under a binary operator (`sum(stddev by (app) (...))`, `stddev by (app) (...) / 2`)
-  still takes the translator's single-pipe form. The series cap applies to the
-  operand's per-series answer, where Loki counts it on the folded answer.
+  still takes the translator's single-pipe form; a `by` a parsed label on a
+  sliding range query (the manual range evaluator names a series by stream and
+  level and adds a parsed label only for a sum's grouping), and the parsed labels
+  of an ungrouped or `without` fold (a series is the stream, not the stream and
+  parsed labels). The series cap applies to the operand's per-series answer,
+  where Loki counts it on the folded answer.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -68,7 +77,7 @@ gap:
   area: 'internal/proxy metric_agg.go (parseStddevStdvarQuery, applyMatrixStddevAgg, applyInstantStddevAgg)'
   loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next (stddev and stdvar at :541-546, :591-595)'
   proxy: 'the per-series values of the operand from VictoriaLogs, folded per group and step'
-  planned_test: 'TestCompat_StddevStdvarGrouped (test/e2e-compat, group core; written, not yet run); TestStddevStdvarGroupedDifferential, TestStddevStdvarFoldEdgeCases, TestParseStddevStdvarPostAgg and TestStdvarWithoutInstantAlwaysAnswersAVector (internal/proxy)'
+  planned_test: 'TestCompat_StddevStdvarGrouped, TestCompat_StddevStdvarGroupedInstantResultType and TestCompat_StddevStdvarGroupedRegistryQueries (test/e2e-compat, group core; written, not yet run); TestStddevStdvarGroupedDifferential, TestStddevStdvarGroupedByParsedLabelDifferential, TestStddevStdvarFoldEdgeCases, TestParseStddevStdvarPostAgg and TestStdvarWithoutInstantAlwaysAnswersAVector (internal/proxy)'
   note: 'Measured on origin/main 1cf58b45. The differential test runs the real handler against an emulated VictoriaLogs (v1.52, v1.40 and no version) with a reference written from Loki v3.7.7 VectorAggEvaluator; the live e2e vs Loki is written and still to be run.'
   clusters:
     - 44bf1425

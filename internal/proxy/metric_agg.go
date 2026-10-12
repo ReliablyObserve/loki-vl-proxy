@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -164,6 +165,29 @@ func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 		return instantMetricPostAgg{}, false
 	}
 	return instantMetricPostAgg{name: string(agg.Op), inner: strings.TrimSpace(rest[1:end]), grouping: agg.Grouping}, true
+}
+
+var postAggParserStageRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)
+
+// translatePostAggOperand translates the operand of a post-aggregation. The
+// operand of a stddev or stdvar `by` a parsed label is translated as the
+// series-level form the vector aggregations count, min, max and avg use, whose
+// first stats pipe groups by the listed labels and the series identity; the
+// final stats pipe is dropped, as the fold across the series is the proxy's,
+// and so is the alias of a function no math pipe reads (the shape of a bare
+// range aggregation, which the manual range evaluator knows).
+func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetricPostAgg) (string, error) {
+	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
+		translated, err := p.translateQueryWithContext(ctx, "max by ("+strings.Join(g.Labels, ", ")+") ("+postAgg.inner+")")
+		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
+			operand := translated[:i]
+			if !strings.Contains(operand[strings.Index(operand, "| stats "):], "| math ") {
+				operand = strings.TrimSuffix(operand, " as __lvp_inner")
+			}
+			return operand, nil
+		}
+	}
+	return p.translateQueryWithContext(ctx, postAgg.inner)
 }
 
 // closingParenIndex returns the index of the parenthesis closing the one s
@@ -457,7 +481,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	// Parse the inner LogQL expression to drive routing via typed AST.
 	parsedInner, _ := logqlpkg.Parse(postAgg.inner)
 
-	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
+	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -565,7 +589,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	// A range the settled steps cache evaluates is recorded with its request.
 	silent := queryStepsSilent(r.Context())
-	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
+	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {

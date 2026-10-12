@@ -106,6 +106,7 @@ func stdStreamText(labels map[string]string) string {
 // series' lines in (t-window, t], folded per group by VectorAggEvaluator.
 // Result: group -> time -> value.
 func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g stdGrouping) map[string]map[int64]float64 {
+	// A row's series: its stream and, when a parser extracted it, its route.
 	out := map[string]map[int64]float64{}
 	for _, t := range times {
 		counts := map[string]float64{}
@@ -116,8 +117,12 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g std
 			}
 			for _, s := range stdStreams {
 				if stdStreamText(s) == row.stream {
-					counts[row.stream]++
-					series[row.stream] = lokiSeriesLabels(s)
+					key := row.stream + row.labels["route"]
+					counts[key]++
+					series[key] = lokiSeriesLabels(s)
+					if route := row.labels["route"]; route != "" {
+						series[key]["route"] = route
+					}
 				}
 			}
 		}
@@ -151,6 +156,7 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, op string, g std
 
 type stdScenario struct {
 	op         string
+	parser     bool // the operand is `{...} | logfmt`, and each line carries a route
 	grouping   stdGrouping
 	window     time.Duration
 	step       time.Duration // 0: instant
@@ -170,7 +176,11 @@ func (s stdScenario) times() []int64 {
 }
 
 func (s stdScenario) query() string {
-	return s.grouping.wrap(s.op, fmt.Sprintf(`count_over_time({env="production"}[%s])`, uwWindowText(s.window)))
+	pipeline := ""
+	if s.parser {
+		pipeline = " | logfmt "
+	}
+	return s.grouping.wrap(s.op, fmt.Sprintf(`count_over_time({env="production"}%s[%s])`, pipeline, uwWindowText(s.window)))
 }
 
 // generateStdScenario draws rows around the evaluation times. A line exactly
@@ -178,10 +188,10 @@ func (s stdScenario) query() string {
 // (no stats_query_range offset arg) the bucket of the range aggregation under
 // the fold puts such a line one bucket late, which is registered apart as
 // versions/stats-bucket-label-v1.45 and is not what is pinned here.
-func generateStdScenario(rnd *rand.Rand, op string, g stdGrouping, instant, tumbling, edgeLines bool) stdScenario {
+func generateStdScenario(rnd *rand.Rand, op string, g stdGrouping, instant, tumbling, edgeLines, parser bool) stdScenario {
 	steps := []time.Duration{30 * time.Second, time.Minute, 90 * time.Second}
 	windows := []time.Duration{30 * time.Second, time.Minute, 90 * time.Second, 5 * time.Minute, 150 * time.Second}
-	s := stdScenario{op: op, grouping: g, window: windows[rnd.Intn(len(windows))]}
+	s := stdScenario{op: op, parser: parser, grouping: g, window: windows[rnd.Intn(len(windows))]}
 	base := int64(1_800_000_000) * 1e9
 	if !instant {
 		s.step = steps[rnd.Intn(len(steps))]
@@ -208,7 +218,12 @@ func generateStdScenario(rnd *rand.Rand, op string, g stdGrouping, instant, tumb
 				ts++
 			}
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: stdStreamText(stdStreams[rnd.Intn(len(stdStreams))]), value: 1, msg: "line"})
+		row := emuRow{ts: ts, stream: stdStreamText(stdStreams[rnd.Intn(len(stdStreams))]), value: 1, msg: "line"}
+		if parser {
+			route := fmt.Sprintf("/r%d", rnd.Intn(3))
+			row.labels, row.msg = map[string]string{"route": route}, "route="+route
+		}
+		s.rows = append(s.rows, row)
 	}
 	return s
 }
@@ -340,7 +355,43 @@ func TestStddevStdvarGroupedDifferential(t *testing.T) {
 					t.Run(name, func(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + int64(len(g.labels))))
 						for i := 0; i < 8; i++ {
-							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0")
+							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", false)
+							got := runStdScenario(t, s, version)
+							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), op, g)
+							compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+// A `by` a label a parser extracts groups by that label: the operand's series are
+// the stream and the parsed route, and the fold takes them per route. Tumbling and
+// instant only: the sliding evaluator names a series by its stream and level and
+// adds a parsed label only for the grouping of a sum, so its series carry no route
+// (registered as a draft gap in the change's notes, not pinned here).
+//
+// conformance: semantics/stddev-stdvar-grouped-values, metric-series-identity
+func TestStddevStdvarGroupedByParsedLabelDifferential(t *testing.T) {
+	groupings := []stdGrouping{
+		{kind: "by", labels: []string{"route"}},
+		{kind: "by", labels: []string{"route"}, trailing: true},
+		{kind: "by", labels: []string{"app", "route"}},
+	}
+	for _, version := range []string{"", "v1.52.0"} {
+		for _, op := range []string{"stddev", "stdvar"} {
+			for _, g := range groupings {
+				for _, mode := range []string{"tumbling", "instant"} {
+					name := fmt.Sprintf("%s/%s/by %v/%s", version, op, g.labels, mode)
+					if g.trailing {
+						name += "/trailing"
+					}
+					t.Run(name, func(t *testing.T) {
+						rnd := rand.New(rand.NewSource(int64(len(name))*104729 + int64(len(g.labels))))
+						for i := 0; i < 6; i++ {
+							s := generateStdScenario(rnd, op, g, mode == "instant", mode == "tumbling", version != "v1.40.0", true)
 							got := runStdScenario(t, s, version)
 							want := lokiGroupedStd(s.rows, int64(s.window), s.times(), op, g)
 							compareStd(t, fmt.Sprintf("%s #%d", name, i), s, got, want)
