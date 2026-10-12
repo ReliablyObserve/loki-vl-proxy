@@ -70,21 +70,22 @@ func TestScalarMatrix_ApplyScalarOp_DivisionAndModuloByZero(t *testing.T) {
 	t.Run("right_scalar_zero", func(t *testing.T) {
 		body := scalarMatrixBody(4)
 
+		// Loki: a zero divisor of / and % is NaN (syntax.MergeBinOp).
 		outDiv := applyScalarOp(body, "/", 0, "matrix")
-		assertApproxEqual(t, firstMatrixValue(t, outDiv), 0)
+		assertNaN(t, firstMatrixValue(t, outDiv))
 
 		outMod := applyScalarOp(body, "%", 0, "matrix")
-		assertApproxEqual(t, firstMatrixValue(t, outMod), 0)
+		assertNaN(t, firstMatrixValue(t, outMod))
 	})
 
 	t.Run("reverse_zero_denominator", func(t *testing.T) {
 		body := scalarMatrixBody(0)
 
 		outDiv := applyScalarOpReverse(body, "/", 2, "matrix")
-		assertApproxEqual(t, firstMatrixValue(t, outDiv), 0)
+		assertNaN(t, firstMatrixValue(t, outDiv))
 
 		outMod := applyScalarOpReverse(body, "%", 2, "matrix")
-		assertApproxEqual(t, firstMatrixValue(t, outMod), 0)
+		assertNaN(t, firstMatrixValue(t, outMod))
 	})
 }
 
@@ -218,6 +219,13 @@ func firstMatrixValue(t *testing.T, body []byte) float64 {
 	default:
 		t.Fatalf("unexpected sample value type %T (%v)", raw, raw)
 		return 0
+	}
+}
+
+func assertNaN(t *testing.T, got float64) {
+	t.Helper()
+	if !math.IsNaN(got) {
+		t.Fatalf("unexpected value: got=%v want=NaN", got)
 	}
 }
 
