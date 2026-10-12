@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Where several series tie at the k-th place of a ranking Loki's choice follows
   Go map order, so the aggregations above it can differ there; the proxy breaks
   the tie by label order. `stddev` and `stdvar` around a ranking and a binary
-  expression around the aggregation keep their own routes (#TBD).
+  expression around the aggregation keep their own routes (#749).
 
 ## [2.11.2] - 2026-10-12
 

@@ -75,7 +75,7 @@ compare:
     differ.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#749"
   impact: explore-visible
   effort: M
   area: 'internal/proxy metric_agg.go (parseAggregationOverRanking, aggregationArgs, applyOuterPostAggregation, foldExcludeLabels), sliding_window_stats.go (manualSeriesLimit), manual_metric_budget.go (withFoldedSeries), metric_binary.go (proxyStatsQuery series limit)'
