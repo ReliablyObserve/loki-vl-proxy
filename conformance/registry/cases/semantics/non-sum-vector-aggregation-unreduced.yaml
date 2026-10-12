@@ -38,7 +38,7 @@ why: |
   VictoriaLogs cannot do the fold. parseOriginalRangeMetricSpec strips every
   aggregation above the range function.
 
-  Not changed (separate causes, registered or drafted apart): stddev and stdvar
+  Not changed (separate causes, not part of this row): stddev and stdvar
   (semantics/stddev-stdvar-grouped-values: the translation has no series level),
   quantile_over_time under count, min, max and avg (the translation groups the
   rows by the label before taking the quantile), `group(...)` (Loki 3.7.7 has no
@@ -71,7 +71,7 @@ gap:
   loki: 'pkg/logql/evaluator.go:400-433 newVectorAggEvaluator, :435-529 VectorAggEvaluator.Next (fold per group per step: avg :525, max :529, min :534, count :539 and :589)'
   proxy: 'the series of the range evaluator folded per step by the query vector aggregations'
   planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group core); TestVectorAggregationOverRangeFunctionDifferential, TestVectorAggregationGroupedLabelsSlidingWindow, TestVectorAggregationOverRateCounterFolds, TestFoldByGroupingEdgeCases, TestSeriesAggregationChain, TestParseOriginalRangeMetricSpecNestedAggregations (internal/proxy)'
-  note: 'Measured on origin/main cf738b80 with VictoriaLogs v1.52.0, v1.47.0 and v1.40.0 emulated; the e2e is written, not yet run.'
+  note: 'Found on origin/main cf738b80. The differential tests run the real handler against an emulated VictoriaLogs (unknown version, v1.52.0, v1.47.0, v1.40.0); the e2e against Loki is written, not yet run.'
   clusters:
     - 099e8acf
     - 0b8db994
