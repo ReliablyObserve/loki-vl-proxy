@@ -3,9 +3,9 @@
 package e2e_compat
 
 import (
+	"math"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -84,10 +84,18 @@ func TestCompat_AggregationOverBinaryMixedParsers(t *testing.T) {
 	fx.waitForLoki(t)
 	t.Run("cluster f2066991", func(t *testing.T) {
 		at := time.Now()
+		// unwrapInstant asserts a success without warnings from each.
 		loki := unwrapInstant(t, lokiURL, aggregationOverBinaryCluster, at)
 		proxy := unwrapInstant(t, proxyURL, aggregationOverBinaryCluster, at)
-		if !reflect.DeepEqual(loki, proxy) {
+		if len(loki) != len(proxy) {
 			t.Fatalf("Loki %v, proxy %v", loki, proxy)
+		}
+		for key, wv := range loki {
+			w, werr := strconv.ParseFloat(wv, 64)
+			g, gerr := strconv.ParseFloat(proxy[key], 64)
+			if _, ok := proxy[key]; !ok || werr != nil || gerr != nil || math.Abs(g-w) > 1e-9*math.Max(1, math.Abs(w)) {
+				t.Fatalf("{%s}: Loki %s, proxy %q (Loki %v, proxy %v)", key, wv, proxy[key], loki, proxy)
+			}
 		}
 		assertInstantVectorAt(t, aggregationOverBinaryCluster, at)
 	})

@@ -51,13 +51,9 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	if _, _, ok := binaryAggregationChain(routed); !ok {
 		return false
 	}
+	// Under a label_replace or label_join the handler has cloned the request
+	// to the expression inside it, and applies the transform to the answer.
 	chain, binary, ok := binaryAggregationChain(binaryRequestExpr(r))
-	if !ok {
-		// Routed from under a label_replace or label_join, which the handler
-		// applies to the folded answer.
-		expr, _ := logqlpkg.Parse(stripLabelTransforms(binaryRequestQuery(r)))
-		chain, binary, ok = binaryAggregationChain(expr)
-	}
 	if !ok {
 		// The request's own query does not parse as the routed one did: answer
 		// Loki's parse error for it.

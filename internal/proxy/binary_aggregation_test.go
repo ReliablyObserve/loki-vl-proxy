@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // binaryAggregationAnswer sends query through the real handler against the
@@ -393,6 +394,9 @@ func TestWithoutFoldLabelOrderAndKeys(t *testing.T) {
 		{"a value with a comma and an equals sign", []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}, []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}},
 		{"a prefix first", []map[string]string{{"a": "x", "b": "y"}, {"a": "x"}}, []map[string]string{{"a": "x"}, {"a": "x", "b": "y"}}},
 	} {
+		if tc.name == "a value with a comma and an equals sign" && metricKeyStr(tc.metric[0]) != metricKeyStr(tc.metric[1]) {
+			t.Fatal("the two sets should share their name=value text, the key the fold no longer uses")
+		}
 		for _, resultType := range []string{"vector", "matrix"} {
 			result := make([]map[string]any, 0, len(tc.metric))
 			for _, metric := range tc.metric {
@@ -435,5 +439,19 @@ func TestWithoutFoldLabelOrderAndKeys(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// A label transform rewrites the series of a vector or a matrix and keeps the
+// answer's warnings and statistics.
+//
+// conformance: semantics/aggregation-over-binary-dropped
+func TestLabelTransformsKeepVectorAndWarnings(t *testing.T) {
+	body := []byte(`{"status":"success","warnings":["partial"],"data":{"resultType":"vector","stats":{"summary":{"bytesProcessedPerSecond":1}},"result":[{"metric":{"job":"a"},"value":[1,"2"]}]}}`)
+	got := applyLabelJoin(applyLabelReplace(body, translator.LabelReplaceSpec{DstLabel: "dst", Replacement: "$1", SrcLabel: "job", Regex: "(.*)"}), translator.LabelJoinSpec{DstLabel: "both", Separator: "-", SrcLabels: []string{"job", "dst"}})
+	want := `{"status":"success","warnings":["partial"],"data":{"resultType":"vector","stats":{"summary":{"bytesProcessedPerSecond":1}},"result":[{"metric":{"both":"a-a","dst":"a","job":"a"},"value":[1,"2"]}]}}`
+	var g, w any
+	if json.Unmarshal(got, &g) != nil || json.Unmarshal([]byte(want), &w) != nil || !reflect.DeepEqual(g, w) {
+		t.Fatalf("got  %s\nwant %s", got, want)
 	}
 }
