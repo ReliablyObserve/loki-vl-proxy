@@ -7,40 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.12.0] - 2026-10-12
-
 ### Fixed
 
-- **An instant query is answered with its failure status and a resultType, as
-  Loki does, not with a 200 that has neither (#735).** `stdvar without (app)
-  (...)` and `label_replace(avg by (app) (a + b / c) * 2, ...)` came back as
-  HTTP 200 with an error body and no `resultType`, which Grafana and every client
-  decoding by type (`pkg/loghttp/query.go` `QueryResponse.UnmarshalJSON` fails on
-  a missing or unknown type) cannot read, where Loki answers `vector`
-  (`pkg/logql/engine.go` `evalSample`, `JoinSampleVector`; `pkg/querier/queryrange/marshal.go`
-  `ResultToResponse`). Two causes. A query the proxy post-processes (`without`,
-  `label_replace`, `label_join`) was buffered, and a failure of it (a
-  VictoriaLogs error, a series limit, a rejected query) was written with the
-  status dropped, so every such error reached the client as a 200; query_range
-  already sent the failing status, the instant path now does too. And a
-  `label_replace` or `label_join` around a binary expression sent the
-  translator's internal binary marker to VictoriaLogs as a LogsQL query; the
-  expression under the transform now routes like any binary expression, its
-  operands run as instant queries and combine, and the transform applies to the
-  result. Also on the instant endpoint: a scalar literal (`1`, `-1`) answers a
-  `scalar` as Loki's `evalLiteral` does, where it was rejected as a log query,
-  also under a multi-tenant `X-Scope-OrgID`; `vector(1)`, `vector(1) + 2` and
-  `vector(1) + vector(2)` are evaluated as constants (a literal division by zero
-  is NaN, as in Loki's `MergeBinOp`) and stamp their sample in seconds like
-  every other sample (`pkg/util/marshal/query.go` `NewVector`) where they
-  carried nanoseconds; the first argument of a `label_replace` or `label_join`
-  is split outside strings and brackets, so a `)` or `,` in a line filter or a
-  matcher no longer breaks the translation; and
-  a log query sent with every tenant filtered out by `__tenant_id__` is rejected
-  with Loki's 400 for a log query as an instant query, not answered with an
-  empty `streams`. An aggregation over a binary expression (`sum by (job) (a /
-  b)`) is still not evaluated as Loki does; where the proxy rejects it, it now
-  does so with an error status, no longer with a typeless 200.
+- **An empty pattern line filter selects the lines Loki selects: `|> ""` keeps no
+  line of an ordinary stream and `!> ""` keeps them all.** `{namespace="prod"}
+  |> ""` returned the page on the proxy and no line on Loki 3.7.7, and
+  `{namespace="prod"} !> ""` returned nothing where Loki returns the page. An
+  empty pattern is valid in Loki: it parses without error and builds a pattern
+  matcher with no expression, which accepts only an empty line
+  (`pkg/logql/log/pattern/pattern.go` `ParseLineFilter`, `Matcher.Test`), so
+  `|> ""` keeps the empty lines and `!> ""` drops them. It is not the match-all
+  filter that `|= ""` is: `|> "" or "x"` keeps the empty lines and the lines that
+  match `x`. The proxy translated the empty pattern to the regexp `.*`, which
+  VictoriaLogs read as every line; it now sends `^$`, the empty line, in log
+  queries, in range and instant metric queries (the filter is part of the stats
+  query, nothing is filtered in the proxy), after a parser stage and inside an
+  `or` chain. A `!=`, `!~` or `!>` written right after a pattern filter, with no
+  pipe between them (`|> "a <_>" != "x"`), is a filter of its own again: the
+  proxy read it as part of the pattern, dropped both filters and returned every
+  line. Non-empty patterns are otherwise unchanged. Covered by the edge table
+  `TestTranslateEmptyPatternLineFilter`, `TestEmptyPatternLineFilterReachesVictoriaLogs`
+  for the log, range and instant paths, and `TestCompat_PatternLineFilter`
+  against Loki (#TBD).
 
 ## [2.11.2] - 2026-10-12
 
