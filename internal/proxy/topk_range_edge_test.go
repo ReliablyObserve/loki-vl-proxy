@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -10,13 +11,14 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 const topKInner = `sum by (app, env) (count_over_time({a="b"}[5m]))`
 
-// conformance: semantics/topk-bottomk-range-series, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/topk-grouped-spellings, loki_api_v1_query_range, loki_api_v1_query
 func TestParseTopKPostAgg(t *testing.T) {
 	by := func(labels ...string) *logqlpkg.Grouping { return &logqlpkg.Grouping{Labels: labels} }
 	without := func(labels ...string) *logqlpkg.Grouping { return &logqlpkg.Grouping{Without: true, Labels: labels} }
@@ -39,6 +41,10 @@ func TestParseTopKPostAgg(t *testing.T) {
 		{"grouping twice", `topk by (env) (3, ` + topKInner + `) by (app)`, instantMetricPostAgg{}, false},
 		{"binary expression around it", `topk by (env) (3, ` + topKInner + `) * 2`, instantMetricPostAgg{}, false},
 		{"not topk", `sum by (env) (` + topKInner + `)`, instantMetricPostAgg{}, false},
+		{"topk inside a binary expression, added", `topk(2, ` + topKInner + `) + sum(` + topKInner + `)`, instantMetricPostAgg{}, false},
+		{"topk and bottomk, set operation", `topk(2, ` + topKInner + `) and bottomk(2, ` + topKInner + `)`, instantMetricPostAgg{}, false},
+		{"topk by topk, scalar on the left", `2 * topk by (env) (2, ` + topKInner + `)`, instantMetricPostAgg{}, false},
+		{"two topk without a space", `topk(2,` + topKInner + `)+topk(2,` + topKInner + `)`, instantMetricPostAgg{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := parseInstantMetricPostAggQuery(tc.query)
@@ -49,7 +55,7 @@ func TestParseTopKPostAgg(t *testing.T) {
 	}
 }
 
-// conformance: semantics/topk-bottomk-range-series
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings
 func TestTopKGroupKey(t *testing.T) {
 	m := map[string]string{"app": "a", "env": "prod", "__name__": "x"}
 	for _, tc := range []struct {
@@ -130,7 +136,7 @@ func ranked(t *testing.T, body []byte) map[string]map[int]string {
 	return out
 }
 
-// conformance: semantics/topk-bottomk-range-series, loki_api_v1_query_range
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, loki_api_v1_query_range
 func TestTopKMatrixEdges(t *testing.T) {
 	by := func(labels ...string) *logqlpkg.Grouping { return &logqlpkg.Grouping{Labels: labels} }
 	nan, inf := strconv.FormatFloat(math.NaN(), 'f', -1, 64), "+Inf"
@@ -236,7 +242,7 @@ func TestTopKMatrixEdges(t *testing.T) {
 	}
 }
 
-// conformance: semantics/topk-bottomk-range-series, loki_api_v1_query
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, loki_api_v1_query
 func TestInstantTopKPerGroup(t *testing.T) {
 	body := []byte(`{"status":"success","data":{"resultType":"vector","result":[` +
 		`{"metric":{"app":"a","env":"dev"},"value":[1,"1"]},{"metric":{"app":"b","env":"dev"},"value":[1,"2"]},` +
@@ -272,7 +278,7 @@ func TestInstantTopKPerGroup(t *testing.T) {
 	}
 }
 
-// conformance: semantics/topk-bottomk-range-series, loki_api_v1_query
+// conformance: semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings, loki_api_v1_query
 // The instant handler ranks per group too: `topk by (env) (1, ...)` was a 400
 // ("log queries are not supported as an instant query type") before.
 func TestInstantTopKByHandler(t *testing.T) {
@@ -316,6 +322,116 @@ func TestParseTopKWrapperGrouping(t *testing.T) {
 		k, _, group, ok := parseTopKWrapper(query)
 		if !ok || k != 3 || !reflect.DeepEqual(group, want) {
 			t.Errorf("%s: k=%d group=%+v ok=%v, want %+v", query, k, group, ok, want)
+		}
+	}
+}
+
+// A topk inside a binary expression is never taken for the topk the post
+// aggregation handlers rank: the inner text would be `X) + sum(X` and the
+// answer a matrix at an instant.
+// conformance: semantics/topk-grouped-spellings, loki_api_v1_query
+func TestInstantTopKInsideBinaryIsNotRanked(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"a","env":"dev"},"value":[1700000000,"1"]},{"metric":{"app":"b","env":"dev"},"value":[1700000000,"2"]}]}}`))
+	}))
+	defer backend.Close()
+	p := newGapTestProxy(t, backend.URL)
+	for _, query := range []string{
+		`topk(2, ` + topKInner + `) + sum(` + topKInner + `)`,
+		`topk(2, ` + topKInner + `) and bottomk(2, ` + topKInner + `)`,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {query}, "time": {"1700000000"}}.Encode(), nil)
+		rec := httptest.NewRecorder()
+		p.handleQuery(rec, req)
+		var resp struct{ Data struct{ ResultType string } }
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Data.ResultType == "matrix" {
+			t.Errorf("%s: an instant query answered a matrix: %.300s", query, rec.Body)
+		}
+	}
+}
+
+func TestTopKCompare(t *testing.T) {
+	nan, inf := math.NaN(), math.Inf(1)
+	for _, tc := range []struct {
+		a, b       float64
+		descending bool
+		want       int
+	}{
+		{7, 5, true, -1}, {5, 7, true, 1}, {7, 5, false, 1}, {5, 7, false, -1}, {5, 5, true, 0},
+		{nan, 5, true, 1}, {5, nan, true, -1}, {nan, 5, false, 1}, {5, nan, false, -1},
+		{nan, nan, true, 0}, {nan, -inf, true, 1}, {inf, 5, true, -1},
+	} {
+		if got := topKCompare(tc.a, tc.b, tc.descending); got != tc.want {
+			t.Errorf("topKCompare(%v, %v, desc=%v) = %d, want %d", tc.a, tc.b, tc.descending, got, tc.want)
+		}
+	}
+}
+
+// NaN never blocks a later number, in the heap of the window-stats route, the
+// vector filter and the instant sort alike: topk(2) over [NaN 5 7] is {7, 5}.
+// conformance: semantics/topk-grouped-spellings, semantics/topk-bottomk-range-series
+func TestTopKNaNRanksLastEverywhere(t *testing.T) {
+	nan := math.NaN()
+	// The heap: three series with one sample at step 0, in this order.
+	stats := &slidingStats{windowGrid: true, ids: map[string]int32{}, lokiNames: []string{"app"}, keys: []string{"a", "b", "c"}}
+	for i, v := range []float64{nan, 5, 7} {
+		stats.records = append(stats.records, slidingRecord{series: int32(i), grid: slidingGridA, index: 0, count: v})
+	}
+	for _, tc := range []struct {
+		descending bool
+		want       []string
+	}{{true, []string{"b", "c"}}, {false, []string{"b", "c"}}} {
+		body, err := stats.encodeTopK(context.Background(), false, 1, 0, 0, rangeTopK{k: 2, descending: tc.descending}, time.Unix(1700000000, 0), time.Minute, 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for app := range ranked(t, body) {
+			got = append(got, app)
+		}
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("heap descending=%v kept %v, want %v", tc.descending, got, tc.want)
+		}
+	}
+	// k=3 keeps the NaN: it fills a place no number wants.
+	body, err := stats.encodeTopK(context.Background(), false, 1, 0, 0, rangeTopK{k: 3, descending: true}, time.Unix(1700000000, 0), time.Minute, 1<<20)
+	if err != nil || len(ranked(t, body)) != 3 {
+		t.Errorf("k=3 over [NaN 5 7]: %v %s", err, body)
+	}
+
+	// The vector filter and the instant sort.
+	vector := []byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+		`{"metric":{"app":"a"},"value":[1,"NaN"]},{"metric":{"app":"b"},"value":[1,"5"]},{"metric":{"app":"c"},"value":[1,"7"]}]}}`)
+	apps := func(body []byte) []string {
+		var resp struct {
+			Data struct {
+				Result []struct{ Metric map[string]string }
+			}
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range resp.Data.Result {
+			out = append(out, s.Metric["app"])
+		}
+		return out
+	}
+	for _, descending := range []bool{true, false} {
+		if got := apps(applyTopKToVector(vector, 2, descending, nil)); !reflect.DeepEqual(got, []string{"b", "c"}) {
+			t.Errorf("vector descending=%v kept %v", descending, got)
+		}
+	}
+	for name, want := range map[string][]string{"topk": {"c", "b"}, "bottomk": {"b", "c"}} {
+		if got := apps(applyInstantSortTopkAgg(vector, instantMetricPostAgg{name: name, k: 2})); !reflect.DeepEqual(got, want) {
+			t.Errorf("instant %s kept %v, want %v", name, got, want)
+		}
+	}
+	for name, want := range map[string][]string{"sort_desc": {"c", "b", "a"}, "sort": {"b", "c", "a"}} {
+		if got := apps(applyInstantSortTopkAgg(vector, instantMetricPostAgg{name: name})); !reflect.DeepEqual(got, want) {
+			t.Errorf("instant %s ordered %v, want %v", name, got, want)
 		}
 	}
 }
