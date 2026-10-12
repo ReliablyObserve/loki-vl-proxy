@@ -608,12 +608,8 @@ func TestUnwrapCountedGateFlagsOverflow(t *testing.T) {
 		match := regexp.MustCompile(translator.UnwrapPattern(conv))
 		gate := unwrapCountedGate("v", conv)
 		flag := ` | format if (` + unwrapBadField + `:="0" -(` + translator.UnwrapInRange(conv) + `)) "1" as ` + unwrapBadField
-		reset := unwrapBadField + `:="1"`
-		if conv == "" {
-			reset += ` or ` + unwrapBadField + `:="` + unwrapNaNFlag + `"`
-		}
-		if !strings.Contains(gate, flag) || !strings.HasSuffix(gate, ` | format if (`+reset+`) "0" as `+translator.UnwrapValueAlias) {
-			t.Errorf("conv %q: the counting gate must flag a value out of range and give it 0: %s", conv, gate)
+		if !strings.Contains(gate, flag) || !strings.HasSuffix(gate, ` | math __lvp_v default 0 as __lvp_v`) {
+			t.Errorf("conv %q: the counting gate must flag a value out of range and read its NaN as 0: %s", conv, gate)
 		}
 		_, convert := translator.UnwrapGateParts("v", conv)
 		if !strings.Contains(gate, convert) {
@@ -794,5 +790,64 @@ func TestUnwrapNaNReachesTheLokiAnswer(t *testing.T) {
 				t.Fatalf("the nan group was not asked for: %q", sent)
 			}
 		})
+	}
+}
+
+// An infinite sum reaches a sliding window (the bucket reader used to skip it)
+// and a nan group reaches an instant answer. The fake answers the stats queries
+// of the counting gate.
+// conformance: semantics/unwrap-gate-parsefloat-divergences, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapInfinityAndInstantNaNReachTheAnswer(t *testing.T) {
+	at := time.Unix(1700000040, 0)
+	infAt := at.Add(5 * time.Minute)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			start, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
+			end, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
+			step := parseVLStepParam(r.Form.Get("step"))
+			var clean []string
+			for ts := start - start%int64(step); ts < end; ts += int64(step) {
+				if ts < start {
+					continue
+				}
+				value := "1"
+				if ts == infAt.UnixNano() {
+					value = "+Inf"
+				}
+				clean = append(clean, fmt.Sprintf(`[%d,"%s"]`, ts/int64(time.Second), value))
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","app":"x","__lvp_bad":"0"},"values":[` + strings.Join(clean, ",") + `]}]}}`))
+		case "/select/logsql/stats_query":
+			result := `{"metric":{"__name__":"sum(__lvp_v)","app":"x","__lvp_bad":"0"},"value":[1700000100,"4"]}`
+			if strings.Contains(query, `:="2"`) {
+				result += `,{"metric":{"__name__":"sum(__lvp_v)","app":"x","__lvp_bad":"2"},"value":[1700000100,"0"]}`
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` + result + `]}}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	p := newSlidingTestProxy(t, srv.URL)
+	params := url.Values{"query": {`sum_over_time({app="x"} | logfmt | unwrap b [5m])`}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(12*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"+Inf"`) {
+		t.Fatalf("a window holding an infinite sum must be +Inf: %d %s", rec.Code, rec.Body)
+	}
+
+	for _, q := range []string{
+		`sum by (app) (sum_over_time({app="x"} | unwrap b | __error__="" [1m]))`,
+		`sum by (app) (sum_over_time({app="x"} | unwrap b [1m]))`,
+	} {
+		rec = httptest.NewRecorder()
+		p.handleQuery(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {q}, "time": {"1700000100"}}.Encode(), nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"NaN"`) {
+			t.Fatalf("%s: an instant window holding a nan must be NaN: %d %s", q, rec.Code, rec.Body)
+		}
 	}
 }

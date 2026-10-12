@@ -71,10 +71,21 @@ why: |
     sliding windows the proxy folds from buckets then carry the NaN (the bucket
     reader accepts NaN and infinities of an unwrap, which it used to skip), and
     the raw evaluators' min and max follow Loki's NaN replacement (lokiMinMax).
-    This costs one extra `format if` on a regular expression per row for a plain
-    unwrap, owed an A/B (see the planned tests).
+    Cost, owed an A/B: the plain gate gained a `copy`, a `replace_regexp if` (a
+    pass-through for a block that holds no `infinity`) and a range filter after
+    the math pipe; a plain unwrap whose error is dropped (`| __error__=""`) now
+    sends the nan-counting gate (`format if` on the syntax, `format if` on the
+    nan word, a filter, the same copy/replace/math, a filter, `math ... default
+    0`) and a `__lvp_bad` group key in every stats pipe, where it sent the plain
+    gate; a plain unwrap whose error is not dropped gained the nan `format if`
+    and the `math default`. A duration or bytes unwrap gained the range filter
+    (and the leading-zero strip for a duration) only.
 
   Still different (why VictoriaLogs cannot, and what the proxy does not do):
+
+  - A stats query the proxy cannot rewrite exactly (a `sort` or `limit` after the
+    stats pipe, two gates in one query) is sent with the plain gate: its nan rows
+    are dropped, and its overflowing values are dropped without the error.
 
   - A duration within about a microsecond of int64 nanoseconds (292.47 years,
     `9223372036854775807ns`, `2562047h47m16.854775807s`): Loki converts it,

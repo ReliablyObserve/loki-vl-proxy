@@ -389,11 +389,11 @@ func unwrapCountedGateMode(field, conv string, errors bool) string {
 	} else {
 		gate += " | filter " + inRange
 	}
-	reset := bad + `:="1"`
-	if nan {
-		reset += " or " + bad + `:="` + unwrapNaNFlag + `"`
-	}
-	return gate + " | format if (" + reset + `) "0" as ` + translator.UnwrapValueAlias
+	// A flagged row's value is NaN (the math pipe reads no number in it): 0 instead,
+	// so the stats keep a point for its group. The math pipe keeps the float column;
+	// a format pipe would rewrite it as text, which the stats read only up to 27
+	// characters (a value of 1e30 or 1e-30 would not count).
+	return gate + " | math " + translator.UnwrapValueAlias + " default 0 as " + translator.UnwrapValueAlias
 }
 
 // unwrapHit is a span where a metric's VictoriaLogs query met a row whose
