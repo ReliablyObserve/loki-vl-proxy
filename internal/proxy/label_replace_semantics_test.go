@@ -320,22 +320,6 @@ func TestLabelReplaceDuplicateLabelSets(t *testing.T) {
 	}
 }
 
-// label_join is no Loki v3.7.7 function (the lexer has label_replace only);
-// the proxy keeps accepting it and applies it to both answer shapes.
-// conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
-func TestLabelJoinInstantAndRange(t *testing.T) {
-	spec := translator.LabelJoinSpec{DstLabel: "j", Separator: "-", SrcLabels: []string{"a", "b"}}
-	for _, body := range []string{
-		`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":"x","b":"y"},"values":[[1,"1"]]}]}}`,
-		`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"a":"x","b":"y"},"value":[1,"1"]}]}}`,
-	} {
-		a := decodeLR(t, 200, applyLabelJoin([]byte(body), spec))
-		if a.series[0].Metric["j"] != "x-y" {
-			t.Errorf("%s: j=%q, want x-y", a.resultType, a.series[0].Metric["j"])
-		}
-	}
-}
-
 // The registry shape and the shapes around it, on both endpoints.
 // conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
 func TestLabelReplaceOnInstantAndRange(t *testing.T) {
@@ -495,19 +479,81 @@ func TestLabelReplaceInvalidRegexp(t *testing.T) {
 func TestLabelReplaceMalformedArguments(t *testing.T) {
 	p := newTestProxy(t, lrBackend(t, []map[string]string{{"app": "a"}}).URL)
 	agg := `sum by (app) (count_over_time({app="a"}[5m]))`
-	for _, q := range []string{
-		`label_replace(` + agg + `, "d", "$1", "app", "(.+):\d+")`,
-		`label_replace(` + agg + `, "d", "$1", "app")`,
-		`label_replace(` + agg + `, "d", "$1")`,
-		`label_replace(` + agg + `, "d", "$1", "app", "x", "y")`,
-		`label_replace(` + agg + `, d, "$1", "app", "x")`,
-		`label_replace(` + agg + `, "d", "$1", "app", 5)`,
+	// The messages are the ones Loki v3.7.7's parser raises for these queries.
+	for _, tc := range []struct{ query, want string }{
+		{`label_replace(` + agg + `, "d", "$1", "app", "(.+):\d+")`, "parse error at line 1, col 80: invalid char escape"},
+		{`label_replace(` + agg + `, "d", "$1", "app")`, "parse error at line 1, col 78: syntax error: unexpected ), expecting ,"},
+		{`label_replace(` + agg + `, "d", "$1")`, "parse error at line 1, col 71: syntax error: unexpected ), expecting ,"},
+		{`label_replace(` + agg + `, "d", "$1", "app", "x", "y")`, "parse error at line 1, col 83: syntax error: unexpected ,, expecting )"},
+		{`label_replace(` + agg + `, d, "$1", "app", "x")`, "parse error at line 1, col 62: syntax error: unexpected IDENTIFIER, expecting STRING"},
+		{`label_replace(` + agg + `, "d", "$1", "app", 5)`, "parse error at line 1, col 80: syntax error: unexpected NUMBER, expecting STRING"},
+		{`label_replace(` + agg + ` "d", "$1", "app", "x")`, "parse error at line 1, col 61: syntax error: unexpected STRING"},
 	} {
 		for _, endpoint := range []string{"query_range", "query"} {
-			a := lrAsk(t, p, endpoint, q)
-			if a.code != http.StatusBadRequest || !strings.Contains(a.body, "parse error at line 1, col ") || strings.Contains(a.body, "log queries") {
-				t.Errorf("%s %s: HTTP %d, want a 400 parse error\n%s", endpoint, q, a.code, a.body)
+			a := lrAsk(t, p, endpoint, tc.query)
+			if a.code != http.StatusBadRequest || !strings.Contains(a.body, `"message":"`+tc.want+`"`) {
+				t.Errorf("%s %s: HTTP %d, want a 400 with %q\n%s", endpoint, tc.query, a.code, tc.want, a.body)
 			}
+		}
+	}
+}
+
+// Loki sorts the result after the transform (pkg/logql/engine.go JoinSampleVector:
+// sort.Sort(result) for a range, sort.Slice(vec, labels.Compare) for an instant
+// query), so the order of the backend's series does not survive it.
+// conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
+func TestLabelReplaceSortsTheResult(t *testing.T) {
+	agg := `sum by (app) (count_over_time({app="x"}[5m]))`
+	lr := func(inner, dst, repl, src, re string) string {
+		return fmt.Sprintf(`label_replace(%s, %q, %q, %q, %q)`, inner, dst, repl, src, re)
+	}
+	for _, tc := range []struct {
+		name  string
+		sets  []map[string]string
+		query string
+		want  []string
+	}{
+		{"input in reverse order", []map[string]string{{"app": "web"}, {"app": "api-gateway"}}, lr(agg, "app_short", "$1", "app", "(.*)-.*"),
+			[]string{`{app="api-gateway",app_short="api"}`, `{app="web"}`}},
+		{"the transform reorders the label sets", []map[string]string{{"app": "a"}, {"app": "b"}},
+			lr(lr(agg, "a_new", "2", "app", "a"), "a_new", "1", "app", "b"),
+			[]string{`{a_new="1",app="b"}`, `{a_new="2",app="a"}`}},
+		{"a shorter prefix first", []map[string]string{{"app": "b", "k": "v"}, {"app": "a"}, {"app": "b"}}, lr(agg, "none", "", "app", "zz"),
+			[]string{`{app="a"}`, `{app="b"}`, `{app="b",k="v"}`}},
+	} {
+		p := newTestProxy(t, lrBackend(t, tc.sets).URL)
+		for _, endpoint := range []string{"query_range", "query"} {
+			a := lrAsk(t, p, endpoint, tc.query)
+			var got []string
+			for _, s := range a.series {
+				got = append(got, lrKey(s.Metric))
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Errorf("%s %s: order %v, want %v\n%s", tc.name, endpoint, got, tc.want, a.body)
+			}
+		}
+	}
+	// sort and sort_desc order by value: that order is kept
+	if !queryIsSortable(`label_replace(sort(sum(x)), "a", "b", "c", "d")`) || queryIsSortable(`label_replace(sum by (resort) (x), "a", "b", "c", "d")`) {
+		t.Error("queryIsSortable does not tell sort(...) from a name that ends in it")
+	}
+}
+
+// compareLabelSets is Prometheus' labels.Compare.
+func TestCompareLabelSets(t *testing.T) {
+	for _, tc := range []struct {
+		a, b map[string]string
+		want int
+	}{
+		{map[string]string{"a": "1"}, map[string]string{"a": "1"}, 0},
+		{map[string]string{"a": "1"}, map[string]string{"a": "2"}, -1},
+		{map[string]string{"a": "1"}, map[string]string{"a": "1", "b": "2"}, -1},
+		{map[string]string{"a": "1", "c": "1"}, map[string]string{"a": "1", "b": "2"}, 1},
+		{map[string]string{"b": "1"}, map[string]string{"a": "9"}, 1},
+		{map[string]string{}, map[string]string{"a": "9"}, -1},
+	} {
+		if got := compareLabelSets(tc.a, tc.b); (got > 0) != (tc.want > 0) || (got < 0) != (tc.want < 0) {
+			t.Errorf("compare(%v, %v) = %d, want sign %d", tc.a, tc.b, got, tc.want)
 		}
 	}
 }

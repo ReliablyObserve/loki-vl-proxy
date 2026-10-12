@@ -171,3 +171,47 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 		}
 	}
 }
+
+// Two series that a label_replace gives one label set are ranked as two
+// samples by the vector aggregation above it, and filed under one series only
+// at the end (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/engine.go
+// vectorsToSeries). The proxy merges them before the ranking
+// (semantics/label-replace-duplicates-before-ranking, open).
+// conformance: semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
+func TestCompat_LabelReplaceDuplicatesBeforeRanking(t *testing.T) {
+	ensureDataIngested(t)
+	waitForLokiMetricData(t)
+
+	at := time.Now().UTC().Truncate(time.Minute)
+	for _, query := range []string{
+		`topk(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))`,
+		`bottomk(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))`,
+	} {
+		params := url.Values{
+			"query": {query},
+			"start": {fmt.Sprintf("%d", at.Add(-15*time.Minute).UnixNano())},
+			"end":   {fmt.Sprintf("%d", at.UnixNano())},
+			"step":  {"60"},
+		}
+		full := "/loki/api/v1/query_range?" + params.Encode()
+		lokiStatus, lokiBody, lokiPayload := doJSONGET(t, lokiURL+full, nil)
+		proxyStatus, proxyBody, proxyPayload := doJSONGET(t, proxyURL+full, nil)
+		if lokiStatus != http.StatusOK || proxyStatus != http.StatusOK {
+			t.Fatalf("%s: HTTP loki=%d proxy=%d\nloki:  %s\nproxy: %s", query, lokiStatus, proxyStatus, lokiBody, proxyBody)
+		}
+		count := func(payload map[string]interface{}) int {
+			data, _ := payload["data"].(map[string]interface{})
+			result, _ := data["result"].([]interface{})
+			points := 0
+			for _, item := range result {
+				series, _ := item.(map[string]interface{})
+				values, _ := series["values"].([]interface{})
+				points += len(values)
+			}
+			return points
+		}
+		if l, p := count(lokiPayload), count(proxyPayload); l != p {
+			t.Errorf("%s: points loki=%d proxy=%d\nloki:  %s\nproxy: %s", query, l, p, lokiBody, proxyBody)
+		}
+	}
+}

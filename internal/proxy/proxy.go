@@ -2501,6 +2501,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
+	if routedQuery != logqlQuery {
+		r = cloneMetricQueryRequest(r, routedQuery)
+	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
 	if isBinary {
@@ -2538,9 +2541,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
-			if routedQuery != logqlQuery {
-				r = cloneMetricQueryRequest(r, routedQuery)
-			}
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
@@ -2571,6 +2571,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			cacheOut = sortSeriesByLabels(cacheOut, false)
 		}
 		var capErr error
 		if foldWithout && sc.code == http.StatusOK {
@@ -2802,6 +2805,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
+	if routedQuery != logqlQuery {
+		r = cloneMetricQueryRequest(r, routedQuery)
+	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
 	if isBinary {
@@ -2829,9 +2835,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
-			if routedQuery != logqlQuery {
-				r = cloneMetricQueryRequest(r, routedQuery)
-			}
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
@@ -2858,6 +2861,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			result = sortSeriesByLabels(result, queryIsSortable(logqlQuery))
 		}
 		var capErr error
 		if foldWithout {

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strconv"
+	"unicode/utf8"
 )
 
 // errEmptyCompatibleMatchers is Loki's syntax.errAtleastOneEqualityMatcherRequired,
@@ -97,14 +98,19 @@ func labelReplaceArgumentsError(call string) error {
 	}
 	for i := 0; i < 4; i++ {
 		if p.cur.Typ != TokComma {
-			return p.syntaxErrorAt("COMMA")
+			if i == 0 {
+				return p.syntaxErrorAt("") // the expression could go on: Loki names nothing
+			}
+			return p.syntaxErrorAt(",")
 		}
 		p.advance()
 		switch p.cur.Typ {
 		case TokString, TokRawString:
 		case TokError:
 			if p.cur.Val == "invalid quoted string" {
-				return newParseError(1, len(p.sc.src[:p.sc.pos])+1, "invalid syntax")
+				// Loki's lexer reports the start of the string.
+				before := p.sc.src[:p.pos()]
+				return newParseError(1, utf8.RuneCountInString(before)+1, "invalid char escape")
 			}
 			return p.syntaxErrorAt("STRING")
 		default:
