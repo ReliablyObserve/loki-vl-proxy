@@ -102,8 +102,7 @@ These are not current open issues in this codebase:
 - route-aware proxy, cache, and upstream request telemetry
 - prefixed app metrics under `loki_vl_proxy_*` with CI guard coverage
 - `label_replace()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
-- `label_join()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
-- `group()` — implemented: inner metric translated normally, proxy normalises all matrix values to `1` (v1.21.0)
+- `label_join()` and `group()` — not in Loki 3.7.7's LogQL; both are a 400 parse error like Loki's (they were proxy-only extensions from v1.21.0)
 - bare label matcher malformed VL output — queries like `app="value"` (missing braces) now return a descriptive HTTP 400 instead of silently producing double-quoted VL syntax (v1.20.0)
 - `detected_level` on log responses — derived per row from stored fields and the line with Loki's rules, including `unknown`, normalised values and structured metadata placement under `categorize-labels` (Unreleased; replaces the v1.20.0 JSON/logfmt inference)
 - circuit breaker sliding window — failure counting uses a 30-second sliding window; sporadic slow-query resets no longer open the breaker (v1.18.0)
