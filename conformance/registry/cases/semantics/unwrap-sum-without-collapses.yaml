@@ -96,7 +96,7 @@ compare:
     One series per label set without pod.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#739"
   impact: explore-visible
   effort: M
   area: 'internal/translator tryTranslateMetricQueryWithout / buildRateLikeQuery (keepWithoutSeries); internal/proxy without fold series limit (withWithoutFold, capWithoutFold)'
