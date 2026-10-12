@@ -10,31 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`group()`, `label_join()` and every other name Loki does not have are a 400
-  parse error, and keywords are accepted in any case (#TBD).** Loki 3.7.7 has no
-  `group` aggregation and no `label_join`: its lexer makes a function token only
-  of the names in `functionTokens` (the range operations, `sum` `avg` `max`
-  `min` `count` `stddev` `stdvar` `bottomk` `topk` `sort` `sort_desc`
+  parse error, and keywords are accepted in any case (#TBD).** Loki 3.7.7 has
+  no `group` aggregation and no `label_join`: its lexer makes a function token
+  only of the names in `functionTokens` (the range operations, `sum` `avg`
+  `max` `min` `count` `stddev` `stdvar` `bottomk` `topk` `sort` `sort_desc`
   `approx_topk`, `vector`, `label_replace` and the unwrap conversions), so any
   other name is an `IDENTIFIER` the grammar cannot place and the query fails
   with `parse error at line 1, col N: syntax error: unexpected IDENTIFIER`, N
   being the column of the name. The proxy kept any unknown `name(...)` as an
   opaque call: `group(count_over_time({...}[5m]))` answered a series valued 1
   per stream on `query_range` and a line count on `query`, `label_join(...)`
-  joined labels in the response, and `abs`, `clamp_min`, `round`, `ln`,
-  `scalar`, `quantile`, `time()` and `count_values()` reached the translator.
-  Both endpoints now answer Loki's status and text, byte for byte, with the
-  column of the name wherever it stands (`sum(group(...))` is col 5, and inside
-  a `label_replace` argument it is relative to the whole query); only
-  `label_replace`, `vector` and `approx_topk` stay opaque calls. Loki's lexer
-  also lower-cases a word before it looks it up, so `TOPK(3, ...)`, `SUM BY
-  (a) (...)`, `RATE(...)`, `OFFSET`, `UNWRAP`, `BOOL`, `ON` and `GROUP_LEFT` are
-  the keywords they spell, while a label called `Rate` or `Count` stays a
-  label. The proxy matched the lower-case spelling only: `TOPK(...)` fell
-  through the opaque path and answered a `streams` result, and `SUM BY (app)
-  (...)` was a parse error. The scanner now reads keywords in any case, and
-  the `query` parameter is written with lower-case keywords before a handler
-  reads it. The group-normalisation and `label_join` post-processing of the
-  response, now unreachable, is removed.
+  joined labels in the response, `abs` and `clamp_min` were answered as well,
+  and `time()` and `count_values()` were a 400 with the proxy's own text
+  (`unexpected )`, `unexpected STRING`). Both endpoints now answer Loki's
+  status and text, byte for byte, with the column of the name wherever it
+  stands (`sum(group(...))` is col 5, and inside a `label_replace` argument it
+  is relative to the whole query); only `label_replace`, `vector` and
+  `approx_topk` stay opaque calls. Loki's lexer also lower-cases a word before
+  it looks it up, so `TOPK(3, ...)`, `SUM BY (a) (...)`, `RATE(...)`, `OFFSET`,
+  `UNWRAP`, `BOOL`, `ON` and `GROUP_LEFT` are the keywords they spell, while a
+  label called `Rate` or `Count` stays a label. The proxy matched the
+  lower-case spelling only: `TOPK(...)` fell through the opaque path and
+  answered a `streams` result, and `SUM BY (app) (...)` was a parse error. The
+  scanner now reads keywords in any case, and the `query` parameter is written
+  with lower-case keywords before a handler reads it. The group-normalisation
+  and `label_join` post-processing of the response, now unreachable, is
+  removed.
 
 ## [2.11.2] - 2026-10-12
 

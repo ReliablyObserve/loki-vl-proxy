@@ -117,28 +117,49 @@ func TestUppercaseKeywordsSendTheLowercaseBackendRequests(t *testing.T) {
 		{`MAX(COUNT_OVER_TIME({app="a"}[5m] OFFSET 1m))`, `max(count_over_time({app="a"}[5m] offset 1m))`},
 		{`{app="a"} | JSON | DROP pod`, `{app="a"} | json | drop pod`},
 	}
-	run := func(t *testing.T, endpoint, query string) []string {
+	// The same request three ways: a GET, a form-encoded POST and a multi-tenant
+	// GET that fans out per tenant.
+	run := func(t *testing.T, endpoint, variant, query string) []string {
 		backend := newRecordingBackend(t)
 		p := newProfileProxy(t, backend.URL, LabelStyleUnderscores, MetadataFieldModeTranslated, false)
-		if w := serve(p, http.MethodGet, queryURL(endpoint, query), nil); w.Code >= 500 || w.Code == http.StatusBadRequest {
-			t.Fatalf("%s %s: status %d %.300s", endpoint, query, w.Code, w.Body)
+		var w *httptest.ResponseRecorder
+		switch variant {
+		case "post":
+			mux := http.NewServeMux()
+			p.RegisterRoutes(mux)
+			target := queryURL(endpoint, query)
+			form := target[strings.Index(target, "?")+1:]
+			req := httptest.NewRequest(http.MethodPost, target[:strings.Index(target, "?")], strings.NewReader(form))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("X-Scope-OrgID", "0")
+			w = httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+		case "multitenant":
+			w = serve(p, http.MethodGet, queryURL(endpoint, query), map[string]string{"X-Scope-OrgID": "0|1"})
+		default:
+			w = serve(p, http.MethodGet, queryURL(endpoint, query), nil)
+		}
+		if w.Code >= 500 || w.Code == http.StatusBadRequest {
+			t.Fatalf("%s %s %s: status %d %.300s", variant, endpoint, query, w.Code, w.Body)
 		}
 		return backend.dataCalls()
 	}
 	for _, endpoint := range []string{"query_range", "query"} {
-		for _, tc := range cases {
-			if endpoint == "query" && strings.HasPrefix(tc.lower, "{") {
-				continue // a log query is not an instant query
+		for _, variant := range []string{"get", "post", "multitenant"} {
+			for _, tc := range cases {
+				if endpoint == "query" && strings.HasPrefix(tc.lower, "{") {
+					continue // a log query is not an instant query
+				}
+				t.Run(endpoint+"/"+variant+"/"+tc.upper, func(t *testing.T) {
+					lower := run(t, endpoint, variant, tc.lower)
+					if len(lower) == 0 {
+						t.Fatalf("the lower-case form %q reached no backend call, the comparison proves nothing", tc.lower)
+					}
+					if upper := run(t, endpoint, variant, tc.upper); strings.Join(upper, "\n") != strings.Join(lower, "\n") {
+						t.Fatalf("backend requests differ\n upper %q\n lower %q", upper, lower)
+					}
+				})
 			}
-			t.Run(endpoint+"/"+tc.upper, func(t *testing.T) {
-				lower := run(t, endpoint, tc.lower)
-				if len(lower) == 0 {
-					t.Fatalf("the lower-case form %q reached no backend call, the comparison proves nothing", tc.lower)
-				}
-				if upper := run(t, endpoint, tc.upper); strings.Join(upper, "\n") != strings.Join(lower, "\n") {
-					t.Fatalf("backend requests differ\n upper %q\n lower %q", upper, lower)
-				}
-			})
 		}
 	}
 }
