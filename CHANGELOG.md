@@ -34,8 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs computes the operand's per-series values with its native stats
   (tumbling, sliding and instant, on every supported line); the fold across series
   is the proxy's, over those values and never over log rows, because VictoriaLogs
-  has no `stdvar` and its `stddev` exists only from v1.49.0. Not changed: a
-  `stddev` or `stdvar` nested in another expression or under a binary operator.
+  has no `stdvar` and its `stddev` exists only from v1.49.0. A `by` a label a
+  parser extracts translates the operand with that label in its first stats
+  group, as `count`, `min`, `max` and `avg` do. Not changed: a `stddev` or
+  `stdvar` nested in another expression or under a binary operator, and a `by` a
+  parsed label on a sliding range query.
+
+## [2.11.2] - 2026-10-12
 
 ### CI
 

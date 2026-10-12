@@ -198,3 +198,73 @@ func TestCompat_StddevStdvarGrouped(t *testing.T) {
 		}
 	}
 }
+
+// stddevInstantResultType returns data.resultType of an instant query, failing
+// unless the answer is a successful one without warnings.
+func stddevInstantResultType(t *testing.T, base, query string, at time.Time) string {
+	t.Helper()
+	params := url.Values{"query": {query}, "time": {strconv.FormatInt(at.UnixNano(), 10)}}
+	status, body, resp := doJSONGET(t, base+"/loki/api/v1/query?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if status != http.StatusOK || resp["status"] != "success" || resp["warnings"] != nil {
+		t.Fatalf("%s %s: unhealthy answer %d %s", base, query, status, body)
+	}
+	resultType, _ := extractMap(resp, "data")["resultType"].(string)
+	return resultType
+}
+
+// TestCompat_StddevStdvarGroupedInstantResultType: an instant stddev or stdvar
+// answers a vector with its resultType on both backends, over a window that
+// holds lines and over one that holds none (registry cluster ce65447e,
+// `stdvar without (app) (count_over_time(({namespace="prod"} |~".+bar")[1m]))`,
+// where the proxy answered no resultType).
+// conformance: semantics/stddev-stdvar-grouped-values, loki_api_v1_query
+func TestCompat_StddevStdvarGroupedInstantResultType(t *testing.T) {
+	fx := ensureStddevGroupedFixtures(t)
+	empty := fmt.Sprintf(`{service_name=~"stdgrp-%d-nothing"}`, time.Now().UnixNano())
+	for _, tc := range []struct{ name, selector string }{{"lines", fx.selector}, {"no lines", empty}} {
+		for _, op := range []string{"stddev", "stdvar"} {
+			for _, grouping := range []string{"without (pod)", "without (app)", "by (service_name)", "by ()", ""} {
+				query := fmt.Sprintf(`%s %s (count_over_time((%s |~".+")[1m]))`, op, grouping, tc.selector)
+				t.Run(tc.name+"/"+op+"/"+grouping, func(t *testing.T) {
+					at := fx.s0.Add(20 * time.Minute)
+					for name, base := range map[string]string{"loki": lokiURL, "proxy": proxyURL} {
+						if got := stddevInstantResultType(t, base, query, at); got != "vector" {
+							t.Errorf("%s answered resultType %q for %s, want vector", name, got, query)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestCompat_StddevStdvarGroupedRegistryQueries runs the row's own request and
+// the example queries of its parity clusters, on the generator's shared data,
+// range and instant, and compares the proxy with Loki: series, labels, values.
+// conformance: semantics/stddev-stdvar-grouped-values, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_StddevStdvarGroupedRegistryQueries(t *testing.T) {
+	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
+	for _, query := range []string{
+		`stddev by (app) (count_over_time({env="production"}[5m]))`,
+		`stdvar by(app)(count_over_time({env="production"}[5m]))`,
+		`stddev by(app)(count_over_time({env="production"}[5m]))`,
+		`stddev by(level)(count_over_time({app="api-gateway",env="production"}[5m]))`,
+	} {
+		t.Run("range/"+query, func(t *testing.T) {
+			loki := slidingRangeSeries(t, lokiURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
+			proxy := slidingRangeSeries(t, proxyURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
+			compareUnwrapSumSeries(t, query, loki, proxy)
+		})
+		t.Run("instant/"+query, func(t *testing.T) {
+			loki := map[string]map[string]string{}
+			proxy := map[string]map[string]string{}
+			for key, value := range unwrapInstant(t, lokiURL, query, end) {
+				loki[key] = map[string]string{strconv.FormatInt(end.Unix(), 10): value}
+			}
+			for key, value := range unwrapInstant(t, proxyURL, query, end) {
+				proxy[key] = map[string]string{strconv.FormatInt(end.Unix(), 10): value}
+			}
+			compareUnwrapSumSeries(t, query, loki, proxy)
+		})
+	}
+}
