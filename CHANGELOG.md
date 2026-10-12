@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`label_replace` adds its destination label to instant answers, reads an
-  escaped regexp, and runs under `topk`, `sort` and a binary expression (#TBD).**
+  escaped regexp, and runs under `topk`, `sort` and a binary expression (#744).**
   `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
   "(.*)-.*")` came back from `/loki/api/v1/query` without `app_short` on every
   series (also through nested `label_replace`), where Loki adds it
