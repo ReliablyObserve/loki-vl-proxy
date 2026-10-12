@@ -22,12 +22,27 @@ why: |
   Loki's value is the first or the last sample of each series in the window, in
   timestamp order (pkg/logql/range_vector.go FirstOverTime and LastOverTime).
   Fixed: the translation reads each series' value with row_min(_time, v) or
-  row_max(_time, v), which VictoriaLogs has had since v1.40, unpacks the row's
+  row_max(_time, v), unpacks the row's
   value into a number (`unpack_json ... fields (v)` then `math`; a row_* result is
   a label to VictoriaLogs, never a metric) and aggregates it with the stats pipe
   after it, so the whole query is VictoriaLogs stats: no raw rows, one value per
   series. The unwrap conversion-error counter rides on the same chain.
-  Not changed: the window a query_range point reads is the step-sized bucket,
+  Not changed (each stays open, none new):
+  * grouped aggregations without a translation: `stdvar by (...)`,
+    `topk by (...) (k, ...)` and `bottomk by (...) (k, ...)` over first/last
+    still send the stats function VictoriaLogs rejects (422, loud on purpose:
+    translating them without the aggregation would be a silent wrong answer);
+  * equal timestamps within a series: row_min/row_max keep the FIRST row met
+    (strict lessString, pipe_sort_topk.go:707; mergeState is strict too, so the
+    pick among equal timestamps depends on block and shard order), where Loki's
+    LastOverTime keeps the LAST sample (range_vector.go:835-843) and its
+    FirstOverTime the first. last_over_time can therefore differ from Loki, and
+    is not deterministic, for two samples of one series with the same
+    nanosecond. The proxy cannot complete it exactly and bounded: VictoriaLogs
+    exposes no insertion order for equal timestamps and Loki's order among them
+    is its iterator's, so there is nothing to rank by; it is documented, not
+    worked around;
+  * the window a query_range point reads is the step-sized bucket,
   as for avg, max and min over time (semantics/unwrap-over-time-range-windows);
   the series identity is the stream and the line, as for those functions
   (semantics/unwrap-per-series-identity-raw-rows); offset and line filters stay
@@ -55,5 +70,5 @@ gap:
   area: 'internal/translator firstLastRowStats (first_over_time / last_over_time) and internal/proxy unwrapCountingQuery'
   loki: 'pkg/logql/range_vector.go:818-843 FirstOverTime, LastOverTime; pkg/logql/evaluator.go:400-529 VectorAggEvaluator'
   proxy: 'row_min / row_max per series, unpacked, then the outer stats pipe'
-  planned_test: 'TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastTopkBottomk (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeUnderAggregationInstantDifferential, TestFirstLastOverTimeUnderAggregationRange, TestFirstLastOverTimeTopkBottomkInstantDifferential, TestUnwrapConversionErrorAnswersLokiText (internal/proxy); TestFirstLastOverTimeUnderAggregationTranslatesToRowStats (internal/translator)'
+  planned_test: 'TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastTopkBottomk and TestCompat_UnwrapFirstLastRangeLevelBy (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeUnderAggregationInstantDifferential, TestFirstLastOverTimeUnderAggregationRange, TestFirstLastOverTimeTopkBottomkInstantDifferential, TestFirstLastOverTimeRangeLevelByDifferential, TestUnwrapConversionErrorAnswersLokiText (internal/proxy); TestFirstLastOverTimeUnderAggregationTranslatesToRowStats (internal/translator)'
   clusters: []

@@ -76,6 +76,16 @@ func TestFirstLastOverTimeBareIsOneValuePerSeries(t *testing.T) {
 		{`last_over_time({app="p"} | unwrap amount [5m])`, "row_max", "_stream, level"},
 		{`last_over_time({app="p"} | logfmt | unwrap amount [5m]) by (pod)`, "row_max", "pod"},
 		{`first_over_time({app="p"} | logfmt | unwrap amount [5m]) by ()`, "row_min", ""},
+		// A range-level by (...) groups the samples before the range function
+		// (Loki groups, then takes the first or last sample of the group).
+		{`first_over_time({app="p"} | logfmt | unwrap amount [5m]) by (app)`, "row_min", "app"},
+		{`last_over_time({app="p"} | unwrap amount [5m]) by (app)`, "row_max", "app"},
+		// An outer aggregation that has no stats equivalent here (topk, bottomk,
+		// sort: the proxy ranks or orders the response) with no by: one value per series.
+		{`topk(2, last_over_time({app="p"} | logfmt | unwrap amount [5m]))`, "row_max", "_stream, _msg"},
+		{`bottomk(2, first_over_time({app="p"} | json | unwrap amount [5m]))`, "row_min", "_stream, _msg"},
+		{`sort(last_over_time({app="p"} | logfmt | unwrap amount [5m]))`, "row_max", "_stream, _msg"},
+		{`sort_desc(first_over_time({app="p"} | unwrap amount [5m]))`, "row_min", "_stream"},
 	} {
 		got, err := TranslateLogQL(tc.logql)
 		if err != nil {

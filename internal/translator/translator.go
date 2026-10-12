@@ -1968,6 +1968,10 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 	// or: count_over_time({...}[5m])
 	// or: rate({...}[5m])
 
+	// VictoriaLogs has no first or last stats function, so "first" and "last" are
+	// the stats functions only for the shapes firstLastRowStats does not translate
+	// (stdvar by, topk by, bottomk by): they are sent as is and VictoriaLogs
+	// rejects them, a loud failure rather than an answer without the aggregation.
 	metricFuncs := map[string]string{
 		"rate":             "count()",
 		"count_over_time":  "count()",
