@@ -2489,12 +2489,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	// Extract without() labels and label-transform markers for post-processing.
+	// Extract without() labels and label_replace markers for post-processing.
 	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
-	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
-	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
@@ -2516,10 +2514,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	// A label_replace or label_join around a binary expression routes by that
+	// A label_replace around a binary expression routes by that
 	// expression: its operands are evaluated, then the transform is applied below.
 	routedQuery := logqlQuery
-	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+	if len(labelReplaceSpecs) > 0 {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
 	if routedQuery != logqlQuery {
@@ -2540,7 +2538,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		withoutLabels = nil
 	}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || len(labelReplaceSpecs) > 0
 	foldWithout = foldWithout && len(withoutLabels) > 0
 	if foldWithout {
 		r = p.withWithoutFold(r)
@@ -2593,16 +2591,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutChain(cacheOut, withoutLabels, logqlQuery, withoutOp)
 		}
-		if isGroupQuery {
-			cacheOut = applyGroupNormalization(cacheOut)
-		}
 		for _, spec := range labelReplaceSpecs {
 			cacheOut = applyLabelReplace(cacheOut, spec)
 		}
-		if labelJoinSpec != nil {
-			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
-		}
-		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		if len(labelReplaceSpecs) > 0 {
 			cacheOut = sortSeriesByLabels(cacheOut, false)
 		}
 		var capErr error
@@ -2811,12 +2803,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract without() labels and label-transform markers for post-processing.
+	// Extract without() labels and label_replace markers for post-processing.
 	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
-	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
-	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
@@ -2835,10 +2825,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	// A label_replace or label_join around a binary expression routes by that
+	// A label_replace around a binary expression routes by that
 	// expression: its operands are evaluated, then the transform is applied below.
 	routedQuery := logqlQuery
-	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+	if len(labelReplaceSpecs) > 0 {
 		routedQuery = stripLabelTransforms(logqlQuery)
 	}
 	if routedQuery != logqlQuery {
@@ -2858,7 +2848,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		withoutLabels = nil
 	}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || len(labelReplaceSpecs) > 0
 	foldWithout = foldWithout && len(withoutLabels) > 0
 	if foldWithout {
 		r = p.withWithoutFold(r)
@@ -2897,16 +2887,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if len(withoutLabels) > 0 {
 			result = applyWithoutChain(result, withoutLabels, logqlQuery, withoutOp)
 		}
-		if isGroupQuery {
-			result = applyGroupNormalization(result)
-		}
 		for _, spec := range labelReplaceSpecs {
 			result = applyLabelReplace(result, spec)
 		}
-		if labelJoinSpec != nil {
-			result = applyLabelJoin(result, *labelJoinSpec)
-		}
-		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		if len(labelReplaceSpecs) > 0 {
 			result = sortSeriesByLabels(result, queryIsSortable(logqlQuery))
 		}
 		var capErr error

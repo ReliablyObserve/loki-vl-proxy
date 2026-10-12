@@ -42,54 +42,6 @@ func parseMatrix(t *testing.T, body []byte) []map[string]string {
 	return out
 }
 
-func parseMatrixValues(t *testing.T, body []byte) [][]interface{} {
-	t.Helper()
-	var resp struct {
-		Data struct {
-			Result []struct {
-				Values [][]interface{} `json:"values"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		t.Fatalf("parseMatrixValues: %v", err)
-	}
-	if len(resp.Data.Result) == 0 {
-		return nil
-	}
-	return resp.Data.Result[0].Values
-}
-
-func TestApplyGroupNormalization(t *testing.T) {
-	body := matrixBody(t, []map[string]interface{}{
-		{
-			"metric": map[string]string{"level": "error"},
-			"values": [][]interface{}{{"1234567890", "42"}, {"1234567891", "7"}},
-		},
-		{
-			"metric": map[string]string{"level": "warn"},
-			"values": [][]interface{}{{"1234567890", "3"}},
-		},
-	})
-
-	result := applyGroupNormalization(body)
-
-	vals := parseMatrixValues(t, result)
-	for _, v := range vals {
-		if len(v) < 2 || v[1] != "1" {
-			t.Errorf("expected value 1, got %v", v)
-		}
-	}
-}
-
-func TestApplyGroupNormalization_NonMatrix(t *testing.T) {
-	body := []byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`)
-	out := applyGroupNormalization(body)
-	if string(out) != string(body) {
-		t.Error("non-matrix body should be returned unchanged")
-	}
-}
-
 func TestApplyLabelReplace_BasicMatch(t *testing.T) {
 	body := matrixBody(t, []map[string]interface{}{
 		{"metric": map[string]string{"instance": "host1:9090"}, "values": [][]interface{}{{"1", "1"}}},
@@ -130,42 +82,5 @@ func TestApplyLabelReplace_NoMatch_KeepsDst(t *testing.T) {
 
 	if metrics[0]["host"] != "old" {
 		t.Errorf("host label should be unchanged on no-match, got %q", metrics[0]["host"])
-	}
-}
-
-func TestApplyLabelJoin(t *testing.T) {
-	body := matrixBody(t, []map[string]interface{}{
-		{"metric": map[string]string{"service": "api", "host": "node1"}, "values": [][]interface{}{{"1", "1"}}},
-	})
-
-	spec := translator.LabelJoinSpec{
-		DstLabel:  "service_host",
-		Separator: "/",
-		SrcLabels: []string{"service", "host"},
-	}
-	result := applyLabelJoin(body, spec)
-	metrics := parseMatrix(t, result)
-
-	if metrics[0]["service_host"] != "api/node1" {
-		t.Errorf("service_host=%q want api/node1", metrics[0]["service_host"])
-	}
-}
-
-func TestApplyLabelJoin_MissingSrc(t *testing.T) {
-	body := matrixBody(t, []map[string]interface{}{
-		{"metric": map[string]string{"service": "api"}, "values": [][]interface{}{{"1", "1"}}},
-	})
-
-	spec := translator.LabelJoinSpec{
-		DstLabel:  "service_host",
-		Separator: "/",
-		SrcLabels: []string{"service", "host"}, // host is missing
-	}
-	result := applyLabelJoin(body, spec)
-	metrics := parseMatrix(t, result)
-
-	// Missing labels are skipped, so only "api" appears (no trailing separator)
-	if metrics[0]["service_host"] != "api" {
-		t.Errorf("service_host=%q want api", metrics[0]["service_host"])
 	}
 }

@@ -5,24 +5,6 @@ import (
 	"testing"
 )
 
-func TestParseGroupMarker(t *testing.T) {
-	t.Run("with_marker_strips_and_returns_true", func(t *testing.T) {
-		// The marker is appended as a suffix; reconstruct one by piggybacking
-		// on a known query that includes it.
-		base := `{app="x"} | stats count()`
-		// Round-trip via GroupMarker — assert via output of helpers.
-		// We can't reach unexported groupMarker, but we can call ParseGroupMarker
-		// on a string built to include the suffix.
-		q, ok := ParseGroupMarker(base)
-		if ok {
-			t.Fatalf("plain string should not match marker: ok=%v stripped=%q", ok, q)
-		}
-		if q != base {
-			t.Errorf("plain string should be returned unchanged: %q", q)
-		}
-	})
-}
-
 func TestDurationSeconds(t *testing.T) {
 	tests := []struct {
 		in   string
