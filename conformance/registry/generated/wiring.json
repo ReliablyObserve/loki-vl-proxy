@@ -425,6 +425,9 @@
       "internal/proxy/label_values_cap_inventory_test.go",
       "internal/proxy/metadata_inventory_test.go"
     ],
+    "semantics/label-replace-duplicates-before-ranking": [
+      "test/e2e-compat/label_replace_new_label_test.go"
+    ],
     "semantics/label-replace-new-label": [
       "internal/proxy/label_replace_semantics_test.go",
       "test/e2e-compat/label_replace_new_label_test.go"
@@ -555,7 +558,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 300,
+  "registry_items": 301,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -985,6 +988,7 @@
     "test/e2e-compat/label_replace_new_label_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
+      "semantics/label-replace-duplicates-before-ranking",
       "semantics/label-replace-new-label"
     ],
     "test/e2e-compat/labels_zero_width_test.go": [
@@ -1203,5 +1207,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 108
+  "wired_items": 109
 }
