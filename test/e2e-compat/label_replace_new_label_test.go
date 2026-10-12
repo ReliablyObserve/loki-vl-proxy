@@ -33,6 +33,15 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 	ensureDataIngested(t)
 	waitForLokiMetricData(t)
 
+	// The structured metadata of the fixture streams that Loki adds to a bare
+	// range function's series (see the bare field below).
+	structuredMetadataLabels := map[string]bool{
+		"cloud_provider": true, "cloud_region": true, "deployment_name": true, "deployment_version": true,
+		"host_name": true, "k8s_node_name": true, "queue_name": true, "request_id": true, "span_id": true,
+		"telemetry_sdk_language": true, "telemetry_sdk_name": true, "telemetry_sdk_version": true,
+		"trace_id": true, "user_agent": true, "worker_id": true,
+	}
+
 	sel := `{env="production"}`
 	count := `count_over_time(` + sel + `[5m])`
 	rate := `rate(` + sel + `[5m])`
@@ -47,59 +56,75 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 		// where two series end with one label set, Loki files the points of
 		// both under one series.
 		points bool
+		// bare marks a range function with no aggregation: Loki's series carry
+		// the entry's structured metadata and the proxy's keep the stream
+		// (registry: metric-identity/structured-metadata-splits-series, an
+		// owner-accepted deviation), so those labels are left out of both
+		// sides. The destination label, the stream labels and detected_level
+		// are still compared.
+		bare bool
 	}{
 		// the request of the registry row, its bare form, and the clusters' forms
-		{"row", `label_replace(sum by (app) (rate({app="api-gateway"}[5m])), "app_short", "$1", "app", "(.*)-.*")`, false},
-		{"bare rate", `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app", "(.*)-.*")`, false},
-		{"bare count_over_time", lr(count, "app_short", "$1", "app", "(.*)-.*"), false},
-		{"bytes_over_time", lr(`bytes_over_time(`+sel+`[5m])`, "buzz", "$2", "app", "(.*)-(.*)"), false},
-		{"nested", lr(lr(agg, "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)"), false},
-		{"nested, the outer reads the inner's label", lr(lr(agg, "a1", "$1", "app", "(.*)-.*"), "a2", "x$1", "a1", "(.*)"), false},
-		{"nested, three deep", lr(lr(lr(agg, "a", "$1", "app", "(.*)-.*"), "b", "$1$1", "a", "(.*)"), "c", "${1}!", "b", "(.*)"), false},
+		{"row", `label_replace(sum by (app) (rate({app="api-gateway"}[5m])), "app_short", "$1", "app", "(.*)-.*")`, false, false},
+		{"bare rate", `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app", "(.*)-.*")`, false, false},
+		{"bare count_over_time", lr(count, "app_short", "$1", "app", "(.*)-.*"), false, true},
+		{"bytes_over_time", lr(`bytes_over_time(`+sel+`[5m])`, "buzz", "$2", "app", "(.*)-(.*)"), false, true},
+		{"nested", lr(lr(agg, "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)"), false, false},
+		{"nested, the outer reads the inner's label", lr(lr(agg, "a1", "$1", "app", "(.*)-.*"), "a2", "x$1", "a1", "(.*)"), false, false},
+		{"nested, three deep", lr(lr(lr(agg, "a", "$1", "app", "(.*)-.*"), "b", "$1$1", "a", "(.*)"), "c", "${1}!", "b", "(.*)"), false, false},
 		// regexp and replacement rules
-		{"anchored: a prefix does not match", lr(agg, "d", "x", "app", "api"), false},
-		{"anchored: the whole value", lr(agg, "d", "x", "app", "api-gateway"), false},
-		{"no match keeps the series", lr(agg, "new_label", "default", "app", "^nonexistent$"), false},
-		{"escaped regexp", lr(agg, "d", "$1", "app", `([a-z]+)\-(\w+)`), false},
-		{"escaped dot never matches a hyphen", lr(agg, "d", "$1", "app", `(\w+)\.(\w+)`), false},
-		{"named group", lr(agg, "d", "${head}", "app", `(?P<head>[a-z]+)-.*`), false},
-		{"bare group name swallows the suffix", lr(agg, "d", "$1x", "app", "(.*)-.*"), false},
-		{"two groups", lr(agg, "d", "$2/$1", "app", "([a-z]+)-([a-z]+)"), false},
-		{"constant replacement", lr(agg, "d", "const", "app", ".*"), false},
-		{"missing source, empty-matching regexp", lr(agg, "d", "dflt", "nope", "(.*)"), false},
-		{"missing source, non-empty regexp", lr(agg, "d", "dflt", "nope", ".+"), false},
-		{"empty replacement removes the destination", lr(agg, "app", "", "app", "api-gateway"), false},
-		{"destination equal to the source", lr(agg, "app", "$1", "app", "(.*)-.*"), false},
-		{"two series with one label set", lr(agg, "app", "all", "app", ".+"), true},
-		{"all labels removed", lr(agg, "app", "", "app", ".*"), true},
-		{"label names are not validated", lr(agg, "1bad", "x", "app", ".*"), false},
+		{"anchored: a prefix does not match", lr(agg, "d", "x", "app", "api"), false, false},
+		{"anchored: the whole value", lr(agg, "d", "x", "app", "api-gateway"), false, false},
+		{"no match keeps the series", lr(agg, "new_label", "default", "app", "^nonexistent$"), false, false},
+		{"escaped regexp", lr(agg, "d", "$1", "app", `([a-z]+)\-(\w+)`), false, false},
+		{"escaped dot never matches a hyphen", lr(agg, "d", "$1", "app", `(\w+)\.(\w+)`), false, false},
+		{"named group", lr(agg, "d", "${head}", "app", `(?P<head>[a-z]+)-.*`), false, false},
+		{"bare group name swallows the suffix", lr(agg, "d", "$1x", "app", "(.*)-.*"), false, false},
+		{"two groups", lr(agg, "d", "$2/$1", "app", "([a-z]+)-([a-z]+)"), false, false},
+		{"constant replacement", lr(agg, "d", "const", "app", ".*"), false, false},
+		{"missing source, empty-matching regexp", lr(agg, "d", "dflt", "nope", "(.*)"), false, false},
+		{"missing source, non-empty regexp", lr(agg, "d", "dflt", "nope", ".+"), false, false},
+		{"empty replacement removes the destination", lr(agg, "app", "", "app", "api-gateway"), false, false},
+		{"destination equal to the source", lr(agg, "app", "$1", "app", "(.*)-.*"), false, false},
+		{"two series with one label set", lr(agg, "app", "all", "app", ".+"), true, false},
+		{"all labels removed", lr(agg, "app", "", "app", ".*"), true, false},
+		{"label names are not validated", lr(agg, "1bad", "x", "app", ".*"), false, false},
 		// around and with other expressions
-		{"over a binary expression", lr(agg+` * 2`, "app_short", "$1", "app", "(.*)-.*"), false},
-		{"over a binary of two aggregations", lr(agg+` / `+agg, "app_short", "$1", "app", "(.*)-.*"), false},
-		{"over a rate aggregation", lr(`sum by (app) (`+rate+`)`, "app_short", "$1", "app", "(.*)-.*"), false},
-		{"over a parser", lr(`sum by (app) (count_over_time(`+sel+` | json [5m]))`, "app_short", "$1", "app", "(.*)-.*"), false},
-		{"under sort", `sort(` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false},
-		{"under topk", `topk(2, ` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false},
+		{"over a binary expression", lr(agg+` * 2`, "app_short", "$1", "app", "(.*)-.*"), false, false},
+		{"over a binary of two aggregations", lr(agg+` / `+agg, "app_short", "$1", "app", "(.*)-.*"), false, false},
+		{"over a rate aggregation", lr(`sum by (app) (`+rate+`)`, "app_short", "$1", "app", "(.*)-.*"), false, false},
+		{"over a parser", lr(`sum by (app) (count_over_time(`+sel+` | json | __error__="" [5m]))`, "app_short", "$1", "app", "(.*)-.*"), false, false},
+		{"under sort", `sort(` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false, false},
+		{"under topk", `topk(1, ` + lr(agg, "app_short", "$1", "app", "(.*)-.*") + `)`, false, false},
 		// an invalid regexp is Loki's parse error
-		{"invalid regexp", lr(agg, "new", "$1", "app", "[invalid"), false},
-		{"invalid regexp, nested", lr(lr(agg, "d", "$1", "app", "(.*)"), "e", "$1", "d", "(unclosed"), false},
-		{"invalid regexp under topk", `topk(2, ` + lr(agg, "new", "$1", "app", "*bad") + `)`, false},
+		{"invalid regexp", lr(agg, "new", "$1", "app", "[invalid"), false, false},
+		{"invalid regexp, nested", lr(lr(agg, "d", "$1", "app", "(.*)"), "e", "$1", "d", "(unclosed"), false, false},
+		{"invalid regexp under topk", `topk(2, ` + lr(agg, "new", "$1", "app", "*bad") + `)`, false, false},
 		// a call the grammar rejects
-		{"invalid escape in a string", `label_replace(` + agg + `, "d", "$1", "app", "(.+):\d+")`, false},
-		{"three string arguments", `label_replace(` + agg + `, "d", "$1", "app")`, false},
-		{"five string arguments", `label_replace(` + agg + `, "d", "$1", "app", "x", "y")`, false},
+		{"invalid escape in a string", `label_replace(` + agg + `, "d", "$1", "app", "(.+):\d+")`, false, false},
+		{"three string arguments", `label_replace(` + agg + `, "d", "$1", "app")`, false, false},
+		{"five string arguments", `label_replace(` + agg + `, "d", "$1", "app", "x", "y")`, false, false},
 	}
 
 	// labelCounts reads a decoded answer as {label set: samples}: an instant
 	// vector's samples per label set, a range series' points when points is
 	// set and 1 otherwise (the points per step are other registry items').
-	labelCounts := func(payload map[string]interface{}, instant, points bool) map[string]int {
+	labelCounts := func(payload map[string]interface{}, instant, points, bare bool) map[string]int {
 		out := map[string]int{}
 		data, _ := payload["data"].(map[string]interface{})
 		result, _ := data["result"].([]interface{})
 		for _, item := range result {
 			series, _ := item.(map[string]interface{})
 			metric, _ := series["metric"].(map[string]interface{})
+			if bare {
+				kept := map[string]interface{}{}
+				for name, value := range metric {
+					if !structuredMetadataLabels[name] {
+						kept[name] = value
+					}
+				}
+				metric = kept
+			}
 			key := canonicalMetricKey(metric)
 			if instant {
 				out[key]++
@@ -160,7 +185,7 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 				if lt, pt := resultType(lokiPayload), resultType(proxyPayload); lt != pt {
 					t.Fatalf("resultType loki=%q proxy=%q\nloki:  %s\nproxy: %s", lt, pt, lokiBody, proxyBody)
 				}
-				lokiSeries, proxySeries := labelCounts(lokiPayload, instant, shape.points), labelCounts(proxyPayload, instant, shape.points)
+				lokiSeries, proxySeries := labelCounts(lokiPayload, instant, shape.points, shape.bare), labelCounts(proxyPayload, instant, shape.points, shape.bare)
 				if len(lokiSeries) == 0 {
 					t.Skipf("Loki answered no series for %s; nothing to compare", shape.query)
 				}
