@@ -48,7 +48,7 @@ compare:
     One unlabelled series whose every value is "NaN".
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#745"
   impact: api-only
   effort: S
   area: 'internal/proxy binary_matching.go (binarySampleValue), metric_binary.go (applyOp)'
