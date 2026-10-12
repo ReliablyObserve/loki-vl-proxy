@@ -104,14 +104,14 @@ func TestProxyHelpers_CanonicalReadCacheKey_NormalizesDetectedLimitsAndDefaults(
 
 func TestProxyHelpers_AddStatsByStreamClause_PreservesStreamIdentity(t *testing.T) {
 	got := addStatsByStreamClause(`app:="api-gateway" | stats count()`, nil)
-	if got != `app:="api-gateway" | stats by (_stream, level) count()` {
+	if withoutDetectedLevelShape(got) != `app:="api-gateway" | stats by (_stream, level) count()` || !strings.Contains(got, "stats by (_stream, level, detected_level) count()") {
 		t.Fatalf("unexpected stats identity clause: %q", got)
 	}
 }
 
 func TestAddStatsByStreamClause(t *testing.T) {
 	t.Run("injects by clause after stats keyword", func(t *testing.T) {
-		got := addStatsByStreamClause(`app:="api" | stats count()`, nil)
+		got := withoutDetectedLevelShape(addStatsByStreamClause(`app:="api" | stats count()`, nil))
 		want := `app:="api" | stats by (_stream, level) count()`
 		if got != want {
 			t.Fatalf("got %q, want %q", got, want)
@@ -148,7 +148,7 @@ func TestAddStatsByStreamClause(t *testing.T) {
 
 func TestProxyHelpers_PreserveMetricStreamIdentity_UsesStreamForBareMetrics(t *testing.T) {
 	got := preserveMetricStreamIdentity(`rate({app="api-gateway"} |= "GET"[5m])`, `app:="api-gateway" ~"GET" | stats rate()`, nil)
-	if got != `app:="api-gateway" ~"GET" | stats by (_stream, level) rate()` {
+	if withoutDetectedLevelShape(got) != `app:="api-gateway" ~"GET" | stats by (_stream, level) rate()` {
 		t.Fatalf("unexpected preserved metric query: %q", got)
 	}
 }

@@ -58,6 +58,7 @@ func TestAdvanced_MetricQueries(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error: %v", err)
 			}
+			got = withoutDetectedLevelShape(got)
 			if got != tt.want {
 				t.Errorf("TranslateLogQL()\n  got  = %q\n  want = %q", got, tt.want)
 			}

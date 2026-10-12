@@ -240,7 +240,16 @@ func tumblingStatsBody(t *testing.T, q string, lines []tumblingLine, start, end,
 	t.Helper()
 	// unpack_logfmt, and the `level=<level> <_>` pattern the tests use, expose
 	// the logfmt fields of a line.
-	parsed := strings.Contains(q, "| unpack_logfmt") || strings.Contains(q, `| extract "level=<level> <_>"`)
+	// The detected_level pipes the translator adds also unpack logfmt: they are
+	// not a parser stage of the query.
+	userQuery := q
+	if i := strings.Index(q, derivedLevelChainStart); i >= 0 {
+		const written = `format "<__dl>" as detected_level`
+		if j := strings.Index(q[i:], written); j >= 0 {
+			userQuery = q[:i] + q[i+j+len(written):]
+		}
+	}
+	parsed := strings.Contains(userQuery, "| unpack_logfmt") || strings.Contains(q, `| extract "level=<level> <_>"`)
 	q, rankedKeep := fakeRankedKeep(t, q, lines, start, end, parsed)
 	m := tumblingStatsByRE.FindStringSubmatch(q)
 	if m == nil {
@@ -276,6 +285,8 @@ func tumblingStatsBody(t *testing.T, q string, lines []tumblingLine, start, end,
 			switch {
 			case f == "_stream":
 				metric[f] = tumblingStream(line.labels)
+			case f == "detected_level":
+				metric[f] = dlDerive(line.labels["level"], line.msg)
 			case line.labels[f] == "" && parsed:
 				metric[f] = slidingLogfmtFields(line.msg)[f]
 			default:

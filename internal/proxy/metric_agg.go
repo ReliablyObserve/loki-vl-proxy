@@ -237,9 +237,9 @@ func isBareMetricFunctionQuery(logql string) bool {
 }
 
 // addStatsByStreamClause groups a bare metric query by the series identity
-// Loki gives it: the stream, its level, and every label a `| regexp` or
-// `| pattern` stage extracted (captureLabels), which Loki counts as part of
-// the series.
+// Loki gives it: the stream, its level and the detected_level Loki derives for
+// every entry, and every label a `| regexp` or `| pattern` stage extracted
+// (captureLabels), which Loki counts as part of the series.
 func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 	idx := strings.Index(logsqlQuery, "| stats ")
 	if idx < 0 {
@@ -250,7 +250,13 @@ func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 	for _, label := range captureLabels {
 		group += ", " + quoteLogsQLIdent(label)
 	}
-	return logsqlQuery[:statsStart] + "by (" + group + ") " + logsqlQuery[statsStart:]
+	grouped := logsqlQuery[:statsStart] + "by (" + group + ") " + logsqlQuery[statsStart:]
+	if queryUsesParserStages(logsqlQuery) {
+		// The parsers' own labels are read from the rows by the evaluators that
+		// answer these queries.
+		return grouped
+	}
+	return translator.ApplyStreamIdentityDetectedLevel(grouped, nil)
 }
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {

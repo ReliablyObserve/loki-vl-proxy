@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bare and `without()` metrics carry Loki's `detected_level`, "unknown" included,
+  on every route.** Loki attaches `detected_level` to every entry at ingest and
+  falls back to `unknown` when no rule finds a level (the stored level fields, the
+  level of a JSON or logfmt body, a level word of the line), so
+  `count_over_time({app="x"}[5m])`, `rate(...)` and `sum without (pod) (...)`
+  answer series named by it, and `count by (pod) (...)` counts series that differ
+  by it. The proxy named those series by the stream and its stored `level` field
+  and filled the label from `level` afterwards, so an instant query and a
+  tumbling window (range equal to the step) answered a series with no
+  `detected_level` at all for lines without a level field, merged the lines whose
+  level only the body gives into one series, and the sliding window answered
+  `unknown` for them: three routes, three answers, none Loki's. The grouping now
+  also names `detected_level`, which VictoriaLogs computes with the same pipes a
+  `by (detected_level)` grouping already uses (inserted once, before the query's
+  own pipes, so `| drop detected_level` still removes it), and the sliding window
+  reads that value. Unwrap queries and queries with a parser stage keep their
+  series identity. The extra pipes read each row's line only when it has no stored
+  level; the speed of bare metrics over large ranges is part of the proof owed for
+  this change ([#TBD](https://github.com/ReliablyObserve/Loki-VL-proxy/pull/TBD)).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

@@ -12,7 +12,7 @@ import (
 
 func TestEmptyWithoutInstantPreservesSeries(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if query := r.FormValue("query"); !strings.Contains(query, "by (_stream, level)") {
+		if query := r.FormValue("query"); !strings.Contains(query, "by (_stream, level, detected_level)") {
 			t.Errorf("missing stream grouping: %s", query)
 		}
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"kind":"0"},"value":[1609459200,"1"]},{"metric":{"kind":"1"},"value":[1609459200,"1"]}]}}`))

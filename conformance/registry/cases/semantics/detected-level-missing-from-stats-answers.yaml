@@ -1,0 +1,80 @@
+id: semantics/detected-level-missing-from-stats-answers
+title: A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed)
+proves:
+  - severity-exposure-surfaces
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  Loki attaches detected_level to every entry at ingest and falls back to
+  "unknown" (pkg/distributor/field_detection.go: LogLevelUnknown; the rule order
+  is the stored level fields, the level of a JSON or logfmt body, a level word of
+  the line, else unknown). It is structured metadata, which the sample extractor
+  adds to the labels builder (pkg/logql/log/metrics_extraction.go:
+  streamLineSampleExtractor.Process) and which GroupedLabels returns for an
+  ungrouped or without() grouping (pkg/logql/log/labels.go:664-688). So
+  `count_over_time({app="x"}[5m])`, `rate(...)` and `sum without (pod) (...)`
+  answer series that carry detected_level, "unknown" for the lines no rule gives
+  a level; a grouping by it always has that group; and `count by (pod) (...)`
+  counts series that differ by it.
+
+  The proxy named a bare or without() metric by the stream and its stored level
+  field (`stats by (_stream, level)`), and filled detected_level from `level`
+  after the answer. So, on VictoriaLogs data with no `level` field:
+    - the instant and the tumbling route answered a series with no
+      detected_level label at all (a missing "unknown" series);
+    - a stream whose lines get different levels from the body (`level=warn`,
+      `{"level":"error"}`, `ERROR: ...`) was one merged series on those routes;
+      the sliding route filled "unknown" for it from an empty level field, so
+      the routes disagreed with each other as well as with Loki;
+    - `count by (pod)`, `max without (pod)` and the like counted the stream and
+      level, not the stream and detected_level, as series.
+  `by (detected_level)` groupings were already right (the translator computes
+  Loki's value in VictoriaLogs for them); `count by (detected_level)` over a
+  sliding window is a separate gap (semantics/non-sum-vector-aggregation-unreduced).
+
+  Fixed in VictoriaLogs, as the by (detected_level) groupings already are: a stats
+  pipe that groups by `_stream` and `level` (the translator's series-identity
+  grouping for a bare range aggregation, a without() grouping and the inner
+  stage of count, min, max and avg, and the proxy's stream-identity clause for a
+  bare metric) also groups by detected_level, and the detected_level pipe chain
+  (stored level fields, severity_number, the JSON, logfmt and keyword reading of
+  the line, else "unknown") is inserted before the query's own pipes, once, so a
+  `| drop detected_level` or `| keep` stage still removes it afterwards, as in
+  Loki. The sliding window evaluator reads the value VictoriaLogs computed
+  instead of its level field. The pipes exist on every supported VictoriaLogs
+  line (the by (detected_level) groupings already send them). Not changed: unwrap
+  queries keep their series identity (semantics/unwrap-per-series-identity-raw-rows),
+  queries with a parser stage are answered by the raw-row evaluators, which label
+  rows from their level field, and the documented index/volume extension
+  (profiles/volume-detected-level-extension) still names lines without a level
+  detected_level="".
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'count_over_time({service_name="api-gateway"}[5m])'
+    start: 'now-1h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series: the stream labels and detected_level ("unknown" for lines no
+    rule gives a level), Loki's counts.
+gap:
+  status: fixed
+  fixed_by: "#TBD"
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/translator ApplyStreamIdentityDetectedLevel (applyDerivedGroupings); internal/proxy addStatsByStreamClause, collectRangeMetricHits'
+  loki: 'pkg/distributor/field_detection.go (LogLevelUnknown); pkg/logql/log/metrics_extraction.go streamLineSampleExtractor.Process; pkg/logql/log/labels.go GroupedLabels'
+  proxy: 'series grouped by _stream, level and detected_level; the detected_level chain computed by VictoriaLogs'
+  planned_test: 'TestCompat_DetectedLevelUnknownInStatsAnswers (test/e2e-compat, group core); TestDetectedLevelUnknownAcrossRoutes, TestDetectedLevelUnknownEdgeTable (internal/proxy); TestStreamIdentityGroupsByDetectedLevel (internal/translator)'
+  note: 'Found while fixing non-sum vector aggregations. Reproduced with the unit differential on origin/main b20a550f; the e2e against Loki is written, not yet run.'
+  clusters: []
