@@ -33,7 +33,7 @@ compare:
     HTTP 200 with Loki's series.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#731"
   impact: explore-visible
   effort: L
   area: 'internal/proxy quantile_histogram.go (collectQuantileHistogram, quantileOfCounts, quantileOuter), range_metric_compat.go (proxyManualRangeMetricRange, proxyManualRangeMetricInstant)'
