@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each series in the window (`pkg/logql/range_vector.go:818-843`
   `FirstOverTime`, `LastOverTime`), folded per step by the vector aggregation
   (`pkg/logql/evaluator.go:400-529`). The proxy now reads each series' value
-  with `row_min(_time, v)` / `row_max(_time, v)` (in VictoriaLogs since v1.40),
+  with `row_min(_time, v)` / `row_max(_time, v)` (in VictoriaLogs since v0.x;
+  v1.40 added the rule that a `row_*` result is a label, never a metric),
   unpacks the row's value into a number (VictoriaLogs reads a `row_*` result as a
   label, never as a metric) and aggregates it with the stats pipe that follows,
   so the answer is VictoriaLogs stats alone, with no raw rows; `sum by (...)`

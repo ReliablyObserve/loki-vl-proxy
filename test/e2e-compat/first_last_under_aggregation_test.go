@@ -159,3 +159,50 @@ func TestCompat_UnwrapFirstLastTopkBottomk(t *testing.T) {
 		}
 	}
 }
+
+// TestCompat_UnwrapFirstLastRangeLevelBy: `agg(fn(... [5m]) by (app))` groups the
+// samples by app before the range function, so first and last are taken over each
+// app's samples and differ from each other and from sum_over_time (every line of
+// the fixture is a series of its own, where the aggregations above cannot tell
+// them apart). The instant value is Loki's; on query_range the series are
+// compared (the point values follow semantics/unwrap-over-time-range-windows).
+// conformance: semantics/unwrap-first-last-under-aggregation, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_UnwrapFirstLastRangeLevelBy(t *testing.T) {
+	fx := ensureFirstLastFixtures(t)
+	ufx := &unwrapSumFixtures{selLogfmt: fx.logfmt, selJSON: fx.json, s0: fx.s0}
+	ufx.waitForLoki(t)
+	for _, g := range []struct{ name, selector, parser string }{{"logfmt", fx.logfmt, "logfmt"}, {"json", fx.json, "json"}} {
+		for _, outer := range []string{"sum", "max", "count"} {
+			for _, function := range []string{"first_over_time", "last_over_time"} {
+				for _, shape := range []unwrapSumShape{
+					{"instant", "5m", 0, 0, 20 * time.Minute},
+					{"sliding", "5m", time.Minute, 6 * time.Minute, 26 * time.Minute},
+				} {
+					query := fmt.Sprintf("%s(%s(%s | %s | unwrap amount [%s]) by (app))", outer, function, g.selector, g.parser, shape.window)
+					t.Run(g.name+"/"+function+"/"+outer+"/"+shape.name, func(t *testing.T) {
+						loki := shape.run(t, ufx, lokiURL, query)
+						proxy := shape.run(t, ufx, proxyURL, query)
+						if shape.step == 0 {
+							compareUnwrapSumSeries(t, query, loki, proxy)
+							return
+						}
+						if len(loki) == 0 {
+							t.Fatalf("%s: Loki answered no series", query)
+						}
+						if lk, pk := seriesKeys(loki), seriesKeys(proxy); fmt.Sprint(lk) != fmt.Sprint(pk) {
+							t.Errorf("%s: Loki series %v, proxy %v", query, lk, pk)
+						}
+					})
+				}
+			}
+		}
+	}
+	// First and last differ in the fixture (the sanity the shapes above rely on).
+	at := fx.s0.Add(20 * time.Minute)
+	q := func(fn string) map[string]string {
+		return unwrapInstant(t, lokiURL, fmt.Sprintf("sum(%s(%s | logfmt | unwrap amount [5m]) by (app))", fn, fx.logfmt), at)
+	}
+	if fmt.Sprint(q("first_over_time")) == fmt.Sprint(q("last_over_time")) {
+		t.Fatal("Loki's first and last are equal on the fixture: the test cannot tell them apart")
+	}
+}

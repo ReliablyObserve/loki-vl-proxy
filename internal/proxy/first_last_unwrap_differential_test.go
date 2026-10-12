@@ -452,3 +452,143 @@ func TestFirstLastOverTimeUnderAggregationOffsetDifferential(t *testing.T) {
 		}
 	}
 }
+
+// firstLastGroupedRef is the reference for `agg(fn(... [w]) by (pod))`: Loki
+// groups the samples by the label before the range function, so the first or the
+// last sample is taken over the whole group (every series of the pod), then the
+// aggregation folds the groups.
+func firstLastGroupedRef(rows []emuRow, fn, agg string, window, t int64) (float64, bool) {
+	type sample struct {
+		ts    int64
+		value float64
+	}
+	groups := map[string][]sample{}
+	for _, row := range rows {
+		if row.ts <= t-window || row.ts > t {
+			continue
+		}
+		pod := regexp.MustCompile(`pod="([^"]*)"`).FindStringSubmatch(row.stream)[1]
+		groups[pod] = append(groups[pod], sample{row.ts, row.value})
+	}
+	if len(groups) == 0 {
+		return 0, false
+	}
+	var values []float64
+	for _, samples := range groups {
+		sort.SliceStable(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
+		if fn == "last_over_time" {
+			values = append(values, samples[len(samples)-1].value)
+		} else {
+			values = append(values, samples[0].value)
+		}
+	}
+	var sum float64
+	for _, v := range values {
+		sum += v
+	}
+	switch agg {
+	case "sum":
+		return sum, true
+	case "max":
+		return slices.Max(values), true
+	}
+	panic("reference: " + agg)
+}
+
+// distinctPerPod drops a row whose timestamp another row of the same pod has: a
+// range-level by (pod) takes the first or last sample of the whole pod, and
+// Loki and VictoriaLogs may order equal timestamps differently.
+func distinctPerPod(rows []emuRow) []emuRow {
+	seen := map[string]bool{}
+	var out []emuRow
+	for _, row := range rows {
+		key := row.stream[:strings.Index(row.stream, "}")] + "@" + strconv.FormatInt(row.ts, 10)
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+// TestFirstLastOverTimeRangeLevelByDifferential: `agg(fn(... [w]) by (pod))`
+// groups the samples by pod before the range function, so first and last are
+// taken over the pod's samples, and they differ (the other tests give every line
+// a series of its own, where first, last and sum_over_time are the same value).
+// At an instant the value is Loki's; on query_range one series without labels
+// whose points are values of the groups' first or last samples.
+//
+// conformance: semantics/unwrap-first-last-under-aggregation, metric-series-identity
+func TestFirstLastOverTimeRangeLevelByDifferential(t *testing.T) {
+	distinguished := 0
+	for _, version := range []string{"", "v1.52.0", "v1.40.0"} {
+		for _, parser := range []string{"", "logfmt", "json"} {
+			for _, agg := range []string{"sum", "max"} {
+				name := fmt.Sprintf("version=%s/parser=%s/%s", version, parser, agg)
+				t.Run(name, func(t *testing.T) {
+					rnd := rand.New(rand.NewSource(int64(len(name))*977 + 11))
+					for i := 0; i < 12; i++ {
+						for _, instant := range []bool{true, false} {
+							first := generateUnwrapScenario(rnd, "first_over_time", parser, instant)
+							first.rows = distinctPerPod(firstLastRows(first))
+							var got [2]float64
+							var want [2]float64
+							for k, fn := range []string{"first_over_time", "last_over_time"} {
+								query := fmt.Sprintf(`%s(%s({app="uw"}%s | unwrap amount [%s]) by (pod))`, agg, fn, parserPipe(parser), uwWindowText(first.window))
+								emu := &vlEmulator{t: t, rows: first.rows, field: "amount", version: version}
+								run := runFirstLast(t, emu, query, instant, first.start, first.end, first.step)
+								label := fmt.Sprintf("%s #%d instant=%v %s", name, i, instant, query)
+								noFirstLastStatsFunction(t, label, emu)
+								for _, q := range emu.endpointCalls("/select/logsql/stats_query") {
+									if !strings.Contains(q, "stats by (pod") {
+										t.Fatalf("%s: the pod grouping must precede the range function: %s", label, q)
+									}
+								}
+								if len(run.series) > 1 || (len(run.series) == 1 && len(run.series[0]) != 0) {
+									t.Fatalf("%s: %v, want one series without labels", label, run.series)
+								}
+								if !instant {
+									values := map[float64]bool{}
+									for _, row := range first.rows {
+										values[row.value] = true
+									}
+									for _, pts := range run.points {
+										for ts, v := range pts {
+											if agg == "max" && !values[v] {
+												t.Fatalf("%s: %v at %d is not a sample value", label, v, ts/1e9)
+											}
+										}
+									}
+									continue
+								}
+								w, ok := firstLastGroupedRef(first.rows, fn, agg, int64(first.window), first.end)
+								if !ok {
+									if len(run.series) != 0 {
+										t.Fatalf("%s: Loki has no sample, proxy %v", label, run.points)
+									}
+									continue
+								}
+								if len(run.points) != 1 {
+									t.Fatalf("%s: %d series, Loki has one (%v)", label, len(run.points), w)
+								}
+								for _, v := range run.points[0] {
+									got[k] = v
+								}
+								want[k] = w
+								if math.Abs(got[k]-w) > 1e-9*math.Max(1, math.Abs(w)) {
+									t.Fatalf("%s: got %v, Loki has %v", label, got[k], w)
+								}
+							}
+							if instant && want[0] != want[1] {
+								distinguished++
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+	if distinguished == 0 {
+		t.Fatal("first and last were never different: the test cannot tell them apart")
+	}
+}
