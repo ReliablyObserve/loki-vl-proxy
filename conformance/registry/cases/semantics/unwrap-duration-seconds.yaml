@@ -11,7 +11,9 @@ why: |
   duration_seconds(okdur) [5m]))` over okdur=250ms answers an empty matrix on
   the proxy and 7.5 per window on Loki 3.7.7 (measured on an isolated stack).
   Its conversion errors were not detected either: nothing was gated, so nothing
-  was counted (semantics/unwrap-conversion-error).
+  was counted (semantics/unwrap-conversion-error). The executable request below
+  is a `rate` of the same conversion, whose query_range values already match
+  Loki (see the note).
 
   Root cause: extractUnwrapField and unwrapGateField (internal/translator),
   inferUnwrapConv, bareParserUnwrapFieldRE and the UnwrapStage converters of the
