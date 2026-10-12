@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.11.2] - 2026-10-12
+### Fixed
+
+- **`absent_over_time` answers the series valued 1 at the steps without data, and
+  nothing at the steps with data, after a parser stage, on query_range and
+  instant queries, under a vector aggregation and with an offset, as Loki
+  does.** Loki 3.7.7 returns one series, labelled by the stream selector's
+  equality matchers, at each step whose window (t-range, t] holds no line the
+  pipeline keeps, and no series where it does (`pkg/logql/evaluator.go`
+  AbsentRangeVectorEvaluator.Next, `absentLabels`; the extractor keeps no
+  labels, `pkg/logql/syntax/extractor.go`). With a parser stage the proxy
+  inverted it: `absent_over_time({service_name="api-gateway"} | json [1m])` over
+  data returned 2026 series (a series per stream and parsed label set, valued
+  by a line count) where Loki returns none, and `absent_over_time({...} | json |
+  nonexistant_field="foo" [1m])`, which no line matches, returned nothing where
+  Loki returns `{service_name="api-gateway"}` at every step. Without a parser
+  the answer was also wrong in other ways found by a differential test against
+  a Loki reference: a tumbling window was one step early (VictoriaLogs buckets
+  `[T, T+step)` were read as Loki's `(T-range, T]`), a range that is not the
+  step was ignored, steps were taken on an epoch grid where Loki steps from
+  `start`, an instant query was hidden by older data, `sum(absent_over_time(...))`
+  returned the inner count instead of the unlabelled series, and a label named
+  by more than one matcher (`{app="a", app=~".+"}`) was kept where Loki drops it.
+  Now the presence of samples comes from VictoriaLogs stats (an ungrouped
+  `sum(count_over_time(...))`, or `sum(rate(...))` with an unwrapped label, whose
+  line without the label is no sample), with the parser stage and its label
+  filters pushed down and no raw rows read, and the proxy inverts it on Loki's
+  step grid; vector aggregations fold the single series as Loki does (`by` and
+  `without` keep or drop labels, `count` is 1, `stddev` and `stdvar` are 0,
+  `topk` and `bottomk` keep it). A failed or degraded VictoriaLogs answer (an
+  error, Grafana's partial-result reply) is passed on, never inverted into a
+  series of ones that would fire every absence alert. Conversion errors and
+  parser error lines keep the behaviour of the other range functions
+  (#TBD).
 
 ### CI
 

@@ -439,19 +439,34 @@ func TestProxyHelpers_ParseAbsentOverTimeCompatSpec_RejectsInvalidInput(t *testi
 	}
 }
 
-func TestProxyHelpers_BuildAbsentInstantVector_UsesCurrentTimeFallback(t *testing.T) {
+// An instant absent_over_time without a time (or with one Loki cannot read)
+// is evaluated now.
+//
+// conformance: semantics/absent-over-time-semantics
+func TestContract_Query_AbsentOverTimeUsesCurrentTimeWhenTimeIsMissing(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	defer vlBackend.Close()
+	p := newTestProxy(t, vlBackend.URL)
 	before := time.Now().Unix()
-	body := buildAbsentInstantVector("bad-time", map[string]string{"app": "missing"})
+	req := httptest.NewRequest("GET", "/loki/api/v1/query?query="+url.QueryEscape(`absent_over_time({app="missing"}[5m])`), nil)
+	resp := httptest.NewRecorder()
+	p.handleQuery(resp, req)
 	after := time.Now().Unix()
 
-	data := body["data"].(map[string]interface{})
-	result := data["result"].([]lokiVectorResult)
-	if len(result) != 1 {
-		t.Fatalf("expected one absent vector sample, got %d", len(result))
+	var body struct {
+		Data struct {
+			Result []lokiVectorResult `json:"result"`
+		} `json:"data"`
 	}
-	ts := result[0].Value[0].(float64)
+	mustUnmarshal(t, resp.Body.Bytes(), &body)
+	if len(body.Data.Result) != 1 {
+		t.Fatalf("expected one absent vector sample, got %d: %s", len(body.Data.Result), resp.Body)
+	}
+	ts := body.Data.Result[0].Value[0].(float64)
 	if ts < float64(before) || ts > float64(after)+1 {
-		t.Fatalf("expected fallback timestamp between %d and %d, got %v", before, after, ts)
+		t.Fatalf("expected the current time between %d and %d, got %v", before, after, ts)
 	}
 }
 
