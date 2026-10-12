@@ -1,0 +1,101 @@
+package translator
+
+import (
+	"strings"
+	"testing"
+)
+
+// lastStatsGrouping returns the by() list of the last stats pipe of a
+// translated query, "" when it has none.
+func lastStatsGrouping(query string) string {
+	query, _ = ParseWithoutMarker(query)
+	idx := strings.LastIndex(query, "| stats ")
+	if idx < 0 {
+		return "<no stats>"
+	}
+	rest := query[idx+len("| stats "):]
+	if !strings.HasPrefix(rest, "by (") {
+		return ""
+	}
+	return rest[len("by ("):strings.Index(rest, ")")]
+}
+
+// An `<op> without (...)` keeps a row per series in the last stats pipe, so the
+// proxy can drop the excluded labels and fold the rows that share the labels
+// left, as Loki does (pkg/logql/evaluator.go:451-466). Only `by` and an
+// ungrouped aggregation fold in VictoriaLogs.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestWithoutKeepsSeriesInLastStatsPipe(t *testing.T) {
+	for _, tc := range []struct {
+		logql, want string
+	}{
+		// The registered shape: a parser's per-line identity stays in the
+		// inner pipe, the outer pipe keeps the stream.
+		{`sum without (pod) (max_over_time({app="x"} | logfmt | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (max_over_time({app="x"} | json | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (max_over_time({app="x"} | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod, ns) (sum_over_time({app="x"} | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (avg_over_time({app="x"} | logfmt | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (stdvar_over_time({app="x"} | logfmt | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (rate({app="x"} | logfmt | unwrap amount [5m]))`, "_stream"},
+		{`sum without (pod) (rate({app="x"} | unwrap amount [5m]))`, "_stream, level"},
+		{`sum without (pod) (rate({app="x"}[5m]))`, "_stream, level"},
+		{`sum without (pod) (bytes_rate({app="x"}[5m]))`, "_stream, level"},
+		{`max without (pod) (max_over_time({app="x"} | logfmt | unwrap amount [5m]))`, "_stream"},
+		{`min without (pod) (min_over_time({app="x"} | unwrap amount [5m]))`, "_stream"},
+		// count and avg read one value per series: kept when the stream is the
+		// series.
+		{`count without (pod) (max_over_time({app="x"} | unwrap amount [5m]))`, "_stream"},
+		{`avg without (pod) (max_over_time({app="x"} | unwrap amount [5m]))`, "_stream"},
+		// A range aggregation grouping is the series.
+		{`sum without (pod) (max_over_time({app="x"} | unwrap amount [5m]) by (ns, pod))`, "ns, pod"},
+		// Not `without`: the fold stays in VictoriaLogs.
+		{`sum(max_over_time({app="x"} | logfmt | unwrap amount [5m]))`, ""},
+		{`sum(rate({app="x"}[5m]))`, ""},
+		{`sum by (ns) (rate({app="x"}[5m]))`, "ns"},
+		// Already a row per series before this change.
+		{`count without (pod) (count_over_time({app="x"}[1m]))`, "_stream, level"},
+	} {
+		got, err := TranslateLogQL(tc.logql)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.logql, err)
+		}
+		if g := lastStatsGrouping(got); g != tc.want {
+			t.Errorf("%s: last stats pipe grouped by (%s), want (%s)\n%s", tc.logql, g, tc.want, got)
+		}
+		excluded := strings.ReplaceAll(tc.logql[strings.Index(tc.logql, "(")+1:strings.Index(tc.logql, ")")], " ", "")
+		if strings.Contains(tc.logql, "without") && !strings.HasSuffix(got, WithoutMarkerSuffix+excluded) {
+			t.Errorf("%s: the without marker is missing: %s", tc.logql, got)
+		}
+	}
+}
+
+func TestKeepWithoutSeries(t *testing.T) {
+	const base = `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats sum(__lvp_inner)`
+	for _, tc := range []struct {
+		innerBy, op string
+		without     bool
+		want        string
+	}{
+		{"_stream, _msg", "sum", true, `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats by (_stream) sum(__lvp_inner)`},
+		{"_stream, _msg", "max", true, `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats by (_stream) sum(__lvp_inner)`},
+		{"_stream, _msg", "min", true, `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats by (_stream) sum(__lvp_inner)`},
+		{"_stream", "count", true, `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats by (_stream) sum(__lvp_inner)`},
+		{"_stream, level", "avg", true, `* | stats by (_stream, _msg) max(v) as __lvp_inner | stats by (_stream, level) sum(__lvp_inner)`},
+		// A row per stream would merge the per-line values of count and avg.
+		{"_stream, _msg", "count", true, base},
+		{"_stream, _msg", "avg", true, base},
+		// stddev and stdvar are not merged by the proxy's without fold.
+		{"_stream", "stddev", true, base},
+		{"_stream", "stdvar", true, base},
+		{"_stream", "sum", false, base},
+		{emptyByGrouping, "sum", true, base},
+		{"", "sum", true, base},
+		{"_msg", "sum", true, base},
+	} {
+		if got := keepWithoutSeries(base, tc.innerBy, tc.op, tc.without); got != tc.want {
+			t.Errorf("keepWithoutSeries(%q, %s, %v):\n got %s\nwant %s", tc.innerBy, tc.op, tc.without, got, tc.want)
+		}
+	}
+}

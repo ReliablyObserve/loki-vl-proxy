@@ -1,5 +1,5 @@
 id: semantics/unwrap-sum-without-collapses
-title: sum without over an unwrap range function returns a single series (open)
+title: sum without over an unwrap range function keeps a series per remaining stream label set, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -8,11 +8,53 @@ consumer: explore
 why: |
   `sum without (pod) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
   keeps every label but pod on Loki 3.7.7: 17823 series on query_range and
-  1596 on an instant query over an hour of generator data. The proxy answers
+  1596 on an instant query over an hour of generator data. The proxy answered
   one series on both. Measured on an isolated stack with VL v1.52.0, the same
   on main and with the unwrap conversion-error change. Related:
   semantics/extracted-ungrouped-metric-raw-rows (the stats pushdown never
   covered `without`).
+
+  Loki groups the series of the inner range aggregation by every label but the
+  excluded ones and folds each group with the operator
+  (pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next: HashWithoutLabels,
+  lb.Del of the excluded labels).
+
+  Root cause: tryTranslateMetricQueryWithout translated an outer aggregation
+  over an unwrap function (and buildRateLikeQuery a sum over rate) to
+  `stats by (<series>) f(...) as __lvp_inner | stats sum(__lvp_inner)`, the last
+  stats pipe without grouping, so VictoriaLogs answered one row and the
+  proxy's `without` step (applyWithoutGrouping, driven by the `__without__:`
+  marker) had no labels to group by. A query whose last pipe has no grouping
+  only reaches VictoriaLogs whole on the instant path, a tumbling window and the
+  native unwrap paths; the sliding evaluator of a rate reads the first stats
+  pipe and kept the series. `count_over_time`, `bytes_over_time` and the other
+  single-pipe shapes were already grouped by the stream
+  (preserveMetricStreamIdentity) and are unchanged.
+
+  Fixed: keepWithoutSeries groups the last stats pipe of an `<op> without (...)`
+  by the series the inner pipe keeps, less `_msg` (the per-line identity that
+  stands for parsed labels: not exposed, and a row per line would be raw-row
+  volume): `stats by (_stream) sum(__lvp_inner)`, `by (_stream, level)` for a
+  rate, the range aggregation's own `by (...)` when it has one. VictoriaLogs
+  answers a row per stream from stats and applyWithoutGrouping drops the
+  excluded labels and folds the rows with the outer operator. Covered: sum, max
+  and min over avg, max, min, sum and stdvar over time with unwrap (stdvar:
+  the translation is pinned, the emulator has no stddev) and over rate, sum
+  over rate with and without unwrap, and count and avg when the stream is the
+  series (no parser). A `| json` metric keeps its raw evaluator, which already
+  kept the streams apart; quantile_over_time is answered by the raw evaluator
+  and is not changed. No new LogsQL feature; v1.40 and v1.52 answer alike.
+
+  Not changed, registered apart: Loki's series also carry the labels a parser
+  extracts, which the proxy does not expose
+  (semantics/unwrap-per-series-identity-raw-rows), so the proxy answers a series
+  per stream label set (Loki 17823 for the registered query, the proxy one per
+  stream) with the same per-stream totals for sum over rate and sum_over_time
+  and for max/min over max/min_over_time; the value of sum over max_over_time
+  and the other per-series functions after a parser depends on that identity.
+  Range values of the over-time functions: semantics/unwrap-over-time-range-windows.
+  count and avg without over an unwrap function after a parser still answer one
+  series: a row per stream would fold the per-line values; a draft row is owed.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -29,11 +71,13 @@ compare:
   expect: |
     One series per label set without pod.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/translator `without` grouping over unwrap range functions'
-  loki: 'pkg/logql/evaluator.go newVectorAggEvaluator (without)'
-  proxy: 'one series'
-  planned_test: 'an e2e over sum without (...) with unwrap on query_range and query'
+  area: 'internal/translator tryTranslateMetricQueryWithout / buildRateLikeQuery (keepWithoutSeries)'
+  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (without: HashWithoutLabels, lb.Del)'
+  proxy: 'a row per stream from VictoriaLogs stats; the excluded labels dropped and the rows folded by applyWithoutGrouping'
+  planned_test: 'TestCompat_UnwrapSumWithoutKeepsSeries (test/e2e-compat, group core); TestSumWithoutDifferential (internal/proxy); TestWithoutKeepsSeriesInLastStatsPipe and TestKeepWithoutSeries (internal/translator)'
+  note: 'Fixed is the collapse to one series: the answer matches Loki projected onto the stream labels. The remaining difference of the registered request (a series per stream and parsed label set on Loki, so 17823 against one per stream, and the value of a per-series function after a parser) is owned by semantics/unwrap-per-series-identity-raw-rows. Differential green on emulated VictoriaLogs v1.52.0 and v1.40.0; the e2e vs Loki is written and not yet run.'
   clusters: []

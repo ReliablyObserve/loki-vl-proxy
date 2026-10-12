@@ -1,0 +1,358 @@
+package proxy
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+)
+
+// This file pins `<op> without (pod) (<range function>)` to Loki's answer over
+// generated rows and windows: Loki v3.7.7 pkg/logql/evaluator.go
+// VectorAggEvaluator.Next (:451-466) groups the series of its input by every
+// label but the excluded ones (HashWithoutLabels, lb.Del) and folds each group
+// with the operator, so the answer keeps a series per remaining label set. The
+// range function is taken per series (the stream plus the labels a parser
+// extracted, less the unwrapped one) over (t-range, t].
+//
+// The proxy keeps the stream labels of a series, not the labels a parser
+// extracted (semantics/unwrap-per-series-identity-raw-rows), so Loki's answer
+// is compared after projecting it onto the stream labels with the same
+// operator, which sum, max and min allow. Every line carries a unique parsed
+// label in the parser cases: each line is a series of its own, which the stats
+// route reads from `_msg`. count and avg take one value per series, which the
+// proxy keeps per stream: they are pinned without a parser.
+
+// lokiWithout is the reference: timestamp -> stream labels without pod ->
+// Loki's value projected onto them.
+func lokiWithout(rows []emuRow, fn, op string, window int64, times []int64) map[int64]map[string]float64 {
+	out := map[int64]map[string]float64{}
+	for _, t := range times {
+		type series struct {
+			group  string
+			values []float64
+		}
+		perSeries := map[string]*series{}
+		for _, row := range rows {
+			if row.ts <= t-window || row.ts > t {
+				continue
+			}
+			parsed := make([]string, 0, len(row.labels))
+			for k, v := range row.labels {
+				parsed = append(parsed, k+"="+v)
+			}
+			sort.Strings(parsed)
+			key := row.stream + "|" + strings.Join(parsed, ",")
+			if perSeries[key] == nil {
+				perSeries[key] = &series{group: withoutPodKey(row.stream)}
+			}
+			perSeries[key].values = append(perSeries[key].values, row.value)
+		}
+		if len(perSeries) == 0 {
+			continue
+		}
+		members := map[string][]float64{}
+		for _, s := range perSeries {
+			var v float64
+			switch fn {
+			case "rate":
+				for _, x := range s.values {
+					v += x
+				}
+				v /= float64(window) / 1e9
+			case "count_rate": // rate without unwrap: lines per second
+				v = float64(len(s.values)) / (float64(window) / 1e9)
+			case "sum_over_time":
+				for _, x := range s.values {
+					v += x
+				}
+			case "avg_over_time":
+				for _, x := range s.values {
+					v += x
+				}
+				v /= float64(len(s.values))
+			case "max_over_time":
+				v = slices.Max(s.values)
+			case "min_over_time":
+				v = slices.Min(s.values)
+			default:
+				panic("reference: " + fn)
+			}
+			members[s.group] = append(members[s.group], v)
+		}
+		groups := map[string]float64{}
+		for group, values := range members {
+			var sum float64
+			for _, v := range values {
+				sum += v
+			}
+			switch op {
+			case "sum":
+				groups[group] = sum
+			case "max":
+				groups[group] = slices.Max(values)
+			case "min":
+				groups[group] = slices.Min(values)
+			case "count":
+				groups[group] = float64(len(values))
+			case "avg":
+				groups[group] = sum / float64(len(values))
+			default:
+				panic("reference: " + op)
+			}
+		}
+		out[t] = groups
+	}
+	return out
+}
+
+// withoutPodKey is the label set of a stream selector without pod, as a key.
+func withoutPodKey(stream string) string {
+	var parts []string
+	for _, m := range emuStreamLabelRE.FindAllStringSubmatch(stream, -1) {
+		if m[1] != "pod" {
+			parts = append(parts, m[1]+"="+m[2])
+		}
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+type withoutScenario struct {
+	uwScenario
+	op string
+}
+
+func (s withoutScenario) query() string {
+	pipeline := ""
+	if s.parser != "" {
+		pipeline = " | " + s.parser
+	}
+	fn := s.fn
+	if fn == "count_rate" {
+		return fmt.Sprintf(`%s without (pod) (rate({app="uw"}%s [%s]))`, s.op, pipeline, uwWindowText(s.window))
+	}
+	return fmt.Sprintf(`%s without (pod) (%s({app="uw"}%s | unwrap amount [%s]))`, s.op, fn, pipeline, uwWindowText(s.window))
+}
+
+func generateWithoutScenario(rnd *rand.Rand, fn, op, parser string, instant bool) withoutScenario {
+	s := withoutScenario{uwScenario: generateUnwrapScenario(rnd, fn, parser, instant), op: op}
+	// Two labels survive `without (pod)` (app, ns), and two pods share each.
+	streams := []string{`{app="uw",ns="x",pod="a"}`, `{app="uw",ns="x",pod="b"}`, `{app="uw",ns="y",pod="a"}`, `{app="uw",ns="y",pod="c"}`}
+	for j := range s.rows {
+		s.rows[j].stream = streams[rnd.Intn(len(streams))]
+		s.rows[j].labels = nil
+		s.rows[j].msg = ""
+		if parser != "" {
+			s.rows[j].labels = map[string]string{"id": strconv.Itoa(j)}
+			s.rows[j].msg = fmt.Sprintf("amount=%v id=%d", s.rows[j].value, j)
+		}
+	}
+	return s
+}
+
+// runWithoutScenario sends the scenario through the real handler against the
+// emulated VictoriaLogs and returns timestamp -> stream labels without pod ->
+// value, failing on a series that keeps pod or two series with the same stream
+// labels.
+func runWithoutScenario(t *testing.T, emu *vlEmulator, s withoutScenario) map[int64]map[string]float64 {
+	return runWithoutScenarioQ(t, emu, s, s.query())
+}
+
+func runWithoutScenarioQ(t *testing.T, emu *vlEmulator, s withoutScenario, query string) map[int64]map[string]float64 {
+	t.Helper()
+	backend := httptest.NewServer(emu.handler())
+	defer backend.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emu.version != "" {
+		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	params := url.Values{"query": {query}}
+	target := "/loki/api/v1/query_range?"
+	if s.step == 0 {
+		target = "/loki/api/v1/query?"
+		params.Set("time", strconv.FormatInt(s.end/1e9, 10))
+	} else {
+		params.Set("start", strconv.FormatInt(s.start/1e9, 10))
+		params.Set("end", strconv.FormatInt(s.end/1e9, 10))
+		params.Set("step", strconv.FormatInt(int64(s.step/time.Second), 10))
+	}
+	res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("%s: %d %s", query, res.Code, res.Body)
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+				Value  []any             `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]map[string]float64{}
+	seen := map[string]bool{}
+	for _, series := range resp.Data.Result {
+		if _, ok := series.Metric["pod"]; ok {
+			t.Fatalf("%s: a series keeps the excluded label: %v", query, series.Metric)
+		}
+		var parts []string
+		for _, k := range []string{"app", "ns"} {
+			if v, ok := series.Metric[k]; ok {
+				parts = append(parts, k+"="+v)
+			}
+		}
+		key := strings.Join(parts, ",")
+		if seen[key] {
+			t.Fatalf("%s: two series for the labels %s:\n%s", query, key, res.Body)
+		}
+		seen[key] = true
+		points := series.Values
+		if series.Value != nil {
+			points = [][]any{series.Value}
+		}
+		for _, point := range points {
+			v, _ := strconv.ParseFloat(point[1].(string), 64)
+			ts := int64(point[0].(float64)) * 1e9
+			if got[ts] == nil {
+				got[ts] = map[string]float64{}
+			}
+			got[ts][key] = v
+		}
+	}
+	return got
+}
+
+// withoutCompare is how much of Loki's answer a scenario pins.
+type withoutCompare int
+
+const (
+	compareValues withoutCompare = iota // the series and their values
+	compareSeries                       // the series
+	compareSubset                       // no series Loki does not have
+)
+
+// compareWithout compares the proxy's answer with Loki's, as much as mode says.
+func compareWithout(t *testing.T, label string, s withoutScenario, got, want map[int64]map[string]float64, mode withoutCompare) {
+	t.Helper()
+	keys := func(m map[int64]map[string]float64) []string {
+		set := map[string]bool{}
+		for _, groups := range m {
+			for k := range groups {
+				set[k] = true
+			}
+		}
+		out := make([]string, 0, len(set))
+		for k := range set {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
+	}
+	g, w := keys(got), keys(want)
+	if mode == compareSubset {
+		for _, key := range g {
+			if !slices.Contains(w, key) {
+				t.Fatalf("%s: series %v, Loki has %v\nquery %s step=%v window=%v rows=%d", label, g, w, s.query(), s.step, s.window, len(s.rows))
+			}
+		}
+		return
+	}
+	if !slices.Equal(g, w) {
+		t.Fatalf("%s: series %v, Loki has %v\nquery %s step=%v window=%v rows=%d", label, g, w, s.query(), s.step, s.window, len(s.rows))
+	}
+	if mode == compareSeries {
+		return
+	}
+	for ts, groups := range want {
+		for key, w := range groups {
+			g, ok := got[ts][key]
+			if !ok {
+				t.Fatalf("%s: no point for {%s} at %d, Loki has %g\nquery %s step=%v window=%v", label, key, ts/1e9, w, s.query(), s.step, s.window)
+			}
+			if math.Abs(g-w) > 1e-9*math.Max(1, math.Abs(w)) {
+				t.Fatalf("%s: {%s} at %d got %g, Loki has %g\nquery %s step=%v window=%v", label, key, ts/1e9, g, w, s.query(), s.step, s.window)
+			}
+		}
+	}
+	for ts, groups := range got {
+		for key, g := range groups {
+			if _, ok := want[ts][key]; !ok {
+				t.Fatalf("%s: extra point {%s} at %d = %g, Loki has none\nquery %s step=%v window=%v", label, key, ts/1e9, g, s.query(), s.step, s.window)
+			}
+		}
+	}
+}
+
+// TestSumWithoutDifferential: `sum without (pod)`, and max and min, over a
+// range function keep a series per label set left once pod is dropped, on
+// query_range and on an instant query, with Loki's values, on every
+// VictoriaLogs line the proxy supports. VictoriaLogs answers a row per stream
+// (stats, no raw rows) and the proxy drops pod and folds the rows.
+//
+// On query_range, max, min and sum over time read a sliding window as the
+// step-sized bucket (semantics/unwrap-over-time-range-windows), so a series can
+// be missing at a step; there no series may be one Loki does not have. A rate
+// on VictoriaLogs before v1.45 puts a line on a bucket edge one bucket late
+// (versions/stats-bucket-label-v1.45); there the series are compared.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestSumWithoutDifferential(t *testing.T) {
+	type tc struct{ fn, op, parser string }
+	var cases []tc
+	for _, parser := range []string{"", "logfmt"} {
+		for _, fn := range []string{"rate", "sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
+			cases = append(cases, tc{fn, "sum", parser})
+		}
+		cases = append(cases, tc{"count_rate", "sum", parser}, tc{"max_over_time", "max", parser}, tc{"min_over_time", "min", parser}, tc{"sum_over_time", "max", parser})
+	}
+	cases = append(cases, tc{"max_over_time", "count", ""}, tc{"sum_over_time", "avg", ""}, tc{"min_over_time", "avg", ""})
+	for _, version := range []string{"v1.52.0", "v1.40.0"} {
+		for _, c := range cases {
+			for _, instant := range []bool{true, false} {
+				name := fmt.Sprintf("%s/%s_without(%s)/parser=%s/instant=%v", version, c.op, c.fn, c.parser, instant)
+				t.Run(name, func(t *testing.T) {
+					rnd := rand.New(rand.NewSource(int64(len(name)) * 7907))
+					for i := 0; i < 12; i++ {
+						s := generateWithoutScenario(rnd, c.fn, c.op, c.parser, instant)
+						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+						got := runWithoutScenario(t, emu, s)
+						want := lokiWithout(s.rows, c.fn, c.op, int64(s.window), s.times())
+						mode := compareValues
+						switch {
+						case instant:
+						case c.fn != "rate" && c.fn != "count_rate":
+							mode = compareSubset
+						case version == "v1.40.0":
+							mode = compareSeries
+						}
+						compareWithout(t, fmt.Sprintf("%s #%d", name, i), s, got, want, mode)
+						if rawRows := emu.endpointCalls("/select/logsql/query"); len(rawRows) > 0 && version != "v1.40.0" {
+							t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, rawRows[0])
+						}
+					}
+				})
+			}
+		}
+	}
+}

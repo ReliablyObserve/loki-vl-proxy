@@ -1987,7 +1987,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 					innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 					withVariance := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String()
 					if outerResult, ok := applyOuterAggregation(withVariance, outerAgg, "__lvp_inner_var"); ok {
-						return outerResult, true
+						return keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout), true
 					}
 				}
 				baseStddev := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
@@ -2001,7 +2001,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			} else if outerAgg != "" && byLabels == "" {
 				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
-					result = outerResult
+					result = keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout)
 				} else {
 					result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				}
@@ -2121,7 +2121,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 
 	if outerAgg != "" && byLabels == "" {
 		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
-			return outerResult, true
+			return keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout), true
 		}
 	}
 
@@ -2251,6 +2251,42 @@ func addByClauseLast(query, labels string, labelFn LabelTranslateFunc) string {
 	}
 	statsStart := idx + len("| stats ")
 	return query[:statsStart] + "by (" + labels + ") " + query[statsStart:]
+}
+
+// keepWithoutSeries keeps a row per series in the last stats pipe of an
+// `<op> without (...)` translation, whose outer stats would otherwise fold every
+// series into one. VictoriaLogs then answers a row per stream, and the proxy
+// drops the excluded labels and folds the rows that share the labels left
+// (applyWithoutGrouping), as Loki groups by every label but the excluded ones
+// (pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next). `_msg`, which stands
+// for the labels a parser extracted, stays out of that grouping: the proxy does
+// not expose those labels, and a row per line would be raw-row volume. sum, max
+// and min fold the rows of a stream to the same value either way; count and avg
+// read one value per series, which only a grouping without `_msg` keeps.
+func keepWithoutSeries(result, innerBy, outerAgg string, hasWithout bool) string {
+	if !hasWithout || innerBy == emptyByGrouping {
+		return result
+	}
+	keep := make([]string, 0, 2)
+	perLine := false
+	for _, label := range strings.Split(innerBy, ",") {
+		switch label = strings.TrimSpace(label); label {
+		case "":
+		case "_msg":
+			perLine = true
+		default:
+			keep = append(keep, label)
+		}
+	}
+	switch {
+	case len(keep) == 0:
+		return result
+	case outerAgg == "sum" || outerAgg == "max" || outerAgg == "min":
+	case (outerAgg == "count" || outerAgg == "avg") && !perLine:
+	default:
+		return result
+	}
+	return addByClauseLast(result, strings.Join(keep, ", "), nil)
 }
 
 func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {
