@@ -2395,15 +2395,8 @@ func applyTopKToMatrix(body []byte, k int, descending bool, group *logqlpkg.Grou
 	selected := make(map[*fj.Value]bool)
 	for _, ranks := range steps {
 		sort.Slice(ranks, func(a, b int) bool {
-			av, bv := ranks[a].value, ranks[b].value
-			if math.IsNaN(av) != math.IsNaN(bv) {
-				return math.IsNaN(bv)
-			}
-			if av != bv && !math.IsNaN(av) {
-				if descending {
-					return av > bv
-				}
-				return av < bv
+			if c := topKCompare(ranks[a].value, ranks[b].value, descending); c != 0 {
+				return c < 0
 			}
 			return ranks[a].key < ranks[b].key
 		})
@@ -2465,13 +2458,10 @@ func applyTopKToVector(body []byte, k int, descending bool, group *logqlpkg.Grou
 		ranks[i] = ranked{i, f, topKGroupKey(group, metric)}
 	}
 	sort.Slice(ranks, func(a, b int) bool {
-		if ranks[a].val == ranks[b].val {
-			return ranks[a].idx < ranks[b].idx
+		if c := topKCompare(ranks[a].val, ranks[b].val, descending); c != 0 {
+			return c < 0
 		}
-		if descending {
-			return ranks[a].val > ranks[b].val
-		}
-		return ranks[a].val < ranks[b].val
+		return ranks[a].idx < ranks[b].idx
 	})
 
 	kept, perGroup := make([]int, 0, k), map[string]int{}
