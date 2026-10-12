@@ -76,7 +76,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 4 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 5 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 7 | partial |
 
 ## LogQL surface (v3.7.7)
 
