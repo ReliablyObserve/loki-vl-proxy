@@ -255,3 +255,53 @@ func TestAggregationOverBinaryMixedOffset(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+// A top-level binary whose first operand is a label_replace stays on the binary
+// evaluator: only an aggregation routed from under a label_replace is read
+// without it.
+//
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query
+func TestBinaryWithLabelReplaceOperandStaysBinary(t *testing.T) {
+	const count = `sum by (job, pod) (count_over_time({app="uw"}[1m]))`
+	for query, want := range map[string]map[string]float64{
+		`label_replace(` + count + `, "dst", "$1", "job", "(.*)") / on (job, pod) ` + count: {
+			`{"job":"a","pod":"p1"}`: 1, `{"job":"a","pod":"p2"}`: 1, `{"job":"b","pod":"p3"}`: 1},
+		`label_replace(` + count + `, "dst", "$1", "job", "(.*)") * on (job, pod) ` + count: {
+			`{"job":"a","pod":"p1"}`: 9, `{"job":"a","pod":"p2"}`: 1, `{"job":"b","pod":"p3"}`: 4},
+	} {
+		emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+		got, _ := binaryAggregationAnswer(t, emu, query, 0, binaryAggregationAt, 0)
+		flat := map[string]float64{}
+		for key, points := range got {
+			for _, v := range points {
+				flat[key] = v
+			}
+		}
+		if !reflect.DeepEqual(flat, want) {
+			t.Fatalf("%s:\n got %v\nwant %v", query, flat, want)
+		}
+	}
+}
+
+// The same offset on both sides (the discovered shape's second form) shifts the
+// windows and stamps the samples at the requested times, on both endpoints.
+//
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query, loki_api_v1_query_range
+func TestAggregationOverBinaryUniformOffset(t *testing.T) {
+	const (
+		count  = `sum by (job, pod) (count_over_time({app="uw"}[1m] offset 1h))`
+		amount = `sum by (job, pod) (sum_over_time({app="uw"} | unwrap amount [1m] offset 1h))`
+		rate   = `sum by (job, pod) (rate({app="uw"} | unwrap amount [1m] offset 1h))`
+	)
+	at := binaryAggregationAt + 3600e9
+	emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+	got, _ := binaryAggregationAnswer(t, emu, `sum by (job) (`+amount+` / `+count+`)`, 0, at, 0)
+	if want := map[string]map[int64]float64{`{"job":"a"}`: {at / 1e9: 6}, `{"job":"b"}`: {at / 1e9: 6}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("instant: got %v, want %v", got, want)
+	}
+	emu = &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+	got, _ = binaryAggregationAnswer(t, emu, `max(`+rate+` / `+count+`)`, at-60e9, at, time.Minute)
+	if want := map[string]map[int64]float64{`{}`: {at / 1e9: 6.0 / 60}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("range: got %v, want %v", got, want)
+	}
+}
