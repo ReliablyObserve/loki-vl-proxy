@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TestPatternLineFilterAnchoringReachesVictoriaLogs` for the log, range and
   instant paths, `TestPatternLineFilterAnchoringDetectedFields` for the
   Drilldown Fields tab, and `TestCompat_PatternLineFilterAnchoring` against
-  Loki (#TBD).
+  Loki (#747).
 
 ## [2.11.2] - 2026-10-12
 
