@@ -18,7 +18,7 @@ func TestTopK_RangeWinnersChangeAtEachStep(t *testing.T) {
 		if descending {
 			name = "topk"
 		}
-		if got := applyMatrixPostAggregation(input, instantMetricPostAgg{name: name, k: 1}); string(got) != string(applyTopKToMatrix(input, 1, descending)) {
+		if got := applyMatrixPostAggregation(input, instantMetricPostAgg{name: name, k: 1}); string(got) != string(applyTopKToMatrix(input, 1, descending, nil)) {
 			t.Fatal("query_range post-aggregation bypasses per-step ranking")
 		}
 		var response struct {
@@ -29,7 +29,7 @@ func TestTopK_RangeWinnersChangeAtEachStep(t *testing.T) {
 				}
 			}
 		}
-		if err := json.Unmarshal(applyTopKToMatrix(input, 1, descending), &response); err != nil {
+		if err := json.Unmarshal(applyTopKToMatrix(input, 1, descending, nil), &response); err != nil {
 			t.Fatal(err)
 		}
 		want := map[string]float64{"a": 1, "b": 2}
@@ -122,7 +122,7 @@ func TestTopK_EmptyWindowsCannotBecomeWinners(t *testing.T) {
 				}
 			}
 		}
-		if err := json.Unmarshal(applyTopKToMatrix(body, 1, descending), &response); err != nil {
+		if err := json.Unmarshal(applyTopKToMatrix(body, 1, descending, nil), &response); err != nil {
 			t.Fatal(err)
 		}
 		want := "a"

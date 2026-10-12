@@ -547,34 +547,29 @@ func hasOuterAggregationWithoutBy(logql string) bool {
 	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
 }
 
-// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper.
-// Returns k, whether descending (true=topk, false=bottomk), ok=true only when
-// topk/bottomk is outermost with a valid positive integer K.
-func parseTopKWrapper(logql string) (k int, descending bool, ok bool) {
+// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper
+// in any of Loki's spellings. Returns k, whether descending (true=topk,
+// false=bottomk) and its by()/without() clause, ok=true only when topk/bottomk
+// is outermost with a valid positive integer K.
+func parseTopKWrapper(logql string) (k int, descending bool, group *logqlpkg.Grouping, ok bool) {
 	if strings.TrimSpace(logql) == "" {
-		return 0, false, false
+		return 0, false, nil, false
 	}
 	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
 	if err != nil {
-		return 0, false, false
+		return 0, false, nil, false
 	}
 	va, isVA := parsed.(*logqlpkg.VectorAggregation)
-	if !isVA || !va.HasParam {
-		return 0, false, false
+	if !isVA || !va.HasParam || int(va.Param) <= 0 {
+		return 0, false, nil, false
 	}
 	switch va.Op {
 	case logqlpkg.VectorTopK:
-		if int(va.Param) <= 0 {
-			return 0, false, false
-		}
-		return int(va.Param), true, true
+		return int(va.Param), true, va.Grouping, true
 	case logqlpkg.VectorBottomK:
-		if int(va.Param) <= 0 {
-			return 0, false, false
-		}
-		return int(va.Param), false, true
+		return int(va.Param), false, va.Grouping, true
 	}
-	return 0, false, false
+	return 0, false, nil, false
 }
 
 // shouldUseManualRangeMetricCompat reports whether the given metric function
@@ -2351,16 +2346,17 @@ func rateCounterWindow(values []float64, windowSeconds float64) float64 {
 	return increase / windowSeconds
 }
 
-// foldedSumKey marks a manual range metric whose series are added up by the
-// outer sum after the evaluator: Loki counts max_query_series on that answer,
-// not on the series the range aggregation yields.
+// foldedSumKey marks a manual range metric whose series are added up (or
+// otherwise folded) by the aggregation around it after the evaluator: Loki
+// counts max_query_series on that answer, not on the series the range
+// aggregation yields.
 type foldedSumKey struct{}
 
 // manualSeriesLimit is the series bound of a manual range metric's own answer,
 // in the raw collector and in the builders; none when foldUngroupedSum adds the
 // series up afterwards (the raw-row budget still bounds the memory).
 func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
-	if folded, _ := ctx.Value(foldedSumKey{}).(bool); folded {
+	if seriesFolded(ctx) {
 		return 0
 	}
 	return p.resolvedMaxStatsQuerySeries(ctx)

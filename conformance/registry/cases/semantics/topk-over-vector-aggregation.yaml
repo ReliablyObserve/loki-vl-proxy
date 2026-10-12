@@ -1,0 +1,85 @@
+id: semantics/topk-over-vector-aggregation
+title: An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki evaluates a vector aggregation on the vector its operand produced at one
+  step (pkg/logql/evaluator.go VectorAggEvaluator.Next:435-529, topk and
+  bottomk at :443-494 and :596-621). `sum(topk(3, x))` is, at every step, the
+  sum of the three best samples of that step; `sum by (app) (topk(3, x))`
+  groups those three by app; `topk(2, topk(3, x))` is the best two of the best
+  three. sort and sort_desc are vector aggregations too and keep every sample,
+  so `topk(3, sort(x))` ranks the whole vector.
+
+  Cause, measured on the head of #736 with an emulated VictoriaLogs (4 apps x
+  3 envs of generated lines, unaligned start, count_over_time, rate and
+  bytes_over_time over sliding and tumbling windows): only a ranking written
+  as the outermost layer reached the post-aggregation route
+  (parseInstantMetricPostAggQuery matches the text `topk(`, `bottomk(`,
+  `sort(`, `stddev(` at the start of the query). An aggregation around it fell
+  through to the log translation: a `streams` 200 on query_range and a 400
+  ("log queries are not supported as an instant query type") at an instant for
+  `sum(topk(3, x))`, `sum by (app) (topk(3, x))`, `max(topk(...))`,
+  `count(bottomk(...))` and `sum(sort(x))`; a 404 on query_range and
+  "unsupported instant aggregation target" at an instant for
+  `topk(2, topk(3, x))` and `topk(3, sort(x))`, whose inner text is itself a
+  ranking.
+
+  Fixed: parseAggregationOverRanking walks the typed query, takes the
+  innermost topk, bottomk, sort or sort_desc as the post-aggregation the
+  proxy already runs (VictoriaLogs computes the base series natively, the
+  proxy ranks per step and group), and keeps the aggregations above it as a
+  chain of outer layers. Each outer layer is applied to the vector of every
+  step: sum, avg, min, max and count fold by applyWithoutGrouping (the
+  without() path, with the labels to drop taken from by(), without() or the
+  whole label set), topk, bottomk, sort and sort_desc rank again. The series
+  limit counts the answer of the whole query (pkg/logql/engine.go
+  JoinSampleVector), so with an outer layer neither the ranked union of the
+  per-step window route (VictoriaLogs v1.45 and later), nor the manual routes
+  (a backend before v1.45, a bare range function), nor an instant answer of the
+  layer below is capped; the limit applies to the folded
+  answer, with the error for a plain client and the partial result and warning
+  for Drilldown. A max, min, avg or count without() inside the ranking now
+  merges its series with its own operator (withoutAggregationOp read the
+  outermost layer's name, which matched no merge, so the merge was a sum).
+
+  Not changed: a topk alone over a without() aggregation ranks before the
+  without() merge on the window route and on an instant (a separate pre-existing
+  cause, also for sum without); stddev and stdvar around a ranking keep their
+  own route (semantics/stddev-stdvar-nested-or-binary); a binary expression around or
+  under the fold is not an aggregation chain. A tie at the k-th place of a
+  ranking follows Go map order in Loki (pkg/logql/range_vector.go keeps its
+  window in a map), so the layers above it can differ there; the proxy breaks
+  the tie by label order and the tests skip such steps unless an ungrouped fold
+  follows.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app) (topk(3, sum by (app, pod) (count_over_time({env="production"}[5m]))))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    A matrix with one series per app: at every step, the sum of the app's
+    samples among the three best of the step. Where several series tie at the
+    third place Loki's choice follows Go map order, so there the series may
+    differ.
+gap:
+  status: fixed
+  fixed_by: "#749"
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy metric_agg.go (parseAggregationOverRanking, aggregationArgs, applyOuterPostAggregation, foldExcludeLabels), sliding_window_stats.go (manualSeriesLimit), manual_metric_budget.go (withFoldedSeries), metric_binary.go (proxyStatsQuery series limit)'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next:435-529 (sum, avg, min, max, count per step; topk/bottomk heaps :443-494, :596-621; sort/sort_desc :506-512); pkg/logql/engine.go JoinSampleVector (max_query_series on the final answer)'
+  proxy: 'the innermost ranking is the post-aggregation (VictoriaLogs computes the base series); the aggregations above it fold the per-step vector in the proxy, bounded by the response-size check of the window evaluator and the series limit on the final answer'
+  planned_test: 'TestCompat_AggregationOverTopK (test/e2e-compat); TestTopKOverVectorAggregationRangeDifferential, TestTopKOverVectorAggregationRangeDifferentialRawEvaluator, TestTopKOverVectorAggregationInstantDifferential, TestParseAggregationOverRanking, TestFoldExcludeLabels, TestOuterFoldMatrixEdges, TestOuterFoldEmptyAndInstantHandlers, TestOuterFoldKeepsInnerWithoutMerge, TestOuterFoldSeriesLimitCountsTheFinalAnswer, TestSortOverTumblingRange and TestAggregationOverRankingLeavesOtherQueriesAlone (internal/proxy)'
+  note: 'Measured on the head of #736 (fix/topk-bottomk-range-series). The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'

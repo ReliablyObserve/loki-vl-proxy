@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`topk`/`bottomk` with `by`/`without` rank inside each group on query_range
+  and at an instant, in every spelling Loki's grammar accepts.**
+  `topk by (container) (5, sum by (container, pod) (count_over_time({env="production"}[5m])))`
+  came back as a log stream response (resultType `streams`, 200) on query_range
+  and as `log queries are not supported as an instant query type` (400) at an
+  instant; `topk(5, ...) by (container)` was a 400 `invalid range metric query`
+  on query_range, and `topk (5, ...)` with a space was taken for a log query
+  too. Only the plain `topk(k, expr)` spelling was recognised (the proxy matched
+  the text `topk(` and the closing parenthesis), and a trailing `by (...)`
+  clause even slipped through that match with a mangled inner expression. Loki
+  keeps one heap per grouping key and step
+  (`pkg/logql/evaluator.go:443-494`, `VectorAggEvaluator.Next`; the grammar is
+  `pkg/logql/syntax/syntax.y:182-184`), so `topk by (env) (1, ...)` keeps the
+  best series of every `env` at every step, and the matrix holds the union of
+  the series that ranked at some step with their samples at those steps only.
+  The proxy now reads the clause from the parsed query, passes the inner
+  expression on as written, and ranks per step and group everywhere it ranks:
+  the bounded per-step heap over VictoriaLogs' window stats (one heap per step
+  and group, still bounded by the series that stats response holds), the matrix
+  ranking of the other routes, and the instant vector. A `without` clause groups
+  by every label but the listed ones and `__name__`; a label a series lacks
+  counts as empty, as in Loki. On the window-stats route the series that ranked
+  at some step now count against `-max-stats-query-series`, as Loki's
+  `max_query_series` counts the result of a topk: an error for a plain client;
+  for Logs Drilldown a partial result with a warning, where Loki keeps the
+  series it met first and stops at that step, and the proxy keeps the limit's
+  worth of series with the most selected samples over the range. The other
+  routes (`applyTopKToMatrix` over a finished matrix) still limit the inner
+  metric before ranking. A ranking whose samples could not fit in
+  `-backend-max-buffered-response-bytes` fails before the heaps hold them.
+  NaN ranks after every number for `topk` and `bottomk` alike and never blocks
+  one (Loki's heaps, `pkg/logql/vector.go`): it stays in a group's result only
+  while the group has fewer than k numbers; the heap, the matrix, the instant
+  vector and the instant sort share one comparison. Where several series tie
+  at the k-th place Loki's choice
+  follows the order of an unordered map (`range_vector.go` keeps its window in
+  a Go map), so any choice is Loki's answer; the proxy takes label order so the
+  answer is stable. The plain `topk(k, ...)` ranking was already per step; the
+  registry row that described it as a global top k is closed with the grouped
+  spellings (#736).
+- **An aggregation around a `topk`, `bottomk` or `sort` folds what the ranking
+  kept at each step.** `sum(topk(3, sum by (app, pod) (count_over_time({env="production"}[5m]))))`,
+  `sum by (app) (topk(3, ...))`, `max(topk(...))`, `count(bottomk(...))` and
+  `sum(sort(...))` came back as a log stream response (resultType `streams`, 200)
+  on query_range and as `log queries are not supported as an instant query type`
+  (400) at an instant, and `topk(2, topk(3, ...))` and `topk(3, sort(...))` were a
+  404 on query_range and `unsupported instant aggregation target` at an instant.
+  Only a ranking written as the outermost layer reached the route that ranks the
+  series of VictoriaLogs. Loki evaluates each vector aggregation on the vector
+  its operand produced at one step (`pkg/logql/evaluator.go:435-529`,
+  `VectorAggEvaluator.Next`), so `sum(topk(3, x))` is, at every step, the sum of
+  the three best samples of that step, `sum by (app) (topk(3, x))` groups those
+  three by app, and `topk(2, topk(3, x))` is the best two of the best three
+  (`sort` and `sort_desc` keep every sample, so `topk(3, sort(x))` ranks the whole
+  vector). The proxy now takes the innermost `topk`, `bottomk`, `sort` or
+  `sort_desc` of the query as the ranking it already runs on VictoriaLogs' series
+  and applies the aggregations above it, innermost first, to the vector of every
+  step: `sum`, `avg`, `min`, `max` and `count` with `by` or `without` (in either
+  clause position, `by ()` included) fold the series, and a `topk`, `bottomk`,
+  `sort` or `sort_desc` ranks again. Loki counts `max_query_series` on the answer
+  of the whole query (`pkg/logql/engine.go`, `JoinSampleVector`), so with an
+  aggregation around the ranking the series that ranked at some step (the
+  per-step window route, VictoriaLogs v1.45 and later) and the vector of an
+  instant ranking are no longer limited: the folded answer is, with the error
+  for a plain client and the partial result and warning for Logs Drilldown;
+  `sum(topk(3, ...))` over a long range no longer fails where Loki answers one
+  series, whichever route evaluates the metric under the ranking (the window
+  evaluator, a bare range function, a backend before v1.45). A `max`, `min`,
+  `avg` or `count without (...)` inside the ranking now merges its series with its own operator instead of a sum (the
+  outermost layer's name decided it, and a ranking's name matched no merge).
+  Where several series tie at the k-th place of a ranking Loki's choice follows
+  Go map order, so the aggregations above it can differ there; the proxy breaks
+  the tie by label order. `stddev` and `stdvar` around a ranking and a binary
+  expression around the aggregation keep their own routes (#749).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

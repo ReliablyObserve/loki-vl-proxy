@@ -1,14 +1,35 @@
 id: semantics/topk-bottomk-range-series
-title: topk/bottomk on query_range return k series overall, not the per-step top k (open)
+title: A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
   Loki ranks at every step, so a range topk(3, ...) returns the union of each
   step's top 3 (8 series for `topk(3, sum by (app)
-  (count_over_time({env="production"}[5m])))` over an hour; 791 for `topk by
-  (container) (5, ...)`). The proxy returns 3 (5) series. Instant topk
-  matches.
+  (count_over_time({env="production"}[5m])))` over an hour in the recorded
+  parity run, against 3 from the proxy; 7 vs 2 and 7 vs 3 for the bottomk
+  variants). Instant topk returned the right number of series, with other
+  series at the tied places ("different series, same count").
+
+  Measured on cf738b80 with an emulated VictoriaLogs (the real handler, the
+  stats pipes of the window evaluator, 4 apps x 3 envs of generated lines with
+  gaps and changing leaders, unaligned start, through RegisterRoutes too): the
+  plain `topk(k, expr)` and `bottomk(k, expr)` already ranked every step on
+  their own (the bounded per-step heap of sliding_window_stats.go encodeTopK and
+  applyTopKToMatrix, in place before the row was recorded); the differential
+  test found no difference from a port of Loki's heap. The grouped spellings
+  that did differ are semantics/topk-grouped-spellings.
+
+  Hypothesis for the recorded difference, not verified here: ties. The log
+  generator writes the same number of lines per service in every batch
+  (LOG_BATCH lines per service every LOG_INTERVAL seconds), so the counts of the
+  services tie at the k-th place in most windows. Loki keeps its range window in
+  a Go map (pkg/logql/range_vector.go) and its heap evicts only a strictly
+  worse sample (pkg/logql/evaluator.go:551-561), so its pick among tied values
+  varies from step to step and its union grows; the proxy's pick (label order)
+  is stable. No proxy answer can reproduce that randomness, so the comparison
+  is tie-tolerant: the values selected per step must match, the series only
+  where no tie sits on the k-th place.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -24,18 +45,23 @@ compare:
   mode: observed
   fields: [series]
   expect: |
-    Loki's per-step union.
+    At every step the 3 best samples, and the union of the series that ranked
+    at some step with their samples at those steps only. Where several series
+    tie at the 3rd place Loki's choice follows Go map order, so there the values
+    must match and the series may differ.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#736"
   impact: explore-visible
+  visual: none
+  visual_reason: 'the plain spelling ranked per step before #736 and nothing visible changed for it; the difference left is Loki choosing at random among tied counts, which no proxy answer can reproduce on the visual stack; the grouped spellings are the visual fix of semantics/topk-grouped-spellings'
   effort: M
-  area: 'internal/proxy topk/bottomk range ranking (cases limits/top-n-ranking-not-silent)'
-  loki: 'pkg/logql/evaluator.go:443-494 VectorAggEvaluator topk/bottomk per step'
-  proxy: 'global top k'
-  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics)'
+  area: 'internal/proxy sliding_window_stats.go (encodeTopK), metric_binary.go (applyTopKToMatrix); cases limits/top-n-ranking-not-silent'
+  loki: 'pkg/logql/evaluator.go:443-494, :551-561 VectorAggEvaluator topk/bottomk per step; pkg/logql/range_vector.go window map; pkg/logql/vector.go heaps'
+  proxy: 'k series per step over every series (bounded heap over the VictoriaLogs window stats); ties broken by label order'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential and TestTopKRangeDifferentialRawEvaluator (internal/proxy)'
+  note: 'Measured on origin/main cf738b80. The plain spelling already ranked per step before #736, so nothing here changed for it but the shared NaN comparison; the tie explanation of the recorded difference is verified only once TestCompat_TopkRangePerStep runs against Loki 3.7.7 and VictoriaLogs (it is written and not yet run). If Loki shows fewer ties than assumed, this row reopens.'
   clusters:
-    - 23526b6c
-    - 4f7b982a
     - 8bc2e155
     - a6109627
     - aa368887

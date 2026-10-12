@@ -91,6 +91,19 @@ func withSeriesLimitScope(r *http.Request) (*http.Request, *seriesLimitScope) {
 	return r.WithContext(context.WithValue(r.Context(), seriesLimitScopeKey{}, scope)), scope
 }
 
+// withFoldedSeries marks a request whose stats answer feeds aggregations
+// written around it: Loki counts max_query_series on the answer of the whole
+// query (pkg/logql/engine.go JoinSampleVector), so the handler of the outer
+// layers applies the limit and the answer of the layer below is not capped.
+func withFoldedSeries(r *http.Request) *http.Request {
+	return r.Clone(context.WithValue(r.Context(), foldedSumKey{}, true))
+}
+
+func seriesFolded(ctx context.Context) bool {
+	folded, _ := ctx.Value(foldedSumKey{}).(bool)
+	return folded
+}
+
 // seriesLimitReached is called when a metric result holds more than limit
 // series. It returns Loki's error, or nil when the request keeps a partial
 // result (Drilldown); the caller then keeps limit series.

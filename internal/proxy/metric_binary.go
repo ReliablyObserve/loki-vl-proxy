@@ -43,7 +43,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
-	topK, topKDesc, hasTopK := parseTopKWrapper(originalLogql)
+	topK, topKDesc, topKGroup, hasTopK := parseTopKWrapper(originalLogql)
 
 	out := http.ResponseWriter(w)
 	var topKBuf *bufferedResponseWriter
@@ -54,7 +54,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 
 	if p.handleStatsCompatRange(out, r, originalLogql, logsqlQuery) {
 		if hasTopK {
-			writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+			writeTopKFiltered(w, topKBuf, topK, topKDesc, topKGroup, "matrix")
 		}
 		return
 	}
@@ -96,7 +96,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 			endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
 			body = relabelSnappedTumblingStatsQueryRange(body, origStartNs, endNs, origSpec.Window.Nanoseconds())
 			if hasTopK {
-				body = applyTopKToMatrix(body, topK, topKDesc)
+				body = applyTopKToMatrix(body, topK, topKDesc, topKGroup)
 			}
 		}
 		// Keep the headers the stats path set, such as the partial-result
@@ -118,7 +118,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 
 	if hasTopK {
-		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+		writeTopKFiltered(w, topKBuf, topK, topKDesc, topKGroup, "matrix")
 	}
 }
 
@@ -1683,17 +1683,19 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	body = wrapAsLokiResponse(body, "vector")
-	if topK, topKDesc, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
-		body = applyTopKToVector(body, topK, topKDesc)
+	if topK, topKDesc, topKGroup, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
+		body = applyTopKToVector(body, topK, topKDesc, topKGroup)
 	}
 	// Loki applies max_query_series to instant queries as well: an error for a
 	// plain client, a partial vector with a warning for Logs Drilldown.
-	capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
-	if capErr != nil {
-		p.writeError(w, badRequestStatusOr(capErr, http.StatusBadRequest), capErr.Error())
-		return
+	if !seriesFolded(r.Context()) {
+		capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
+		if capErr != nil {
+			p.writeError(w, badRequestStatusOr(capErr, http.StatusBadRequest), capErr.Error())
+			return
+		}
+		body = capped
 	}
-	body = capped
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }
@@ -2317,9 +2319,13 @@ func metricKey(metric map[string]interface{}) string {
 }
 
 // applyTopKToMatrix ranks independently at each evaluation timestamp, as
-// Loki/PromQL range queries require. Winners can change, so the result may
-// contain more than k series, with only their winning samples retained.
-func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
+// Loki/PromQL range queries require, keeping the k best samples of every group
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next keeps one heap per grouping
+// key and step). Winners can change, so the result may contain more than k
+// series, with only their winning samples retained. NaN ranks last for topk and
+// bottomk alike. Loki breaks ties by the order of an unordered map, so any
+// order is conformant; label order keeps the answer stable.
+func applyTopKToMatrix(body []byte, k int, descending bool, group *logqlpkg.Grouping) []byte {
 	v, err := fj.ParseBytes(body)
 	if err != nil {
 		return body
@@ -2336,12 +2342,21 @@ func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 		return body
 	}
 	type ranked struct {
-		point  *fj.Value
-		value  float64
-		series int
+		point *fj.Value
+		value float64
+		key   string
 	}
-	steps := make(map[float64][]ranked)
-	for i, series := range result {
+	type stepGroup struct {
+		ts    float64
+		group string
+	}
+	steps := make(map[stepGroup][]ranked)
+	for _, series := range result {
+		metric := map[string]string{}
+		if labels, err := series.Get("metric").Object(); err == nil {
+			labels.Visit(func(name []byte, value *fj.Value) { metric[string(name)] = string(value.GetStringBytes()) })
+		}
+		key, groupKey := canonicalLabelsKey(metric), topKGroupKey(group, metric)
 		for _, point := range series.GetArray("values") {
 			pair := point.GetArray()
 			if len(pair) != 2 {
@@ -2355,26 +2370,17 @@ func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 			if err != nil {
 				return body
 			}
-			steps[ts] = append(steps[ts], ranked{point, value, i})
+			slot := stepGroup{ts, groupKey}
+			steps[slot] = append(steps[slot], ranked{point, value, key})
 		}
 	}
 	selected := make(map[*fj.Value]bool)
 	for _, ranks := range steps {
 		sort.Slice(ranks, func(a, b int) bool {
-			av, bv := ranks[a].value, ranks[b].value
-			if math.IsNaN(av) {
-				return false
+			if c := topKCompare(ranks[a].value, ranks[b].value, descending); c != 0 {
+				return c < 0
 			}
-			if math.IsNaN(bv) {
-				return true
-			}
-			if av == bv {
-				return ranks[a].series < ranks[b].series
-			}
-			if descending {
-				return av > bv
-			}
-			return av < bv
+			return ranks[a].key < ranks[b].key
 		})
 		for i := 0; i < min(max(k, 0), len(ranks)); i++ {
 			selected[ranks[i].point] = true
@@ -2403,8 +2409,9 @@ func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 	return v.MarshalTo(nil)
 }
 
-// applyTopKToVector filters a Loki vector response to the top or bottom k samples.
-func applyTopKToVector(body []byte, k int, descending bool) []byte {
+// applyTopKToVector filters a Loki vector response to the top or bottom k
+// samples of every group.
+func applyTopKToVector(body []byte, k int, descending bool, group *logqlpkg.Grouping) []byte {
 	v, err := fj.ParseBytes(body)
 	if err != nil {
 		return body
@@ -2415,8 +2422,9 @@ func applyTopKToVector(body []byte, k int, descending bool) []byte {
 	}
 
 	type ranked struct {
-		idx int
-		val float64
+		idx   int
+		val   float64
+		group string
 	}
 	ranks := make([]ranked, len(result))
 	for i, s := range result {
@@ -2425,18 +2433,24 @@ func applyTopKToVector(body []byte, k int, descending bool) []byte {
 		if len(arr) >= 2 {
 			f = parseFloat64Bytes(arr[1].GetStringBytes())
 		}
-		ranks[i] = ranked{i, f}
+		metric := map[string]string{}
+		if labels, err := s.Get("metric").Object(); err == nil {
+			labels.Visit(func(name []byte, value *fj.Value) { metric[string(name)] = string(value.GetStringBytes()) })
+		}
+		ranks[i] = ranked{i, f, topKGroupKey(group, metric)}
 	}
 	sort.Slice(ranks, func(a, b int) bool {
-		if descending {
-			return ranks[a].val > ranks[b].val
+		if c := topKCompare(ranks[a].val, ranks[b].val, descending); c != 0 {
+			return c < 0
 		}
-		return ranks[a].val < ranks[b].val
+		return ranks[a].idx < ranks[b].idx
 	})
 
-	kept := make([]int, k)
-	for i := range kept {
-		kept[i] = ranks[i].idx
+	kept, perGroup := make([]int, 0, k), map[string]int{}
+	for _, r := range ranks {
+		if perGroup[r.group]++; perGroup[r.group] <= k {
+			kept = append(kept, r.idx)
+		}
 	}
 	sort.Ints(kept)
 
@@ -2462,13 +2476,13 @@ func rebuildMatrixOrVector(body []byte, resultType string, result []*fj.Value, k
 
 // writeTopKFiltered applies topk/bottomk post-processing to a buffered response
 // and writes the filtered result to dst.
-func writeTopKFiltered(dst http.ResponseWriter, buf *bufferedResponseWriter, k int, descending bool, resultType string) {
+func writeTopKFiltered(dst http.ResponseWriter, buf *bufferedResponseWriter, k int, descending bool, group *logqlpkg.Grouping, resultType string) {
 	body := buf.body
 	if len(body) > 0 {
 		if resultType == "matrix" {
-			body = applyTopKToMatrix(body, k, descending)
+			body = applyTopKToMatrix(body, k, descending, group)
 		} else {
-			body = applyTopKToVector(body, k, descending)
+			body = applyTopKToVector(body, k, descending, group)
 		}
 	}
 	code := buf.code
