@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1286,16 +1287,19 @@ func (p *Proxy) collectRangeMetricHits(
 	results := v.GetArray("data", "result")
 	// Stream-grouped series carry the labels the raw evaluator derives from
 	// _stream and level.
-	streamGrouped := false
-	for _, g := range groupBy {
-		streamGrouped = streamGrouped || g == "_stream"
-	}
+	streamGrouped := slices.Contains(groupBy, "_stream")
+	streamGroupedByDetectedLevel := streamGrouped && slices.Contains(groupBy, "detected_level")
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
 		var metric map[string]string
 		if streamGrouped {
-			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
+			var derived *string
+			if streamGroupedByDetectedLevel {
+				value := strings.TrimSpace(string(metricObj.Get("detected_level").GetStringBytes()))
+				derived = &value
+			}
+			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy).translated
 		} else {
 			metric = make(map[string]string)
 			metricObj.Visit(func(k []byte, mv *fj.Value) {
@@ -1390,6 +1394,14 @@ type metricSeriesCacheEntry struct {
 }
 
 func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
+	// A stream-identity grouping reads detected_level from the rows: the query
+	// carries the derivation pipes, which filter nothing, so the pipe-free row
+	// count precheck runs on the query without them.
+	streamIdentity := slices.Contains(groupBy, "_stream") && slices.Contains(groupBy, "level") && slices.Contains(groupBy, "detected_level")
+	precheckQuery := baseQuery
+	if streamIdentity {
+		precheckQuery = withoutDerivedLevelChain(baseQuery)
+	}
 	params := url.Values{}
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
@@ -1403,7 +1415,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	// limit pipe streams an arbitrary subset instead; successful responses are
 	// complete because overflow is rejected, and samples are sorted below.
 	params.Set("query", baseQuery+" | limit "+strconv.Itoa(rowLimit+1))
-	if err := p.precheckRawMetricRows(ctx, baseQuery, params, end.Sub(start), rowLimit); err != nil {
+	if err := p.precheckRawMetricRows(ctx, precheckQuery, params, end.Sub(start), rowLimit); err != nil {
 		return nil, err
 	}
 
@@ -1477,26 +1489,32 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		streamStr := string(v.GetStringBytes("_stream"))
 		levelStr := strings.TrimSpace(string(v.GetStringBytes("level")))
+		var derived *string
+		derivedKey := ""
+		if streamIdentity {
+			value := strings.TrimSpace(string(v.GetStringBytes("detected_level")))
+			derived, derivedKey = &value, "|"+value
+		}
 
 		var seriesEntry *metricSeriesCacheEntry
 
 		if !includeParsedLabels || len(groupBy) == 0 {
 			// Hot path: series identity depends only on _stream + level.
 			// Build once per unique (stream, level) pair and reuse across all matching lines.
-			cacheKey := streamStr + "|" + levelStr
+			cacheKey := streamStr + "|" + levelStr + derivedKey
 			seriesEntry = seriesCache[cacheKey]
 			if seriesEntry == nil {
-				seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+				seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, derived, groupBy, byExplicit, origGroupBy)
 				seriesCache[cacheKey] = seriesEntry
 			}
 		} else {
 			// Slow path: by(...) includes parsed fields extracted per entry.
 			// Extend the cache key with the extracted field values so entries with
 			// the same parsed-field values still hit the cache.
-			cacheKey := p.buildParsedGroupByCacheKey(streamStr, levelStr, v, groupBy)
+			cacheKey := p.buildParsedGroupByCacheKey(streamStr, levelStr, v, groupBy) + derivedKey
 			seriesEntry = seriesCache[cacheKey]
 			if seriesEntry == nil {
-				base := p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+				base := p.buildMetricSeriesEntry(streamStr, levelStr, derived, groupBy, byExplicit, origGroupBy)
 				// Copy base metric labels and inject per-entry parsed fields.
 				metricLabels := make(map[string]string, len(base.metricLabels))
 				for k, val := range base.metricLabels {
@@ -1548,7 +1566,10 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
 // (_stream, level) pair. Called once per distinct stream identity per request.
-func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
+// derived, when not nil, is the detected_level VictoriaLogs computed for the
+// group or row (the translator's pipes); empty, a stage removed the label.
+// Otherwise it is the level, else unknown.
+func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
 	rawStreamLabels := parseStreamLabels(streamStr)
 	streamLabels := make(map[string]string, len(rawStreamLabels))
 	for k, v := range rawStreamLabels {
@@ -1558,7 +1579,12 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 		streamLabels["level"] = levelStr
 		streamLabels["detected_level"] = levelStr
 	}
-	if strings.TrimSpace(streamLabels["detected_level"]) == "" {
+	switch {
+	case derived != nil && *derived != "":
+		streamLabels["detected_level"] = *derived
+	case derived != nil:
+		delete(streamLabels, "detected_level")
+	case strings.TrimSpace(streamLabels["detected_level"]) == "":
 		streamLabels["detected_level"] = "unknown"
 	}
 	ensureSyntheticServiceName(streamLabels)

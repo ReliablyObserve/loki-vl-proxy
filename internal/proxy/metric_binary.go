@@ -59,11 +59,12 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// Strip | delete __error__, __error_details__ for any stats query — it removes
-	// a field per row but never filters logs; counts are identical without it.
+	// Strip | delete __error__, __error_details__ (and the proxy's scratch fields)
+	// for any stats query — it removes a field per row but never filters logs;
+	// counts are identical without it. A delete of a client's dropped label stays.
 	effectiveQuery := logsqlQuery
 	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
-		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(spec.BaseQuery, ""))
+		noDelete := strings.TrimSpace(stripInternalDeletePipes(spec.BaseQuery))
 		if noDelete != spec.BaseQuery {
 			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
 		}
