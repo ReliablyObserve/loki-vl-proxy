@@ -430,6 +430,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-first-last-under-sum",
+   "kind": "explore",
+   "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",
+   "covers": [
+    "semantics/unwrap-first-last-under-aggregation",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-first-last-under-aggregation"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
