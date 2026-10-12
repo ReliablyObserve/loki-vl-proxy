@@ -125,7 +125,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `parser-logfmt` | 4 | 2.40s (logfmt count by level, filter, drop, 24h) | 0.01s |
+| `parser-logfmt` | 3 | 2.40s (logfmt count by level, filter, drop, 24h) | 0.01s |
 | `severity-detected-level-derivation` | 11 | 1.59s (logfmt volume, 24h) | 0.01s |
 | `explore-logs-volume-json` | 7 | 1.26s (json volume no filters, 24h) | 0.01s |
 | `operator-topk` | 1 | 0.62s (topk rate by app, 24h) | 0.01s |
