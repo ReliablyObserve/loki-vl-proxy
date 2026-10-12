@@ -58,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments of Loki's grammar, or with an invalid escape in one, was taken for a
   log query (an empty `streams` answer on `query_range`) and is now a 400 parse
   error on both endpoints.
+  An instant `label_replace(count_over_time({env="production"}[5m]), ...)` (or
+  `bytes_over_time`, `rate`, ...) no longer comes back as one unlabeled total: the
+  grouping by stream was added only for a query that itself starts with the range
+  function, so the wrapper turned sixteen series into `{}`. A `label_replace`
+  around a metric over `| json` is answered by the evaluator that owns JSON parser
+  errors, as the metric is without the wrapper: a line that is not JSON fails the
+  query with Loki's `pipeline error: 'JSONParserErr'` 400 unless the pipeline
+  filters `__error__`, and `| json | __error__=""` keeps only the streams that
+  parse (the wrapper used to skip both and answer 200 with every stream). The
+  transform is applied to that answer.
 
 ## [2.12.0] - 2026-10-12
 
