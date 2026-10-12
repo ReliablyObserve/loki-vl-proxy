@@ -1,15 +1,68 @@
 id: semantics/unwrap-rate-ungrouped-sum-per-stream
-title: An ungrouped sum over rate with unwrap returns one series per stream on query_range (open)
+title: An ungrouped sum over rate with unwrap is one series on query_range, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
+  - loki_api_v1_query
 consumer: explore
 why: |
   `sum(rate({app="payment-service"} | logfmt | unwrap amount [5m]))` is one
-  series on Loki 3.7.7. On the range path the proxy returns 660 series over an
-  hour of generator data (one per stream and parsed label set); the instant
-  query returns the single series. Measured on an isolated stack with VL
-  v1.52.0, the same on main and with the unwrap conversion-error change.
+  series on Loki 3.7.7. A `sum` over rate, sum_over_time, count_over_time and
+  the bytes functions hands its grouping to the range aggregation's sample
+  extractor (pkg/logql/syntax/ast.go:1612-1642 VectorAggregationExpr.Extractors
+  and canInjectVectorGrouping; pkg/logql/syntax/extractor.go:21-60), so an
+  ungrouped sum extracts every sample with no label (pkg/logql/log/metrics_extraction.go:
+  labelSampleExtractor, noLabels) and the one series it makes is the sum of the
+  values: a rate over an unwrapped label is that sum per second
+  (pkg/logql/range_vector.go:259-272 rateLogs, computeValues). Any other range
+  function (avg, max, min, stddev, quantile, rate_counter, first, last) is
+  evaluated per series, the stream plus the labels a parser extracts less the
+  unwrapped one, and newVectorAggEvaluator folds those values per step
+  (pkg/logql/evaluator.go:400-433, VectorAggEvaluator.Next:435-529, sum at :522).
+
+  Measured on an isolated stack (Loki 3.7.7, VictoriaLogs v1.52.0, the log
+  generator's data: 28 minutes of evaluation points at `[5m]`, step 60 s, every
+  shape checked against Loki with the same 200 and the same line counts):
+    shape                                   Loki   main           branch
+    sliding rate, logfmt, amount            1      1594 series    1
+    sliding rate, json, duration_ms         1      4062 series    1
+    instant rate, json                      1      678 series     1
+    instant rate, logfmt                    1      1              1
+    tumbling rate (range == step)           1      1              1
+    sliding rate, `| __error__=""` forms    1      1594 / 4062    1
+    rate_counter, every mode                1      264-4062       1 (values: see below)
+  `sum by (a)` was already one series per group on both.
+
+  Root cause: the translation of an ungrouped sum over an unwrap is the
+  two-stage `stats by (_stream) sum(__lvp_v) as __lvp_inner | math ... | stats
+  sum(__lvp_rate)`. The tumbling and the logfmt instant paths send the whole
+  chain to VictoriaLogs, whose last stage is the fold. The sliding (range !=
+  step) path and the `| json` instant path evaluate the range window in the
+  proxy from the first stage only: parseStatsCompatSpec reads the first stats
+  pipe, so the evaluator got `GroupBy=[_stream]` and the outer sum was dropped.
+  The single-stage collapse that a bare `sum(rate({..}[5m]))` had
+  (isSumAllLogRange) explicitly excluded unwrap, and the instant path collapsed
+  only sum_over_time. Fixed: isSumAllLogRange covers an ungrouped sum over
+  rate and sum_over_time with unwrap (the injectable set), so the sliding
+  evaluator of a rate reads one series from VictoriaLogs (`stats sum(__lvp_v) as
+  c, count() as __sample_count` over anchored buckets: no per-stream series, no
+  raw rows, no -max-stats-query-series pressure), the instant path sends the
+  whole chain to VictoriaLogs (stats_query; a sum_over_time range query stays on
+  the native path of semantics/unwrap-over-time-range-windows), and foldUngroupedSum adds the series of a
+  function evaluated per series (rate_counter, the raw-row quantile) per step,
+  as VectorAggEvaluator does. The raw sliding evaluator of a rate over an
+  unwrapped label now reads Loki's window (t-range, t] (isLogRangeWindowFunc
+  covers unwrap_rate): it included the lower edge and left out the sample at t,
+  which VictoriaLogs before v1.45 (no stats_query_range offset argument) and an
+  unaligned start use.
+
+  Not changed (separate causes, measured in the same run, each registered):
+  semantics/unwrap-over-time-range-windows (sum, avg, max, min over time with
+  unwrap: a tumbling window is labelled one step early, a sliding window is the
+  step-sized bucket) and semantics/unwrap-per-series-identity-raw-rows (the
+  value of a function taken per series, avg/max/min/rate_counter under `sum` or
+  `sum by`, uses the stream, not the stream and parsed labels). Related, open:
+  semantics/non-sum-vector-aggregation-unreduced (max, min, count, avg).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -26,11 +79,13 @@ compare:
   expect: |
     One unlabelled series, Loki's sum per step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#716"
   impact: explore-visible
   effort: M
-  area: 'internal/translator rate with unwrap under an ungrouped sum (range path)'
-  loki: 'pkg/logql/evaluator.go newVectorAggEvaluator'
-  proxy: 'per-stream series on query_range'
-  planned_test: 'an e2e over sum(rate(... | unwrap ...)) on query_range and query'
+  area: 'internal/proxy range_metric_compat.go (isSumAllLogRange, foldUngroupedSum, handleStatsCompatInstant)'
+  loki: 'pkg/logql/syntax/ast.go:1612-1642 (Extractors, canInjectVectorGrouping); pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/range_vector.go:259-272 rateLogs'
+  proxy: 'one series from VictoriaLogs stats; the per-series functions folded per step'
+  planned_test: 'TestCompat_UnwrapUngroupedSum and TestCompat_UnwrapUngroupedSumPerSeriesFunctions (test/e2e-compat, group core); TestUngroupedSumUnwrapDifferential and TestUngroupedSumUnwrapPerSeriesFunctions (internal/proxy)'
+  note: 'Measured on origin/main e173e40b with VictoriaLogs v1.52.0; the e2e is green on v1.52.0, v1.47.0 and v1.40.0.'
   clusters: []

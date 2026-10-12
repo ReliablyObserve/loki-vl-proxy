@@ -1455,6 +1455,101 @@
      ]
     }
    ]
+  },
+  "unwrap-ungrouped-sum": {
+   "description": "An ungrouped sum over rate or sum_over_time with unwrap (PR for semantics/unwrap-rate-ungrouped-sum-per-stream): Loki answers one series; a sliding window ([5m] over a smaller step) answered one series per stream and parsed label set, from per-stream stats or raw rows. U1-U4 are sliding range queries over logfmt and JSON streams (U4 broad: every production stream), U5-U7 are instant queries (U6 the `| json` route that read raw rows), U8 is the grouped form that was already one series per group (it must not move), U9 folds a function taken per series. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "U1 logfmt amount rate",
+     "query": "sum(rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U2 json duration_ms rate",
+     "query": "sum(rate({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U3 json duration_ms rate, error filter",
+     "query": "sum(rate({service_name=\"api-gateway\"} | json | __error__=\"\" | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U4 logfmt latency_ms rate, production",
+     "query": "sum(rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U5 logfmt amount rate, instant",
+     "query": "sum(rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "U6 json duration_ms rate, instant",
+     "query": "sum(rate({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "U7 json duration_ms sum_over_time, instant",
+     "query": "sum(sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "U8 logfmt amount rate by service (grouped)",
+     "query": "sum by (service_name) (rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "U9 logfmt amount rate_counter (folded per series)",
+     "query": "sum(rate_counter({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

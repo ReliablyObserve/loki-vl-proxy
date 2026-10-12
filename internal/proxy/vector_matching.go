@@ -99,6 +99,10 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	}
 }
 
+// withoutAllLabels, as an excluded label, drops every label: the series of the
+// response fold into one, an aggregation with no by() or without().
+const withoutAllLabels = "*"
+
 func applyWithoutGrouping(body []byte, excludeLabels []string, op string) []byte {
 	var resp struct {
 		Status string `json:"status"`
@@ -154,7 +158,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 		// Strip excluded labels
 		filtered := make(map[string]string)
 		for k, v := range series.Metric {
-			if !exclude[k] {
+			if !exclude[k] && !exclude[withoutAllLabels] {
 				filtered[k] = v
 			}
 		}
@@ -183,7 +187,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 	}
 
 	// Build result
-	var result []map[string]interface{}
+	result := []map[string]interface{}{}
 	for _, g := range groups {
 		result = append(result, map[string]interface{}{
 			"metric": g.metric,
@@ -226,7 +230,7 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 	for _, series := range resp.Data.Result {
 		filtered := make(map[string]string)
 		for k, v := range series.Metric {
-			if !exclude[k] {
+			if !exclude[k] && !exclude[withoutAllLabels] {
 				filtered[k] = v
 			}
 		}
@@ -267,17 +271,30 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 		}
 	}
 
-	var result []map[string]interface{}
+	result := []map[string]interface{}{}
 	for _, group := range groups {
-		timestamps := make([]string, 0, len(group.values))
-		for ts := range group.values {
-			timestamps = append(timestamps, ts)
+		type sampleTime struct {
+			key     string
+			seconds float64
+			ok      bool
 		}
+		timestamps := make([]sampleTime, 0, len(group.values))
+		for ts := range group.values {
+			seconds, ok := sampleTimeSeconds(group.order[ts])
+			timestamps = append(timestamps, sampleTime{ts, seconds, ok})
+		}
+		// Sample times order numerically: their text form ("1.79166e+09",
+		// "1.7916642e+09") does not.
 		sort.Slice(timestamps, func(i, j int) bool {
-			return timestamps[i] < timestamps[j]
+			a, b := timestamps[i], timestamps[j]
+			if a.ok && b.ok && a.seconds != b.seconds {
+				return a.seconds < b.seconds
+			}
+			return a.key < b.key
 		})
 		values := make([][]interface{}, 0, len(timestamps))
-		for _, ts := range timestamps {
+		for _, t := range timestamps {
+			ts := t.key
 			values = append(values, []interface{}{
 				group.order[ts],
 				strconv.FormatFloat(group.values[ts], 'f', -1, 64),
@@ -694,4 +711,17 @@ func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
 		return body
 	}
 	return out
+}
+
+// sampleTimeSeconds reads a sample time of a decoded response: a JSON number, or
+// its text.
+func sampleTimeSeconds(v interface{}) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case string:
+		f, err := strconv.ParseFloat(t, 64)
+		return f, err == nil
+	}
+	return 0, false
 }

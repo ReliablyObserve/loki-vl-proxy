@@ -5,24 +5,30 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
-// An instant `sum(sum_over_time(... | json | unwrap x [r]))` collapses every
-// stream into one series without labels, as Loki's bare outer sum does; the
-// translated `stats by (_stream, _msg)` identity is not a label of the result.
+// An instant `sum(sum_over_time(... | json | unwrap x [r]))` is one series
+// without labels, as Loki's bare outer sum makes it, and VictoriaLogs answers it
+// whole: the translated `stats by (_stream, _msg)` before the outer sum is not a
+// label of the result, and no raw rows are read.
 //
 // conformance: profiles/sanitized-json-key-grouping
 func TestInstantUnwrapSumCollapsesStreams(t *testing.T) {
-	rows := `{"_time":"2026-01-01T00:59:00Z","_msg":"{\"code\":200}","_stream":"{app=\"web\",pod=\"a\"}","app":"web","pod":"a","code":"200"}` + "\n" +
-		`{"_time":"2026-01-01T00:59:01Z","_msg":"{\"code\":201}","_stream":"{app=\"web\",pod=\"b\"}","app":"web","pod":"b","code":"201"}` + "\n"
+	var statsQueries []string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/select/logsql/query" {
-			w.Header().Set("Content-Type", "application/x-ndjson")
-			_, _ = w.Write([]byte(rows))
-			return
+		switch r.URL.Path {
+		case "/select/logsql/stats_query":
+			_ = r.ParseForm()
+			statsQueries = append(statsQueries, r.FormValue("query"))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"sum(__lvp_inner)"},"value":[1767229200,"401"]}]}}`))
+		case "/select/logsql/query":
+			t.Errorf("raw rows read for an ungrouped sum: %s", r.URL.RawQuery)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
 		}
-		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer backend.Close()
 	p := newTestProxy(t, backend.URL)
@@ -44,6 +50,9 @@ func TestInstantUnwrapSumCollapsesStreams(t *testing.T) {
 	}
 	if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Metric) != 0 || resp.Data.Result[0].Value[1] != "401" {
 		t.Fatalf("want one unlabelled series worth 401: %s", res.Body)
+	}
+	if len(statsQueries) != 1 || !strings.Contains(statsQueries[0], "| stats by (__lvp_bad) sum(__lvp_inner)") {
+		t.Fatalf("want one stats query ending in the outer sum (grouped by the conversion counter): %v", statsQueries)
 	}
 }
 

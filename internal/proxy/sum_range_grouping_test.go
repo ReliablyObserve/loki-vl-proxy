@@ -71,8 +71,13 @@ func TestSumAllLogRangeUsesStatsFastPath(t *testing.T) {
 func TestSumAllLogRangePreservesOtherAggregationSemantics(t *testing.T) {
 	for _, query := range []string{
 		`avg(rate({app="api"}[5m]))`, `sum by(app)(rate({app="api"}[5m]))`,
-		`sum without()(rate({app="api"}[5m]))`, `sum(rate({app="api"} | unwrap count [5m]))`,
+		`sum without()(rate({app="api"}[5m]))`,
 		`sum(quantile_over_time(0.5,{app="api"} | unwrap latency [5m]))`,
+		`sum(avg_over_time({app="api"} | unwrap latency [5m]))`,
+		`sum(max_over_time({app="api"} | unwrap latency [5m]))`,
+		`sum(min_over_time({app="api"} | unwrap latency [5m]))`,
+		`sum(rate_counter({app="api"} | unwrap latency [5m]))`,
+		`sum(count_over_time({app="api"} | unwrap latency [5m]))`,
 	} {
 		if isSumAllLogRange(query) {
 			t.Errorf("must not collapse %s", query)

@@ -318,6 +318,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-rate-sum",
+   "kind": "explore",
+   "query": "sum(rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+   "covers": [
+    "semantics/unwrap-rate-ungrouped-sum-per-stream",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-rate-ungrouped-sum-per-stream"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

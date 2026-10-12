@@ -1,0 +1,54 @@
+id: semantics/unwrap-per-series-identity-raw-rows
+title: A function taken per series (avg, max, min over time, rate_counter) under sum or sum by uses the stream as the series (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Only sum over rate, sum_over_time, count and the bytes functions is evaluated
+  on the folded samples (pkg/logql/syntax/ast.go:1612-1642 canInjectVectorGrouping).
+  Every other function under a vector aggregation is evaluated per series, the
+  stream plus the labels a parser extracts less the unwrapped one
+  (pkg/logql/log/metrics_extraction.go:150-178), and the aggregation then folds
+  those values (pkg/logql/evaluator.go:435-529). VictoriaLogs stats cannot name
+  the parsed labels, so the proxy approximates the series by `_stream` (the raw
+  `| json` and rate_counter evaluators) or `_stream, _msg` (the stats pipeline of
+  an instant logfmt query), and a `sum by (a)` over such a function groups the
+  inner stats by `a` alone (unwrapInnerGrouping). Measured on an isolated stack
+  (Loki 3.7.7, VictoriaLogs v1.52.0, generator data; every payment-service line
+  has its own transaction id, so each line is a series of its own in Loki):
+    * `sum by (level) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
+      instant at t=1791665700: Loki 1.07126e+06, proxy 9965.18 (the maximum per
+      level, not the sum of the per-series maxima); tumbling and sliding the
+      same factor (and the window gaps of semantics/unwrap-over-time-range-windows);
+    * `sum(avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))`
+      instant: Loki 1.21215e+06, proxy 388600 (a value per stream);
+    * `sum(rate_counter({app="payment-service"} | logfmt | unwrap amount [5m]))`
+      instant: Loki 0, proxy 19506.7 (rate_counter of one sample is 0 in Loki).
+  The shape is right since semantics/unwrap-rate-ungrouped-sum-per-stream (one
+  series; main answered 273-2704): the values are not. Related, open:
+  parsed-identity/dynamic-key-parsers (the series identity of a parser).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (level) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's sum of the per-series maxima per level.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator unwrapInnerGrouping (sum by over a per-series function) and the raw evaluators series key (collectRangeMetricSamples)'
+  loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next; pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + parsed labels)'
+  proxy: 'the value per stream (or per level), not per stream and parsed labels'
+  planned_test: 'TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core) over sum and sum by x avg/max/min/rate_counter, logfmt and json'
+  note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only; a fix needs the parsed keys of the data (parsed-identity/dynamic-key-parsers).'
+  clusters: []
