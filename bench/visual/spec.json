@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-rate-detected-level-unknown",
+   "kind": "explore",
+   "query": "sum without (pod) (rate({service_name=\"api-gateway\"}[$__auto]))",
+   "covers": [
+    "semantics/detected-level-missing-from-stats-answers",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/detected-level-missing-from-stats-answers"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
