@@ -30,7 +30,13 @@ gap:
   impact: explore-visible
   effort: L
   area: 'internal/proxy raw-row quantile evaluator (manual metric response cap)'
-  loki: 'pkg/logql/range_vector.go quantile_over_time'
-  proxy: '502 at the manual metric response limit'
-  planned_test: 'bench/ab set unwrap-conversion-error E2 at 6h/24h/7d'
+  loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile (sorted samples of the window, linear interpolation at rank phi*(n-1)); :804-816 QuantileOverTime'
+  proxy: '502 at the manual metric response limit (range_metric_compat.go collectRangeMetricSamples reads every raw row; checkManualMetricRead)'
+  planned_test: 'TestUnwrapQuantileResponseLimit (internal/proxy, skipped while open; LVP_OPEN_GAP_TESTS=1 reproduces the 502); bench/ab set unwrap-conversion-error E2 at 6h/24h/7d'
+  note: |
+    VictoriaLogs' quantile stats function is not a drop-in: it returns the
+    sorted value at index int(phi*n) with no interpolation (Loki interpolates
+    at phi*(n-1)), it keeps a random 10,000-value reservoir per shard above
+    that, and a quantile of buckets cannot be combined into a sliding window.
+    Same code from v1.24 (VictoriaMetrics repo) through v1.50.0.
   clusters: []
