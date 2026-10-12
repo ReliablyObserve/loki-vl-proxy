@@ -1,0 +1,288 @@
+{
+ "label": "unwrapgate-confirm-long",
+ "date": "2026-10-12",
+ "set": "unwrap-gate",
+ "description": "Unwrap value gate (semantics/unwrap-gate-parsefloat-divergences): every unwrap query now carries the gate's per-row pipes (a copy, a conditional replace_regexp, a range filter after math, a counting stats group), so the common path must stay within noise of main. G1-G2 plain unwrap, G3-G4 with `| __error__=\"\"`, G5-G6 sum by over rate, G7-G8 duration() and bytes(), G9 max, G10 every production stream, G11-G12 instant. All hold clean numbers, so the shapes measure the gate's cost, not an error path. Run with the control set.",
+ "baseline": "base",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 7,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 9
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "G1 logfmt amount sum_over_time, no filter",
+   "range": "6h",
+   "p50": {
+    "base": 0.021,
+    "branch": 0.02
+   },
+   "p95": {
+    "base": 0.024,
+    "branch": 0.026
+   },
+   "cold": {
+    "base": 0.031,
+    "branch": 0.018
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 34.62,
+    "branch": 34.62
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  },
+  {
+   "shape": "G1 logfmt amount sum_over_time, no filter",
+   "range": "24h",
+   "p50": {
+    "base": 0.051,
+    "branch": 0.054
+   },
+   "p95": {
+    "base": 0.057,
+    "branch": 0.061
+   },
+   "cold": {
+    "base": 0.061,
+    "branch": 0.067
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 114.1,
+    "branch": 114.1
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.94
+  },
+  {
+   "shape": "G1 logfmt amount sum_over_time, no filter",
+   "range": "7d",
+   "p50": {
+    "base": 0.054,
+    "branch": 0.057
+   },
+   "p95": {
+    "base": 0.056,
+    "branch": 0.068
+   },
+   "cold": {
+    "base": 0.068,
+    "branch": 0.052
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 122.64,
+    "branch": 122.64
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "G7 duration() of a unit string",
+   "range": "6h",
+   "p50": {
+    "base": 0.021,
+    "branch": 0.028
+   },
+   "p95": {
+    "base": 0.022,
+    "branch": 0.03
+   },
+   "cold": {
+    "base": 0.021,
+    "branch": 0.03
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 67.56,
+    "branch": 67.56
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.75
+  },
+  {
+   "shape": "G7 duration() of a unit string",
+   "range": "24h",
+   "p50": {
+    "base": 0.065,
+    "branch": 0.081
+   },
+   "p95": {
+    "base": 0.074,
+    "branch": 0.1
+   },
+   "cold": {
+    "base": 0.067,
+    "branch": 0.077
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 143.3,
+    "branch": 143.3
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.8
+  },
+  {
+   "shape": "G7 duration() of a unit string",
+   "range": "7d",
+   "p50": {
+    "base": 0.072,
+    "branch": 0.084
+   },
+   "p95": {
+    "base": 0.079,
+    "branch": 0.092
+   },
+   "cold": {
+    "base": 0.067,
+    "branch": 0.096
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 162.41,
+    "branch": 162.41
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.86
+  },
+  {
+   "shape": "G8 bytes() of a number",
+   "range": "6h",
+   "p50": {
+    "base": 0.03,
+    "branch": 0.03
+   },
+   "p95": {
+    "base": 0.056,
+    "branch": 0.056
+   },
+   "cold": {
+    "base": 0.032,
+    "branch": 0.032
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 106.52,
+    "branch": 106.52
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "G8 bytes() of a number",
+   "range": "24h",
+   "p50": {
+    "base": 0.071,
+    "branch": 0.079
+   },
+   "p95": {
+    "base": 0.097,
+    "branch": 0.094
+   },
+   "cold": {
+    "base": 0.077,
+    "branch": 0.078
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 168.66,
+    "branch": 168.66
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "G8 bytes() of a number",
+   "range": "7d",
+   "p50": {
+    "base": 0.073,
+    "branch": 0.081
+   },
+   "p95": {
+    "base": 0.076,
+    "branch": 0.096
+   },
+   "cold": {
+    "base": 0.112,
+    "branch": 0.084
+   },
+   "status": {
+    "base": "200",
+    "branch": "200"
+   },
+   "vl_cpu_max": {
+    "base": 168.66,
+    "branch": 168.66
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.9
+  }
+ ]
+}

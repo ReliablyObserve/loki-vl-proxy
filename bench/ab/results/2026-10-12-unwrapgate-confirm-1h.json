@@ -1,0 +1,129 @@
+{
+ "label": "unwrapgate-confirm-1h",
+ "date": "2026-10-12",
+ "set": "unwrap-gate",
+ "description": "Unwrap value gate (semantics/unwrap-gate-parsefloat-divergences): every unwrap query now carries the gate's per-row pipes (a copy, a conditional replace_regexp, a range filter after math, a counting stats group), so the common path must stay within noise of main. G1-G2 plain unwrap, G3-G4 with `| __error__=\"\"`, G5-G6 sum by over rate, G7-G8 duration() and bytes(), G9 max, G10 every production stream, G11-G12 instant. All hold clean numbers, so the shapes measure the gate's cost, not an error path. Run with the control set.",
+ "baseline": "base",
+ "candidate": "branch",
+ "reference": "loki",
+ "runs": 7,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 3
+ },
+ "result_differs_from_reference": 3,
+ "result_differs_preexisting": 3,
+ "stale_answers": {
+  "base": 0,
+  "branch": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "G1 logfmt amount sum_over_time, no filter",
+   "range": "1h",
+   "p50": {
+    "base": 0.006,
+    "branch": 0.007,
+    "loki": 0.009
+   },
+   "p95": {
+    "base": 0.007,
+    "branch": 0.008,
+    "loki": 0.011
+   },
+   "cold": {
+    "base": 0.021,
+    "branch": 0.006,
+    "loki": 0.014
+   },
+   "status": {
+    "base": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 9.69,
+    "branch": 9.69,
+    "loki": 9.69
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.86
+  },
+  {
+   "shape": "G7 duration() of a unit string",
+   "range": "1h",
+   "p50": {
+    "base": 0.006,
+    "branch": 0.016,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.007,
+    "branch": 0.018,
+    "loki": 0.008
+   },
+   "cold": {
+    "base": 0.006,
+    "branch": 0.015,
+    "loki": 0.01
+   },
+   "status": {
+    "base": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 8.27,
+    "branch": 8.27,
+    "loki": 8.27
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.38
+  },
+  {
+   "shape": "G8 bytes() of a number",
+   "range": "1h",
+   "p50": {
+    "base": 0.009,
+    "branch": 0.011,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.011,
+    "branch": 0.013,
+    "loki": 0.008
+   },
+   "cold": {
+    "base": 0.014,
+    "branch": 0.011,
+    "loki": 0.008
+   },
+   "status": {
+    "base": "200",
+    "branch": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 9.32,
+    "branch": 9.32,
+    "loki": 9.32
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.82
+  }
+ ]
+}
