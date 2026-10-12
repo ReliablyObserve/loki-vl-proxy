@@ -138,7 +138,9 @@
     ],
     "limits/top-n-ranking-not-silent": [
       "internal/proxy/sliding_window_stats_test.go",
-      "test/e2e-compat/heavy_query_protection_test.go"
+      "internal/proxy/topk_range_differential_test.go",
+      "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/topk_range_per_step_test.go"
     ],
     "loki-compatible-profile": [
       "internal/proxy/extracted_suffix_collision_test.go",
@@ -184,6 +186,7 @@
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tenant_query_limits_test.go",
+      "internal/proxy/topk_range_edge_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
@@ -206,6 +209,8 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/tenant_query_limits_test.go",
+      "internal/proxy/topk_range_differential_test.go",
+      "internal/proxy/topk_range_edge_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/translator/extracted_suffix_test.go",
@@ -218,6 +223,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
+      "test/e2e-compat/topk_range_per_step_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
@@ -460,6 +466,16 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "semantics/topk-bottomk-range-series": [
+      "internal/proxy/topk_range_differential_test.go",
+      "internal/proxy/topk_range_edge_test.go",
+      "test/e2e-compat/topk_range_per_step_test.go"
+    ],
+    "semantics/topk-grouped-spellings": [
+      "internal/proxy/topk_range_differential_test.go",
+      "internal/proxy/topk_range_edge_test.go",
+      "test/e2e-compat/topk_range_per_step_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -541,7 +557,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 299,
+  "registry_items": 300,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -818,6 +834,18 @@
       "series-limits-and-partial-results",
       "tenant-query-limits"
     ],
+    "internal/proxy/topk_range_differential_test.go": [
+      "limits/top-n-ranking-not-silent",
+      "loki_api_v1_query_range",
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
+    ],
+    "internal/proxy/topk_range_edge_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
+    ],
     "internal/proxy/tumbling_axis_parity_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -1038,6 +1066,12 @@
       "loki_api_v1_drilldown_limits",
       "tenant-query-limits"
     ],
+    "test/e2e-compat/topk_range_per_step_test.go": [
+      "limits/top-n-ranking-not-silent",
+      "loki_api_v1_query_range",
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
+    ],
     "test/e2e-compat/unwrap_conversion_error_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1064,7 +1098,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 99,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1154,7 +1188,6 @@
     "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/stddev-stdvar-grouped-values",
     "semantics/tail-history-start-limit",
-    "semantics/topk-bottomk-range-series",
     "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",
     "semantics/unwrap-conversion-error-parser-divergence",
@@ -1172,5 +1205,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 106
+  "wired_items": 108
 }

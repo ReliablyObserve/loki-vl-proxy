@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`topk`/`bottomk` with `by`/`without` rank inside each group on query_range
+  and at an instant, in every spelling Loki's grammar accepts.**
+  `topk by (container) (5, sum by (container, pod) (count_over_time({env="production"}[5m])))`
+  came back as a log stream response (resultType `streams`, 200) on query_range
+  and as `log queries are not supported as an instant query type` (400) at an
+  instant; `topk(5, ...) by (container)` was a 400 `invalid range metric query`
+  on query_range, and `topk (5, ...)` with a space was taken for a log query
+  too. Only the plain `topk(k, expr)` spelling was recognised (the proxy matched
+  the text `topk(` and the closing parenthesis), and a trailing `by (...)`
+  clause even slipped through that match with a mangled inner expression. Loki
+  keeps one heap per grouping key and step
+  (`pkg/logql/evaluator.go:443-494`, `VectorAggEvaluator.Next`; the grammar is
+  `pkg/logql/syntax/syntax.y:182-184`), so `topk by (env) (1, ...)` keeps the
+  best series of every `env` at every step, and the matrix holds the union of
+  the series that ranked at some step with their samples at those steps only.
+  The proxy now reads the clause from the parsed query, passes the inner
+  expression on as written, and ranks per step and group everywhere it ranks:
+  the bounded per-step heap over VictoriaLogs' window stats (one heap per step
+  and group, still bounded by the series that stats response holds), the matrix
+  ranking of the other routes, and the instant vector. A `without` clause groups
+  by every label but the listed ones and `__name__`; a label a series lacks
+  counts as empty, as in Loki. On the window-stats route the series that ranked
+  at some step now count against `-max-stats-query-series`, as Loki's
+  `max_query_series` counts the result of a topk: an error for a plain client;
+  for Logs Drilldown a partial result with a warning, where Loki keeps the
+  series it met first and stops at that step, and the proxy keeps the limit's
+  worth of series with the most selected samples over the range. The other
+  routes (`applyTopKToMatrix` over a finished matrix) still limit the inner
+  metric before ranking. A ranking whose samples could not fit in
+  `-backend-max-buffered-response-bytes` fails before the heaps hold them.
+  NaN ranks after every number for `topk` and `bottomk` alike and never blocks
+  one (Loki's heaps, `pkg/logql/vector.go`): it stays in a group's result only
+  while the group has fewer than k numbers; the heap, the matrix, the instant
+  vector and the instant sort share one comparison. Where several series tie
+  at the k-th place Loki's choice
+  follows the order of an unordered map (`range_vector.go` keeps its window in
+  a Go map), so any choice is Loki's answer; the proxy takes label order so the
+  answer is stable. The plain `topk(k, ...)` ranking was already per step; the
+  registry row that described it as a global top k is closed with the grouped
+  spellings (#736).
+
 ## [2.11.2] - 2026-10-12
 
 ### CI

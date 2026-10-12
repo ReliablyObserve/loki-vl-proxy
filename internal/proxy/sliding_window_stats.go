@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // Sliding-window log metrics (count_over_time, rate, bytes_over_time,
@@ -55,13 +57,14 @@ type rangeTopKKey struct{}
 type rangeTopK struct {
 	k          int
 	descending bool
+	group      *logqlpkg.Grouping // k series are kept per group (nil: one group)
 }
 
 // withRangeTopK marks a range metric evaluation whose result feeds topk or
 // bottomk, so the evaluator ranks every series per step instead of truncating
 // to the busiest series first.
-func withRangeTopK(ctx context.Context, k int, descending bool) context.Context {
-	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending})
+func withRangeTopK(ctx context.Context, k int, descending bool, group *logqlpkg.Grouping) context.Context {
+	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending, group: group})
 }
 
 func rangeTopKFromContext(ctx context.Context) (rangeTopK, bool) {
@@ -199,7 +202,7 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	}
 	var body []byte
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
-		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, topK, start, step, p.limits().BufferedBackendBodyBytes)
+		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
 		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}
@@ -481,22 +484,51 @@ func (h *topKHeap) Pop() any {
 	return last
 }
 
-// better reports whether a ranks before b; ties break by label order.
+// better reports whether a ranks before b; NaN ranks last and ties break by
+// label order.
 func (h *topKHeap) better(a, b topKCandidate) bool {
-	if a.value != b.value {
-		if h.descending {
-			return a.value > b.value
-		}
-		return a.value < b.value
+	if c := topKCompare(a.value, b.value, h.descending); c != 0 {
+		return c < 0
 	}
 	return h.keys[a.series] < h.keys[b.series]
 }
 
 // encodeTopK keeps, per step, the k series Loki's topk or bottomk selects
-// among every series, with one bounded heap per step.
-func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps int, topK rangeTopK, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
+// among every series of each group, with one bounded heap per step and group.
+// Like Loki's JoinSampleVector it counts the series of the result, the union of
+// the ones that ranked at some step, against maxSeries: Loki's error for a
+// plain client, the series with the most selected samples and Loki's warning
+// for Logs Drilldown.
+func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale float64, steps, maxSeries int, topK rangeTopK, start time.Time, step time.Duration, maxBytes int) ([]byte, error) {
 	offsets := s.bySeries()
-	heaps := make([]*topKHeap, steps+1)
+	// One group keeps a heap per step in a slice; groups keep one per step and
+	// group that holds a series, in a map.
+	type slot struct{ step, group int32 }
+	var byStep []*topKHeap
+	var byGroup map[slot]*topKHeap
+	groupOf := make([]int32, len(s.keys))
+	// Every sample a heap holds is a sample of the response, which costs at
+	// least slidingPointOverheadBytes there: the heaps of a response over the
+	// limit stop growing. In memory a held sample costs more than in the
+	// response (a 16-byte candidate plus its share of a heap header and map
+	// slot, about 60-100 bytes when every group is a single series), so this
+	// bounds the heaps to a small multiple of maxBytes, not to maxBytes.
+	kept, keptLimit, tooLarge := 0, maxBytes/slidingPointOverheadBytes, false
+	if topK.group == nil {
+		byStep = make([]*topKHeap, steps+1)
+	} else {
+		byGroup = make(map[slot]*topKHeap)
+		ids := map[string]int32{}
+		for series := range groupOf {
+			key := topKGroupKey(topK.group, s.metric(int32(series)))
+			id, ok := ids[key]
+			if !ok {
+				id = int32(len(ids))
+				ids[key] = id
+			}
+			groupOf[series] = id
+		}
+	}
 	for series := range s.keys {
 		if series%4096 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -504,14 +536,27 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 			}
 		}
 		slidingWindows(s.records[offsets[series]:offsets[series+1]], withBytes, scale, steps, s.windowGrid, func(seg slidingSegment) {
-			for k := seg.from; k < seg.to; k++ {
-				h := heaps[k]
+			for k := seg.from; k < seg.to && !tooLarge; k++ {
+				var h *topKHeap
+				if byStep != nil {
+					h = byStep[k]
+				} else {
+					h = byGroup[slot{k, groupOf[series]}]
+				}
 				if h == nil {
 					h = &topKHeap{descending: topK.descending, keys: s.keys}
-					heaps[k] = h
+					if byStep != nil {
+						byStep[k] = h
+					} else {
+						byGroup[slot{k, groupOf[series]}] = h
+					}
 				}
 				c := topKCandidate{series: int32(series), value: seg.value}
 				if h.Len() < topK.k {
+					if kept++; kept > keptLimit {
+						tooLarge = true
+						return
+					}
 					heap.Push(h, c)
 				} else if h.better(c, h.items[0]) {
 					h.items[0] = c
@@ -519,21 +564,53 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 				}
 			}
 		})
+		if tooLarge {
+			return nil, errSlidingResponseTooLarge(maxBytes)
+		}
 	}
 	points := make(map[int32][]slidingSegment)
-	for k, h := range heaps {
-		if h == nil {
-			continue
-		}
+	collect := func(step int32, h *topKHeap) {
 		for _, c := range h.items {
-			points[c.series] = append(points[c.series], slidingSegment{from: int32(k), to: int32(k) + 1, value: c.value})
+			points[c.series] = append(points[c.series], slidingSegment{from: step, to: step + 1, value: c.value})
 		}
 	}
-	out := make([]slidingOutputSeries, 0, len(points))
-	for series, segments := range points {
-		out = append(out, slidingOutputSeries{metric: s.metric(series), segments: segments})
+	for k, h := range byStep {
+		if h != nil {
+			collect(int32(k), h)
+		}
+	}
+	for at, h := range byGroup {
+		collect(at.step, h)
+	}
+	ranked := make([]int32, 0, len(points))
+	for series := range points {
+		ranked = append(ranked, series)
+	}
+	if maxSeries > 0 && len(ranked) > maxSeries {
+		if err := seriesLimitReached(ctx, maxSeries); err != nil {
+			return nil, err
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			if a, b := len(points[ranked[i]]), len(points[ranked[j]]); a != b {
+				return a > b
+			}
+			return s.keys[ranked[i]] < s.keys[ranked[j]]
+		})
+		ranked = ranked[:maxSeries]
+	}
+	out := make([]slidingOutputSeries, 0, len(ranked))
+	for _, series := range ranked {
+		out = append(out, slidingOutputSeries{metric: s.metric(series), segments: points[series]})
 	}
 	return encodeSlidingWindowMatrix(out, start, step, maxBytes)
+}
+
+// slidingPointOverheadBytes is what a sample costs in the response besides its
+// formatted value: the timestamp, the brackets and the separators.
+const slidingPointOverheadBytes = 26
+
+func errSlidingResponseTooLarge(maxBytes int) error {
+	return fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
 }
 
 type slidingOutputSeries struct {
@@ -565,8 +642,8 @@ func encodeSlidingWindowMatrix(series []slidingOutputSeries, start time.Time, st
 		for _, seg := range entry.segments {
 			formatted := strconv.FormatFloat(seg.value, 'f', -1, 64)
 			for k := seg.from; k < seg.to; k++ {
-				if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
-					return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+				if encodedBytes += len(formatted) + slidingPointOverheadBytes; encodedBytes > maxBytes {
+					return nil, errSlidingResponseTooLarge(maxBytes)
 				}
 				t := start.Add(time.Duration(k) * step)
 				points = append(points, []interface{}{float64(t.UnixNano()) / float64(time.Second), formatted})
