@@ -51,11 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block layouts). The plain unwrap gate gained a `copy`, a conditional
   `replace_regexp` and a range filter, and the query of an unwrap whose error is
   dropped now carries the counting gate's flag pipes and a `__lvp_bad` group key
-  (owed an A/B against main). Still registered
+  (A/B against main on 2.4 M lines: a plain unwrap and a `| __error__=""` unwrap
+  within the noise of the harness (up to about 10 to 15 percent on queries of 50
+  to 150 ms), a `duration()` unwrap about 25 percent (8 to 16 ms) and a
+  `bytes()` unwrap about 6 to 11 percent slower on queries of 60 to 80 ms, the
+  control set unchanged). Still registered
   (`semantics/unwrap-gate-parsefloat-divergences`): a duration within about a
   microsecond of int64 nanoseconds, a window made only of nan values under
-  `max_over_time` or `min_over_time`, and a `max`, `min` or `count` of series
-  that `sum`, `avg`, `stddev` or `rate` made NaN.
+  `max_over_time` or `min_over_time`, a `max`, `min` or `count` of series
+  that `sum`, `avg`, `stddev` or `rate` made NaN, and an ungrouped instant
+  `sum(...)` over `sum_over_time` or `avg_over_time` of a series that holds a nan.
 
 ## [2.11.2] - 2026-10-12
 

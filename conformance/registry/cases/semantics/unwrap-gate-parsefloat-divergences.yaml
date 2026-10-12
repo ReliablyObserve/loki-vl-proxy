@@ -74,7 +74,13 @@ why: |
     sliding windows the proxy folds from buckets then carry the NaN (the bucket
     reader accepts NaN and infinities of an unwrap, which it used to skip), and
     the raw evaluators' min and max follow Loki's NaN replacement (lokiMinMax).
-    Cost, owed an A/B: the plain gate gained a `copy`, a `replace_regexp if` (a
+    Cost, measured (bench/ab set unwrap-gate and the control set, VictoriaLogs
+    v1.52.0, 2.4 M lines, 5 runs; a plain unwrap, `| __error__=""` unwrap,
+    sum by over rate and max stay within the noise of the harness (up to about
+    10 to 15 percent on 50 to 150 ms queries); a duration() unwrap
+    is about 8 to 16 ms (25 percent) slower on a 60 to 80 ms query and bytes()
+    about 4 to 8 ms (6 to 11 percent); the control set is unchanged):
+    the plain gate gained a `copy`, a `replace_regexp if` (a
     pass-through for a block that holds no `infinity`) and a range filter after
     the math pipe; a plain unwrap whose error is dropped (`| __error__=""`) now
     sends the nan-counting gate (`format if` on the syntax, `format if` on the
@@ -85,6 +91,13 @@ why: |
     (and the leading-zero strip for a duration) only.
 
   Still different (why VictoriaLogs cannot, and what the proxy does not do):
+
+  - An ungrouped `sum(...)` over `sum_over_time` or `avg_over_time` of a series
+    that holds a nan, on an instant query: Loki answers NaN, the proxy answers the
+    sum of the numbers (or no series when the window holds only nan rows). The
+    grouped form, `sum by (service_name) (...)`, and a rate answer NaN. Found by
+    TestCompat_UnwrapValueFormsParity (8 subtests on v1.40, v1.47 and v1.52,
+    with the same failure on main).
 
   - A stats query the proxy cannot rewrite exactly (a `sort` or `limit` after the
     stats pipe, two gates in one query) is sent with the plain gate: its nan rows
@@ -131,7 +144,7 @@ gap:
   effort: S
   area: 'internal/translator/unwrap_gate.go (UnwrapNumberPattern, UnwrapDurationPattern, UnwrapBytesPattern, UnwrapInRange); internal/proxy/unwrap_conversion_error.go (unwrapCountedGateMode, unwrapNaN)'
   loki: 'pkg/logql/log/metrics_extraction.go:316-338 convertFloat, convertDuration, convertBytes; pkg/logql/range_vector.go sumOverTime, avgOverTime, maxOverTime, minOverTime, stddevOverTime'
-  proxy: 'a duration within a microsecond of int64 nanoseconds is dropped; a nan under max/min only windows and mixed max/min/count chains is dropped'
-  planned_test: 'TestUnwrapNumberPatternMatchesParseFloat, TestUnwrapGateRange, TestUnwrapDurationPatternMatchesParseDuration, TestUnwrapBytesPatternAndExtract and the generated-input tests (internal/translator, internal/proxy); TestUnwrapCountedGateFlagsOverflow, TestUnwrapNaNGroupsReachTheAnswer, TestUnwrapNaNReachesTheLokiAnswer, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential (internal/proxy); TestCompat_UnwrapValueFormsParity and TestCompat_UnwrapOverflowParity (test/e2e-compat, written, not yet run)'
-  note: 'Every form of the lists was checked against the Go functions through the gate and the counting gate executed by VictoriaLogs v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both block layouts); not yet run live on the v1.40 line, v1.52 or the e2e stack.'
+  proxy: 'a duration within a microsecond of int64 nanoseconds is dropped; a nan under max/min only windows, mixed max/min/count chains and an ungrouped instant sum over sum_over_time or avg_over_time is dropped'
+  planned_test: 'TestUnwrapNumberPatternMatchesParseFloat, TestUnwrapGateRange, TestUnwrapDurationPatternMatchesParseDuration, TestUnwrapBytesPatternAndExtract and the generated-input tests (internal/translator, internal/proxy); TestUnwrapCountedGateFlagsOverflow, TestUnwrapNaNGroupsReachTheAnswer, TestUnwrapNaNReachesTheLokiAnswer, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential (internal/proxy); TestCompat_UnwrapValueFormsParity (rate on query_range, the over-time functions on grouped instants) and TestCompat_UnwrapOverflowParity (test/e2e-compat)'
+  note: 'Every form of the lists was checked against the Go functions through the gate and the counting gate executed by VictoriaLogs v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both block layouts); run live against Loki on VictoriaLogs v1.40.0, v1.47.0 and v1.52.0 (TestCompat_UnwrapOverflowParity passes on all three; TestCompat_UnwrapValueFormsParity passes except the ungrouped nan sum above, with the ungrouped over-time series skipped as registered apart).'
   clusters: []
