@@ -1,0 +1,232 @@
+{
+ "label": "labelreplace-1h",
+ "date": "2026-10-12",
+ "set": "label-replace",
+ "description": "label_replace adds its label to instant answers, to post-aggregated series and around a bare range function or a `| json` metric (PR for semantics/label-replace-new-label). L1 instant and L2 range are the registry row's form over a sum by; L3 is the transform under topk (ranked after the transform, as Loki evaluates it); L4 is an instant label_replace over a bare count_over_time (one series per stream, not one total); L5 and L6 are the transform over a `| json` metric that drops __error__ (answered by the evaluator that owns JSON parser errors). Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 5,
+  "slower": 1
+ },
+ "result_differs_from_reference": 1,
+ "result_differs_preexisting": 1,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "L1 label_replace over sum by rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.005,
+    "pr": 0.005,
+    "loki": 0.109
+   },
+   "p95": {
+    "base": 0.008,
+    "pr": 0.006,
+    "loki": 0.119
+   },
+   "cold": {
+    "base": 0.014,
+    "pr": 0.005,
+    "loki": 0.099
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 3.49,
+    "pr": 3.49,
+    "loki": 3.49
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "L2 label_replace over sum by rate",
+   "range": "1h",
+   "p50": {
+    "base": 0.029,
+    "pr": 0.035,
+    "loki": 0.166
+   },
+   "p95": {
+    "base": 0.032,
+    "pr": 0.037,
+    "loki": 0.187
+   },
+   "cold": {
+    "base": 0.041,
+    "pr": 0.035,
+    "loki": 0.82
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 29.01,
+    "pr": 29.01,
+    "loki": 29.01
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.83
+  },
+  {
+   "shape": "L3 topk over label_replace over sum by count",
+   "range": "1h",
+   "p50": {
+    "base": 0.022,
+    "pr": 0.048,
+    "loki": 0.07
+   },
+   "p95": {
+    "base": 0.023,
+    "pr": 0.053,
+    "loki": 0.141
+   },
+   "cold": {
+    "base": 0.031,
+    "pr": 0.049,
+    "loki": 0.826
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 39.57,
+    "pr": 40.35,
+    "loki": 40.35
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.46
+  },
+  {
+   "shape": "L4 label_replace over bare count_over_time, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.003,
+    "pr": 0.007,
+    "loki": 0.013
+   },
+   "p95": {
+    "base": 0.003,
+    "pr": 0.009,
+    "loki": 0.016
+   },
+   "cold": {
+    "base": 0.003,
+    "pr": 0.006,
+    "loki": 0.012
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 40.35,
+    "pr": 40.35,
+    "loki": 40.35
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.43
+  },
+  {
+   "shape": "L5 label_replace over json sum by, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.018,
+    "pr": 0.05,
+    "loki": 0.014
+   },
+   "p95": {
+    "base": 0.022,
+    "pr": 0.056,
+    "loki": 0.015
+   },
+   "cold": {
+    "base": 0.028,
+    "pr": 0.057,
+    "loki": 0.015
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 36.58,
+    "pr": 36.58,
+    "loki": 36.58
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.36
+  },
+  {
+   "shape": "L6 label_replace over json sum by",
+   "range": "1h",
+   "p50": {
+    "base": 0.021,
+    "pr": 0.554,
+    "loki": 0.015
+   },
+   "p95": {
+    "base": 0.022,
+    "pr": 0.557,
+    "loki": 0.022
+   },
+   "cold": {
+    "base": 0.024,
+    "pr": 0.536,
+    "loki": 0.112
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 35.61,
+    "pr": 35.61,
+    "loki": 35.61
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "slower",
+   "speedup": 0.04
+  }
+ ]
+}
