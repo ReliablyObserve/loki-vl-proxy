@@ -4,8 +4,11 @@ package e2e_compat
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -205,12 +208,69 @@ func TestCompat_AbsentOverTimeUnderVectorAggregation(t *testing.T) {
 			})
 		}
 	}
-	for _, outer := range []string{"topk(1,", "bottomk(2,"} {
+	for _, outer := range []string{"topk(1,", "bottomk(2,", "sort(", "sort_desc("} {
 		query := fmt.Sprintf(`%s absent_over_time(%s | json [2m]))`, outer, selector)
 		t.Run("range/"+outer, func(t *testing.T) {
 			compareAbsentSeries(t, query,
 				slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil),
 				slidingRangeSeries(t, proxyURL, query, start, end, time.Minute, nil))
 		})
+	}
+}
+
+// TestCompat_AbsentOverTimeLabelReplace: a label_replace around
+// absent_over_time rewrites the absent series' labels, not a count series
+// (the proxy relabelled the inner count), on a range and an instant query.
+// conformance: semantics/absent-over-time-semantics, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_AbsentOverTimeLabelReplace(t *testing.T) {
+	fx := ensureAbsentFixtures(t)
+	fx.waitForLoki(t)
+	start, end := fx.s0.Add(-4*time.Minute), fx.s0.Add(36*time.Minute)
+	selector := `{app="` + fx.json.app + `"}`
+	for _, query := range []string{
+		fmt.Sprintf(`label_replace(absent_over_time(%s | json [2m]), "dst", "x-$1", "app", "(.*)")`, selector),
+		fmt.Sprintf(`label_replace(sum by (app) (absent_over_time(%s [2m])), "dst", "$1", "app", "(.*)")`, selector),
+		fmt.Sprintf(`label_replace(absent_over_time(%s | json | nonexistant_field="foo" [2m]), "dst", "v", "nope", "")`, selector),
+	} {
+		t.Run("range/"+query, func(t *testing.T) {
+			compareAbsentSeries(t, query,
+				slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil),
+				slidingRangeSeries(t, proxyURL, query, start, end, time.Minute, nil))
+		})
+		t.Run("instant/"+query, func(t *testing.T) {
+			for _, at := range []time.Duration{5 * time.Minute, 15 * time.Minute} {
+				loki := unwrapInstant(t, lokiURL, query, fx.s0.Add(at))
+				proxy := unwrapInstant(t, proxyURL, query, fx.s0.Add(at))
+				if fmt.Sprint(loki) != fmt.Sprint(proxy) {
+					t.Errorf("%s at %s: Loki %v, proxy %v", query, at, loki, proxy)
+				}
+			}
+		})
+	}
+}
+
+// TestCompat_AbsentOverTimeGroupingRejected: Loki rejects a grouping on
+// absent_over_time with a 400 parse error; the proxy answered 200 with counts.
+// conformance: semantics/absent-over-time-semantics, status-400, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_AbsentOverTimeGroupingRejected(t *testing.T) {
+	fx := ensureAbsentFixtures(t)
+	query := fmt.Sprintf(`absent_over_time({app="%s"}[2m]) by (app)`, fx.json.app)
+	for _, path := range []string{"/loki/api/v1/query_range", "/loki/api/v1/query"} {
+		params := url.Values{"query": {query}}
+		if path == "/loki/api/v1/query" {
+			params.Set("time", strconv.FormatInt(fx.s0.Add(5*time.Minute).UnixNano(), 10))
+		} else {
+			params.Set("start", strconv.FormatInt(fx.s0.UnixNano(), 10))
+			params.Set("end", strconv.FormatInt(fx.s0.Add(10*time.Minute).UnixNano(), 10))
+			params.Set("step", "60")
+		}
+		loki := unwrapErrorGet(t, lokiURL, path, params)
+		proxy := unwrapErrorGet(t, proxyURL, path, params)
+		if loki.status != http.StatusBadRequest || !strings.Contains(loki.body, "grouping not allowed for absent_over_time aggregation") {
+			t.Fatalf("%s Loki answered %d %s", path, loki.status, loki.body)
+		}
+		if proxy.status != loki.status || !strings.Contains(proxy.body, "grouping not allowed for absent_over_time aggregation") {
+			t.Errorf("%s: proxy %d %s, Loki %d %s", path, proxy.status, proxy.body, loki.status, loki.body)
+		}
 	}
 }

@@ -46,8 +46,16 @@ why: |
   matched to a presence point by index, so a start with milliseconds lines up. Vector
   aggregations fold the single series as VectorAggEvaluator does (grouping keeps
   or drops labels, count 1, stddev and stdvar 0, topk and bottomk keep it whole).
+  A sort around it keeps the series whole, a label_replace around it rewrites
+  the absent series' labels, and a grouping on it is Loki's 400 `parse error :
+  grouping not allowed for absent_over_time aggregation` (syntax/ast.go:1439-1447).
+  Multi-tenant (`X-Scope-OrgID: a|b`): Loki's MultiTenantQuerier merges the
+  tenants' samples before the evaluator runs (pkg/querier/multi_tenant_querier.go
+  SelectSamples), so a step is absent only when no tenant has a line, and the
+  series never carries __tenant_id__; the proxy takes each tenant's absent answer
+  and keeps the steps every tenant holds.
   An answer that is not a clean 200 (a VictoriaLogs failure, the Grafana
-  partial-result reply, the split-residual suppression) is passed on, never
+  partial-result reply, the split-residual suppression, a body `warnings` array) is passed on, never
   inverted into a series of ones.
 request:
   method: GET
@@ -73,8 +81,8 @@ gap:
   area: 'internal/proxy absent_over_time.go (parseAbsentOverTimeCompatSpec, presenceAnswer, buildAbsentOverTimeMatrix); parseBareParserMetricCompatSpecAST'
   loki: 'pkg/logql/evaluator.go:647-664, :754-778 AbsentRangeVectorEvaluator, :1320-1345 absentLabels; pkg/logql/range_vector.go:251,:628; pkg/logql/syntax/extractor.go:44-48; pkg/logql/log/metrics_extraction.go:214-231'
   proxy: 'the inversion of an ungrouped sum(count_over_time) (sum(rate) with unwrap) answered from VictoriaLogs stats, on Loki steps'
-  planned_test: 'TestCompat_AbsentOverTime and TestCompat_AbsentOverTimeUnderVectorAggregation (test/e2e-compat, group semantics); TestAbsentOverTimeDifferential, TestAbsentOverTimeUnderVectorAggregation, TestAbsentOverTimeLabelsEdgeTable, TestParseAbsentOverTimeCompatSpecEdgeTable, TestAbsentOverTimeSeriesFoldEdgeTable, TestAbsentOverTimeParserStageEdgeTable, TestAbsentOverTimeDoesNotInvertFailedPresence, TestAbsentOverTimeInstantEdgeTable (internal/proxy)'
-  note: 'Differential over generated rows (starts with milliseconds, offset, instant, sliding and tumbling windows) on VictoriaLogs v1.52, v1.40 (no offset argument) and with no version. An unwrapped value Loki cannot convert now fails absent_over_time with Loki 400 pipeline error, as rate does (it was a 200; semantics/unwrap-conversion-error-undetected-shapes lists this shape as open and needs its text updated). A parser error line is answered as for count_over_time (parse-error*). Not run yet: the e2e against Loki.'
+  planned_test: 'TestCompat_AbsentOverTime and TestCompat_AbsentOverTimeUnderVectorAggregation (test/e2e-compat, group semantics); TestAbsentOverTimeDifferential, TestAbsentOverTimeUnderVectorAggregation, TestAbsentOverTimeLabelsEdgeTable, TestParseAbsentOverTimeCompatSpecEdgeTable, TestAbsentOverTimeSeriesFoldEdgeTable, TestAbsentOverTimeParserStageEdgeTable, TestAbsentOverTimeDoesNotInvertFailedPresence, TestAbsentOverTimeInstantEdgeTable, TestAbsentOverTimeGroupingIsLokisParseError, TestAbsentOverTimePassesOnWarningInBody, TestAbsentOverTimeMultiTenant, TestAbsentOverTimePresenceQueryKeepsEveryStage (internal/proxy); TestCompat_AbsentOverTimeLabelReplace, TestCompat_AbsentOverTimeGroupingRejected (test/e2e-compat)'
+  note: 'Differential over generated rows (starts with milliseconds, offset, instant, sliding and tumbling windows) on VictoriaLogs v1.52, v1.40 (no offset argument) and with no version. An unwrapped value Loki cannot convert now fails absent_over_time with Loki 400 pipeline error, as rate does (it was a 200). A parser error line is answered as for count_over_time (parse-error*). Not run yet: the e2e against Loki.'
   clusters:
     - 2336e2a5
     - 4dfd84f7

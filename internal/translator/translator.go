@@ -1956,6 +1956,23 @@ func parseUnquotedStringArgs(s string) []string {
 		s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s[len(quoted):]), ","))
 	}
 	return args
+// SplitLabelReplace splits label_replace(v, "dst", "repl", "src", "regex") into
+// the inner expression v and its label arguments.
+func SplitLabelReplace(logql string) (inner string, spec LabelReplaceSpec, ok bool) {
+	const prefix = "label_replace("
+	logql = strings.TrimSpace(logql)
+	if !strings.HasPrefix(logql, prefix) {
+		return "", LabelReplaceSpec{}, false
+	}
+	inner, rest, ok := splitFuncFirstArg(logql[len(prefix):])
+	if !ok {
+		return "", LabelReplaceSpec{}, false
+	}
+	args := parseUnquotedStringArgs(rest)
+	if len(args) != 4 {
+		return "", LabelReplaceSpec{}, false
+	}
+	return inner, LabelReplaceSpec{DstLabel: args[0], Replacement: args[1], SrcLabel: args[2], Regex: args[3]}, true
 }
 
 // tryTranslateLabelReplace handles label_replace(v, "dst", "repl", "src", "regex").
