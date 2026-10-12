@@ -71,7 +71,7 @@ compare:
     Loki's values.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#738"
   impact: explore-visible
   effort: S
   area: 'internal/proxy metric_agg.go (parseStddevStdvarQuery, applyMatrixStddevAgg, applyInstantStddevAgg)'

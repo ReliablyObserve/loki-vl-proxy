@@ -191,6 +191,7 @@
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -218,6 +219,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
+      "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
@@ -231,10 +233,12 @@
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
+      "internal/proxy/stddev_grouped_differential_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
+      "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
     "operator-configurable-limits": [
@@ -460,6 +464,11 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "semantics/stddev-stdvar-grouped-values": [
+      "internal/proxy/stddev_grouped_differential_test.go",
+      "internal/proxy/stddev_grouped_test.go",
+      "test/e2e-compat/stddev_stdvar_grouped_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -535,9 +544,11 @@
     ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
+      "internal/proxy/stddev_grouped_differential_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
@@ -799,6 +810,14 @@
       "profiles/parsed-fields-without-parser",
       "profiles/stage-field-exposure"
     ],
+    "internal/proxy/stddev_grouped_differential_test.go": [
+      "metric-series-identity",
+      "semantics/stddev-stdvar-grouped-values",
+      "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/stddev_grouped_test.go": [
+      "semantics/stddev-stdvar-grouped-values"
+    ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -1029,6 +1048,13 @@
       "profiles/stage-field-exposure",
       "profiles/uncategorized-streams-carry-structured-metadata"
     ],
+    "test/e2e-compat/stddev_stdvar_grouped_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/stddev-stdvar-grouped-values",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -1064,7 +1090,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 99,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1152,7 +1178,6 @@
     "semantics/proxy-accepts-invalid-logql",
     "semantics/proxy-rejects-valid-logql",
     "semantics/repeated-label-filter-replaced-across-label-format",
-    "semantics/stddev-stdvar-grouped-values",
     "semantics/tail-history-start-limit",
     "semantics/topk-bottomk-range-series",
     "semantics/two-parsers-keep-one",
@@ -1172,5 +1197,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 106
+  "wired_items": 107
 }

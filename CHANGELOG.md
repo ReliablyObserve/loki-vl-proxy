@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`stddev` and `stdvar` with `by` or `without` take the deviation and variance
   of the series in each group, as Loki does, instead of the group's line count
-  (#TBD).** `stddev by (app) (count_over_time({env="production"}[5m]))` answered
+  (#738).** `stddev by (app) (count_over_time({env="production"}[5m]))` answered
   1829 for auth-service where Loki 3.7.7 answers 28.0 (the total count of the
   app's lines; `stdvar` alike, on query_range and instant queries), and some
   instant `stdvar without (app) (...)` forms answered no `resultType`. Loki's
