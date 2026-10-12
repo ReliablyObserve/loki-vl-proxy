@@ -531,40 +531,19 @@ jobs:
           fi
           echo "release metadata commit ${METADATA_SHA} on ${BRANCH} (signed by GitHub)"
 
-      - name: Create or update release metadata PR
-        id: metadata-pr
+      - name: Announce the release metadata branch
         if: steps.metadata.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
           BRANCH: ${{ steps.metadata.outputs.branch }}
         run: |
           set -euo pipefail
-          TITLE="docs: sync release metadata for v${VERSION}"
-          BODY=$'## Summary\n- sync release metadata files for v'"${VERSION}"$' after automated release publish\n- update CHANGELOG materialization, Helm chart version/appVersion, observability service.version, and README release badges\n\n## Why\n- branch protection blocks direct pushes to main\n- this PR preserves required checks and signed merge flow while keeping metadata sync automated'
-
-          PR_NUMBER="$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base main --state open --json number --jq '.[0].number // empty')"
-          if [ -n "${PR_NUMBER}" ]; then
-            gh pr edit "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --body "${BODY}"
-          else
-            gh pr create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --base main \
-              --head "${BRANCH}" \
-              --title "${TITLE}" \
-              --body "${BODY}" >/tmp/release-metadata-pr-url.txt
-            PR_NUMBER="$(basename "$(cat /tmp/release-metadata-pr-url.txt)")"
-          fi
-          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-
-      - name: Enable auto-merge for release metadata PR
-        if: steps.metadata-pr.outputs.number != ''
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          gh pr merge "${{ steps.metadata-pr.outputs.number }}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --auto \
-            --squash \
-            --delete-branch || true
+          # The metadata pull request is opened by a maintainer from this branch, so
+          # the pull request and the commit that lands on main carry the maintainer's
+          # authorship, not the automation's.
+          echo "::notice::release metadata for v${VERSION} is on ${BRANCH}; open its pull request from a maintainer account"
+          {
+            echo "### Release metadata v${VERSION}"
+            echo
+            echo "Branch \`${BRANCH}\` holds the metadata commit. A maintainer opens the pull request to main."
+          } >> "$GITHUB_STEP_SUMMARY"
