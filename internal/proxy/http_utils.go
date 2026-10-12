@@ -76,6 +76,10 @@ func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 				if r.PostForm.Has("query") {
 					r.PostForm.Set("query", lower)
 				}
+				if values := r.URL.Query(); values.Has("query") { // read again by the multi-tenant fan-out
+					values.Set("query", lower)
+					r.URL.RawQuery = values.Encode()
+				}
 			}
 		}
 		next(w, r)

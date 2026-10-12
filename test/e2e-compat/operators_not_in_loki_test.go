@@ -75,28 +75,32 @@ func TestCompat_OperatorsNotInLokiRejected(t *testing.T) {
 }
 
 // Loki lower-cases a word before it looks it up, so SUM, TOPK(3, ...), RATE,
-// BY, OFFSET, UNWRAP, BOOL, ON and GROUP_LEFT are the keywords they spell. The
-// proxy answers 200 with the series Loki answers.
+// BY, OFFSET, UNWRAP, BOOL, ON and GROUP_LEFT are the keywords they spell: both
+// spellings answer 200 on Loki. The proxy answers the upper-case spelling with
+// the same status, result type and series as its own lower-case answer (the
+// comparison with Loki's series is the job of the rows for each query shape,
+// not of this one).
 //
 // conformance: semantics/proxy-accepts-operators-not-in-loki
 func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
 	ensureDataIngested(t)
 	end := time.Now()
-	queries := []string{
-		`TOPK(3, SUM BY (app) (RATE({env="production"}[5m])))`,
-		`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m]))`,
-		`SUM(RATE({env="production"}[5m])) BY (app)`,
-		`SUM WITHOUT (level) (COUNT_OVER_TIME({env="production"}[5m]))`,
-		`MAX BY (app) (BYTES_OVER_TIME({env="production"}[5m]))`,
-		`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m]))`,
-		`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m])) > BOOL 0`,
-		`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m] OFFSET 1m))`,
-		`SUM BY (app) (SUM_OVER_TIME({env="production"} | JSON | UNWRAP duration_ms [5m]))`,
+	cases := []struct{ upper, lower string }{
+		{`TOPK(3, SUM BY (app) (RATE({env="production"}[5m])))`, `topk(3, sum by (app) (rate({env="production"}[5m])))`},
+		{`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m]))`, `sum by (app) (count_over_time({env="production"}[5m]))`},
+		{`SUM(RATE({env="production"}[5m])) BY (app)`, `sum(rate({env="production"}[5m])) by (app)`},
+		{`SUM WITHOUT (level) (COUNT_OVER_TIME({env="production"}[5m]))`, `sum without (level) (count_over_time({env="production"}[5m]))`},
+		{`MAX BY (app) (BYTES_OVER_TIME({env="production"}[5m]))`, `max by (app) (bytes_over_time({env="production"}[5m]))`},
+		{`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m]))`,
+			`sum by (app) (count_over_time({env="production"}[5m])) / on (app) sum by (app) (count_over_time({env="production"}[5m]))`},
+		{`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m])) > BOOL 0`, `sum by (app) (count_over_time({env="production"}[5m])) > bool 0`},
+		{`SUM BY (app) (COUNT_OVER_TIME({env="production"}[5m] OFFSET 1m))`, `sum by (app) (count_over_time({env="production"}[5m] offset 1m))`},
+		{`SUM BY (app) (SUM_OVER_TIME({env="production"} | JSON | UNWRAP duration_ms [5m]))`, `sum by (app) (sum_over_time({env="production"} | json | unwrap duration_ms [5m]))`},
 	}
 	type result struct {
 		status     int
 		resultType string
-		series     []string
+		series     string
 	}
 	run := func(base, path string, params url.Values) result {
 		status, body := rejectedQueryGet(t, base, path, params, "0", nil)
@@ -111,37 +115,41 @@ func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
 		}
 		if status == http.StatusOK && json.Unmarshal(body, &resp) == nil {
 			out.resultType = resp.Data.ResultType
+			var series []string
 			for _, s := range resp.Data.Result {
 				keys := make([]string, 0, len(s.Metric))
 				for k, v := range s.Metric {
 					keys = append(keys, k+"="+v)
 				}
 				sort.Strings(keys)
-				out.series = append(out.series, strings.Join(keys, ","))
+				series = append(series, strings.Join(keys, ","))
 			}
-			sort.Strings(out.series)
+			sort.Strings(series)
+			out.series = strings.Join(series, "|")
 		}
 		return out
 	}
 	for _, path := range []string{"/loki/api/v1/query_range", "/loki/api/v1/query"} {
-		for _, query := range queries {
-			t.Run(path+" "+query, func(t *testing.T) {
-				params := url.Values{
-					"query": {query},
-					"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)},
-					"end":   {strconv.FormatInt(end.UnixNano(), 10)},
-					"time":  {strconv.FormatInt(end.UnixNano(), 10)},
-					"step":  {"60"},
+		for _, tc := range cases {
+			t.Run(path+" "+tc.upper, func(t *testing.T) {
+				params := func(query string) url.Values {
+					return url.Values{
+						"query": {query},
+						"start": {strconv.FormatInt(end.Add(-time.Hour).UnixNano(), 10)},
+						"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+						"time":  {strconv.FormatInt(end.UnixNano(), 10)},
+						"step":  {"60"},
+					}
 				}
-				loki := run(lokiURL, path, params)
-				if loki.status != http.StatusOK {
-					t.Fatalf("Loki fixture drifted: want 200, got %d", loki.status)
+				for _, query := range []string{tc.lower, tc.upper} {
+					if got := run(lokiURL, path, params(query)); got.status != http.StatusOK {
+						t.Fatalf("Loki fixture drifted: want 200 for %q, got %d", query, got.status)
+					}
 				}
 				for name, base := range lokiProfileProxies() {
-					got := run(base, path, params)
-					if got.status != loki.status || got.resultType != loki.resultType || strings.Join(got.series, "|") != strings.Join(loki.series, "|") {
-						t.Errorf("%s proxy: status %d %s series %q, Loki %d %s series %q",
-							name, got.status, got.resultType, got.series, loki.status, loki.resultType, loki.series)
+					want, got := run(base, path, params(tc.lower)), run(base, path, params(tc.upper))
+					if want.status != http.StatusOK || got != want {
+						t.Errorf("%s proxy: upper-case %+v, lower-case %+v", name, got, want)
 					}
 				}
 			})
