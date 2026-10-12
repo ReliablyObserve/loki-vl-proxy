@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -241,6 +242,19 @@ func evalLogsQLLine(t *testing.T, query, line string) (bool, map[string]string) 
 	return true, row.fields
 }
 
+var regexpCache sync.Map
+
+// compiledRegexp compiles each distinct regexp of a translation once: the
+// corpus test evaluates the same few filters on thousands of lines.
+func compiledRegexp(re string) *regexp.Regexp {
+	if c, ok := regexpCache.Load(re); ok {
+		return c.(*regexp.Regexp)
+	}
+	c := regexp.MustCompile(re)
+	regexpCache.Store(re, c)
+	return c
+}
+
 type filterParser struct {
 	t   *testing.T
 	s   string
@@ -323,15 +337,19 @@ func (p *filterParser) parseUnary(row *logsqlRow) bool {
 		}
 		p.pos += 1 + len(q)
 		re, _ := strconv.Unquote(q)
-		return regexp.MustCompile(re).MatchString(row.fields[field])
+		return compiledRegexp(re).MatchString(row.fields[field])
 	}
 	p.t.Fatalf("filter %q: unsupported filter at %q", p.s, rest)
 	return false
 }
 
-// translatedPatternVerdict translates `{app="x"} <op> <operands>` and evaluates
-// it on line.
-func translatedPatternVerdict(t *testing.T, op string, patterns []string, line string) (bool, string) {
+// translatedPattern is `{app="x"} <op> <operands>` after translation: the
+// LogsQL text and the part that follows the stream selector.
+type translatedPattern struct {
+	logql, logsql, query string
+}
+
+func translatePattern(t *testing.T, op string, patterns []string) translatedPattern {
 	t.Helper()
 	quoted := make([]string, len(patterns))
 	for i, p := range patterns {
@@ -347,13 +365,27 @@ func translatedPatternVerdict(t *testing.T, op string, patterns []string, line s
 		// No bare filter before the first pipe: every line enters it.
 		q = `~"" ` + q
 	}
-	keep, fields := evalLogsQLLine(t, q, line)
+	return translatedPattern{logql: logql, logsql: got, query: q}
+}
+
+// keeps evaluates the translation on line the way VictoriaLogs does.
+func (tp translatedPattern) keeps(t *testing.T, line string) bool {
+	t.Helper()
+	keep, fields := evalLogsQLLine(t, tp.query, line)
 	for k := range fields {
 		if keep && k != "_msg" {
-			t.Fatalf("%s leaves the scratch field %q on the row: %s", logql, k, got)
+			t.Fatalf("%s leaves the scratch field %q on the row: %s", tp.logql, k, tp.logsql)
 		}
 	}
-	return keep, got
+	return keep
+}
+
+// translatedPatternVerdict translates `{app="x"} <op> <operands>` and evaluates
+// it on line.
+func translatedPatternVerdict(t *testing.T, op string, patterns []string, line string) (bool, string) {
+	t.Helper()
+	tp := translatePattern(t, op, patterns)
+	return tp.keeps(t, line), tp.logsql
 }
 
 func lokiPatternVerdict(op string, patterns []string, line string) bool {
@@ -498,4 +530,90 @@ func TestPatternLineFilterAnchoringDifferential(t *testing.T) {
 	if mismatches > 0 {
 		t.Errorf("%d mismatches against Loki's pattern.Matcher.Test", mismatches)
 	}
+}
+
+// TestPatternLineFilterAnchoringCorpus is the committed form of the proof
+// that ran Loki's own pattern package against real VictoriaLogs storage: the
+// same seed (7), the same generator and the same fixed patterns and lines, so
+// the 638 filters (19 fixed and 600 generated, each of |> and !> for the fixed
+// ones, alternating for the generated ones) are checked on 2,530 lines, about
+// 1.6M verdicts. The reference is the port of Loki's Matcher.Test above and the
+// translation is evaluated with the port of the VictoriaLogs extract pipe, so
+// the test needs no storage; the storage run is described in the pull request.
+//
+// conformance: semantics/pattern-line-filter-anchoring
+func TestPatternLineFilterAnchoringCorpus(t *testing.T) {
+	literals := []string{"a", "b", " ", "ab", "ba", "aa", " a", "a ", "\n", `"`, "<", "&", "&lt;", "<b", "x<y", "\\", "'", "`", "&amp;", " GET ", "=", `"x"`}
+	alphabet := []string{"a", "b", " ", "\n", `"`, "'", "<", "&", "x", "lt;", ">", "`", "amp;", "=", "GET"}
+	rng := rand.New(rand.NewSource(7))
+	genPattern := func() string {
+		var b strings.Builder
+		nodes := 1 + rng.Intn(5)
+		capture := rng.Intn(2) == 0
+		for i := 0; i < nodes; i++ {
+			if capture {
+				b.WriteString("<_>")
+			} else {
+				b.WriteString(literals[rng.Intn(len(literals))])
+			}
+			capture = !capture
+		}
+		return b.String()
+	}
+	type filter struct {
+		op       string
+		patterns []string
+	}
+	var filters []filter
+	fixed := []string{"<_> bar", "foo", "<_>a<_>", "foo <_>", "<_>x", "aa", "<_> <_>", "<_>bar", "<_> end", "start <_>", "key=<_> next", "a < b<_>", "<_>&amp;<_>", "<_>&lt;", "<a b> <_>", "<_>\"<_>", "<_>`<_>", "", "<_>"}
+	for _, p := range fixed {
+		filters = append(filters, filter{"|>", []string{p}}, filter{"!>", []string{p}})
+	}
+	for i := 0; i < 600; i++ {
+		ps := []string{genPattern()}
+		if rng.Intn(4) == 0 {
+			ps = append(ps, genPattern())
+		}
+		filters = append(filters, filter{[]string{"|>", "!>"}[i%2], ps})
+	}
+	var lines []string
+	for i := 0; i < 2500; i++ {
+		var b strings.Builder
+		for n := rng.Intn(10); n > 0; n-- {
+			if rng.Intn(3) == 0 {
+				b.WriteString(literals[rng.Intn(len(literals))])
+			} else {
+				b.WriteString(alphabet[rng.Intn(len(alphabet))])
+			}
+		}
+		lines = append(lines, b.String())
+	}
+	lines = append(lines, "x bar y", "foo bar", "a", "aab", "x bar bar", " bar x bar y", "axbx", "aaa", "xfoo", "foofoo", "xfoo bar", "foo ", "x", " a", "a  b", "a ", "bar", "first\nsecond end", "start\nx", `"q" x bar`, `key="a b" next`, `key='a' next`, "a < b c", "x&amp;y", "x&y", "x&lt;", "x<", "<a b> c", "a\"b", "a`b")
+	if len(filters) != 638 || len(lines) != 2530 {
+		t.Fatalf("corpus drifted from the committed proof: %d filters, %d lines (want 638, 2530)", len(filters), len(lines))
+	}
+	checks, mismatches, keptBy := 0, 0, 0
+	for _, f := range filters {
+		tp := translatePattern(t, f.op, f.patterns)
+		for _, line := range lines {
+			checks++
+			want := lokiPatternVerdict(f.op, f.patterns, line)
+			if want {
+				keptBy++
+			}
+			if got := tp.keeps(t, line); got != want {
+				mismatches++
+				if mismatches <= 20 {
+					t.Errorf("%s %q on %q: proxy keeps=%v, Loki keeps=%v\n  LogsQL: %s", f.op, f.patterns, line, got, want, tp.logsql)
+				}
+			}
+		}
+	}
+	if keptBy == 0 || keptBy == checks {
+		t.Errorf("the corpus is vacuous: Loki keeps %d of %d verdicts", keptBy, checks)
+	}
+	if mismatches > 0 {
+		t.Errorf("%d mismatches in %d verdicts against Loki's pattern.Matcher.Test", mismatches, checks)
+	}
+	t.Logf("%d filters x %d lines = %d verdicts, Loki keeps %d, mismatches %d", len(filters), len(lines), checks, keptBy, mismatches)
 }
