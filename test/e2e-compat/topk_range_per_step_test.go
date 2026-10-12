@@ -122,11 +122,13 @@ func assertTopKRangeParity(t *testing.T, query string, inner, loki, proxy map[st
 func TestCompat_TopkRangePerStep(t *testing.T) {
 	id := time.Now().UnixNano()
 	s0 := time.Now().Add(-3 * time.Hour).Truncate(time.Hour)
-	// Lines sit at :07 of each minute, so with a window edge at :30 every window
-	// holds five whole minutes of every pod.
+	// Lines sit at :07 of each minute, so with window edges on whole minutes every
+	// window holds five whole minutes of every pod. Start and end are multiples of
+	// the step: the compose Loki aligns queries to the step
+	// (align_queries_with_step), which the proxy does not, like a default Loki.
 	const pods, minutes = 6, 125
 	apps := []string{fmt.Sprintf("topk-step-%d-a", id), fmt.Sprintf("topk-step-%d-b", id)}
-	start, end := s0.Add(10*time.Minute+30*time.Second), s0.Add(110*time.Minute+30*time.Second)
+	start, end := s0.Add(10*time.Minute), s0.Add(110*time.Minute)
 	for a, app := range apps {
 		var rows strings.Builder
 		streams := map[string][][]any{}
