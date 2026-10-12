@@ -31,14 +31,26 @@ why: |
   follow Go map order in Loki (pkg/logql/range_vector.go keeps its window in a
   map, evaluator.go's groups in another), so the series chosen there are not
   reproducible; the proxy breaks them by label order and the tests compare the
-  selected values at such steps. This is also the likeliest reason for a plain
-  topk over generated data with equal counts returning fewer series than Loki's
-  union: Loki's per-step choice among equal values varies, the proxy's does not.
+  selected values at such steps.
+
+  What the recorded parity run (cluster examples) shows, read against that:
+  `topk by (container) (5, count_over_time({namespace="prod"}[5m]))` returned 5
+  series at an instant and on a range where Loki returned 45 and 791 - the
+  grouped spellings, now ranked per group. `topk(3|5, ...)` and
+  `bottomk(2|3, sum by (app) (...))` returned the right number of series with
+  "different series, same count" at an instant, and fewer series than Loki on a
+  range (2 vs 7, 3 vs 7). The log generator writes the same number of lines per
+  service in every batch (LOG_BATCH lines per service every LOG_INTERVAL
+  seconds), so the counts of the services tie at the k-th place in most windows:
+  Loki's pick among tied values varies from step to step and its union grows,
+  the proxy's pick (label order) is stable. The differential test reproduces
+  the rule, not Loki's randomness; whether that explains the recorded 3 vs 8 is
+  settled by the e2e run against Loki, which is owed.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'topk(3, sum by (app) (count_over_time({env="production"}[5m])))'
+    query: 'topk by (container) (5, sum by (container, pod) (count_over_time({env="production"}[5m])))'
     start: 'now-1h'
     end: 'now'
     step: '60'
@@ -49,7 +61,10 @@ compare:
   mode: observed
   fields: [series]
   expect: |
-    Loki's per-step union.
+    At every step and for every container, the 5 best samples, and the union of
+    the series that ranked at some step with their samples at those steps only.
+    Where several series tie at the 5th place Loki's choice follows Go map
+    order, so there the values must match and the series may differ.
 gap:
   status: fixed
   fixed_by: "#TBD"
@@ -58,8 +73,8 @@ gap:
   area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey), metric_binary.go (applyTopKToMatrix, applyTopKToVector), sliding_window_stats.go (encodeTopK); cases limits/top-n-ranking-not-silent'
   loki: 'pkg/logql/evaluator.go:443-494, :551-561, :596-621 VectorAggEvaluator topk/bottomk per step and grouping key; pkg/logql/vector.go heaps; pkg/logql/syntax/syntax.y:182-184'
   proxy: 'every spelling parsed; k series per step and group, bounded heap over the VictoriaLogs window stats'
-  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
-  note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
+  planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKRangeResultBounds, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
+  note: 'Measured on origin/main cf738b80. Fixed: the grouped spellings. The plain spelling already ranked per step; its recorded difference (fewer series than Loki on tied counts) is Loki picking among ties at random, unverified until TestCompat_TopkRangePerStep is run. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
   clusters:
     - 23526b6c
     - 4f7b982a

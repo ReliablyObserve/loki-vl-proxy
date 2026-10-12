@@ -30,7 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and group, still bounded by the series that stats response holds), the matrix
   ranking of the other routes, and the instant vector. A `without` clause groups
   by every label but the listed ones and `__name__`; a label a series lacks
-  counts as empty, as in Loki. NaN ranks last for `topk` and `bottomk` alike,
+  counts as empty, as in Loki. The series that ranked at some step now count
+  against `-max-stats-query-series` as Loki's `max_query_series` counts the
+  result of a topk (an error for a plain client, the first series with a
+  warning for Logs Drilldown), and a ranking whose samples could not fit in
+  `-backend-max-buffered-response-bytes` fails before the heaps hold them. NaN ranks last for `topk` and `bottomk` alike,
   as in Loki's heaps. Where several series tie at the k-th place Loki's choice
   follows the order of an unordered map (`range_vector.go` keeps its window in
   a Go map), so any choice is Loki's answer; the proxy takes label order so the
