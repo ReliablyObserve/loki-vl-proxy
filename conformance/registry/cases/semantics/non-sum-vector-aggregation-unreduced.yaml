@@ -1,5 +1,5 @@
 id: semantics/non-sum-vector-aggregation-unreduced
-title: max, min, count and avg over a range function return one series per stream on query_range (open)
+title: max, min, count and avg over a range function are one series per group on query_range, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -15,9 +15,37 @@ why: |
   sum and stddev reduce correctly; the instant path reduces but folds over
   streams (see metric-identity/structured-metadata-splits-series).
 
-  Found by the differential run (bench/parity) on origin/main; the registry's
-  metric-series-identity item records count/min/max/avg as fixed by #582, so
-  this is either a range-path regression or a path #582 did not reach.
+  Root cause: since #582 the translation of count, min, max and avg is the
+  two-stage `stats by (<by>, _stream, level) <fn> as __lvp_inner | stats [by
+  (<by>)] max(__lvp_inner)`. VictoriaLogs runs both stages for an instant query
+  and for a tumbling window (range == step), so those were right. A window that
+  is not the step is evaluated by the proxy's range evaluator, which builds its
+  spec from the first stats pipe only (parseStatsCompatSpec) and so returned
+  that pipe's series, one per stream, without the outer operator. `without`
+  was right because the post-processing of its marker folds the series. A nested
+  aggregation (`sum(max(rate(...)))`) had a second fault: only the outermost
+  operator was stripped to find the range function, so the evaluator counted
+  lines where the query asked for a rate.
+
+  Fix: the proxy applies the query's vector aggregations to the series its
+  evaluator returns, per step, the way VectorAggEvaluator.Next does (each series
+  falls into the group its labels name, `by` keeping the listed labels, none
+  keeping none; count is the number of series with a sample at the step, avg a
+  running mean, min and max the extreme), innermost first, and checks
+  max_query_series on that answer as Loki does. The first stats pipe stays a
+  VictoriaLogs stats query (one row per series and bucket), so no raw rows are
+  read for it; a sliding window needs the per-series window before any fold, so
+  VictoriaLogs cannot do the fold. parseOriginalRangeMetricSpec strips every
+  aggregation above the range function.
+
+  Not changed (separate causes, registered or drafted apart): stddev and stdvar
+  (semantics/stddev-stdvar-grouped-values: the translation has no series level),
+  quantile_over_time under count, min, max and avg (the translation groups the
+  rows by the label before taking the quantile), `group(...)` (Loki 3.7.7 has no
+  such operator and rejects it), a nested aggregation with an outer `by` on an
+  instant query or a tumbling window (the label is dropped), the detected_level
+  label VictoriaLogs stats answers do not carry, and a line exactly on a window
+  edge on VictoriaLogs v1.40.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -35,14 +63,15 @@ compare:
   expect: |
     One series, Loki's maximum per step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/translator seriesLevelOuterAggregation (range path) + internal/proxy range stats folding'
-  loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next (fold per group per step)'
-  proxy: 'inner per-stream series returned unreduced on query_range'
-  planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group semantics) over max/min/count/avg x by/without/none'
-  note: 'Measured on main at fcaccfcc; verified still present on c4ebcd98.'
+  area: 'internal/proxy vector_agg_fold.go (foldVectorAggregations, called from handleStatsCompatRange and handleStatsCompatInstant); range_metric_compat.go parseOriginalRangeMetricSpec'
+  loki: 'pkg/logql/evaluator.go:400-433 newVectorAggEvaluator, :435-529 VectorAggEvaluator.Next (fold per group per step: avg :525, max :529, min :534, count :539 and :589)'
+  proxy: 'the series of the range evaluator folded per step by the query vector aggregations'
+  planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group core); TestVectorAggregationOverRangeFunctionDifferential, TestVectorAggregationGroupedLabelsSlidingWindow, TestVectorAggregationOverRateCounterFolds, TestFoldByGroupingEdgeCases, TestSeriesAggregationChain, TestParseOriginalRangeMetricSpecNestedAggregations (internal/proxy)'
+  note: 'Measured on origin/main cf738b80 with VictoriaLogs v1.52.0, v1.47.0 and v1.40.0 emulated; the e2e is written, not yet run.'
   clusters:
     - 099e8acf
     - 0b8db994

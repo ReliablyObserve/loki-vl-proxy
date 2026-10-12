@@ -170,11 +170,22 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	logql = strings.TrimSpace(logql)
 	// Strip label_replace wrappers so the inner metric function is visible.
 	logql = stripOuterLabelReplace(logql)
-	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
-	// so we parse the inner range function, not the aggregation operator.
-	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {
+	// Strip outer aggregations like "sum by (method) (rate(...))" → "rate(...)"
+	// so we parse the inner range function, not the aggregation operators; a
+	// nested one (sum(max(rate(...)))) goes down to the range function too.
+	for depth := 0; ; depth++ {
+		loc := outerAggregationRE.FindStringIndex(logql)
+		if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
+			break
+		}
 		inner := strings.TrimSpace(logql[loc[1]:])
-		if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") {
+		wrapped := strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")")
+		if !wrapped && depth > 0 {
+			// A range function whose name starts like an aggregation's
+			// (count_over_time): the operators are already stripped.
+			break
+		}
+		if wrapped {
 			inner = strings.TrimSpace(inner[1 : len(inner)-1])
 		}
 		logql = inner
@@ -450,7 +461,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.
-	return foldUngroupedSum(w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
+	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
 }
@@ -524,7 +535,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 			return p.proxyManualRangeMetricInstant(w, shaped, shapedSpec, origSpec, manualFunc)
 		}
 	}
-	return foldUngroupedSum(w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
+	return foldVectorAggregations(p, w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 	})
 }
