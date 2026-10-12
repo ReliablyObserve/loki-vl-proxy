@@ -1,0 +1,169 @@
+{
+ "label": "dursec-1h",
+ "date": "2026-10-12",
+ "set": "unwrap-duration-seconds",
+ "description": "unwrap duration_seconds(label) (PR for semantics/unwrap-duration-seconds): Loki converts it like duration(label), in seconds; the proxy answered an empty matrix. D1 is duration_seconds(ttl) over the cache-redis logfmt streams, D2 its duration(ttl) twin (the answers must be equal and D2 must not move), D3 and D4 are the instant forms. Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 4
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 2,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "D1 logfmt ttl duration_seconds rate by service",
+   "range": "1h",
+   "p50": {
+    "base": 0.009,
+    "pr": 0.011,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.009,
+    "pr": 0.013,
+    "loki": 0.009
+   },
+   "cold": {
+    "base": 0.027,
+    "pr": 0.017,
+    "loki": 0.017
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 42.17,
+    "pr": 42.17,
+    "loki": 42.17
+   },
+   "stale": [
+    "base"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.82
+  },
+  {
+   "shape": "D2 logfmt ttl duration rate by service",
+   "range": "1h",
+   "p50": {
+    "base": 0.011,
+    "pr": 0.011,
+    "loki": 0.006
+   },
+   "p95": {
+    "base": 0.012,
+    "pr": 0.015,
+    "loki": 0.006
+   },
+   "cold": {
+    "base": 0.013,
+    "pr": 0.011,
+    "loki": 0.017
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 18.02,
+    "pr": 18.02,
+    "loki": 18.02
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "D3 logfmt ttl duration_seconds rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.004,
+    "pr": 0.003,
+    "loki": 0.005
+   },
+   "p95": {
+    "base": 0.004,
+    "pr": 0.005,
+    "loki": 0.006
+   },
+   "cold": {
+    "base": 0.004,
+    "pr": 0.004,
+    "loki": 0.006
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 11.95,
+    "pr": 11.95,
+    "loki": 11.95
+   },
+   "stale": [
+    "base"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.33
+  },
+  {
+   "shape": "D4 logfmt ttl duration rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.005,
+    "pr": 0.005,
+    "loki": 0.005
+   },
+   "p95": {
+    "base": 0.007,
+    "pr": 0.006,
+    "loki": 0.007
+   },
+   "cold": {
+    "base": 0.004,
+    "pr": 0.004,
+    "loki": 0.011
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 2.68,
+    "pr": 2.68,
+    "loki": 2.68
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  }
+ ]
+}

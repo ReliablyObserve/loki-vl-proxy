@@ -1551,45 +1551,46 @@
     }
    ]
   },
-  "pattern-line-filter": {
-   "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
+  "unwrap-duration-seconds": {
+   "description": "unwrap duration_seconds(label) (PR for semantics/unwrap-duration-seconds): Loki converts it like duration(label), in seconds; the proxy answered an empty matrix. D1 is duration_seconds(ttl) over the cache-redis logfmt streams, D2 its duration(ttl) twin (the answers must be equal and D2 must not move), D3 and D4 are the instant forms. Run with the control set.",
    "ranges": [
-    "1h"
+    "1h",
+    "24h"
    ],
    "shapes": [
     {
-     "name": "P1 api-gateway empty pattern",
-     "query": "{service_name=\"api-gateway\"} |> \"\"",
+     "name": "D1 logfmt ttl duration_seconds rate by service",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
      "covers": [
-      "semantics/pattern-line-filter",
-      "loki_api_v1_query_range"
-     ],
-     "logs": true
-    },
-    {
-     "name": "P2 api-gateway not empty pattern, line filter",
-     "query": "{service_name=\"api-gateway\"} !> \"\" != \"GET\"",
-     "covers": [
-      "semantics/pattern-line-filter",
-      "loki_api_v1_query_range"
-     ],
-     "logs": true
-    },
-    {
-     "name": "P3 nginx count_over_time, pattern with spaces",
-     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} |> \"<_> GET <_>\" [1m]))",
-     "covers": [
-      "semantics/pattern-line-filter",
+      "semantics/unwrap-duration-seconds",
       "loki_api_v1_query_range"
      ]
     },
     {
-     "name": "P4 nginx count_over_time, GET request pattern",
-     "query": "sum(count_over_time({service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_>\" [1m]))",
+     "name": "D2 logfmt ttl duration rate by service",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
      "covers": [
-      "semantics/pattern-line-filter",
+      "semantics/unwrap-duration-seconds",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "D3 logfmt ttl duration_seconds rate, instant",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "D4 logfmt ttl duration rate, instant",
+     "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
+     "covers": [
+      "semantics/unwrap-duration-seconds",
+      "loki_api_v1_query"
+     ],
+     "instant": true
     }
    ]
   }
