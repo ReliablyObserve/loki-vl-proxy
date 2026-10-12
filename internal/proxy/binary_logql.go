@@ -332,18 +332,18 @@ func alignBinaryRangeRequest(r *http.Request) *http.Request {
 	return aligned
 }
 
-func validateBinaryVectorCardinality(ctx context.Context, left, right []byte, op string, vm *translator.VectorMatchInfo, leftScalar, rightScalar bool) error {
+func validateBinaryVectorCardinality(ctx context.Context, left, right []byte, op string, vm *translator.VectorMatchInfo, leftScalar, rightScalar bool) (float64, error) {
 	if leftScalar || rightScalar || op == "and" || op == "or" || op == "unless" {
-		return nil
+		return 0, nil
 	}
 	if vm == nil {
-		return validateVectorMatchCardinalityContext(ctx, left, right, nil, nil, false, false)
+		return firstVectorMatchFailure(ctx, left, right, nil, nil, false, false)
 	}
 	on := vm.On
 	if vm.MatchOn && on == nil {
 		on = []string{}
 	}
-	return validateVectorMatchCardinalityContext(ctx, left, right, on, vm.Ignoring,
+	return firstVectorMatchFailure(ctx, left, right, on, vm.Ignoring,
 		vm.GroupSide == "group_left" || len(vm.GroupLeft) > 0,
 		vm.GroupSide == "group_right" || len(vm.GroupRight) > 0)
 }

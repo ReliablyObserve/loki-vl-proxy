@@ -8,6 +8,26 @@ why: |
   ignoring(machine) sum by (cluster, machine) (rate({namespace="prod"}[5m])))`
   is one series per cluster on Loki (2) with the sum of both sides; the proxy
   returns 1 series with 150x Loki's value.
+
+  Root cause (measured against the real handler with a VictoriaLogs stand-in):
+  the join is not the defect. `sum by (cluster) (rate(..)) + ignoring(machine)
+  sum by (cluster, machine) (rate(..))` on its own is evaluated by the binary
+  evaluator and gives Loki's series: the ignored label is dropped from the
+  match key and from the result, an empty value counts as absent (Loki
+  pkg/logql/evaluator.go matchingSignature :945, resultMetric :1096). Under the
+  outer `sum by (cluster) (...)` the query never reaches the evaluator: the
+  translator takes the first operand of the binary and sends only
+  `stats by (cluster) count()` to VictoriaLogs, so the answer is that operand's
+  raw count, with no rate division and no second operand (a count of C against
+  Loki's 2C/300 is the 150x). The same happens for any outer aggregation over a
+  binary (`sum(A / B)`), with or without a vector-matching modifier.
+
+  Fixed in the matching code, found while pinning it to Loki: the duplicate
+  series text had a space after the semicolon (Loki joins the two halves of the
+  text with ";" alone, evaluator.go:974-975); and the join checked every
+  step's right-hand duplicates before any left-hand ones and before the
+  group-label collisions, where Loki stops at the first step whose join fails
+  (engine.go reads the evaluator's error after every step).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -28,10 +48,10 @@ gap:
   status: open
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/vector_matching.go (ignoring with a label absent on both sides)'
-  loki: 'pkg/logql/evaluator.go binary vector matching (ignoring)'
-  proxy: 'wrong join'
-  planned_test: 'TestCompat_BinaryIgnoringAbsentLabel (test/e2e-compat, group semantics)'
+  area: 'translator and handleQueryRange/handleQuery: an outer aggregation over a binary expression (the binary evaluator itself matches Loki)'
+  loki: 'pkg/logql/evaluator.go:791-1128 newBinOpStepEvaluator, matchingSignature, vectorBinop, resultMetric; pkg/logql/engine.go step loop'
+  proxy: 'sum by (..) (A + ignoring(..) B) is translated from its first operand alone: a raw count, no join'
+  planned_test: 'TestCompat_BinaryIgnoringOuterSum (the row's shape, test/e2e-compat, group semantics) and TestCompat_BinaryIgnoringAbsentLabel (the join itself); TestBinaryMatchingDifferential, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryIgnoringMatchingEdgeTable, TestBinaryIgnoringThroughHandler (internal/proxy)'
   clusters:
     - 354c7d83
     - 8fef8a78
