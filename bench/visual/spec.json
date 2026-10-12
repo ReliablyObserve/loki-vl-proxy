@@ -355,6 +355,19 @@
    ]
   },
   {
+   "id": "explore-pattern-filter-anchored",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} !> \"<_> 200\"",
+   "covers": [
+    "semantics/pattern-line-filter-anchoring",
+    "semantics/pattern-line-filter",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/pattern-line-filter-anchoring"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

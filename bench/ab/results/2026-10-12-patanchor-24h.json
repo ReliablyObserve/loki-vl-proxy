@@ -1,0 +1,238 @@
+{
+ "label": "patanchor-24h",
+ "date": "2026-10-12",
+ "set": "pattern-line-filter-anchoring",
+ "description": "Pattern line filters keep the lines Loki's matcher accepts (semantics/pattern-line-filter-anchoring). The proxy sends an anchored regexp as a prefilter under |> and VictoriaLogs' extract pipe plus a filter on the extracted fields, so every selected row of a !> goes through extract. Log queries (limit 100) and count_over_time over the nginx access log, an include and an exclude of a pattern that matches half the lines, the Drilldown volume under an exclude (a concrete step per range), and a pattern that ends on a literal and so matches no line. Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 9,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 7
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 2,
+  "pr": 2,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "A1 nginx include GET, log query",
+   "range": "24h",
+   "p50": {
+    "base": 0.02,
+    "pr": 0.02
+   },
+   "p95": {
+    "base": 0.061,
+    "pr": 0.059
+   },
+   "cold": {
+    "base": 0.417,
+    "pr": 0.325
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 264.45,
+    "pr": 264.45
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "A2 nginx exclude GET, log query",
+   "range": "24h",
+   "p50": {
+    "base": 0.02,
+    "pr": 0.019
+   },
+   "p95": {
+    "base": 0.025,
+    "pr": 0.02
+   },
+   "cold": {
+    "base": 0.188,
+    "pr": 0.215
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 128.73,
+    "pr": 128.73
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.05
+  },
+  {
+   "shape": "A3 nginx include GET, count_over_time",
+   "range": "24h",
+   "p50": {
+    "base": 0.149,
+    "pr": 0.157
+   },
+   "p95": {
+    "base": 0.179,
+    "pr": 0.192
+   },
+   "cold": {
+    "base": 0.106,
+    "pr": 0.103
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 247.36,
+    "pr": 247.36
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "A4 nginx exclude GET, count_over_time",
+   "range": "24h",
+   "p50": {
+    "base": 0.151,
+    "pr": 0.146
+   },
+   "p95": {
+    "base": 0.213,
+    "pr": 0.178
+   },
+   "cold": {
+    "base": 0.191,
+    "pr": 0.143
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 289.21,
+    "pr": 289.21
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.03
+  },
+  {
+   "shape": "A5 drilldown exclude, volume by detected_level",
+   "range": "24h",
+   "p50": {
+    "base": 0.136,
+    "pr": 0.137
+   },
+   "p95": {
+    "base": 0.166,
+    "pr": 0.144
+   },
+   "cold": {
+    "base": 0.132,
+    "pr": 0.141
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 258.15,
+    "pr": 258.15
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.99
+  },
+  {
+   "shape": "A6 nginx include ends on a literal, log query",
+   "range": "24h",
+   "p50": {
+    "base": 0.02,
+    "pr": 0.013
+   },
+   "p95": {
+    "base": 0.035,
+    "pr": 0.016
+   },
+   "cold": {
+    "base": 0.237,
+    "pr": 0.226
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 245.55,
+    "pr": 245.55
+   },
+   "stale": [
+    "base",
+    "pr"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.54
+  },
+  {
+   "shape": "A7 nginx exclude ends on a literal, log query",
+   "range": "24h",
+   "p50": {
+    "base": 0.014,
+    "pr": 0.026
+   },
+   "p95": {
+    "base": 0.017,
+    "pr": 0.037
+   },
+   "cold": {
+    "base": 0.129,
+    "pr": 0.195
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 47.33,
+    "pr": 47.33
+   },
+   "stale": [
+    "base",
+    "pr"
+   ],
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.54
+  }
+ ]
+}

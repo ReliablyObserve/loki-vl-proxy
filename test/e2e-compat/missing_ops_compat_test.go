@@ -202,17 +202,15 @@ func TestMissingOps_PatternMatchLineFilter(t *testing.T) {
 	tests := []struct {
 		name  string
 		query string
-		skip  bool
 	}{
-		{name: "include_pattern", query: `{app="pattern-filter-test"} |> "user=<_> action=login"`, skip: true},
+		// Loki rejects every line: the pattern ends on a literal ("login"), and
+		// no line ends there.
+		{name: "include_pattern", query: `{app="pattern-filter-test"} |> "user=<_> action=login"`},
 		{name: "exclude_pattern", query: `{app="pattern-filter-test"} !> "result=failure"`},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.skip {
-				t.Skip("|> include returns mismatched line counts (proxy=6 loki=0)")
-			}
 			lokiResult := queryRangeResult(t, lokiURL, tc.query, start, end, "")
 			proxyResult := queryRangeResult(t, proxyURL, tc.query, start, end, "")
 

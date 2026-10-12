@@ -8,10 +8,9 @@ why: |
   Loki's pattern filter keeps (`|>`) or drops (`!>`) the lines matching a
   pattern. Only the empty pattern differed in the differential run:
   `{namespace="prod"} |> ""` returned the page on the proxy where Loki returns
-  no line, and `!> ""` returned nothing where Loki returns the page. Non-empty
-  patterns (`|> "<_> GET <_>"`, `!> "<_> GET <_>"`, `!> "foo <_>"`) agree with
-  Loki; pattern alternatives with `or` are rejected (semantics/line-filter-or-
-  alternatives).
+  no line, and `!> ""` returned nothing where Loki returns the page. This row
+  covers the empty pattern only; non-empty patterns (anchoring, first-occurrence
+  literals, non-empty captures) are semantics/pattern-line-filter-anchoring.
 
   An empty pattern is valid in Loki (it parses, there is no error): the lexer
   makes `|>` and `!>` the PIPE_PATTERN and NPA tokens (pkg/logql/syntax/lex.go:26,29)
@@ -56,7 +55,7 @@ gap:
   fixed_by: "#743"
   impact: explore-visible
   effort: S
-  area: 'internal/translator patternFilterValueToRegex'
+  area: 'internal/translator planPatternLineFilter'
   loki: 'pkg/logql/syntax/lex.go:26,29 (NPA, PIPE_PATTERN); pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-39,124-128 (ParseLineFilter, Matcher.Test)'
   proxy: 'the empty pattern is `^$` (the empty line), not match-all'
   planned_test: 'TestCompat_PatternLineFilter (test/e2e-compat, group semantics); TestTranslateEmptyPatternLineFilter, TestEmptyPatternRegexpMatchesOnlyEmptyLine (internal/translator); TestEmptyPatternLineFilterReachesVictoriaLogs (internal/proxy)'

@@ -70,22 +70,22 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "pattern line filter",
 			logql: `{app="nginx"} |> "test <_> pattern"`,
-			want:  `app:="nginx" ~"test .* pattern"`,
+			want:  `app:="nginx" _msg:~"test " _msg:~" pattern" ~"(?s)test .+ pattern$" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf*`,
 		},
 		{
 			name:  "negative pattern line filter",
 			logql: `{app="nginx"} !> "test <_> pattern"`,
-			want:  `app:="nginx" NOT ~"test .* pattern"`,
+			want:  `app:="nginx" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter NOT (__lvp_pf0_1:* __lvp_pf0_r:"") | delete __lvp_pf*`,
 		},
 		{
 			name:  "detected_level filter before pattern negation — drilldown patterns page",
 			logql: `{env="production"} | detected_level="error" !> "level=error msg=<_>"`,
-			want:  `env:="production" | unpack_logfmt | filter level:="error" NOT ~"level=error msg=.*"`,
+			want:  `env:="production" | unpack_logfmt | filter level:="error" NOT ~"(?s)level=error msg=.+"`,
 		},
 		{
 			name:  "pattern line filter with alternation",
 			logql: `{app="nginx"} |> "test <_> pattern" or "other <_> value"`,
-			want:  `app:="nginx" ~"(?:test .* pattern)|(?:other .* value)"`,
+			want:  `app:="nginx" ((_msg:~"test " _msg:~" pattern") or (_msg:~"other " _msg:~" value")) ~"(?:(?s)test .+ pattern$)|(?:(?s)other .+ value$)" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | extract "other <plain:__lvp_pf1_1> value<plain:__lvp_pf1_r>" from _msg | filter (__lvp_pf0_1:* __lvp_pf0_r:"") or (__lvp_pf1_1:* __lvp_pf1_r:"") | delete __lvp_pf*`,
 		},
 		{
 			name:  "json parser",
@@ -233,7 +233,7 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "drilldown pattern stats query shape",
 			logql: `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`,
-			want:  `foo:="bar" ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format ""`,
+			want:  `foo:="bar" _msg:~"test " _msg:~" pattern" ~"(?s)test .+ pattern$" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf* | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format ""`,
 		},
 		{
 			name:  "json then drop",

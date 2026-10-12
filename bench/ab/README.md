@@ -201,7 +201,7 @@ list here.
 ### Adding a shape
 
 1. Add it to the set for your change in `shapes.json` (`name`, `query`, and
-   `headers` / `instant` / `logs` as needed) with `covers`: the registry
+   `headers` / `instant` / `logs` / `limit` (a log query's entry limit, default 1000) as needed) with `covers`: the registry
    cases, behaviours or translations it measures. Add `"smoke": true` only to
    a `control` shape that should run on every code change.
 2. `python3 bench/ab/selection.py --check` and

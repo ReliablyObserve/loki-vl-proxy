@@ -72,12 +72,12 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "pattern include filter expands placeholder span",
 			logql: `{app="api"} |> "GET <_> 500"`,
-			want:  `app:="api" ~"GET .* 500"`,
+			want:  `app:="api" _msg:~"GET " _msg:~" 500" ~"(?s)GET .+ 500$" | extract "GET <plain:__lvp_pf0_1> 500<plain:__lvp_pf0_r>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_r:"" | delete __lvp_pf*`,
 		},
 		{
 			name:  "pattern exclude filter expands placeholder span",
 			logql: "{app=\"api\"} !> `GET <_> 500`",
-			want:  `app:="api" NOT ~"GET .* 500"`,
+			want:  `app:="api" | extract "GET <plain:__lvp_pf0_1> 500<plain:__lvp_pf0_r>" from _msg | filter NOT (__lvp_pf0_1:* __lvp_pf0_r:"") | delete __lvp_pf*`,
 		},
 		{
 			name:  "backtick regex matcher",
