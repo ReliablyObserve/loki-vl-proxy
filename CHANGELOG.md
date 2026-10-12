@@ -50,6 +50,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Drilldown Fields tab, and `TestCompat_PatternLineFilterAnchoring` against
   Loki (#747).
 
+## [2.14.2] - 2026-10-12
+
+### Fixed
+
+- **A scalar instant answer carries its sample time in integer milliseconds, as
+  Loki does, not in seconds (#752).** `GET /loki/api/v1/query?query=1` (and
+  `1 + 1`, `2 * (3 + 4)`, `1 > bool 2`) was answered `[1791811168.123,"1"]`;
+  Loki 3.7.7 answers `[1791811168123,"1"]`, while `vector(1)` is in seconds on
+  both. The engine keeps the scalar time in milliseconds (`pkg/logql/engine.go`
+  `evalLiteral`), the encoder of `pkg/util/marshal` would write seconds, but the
+  HTTP answer is written by the query frontend: `pkg/querier/queryrange/prometheus.go`
+  `marshalScalar` builds the time with `model.TimeFromUnix(TimestampMs)`, which
+  reads seconds, so the millisecond count is printed as is, whereas
+  `marshalVector` uses `model.Time(TimestampMs)`. The earlier fix (#735) followed
+  `pkg/util/marshal` and stamped seconds. Every scalar shape the proxy answers
+  without a backend (a literal, a binary operation of literals, a comparison
+  with `bool`) now carries the evaluation time truncated to the millisecond;
+  vector samples are unchanged. `1 / 0` is left as it is: Loki 3.7.7 answers a
+  500 `failed to enqueue request` after about 40 s (its frontend cannot ship
+  the folded NaN to the querier) where the proxy answers a 200 scalar `NaN`; that
+  difference awaits an owner decision. `TestCompat_InstantResultTypeAlwaysSet` now compares the
+  sample time and value of every constant against Loki
+  (`semantics/scalar-sample-time-units`).
+
 ## [2.14.1] - 2026-10-12
 
 ### CI
