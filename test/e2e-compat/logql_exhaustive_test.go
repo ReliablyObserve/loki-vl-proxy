@@ -82,8 +82,9 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── count_values (not translatable to VL) ──
 		{"count_values_metric", `count_values("app", count_over_time({app="api-gateway"}[5m]))`, "count_values"},
 
-		// ── label_replace / label_join applied to a log stream ──
-		// Note: proxy accepts these (proxy extension); Loki rejects → tracked in TestLogQL_Exhaustive_KnownGaps
+		// ── group() and label_join() do not exist in Loki 3.7.7 LogQL ──
+		{"group_aggregation", `group(sum by (app)(count_over_time({env="production"}[5m])))`, "unknown_function"},
+		{"label_join_function", `label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`, "unknown_function"},
 
 		// ── absent_over_time without range ──
 		{"absent_over_time_no_range", `absent_over_time({app="api-gateway"})`, "malformed"},
@@ -379,15 +380,13 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"wildcard_regex", `{app=~".+",env="production"}`, "basic"},
 		{"multiple_not_equal", `{app!="nginx-ingress",env="production",level!="debug"}`, "basic"},
 
-		// ── label_replace / label_join / group() ──────────────────────────────
+		// ── label_replace / aggregations that regroup ─────────────────────────
 		{"label_replace_basic", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "level_alias", "$1", "level", "(.*)")`, "label_transform"},
 		{"label_replace_rewrite", `label_replace(sum by (app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)")`, "label_transform"},
 		{"label_replace_no_match", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "new_label", "default", "level", "^nonexistent$")`, "label_transform"},
 		{"label_replace_multi_result", `label_replace(sum by (app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`, "label_transform"},
 		{"avg_without_app", `avg without(app)(rate({env="production"}[5m]))`, "label_transform"},
 		{"count_by_level_agg", `count by(level)(count_over_time({env="production"}[5m]))`, "label_transform"},
-		{"group_outer_agg", `group(sum by (app)(count_over_time({env="production"}[5m])))`, "label_transform"},
-		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
 
 		// ── Subqueries ────────────────────────────────────────────────────────
 		// Loki 3.7.1 and the proxy both reject every subquery form (matching 400);
@@ -955,12 +954,6 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`rate({app="api-gateway"}[5m] @ start())`,
 			"proxy_extension", 400, 200,
 			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
-		},
-		{
-			"label_join_function",
-			`label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`,
-			"proxy_extension", 400, 200,
-			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
 		},
 		// stddev_outer_aggregation, stdvar_outer_aggregation, quantile_neg_error_code were
 		// proxy_bug/code_mismatch gaps but are now fixed — moved to QueryParity/ErrorParity.

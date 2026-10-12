@@ -51,9 +51,9 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] `IsScalar` supports negative and scientific notation
 - [x] Circuit breaker half-open metrics fix
 - [x] Tenant map reload race condition fix
-- [x] `group()` outer aggregation — inner metric translated normally, proxy normalises all values to `1` (v1.21.x)
+- [x] ~~`group()` outer aggregation~~ — removed: Loki has no `group()`, the proxy answers its 400 parse error
 - [x] `label_replace()` — proxy post-processing via marker suffix; Prometheus no-match semantics (v1.21.x)
-- [x] `label_join()` — proxy post-processing via marker suffix; missing src labels skipped (v1.21.x)
+- [x] ~~`label_join()`~~ — removed: Loki has no `label_join()`, the proxy answers its 400 parse error
 - [x] `count_values()` — not LogQL (Loki v3.7.7 has no such aggregation); rejected with Loki's parse error, including its position
 - [x] Circuit breaker sliding-window failure counting — 30s window replaces consecutive-failure model; sporadic slow-query resets no longer open the breaker (v1.18.0)
 - [x] Bare label matcher error — `app="value"` (missing braces) returns HTTP 400 with descriptive Loki-style parse error instead of silently emitting malformed VL syntax (v1.20.0)
