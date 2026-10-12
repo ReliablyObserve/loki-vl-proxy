@@ -356,3 +356,128 @@ func TestSumWithoutDifferential(t *testing.T) {
 		}
 	}
 }
+
+// TestSumWithoutSeriesLimitOnFoldedAnswer: Loki counts max_query_series on the
+// answer of the vector aggregation (pkg/logql/engine.go:536-548 and :575-590
+// JoinSampleVector), so four streams folded into two series by `without (pod)`
+// fit a limit of two, and a limit of one fails with Loki's 400 for a plain
+// client and keeps one series with Loki's warning for Logs Drilldown. The
+// proxy reads a row per stream from VictoriaLogs and applies the limit after
+// the fold, on query_range and at an instant, on the stats routes (no parser,
+// logfmt) and the raw route (json). `sum by` keeps its limit as before.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	var rows []emuRow
+	for i := 0; i < 40; i++ {
+		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
+		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf(`{"amount":%d}`, i+1)})
+	}
+	logfmtRows := make([]emuRow, len(rows))
+	for i, row := range rows {
+		row.msg = fmt.Sprintf("amount=%v", row.value)
+		logfmtRows[i] = row
+	}
+	run := func(t *testing.T, rows []emuRow, query string, instant bool, seriesCap int, drilldown bool, orgID ...string) (int, string, int) {
+		t.Helper()
+		emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+		backend := httptest.NewServer(emu.handler())
+		defer backend.Close()
+		tenants := map[string]TenantMapping{"t1": {AccountID: "1", ProjectID: "0"}, "t2": {AccountID: "2", ProjectID: "0"}}
+		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap, TenantMap: tenants})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		params := url.Values{"query": {query}}
+		target := "/loki/api/v1/query_range?"
+		if instant {
+			target = "/loki/api/v1/query?"
+			params.Set("time", strconv.FormatInt(base/1e9, 10))
+		} else {
+			params.Set("start", strconv.FormatInt(base/1e9-120, 10))
+			params.Set("end", strconv.FormatInt(base/1e9, 10))
+			params.Set("step", "60")
+		}
+		headers := map[string]string{"X-Scope-OrgID": "0"}
+		if len(orgID) > 0 {
+			headers["X-Scope-OrgID"] = orgID[0]
+		}
+		if drilldown {
+			headers["X-Query-Tags"] = "Source=grafana-lokiexplore-app"
+		}
+		res := doCompatProxyRequest(p, target+params.Encode(), headers)
+		var resp struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string `json:"metric"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(res.Body.Bytes(), &resp)
+		for _, s := range resp.Data.Result {
+			if _, ok := s.Metric["pod"]; ok {
+				t.Fatalf("%s: a series keeps pod: %v", query, s.Metric)
+			}
+		}
+		return res.Code, res.Body.String(), len(resp.Data.Result)
+	}
+	const limitMsg = "maximum number of series (1) reached for a single query"
+	const warning = "maximum number of series (1) reached for a single query; returning partial results"
+	for _, tc := range []struct {
+		query string
+		rows  []emuRow
+	}{
+		{`sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`, logfmtRows},
+		{`sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, logfmtRows},
+		{`sum without (pod) (rate({app="uw"} | logfmt | unwrap amount [5m]))`, logfmtRows},
+		{`sum without (pod) (rate({app="uw"} | json | unwrap amount [5m]))`, rows},
+		{`sum without (pod) (rate({app="uw"}[5m]))`, logfmtRows},
+		{`sum without (pod) (count_over_time({app="uw"}[1m]))`, logfmtRows},
+		{`max without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`, logfmtRows},
+		{`topk(5, sum without (pod) (rate({app="uw"}[5m])))`, logfmtRows},
+	} {
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/instant=%v", tc.query, instant), func(t *testing.T) {
+				if code, body, n := run(t, tc.rows, tc.query, instant, 2, false); code != http.StatusOK || n != 2 {
+					t.Fatalf("limit 2: %d with %d series, want 200 with Loki's 2: %s", code, n, body)
+				}
+				if code, body, _ := run(t, tc.rows, tc.query, instant, 1, false); code != http.StatusBadRequest || !strings.Contains(body, limitMsg) {
+					t.Fatalf("limit 1: %d %s, want Loki's 400 series limit error", code, body)
+				}
+				if code, body, n := run(t, tc.rows, tc.query, instant, 1, true); code != http.StatusOK || n != 1 || !strings.Contains(body, warning) {
+					t.Fatalf("limit 1, Logs Drilldown: %d with %d series, want 200 with one series and Loki's warning: %s", code, n, body)
+				}
+			})
+		}
+	}
+	for _, instant := range []bool{false, true} {
+		// Control: a grouping VictoriaLogs answers itself keeps its limit, and
+		// a failing instant label_replace keeps its status.
+		for _, query := range []string{
+			`sum by (ns) (max_over_time({app="uw"} | unwrap amount [5m]))`,
+			`label_replace(sum by (ns) (max_over_time({app="uw"} | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")`,
+		} {
+			if code, _, n := run(t, logfmtRows, query, instant, 2, false); code != http.StatusOK || n != 2 {
+				t.Fatalf("%s instant=%v limit 2: %d with %d series", query, instant, code, n)
+			}
+			if code, body, _ := run(t, logfmtRows, query, instant, 1, false); code != http.StatusBadRequest || !strings.Contains(body, limitMsg) {
+				t.Fatalf("%s instant=%v limit 1: %d %s", query, instant, code, body)
+			}
+		}
+		// Two tenants: Loki keeps __tenant_id__ on every series
+		// (pkg/querier/multi_tenant_querier.go), so the answer is two series per
+		// tenant and the limit counts the merged answer.
+		query := `sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`
+		code, body, n := run(t, logfmtRows, query, instant, 4, false, "t1|t2")
+		if code != http.StatusOK || n != 4 || strings.Count(body, `"__tenant_id__"`) != 4 {
+			t.Fatalf("%s instant=%v two tenants, limit 4: %d with %d series, want 200 with 4 tenant series: %s", query, instant, code, n, body)
+		}
+		if code, body, _ := run(t, logfmtRows, query, instant, 3, false, "t1|t2"); code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (3)") {
+			t.Fatalf("%s instant=%v two tenants, limit 3: %d %s", query, instant, code, body)
+		}
+	}
+}

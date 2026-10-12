@@ -275,6 +275,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	if len(withoutLabels) > 0 {
+		r = withWithoutFold(r)
+	}
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -325,6 +328,14 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	result := applyInstantVectorPostAggregation(bw.body, postAgg)
+	if len(withoutLabels) > 0 {
+		var capErr error
+		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
+			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			return
+		}
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -348,6 +359,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	if len(withoutLabels) > 0 {
+		r = withWithoutFold(r)
+	}
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
@@ -403,6 +417,14 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	result := applyMatrixPostAggregation(bw.body, postAgg)
+	if len(withoutLabels) > 0 {
+		var capErr error
+		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
+			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			return
+		}
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")

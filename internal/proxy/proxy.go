@@ -2370,6 +2370,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	if len(withoutLabels) > 0 {
+		r = withWithoutFold(r)
+	}
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
@@ -2426,11 +2429,19 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
+		var capErr error
+		if len(withoutLabels) > 0 && sc.code == http.StatusOK {
+			if cacheOut, capErr = p.capWithoutFold(r.Context(), cacheOut); capErr != nil {
+				sc.code, cacheable = http.StatusBadRequest, false
+			}
+		}
 		copyBackendHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
 			w.Header().Set("Content-Type", "application/json")
 		}
-		if sc.code != http.StatusOK {
+		if capErr != nil {
+			p.writeError(w, sc.code, capErr.Error())
+		} else if sc.code != http.StatusOK {
 			// Rewrite VL error body to Loki-compliant format (Loki's errorType field
 			// uses strings like "execution", "timeout", etc.; VL may use "unavailable").
 			p.writeError(w, sc.code, p.redactBackendError(cacheOut))
@@ -2641,6 +2652,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	if len(withoutLabels) > 0 {
+		r = withWithoutFold(r)
+	}
 	var bw *bufferedResponseWriter
 	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
@@ -2693,8 +2707,17 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(result)
+		var capErr error
+		if len(withoutLabels) > 0 {
+			result, capErr = p.capWithoutFold(r.Context(), result)
+		}
+		if capErr != nil {
+			sc.code = http.StatusBadRequest
+			p.writeError(w, sc.code, capErr.Error())
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(result)
+		}
 	}
 
 	elapsed := time.Since(start)

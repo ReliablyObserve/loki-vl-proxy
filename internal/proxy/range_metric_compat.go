@@ -1962,7 +1962,14 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 // -tenant-limits, -tenant-default-limits, -max-stats-query-series, or Loki's
 // default of 500 (see queryLimitsFor).
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
-	return p.requestQueryLimits(ctx).MaxQuerySeries
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
+	if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
+		// The per-stream series are folded before Loki's limit applies.
+		if budget, err := p.manualMetricRowBudget(); err == nil && budget > limit {
+			return budget
+		}
+	}
+	return limit
 }
 
 // defaultStatsQuerySeries is Loki's stock max_query_series, the default of

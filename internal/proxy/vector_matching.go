@@ -99,6 +99,28 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	}
 }
 
+// withoutFoldKey marks a request whose series the proxy folds by `without`
+// once VictoriaLogs has answered (applyWithoutGrouping): VictoriaLogs returns a
+// row per stream, since a LogsQL `by` cannot name every label but the excluded
+// ones, and Loki counts max_query_series on the folded answer
+// (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). While it is set,
+// the series limit of the reads before the fold is the raw-row budget
+// (-manual-range-metric-row-limit), and capWithoutFold applies the tenant's
+// limit to the answer.
+type withoutFoldKey struct{}
+
+func withWithoutFold(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), withoutFoldKey{}, true))
+}
+
+// capWithoutFold applies max_query_series to the folded answer of a
+// withWithoutFold request: Loki's error for a plain client, the busiest series
+// with Loki's warning for Logs Drilldown.
+func (p *Proxy) capWithoutFold(ctx context.Context, body []byte) ([]byte, error) {
+	ctx = context.WithValue(ctx, withoutFoldKey{}, false)
+	return capSeriesToLimit(ctx, body, p.resolvedMaxStatsQuerySeries(ctx))
+}
+
 // withoutAllLabels, as an excluded label, drops every label: the series of the
 // response fold into one, an aggregation with no by() or without().
 const withoutAllLabels = "*"
