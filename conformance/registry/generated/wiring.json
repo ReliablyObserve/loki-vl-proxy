@@ -186,6 +186,7 @@
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
@@ -210,6 +211,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/translator/extracted_suffix_test.go",
       "internal/translator/regexp_escaping_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -234,6 +236,7 @@
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -363,6 +366,12 @@
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
+    ],
+    "semantics/detected-level-missing-from-stats-answers": [
+      "internal/proxy/detected_level_unknown_differential_test.go",
+      "internal/proxy/parser_capture_identity_test.go",
+      "internal/translator/detected_level_logsql_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
     ],
     "semantics/extracted-metric-known-differences": [
       "internal/proxy/ordered_json_extracted_differential_test.go"
@@ -513,8 +522,10 @@
     ],
     "severity-exposure-surfaces": [
       "internal/proxy/detected_level_response_test.go",
+      "internal/proxy/detected_level_unknown_differential_test.go",
       "internal/translator/detected_level_logsql_test.go",
-      "test/e2e-compat/detected_level_test.go"
+      "test/e2e-compat/detected_level_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
     ],
     "severity/normalisation-table": [
       "test/e2e-compat/detected_level_corpus_test.go"
@@ -541,7 +552,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 299,
+  "registry_items": 300,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -600,6 +611,10 @@
     ],
     "internal/proxy/detected_level_test.go": [
       "severity-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_unknown_differential_test.go": [
+      "semantics/detected-level-missing-from-stats-answers",
+      "severity-exposure-surfaces"
     ],
     "internal/proxy/drilldown_breakdown_exact_test.go": [
       "limits/drilldown-breakdown-exact",
@@ -759,7 +774,8 @@
       "semantics/parenthesized-log-range"
     ],
     "internal/proxy/parser_capture_identity_test.go": [
-      "parsed-label-series-identity"
+      "parsed-label-series-identity",
+      "semantics/detected-level-missing-from-stats-answers"
     ],
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
@@ -861,6 +877,7 @@
       "semantics/parenthesized-log-range"
     ],
     "internal/translator/detected_level_logsql_test.go": [
+      "semantics/detected-level-missing-from-stats-answers",
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
@@ -909,6 +926,13 @@
     ],
     "test/e2e-compat/detected_level_test.go": [
       "severity-detected-level-derivation",
+      "severity-exposure-surfaces"
+    ],
+    "test/e2e-compat/detected_level_unknown_stats_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/detected-level-missing-from-stats-answers",
       "severity-exposure-surfaces"
     ],
     "test/e2e-compat/drilldown_field_breakdown_test.go": [
@@ -1064,7 +1088,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 98,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1172,5 +1196,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 106
+  "wired_items": 107
 }

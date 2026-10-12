@@ -108,6 +108,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/parenthesized-log-range` — A parenthesized log expression under a range function evaluates like the plain form | #669 | 41 | 77 |
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
 | `semantics/plain-name-after-parser-reads-stream-label` — A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed) | #676 | 4 | 6 |
+| `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
 | `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |

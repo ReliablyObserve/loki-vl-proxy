@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no stored level, and ignore `-detected-level-body-scan` as `by
   (detected_level)` already does; a stream whose lines get several levels is
   several series, as in Loki. The speed of bare metrics over large ranges is part
-  of the proof owed for this change (#TBD).
+  of the proof owed for this change (#750).
 
 ## [2.11.2] - 2026-10-12
 
