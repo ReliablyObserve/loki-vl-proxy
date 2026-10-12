@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **The race-enabled unit tests get a 20 minute timeout.** `internal/proxy` alone
+  ran 577-602 s under `-race` with coverage on the hosted runners (main, the
+  v2.11.1 metadata PR and dependency PRs alike), against Go's default 10 minute
+  per-binary timeout, so a slower runner failed the `test` job with `panic: test
+  timed out` on changes that did not touch the tests that were running. The step
+  now passes `-timeout=20m`.
+
 ## [2.11.1] - 2026-10-12
 
 ### Documentation

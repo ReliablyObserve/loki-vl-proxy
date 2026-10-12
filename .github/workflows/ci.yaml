@@ -44,8 +44,10 @@ jobs:
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
+      # internal/proxy alone takes 480-600 s under -race with coverage on the hosted
+      # runners, at Go's default 10 minute per-binary timeout; give it headroom.
       - name: Unit tests
-        run: go test ./... -count=1 -race -coverprofile=coverage.out
+        run: go test ./... -count=1 -race -timeout=20m -coverprofile=coverage.out
 
       # bench/ is a separate Go module, so the root ./... above does not cover it.
       # Its tests include the benchmark Loki config drift guard.
