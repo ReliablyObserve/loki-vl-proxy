@@ -98,9 +98,17 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	case m.count:
 		return acc + 1
 	case m.min:
-		return math.Min(acc, value)
+		// A NaN accumulator is replaced and a later NaN never wins, as in
+		// pkg/logql/evaluator.go VectorAggEvaluator.Next.
+		if math.IsNaN(acc) || value < acc {
+			return value
+		}
+		return acc
 	case m.max:
-		return math.Max(acc, value)
+		if math.IsNaN(acc) || value > acc {
+			return value
+		}
+		return acc
 	case m.avg:
 		return acc + (value-acc)/float64(n)
 	default:

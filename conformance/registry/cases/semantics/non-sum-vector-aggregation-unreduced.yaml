@@ -38,6 +38,10 @@ why: |
   VictoriaLogs cannot do the fold. parseOriginalRangeMetricSpec strips every
   aggregation above the range function.
 
+  count and avg depend on the inner series identity, which
+  metric-identity/structured-metadata-splits-series records as an owner-accepted
+  deviation (stream, not stream plus structured metadata).
+
   Not changed (separate causes, not part of this row): stddev and stdvar
   (semantics/stddev-stdvar-grouped-values: the translation has no series level),
   quantile_over_time under count, min, max and avg (the translation groups the
