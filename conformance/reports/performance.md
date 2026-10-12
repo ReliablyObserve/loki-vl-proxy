@@ -7,7 +7,7 @@ Do not edit by hand. Timings are the candidate build's; Loki is compared on cold
 Loki's first run can still hit split-level caches warmed by earlier requests, so a Loki cold
 time near zero understates what a truly cold Loki takes.
 
-Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-metric-latency-gap (2026-09-23), pr624-final-drilldown-breakdown-exact (2026-09-30), pr624-final-loki-profile-otel-metadata (2026-09-30), backfilled-empty-buckets-metadata-freshness (2026-10-01), backfilled-empty-buckets-metadata-inventory (2026-10-01), loki-parity-pages-loki-profile-otel-metadata (2026-10-01), ordered-json-control-long (2026-10-01), ordered-json-drilldown-breakdown-exact-long (2026-10-01), ordered-json-json-filter-pushdown-1h (2026-10-01), ordered-json-json-filter-pushdown-long (2026-10-01), ordered-json-metric-latency-gap-1h (2026-10-01), ordered-json-metric-latency-gap-long (2026-10-01), stage-field-exposure (2026-10-02), extracted-suffix (2026-10-06), paren-or-filters-parenthesized-range-or-filters (2026-10-06), plain-name-after-parser (2026-10-06), plain-name-control (2026-10-06), plain-name-drilldown-breakdown-exact (2026-10-06), unwrap-validity (2026-10-06), unwrap-validity-24h (2026-10-06), extmetric-extracted (2026-10-07), unwraperr-conversion (2026-10-08), unwrapsum-1h (2026-10-11), unwrapsum-long (2026-10-11), dursec-1h (2026-10-12), dursec-24h (2026-10-12), dursec-control-24h (2026-10-12), patfilter-control-1h (2026-10-12).
+Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-metric-latency-gap (2026-09-23), pr624-final-drilldown-breakdown-exact (2026-09-30), pr624-final-loki-profile-otel-metadata (2026-09-30), backfilled-empty-buckets-metadata-freshness (2026-10-01), backfilled-empty-buckets-metadata-inventory (2026-10-01), loki-parity-pages-loki-profile-otel-metadata (2026-10-01), ordered-json-control-long (2026-10-01), ordered-json-drilldown-breakdown-exact-long (2026-10-01), ordered-json-json-filter-pushdown-1h (2026-10-01), ordered-json-json-filter-pushdown-long (2026-10-01), ordered-json-metric-latency-gap-1h (2026-10-01), ordered-json-metric-latency-gap-long (2026-10-01), stage-field-exposure (2026-10-02), extracted-suffix (2026-10-06), paren-or-filters-parenthesized-range-or-filters (2026-10-06), plain-name-after-parser (2026-10-06), plain-name-control (2026-10-06), plain-name-drilldown-breakdown-exact (2026-10-06), unwrap-validity (2026-10-06), unwrap-validity-24h (2026-10-06), extmetric-extracted (2026-10-07), unwraperr-conversion (2026-10-08), unwrapsum-1h (2026-10-11), unwrapsum-long (2026-10-11), dursec-1h (2026-10-12), dursec-24h (2026-10-12), dursec-control-24h (2026-10-12), patfilter-1h (2026-10-12), patfilter-control-1h (2026-10-12).
 
 ## Slower than Loki on first load
 
@@ -83,7 +83,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `loki_api_v1_label_name_values` | 6 × 4 ranges | 24 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | differs |
 | `loki_api_v1_labels` | 6 × 4 ranges | 24 same | worst 0.26s / 0.00s (7d) | 0.04s / 0.02s | differs |
 | `loki_api_v1_query` | 11 × 1 ranges | 2 fixed, 9 same | worst 0.25s / 0.13s (instant) | — / — | same; 2 slower than Loki cold |
-| `loki_api_v1_query_range` | 112 × 6 ranges | 32 faster, 62 fixed, 270 same, 2 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 44 slower than Loki cold |
+| `loki_api_v1_query_range` | 116 × 6 ranges | 32 faster, 62 fixed, 274 same, 2 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 44 slower than Loki cold |
 | `metric-series-identity` | 10 × 6 ranges | 8 faster, 6 fixed, 17 same | worst 1.18s / 1.06s (7d) | — / — | differs |
 | `operator-sum` | 3 × 4 ranges | 12 same | worst 0.26s / 0.28s (24h) | — / — | same |
 | `operator-topk` | 1 × 4 ranges | 4 same | worst 0.17s / 0.19s (24h) | — / — | differs |
@@ -113,6 +113,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/line-filter-or-alternatives` | 6 × 5 ranges | 21 fixed | worst 0.06s / 0.04s (3h) | 0.01s / 0.02s | same |
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.00s / 0.00s | differs |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 17 fixed, 8 same | worst 0.07s / 0.04s (6h) | 0.28s / 0.01s | same |
+| `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.03s / 0.03s (1h) | 0.07s / 0.06s | same |
 | `semantics/plain-name-after-parser-reads-stream-label` | 9 × 3 ranges | 17 same | worst 0.12s / 0.06s (1h) | 0.09s / 0.07s | same; 1 slower than Loki cold |
 | `semantics/unwrap-conversion-error` | 9 × 5 ranges | 2 faster, 8 fixed, 23 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 15 slower than Loki cold |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.18s / 0.17s (24h) | — / — | same |
@@ -121,7 +122,3 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `series-limits-and-partial-results` | 4 × 5 ranges | 20 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
 | `service-name-derivation` | 2 × 4 ranges | 8 same | worst 0.15s / 0.12s (24h) | — / — | same |
 | `severity-detected-level-derivation` | 12 × 5 ranges | 3 faster, 41 same, 1 slower | worst 4.12s / 4.07s (24h) | — / — | differs; 5 slower than Loki cold |
-
-## Problems
-
-- bench/ab/results/2026-10-12-patfilter-1h.json: set 'pattern-line-filter' is not defined in bench/ab/shapes.json

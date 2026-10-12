@@ -125,7 +125,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `explore-logs-volume-json` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `explore-logs-volume-json` | 6 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
@@ -135,7 +135,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
+| `semantics/json-filter-pushdown-without-error-drop` | 3 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
 | `parser-logfmt` | 1 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
