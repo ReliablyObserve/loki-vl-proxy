@@ -70,16 +70,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clause position, `by ()` included) fold the series, and a `topk`, `bottomk`,
   `sort` or `sort_desc` ranks again. Loki counts `max_query_series` on the answer
   of the whole query (`pkg/logql/engine.go`, `JoinSampleVector`), so with an
-  aggregation around the ranking neither the series that ranked at some step nor
-  the vector of an instant ranking are limited: the folded answer is, with the
-  error for a plain client and the partial result and warning for Logs Drilldown;
+  aggregation around the ranking the series that ranked at some step (the
+  per-step window route, VictoriaLogs v1.45 and later) and the vector of an
+  instant ranking are no longer limited: the folded answer is, with the error
+  for a plain client and the partial result and warning for Logs Drilldown;
   `sum(topk(3, ...))` over a long range no longer fails where Loki answers one
-  series. A `sum without (...)` inside the ranking now merges its series with its
-  own operator instead of the outermost one. Where several series tie at the k-th
-  place of a ranking Loki's choice follows Go map order, so the aggregations above
-  it can differ there; the proxy breaks the tie by label order. `stddev` and
-  `stdvar` around a ranking and a binary expression around the aggregation keep
-  their own routes (#TBD).
+  series, whichever route evaluates the metric under the ranking (the window
+  evaluator, a bare range function, a backend before v1.45). A `max`, `min`,
+  `avg` or `count without (...)` inside the ranking now merges its series with its own operator instead of a sum (the
+  outermost layer's name decided it, and a ranking's name matched no merge).
+  Where several series tie at the k-th place of a ranking Loki's choice follows
+  Go map order, so the aggregations above it can differ there; the proxy breaks
+  the tie by label order. `stddev` and `stdvar` around a ranking and a binary
+  expression around the aggregation keep their own routes (#TBD).
 
 ## [2.11.2] - 2026-10-12
 

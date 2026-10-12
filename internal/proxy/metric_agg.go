@@ -500,7 +500,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		// operand of the ranking layer, which is ranked below once its
 		// without() labels are merged, and leave the series limit to the
 		// answer of the whole query.
-		r = withDeferredSeriesLimit(r)
+		r = withFoldedSeries(r)
 		_ = r.ParseForm()
 		r.Form.Set("query", postAgg.inner)
 	}
@@ -588,6 +588,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Clone the request and replace "query" with the unwrapped inner expression so the
 	// stats compat layer can correctly identify the inner metric function.
 	innerR := r.Clone(r.Context())
+	if postAgg.outer != nil {
+		innerR = withFoldedSeries(innerR)
+	}
 	_ = innerR.ParseForm()
 	innerR.Form.Set("query", postAgg.inner)
 
@@ -608,7 +611,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
 				// Rank every series per step from VictoriaLogs window stats
 				// instead of truncating to the busiest series first.
-				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group, postAgg.outer != nil))
+				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
 				handled = p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
 			}
 		}

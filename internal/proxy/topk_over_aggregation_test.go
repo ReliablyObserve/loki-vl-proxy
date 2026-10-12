@@ -289,6 +289,26 @@ func TestOuterFoldSeriesLimitCountsTheFinalAnswer(t *testing.T) {
 	if code, body, _ := rangeQuery(`sum by (app, env) (topk(3, ` + topKInner + `))`); code == http.StatusOK || !strings.Contains(body, "max") {
 		t.Errorf("sum by (app, env) (topk) over limit 2: %d %.300s", code, body)
 	}
+	// The other range routes do not count the series below the fold either: a
+	// bare range function, a window equal to the step, a parser stage and a
+	// backend before v1.45, whose windows the raw evaluator reads.
+	for version, inner := range map[string]string{
+		"v1.50.0": `count_over_time({app=~".+"}[5m])`,
+	} {
+		p.storeBackendVersion(version, version)
+		if code, body, n := rangeQuery(`sum(topk(3, ` + inner + `))`); code != http.StatusOK || n != 1 {
+			t.Errorf("%s sum(topk(%s)) under limit 2: %d, %d series: %.300s", version, inner, code, n, body)
+		}
+	}
+	for _, inner := range []string{topKInner, `sum by (app, env) (count_over_time({app=~".+"}[1m]))`, `sum by (app, env) (count_over_time({app=~".+"} | logfmt [5m]))`} {
+		for _, version := range []string{"v1.44.0", "v1.50.0"} {
+			p.storeBackendVersion(version, version)
+			if code, body, n := rangeQuery(`sum(topk(3, ` + inner + `))`); code != http.StatusOK || n != 1 {
+				t.Errorf("%s sum(topk(%s)) under limit 2: %d, %d series: %.300s", version, inner, code, n, body)
+			}
+		}
+	}
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
 
 	var rows []string
 	for i := 0; i < 8; i++ {
@@ -359,5 +379,32 @@ func TestAggregationOverRankingLeavesOtherQueriesAlone(t *testing.T) {
 		if got, ok := parseAggregationOverRanking(query); ok {
 			t.Errorf("%s was taken for an aggregation over a ranking: %+v", query, got)
 		}
+	}
+}
+
+// Logs Drilldown gets a folded answer over the limit cut to the limit with
+// Loki's partial-result warning on query_range, where every other client gets
+// the error.
+// conformance: semantics/topk-over-vector-aggregation, loki_api_v1_query_range
+func TestOuterFoldSeriesLimitPartialResultForDrilldown(t *testing.T) {
+	base := time.Unix(1699999200, 0).UTC()
+	start, end := base.Add(10*time.Minute), base.Add(30*time.Minute)
+	backend := newTopKTestBackend(t, topKFixture(1, base, 60))
+	defer backend.Close()
+	p := newGapTestProxy(t, backend.URL)
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	p.maxStatsQuerySeries = 2
+	query := `sum by (app, env) (topk(3, ` + topKInner + `))`
+	params := url.Values{"query": {query}, "start": {fmt.Sprint(start.UnixNano())}, "end": {fmt.Sprint(end.UnixNano())}, "step": {"60"}}
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+	var resp struct {
+		Warnings []string
+		Data     struct{ Result []json.RawMessage }
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || len(resp.Data.Result) != 2 || len(resp.Warnings) == 0 {
+		t.Fatalf("%d %.400s", rec.Code, rec.Body)
 	}
 }

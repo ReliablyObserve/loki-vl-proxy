@@ -58,16 +58,13 @@ type rangeTopK struct {
 	k          int
 	descending bool
 	group      *logqlpkg.Grouping // k series are kept per group (nil: one group)
-	// folded marks a ranking that an outer aggregation folds: the series of
-	// the whole query are counted on its answer, not on this union.
-	folded bool
 }
 
 // withRangeTopK marks a range metric evaluation whose result feeds topk or
 // bottomk, so the evaluator ranks every series per step instead of truncating
 // to the busiest series first.
-func withRangeTopK(ctx context.Context, k int, descending bool, group *logqlpkg.Grouping, folded bool) context.Context {
-	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending, group: group, folded: folded})
+func withRangeTopK(ctx context.Context, k int, descending bool, group *logqlpkg.Grouping) context.Context {
+	return context.WithValue(ctx, rangeTopKKey{}, rangeTopK{k: k, descending: descending, group: group})
 }
 
 func rangeTopKFromContext(ctx context.Context) (rangeTopK, bool) {
@@ -205,11 +202,9 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	}
 	var body []byte
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
-		maxSeries := p.resolvedMaxStatsQuerySeries(ctx)
-		if topK.folded {
-			maxSeries = 0
-		}
-		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, maxSeries, topK, start, step, p.limits().BufferedBackendBodyBytes)
+		// With an aggregation around the ranking the series of the query are
+		// counted on its answer (manualSeriesLimit), not on this union.
+		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, p.manualSeriesLimit(ctx), topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
 		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}

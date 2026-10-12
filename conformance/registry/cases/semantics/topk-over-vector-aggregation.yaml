@@ -36,14 +36,19 @@ why: |
   without() path, with the labels to drop taken from by(), without() or the
   whole label set), topk, bottomk, sort and sort_desc rank again. The series
   limit counts the answer of the whole query (pkg/logql/engine.go
-  JoinSampleVector), so neither the ranked union (rangeTopK.folded) nor an
-  instant answer of the layer below is capped when an outer layer follows;
-  the limit applies to the folded answer, with the error for a plain client
-  and the partial result for Drilldown. A sum without() inside the ranking
-  now merges its series with its own operator rather than the outermost one.
+  JoinSampleVector), so with an outer layer neither the ranked union of the
+  per-step window route (VictoriaLogs v1.45 and later), nor the manual routes
+  (a backend before v1.45, a bare range function), nor an instant answer of the
+  layer below is capped; the limit applies to the folded
+  answer, with the error for a plain client and the partial result and warning
+  for Drilldown. A max, min, avg or count without() inside the ranking now
+  merges its series with its own operator (withoutAggregationOp read the
+  outermost layer's name, which matched no merge, so the merge was a sum).
 
-  Not changed: stddev and stdvar around a ranking keep their own route
-  (semantics/stddev-stdvar-nested-or-binary); a binary expression around or
+  Not changed: a topk alone over a without() aggregation ranks before the
+  without() merge on the window route and on an instant (a separate pre-existing
+  cause, also for sum without); stddev and stdvar around a ranking keep their
+  own route (semantics/stddev-stdvar-nested-or-binary); a binary expression around or
   under the fold is not an aggregation chain. A tie at the k-th place of a
   ranking follows Go map order in Loki (pkg/logql/range_vector.go keeps its
   window in a map), so the layers above it can differ there; the proxy breaks
@@ -73,7 +78,7 @@ gap:
   fixed_by: "#TBD"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy metric_agg.go (parseAggregationOverRanking, aggregationArgs, applyOuterPostAggregation, foldExcludeLabels), sliding_window_stats.go (rangeTopK.folded), manual_metric_budget.go (withDeferredSeriesLimit), metric_binary.go (proxyStatsQuery series limit)'
+  area: 'internal/proxy metric_agg.go (parseAggregationOverRanking, aggregationArgs, applyOuterPostAggregation, foldExcludeLabels), sliding_window_stats.go (manualSeriesLimit), manual_metric_budget.go (withFoldedSeries), metric_binary.go (proxyStatsQuery series limit)'
   loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next:435-529 (sum, avg, min, max, count per step; topk/bottomk heaps :443-494, :596-621; sort/sort_desc :506-512); pkg/logql/engine.go JoinSampleVector (max_query_series on the final answer)'
   proxy: 'the innermost ranking is the post-aggregation (VictoriaLogs computes the base series); the aggregations above it fold the per-step vector in the proxy, bounded by the response-size check of the window evaluator and the series limit on the final answer'
   planned_test: 'TestCompat_AggregationOverTopK (test/e2e-compat); TestTopKOverVectorAggregationRangeDifferential, TestTopKOverVectorAggregationRangeDifferentialRawEvaluator, TestTopKOverVectorAggregationInstantDifferential, TestParseAggregationOverRanking, TestFoldExcludeLabels, TestOuterFoldMatrixEdges, TestOuterFoldEmptyAndInstantHandlers, TestOuterFoldKeepsInnerWithoutMerge, TestOuterFoldSeriesLimitCountsTheFinalAnswer, TestSortOverTumblingRange and TestAggregationOverRankingLeavesOtherQueriesAlone (internal/proxy)'

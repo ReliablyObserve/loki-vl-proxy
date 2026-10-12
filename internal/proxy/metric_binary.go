@@ -1688,7 +1688,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	// Loki applies max_query_series to instant queries as well: an error for a
 	// plain client, a partial vector with a warning for Logs Drilldown.
-	if !seriesLimitDeferred(r.Context()) {
+	if !seriesFolded(r.Context()) {
 		capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 		if capErr != nil {
 			p.writeError(w, badRequestStatusOr(capErr, http.StatusBadRequest), capErr.Error())
