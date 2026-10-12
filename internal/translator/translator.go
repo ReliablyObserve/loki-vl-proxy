@@ -2838,6 +2838,12 @@ func applyServiceNameGrouping(query string, caps logsql.Capabilities) string {
 // one of them.
 func applyDerivedGroupings(query string, caps logsql.Capabilities, streamFields map[string]bool) string {
 	query = applyServiceNameGrouping(query, caps)
+	if strings.Contains(query, UnwrapValueAlias) {
+		// An unwrap query keeps the series identity it had: its per-series
+		// values and their stream identity are registered apart
+		// (semantics/unwrap-per-series-identity-raw-rows).
+		return applyDetectedLevelGrouping(query, detectedLevelKnownFields(streamFields))
+	}
 	return ApplyStreamIdentityDetectedLevel(query, streamFields)
 }
 
@@ -2850,14 +2856,7 @@ func applyDerivedGroupings(query string, caps logsql.Capabilities, streamFields 
 // Without it a row that has no level field would be a series without the
 // label, or the one series of every level the line body or severity fields
 // give it.
-//
-// An unwrap query keeps the series identity it had: its per-series values and
-// their stream identity are registered apart
-// (semantics/unwrap-per-series-identity-raw-rows).
 func ApplyStreamIdentityDetectedLevel(query string, streamFields map[string]bool) string {
-	if strings.Contains(query, UnwrapValueAlias) {
-		return query
-	}
 	return applyDetectedLevelGrouping(addDetectedLevelToStreamIdentity(query), detectedLevelKnownFields(streamFields))
 }
 

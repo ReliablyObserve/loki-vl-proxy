@@ -112,11 +112,11 @@ func (s dlUnknownShape) run(t *testing.T, fx *dlUnknownFixture, base, query stri
 }
 
 // TestCompat_DetectedLevelUnknownInStatsAnswers: a bare count_over_time and
-// rate, and the same under a without() grouping, a grouping by detected_level
-// and a series count by it, are Loki's series (the labels with
-// detected_level="unknown" for the lines no rule gives a level, and the level
-// the body gives for the others) with Loki's values, at an instant, over a
-// tumbling window and over a sliding window.
+// rate, a bare count whose pipeline drops detected_level, and the same under a
+// without() grouping, a grouping by detected_level and a series count by it, are
+// Loki's series (the labels with detected_level="unknown" for the lines no rule
+// gives a level, and the level the body gives for the others) with Loki's
+// values, at an instant, over a tumbling window and over a sliding window.
 // conformance: semantics/detected-level-missing-from-stats-answers, severity-exposure-surfaces, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_DetectedLevelUnknownInStatsAnswers(t *testing.T) {
 	fx := ensureDLUnknownFixture(t)
@@ -124,6 +124,7 @@ func TestCompat_DetectedLevelUnknownInStatsAnswers(t *testing.T) {
 	for _, shape := range dlUnknownShapes {
 		for _, outer := range []string{
 			`count_over_time(%s[%s])`,
+			`count_over_time(%s | drop detected_level [%s])`,
 			`rate(%s[%s])`,
 			`sum without (service_name) (count_over_time(%s[%s]))`,
 			`sum without (detected_level) (count_over_time(%s[%s]))`,
@@ -139,7 +140,7 @@ func TestCompat_DetectedLevelUnknownInStatsAnswers(t *testing.T) {
 			t.Run(shape.name+"/"+query, func(t *testing.T) {
 				loki := shape.run(t, fx, lokiURL, query)
 				proxy := shape.run(t, fx, proxyURL, query)
-				if strings.Contains(query, "without (detected_level)") {
+				if strings.Contains(query, "without (detected_level)") || strings.Contains(query, "drop detected_level") {
 					for key := range loki {
 						if strings.Contains(key, "detected_level=") {
 							t.Fatalf("%s: Loki sanity: the series keeps detected_level: %s", query, key)

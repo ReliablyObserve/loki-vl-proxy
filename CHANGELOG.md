@@ -24,10 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also names `detected_level`, which VictoriaLogs computes with the same pipes a
   `by (detected_level)` grouping already uses (inserted once, before the query's
   own pipes, so `| drop detected_level` still removes it), and the sliding window
-  reads that value. Unwrap queries and queries with a parser stage keep their
-  series identity. The extra pipes read each row's line only when it has no stored
-  level; the speed of bare metrics over large ranges is part of the proof owed for
-  this change ([#TBD](https://github.com/ReliablyObserve/Loki-VL-proxy/pull/TBD)).
+  reads that value. The instant and tumbling routes also stopped removing every
+  `| delete` pipe from the query (they meant to remove the parse-error fields),
+  which had ignored a `| drop detected_level` or `| drop level` there while the
+  sliding route honoured it. Aggregations over unwrap and a bare `| json` metric
+  keep their series identity. The extra pipes read a row's line only when it has
+  no stored level, and ignore `-detected-level-body-scan` as `by
+  (detected_level)` already does; a stream whose lines get several levels is
+  several series, as in Loki. The speed of bare metrics over large ranges is part
+  of the proof owed for this change (#TBD).
 
 ## [2.11.2] - 2026-10-12
 

@@ -251,9 +251,9 @@ func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 		group += ", " + quoteLogsQLIdent(label)
 	}
 	grouped := logsqlQuery[:statsStart] + "by (" + group + ") " + logsqlQuery[statsStart:]
-	if queryUsesParserStages(logsqlQuery) {
-		// The parsers' own labels are read from the rows by the evaluators that
-		// answer these queries.
+	if strings.Contains(logsqlQuery, "| unpack_json") {
+		// The evaluators that answer a bare | json metric read its labels from
+		// the rows.
 		return grouped
 	}
 	return translator.ApplyStreamIdentityDetectedLevel(grouped, nil)

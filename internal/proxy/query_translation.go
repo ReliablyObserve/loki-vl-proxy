@@ -2219,7 +2219,11 @@ var byClauseRE = regexp.MustCompile(`\bby\s*\(([^)]*)\)`)
 // Without a by() clause naming either, level becomes detected_level.
 func (req levelGroupingRequest) apply(labels, translated map[string]string, hadStream bool) {
 	hadLevel := labels["level"] != ""
-	if hadStream || !req.known || req.detectedLevel {
+	// A detected_level key VictoriaLogs returned, even an empty one, is its
+	// derivation (the translator's chain) or a stage that removed the label: it
+	// is not filled from level.
+	_, derived := labels["detected_level"]
+	if (hadStream || !req.known || req.detectedLevel) && !derived {
 		ensureDetectedLevel(labels)
 	}
 	if hadLevel && !hadStream && labels["detected_level"] != "" && (!req.known || !req.level) {
