@@ -106,7 +106,8 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `profiles/structured-metadata-label-collision` — Structured metadata named like a stream label gets Loki's _extracted suffix (fixed) | #660 | 20 | 293 |
 | `semantics/parenthesized-log-range` — A parenthesized log expression under a range function evaluates like the plain form | #669 | 41 | 77 |
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
-| `semantics/topk-bottomk-range-series` — topk/bottomk on query_range rank every step in each by()/without() group, in every spelling, like Loki (fixed) | #736 | 7 | 29 |
+| `semantics/topk-bottomk-range-series` — A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed) | #736 | 5 | 15 |
+| `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 2 | 14 |
 | `semantics/plain-name-after-parser-reads-stream-label` — A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed) | #676 | 4 | 6 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
 | `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
