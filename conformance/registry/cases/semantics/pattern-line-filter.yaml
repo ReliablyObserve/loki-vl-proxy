@@ -53,7 +53,7 @@ compare:
     Loki's lines.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#743"
   impact: explore-visible
   effort: S
   area: 'internal/translator patternFilterValueToRegex'

@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line. Non-empty patterns are otherwise unchanged. Covered by the edge table
   `TestTranslateEmptyPatternLineFilter`, `TestEmptyPatternLineFilterReachesVictoriaLogs`
   for the log, range and instant paths, and `TestCompat_PatternLineFilter`
-  against Loki (#TBD).
+  against Loki (#743).
 
 ## [2.11.2] - 2026-10-12
 
