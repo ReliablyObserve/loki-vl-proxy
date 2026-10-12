@@ -33,32 +33,42 @@ why: |
   with the aggregation's operator. The expression is read from the request, so
   an operand keeps its parser when the whole query names `| json` and `|
   logfmt` (the discovered cluster below). A mixed offset (one side only) is
-  accepted as for a bare binary, and the folded series are in Loki's label
-  order.
+  accepted as for a bare binary.
+
+  A label_replace or label_join around the aggregation, the discovered shape
+  (cluster f2066991 on /query), routes by the expression inside it on both
+  endpoints and the transform applies to the folded answer; the transforms
+  now apply to an instant vector as well as a matrix. A transform is stripped
+  only when its call is the whole expression (`label_replace(a, ...) / b` is a
+  binary whose operand applies its own). The folded series keep every label set
+  apart (escaped keys: `a="b,c=d"` is not `a="b",c="d"`) and come in Loki's
+  order (labels.Compare: name then value, label by label).
+
+  Owed after the PRs that own them land: the series limit counted on the folded
+  answer (semantics/non-sum-vector-aggregation-unreduced's fold) and NaN-skipping
+  min and max (semantics/binary-division-by-zero-nan).
 request:
   method: GET
-  path: /loki/api/v1/query_range
+  path: /loki/api/v1/query
   params:
-    query: 'sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))'
-    start: 'now-1h'
-    end: 'now'
-    step: '60'
+    query: 'label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )'
   headers:
     X-Scope-OrgID: "0"
 compare:
   mode: observed
   fields: [resultType, series, values]
   expect: |
-    Loki's series and values: the binary per series, then the aggregation per step.
+    Loki's vector: the binary per series, the aggregation per step, then the
+    label_replace; the same series and values as Loki.
 gap:
   status: fixed
   fixed_by: "#741"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing'
+  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing; vector_matching.go (fold keys and order, label transforms on vectors); range_metric_compat.go stripOuterCalls'
   loki: 'pkg/logql/evaluator.go:791 newBinOpStepEvaluator, :955 vectorBinop, :1096 resultMetric, :400-630 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/syntax/ast.go:1944 MergeBinOp'
   proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
-  planned_test: 'TestCompat_AggregationOverBinary and TestCompat_AggregationOverBinaryMixedParsers (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset and TestBinaryWithLabelReplaceOperandStaysBinary (internal/proxy)'
+  planned_test: 'TestCompat_AggregationOverBinary, TestCompat_AggregationOverBinaryMixedParsers and TestCompat_AggregationOverBinaryUnderLabelTransforms (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset, TestAggregationOverBinaryUnderLabelTransforms, TestBinaryWithLabelReplaceOperandStaysBinary, TestStripLabelTransformsWholeCallOnly and TestWithoutFoldLabelOrderAndKeys (internal/proxy)'
   note: 'The e2e is written and not yet run against the stack.'
   clusters:
     - f2066991

@@ -2528,6 +2528,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
 	if isBinary {
 		// A binary expression evaluates its operands through this handler, which
@@ -2843,6 +2847,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
 	if isBinary {
 		// The operands of a binary expression fold and are limited on their own

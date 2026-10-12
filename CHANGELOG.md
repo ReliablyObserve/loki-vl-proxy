@@ -2604,10 +2604,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays a native VictoriaLogs stats query through its own handler, the proxy
   joins the aggregated operand series and folds them per step, with no raw rows
   and work bounded by the operands' series. An operand keeps its own parser when
-  the query names both `| json` and `| logfmt` (the shape the differential
-  corpus found inside a `label_replace`), an offset on one side only is accepted as for a
-  bare binary, and the series of an aggregation folded by the proxy come in
-  Loki's label order (#741).
+  the query names both `| json` and `| logfmt`, and an offset on one side only
+  is accepted as for a bare binary. A `label_replace` or `label_join` around
+  such an aggregation (the shape the differential corpus found on /query)
+  routes by the expression inside it on query and query_range and applies to
+  the folded answer; the label transforms now apply to an instant vector too,
+  and a transform is stripped only when its call is the whole query
+  (`label_replace(a, ...) / b` is a binary whose operand applies its own). The series the proxy folds
+  (this, and every `without`) keep every label set apart, a value holding `,`
+  or `=` included, and come in Loki's order (`labels.Compare`) (#741).
 
 ## [2.11.2] - 2026-10-12
 
