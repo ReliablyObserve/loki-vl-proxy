@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -257,9 +259,10 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 		}
 	}
 
-	// Build result
+	// Build result, in label order as Loki sorts the vector (pkg/logql/engine.go).
 	result := []map[string]interface{}{}
-	for _, g := range groups {
+	for _, key := range slices.Sorted(maps.Keys(groups)) {
+		g := groups[key]
 		result = append(result, map[string]interface{}{
 			"metric": g.metric,
 			"value":  []interface{}{g.ts, strconv.FormatFloat(g.value, 'f', -1, 64)},
@@ -343,7 +346,8 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 	}
 
 	result := []map[string]interface{}{}
-	for _, group := range groups {
+	for _, key := range slices.Sorted(maps.Keys(groups)) { // label order, as Loki's sort.Sort(matrix)
+		group := groups[key]
 		type sampleTime struct {
 			key     string
 			seconds float64

@@ -50,16 +50,7 @@ func binaryRequestQuery(r *http.Request) string {
 }
 
 func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
-	query := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	// The outer handler has already shifted uniform offsets. Mixed offsets
-	// remain on their individual operands and are applied by each child handler.
-	if _, stripped, err := extractLogQLOffset(query); err == nil {
-		query = stripped
-	}
-	expr, err := logqlpkg.Parse(query)
-	if err != nil {
-		return nil
-	}
+	expr := binaryRequestExpr(r)
 	for {
 		switch x := expr.(type) {
 		case *logqlpkg.BinOpExpr:
@@ -70,6 +61,22 @@ func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
 			return nil
 		}
 	}
+}
+
+// binaryRequestExpr parses the request's query. A label_replace around it is
+// applied to the answer by the handler, so the expression is the one inside.
+func binaryRequestExpr(r *http.Request) logqlpkg.Expr {
+	query := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	// The outer handler has already shifted uniform offsets. Mixed offsets
+	// remain on their individual operands and are applied by each child handler.
+	if _, stripped, err := extractLogQLOffset(query); err == nil {
+		query = stripped
+	}
+	expr, err := logqlpkg.Parse(stripOuterLabelReplace(query))
+	if err != nil {
+		return nil
+	}
+	return expr
 }
 
 type binaryOperandResponse struct {
