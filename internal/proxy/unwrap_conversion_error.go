@@ -229,18 +229,17 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 
 // unwrapConvertibleForms holds, per conversion, the values the gate drops that
 // the conversion may still accept (registered in
-// semantics/unwrap-gate-parsefloat-divergences). The detection skips them too,
-// so a row it counts always fails the conversion; the forms that overflow
-// (1e309, 0x1p2000) are not reported, as before.
+// semantics/unwrap-gate-parsefloat-divergences): nan. The detection skips them
+// too, so a row it counts always fails the conversion. A value that is
+// syntactically a number but overflows (1e309, 0x1p2000, 2562048h, 19EB) is not
+// one of them: the gate lets it through to the range filter after the math pipe
+// (translator.UnwrapInRange), which the counting gate turns into a flag.
 var unwrapConvertibleForms = map[string]string{
-	"": `^[+-]?(?:(?i:inf|infinity|nan)|0[xX][0-9a-fA-F_.]*[pP][+-]?[0-9_]+|(?:[0-9_]*[0-9][0-9_]*(?:[.][0-9_]*)?|[0-9_]*[.][0-9_]*[0-9][0-9_]*)[eE][+-]?[0-9_]+)$`,
-	// humanize.ParseBytes reads a number with commas anywhere (dropped) and at
-	// most one point, then any Unicode space around the unit.
-	"bytes": `^,*(?:[0-9][0-9,]*(?:[.][0-9,]*)?|[.][0-9,]*[0-9][0-9,]*)[\s\x{85}\p{Z}]*(?i:(?:[kmgtpe]i?)?b?)[\s\x{85}\p{Z}]*$`,
+	"": unwrapNaNPattern,
 }
 
-// unwrapAcceptablePattern is the expression of every value the conversion conv
-// may accept: the gate's own pattern and the forms it drops.
+// unwrapAcceptablePattern is the expression of the values the conversion conv
+// may accept by syntax: the gate's own pattern and the forms it drops.
 func unwrapAcceptablePattern(conv string) string {
 	pattern := "(?:" + translator.UnwrapPattern(conv) + ")"
 	if extra := unwrapConvertibleForms[conv]; extra != "" {
@@ -249,11 +248,11 @@ func unwrapAcceptablePattern(conv string) string {
 	return pattern
 }
 
-// unwrapRejectedFilter is the LogsQL filter of a row whose field holds a value
-// the conversion conv rejects.
-func unwrapRejectedFilter(field, conv string) string {
-	q := strconv.Quote(field)
-	return q + ":* -" + q + ":~" + strconv.Quote(unwrapAcceptablePattern(conv))
+// unwrapLookupQuery is the query that reads the rows of the metric's base query
+// whose unwrapped value the conversion conv rejects: the counting gate flags a
+// value outside the accepted syntax and one that overflows, so both are found.
+func unwrapLookupQuery(base, field, conv string) string {
+	return base + unwrapCountedGate(field, conv) + " | filter " + unwrapBadField + `:="1"`
 }
 
 const unwrapBadField = "__lvp_bad"
@@ -268,6 +267,15 @@ var unwrapGateFieldRE = regexp.MustCompile(`^ \| filter ("(?:[^"\\]|\\.)*"):~`)
 // the stats that could mix or drop the flagged groups, or whose (field, conv)
 // accept rejects. base is the query before the gate (the metric's rows).
 func unwrapCountingQuery(query string, accept func(field, conv string) bool) (rewritten, base, field, conv string, ok bool) {
+	rewritten, base, field, conv, _, ok = unwrapCountingRewrite(query, func(f, c string) (bool, bool) { a := accept(f, c); return a, a })
+	return
+}
+
+// unwrapCountingRewrite is unwrapCountingQuery where accept says, per gate, whether
+// the rows the conversion rejects are counted (errors) and whether the gate is
+// rewritten at all (ok): a plain gate is also rewritten to count the nan values
+// the gate drops (unwrapNaNCounted), whatever the query does with errors.
+func unwrapCountingRewrite(query string, accept func(field, conv string) (errors, ok bool)) (rewritten, base, field, conv string, errors, ok bool) {
 	idx := -1
 	for from := 0; ; {
 		at := strings.Index(query[from:], ` | filter "`)
@@ -287,21 +295,24 @@ func unwrapCountingQuery(query string, accept func(field, conv string) bool) (re
 		for _, c := range []string{"", "duration", "bytes"} {
 			if strings.HasPrefix(query[at:], translator.UnwrapGateFor(f, c)) {
 				if idx >= 0 {
-					return query, "", "", "", false // two gates: not a shape this rewrite knows
+					return query, "", "", "", false, false // two gates: not a shape this rewrite knows
 				}
 				idx, field, conv = at, f, c
 				break
 			}
 		}
 	}
-	if idx < 0 || !accept(field, conv) {
-		return query, "", "", "", false
+	if idx < 0 {
+		return query, "", "", "", false, false
+	}
+	if errors, ok = accept(field, conv); !ok {
+		return query, "", "", "", false, false
 	}
 	gate := translator.UnwrapGateFor(field, conv)
 	after := query[idx+len(gate):]
 	statsAt := strings.Index(after, " | stats ")
 	if statsAt < 0 {
-		return query, "", "", "", false
+		return query, "", "", "", false, false
 	}
 	pipes := strings.Split(after[statsAt+len(" | "):], " | ")
 	for i, pipe := range pipes {
@@ -309,7 +320,7 @@ func unwrapCountingQuery(query string, accept func(field, conv string) bool) (re
 		case strings.HasPrefix(pipe, "stats by ("):
 			end := strings.Index(pipe, ")")
 			if end < 0 {
-				return query, "", "", "", false
+				return query, "", "", "", false, false
 			}
 			if inner := strings.TrimSpace(pipe[len("stats by ("):end]); inner == "" {
 				pipes[i] = "stats by (" + unwrapBadField + pipe[end:]
@@ -320,32 +331,66 @@ func unwrapCountingQuery(query string, accept func(field, conv string) bool) (re
 			pipes[i] = "stats by (" + unwrapBadField + ") " + pipe[len("stats "):]
 		case strings.HasPrefix(pipe, "math "), strings.HasPrefix(pipe, "filter "):
 		default:
-			return query, "", "", "", false // sort, limit, fields, ...: could mix or drop the flagged groups
+			return query, "", "", "", false, false // sort, limit, fields, ...: could mix or drop the flagged groups
 		}
 	}
-	rewritten = query[:idx] + unwrapCountedGate(field, conv) + after[:statsAt] + " | " + strings.Join(pipes, " | ")
-	return rewritten, query[:idx], field, conv, true
+	rewritten = query[:idx] + unwrapCountedGateMode(field, conv, errors) + after[:statsAt] + " | " + strings.Join(pipes, " | ")
+	return rewritten, query[:idx], field, conv, errors, true
 }
 
 // unwrapCountedGate is the unwrap gate (translator.UnwrapGateFor) that also lets
 // the rows the conversion rejects through: __lvp_bad is "0" for a row the gate
 // keeps (one test of the gate's expression, as before) and "1" for a present
 // value outside the forms the conversion may accept (tested only on the rows
-// the gate refused), whose value is then 0.
-func unwrapCountedGate(field, conv string) string {
+// the gate refused) or whose converted value is out of range (an overflow:
+// translator.UnwrapInRange), whose value is then 0. A plain gate also lets the
+// nan values through, flagged "2" (unwrapNaNCounted).
+func unwrapCountedGate(field, conv string) string { return unwrapCountedGateMode(field, conv, true) }
+
+// unwrapNaNFlag marks a nan value in unwrapBadField; its value is 0.
+const unwrapNaNFlag = "2"
+
+// unwrapNaNPattern is the nan strconv.ParseFloat reads (case-insensitive, unsigned).
+const unwrapNaNPattern = `^(?i:nan)$`
+
+// unwrapCountedGateMode is unwrapCountedGate with the rejected values counted
+// (errors) or, without, dropped as the plain gate does (a query whose
+// `__error__=""` filter drops the error): a plain gate keeps counting the nan
+// values, which the gate drops and VictoriaLogs' stats cannot carry
+// (unwrapNaNCounted).
+func unwrapCountedGateMode(field, conv string, errors bool) string {
 	q := strconv.Quote(field)
-	gate := translator.UnwrapGateFor(field, conv)
-	firstFilter := " | filter " + q + ":~" + strconv.Quote(translator.UnwrapPattern(conv))
-	extra := unwrapConvertibleForms[conv]
-	rejected := q + ":*"
-	if extra != "" {
-		rejected += " -" + q + ":~" + strconv.Quote(extra)
+	_, convert := translator.UnwrapGateParts(field, conv)
+	bad := unwrapBadField
+	nan := conv == ""
+	gate := " | format if (" + q + ":~" + strconv.Quote(translator.UnwrapPattern(conv)) + `) "0" as ` + bad
+	keep := bad + `:="0"`
+	if nan {
+		gate += " | format if (-" + bad + `:="0" ` + q + ":~" + strconv.Quote(unwrapNaNPattern) + `) "` + unwrapNaNFlag + `" as ` + bad
+		keep += " or " + bad + `:="` + unwrapNaNFlag + `"`
 	}
-	return " | format if (" + q + ":~" + strconv.Quote(translator.UnwrapPattern(conv)) + `) "0" as ` + unwrapBadField +
-		" | format if (-" + unwrapBadField + `:="0" ` + rejected + `) "1" as ` + unwrapBadField +
-		" | filter " + unwrapBadField + `:="0" or ` + unwrapBadField + `:="1"` +
-		gate[len(firstFilter):] +
-		" | format if (" + unwrapBadField + `:="1") "0" as ` + translator.UnwrapValueAlias
+	if errors {
+		rejected := q + ":*"
+		if nan {
+			rejected = "-" + bad + `:="` + unwrapNaNFlag + `" ` + rejected
+		}
+		gate += " | format if (-" + bad + `:="0" ` + rejected + `) "1" as ` + bad
+		keep += " or " + bad + `:="1"`
+	}
+	gate += " | filter " + keep + convert
+	inRange := translator.UnwrapInRange(conv)
+	if errors {
+		gate += " | format if (" + bad + `:="0" -(` + inRange + `)) "1" as ` + bad
+	} else if nan {
+		gate += " | filter " + bad + `:="` + unwrapNaNFlag + `" or (` + inRange + ")"
+	} else {
+		gate += " | filter " + inRange
+	}
+	reset := bad + `:="1"`
+	if nan {
+		reset += " or " + bad + `:="` + unwrapNaNFlag + `"`
+	}
+	return gate + " | format if (" + reset + `) "0" as ` + translator.UnwrapValueAlias
 }
 
 // unwrapHit is a span where a metric's VictoriaLogs query met a row whose
@@ -356,11 +401,80 @@ type unwrapHit struct {
 }
 
 // stripUnwrapCounter removes the flagged groups from a stats answer (matrix or
-// vector) and returns the times of the buckets they held (seconds). An answer
-// without a flagged group only loses the empty label, without decoding it.
+// vector) and returns the times of the buckets the rejected values (flag 1) held
+// (seconds). An answer without a flagged group only loses the empty label,
+// without decoding it. The nan groups (flag 2) are dropped, as the gate drops
+// nan values.
 func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
-	if !bytes.Contains(body, []byte(`"`+unwrapBadField+`":"1"`)) {
-		kept := `"` + unwrapBadField + `":"0"`
+	return stripUnwrapFlags(body, nil)
+}
+
+// unwrapNaN says how the nan groups (flag 2) of a stats answer reach the result.
+// Loki's sample is NaN (strconv.ParseFloat reads nan): sum, avg, stddev and
+// stdvar over a window that holds one are NaN (pkg/logql/range_vector.go
+// sumOverTime, avgOverTime, stddevOverTime), and so are the vector aggregations
+// of those series; VictoriaLogs' sum restarts at a NaN, so its stats can only
+// carry the rows apart (translator gate drops them, the counting gate groups
+// them under flag 2). poison is set when every function of the query poisons its
+// result; the value of each series that has a nan group at a time is then NaN
+// (a series that only has nan samples included), and the nan group's row count
+// is added to a count series (the presence of the sample). Otherwise the nan
+// rows are dropped, which max and min over time do too (maxOverTime ignores a
+// NaN unless every sample is).
+type unwrapNaN struct {
+	poison bool
+	counts map[string]bool // aliases of the count functions, which add up
+}
+
+// unwrapNaNFor reads the stats pipes of a rewritten query.
+func unwrapNaNFor(query string) *unwrapNaN {
+	n := &unwrapNaN{poison: true, counts: map[string]bool{"__sample_count": true}}
+	seen := false
+	for _, pipe := range strings.Split(query, " | ") {
+		if !strings.HasPrefix(pipe, "stats ") {
+			continue
+		}
+		if end := strings.Index(pipe, ")"); strings.HasPrefix(pipe, "stats by (") && end > 0 {
+			pipe = pipe[end+1:]
+		} else {
+			pipe = strings.TrimPrefix(pipe, "stats ")
+		}
+		for _, m := range unwrapStatsFuncRE.FindAllStringSubmatch(pipe, -1) {
+			fn, expr, alias := m[1], m[0], m[2]
+			if alias == "" {
+				alias = strings.TrimSpace(expr)
+			}
+			if fn == "count" {
+				// Only the sample count of a sum adds up: a count of series would count a
+				// stream with clean and nan rows twice.
+				n.counts[alias] = true
+				n.poison = n.poison && alias == "__sample_count"
+				continue
+			}
+			seen = true
+			switch fn {
+			case "sum", "avg", "stddev":
+			default:
+				n.poison = false
+			}
+		}
+	}
+	n.poison = n.poison && seen
+	return n
+}
+
+var unwrapStatsFuncRE = regexp.MustCompile(`(\w+)\([^()]*\)(?: as (\w+))?`)
+
+type unwrapPoint struct {
+	ts, value json.RawMessage
+}
+
+// stripUnwrapFlags is stripUnwrapCounter with the nan groups applied to the
+// answer (nan nil: dropped).
+func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
+	flagged := func(flag string) []byte { return []byte(`"` + unwrapBadField + `":"` + flag + `"`) }
+	if !bytes.Contains(body, flagged("1")) && !bytes.Contains(body, flagged(unwrapNaNFlag)) {
+		kept := string(flagged("0"))
 		out := bytes.ReplaceAll(body, []byte(","+kept), nil)
 		out = bytes.ReplaceAll(out, []byte(kept+","), nil)
 		return bytes.ReplaceAll(out, []byte(kept), nil), nil, nil
@@ -379,37 +493,50 @@ func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
 			return nil, nil, err
 		}
 	}
+	type nanGroup struct {
+		metric map[string]string
+		points []unwrapPoint
+	}
 	var times []float64
+	var nans []nanGroup
 	kept := result[:0]
 	for _, series := range result {
 		var metric map[string]string
 		if err := json.Unmarshal(series["metric"], &metric); err != nil {
 			return nil, nil, err
 		}
-		flag, flagged := metric[unwrapBadField]
-		if flagged && flag == "1" {
-			var points [][]json.RawMessage
+		flag, isFlagged := metric[unwrapBadField]
+		if isFlagged && (flag == "1" || flag == unwrapNaNFlag) {
+			var points []unwrapPoint
 			if raw, ok := series["values"]; ok {
-				_ = json.Unmarshal(raw, &points)
+				var rows [][]json.RawMessage
+				_ = json.Unmarshal(raw, &rows)
+				for _, row := range rows {
+					if len(row) == 2 {
+						points = append(points, unwrapPoint{row[0], row[1]})
+					}
+				}
 			}
 			if raw, ok := series["value"]; ok {
-				var point []json.RawMessage
-				if json.Unmarshal(raw, &point) == nil {
-					points = append(points, point)
+				var row []json.RawMessage
+				if json.Unmarshal(raw, &row) == nil && len(row) == 2 {
+					points = append(points, unwrapPoint{row[0], row[1]})
 				}
 			}
+			if flag == unwrapNaNFlag {
+				delete(metric, unwrapBadField)
+				nans = append(nans, nanGroup{metric, points})
+				continue
+			}
 			for _, point := range points {
-				if len(point) == 0 {
-					continue
-				}
 				var ts float64
-				if json.Unmarshal(point[0], &ts) == nil {
+				if json.Unmarshal(point.ts, &ts) == nil {
 					times = append(times, ts)
 				}
 			}
 			continue
 		}
-		if flagged {
+		if isFlagged {
 			delete(metric, unwrapBadField)
 			encoded, err := json.Marshal(metric)
 			if err != nil {
@@ -418,6 +545,14 @@ func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
 			series["metric"] = encoded
 		}
 		kept = append(kept, series)
+	}
+	if nan != nil && nan.poison {
+		vector := string(data["resultType"]) == `"vector"`
+		for _, group := range nans {
+			if err := nan.apply(&kept, group.metric, group.points, vector); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	encoded, err := json.Marshal(kept)
 	if err != nil {
@@ -429,6 +564,128 @@ func stripUnwrapCounter(body []byte) ([]byte, []float64, error) {
 	}
 	out, err := json.Marshal(top)
 	return out, times, err
+}
+
+// unwrapSeriesKey identifies a series of a stats answer by its labels.
+func unwrapSeriesKey(metric map[string]string) string {
+	keys := make([]string, 0, len(metric))
+	for k := range metric {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(strconv.Quote(k) + "=" + strconv.Quote(metric[k]) + ",")
+	}
+	return b.String()
+}
+
+// apply sets the points of a nan group onto the series of the answer with the
+// same labels (a count series adds the group's count): the value is NaN where
+// Loki's is, the series is added when only nan samples made it.
+func (n *unwrapNaN) apply(kept *[]map[string]json.RawMessage, metric map[string]string, points []unwrapPoint, vector bool) error {
+	key := unwrapSeriesKey(metric)
+	index := -1
+	for i, series := range *kept {
+		var m map[string]string
+		if err := json.Unmarshal(series["metric"], &m); err != nil {
+			return err
+		}
+		if unwrapSeriesKey(m) == key {
+			index = i
+			break
+		}
+	}
+	isCount := n.counts[metric["__name__"]]
+	var target map[string]json.RawMessage
+	var current []unwrapPoint
+	instant := vector
+	if index >= 0 {
+		target = (*kept)[index]
+		if raw, ok := target["values"]; ok {
+			var rows [][]json.RawMessage
+			if err := json.Unmarshal(raw, &rows); err != nil {
+				return err
+			}
+			for _, row := range rows {
+				if len(row) == 2 {
+					current = append(current, unwrapPoint{row[0], row[1]})
+				}
+			}
+		} else if raw, ok := target["value"]; ok {
+			var row []json.RawMessage
+			if err := json.Unmarshal(raw, &row); err != nil {
+				return err
+			}
+			if len(row) == 2 {
+				current = []unwrapPoint{{row[0], row[1]}}
+			}
+			instant = true
+		} else {
+			instant = false
+		}
+	} else {
+		encoded, err := json.Marshal(metric)
+		if err != nil {
+			return err
+		}
+		target = map[string]json.RawMessage{"metric": encoded}
+	}
+	for _, point := range points {
+		at := -1
+		for i, c := range current {
+			if string(c.ts) == string(point.ts) {
+				at = i
+				break
+			}
+		}
+		value := json.RawMessage(`"NaN"`)
+		if isCount {
+			var add, have float64
+			_ = json.Unmarshal(unwrapUnquote(point.value), &add)
+			if at >= 0 {
+				_ = json.Unmarshal(unwrapUnquote(current[at].value), &have)
+			}
+			value = json.RawMessage(`"` + strconv.FormatFloat(have+add, 'f', -1, 64) + `"`)
+		}
+		if at >= 0 {
+			current[at].value = value
+		} else {
+			current = append(current, unwrapPoint{point.ts, value})
+		}
+	}
+	sort.SliceStable(current, func(i, j int) bool {
+		var a, b float64
+		_ = json.Unmarshal(current[i].ts, &a)
+		_ = json.Unmarshal(current[j].ts, &b)
+		return a < b
+	})
+	rows := make([][]json.RawMessage, len(current))
+	for i, c := range current {
+		rows[i] = []json.RawMessage{c.ts, c.value}
+	}
+	var err error
+	if instant && len(rows) > 0 {
+		target["value"], err = json.Marshal(rows[0])
+	} else {
+		target["values"], err = json.Marshal(rows)
+	}
+	if err != nil {
+		return err
+	}
+	if index < 0 {
+		*kept = append(*kept, target)
+	}
+	return nil
+}
+
+// unwrapUnquote turns a JSON string number into the number.
+func unwrapUnquote(raw json.RawMessage) json.RawMessage {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return json.RawMessage(s)
+	}
+	return raw
 }
 
 // parseVLStepParam reads a VictoriaLogs step argument ("60s", "1m", "60").
@@ -496,9 +753,16 @@ func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Va
 	if c == nil || (path != "/select/logsql/stats_query_range" && path != "/select/logsql/stats_query") {
 		return params, nil, false
 	}
-	rewritten, base, field, conv, ok := unwrapCountingQuery(params.Get("query"), c.accepts)
+	rewritten, base, field, conv, _, ok := unwrapCountingRewrite(params.Get("query"), func(field, conv string) (bool, bool) {
+		errors := c.accepts(field, conv)
+		return errors, errors || conv == ""
+	})
 	if !ok {
 		return params, nil, false
+	}
+	var nan *unwrapNaN
+	if conv == "" {
+		nan = unwrapNaNFor(rewritten)
 	}
 	sent := url.Values{}
 	for k, v := range params {
@@ -507,7 +771,7 @@ func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Va
 	sent.Set("query", rewritten)
 	step := parseVLStepParam(params.Get("step"))
 	strip := func(body []byte) ([]byte, error) {
-		out, times, err := stripUnwrapCounter(body)
+		out, times, err := stripUnwrapFlags(body, nan)
 		if err != nil {
 			return nil, err
 		}
@@ -603,7 +867,7 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 			if !to.After(from) {
 				continue
 			}
-			query := h.base + " | filter " + unwrapRejectedFilter(h.field, h.conv)
+			query := unwrapLookupQuery(h.base, h.field, h.conv)
 			if !c.instant && c.step > probe.window {
 				query += windowPhaseFilter(c.start, c.step, probe.window)
 			}
@@ -1066,12 +1330,15 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 		return r, nil
 	}
 	probes := unwrapErrorProbes(expr)
-	if len(probes) == 0 {
-		return r, nil
-	}
 	start, end, step, err := orderedJSONMetricTimes(r, isRange)
 	if err != nil {
 		return r, nil
+	}
+	if len(probes) == 0 {
+		// No conversion error reaches the result, but the nan values the gate drops
+		// still count (unwrapNaN): the stats queries are rewritten, nothing else.
+		c := &unwrapCheck{instant: !isRange, start: start, end: end, step: step}
+		return r.WithContext(context.WithValue(r.Context(), unwrapCheckKey{}, c)), nil
 	}
 	if _, binary := expr.(*logqlpkg.BinOpExpr); binary && isRange && step > 0 {
 		// Binary operands are evaluated on the step-aligned axis (alignBinaryRangeRequest).

@@ -138,12 +138,14 @@ func TestUnwrapConversionIsConvertedInTheStatsQuery(t *testing.T) {
 // translated query carries the gate, whichever route sends it.
 func TestUnwrapStatsQueriesCarryTheSampleGate(t *testing.T) {
 	t0 := time.Unix(1700000400, 0).UTC()
-	gate := translator.UnwrapGate("b")
 	for _, tc := range []struct {
 		name, query, path, want string
 	}{
-		{"native range", `sum by (app) (max_over_time({app="x"} | unwrap b | __error__="" [1m]))`, "/select/logsql/stats_query_range", gate + " | stats by (app) max(__lvp_v)"},
-		{"bare parser buckets", `max_over_time({app="x"} | logfmt | unwrap b | __error__="" [2m])`, "/select/logsql/stats_query_range", translator.UnwrapGate("b") + " | stats by (_stream) max(__lvp_v) as c"},
+		// A filter after the unwrap drops the conversion errors: the gate drops the rejected
+		// values, and a plain one still counts the nan values apart (unwrapNaN).
+		{"native range", `sum by (app) (max_over_time({app="x"} | unwrap b | __error__="" [1m]))`, "/select/logsql/stats_query_range", unwrapCountedGateMode("b", "", false) + " | stats by (app, __lvp_bad) max(__lvp_v)"},
+		{"bare parser buckets", `max_over_time({app="x"} | logfmt | unwrap b | __error__="" [2m])`, "/select/logsql/stats_query_range", unwrapCountedGateMode("b", "", false) + " | stats by (_stream, __lvp_bad) max(__lvp_v) as c"},
+		{"a duration has no nan: the plain gate", `sum by (app) (max_over_time({app="x"} | unwrap duration(b) | __error__="" [1m]))`, "/select/logsql/stats_query_range", translator.UnwrapGateFor("b", "duration") + " | stats by (app) max(__lvp_v)"},
 		// Without the error filter the gate also counts the rejected values.
 		{"native range, counted", `sum by (app) (max_over_time({app="x"} | unwrap b [1m]))`, "/select/logsql/stats_query_range", unwrapCountedGate("b", "") + " | stats by (app, __lvp_bad) max(__lvp_v)"},
 		{"bare parser buckets, counted", `max_over_time({app="x"} | logfmt | unwrap b [2m])`, "/select/logsql/stats_query_range", unwrapCountedGate("b", "") + " | stats by (_stream, __lvp_bad) max(__lvp_v) as c"},
