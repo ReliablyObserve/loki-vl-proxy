@@ -73,10 +73,11 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 		}
 	}
 	copyHeaders(w.Header(), buf.Header())
+	w.Header().Set("Content-Type", "application/json")
 	if buf.code != 0 {
 		w.WriteHeader(buf.code)
 	}
-	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the binary evaluator's own JSON, Content-Type copied above
+	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the binary evaluator's own JSON
 	return true
 }
 
