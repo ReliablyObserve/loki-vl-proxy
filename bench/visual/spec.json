@@ -347,7 +347,7 @@
   {
    "id": "explore-unwrap-avg-over-time-sliding-window",
    "kind": "explore",
-   "query": "sum by (service_name) (avg_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+   "query": "max by (service_name) (max_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
    "covers": [
     "semantics/unwrap-over-time-range-windows",
     "window-bounds-and-step-alignment",
