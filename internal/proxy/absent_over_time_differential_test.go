@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -135,10 +136,10 @@ func runAbsentScenario(t *testing.T, emu *vlEmulator, s absentScenario) ([]absen
 	target := "/loki/api/v1/query_range?"
 	if s.step == 0 {
 		target = "/loki/api/v1/query?"
-		params.Set("time", strconv.FormatInt(s.end/1e9, 10))
+		params.Set("time", strconv.FormatInt(s.end, 10))
 	} else {
-		params.Set("start", strconv.FormatInt(s.start/1e9, 10))
-		params.Set("end", strconv.FormatInt(s.end/1e9, 10))
+		params.Set("start", strconv.FormatInt(s.start, 10))
+		params.Set("end", strconv.FormatInt(s.end, 10))
 		params.Set("step", strconv.FormatInt(int64(s.step/time.Second), 10))
 	}
 	res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
@@ -165,7 +166,7 @@ func runAbsentScenario(t *testing.T, emu *vlEmulator, s absentScenario) ([]absen
 			points = [][]any{series.Value}
 		}
 		for _, point := range points {
-			o.points[int64(point[0].(float64))*1e9] = point[1].(string)
+			o.points[int64(math.Round(point[0].(float64)*1e3))*1e6] = point[1].(string)
 		}
 		out = append(out, o)
 	}
@@ -228,8 +229,14 @@ func generateAbsentScenario(rnd *rand.Rand, instant, exactEdges bool) absentScen
 			s.window = s.step // a tumbling window
 		}
 	}
-	// Evaluation times on whole seconds, not on the step: Loki steps from start.
+	// Evaluation times off the step grid: Loki steps from start. A third of the
+	// scenarios start on a millisecond, sent as the nanosecond integer Grafana
+	// sends (a decimal-seconds start loses its last digits in the proxy's float
+	// parse, for every range function alike).
 	s.start = base + int64(rnd.Intn(600))*1e9
+	if rnd.Intn(3) == 0 {
+		s.start += int64(rnd.Intn(1000)) * 1e6
+	}
 	if instant {
 		s.end = s.start
 	} else {

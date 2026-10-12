@@ -39,8 +39,11 @@ why: |
   labels) or `sum(rate(<log query with unwrap>[r]))` (Loki has no count_over_time
   with unwrap; a line without the unwrapped label is no sample), which VictoriaLogs
   answers as one stats series with a point at each step whose window holds a line,
-  on Loki's window bounds and step grid, parser and label filters pushed down. The
-  answer is those steps inverted on start, start+step, ... end. Vector
+  on Loki's window bounds and step grid, parser and label filters pushed down (a
+  label filter on a JSON-parsed field keeps using the existing ordered-JSON route,
+  which reads bounded rows only where VictoriaLogs' unpack cannot give Loki's
+  parse). The answer is those steps inverted on start, start+step, ... end, each
+  matched to a presence point by index, so a start with milliseconds lines up. Vector
   aggregations fold the single series as VectorAggEvaluator does (grouping keeps
   or drops labels, count 1, stddev and stdvar 0, topk and bottomk keep it whole).
   An answer that is not a clean 200 (a VictoriaLogs failure, the Grafana
@@ -71,7 +74,7 @@ gap:
   loki: 'pkg/logql/evaluator.go:647-664, :754-778 AbsentRangeVectorEvaluator, :1320-1345 absentLabels; pkg/logql/range_vector.go:251,:628; pkg/logql/syntax/extractor.go:44-48; pkg/logql/log/metrics_extraction.go:214-231'
   proxy: 'the inversion of an ungrouped sum(count_over_time) (sum(rate) with unwrap) answered from VictoriaLogs stats, on Loki steps'
   planned_test: 'TestCompat_AbsentOverTime and TestCompat_AbsentOverTimeUnderVectorAggregation (test/e2e-compat, group semantics); TestAbsentOverTimeDifferential, TestAbsentOverTimeUnderVectorAggregation, TestAbsentOverTimeLabelsEdgeTable, TestParseAbsentOverTimeCompatSpecEdgeTable, TestAbsentOverTimeSeriesFoldEdgeTable, TestAbsentOverTimeParserStageEdgeTable, TestAbsentOverTimeDoesNotInvertFailedPresence, TestAbsentOverTimeInstantEdgeTable (internal/proxy)'
-  note: 'Differential over generated rows on VictoriaLogs v1.52 and v1.40 (no offset argument) and with no version. Not changed: a conversion error of an unwrapped value and a parser error line are answered as for count_over_time and rate (semantics/unwrap-conversion-error*, parse-error*).'
+  note: 'Differential over generated rows (starts with milliseconds, offset, instant, sliding and tumbling windows) on VictoriaLogs v1.52, v1.40 (no offset argument) and with no version. An unwrapped value Loki cannot convert now fails absent_over_time with Loki 400 pipeline error, as rate does (it was a 200; semantics/unwrap-conversion-error-undetected-shapes lists this shape as open and needs its text updated). A parser error line is answered as for count_over_time (parse-error*). Not run yet: the e2e against Loki.'
   clusters:
     - 2336e2a5
     - 4dfd84f7
