@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-quantile-over-time",
+   "kind": "explore",
+   "query": "quantile_over_time(0.95, {service_name=\"api-gateway\"} | json | unwrap duration_ms [$__auto]) by (service_name)",
+   "covers": [
+    "semantics/unwrap-quantile-response-limit",
+    "heavy-metric-fetch-bounds",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-quantile-response-limit"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

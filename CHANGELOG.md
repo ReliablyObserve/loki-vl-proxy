@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   series also carry the parsed labels, while the proxy's per-stream series do
   not, as for the other per-series functions
   (`semantics/unwrap-per-series-identity-raw-rows`, unchanged); an ungrouped
-  quantile after a parser keeps the raw evaluator for that reason (#TBD).
+  quantile after a parser keeps the raw evaluator for that reason (#731).
 
 ## [2.11.2] - 2026-10-12
 
