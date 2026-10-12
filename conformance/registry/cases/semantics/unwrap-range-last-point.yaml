@@ -37,16 +37,20 @@ why: |
   differs and whether a step has a sample follows the step bucket and not (t-range,
   t]: a source with a line every few minutes under [5m] at step 60 misses the steps
   whose last minute is empty, and a [30s] range at step 60 has samples Loki does
-  not. That stays in semantics/unwrap-over-time-range-windows.
+  not. The window merge of semantics/unwrap-over-time-range-windows answers a
+  range other than the step now, so this shift serves those only in the forms
+  that row lists as residuals.
 
   Not covered, same defect: stddev_over_time and stdvar_over_time with unwrap take
   the same native bucket path and still drop the sample at end
   (semantics/unwrap-stddev-stdvar-range-last-point).
 
-  Not changed: VictoriaLogs before v1.45 (no stats_query_range offset) with a
-  start that is not a multiple of the step still labels the buckets on the epoch
-  grid, as before (tumblingBucketsAligned;
-  semantics/native-buckets-epoch-grid-unaligned-start-v140).
+  VictoriaLogs before v1.45 (no stats_query_range offset) with a start that is
+  not a multiple of the step cannot place these buckets (tumblingBucketsAligned):
+  sum, avg, max and min over time then take the window evaluator's raw-row
+  fallback, which reads (t-range, t] (semantics/unwrap-over-time-range-windows);
+  stddev and stdvar are still labelled on the epoch grid
+  (semantics/native-buckets-epoch-grid-unaligned-start-v140).
 
   In the differential run this shows only as a secondary difference of
   requests whose primary difference is the parser series identity, so those

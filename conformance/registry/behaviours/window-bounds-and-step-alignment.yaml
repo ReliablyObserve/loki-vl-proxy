@@ -20,7 +20,8 @@ proxy: |
 
 implementation:
   - "internal/proxy/metric_binary.go statsRateRangeEqualsStepShift, logRangeFunctions, relabelSnappedTumblingStatsQueryRange"
-  - "internal/proxy/range_metric_compat.go isLogRangeWindowFunc"
+  - "internal/proxy/range_metric_compat.go isLogRangeWindowFunc, manualRawBounds"
+  - "internal/proxy/unwrap_samples.go unwrapWindowBuckets, unwrapBucketAgg, mergeUnwrapBuckets"
 
 cases:
   - semantics/lower-bound-exclusive

@@ -66,7 +66,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 9 | 0 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 3 | partial |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
-| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 5 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 6 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 7 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
@@ -76,7 +76,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 4 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 7 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 9 | partial |
 
 ## LogQL surface (v3.7.7)
 

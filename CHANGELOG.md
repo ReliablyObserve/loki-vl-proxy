@@ -42,8 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a start off the step grid on those versions, which used to read
   epoch-grid buckets one step off. Still on step buckets: an ungrouped `sum` or a
   `without` of avg, max or min over a parser query (VictoriaLogs groups those by
-  stream and line, which no bucket merge bounds), an outer aggregation other than
-  `sum` (`max by`, `avg by`, ...) around these functions, and
+  stream and line, which no bucket merge bounds;
+  `semantics/unwrap-over-time-parser-series-windows`), an outer aggregation other
+  than `sum` (`max by`, `avg by`, ...) around these functions
+  (`semantics/manual-range-outer-aggregation-dropped`), and
   `stddev_over_time`/`stdvar_over_time`. `semantics/unwrap-over-time-range-windows`
   fixed (#TBD).
 - **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
