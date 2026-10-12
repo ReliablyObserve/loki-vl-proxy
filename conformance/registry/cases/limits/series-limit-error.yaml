@@ -12,6 +12,18 @@ why: |
   `-max-stats-query-series` (default 500, Loki's own default), and the message
   stays Loki's word for word because Grafana renders it; the flag that set the
   limit is named in the proxy's log line instead.
+
+  Loki counts the series of the answer of the expression, after an aggregation
+  has folded them (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector), so
+  `sum without (pod) (count_over_time({app="wide"}[1m]))` over many pods fits a
+  limit its per-stream rows exceed. The proxy applies the limit the same way:
+  a `without` query reads the per-stream rows under the raw-row budget
+  (`-manual-range-metric-row-limit`, past it the client reads this same message
+  with that number) and the tenant's limit is applied to the folded answer, on
+  query_range, at an instant and under topk, sort, stddev and stdvar
+  (semantics/unwrap-sum-without-collapses, TestSumWithoutSeriesLimitOnFoldedAnswer).
+  A failing instant `without`, `group`, `label_replace` or `label_join` query keeps
+  the error's status instead of answering 200 with an error body.
 request:
   method: GET
   path: /loki/api/v1/query_range

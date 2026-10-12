@@ -25,6 +25,12 @@ reason: |
   Loki's evaluation timestamps, and over it the busiest series, ranked by
   VictoriaLogs in a bounded second call, with Loki's warning, proven against a Loki
   reference evaluator by internal/proxy/drilldown_breakdown_exact_test.go.
+  The limit counts the folded answer of a `without` aggregation, as Loki does
+  (semantics/unwrap-sum-without-collapses): the per-stream rows are read under
+  -manual-range-metric-row-limit and the tenant's max_query_series is applied to
+  the folded series, on range and instant queries, under topk, sort, stddev and
+  stdvar, proven by TestSumWithoutSeriesLimitOnFoldedAnswer and
+  TestCompat_UnwrapSumWithoutKeepsSeries.
   Still open: limits/resolution-limit-precedence (the 11,000-point rejection
   ahead of parsing) is named but not written, and the Drilldown partial keeps the
   busiest series where Loki keeps the first it encounters, so the kept set can

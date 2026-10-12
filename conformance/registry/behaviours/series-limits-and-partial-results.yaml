@@ -6,7 +6,9 @@ loki: |
   Above max_query_series (default 500) Loki fails the query with "maximum number
   of series (N) reached for a single query". Logs Drilldown requests get a
   partial result plus a warning instead. Above the resolution limit Loki returns
-  400 before parsing.
+  400 before parsing. The limit counts the series of the answer, after an
+  aggregation such as `sum without (...)` has folded them
+  (pkg/logql/engine.go:536-548, :575-590).
 
 victorialogs: |
   VictoriaLogs truncates or returns everything depending on the pipe; it has no
@@ -15,7 +17,9 @@ victorialogs: |
 proxy: |
   Truncating silently where Loki errors is a correctness bug: a chart quietly
   loses series. The limit must be operator-configurable and the error must name
-  the flag.
+  the flag. A `without` aggregation is read per stream and the limit applies to
+  the folded answer, so a query whose answer fits the limit is not rejected
+  because its streams do not.
 
 implementation:
   - internal/proxy/metric_agg.go

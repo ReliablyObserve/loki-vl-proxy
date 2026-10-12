@@ -1794,6 +1794,100 @@
      ]
     }
    ]
+  },
+  "unwrap-sum-without": {
+   "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer, W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h",
+    "7d"
+   ],
+   "shapes": [
+    {
+     "name": "W1 sum without pod, max_over_time",
+     "query": "sum without (pod) (max_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W2 sum without pod, sum_over_time",
+     "query": "sum without (pod) (sum_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W3 sum without pod, rate",
+     "query": "sum without (pod) (rate({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W4 max without pod, max_over_time",
+     "query": "max without (pod) (max_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W5 sum without pod, max_over_time, instant",
+     "query": "sum without (pod) (max_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "instant": true,
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "W6 sum without pod, rate, instant",
+     "query": "sum without (pod) (rate({app=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+     "instant": true,
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "W7 topk 5 of sum without pod",
+     "query": "topk(5, sum without (pod) (max_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m])))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W8 sum without pod, count_over_time (production)",
+     "query": "sum without (pod) (count_over_time({env=\"production\"}[1m]))",
+     "covers": [
+      "semantics/unwrap-sum-without-collapses",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "W9 label_replace control, instant",
+     "query": "label_replace(sum by (app) (count_over_time({env=\"production\"}[5m])), \"svc\", \"$1\", \"app\", \"(.*)\")",
+     "instant": true,
+     "covers": [
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    }
+   ]
   }
  }
 }

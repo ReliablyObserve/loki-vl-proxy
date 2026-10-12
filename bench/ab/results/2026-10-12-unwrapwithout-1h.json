@@ -1,0 +1,334 @@
+{
+ "label": "unwrapwithout-1h",
+ "date": "2026-10-12",
+ "set": "unwrap-sum-without",
+ "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer, W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 9
+ },
+ "result_differs_from_reference": 8,
+ "result_differs_preexisting": 8,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "W1 sum without pod, max_over_time",
+   "range": "1h",
+   "p50": {
+    "base": 0.022,
+    "pr": 0.027,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.026,
+    "pr": 0.035,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.037,
+    "pr": 0.036,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 1.3,
+    "pr": 1.3,
+    "loki": 51.88
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.81
+  },
+  {
+   "shape": "W2 sum without pod, sum_over_time",
+   "range": "1h",
+   "p50": {
+    "base": 0.028,
+    "pr": 0.034,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.067,
+    "pr": 0.065,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.059,
+    "pr": 0.073,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 1.7,
+    "pr": 1.7,
+    "loki": 30.93
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.82
+  },
+  {
+   "shape": "W3 sum without pod, rate",
+   "range": "1h",
+   "p50": {
+    "base": 0.078,
+    "pr": 0.075,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.089,
+    "pr": 0.085,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.063,
+    "pr": 0.06,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 1.54,
+    "pr": 1.54,
+    "loki": 2.57
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.04
+  },
+  {
+   "shape": "W4 max without pod, max_over_time",
+   "range": "1h",
+   "p50": {
+    "base": 0.028,
+    "pr": 0.031,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.029,
+    "pr": 0.036,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.019,
+    "pr": 0.025,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 1.82,
+    "pr": 1.82,
+    "loki": 15.73
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "W5 sum without pod, max_over_time, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.006,
+    "pr": 0.007,
+    "loki": 0.038
+   },
+   "p95": {
+    "base": 0.006,
+    "pr": 0.007,
+    "loki": 0.041
+   },
+   "cold": {
+    "base": 0.006,
+    "pr": 0.008,
+    "loki": 0.039
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 4.11,
+    "pr": 4.11,
+    "loki": 4.11
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.86
+  },
+  {
+   "shape": "W6 sum without pod, rate, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.007,
+    "pr": 0.007,
+    "loki": 0.045
+   },
+   "p95": {
+    "base": 0.007,
+    "pr": 0.008,
+    "loki": 0.058
+   },
+   "cold": {
+    "base": 0.005,
+    "pr": 0.006,
+    "loki": 0.04
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 6.45,
+    "pr": 6.45,
+    "loki": 6.45
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "W7 topk 5 of sum without pod",
+   "range": "1h",
+   "p50": {
+    "base": 0.021,
+    "pr": 0.03,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.025,
+    "pr": 0.032,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.022,
+    "pr": 0.024,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 12.33,
+    "pr": 16.88,
+    "loki": 16.88
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.7
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "p50": {
+    "base": 0.696,
+    "pr": 0.637,
+    "loki": null
+   },
+   "p95": {
+    "base": 0.802,
+    "pr": 0.74,
+    "loki": null
+   },
+   "cold": {
+    "base": 0.57,
+    "pr": 0.593,
+    "loki": null
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "0"
+   },
+   "vl_cpu_max": {
+    "base": 43.24,
+    "pr": 43.24,
+    "loki": 43.24
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.09
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "p50": {
+    "base": 0.005,
+    "pr": 0.005,
+    "loki": 0.079
+   },
+   "p95": {
+    "base": 0.007,
+    "pr": 0.009,
+    "loki": 0.108
+   },
+   "cold": {
+    "base": 0.012,
+    "pr": 0.013,
+    "loki": 0.118
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 4.07,
+    "pr": 4.07,
+    "loki": 4.07
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  }
+ ],
+ "note": "Loki did not answer the range shapes within the 25 s client timeout (its answer is ~20,000 series at a 5 s step); those Loki timings are not measurements and are left empty."
+}

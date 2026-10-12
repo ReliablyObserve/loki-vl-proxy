@@ -366,7 +366,7 @@ func TestSumWithoutDifferential(t *testing.T) {
 // the fold, on query_range and at an instant, on the stats routes (no parser,
 // logfmt) and the raw route (json). `sum by` keeps its limit as before.
 //
-// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity, limits/series-limit-error, series-limits-and-partial-results, limits/drilldown-partial-with-warning
 func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
 	var rows []emuRow
