@@ -13,7 +13,7 @@ without counters are older and their Loki cold time is unverified. A query two s
 the first set's computed Loki cold (`loki_cold_reused_from`). Warm and refresh timings are
 compared with the same noise rules; a row Loki's cache answered is excluded from all three.
 
-Runs: pr624-final-drilldown-breakdown-exact (2026-09-30), backfilled-empty-buckets-metadata-freshness (2026-10-01), backfilled-empty-buckets-metadata-inventory (2026-10-01), plain-name-control (2026-10-06), plain-name-drilldown-breakdown-exact (2026-10-06), unwrap-validity-24h (2026-10-06), unwraperr-conversion (2026-10-08), unwrapsum-long (2026-10-11), unwrapwithout-control-long (2026-10-17), unwrapwithout-long (2026-10-17), daily-control (2026-10-22), daily-drilldown-breakdown-exact (2026-10-22), daily-extracted-pushdown (2026-10-22), daily-extracted-suffix (2026-10-22), daily-json-detected-level (2026-10-22), daily-json-filter-pushdown (2026-10-22), daily-loki-profile-otel-metadata (2026-10-22), daily-metadata-freshness (2026-10-22), daily-metadata-inventory (2026-10-22), daily-metric-latency-gap (2026-10-22), daily-parenthesized-range-or-filters (2026-10-22), daily-pattern-line-filter (2026-10-22), daily-pattern-line-filter-anchoring (2026-10-22), daily-plain-name-after-parser (2026-10-22), daily-stage-field-exposure (2026-10-22), daily-unwrap-conversion-error (2026-10-22), daily-unwrap-duration-seconds (2026-10-22), daily-unwrap-sum-without (2026-10-22), daily-unwrap-ungrouped-sum (2026-10-22), daily-unwrap-validity (2026-10-22), json-error-split-1h (2026-10-22), json-error-split-long (2026-10-22).
+Runs: pr624-final-drilldown-breakdown-exact (2026-09-30), backfilled-empty-buckets-metadata-freshness (2026-10-01), backfilled-empty-buckets-metadata-inventory (2026-10-01), plain-name-control (2026-10-06), plain-name-drilldown-breakdown-exact (2026-10-06), unwrap-validity-24h (2026-10-06), unwraperr-conversion (2026-10-08), unwrapsum-long (2026-10-11), unwrapgate-1h (2026-10-12), unwrapgate-confirm-1h (2026-10-12), unwrapgate-long (2026-10-12), unwrapwithout-control-long (2026-10-17), unwrapwithout-long (2026-10-17), daily-control (2026-10-22), daily-drilldown-breakdown-exact (2026-10-22), daily-extracted-pushdown (2026-10-22), daily-extracted-suffix (2026-10-22), daily-json-detected-level (2026-10-22), daily-json-filter-pushdown (2026-10-22), daily-loki-profile-otel-metadata (2026-10-22), daily-metadata-freshness (2026-10-22), daily-metadata-inventory (2026-10-22), daily-metric-latency-gap (2026-10-22), daily-parenthesized-range-or-filters (2026-10-22), daily-pattern-line-filter (2026-10-22), daily-pattern-line-filter-anchoring (2026-10-22), daily-plain-name-after-parser (2026-10-22), daily-stage-field-exposure (2026-10-22), daily-unwrap-conversion-error (2026-10-22), daily-unwrap-duration-seconds (2026-10-22), daily-unwrap-sum-without (2026-10-22), daily-unwrap-ungrouped-sum (2026-10-22), daily-unwrap-validity (2026-10-22), json-error-split-1h (2026-10-22), json-error-split-long (2026-10-22).
 
 ## Slower than Loki on first load
 
@@ -100,9 +100,9 @@ None measured.
 | `loki_api_v1_index_volume` | 1 × 4 ranges | 4 same | worst 0.41s / 0.41s (24h) | 0.11s / 0.10s | differs; 1 slower than Loki cold |
 | `loki_api_v1_label_name_values` | 6 × 4 ranges | 24 same | worst 0.71s / 0.00s (24h) | 0.08s / 0.09s | differs |
 | `loki_api_v1_labels` | 6 × 4 ranges | 24 same | worst 0.73s / 0.00s (24h) | 0.04s / 0.04s | differs |
-| `loki_api_v1_query` | 14 × 1 ranges | 14 same | worst 0.20s / 0.19s (instant) | 0.51s / 0.48s | same |
-| `loki_api_v1_query_range` | 142 × 6 ranges | 15 faster, 12 fixed, 437 same, 1 slower | worst 22.48s / 2.63s (24h) | 4.70s / 0.04s | differs; 49 slower than Loki cold |
-| `metric-series-identity` | 19 × 6 ranges | 6 faster, 2 fixed, 50 same | worst 8.55s / 8.62s (7d) | — / — | differs; 1 slower than Loki cold |
+| `loki_api_v1_query` | 16 × 1 ranges | 16 same | worst 0.20s / 0.19s (instant) | 0.51s / 0.48s | same |
+| `loki_api_v1_query_range` | 152 × 6 ranges | 15 faster, 12 fixed, 477 same, 1 slower | worst 22.48s / 2.63s (24h) | 4.70s / 0.04s | differs; 49 slower than Loki cold |
+| `metric-series-identity` | 31 × 6 ranges | 6 faster, 2 fixed, 92 same | worst 8.55s / 8.62s (7d) | — / — | differs; 1 slower than Loki cold |
 | `operator-sum` | 3 × 4 ranges | 12 same | worst 0.44s / 0.43s (24h) | 5.40s / 0.08s | same |
 | `operator-topk` | 1 × 4 ranges | 4 same | worst 0.48s / 0.25s (24h) | 5.52s / 0.08s | differs |
 | `parsed-label-series-identity` | 6 × 4 ranges | 24 same | worst 7.93s / 0.40s (24h) | 5.04s / 0.07s | same; 3 slower than Loki cold |
@@ -136,8 +136,9 @@ None measured.
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.07s / 0.06s (1h) | 0.02s / 0.02s | same |
 | `semantics/pattern-line-filter-anchoring` | 9 × 2 ranges | 18 same | worst 0.38s / 0.02s (24h) | 0.04s / 0.03s | same; 3 slower than Loki cold |
 | `semantics/plain-name-after-parser-reads-stream-label` | 9 × 3 ranges | 17 same | worst 0.20s / 0.09s (3h) | 0.17s / 0.11s | same |
-| `semantics/unwrap-conversion-error` | 9 × 5 ranges | 1 faster, 2 fixed, 30 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 7 slower than Loki cold |
+| `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 7 slower than Loki cold |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.34s / 0.34s (24h) | 0.22s / 0.01s | same; 1 slower than Loki cold |
+| `semantics/unwrap-gate-parsefloat-divergences` | 12 × 5 ranges | 42 same | worst 0.91s / 0.86s (7d) | — / — | differs |
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 2 faster, 2 fixed, 23 same | worst 2.57s / 2.57s (24h) | 6.92s / 0.07s | differs |
 | `semantics/unwrap-sample-validity` | 14 × 4 ranges | 1 faster, 37 same | worst 2.09s / 2.17s (24h) | — / — | differs |
 | `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 4 faster, 22 same | worst 8.55s / 8.62s (7d) | — / — | differs; 1 slower than Loki cold |
