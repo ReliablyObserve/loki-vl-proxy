@@ -181,6 +181,7 @@
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
     "loki_api_v1_query": [
+      "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/series_limit_routes_test.go",
@@ -482,6 +483,11 @@
       "internal/proxy/plain_stream_labels_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go"
     ],
+    "semantics/scalar-sample-time-units": [
+      "internal/proxy/binary_matching_test.go",
+      "internal/proxy/instant_result_type_test.go",
+      "test/e2e-compat/instant_result_type_test.go"
+    ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
@@ -574,7 +580,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 302,
+  "registry_items": 303,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -625,6 +631,10 @@
       "operator-configurable-limits",
       "semantics/backend-aborted-response"
     ],
+    "internal/proxy/binary_matching_test.go": [
+      "loki_api_v1_query",
+      "semantics/scalar-sample-time-units"
+    ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -667,7 +677,8 @@
     ],
     "internal/proxy/instant_result_type_test.go": [
       "loki_api_v1_query",
-      "semantics/instant-result-type-missing"
+      "semantics/instant-result-type-missing",
+      "semantics/scalar-sample-time-units"
     ],
     "internal/proxy/instant_unwrap_sum_test.go": [
       "profiles/sanitized-json-key-grouping"
@@ -1008,7 +1019,8 @@
     ],
     "test/e2e-compat/instant_result_type_test.go": [
       "loki_api_v1_query",
-      "semantics/instant-result-type-missing"
+      "semantics/instant-result-type-missing",
+      "semantics/scalar-sample-time-units"
     ],
     "test/e2e-compat/json_filter_pushdown_test.go": [
       "parser-error-and-label-collision",
@@ -1142,7 +1154,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 106,
+  "tests_with_markers": 107,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1249,5 +1261,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 110
+  "wired_items": 111
 }

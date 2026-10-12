@@ -117,4 +117,5 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |
 | `semantics/instant-result-type-missing` — An instant query answers its failure status and a resultType, like Loki (fixed) | #735 | 1 | 2 |
+| `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |
