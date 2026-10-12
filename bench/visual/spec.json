@@ -331,6 +331,19 @@
    ]
   },
   {
+   "id": "explore-absent-over-time",
+   "kind": "explore",
+   "query": "absent_over_time({service_name=\"api-gateway\"} | json | nonexistant_field=\"foo\" [$__auto])",
+   "covers": [
+    "semantics/absent-over-time-semantics",
+    "heavy-metric-fetch-bounds",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/absent-over-time-semantics"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
