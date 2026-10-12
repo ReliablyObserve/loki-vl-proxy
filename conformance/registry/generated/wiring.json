@@ -219,6 +219,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
+      "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -482,7 +483,9 @@
       "internal/translator/unwrap_gate_property_test.go"
     ],
     "semantics/unwrap-range-last-point": [
-      "internal/proxy/unwrap_ungrouped_sum_differential_test.go"
+      "internal/proxy/unwrap_range_last_point_test.go",
+      "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
+      "test/e2e-compat/unwrap_range_end_sample_test.go"
     ],
     "semantics/unwrap-rate-ungrouped-sum-per-stream": [
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
@@ -536,12 +539,14 @@
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "internal/proxy/unwrap_range_last_point_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 299,
+  "registry_items": 301,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -846,6 +851,10 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "status-400"
     ],
+    "internal/proxy/unwrap_range_last_point_test.go": [
+      "semantics/unwrap-range-last-point",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/unwrap_ungrouped_sum_differential_test.go": [
       "metric-series-identity",
       "semantics/unwrap-range-last-point",
@@ -1046,6 +1055,11 @@
       "semantics/unwrap-conversion-error-stored-value-overwritten",
       "status-400"
     ],
+    "test/e2e-compat/unwrap_range_end_sample_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-range-last-point",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/unwrap_sample_validity_test.go": [
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
@@ -1064,7 +1078,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 96,
+  "tests_with_markers": 98,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1145,6 +1159,7 @@
     "semantics/label-replace-new-label",
     "semantics/log-entries-differ-same-count",
     "semantics/logfmt-existence-filter-ungrouped-sum",
+    "semantics/native-buckets-epoch-grid-unaligned-start-v140",
     "semantics/non-sum-vector-aggregation-unreduced",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/parse-error-text-parity",
@@ -1164,6 +1179,7 @@
     "semantics/unwrap-over-time-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-response-limit",
+    "semantics/unwrap-stddev-stdvar-range-last-point",
     "semantics/unwrap-sum-without-collapses",
     "service-name-derivation",
     "severity/detected-level-filter-json-level",
