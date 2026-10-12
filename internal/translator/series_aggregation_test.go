@@ -71,6 +71,7 @@ func TestSeriesLevelOuterAggregationsKeepSeriesIdentity(t *testing.T) {
 		},
 	} {
 		got, err := TranslateLogQL(tc.logql)
+		got = withoutDetectedLevelShape(got)
 		if err != nil || got != tc.want {
 			t.Errorf("%s:\n got %s (%v)\nwant %s", tc.logql, got, err, tc.want)
 		}

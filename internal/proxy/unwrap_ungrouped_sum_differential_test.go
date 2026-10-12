@@ -66,6 +66,9 @@ type vlEmulator struct {
 	rows    []emuRow
 	field   string // the unwrapped label
 	version string // "" answers no version
+	// deriveLevel is Loki's detected_level of a row (its stored level field and
+	// line), applied where the translator's detected_level pipe chain is.
+	deriveLevel func(level, msg string) string
 
 	mu    sync.Mutex
 	calls []emuCall
@@ -255,7 +258,13 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	// parsers keep every generated row (all values are numbers), and the window
 	// phase filter of a window shorter than the step keeps the lines inside one.
 	var phaseAnchor, phaseStep, phaseWindow int64
+	derivedLevel := false
 	for _, pipe := range pipes[:first] {
+		// The translator's detected_level chain ends by writing the field: the
+		// emulator applies Loki's rule to the row instead of running the pipes.
+		if pipe == `format "<__dl>" as detected_level` {
+			derivedLevel = true
+		}
 		if m := emuPhaseMathRE.FindStringSubmatch(pipe); m != nil {
 			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
 			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
@@ -298,6 +307,9 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 		}
 		for k, v := range row.labels {
 			f[k] = v
+		}
+		if derivedLevel {
+			f["detected_level"] = e.deriveLevel(f["level"], f["_msg"])
 		}
 		recs = append(recs, emuRec{t: row.ts, f: f})
 	}

@@ -113,7 +113,7 @@ func TestOn_BinaryMatchesBySubset(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Left side has no "error" in the query; right side has level="error".
 		// Dispatch by query content — safe for concurrent left+right fetches.
-		if strings.Contains(r.FormValue("query"), "error") {
+		if strings.Contains(r.FormValue("query"), `level:="error"`) {
 			// Right side: rate({app="a",level="error"}[5m])
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","level":"error"},"value":[1609459200,"10"]}

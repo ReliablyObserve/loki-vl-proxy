@@ -1508,7 +1508,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		metricObj := mv.GetObject()
 		var metric map[string]string
 		if streamGrouped {
-			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
+			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), strings.TrimSpace(string(metricObj.Get("detected_level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
 			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
 			}
@@ -1724,6 +1724,12 @@ type metricSeriesCacheEntry struct {
 }
 
 func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
+	if slices.Contains(groupBy, "_stream") && slices.Contains(groupBy, "level") && slices.Contains(groupBy, "detected_level") {
+		// The rows are labelled from their level field (buildMetricSeriesEntry):
+		// the derivation pipes would only make the row query slower and keep the
+		// pipe-free row count precheck from running.
+		baseQuery = withoutDerivedLevelChain(baseQuery)
+	}
 	params := url.Values{}
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
@@ -1889,7 +1895,9 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 
 // buildMetricSeriesEntry constructs the label maps and series key for a given
 // (_stream, level) pair. Called once per distinct stream identity per request.
-func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
+// detectedLevel is the value VictoriaLogs computed for the group (the
+// translator's detected_level pipes); empty, it is the level or unknown.
+func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr, detectedLevel string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
 	rawStreamLabels := parseStreamLabels(streamStr)
 	streamLabels := make(map[string]string, len(rawStreamLabels))
 	for k, v := range rawStreamLabels {
@@ -1898,6 +1906,9 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 	if levelStr != "" {
 		streamLabels["level"] = levelStr
 		streamLabels["detected_level"] = levelStr
+	}
+	if detectedLevel != "" {
+		streamLabels["detected_level"] = detectedLevel
 	}
 	if strings.TrimSpace(streamLabels["detected_level"]) == "" {
 		streamLabels["detected_level"] = "unknown"
