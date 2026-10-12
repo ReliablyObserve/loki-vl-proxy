@@ -484,13 +484,11 @@ func (h *topKHeap) Pop() any {
 	return last
 }
 
-// better reports whether a ranks before b; ties break by label order.
+// better reports whether a ranks before b; NaN ranks last and ties break by
+// label order.
 func (h *topKHeap) better(a, b topKCandidate) bool {
-	if a.value != b.value {
-		if h.descending {
-			return a.value > b.value
-		}
-		return a.value < b.value
+	if c := topKCompare(a.value, b.value, h.descending); c != 0 {
+		return c < 0
 	}
 	return h.keys[a.series] < h.keys[b.series]
 }
@@ -510,8 +508,11 @@ func (s *slidingStats) encodeTopK(ctx context.Context, withBytes bool, scale flo
 	var byGroup map[slot]*topKHeap
 	groupOf := make([]int32, len(s.keys))
 	// Every sample a heap holds is a sample of the response, which costs at
-	// least slidingPointOverheadBytes: the heaps of a response over the limit
-	// stop growing, so a grouped ranking cannot hold more than the limit allows.
+	// least slidingPointOverheadBytes there: the heaps of a response over the
+	// limit stop growing. In memory a held sample costs more than in the
+	// response (a 16-byte candidate plus its share of a heap header and map
+	// slot, about 60-100 bytes when every group is a single series), so this
+	// bounds the heaps to a small multiple of maxBytes, not to maxBytes.
 	kept, keptLimit, tooLarge := 0, maxBytes/slidingPointOverheadBytes, false
 	if topK.group == nil {
 		byStep = make([]*topKHeap, steps+1)

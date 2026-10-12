@@ -30,12 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and group, still bounded by the series that stats response holds), the matrix
   ranking of the other routes, and the instant vector. A `without` clause groups
   by every label but the listed ones and `__name__`; a label a series lacks
-  counts as empty, as in Loki. The series that ranked at some step now count
-  against `-max-stats-query-series` as Loki's `max_query_series` counts the
-  result of a topk (an error for a plain client, the first series with a
-  warning for Logs Drilldown), and a ranking whose samples could not fit in
-  `-backend-max-buffered-response-bytes` fails before the heaps hold them. NaN ranks last for `topk` and `bottomk` alike,
-  as in Loki's heaps. Where several series tie at the k-th place Loki's choice
+  counts as empty, as in Loki. On the window-stats route the series that ranked
+  at some step now count against `-max-stats-query-series`, as Loki's
+  `max_query_series` counts the result of a topk: an error for a plain client;
+  for Logs Drilldown a partial result with a warning, where Loki keeps the
+  series it met first and stops at that step, and the proxy keeps the limit's
+  worth of series with the most selected samples over the range. The other
+  routes (`applyTopKToMatrix` over a finished matrix) still limit the inner
+  metric before ranking. A ranking whose samples could not fit in
+  `-backend-max-buffered-response-bytes` fails before the heaps hold them.
+  NaN ranks after every number for `topk` and `bottomk` alike and never blocks
+  one (Loki's heaps, `pkg/logql/vector.go`): it stays in a group's result only
+  while the group has fewer than k numbers; the heap, the matrix, the instant
+  vector and the instant sort share one comparison. Where several series tie
+  at the k-th place Loki's choice
   follows the order of an unordered map (`range_vector.go` keeps its window in
   a Go map), so any choice is Loki's answer; the proxy takes label order so the
   answer is stable. The plain `topk(k, ...)` ranking was already per step; the

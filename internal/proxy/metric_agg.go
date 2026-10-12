@@ -157,10 +157,15 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	if postAgg, ok := parseTopKPostAgg(logql); ok {
 		return postAgg, true
 	}
-	// Spellings the typed parser rejects keep the textual split.
+	// A query the typed parser reads is not topk here (a binary expression
+	// around it, say); only one it rejects keeps the textual split, and only
+	// when the name's own parenthesis is the last character.
+	if _, err := logqlpkg.Parse(logql); err == nil {
+		return instantMetricPostAgg{}, false
+	}
 	for _, name := range []string{"topk", "bottomk"} {
 		prefix := name + "("
-		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
+		if !strings.HasPrefix(logql, prefix) || closingParen(logql, len(prefix)-1) != len(logql)-1 {
 			continue
 		}
 		args := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
@@ -252,6 +257,25 @@ func closingParen(s string, open int) int {
 		}
 	}
 	return -1
+}
+
+// topKCompare orders two sample values for topk, bottomk, sort and sort_desc:
+// negative when a ranks before b, positive after, zero when they tie. NaN ranks
+// last in both directions, as in Loki's heaps (pkg/logql/vector.go: a NaN is
+// the lowest of vectorByValueHeap and of vectorByReverseValueHeap, and a full
+// heap lets any number displace a NaN root), so it never blocks a number.
+func topKCompare(a, b float64, descending bool) int {
+	switch aNaN, bNaN := math.IsNaN(a), math.IsNaN(b); {
+	case aNaN && bNaN, a == b:
+		return 0
+	case aNaN:
+		return 1
+	case bNaN:
+		return -1
+	case (a > b) == descending:
+		return -1
+	}
+	return 1
 }
 
 // topKGroupKey identifies the group a series is ranked in: the values of the
@@ -758,21 +782,12 @@ func applyInstantSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 		return body
 	}
 
+	descending := postAgg.name != "sort" && postAgg.name != "bottomk"
 	sort.SliceStable(resp.Data.Result, func(i, j int) bool {
-		left := vectorPointValue(resp.Data.Result[i].Value)
-		right := vectorPointValue(resp.Data.Result[j].Value)
-		switch postAgg.name {
-		case "sort", "bottomk":
-			if left == right {
-				return metricKey(resp.Data.Result[i].Metric) < metricKey(resp.Data.Result[j].Metric)
-			}
-			return left < right
-		default:
-			if left == right {
-				return metricKey(resp.Data.Result[i].Metric) < metricKey(resp.Data.Result[j].Metric)
-			}
-			return left > right
+		if c := topKCompare(vectorPointValue(resp.Data.Result[i].Value), vectorPointValue(resp.Data.Result[j].Value), descending); c != 0 {
+			return c < 0
 		}
+		return metricKey(resp.Data.Result[i].Metric) < metricKey(resp.Data.Result[j].Metric)
 	})
 
 	if postAgg.name == "topk" || postAgg.name == "bottomk" {
