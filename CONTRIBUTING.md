@@ -52,6 +52,24 @@ Dependency-only pull requests (all commits `build(deps):` / `build(deps-dev):`) 
 python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 ```
 
+## Compatibility Rules
+
+Loki defines what clients observe; VictoriaLogs is where the data lives. Every change
+keeps Loki's behaviour (responses, series, values, errors) and chooses where to compute
+it in this order:
+
+1. **VictoriaLogs first.** If a VictoriaLogs query (native stats, pipes, filters) gives
+   Loki's exact result, use it. This is always the first choice: it keeps the proxy
+   light and lets VictoriaLogs do the work it is fast at.
+2. **The proxy when VictoriaLogs cannot.** If VictoriaLogs cannot produce Loki's exact
+   result, the proxy completes it: post-processing, merging buckets, interpolation,
+   re-aggregation or a bounded extra query. A difference from Loki or an approximation
+   is not an acceptable outcome. Say in the PR why VictoriaLogs could not do it.
+3. **Bounded either way.** Proxy-side work reads aggregated input where possible, stays
+   within configurable limits and answers a Loki-style error naming the flag when a
+   limit is reached. Evaluating raw log rows is the last resort and must stream with
+   bounded memory.
+
 ## Code Style
 
 - Follow standard Go conventions (`gofmt -s`, `go vet`)
