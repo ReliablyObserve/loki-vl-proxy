@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Contributing guide: where to compute Loki's result.** A new "Compatibility
+  Rules" section states the order every change follows: use VictoriaLogs when one
+  of its queries gives Loki's exact result; when it cannot, complete the result in
+  the proxy (post-processing, merging buckets, interpolation, re-aggregation or a
+  bounded extra query) rather than answering differently from Loki or with an
+  approximation; keep proxy-side work bounded, with raw-row evaluation as the last
+  resort.
+
 ## [2.11.0] - 2026-10-12
 
 ### Fixed
