@@ -617,3 +617,83 @@ func TestPatternLineFilterAnchoringCorpus(t *testing.T) {
 	}
 	t.Logf("%d filters x %d lines = %d verdicts, Loki keeps %d, mismatches %d", len(filters), len(lines), checks, keptBy, mismatches)
 }
+
+// TestPatternLineFilterSingleLiteralShapes checks the pipe-free translation of
+// the patterns with one literal (`L`, `<_>L`, `<_>L<_>`; `L<_>` and `<_>` are
+// plain regexps) against the port of Matcher.Test on every line over a small
+// alphabet, so each overlap of the literal with itself and with its
+// neighbours occurs: `aa` in `aaa`, `aba` in `ababa`, a literal at the start
+// or the end of the line, and two or more occurrences. Alternatives that mix
+// these shapes with the ones that need extract are checked the same way.
+//
+// conformance: semantics/pattern-line-filter-anchoring
+func TestPatternLineFilterSingleLiteralShapes(t *testing.T) {
+	type set struct {
+		alphabet []string
+		maxLen   int
+		literals []string
+	}
+	sets := []set{
+		{[]string{"a", "b", " "}, 7, []string{"a", "b", "aa", "ab", "ba", "aba", "aab", "bab", "aaa", "a ", " a", "a a", " "}},
+		{[]string{".", "a", "*", "$", "^", "\\"}, 4, []string{".", "a.", ".*", "$", "a$", "^a", "\\", ".a"}},
+		{[]string{"<", "&", "lt;", "a", "\n"}, 4, []string{"<", "&", "&lt;", "<a", "\n", "a\n"}},
+	}
+	// Patterns that need the extract pipe, to be or-ed with the pipe-free ones.
+	withExtract := []string{"<_>a<_>b", "a<_>a", "<_>a<_>a<_>"}
+	checked, kept := 0, 0
+	for _, s := range sets {
+		var lines []string
+		var gen func(prefix string, n int)
+		gen = func(prefix string, n int) {
+			lines = append(lines, prefix)
+			if n == 0 {
+				return
+			}
+			for _, c := range s.alphabet {
+				gen(prefix+c, n-1)
+			}
+		}
+		gen("", s.maxLen)
+		var filters [][]string
+		for _, lit := range s.literals {
+			for _, shape := range []string{"L", "<_>L", "<_>L<_>", "L<_>", "<_>L <_>"} {
+				p := strings.ReplaceAll(shape, "L", lit)
+				filters = append(filters, []string{p})
+				filters = append(filters, []string{p, "<_>" + lit}, []string{p, withExtract[len(filters)%len(withExtract)]})
+			}
+		}
+		for _, f := range filters {
+			for _, op := range []string{"|>", "!>"} {
+				tp := translatePattern(t, op, f)
+				for _, line := range lines {
+					want := lokiPatternVerdict(op, f, line)
+					if want {
+						kept++
+					}
+					checked++
+					if got := tp.keeps(t, line); got != want {
+						t.Fatalf("%s %q on %q: proxy keeps=%v, Loki keeps=%v\n  LogsQL: %s", op, f, line, got, want, tp.logsql)
+					}
+				}
+			}
+		}
+	}
+	if kept == 0 || kept == checked {
+		t.Fatalf("vacuous: Loki keeps %d of %d verdicts", kept, checked)
+	}
+	t.Logf("%d verdicts, Loki keeps %d, 0 mismatches", checked, kept)
+}
+
+// TestPatternLineFilterSingleLiteralNeedsNoPipe pins which patterns are
+// answered by a filter alone and which still extract.
+func TestPatternLineFilterSingleLiteralNeedsNoPipe(t *testing.T) {
+	for pattern, pipe := range map[string]bool{
+		"<_>": false, "foo<_>": false, "foo": false, "<_>foo": false, "<_>foo<_>": false, "<_> GET <_>": false,
+		"foo<_>bar": true, "<_>a<_>b": true, "<_>a<_>b<_>": true, "a<_>b<_>": true, "<_> a <_> b": true,
+	} {
+		tp := translatePattern(t, "|>", []string{pattern})
+		if got := strings.Contains(tp.logsql, "| extract"); got != pipe {
+			t.Errorf("%q: extract=%v, want %v: %s", pattern, got, pipe, tp.logsql)
+		}
+	}
+}

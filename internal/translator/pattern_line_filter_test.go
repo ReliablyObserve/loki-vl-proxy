@@ -27,7 +27,7 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 		{`{namespace="prod"} |> "a <_>" or "" != "x" or "y"`, `namespace:="prod" ~"(?:(?s)a .+)|(?:^$)" NOT ~"x|y"`},
 		{`{namespace="prod"} | json |> "" != "x"`, `namespace:="prod" | unpack_json | filter ~"^$" NOT ~"x"`},
 		{`{namespace="prod"} |> "a <_>" != "x"`, `namespace:="prod" ~"(?s)a .+" NOT ~"x"`},
-		{`{namespace="prod"} |> "a" OR "b"`, `namespace:="prod" ~"(?:a$)|(?:b$)" | extract "a<plain:__lvp_pf0_r>" from _msg | extract "b<plain:__lvp_pf1_r>" from _msg | filter (_msg:~"a$" __lvp_pf0_r:"") or (_msg:~"b$" __lvp_pf1_r:"") | delete __lvp_pf*`},
+		{`{namespace="prod"} |> "a" OR "b"`, `namespace:="prod" ((_msg:~"(?s)a$" NOT _msg:~"(?s)a.") or (_msg:~"(?s)b$" NOT _msg:~"(?s)b."))`},
 		{`{namespace="prod"} !> "" |> "GET <_>"`, `namespace:="prod" NOT ~"^$" ~"(?s)GET .+"`},
 		{`{namespace="prod"} | json !> ""`, `namespace:="prod" | unpack_json | filter NOT ~"^$"`},
 		{`{namespace="prod"} | json |> "" | level="info"`, `namespace:="prod" | unpack_json | filter ~"^$" | filter level:="info"`},
@@ -40,7 +40,7 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 		{`count_over_time({namespace="prod"} |> "" != "x" [5m])`, `namespace:="prod" ~"^$" NOT ~"x" | stats count()`},
 		{`count_over_time({namespace="prod"} !> "" [5m])`, `namespace:="prod" NOT ~"^$" | stats count()`},
 		// Non-empty patterns follow Loki's matcher (semantics/pattern-line-filter-anchoring).
-		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" ~"(?s)^.+ GET .+" | extract "<plain:__lvp_pf0_1> GET <plain:__lvp_pf0_2>" from _msg | filter __lvp_pf0_1:* __lvp_pf0_2:* | delete __lvp_pf*`},
+		{`{namespace="prod"} |> "<_> GET <_>"`, `namespace:="prod" (_msg:~"(?s). GET ." NOT _msg:~"^ GET ")`},
 		{`{namespace="prod"} !> "foo <_>"`, `namespace:="prod" NOT ~"(?s)foo .+"`},
 	}
 	for _, c := range cases {

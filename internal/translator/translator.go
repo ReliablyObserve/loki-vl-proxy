@@ -3268,9 +3268,11 @@ const patternFilterScratch = "__lvp_pf"
 // at its first occurrence after the previous one (a leading literal may start
 // anywhere in the line), every capture must be non-empty, and a pattern that
 // ends on a literal must end the line there. A regexp backtracks to later
-// occurrences, so it is exact only for `<_>` and `literal<_>`. VictoriaLogs'
+// occurrences, so it is exact only for `<_>` and `literal<_>`. The other
+// patterns with one literal are exact as a pair of regexp filters
+// (exactSingleLiteralPatternFilter) and need no pipe. VictoriaLogs'
 // extract pipe searches each text at its first occurrence as Test does
-// (lib/logstorage/pattern.go apply), so the other patterns extract the line
+// (lib/logstorage/pattern.go apply), so the remaining patterns extract the line
 // into scratch fields, one per capture plus the text after a trailing
 // literal, and keep it when every capture is non-empty and that text is
 // empty. Under |> the regexp, a superset of Loki's lines, stays in front as a
@@ -3279,13 +3281,15 @@ const patternFilterScratch = "__lvp_pf"
 func translatePatternLineFilter(values []string, negative bool, seq *int) []string {
 	alts := make([]patternLineFilterAlt, len(values))
 	regexes := make([]string, len(values))
-	exact := true
+	exact, pipeFree := true, true
 	for i, value := range values {
 		alts[i] = planPatternLineFilter(value, *seq)
 		regexes[i] = alts[i].re
 		if alts[i].extract != "" {
-			exact = false
+			exact, pipeFree = false, false
 			*seq++
+		} else if alts[i].exact != "" {
+			exact = false
 		}
 	}
 	combined := regexes[0]
@@ -3299,10 +3303,33 @@ func translatePatternLineFilter(values []string, negative bool, seq *int) []stri
 		return []string{"~" + strconv.Quote(combined)}
 	}
 
+	if pipeFree {
+		// Every alternative is a filter on the line: no extract is needed.
+		terms := make([]string, len(alts))
+		for i, alt := range alts {
+			terms[i] = "_msg:~" + strconv.Quote(alt.re)
+			if alt.exact != "" {
+				terms[i] = alt.exact
+			}
+		}
+		keep := "(" + terms[0] + ")"
+		if len(terms) > 1 {
+			keep = "((" + strings.Join(terms, ") or (") + "))"
+		}
+		if negative {
+			return []string{"NOT " + keep}
+		}
+		return []string{keep}
+	}
+
 	var pipes, conds []string
 	for _, alt := range alts {
 		if alt.extract == "" {
-			conds = append(conds, "_msg:~"+strconv.Quote(alt.re))
+			if alt.exact != "" {
+				conds = append(conds, alt.exact)
+			} else {
+				conds = append(conds, "_msg:~"+strconv.Quote(alt.re))
+			}
 			continue
 		}
 		pipes = append(pipes, "| extract "+strconv.Quote(alt.extract)+" from _msg")
@@ -3342,6 +3369,9 @@ func WithoutPatternLineFilterExtracts(query string) string {
 // fields that keeps exactly Loki's lines.
 type patternLineFilterAlt struct {
 	re, extract, cond string
+	// exact, when set, is a LogsQL filter (no pipe) that keeps exactly Loki's
+	// lines; re is then only the superset regexp, and extract is empty.
+	exact string
 }
 
 func planPatternLineFilter(value string, id int) patternLineFilterAlt {
@@ -3387,6 +3417,10 @@ func planPatternLineFilter(value string, id int) patternLineFilterAlt {
 	if (len(nodes) == 1 && nodes[0].capture) || (len(nodes) == 2 && !nodes[0].capture && nodes[1].capture) {
 		return alt
 	}
+	alt.exact = exactSingleLiteralPatternFilter(nodes)
+	if alt.exact != "" {
+		return alt
+	}
 	if captures == 0 {
 		// A literal alone leaves the trailing field empty when the line does
 		// not hold it at all; the regexp says it does.
@@ -3395,6 +3429,56 @@ func planPatternLineFilter(value string, id int) patternLineFilterAlt {
 	alt.extract = ext.String()
 	alt.cond = strings.Join(cond, " ")
 	return alt
+}
+
+// exactSingleLiteralPatternFilter returns a LogsQL filter, with no pipe, that
+// keeps exactly the lines Loki's Matcher.Test accepts for a pattern with one
+// literal L, or "" for any other pattern. L is searched once, at its first
+// occurrence, and a later occurrence ends later, so "some occurrence is followed
+// by a character" is the same as "the first one is". With "after" = the regexp
+// (?s)L. (an occurrence followed by a character):
+//
+//	<_>L<_>  the first occurrence is not at the start and is followed by a
+//	         character: (?s).L.  and not ^L  (an occurrence at the start is the
+//	         first one)
+//	<_>L     the first occurrence is not at the start and ends the line: the
+//	         line ends with L after a character, (?s).L$, and no occurrence is
+//	         followed by a character (one that was would come first)
+//	L        the first occurrence ends the line: (?s)L$ and no "after"
+//
+// <_> and L<_> are plain regexps and are not handled here.
+func exactSingleLiteralPatternFilter(nodes []linePatternNode) string {
+	var lit string
+	var lead, trail bool
+	switch len(nodes) {
+	case 1:
+		lit = nodes[0].text
+	case 2:
+		lit, lead = nodes[0].text, nodes[0].capture
+		if lead {
+			lit = nodes[1].text
+		}
+	case 3:
+		if !nodes[0].capture || nodes[1].capture || !nodes[2].capture {
+			return ""
+		}
+		lit, lead, trail = nodes[1].text, true, true
+	default:
+		return ""
+	}
+	if lit == "" {
+		return ""
+	}
+	q := regexp.QuoteMeta(lit)
+	re := func(s string) string { return "_msg:~" + strconv.Quote(s) }
+	switch {
+	case lead && trail:
+		return re("(?s)."+q+".") + " NOT " + re("^"+q)
+	case lead:
+		return re("(?s)."+q+"$") + " NOT " + re("(?s)"+q+".")
+	default:
+		return re("(?s)"+q+"$") + " NOT " + re("(?s)"+q+".")
+	}
 }
 
 // linePatternNode is a literal or a capture of a Loki pattern.
