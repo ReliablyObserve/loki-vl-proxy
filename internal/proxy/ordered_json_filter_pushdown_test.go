@@ -1003,7 +1003,8 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
 		{`sum by (level_extracted, detected_level) (count_over_time({env="production"} | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, false, nil, nil},
+		// A filter on detected_level compares the derived value after the pipes that compute it.
+		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (a_b_c_d_e_f_g_h) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" [1m]))`, true, []string{"level"}, []string{"service_version"}},

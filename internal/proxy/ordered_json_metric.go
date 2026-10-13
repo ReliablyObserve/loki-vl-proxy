@@ -789,8 +789,19 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 		case stage.line != nil:
 			continue
 		case stage.filter != nil:
-			if !parsed || !orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted") {
+			// Loki's detected_level is on every line, parsed or not: a filter
+			// on it compares the derived value (it never rejects an unparsed
+			// line, so it cannot stand for the error drop) and `!= ""` always
+			// holds.
+			level := stage.filter.Field == detectedLevelLabel && plan.derivesLevel
+			if !parsed || !level && (!orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted")) {
 				return nil, nil, false
+			}
+			if level {
+				if stage.filter.Op != "!=" || stage.filter.Value != "" {
+					filters = append(filters, *stage.filter)
+				}
+				continue
 			}
 			filters = append(filters, *stage.filter)
 			if !stage.filter.Matches("") && !containsString(errorFilters, stage.filter.Field) {
@@ -869,12 +880,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		// the stored fields decide, which the raw evaluator derives.
 		return nil, false, false, nil
 	}
-	unpack := append([]string(nil), plan.unpackFields...)
-	for _, filter := range plan.pushdownFilters {
-		if !containsString(unpack, filter.Field) {
-			unpack = append(unpack, filter.Field)
-		}
-	}
+	unpack := plan.unpackKeys()
 	// A name_extracted label is computed after the plain unpack from a scratch
 	// unpack of the key name (translator.ExtractedLabelPipes); the plain unpack
 	// and the parse-risk probes read both keys, the probes with the stored
@@ -935,13 +941,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		}
 	}
 	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
-	chain := ""
-	if plan.derivesLevel {
-		// Reads the stored level fields and the line before the unpack below
-		// can make a body key look stored.
-		chain = " " + translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping)
-	}
-	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, chain) + compute
+	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, plan.levelChain()) + compute
 	for _, filter := range plan.pushdownFilters {
 		query += logsQLLabelFilter(filter)
 	}
@@ -994,6 +994,28 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
 	return body, err == nil, false, err
+}
+
+// unpackKeys lists the keys the pushdown unpacks: the grouped labels and the
+// filtered ones, except detected_level, which no key holds.
+func (plan *orderedJSONMetricPlan) unpackKeys() []string {
+	unpack := append([]string(nil), plan.unpackFields...)
+	for _, filter := range plan.pushdownFilters {
+		if !containsString(unpack, filter.Field) && (!plan.derivesLevel || filter.Field != detectedLevelLabel) {
+			unpack = append(unpack, filter.Field)
+		}
+	}
+	return unpack
+}
+
+// levelChain returns the pipes that compute detected_level for a plan reading
+// it, placed before the unpack so that the stored level fields and the line
+// decide, and a body key never looks stored.
+func (plan *orderedJSONMetricPlan) levelChain() string {
+	if !plan.derivesLevel {
+		return ""
+	}
+	return " " + translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping)
 }
 
 // splitPushdownKeys splits the labels a pushdown reads: the plain ones, every
@@ -1147,7 +1169,7 @@ func (plan *orderedJSONMetricPlan) requiredFields(base string) []string {
 	}
 	var fields []string
 	for _, filter := range plan.pushdownFilters {
-		if !filter.Matches("") && !containsString(fields, filter.Field) {
+		if !filter.Matches("") && !containsString(fields, filter.Field) && filter.Field != detectedLevelLabel {
 			fields = append(fields, filter.Field)
 		}
 	}
@@ -1374,15 +1396,22 @@ func (p *Proxy) detectedLevelStreamRisk(ctx context.Context, base string, start,
 // detectedLevelKeyNames lists the body keys Loki reads a level from.
 var detectedLevelKeyNames = translator.DetectedLevelFieldNames[1 : len(translator.DetectedLevelFieldNames)-1]
 
-// detectedLevelLineKey matches the mention of a level key in a JSON or logfmt
-// line: the key name after a non-word character, then its colon or equals sign.
-var detectedLevelLineKey = func() string {
+// detectedLevelNames is the alternation of the level key names, escaped.
+var detectedLevelNames = func() string {
 	names := make([]string, len(detectedLevelKeyNames))
 	for i, name := range detectedLevelKeyNames {
 		names[i] = regexp.QuoteMeta(name)
 	}
-	return `(?:^|[^A-Za-z0-9_.])(?:` + strings.Join(names, "|") + `)"?\s*[:=]`
+	return strings.Join(names, "|")
 }()
+
+// detectedLevelJSONKey matches a level key of a JSON line, quoted and followed
+// by a colon (a mention inside a string, such as "log level: high", does not
+// match); detectedLevelLogfmtKey matches one of a logfmt line.
+var (
+	detectedLevelJSONKey   = `"(?:` + detectedLevelNames + `)"\s*:`
+	detectedLevelLogfmtKey = `(?:^|\s)(?:` + detectedLevelNames + `)=`
+)
 
 // detectedLevelWordFilter passes the lines that hold a level key as a word,
 // which VictoriaLogs answers from its token index.
@@ -1409,14 +1438,18 @@ func detectedLevelStoredFilter() string {
 // twice, or spells one with a unicode escape. Loki takes the first level key
 // in document order (and, for a value that is not a known spelling, scans the
 // line), while the pipes of translator.BuildDetectedLevelChain read the keys
-// in a fixed order: a line with two of them can be read differently. The
-// pattern also matches mentions inside text, a superset that only costs the
-// raw evaluator.
+// in a fixed order: a line with two of them can be read differently. A line
+// starting with a brace is read for quoted keys, any other for logfmt keys.
+// The patterns also match a mention inside a longer string, a superset that
+// only costs the raw evaluator.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
 	const escapedKey = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`
-	repeated := detectedLevelLineKey + `(?s:.*)` + detectedLevelLineKey
+	const braced = `^\s*\{`
+	twice := func(key string) string { return key + `(?s:.*)` + key }
 	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" (_msg:~" + strconv.Quote(repeated) + ` or (_msg:~"\\\\u" _msg:~` + strconv.Quote(escapedKey) + ")) | limit 1"
+		" ((_msg:~" + strconv.Quote(braced) + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (-_msg:~" + strconv.Quote(braced) + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")" +
+		` or (_msg:~"\\\\u" _msg:~` + strconv.Quote(escapedKey) + ")) | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
@@ -1435,7 +1468,7 @@ func (p *Proxy) detectedLevelUnpackRisk(ctx context.Context, base string, start,
 		empty[i] = quoteLogsQLIdent("__lr_"+name) + `:=""`
 	}
 	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" _msg:~" + strconv.Quote(`^\s*\{(?s:.*)`+detectedLevelLineKey) +
+		" _msg:~" + strconv.Quote(`^\s*\{(?s:.*)`+detectedLevelJSONKey) +
 		" | unpack_json from _msg fields (" + strings.Join(names, ", ") + `) result_prefix "__lr_"` +
 		" | filter " + strings.Join(empty, " ") + " | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,6 +28,9 @@ type detectedLevelProbe struct {
 	vl     map[string]string // stored fields that are not stream labels
 	msg    string
 	want   string // the series' detected_level
+	// dropOnly marks lines with a parser error: Loki fails the plain `| json`
+	// query on them, so only the form that drops the error is valid.
+	dropOnly bool
 	// rawRows marks the lines the stats pushdown must not answer: the pipes of
 	// translator.BuildDetectedLevelChain would read them differently, or
 	// might, so a guard probe sends the query to the raw-row evaluator.
@@ -62,6 +66,14 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "stored level field", vl: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn"},
 	{name: "stored detected_level field", vl: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error"},
 	{name: "body detected_level key alone", msg: `{"detected_level":"verbose"}`, want: "unknown"},
+	// A mention of a level key inside a string is no second key.
+	{name: "level key mentioned in the message", msg: `{"level":"info","msg":"set log level=debug"}`, want: "info"},
+	{name: "level name followed by a colon inside a string", msg: `{"msg":"level: high","level":"warn"}`, want: "warn"},
+	{name: "stored severity field", vl: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error"},
+	// Malformed JSON is not JSON for Loki's ingest: the keyword scan reads it.
+	{name: "body detected_level key, syntax error", msg: `{"detected_level":"warn","x":{bad`, want: "warn", dropOnly: true},
+	{name: "body detected_level and level keys, syntax error", msg: `{"detected_level":"warn","level":"info","x":{bad`, want: "warn", dropOnly: true, rawRows: true},
+	{name: "level key, syntax error", msg: `{"level":"info","x":{bad`, want: "info", dropOnly: true, rawRows: true},
 }
 
 func (c detectedLevelProbe) row(ts time.Time) pushdownRow {
@@ -90,6 +102,9 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 			canonicalLabelsKey(map[string]string{"detected_level": probe.want}): {end.Unix(): "1"},
 		}
 		for _, pipeline := range []string{`| json`, `| json | drop __error__`, `| json | __error__=""`} {
+			if probe.dropOnly && pipeline != `| json | drop __error__` {
+				continue
+			}
 			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
 				query := `sum by (detected_level) (count_over_time({env="prod"} ` + pipeline + ` [5m]))`
 				srv, fake := newPushdownFakeVL(t, []pushdownRow{probe.row(s0.Add(100 * time.Second))}, nil)
@@ -120,6 +135,9 @@ func TestOrderedJSONDetectedLevelMixedRows(t *testing.T) {
 	var rows []pushdownRow
 	want := map[string]map[string]int{} // level -> function -> sum at the last step
 	for i, probe := range detectedLevelProbes {
+		if probe.dropOnly {
+			continue // the plain `| json` query fails on them, as in Loki
+		}
 		rows = append(rows, probe.row(s0.Add(time.Duration(100+i)*time.Second)))
 		if want[probe.want] == nil {
 			want[probe.want] = map[string]int{}
@@ -176,4 +194,97 @@ func detectedLevelQuery(t *testing.T, p *Proxy, query string, start, end time.Ti
 		return rec.Code, nil, rec.Body.String()
 	}
 	return rec.Code, decodeExtractedMatrix(t, rec.Body.Bytes()), ""
+}
+
+// A filter on detected_level compares Loki's structured metadata, on every
+// line whether or not its body parses, so it reads the derived value: the
+// raw-row evaluator filters on it, and the stats pushdown (also for Logs
+// Drilldown's detected_level breakdown, which is not the native histogram's)
+// applies the filter after the pipes that compute it, `!= ""` being always
+// true.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(5*time.Minute), s0.Add(5*time.Minute)
+	pick := func(clean bool) (rows []pushdownRow, levels []string) {
+		for i, probe := range detectedLevelProbes {
+			if probe.dropOnly || clean && probe.rawRows {
+				continue
+			}
+			rows = append(rows, probe.row(s0.Add(time.Duration(100+i)*time.Second)))
+			levels = append(levels, probe.want)
+		}
+		return rows, levels
+	}
+	for _, tc := range []struct {
+		name, pipeline string
+		keep           func(level string) bool
+		pushdown       bool   // the stats pushdown serves lines the pipes read like Loki
+		filter         string // the pipe the pushdown applies after the level pipes
+	}{
+		{"not empty", `| json | drop __error__, __error_details__ | detected_level != ""`, func(string) bool { return true }, true, ""},
+		{"equals", `| json | drop __error__ | detected_level="info"`, func(l string) bool { return l == "info" }, true, `| filter detected_level:="info"`},
+		{"regexp", `| json | drop __error__ | detected_level=~"warn|error"`, func(l string) bool { return l == "warn" || l == "error" }, true, `| filter detected_level:~"^(?:warn|error)$"`},
+		{"not equals", `| json | drop __error__ | detected_level!="unknown"`, func(l string) bool { return l != "unknown" }, true, `| filter -detected_level:="unknown"`},
+		// No error drop: a parse error survives a filter on detected_level, which
+		// holds for every line, so the raw-row evaluator answers.
+		{"without the error drop", `| json | detected_level="info"`, func(l string) bool { return l == "info" }, false, ""},
+		{"error label", `| json | __error__="" | detected_level!=""`, func(string) bool { return true }, false, ""},
+	} {
+		for _, clean := range []bool{false, true} {
+			name := tc.name + " all probes"
+			if clean {
+				name = tc.name + " lines the pipes read like Loki"
+			}
+			t.Run(name, func(t *testing.T) {
+				rows, levels := pick(clean)
+				want := map[string]map[int64]string{}
+				counts := map[string]int{}
+				for _, level := range levels {
+					if tc.keep(level) {
+						counts[level]++
+					}
+				}
+				for level, n := range counts {
+					want[canonicalLabelsKey(map[string]string{"detected_level": level})] = map[int64]string{end.Unix(): strconv.Itoa(n)}
+				}
+				if len(want) == 0 {
+					t.Fatal("fixture: the filter keeps nothing")
+				}
+				query := `sum by (detected_level) (count_over_time({env="prod"} ` + tc.pipeline + ` [5m]))`
+				for _, drilldown := range []bool{false, true} {
+					srv, fake := newPushdownFakeVL(t, rows, nil)
+					p := newFilterPushdownProxy(t, srv.URL)
+					fake.stored = p.labelTranslator.ToVL
+					params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"300"}}
+					r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+					if drilldown {
+						r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+					}
+					rec := httptest.NewRecorder()
+					p.handleQueryRange(rec, r)
+					if rec.Code != http.StatusOK {
+						t.Fatalf("drilldown=%v: status %d %s", drilldown, rec.Code, rec.Body)
+					}
+					if got := decodeExtractedMatrix(t, rec.Body.Bytes()); !reflect.DeepEqual(got, want) {
+						t.Fatalf("drilldown=%v: got %v, want %v", drilldown, got, want)
+					}
+					fake.mu.Lock()
+					// Logs Drilldown's detected_level breakdown has the shape of its
+					// native histogram, but the label translator maps detected_level
+					// to level, so the native route is never exact for it
+					// (orderedJSONNativeGroupingIsExact): lines the pipes read like
+					// Loki are answered by the pushdown, behind its guard probes,
+					// with the filter applied after the pipes.
+					if clean && tc.pushdown && (fake.raw != 0 || len(fake.stats) != 1 || len(fake.guards) == 0) {
+						t.Errorf("drilldown=%v: expected a guarded pushdown answer without raw rows: raw=%d stats=%d guards=%d", drilldown, fake.raw, len(fake.stats), len(fake.guards))
+					}
+					if clean && tc.pushdown && tc.filter != "" && !strings.Contains(fake.stats[0], tc.filter+" | stats by (detected_level)") {
+						t.Errorf("drilldown=%v: filter not applied after the level pipes: %s", drilldown, fake.stats[0])
+					}
+					fake.mu.Unlock()
+				}
+			})
+		}
+	}
 }

@@ -18,7 +18,11 @@ why: |
   Measured against Loki v3.7.7 on VictoriaLogs v1.52.0 with the e2e probe
   fixtures: `{"msg":"x","severity":"error","level":"info"}` is error in Loki and
   info in the proxy; a stream with the label `detected_level="INFO"` is INFO in
-  Loki and info in the proxy. The JSON pipeline route (`| json`, #760) probes
+  Loki and info in the proxy. Logs Drilldown's detected_level breakdown
+  (`| json | drop __error__, __error_details__ | detected_level != ""`) is not
+  on this route: the label translator maps detected_level to level, so the
+  native histogram is never exact for it and the JSON pipeline route answers.
+  The JSON pipeline route (`| json`, #760) probes
   for these lines and answers them with the raw-row evaluator, which is exact;
   the native route has no raw-row fallback for them.
 request:

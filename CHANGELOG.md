@@ -26,13 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unknown`. The row evaluator now derives the level with the derivation the
   log lines use, and a body `detected_level` key is renamed
   `detected_level_extracted` as in Loki; a `detected_level` stream label keeps
-  its stored spelling. The stats pushdown computes the level in VictoriaLogs
-  with the pipes of the native metric path, and probes the window for the lines
-  those pipes read differently from Loki (two level keys, a level key
-  VictoriaLogs does not unpack, a `detected_level` stream label): one such line
-  sends the query to the raw-row evaluator. One extra bounded VictoriaLogs
-  round trip per uncached window; a query with `-detected-level-body-scan`
-  disabled uses the raw-row evaluator. The native metric route for a plain
+  its stored spelling. A filter on detected_level
+  (`| json | detected_level="info"`, Logs Drilldown's detected_level
+  breakdown) compares that value too, where it compared the stream's level or
+  the body key.
+  The stats pushdown computes the level in VictoriaLogs with the pipes of the
+  native metric route, and probes the window for the lines those pipes read
+  differently from Loki (two level keys, a level key VictoriaLogs does not
+  unpack, a `detected_level` stream label). One such line, and a line that only
+  looks like one (a body with both `level` and `severity`, as audit logs have),
+  sends the whole query to the raw-row evaluator: exact, but bounded by the row
+  limit, so a long range answers 502 where the pushdown answered 200. A clean
+  window costs three extra bounded VictoriaLogs queries, cached with the other
+  probes; with `-detected-level-body-scan=false` the raw-row evaluator answers.
+  The plain and `| logfmt` logs volume shapes
+  (`sum by (level, detected_level)`) take the same pipes, so a stream without a
+  level label now gets the level of its body (a `level=warn` key or a keyword)
+  as in Loki, where it was `unknown`. The native metric route for a plain
   selector still reads level keys in the pipes' fixed order and overwrites a
   `detected_level` stream label
   (`semantics/detected-level-pipes-known-differences`, open).

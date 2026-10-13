@@ -19,7 +19,7 @@ why: |
   detected_level is detected_level_extracted, and a detected_level stream label
   keeps its stored value (the derived one moves to detected_level_extracted).
 
-  Measured against Loki v3.7.7 on 29 probe lines (the e2e test pins each):
+  Measured against Loki v3.7.7 on 35 probe lines (the e2e test pins each):
   `{"level":30,"msg":"hi"}` is unknown; a pino error line
   (`{"level":50,...,"err":{"type":"Error"}}`) is error; `{"level":"notice"}` is
   unknown but `{"level":"notice","msg":"error connecting"}` is error;
@@ -35,20 +35,36 @@ why: |
   value. The row evaluator (plain `| json`, `__error__!=""`, every pushdown
   fallback) gives each row Loki's structured metadata before any stage runs,
   using the derivation the log lines use (deriveRowLevel), so a body
-  detected_level key is renamed and filters on detected_level read it. The
-  stats pushdown computes the level in VictoriaLogs with the pipes of the
-  native metric route (translator.BuildDetectedLevelChain), placed before the
-  unpack of any other label, and a guard (detectedLevelStreamRisk,
+  detected_level key is renamed and a filter on detected_level
+  (`| json | detected_level="info"`) compares the derived value. The stats
+  pushdown computes the level in VictoriaLogs with the pipes of the native
+  metric route (translator.BuildDetectedLevelChain), placed before the unpack
+  of any other label, and a guard (detectedLevelStreamRisk,
   detectedLevelKeysRisk, detectedLevelUnpackRisk, cached with the other
   pushdown probes) hands the query to the raw-row evaluator when the window
   holds a line those pipes read differently from Loki: a detected_level stream
   label, two mentions of a level key (the pipes read keys in a fixed order),
   or a level key unpack_json yields no value for (nested other than log.level,
-  leading whitespace, text after the closing brace, a syntax error). With
+  leading whitespace, text after the closing brace, a syntax error). A filter
+  on detected_level is applied after the pipes (`!= ""` always holds), also for
+  Logs Drilldown's detected_level breakdown, which is not the native histogram
+  (the label translator maps detected_level to level, so
+  orderedJSONNativeGroupingIsExact is false for it). With
   -detected-level-body-scan=false the raw-row evaluator answers, as only the
-  stored fields decide. Cost: one extra bounded VictoriaLogs round trip per
-  uncached window; a window with a guarded line reads raw rows up to the row
-  limit, like the other parse-risk fallbacks.
+  stored fields decide.
+
+  The plain and `| logfmt` logs volume shapes (`sum by (level,
+  detected_level)`) take the same pipes: a stream without a level label gets
+  the level of its body (a `level=warn` key or a keyword), as in Loki, where
+  main answered `unknown`. The plain shape has no raw-row fallback, so it runs
+  without the guard (see semantics/detected-level-pipes-known-differences).
+
+  Cost: three extra bounded VictoriaLogs queries per uncached window, cached
+  with the other probes. The guard is a superset of the lines the pipes read
+  differently: a body with both `level` and `severity` (audit logs) trips it
+  although the pipes might agree. One such line sends the whole query to the
+  raw-row evaluator, which is exact and bounded by the row limit, so a long
+  range answers 502 where the pushdown answered 200 (DLV2 and DLV3 of the A/B).
 request:
   method: GET
   path: /loki/api/v1/query_range

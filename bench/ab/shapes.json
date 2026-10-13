@@ -1780,6 +1780,18 @@
       "severity-detected-level-derivation",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "DLV6 drilldown detected_level breakdown, json",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | drop __error__, __error_details__ | detected_level != \"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/json-metric-detected-level-derivation",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
     }
    ]
   }

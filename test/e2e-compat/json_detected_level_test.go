@@ -105,7 +105,13 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "severity before level", msg: `{"msg":"x","severity":"error","level":"info"}`, want: "error", route: "raw"},
 	{name: "level before severity", msg: `{"level":"info","severity":"error"}`, want: "info", route: "raw"},
 	{name: "body detected_level key alone", msg: `{"detected_level":"verbose"}`, want: "unknown", route: "stats"},
+	{name: "level key mentioned in the message", msg: `{"level":"info","msg":"set log level=debug"}`, want: "info", route: "stats"},
+	{name: "level name followed by a colon inside a string", msg: `{"msg":"level: high","level":"warn"}`, want: "warn", route: "stats"},
 	{name: "syntax error after the level", msg: `{"level":"warn","x":{bad`, want: "warn", dropOnly: true, route: "raw"},
+	{name: "body detected_level key, syntax error", msg: `{"detected_level":"warn","x":{bad`, want: "warn", dropOnly: true},
+	{name: "body detected_level and level keys, syntax error", msg: `{"detected_level":"warn","level":"info","x":{bad`, want: "warn", dropOnly: true, route: "raw"},
+	{name: "level key, syntax error", msg: `{"level":"info","x":{bad`, want: "info", dropOnly: true, route: "raw"},
+	{name: "stored severity metadata", meta: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
 	{name: "stream level, unknown spelling", labels: map[string]string{"level": "notice"}, msg: `{"n":1}`, want: "notice", route: "stats"},
 	{name: "stream severity", labels: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
 	{name: "stream level wins over the body", labels: map[string]string{"level": "INFO"}, msg: `{"level":"error"}`, want: "info", route: "stats"},
@@ -182,5 +188,65 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 				}
 			})
 		}
+	}
+
+	// A filter on detected_level compares Loki's structured metadata of every
+	// line, and Logs Drilldown's detected_level breakdown (not the native
+	// histogram: the label translator maps detected_level to level) keeps its
+	// guard. One selector holds the lines the VictoriaLogs pipes read like
+	// Loki and one the lines they do not.
+	var clean, risky, valid []string
+	for i, probe := range detectedLevelProbes {
+		switch {
+		case probe.route == "stats":
+			clean = append(clean, apps[i])
+		case probe.route == "raw":
+			risky = append(risky, apps[i])
+		}
+		if !probe.dropOnly {
+			valid = append(valid, apps[i])
+		}
+	}
+	drilldown := map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"}
+	for _, tc := range []struct {
+		name     string
+		selector []string
+		pipeline string
+		headers  map[string]string
+		guarded  bool // the selector holds only lines the pipes read like Loki
+	}{
+		{"Drilldown breakdown, clean lines", clean, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, true},
+		{"Drilldown breakdown, guarded lines", risky, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, false},
+		{"equals, clean lines", clean, `| json | drop __error__ | detected_level="info"`, nil, true},
+		{"regexp, guarded lines", risky, `| json | drop __error__ | detected_level=~"warn|error|INFO"`, nil, false},
+		{"not equals, all lines", append(append([]string{}, clean...), risky...), `| json | drop __error__ | detected_level!="unknown"`, nil, false},
+		{"without the error drop, valid lines", valid, `| json | detected_level="info"`, nil, false},
+		{"error label, valid lines", valid, `| json | __error__="" | detected_level!=""`, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := `sum by (detected_level) (count_over_time({app=~"` + strings.Join(tc.selector, "|") + `"} ` + tc.pipeline + ` [1m]))`
+			loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, tc.headers)
+			rec.reset()
+			assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, tc.headers))
+			calls := rec.reset()
+			assertSlidingParity(t, query+" [proxy]", loki, slidingRangeSeries(t, proxyURL, query, start, end, time.Minute, tc.headers))
+			if !tc.guarded {
+				return
+			}
+			stats, guards, raw := 0, 0, 0
+			for _, call := range calls {
+				switch {
+				case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
+					stats++
+				case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
+					guards++
+				case strings.HasPrefix(call, "/select/logsql/query "):
+					raw++
+				}
+			}
+			if stats != 1 || guards == 0 || raw != 0 {
+				t.Errorf("expected one guarded stats request without raw rows: stats=%d guards=%d raw=%d", stats, guards, raw)
+			}
+		})
 	}
 }

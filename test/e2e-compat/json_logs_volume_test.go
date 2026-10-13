@@ -230,11 +230,13 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 			jsonVolumeStreamLine{ts: at(4), level: "", msg: fmt.Sprintf(`{"level":["error"],"n":%d}`, i)},
 		)
 		// Level-less lines carry no level in the body, so Loki's ingest-time
-		// detected_level is unknown for them.
+		// detected_level is unknown for them; the last line's body holds one.
 		fixture[plain] = append(fixture[plain],
 			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf("request served %d", i)},
 			jsonVolumeStreamLine{ts: at(1), level: "debug", msg: fmt.Sprintf("cache probe %d", i)},
 			jsonVolumeStreamLine{ts: at(2), level: "", msg: fmt.Sprintf("op=select n=%d", i)},
+			// Loki's ingest reads a level key of the body whatever the query parses.
+			jsonVolumeStreamLine{ts: at(3), level: "", msg: fmt.Sprintf("level=warn op=update n=%d", i)},
 		)
 		fixture[logfmt] = append(fixture[logfmt],
 			jsonVolumeStreamLine{ts: at(0), level: "info", msg: fmt.Sprintf("level=error msg=collision n=%d", i)},

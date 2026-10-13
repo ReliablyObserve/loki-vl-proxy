@@ -272,13 +272,22 @@ func lokiLevelVolumeReference(lines []jsonVolumeLine, parser, fn string, groupBy
 			case parser == "logfmt":
 				level = slidingLogfmtFields(line.msg)["level"]
 			}
+			// Loki's ingest reads the body of a stream without a level for
+			// detected_level whatever the query parses (a logfmt or JSON level
+			// key here).
+			detected := level
+			if detected == "" {
+				if detected = slidingLogfmtFields(line.msg)["level"]; detected == "" {
+					detected = vlUnpackJSONLevel(line.msg)
+				}
+			}
 			labels := map[string]string{}
 			for _, name := range groupBy {
 				switch {
 				case name == "level" && level != "":
 					labels[name] = level
-				case name == "detected_level" && level != "":
-					labels[name] = level
+				case name == "detected_level" && detected != "":
+					labels[name] = detected
 				case name == "detected_level":
 					labels[name] = "unknown"
 				}
@@ -546,7 +555,8 @@ func TestLogfmtParseRiskPatterns(t *testing.T) {
 
 // Grafana's logs volume for a plain selector and for `| logfmt` groups by the
 // detected_level alias. VictoriaLogs stats buckets answer both: level keeps
-// the stored value, detected_level mirrors it and falls back to unknown.
+// the stored value, detected_level is Loki's value for the line (the stream's
+// level, else the body's level key or keyword) and unknown without any.
 func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	var lines []jsonVolumeLine
@@ -573,17 +583,6 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 1 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
-			lines := lines
-			if tc.parser == "" {
-				// Loki detects a body level at ingest for streams without one;
-				// the plain fixture keeps level-less bodies free of levels.
-				lines = append([]jsonVolumeLine(nil), lines...)
-				for i := range lines {
-					if lines[i].level == "" {
-						lines[i].msg = strings.ReplaceAll(lines[i].msg, "level=warn", "stage=load")
-					}
-				}
-			}
 			srv, fake := newJSONVolumeFakeVL(t, lines)
 			p := newSlidingTestProxy(t, srv.URL)
 			want := lokiLevelVolumeReference(lines, tc.parser, "count_over_time", []string{"level", "detected_level"}, start, end, time.Minute, time.Minute)
