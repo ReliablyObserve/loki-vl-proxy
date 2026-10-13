@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.15.1] - 2026-10-14
-
 ### Fixed
 
-- The query translator no longer panics on a label filter after `| json` or `| logfmt` whose label name contains the byte `\x01` (found by fuzzing). The proxy already rejects such a query with Loki's parse error before it reaches the translator, so clients were not affected; translator callers that skip that check now get a plain filter instead of a crash (#761).
+- **`sum by (detected_level)` over a JSON pipeline normalizes a `level` stream
+  label and reads a body `level` key (#TBD).** Loki sets detected_level at
+  ingest, normalized (`distributor/field_detection.go`): a `level` stream
+  label, else a `level` key of a JSON body, with `info`, `INFO`, `inf` and
+  `information` one level. The row evaluator, which answers plain `| json` and
+  `__error__!=""` shapes and every fallback of the stats pushdown, took the
+  stream's spelling as stored (three series for those four) and never read a
+  `level` key that only the body holds (every such line was `unknown`). It now
+  normalizes the stream's level and adds `level` to its parser hints for a
+  detected_level grouping, as the stats pushdown already did. Only `level` is
+  read: Loki's other level fields (severity, lvl, ...) are not, and a line with
+  text after the closing brace gets its level from Loki's ingest keyword scan,
+  which is not reproduced (`semantics/json-metric-detected-level-derivation`;
+  `semantics/json-metric-detected-level-ingest-keyword-scan`, open).
 
 ## [2.15.0] - 2026-10-12
 

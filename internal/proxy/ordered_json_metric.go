@@ -1585,6 +1585,11 @@ func (plan *orderedJSONMetricPlan) setParserHints() {
 	if plan.grouping != nil {
 		for _, label := range plan.grouping.Labels {
 			plan.required[label] = true
+			if label == "detected_level" {
+				// Derived from the body's level key where the stream holds none
+				// (groupLabels), as Loki derives it at ingest.
+				plan.required["level"] = true
+			}
 		}
 	}
 	for _, stage := range plan.stages {
@@ -1971,10 +1976,15 @@ func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[str
 		}
 	}
 	// detected_level is structured metadata Loki sets at ingest, so no parser
-	// yields it; derive it from the level this row carries, normalised the way
-	// Loki normalises it, exactly as the stats pushdown does.
-	if group["detected_level"] == "" && containsString(plan.grouping.Labels, "detected_level") != plan.grouping.Without {
-		group["detected_level"] = lokiNormalizedLevel(labels["level"])
+	// yields it; derive it from the level this row carries (its stream's, else
+	// the body's), normalised the way Loki normalises it
+	// (distributor/field_detection.go), exactly as the stats pushdown does.
+	if containsString(plan.grouping.Labels, "detected_level") != plan.grouping.Without {
+		level := group["detected_level"]
+		if level == "" {
+			level = labels["level"]
+		}
+		group["detected_level"] = lokiNormalizedLevel(level)
 	}
 	return group
 }
