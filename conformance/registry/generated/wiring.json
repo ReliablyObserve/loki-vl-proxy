@@ -377,6 +377,9 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/detected-level-pipes-known-differences": [
+      "internal/proxy/ordered_json_detected_level_test.go"
+    ],
     "semantics/extracted-metric-known-differences": [
       "internal/proxy/ordered_json_extracted_differential_test.go"
     ],
@@ -776,6 +779,7 @@
       "semantics/label-filter-before-parser-pushdown"
     ],
     "internal/proxy/ordered_json_detected_level_test.go": [
+      "semantics/detected-level-pipes-known-differences",
       "semantics/json-metric-detected-level-derivation"
     ],
     "internal/proxy/ordered_json_drilldown_test.go": [
@@ -1235,7 +1239,6 @@
     "semantics/binary-ignoring-matching",
     "semantics/count-values-unsupported",
     "semantics/detected-fields-extracted-suffix",
-    "semantics/detected-level-pipes-known-differences",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
     "semantics/extracted-derived-labels-raw-evaluator",
@@ -1272,5 +1275,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 112
+  "wired_items": 113
 }

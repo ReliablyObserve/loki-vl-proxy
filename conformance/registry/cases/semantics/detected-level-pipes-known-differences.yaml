@@ -1,5 +1,5 @@
 id: semantics/detected-level-pipes-known-differences
-title: The native metric route for detected_level reads level keys in a fixed order and overwrites a detected_level stream label (open)
+title: The detected_level pipes read level keys in a fixed order, do not decode logfmt like Loki and overwrite a detected_level stream label (open)
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -25,6 +25,24 @@ why: |
   `stream severity before stored level metadata` assert the raw-row
   evaluator's answer only.
 
+  Three more lines the pipes read differently, which no guard probe sees
+  (an exact one would need a logfmt decoder per line):
+  - A logfmt level key in another case, `msg="error x" LvL=warn`: Loki's
+    decoder compares keys without case and reads `warn`, `unpack_logfmt` is
+    case-sensitive and the keyword scan says `error`. Loki answers `warn`
+    (measured on v3.7.7); the pushdown and this route answer `error`.
+  - A logfmt syntax error before the level key,
+    `msg="unterminated error level=info`: Loki's decoder stops at the error
+    and the line falls to the keyword scan, `error` (measured); the pipes skip
+    the error and read `level=info`.
+  - A row VictoriaLogs unpacked from a JSON body (stored without a message,
+    `{"level":"notice","msg":"error later"}` pushed with message parsing on),
+    whose stored `level=notice` the pipes keep as the word `notice`, where Loki
+    keeps the line and gives `error` (measured; the same on main).
+  The raw-row evaluator reads the first two like Loki
+  (TestOrderedJSONDetectedLevelKnownDifferences); the pushdown and the native
+  route keep the pipes' value.
+
   Measured against Loki v3.7.7 on VictoriaLogs v1.52.0 with the e2e probe
   fixtures: `{"msg":"x","severity":"error","level":"info"}` is error in Loki and
   info in the proxy; a stream with the label `detected_level="INFO"` is INFO in
@@ -49,13 +67,17 @@ request:
     X-Scope-OrgID: "0"
   precondition: |
     A line holding `severity` before `level` with different values, a stream
-    with a detected_level label, or a stream `severity` with metadata `level`.
+    with a detected_level label, a stream `severity` with metadata `level`, a
+    logfmt line with `LvL=warn` or a syntax error before its level key, or a
+    row VictoriaLogs unpacked from a JSON body with a stored `level`.
 compare:
   mode: exact
   fields: [series_labels, values]
   expect: |
-    Loki: error for the line with severity first; INFO for the labelled stream.
-    Proxy: info for both.
+    Loki: error for the line with severity first; INFO for the labelled stream;
+    warn for `LvL=warn`; error for the unterminated line and for the unpacked
+    row. Proxy: info for the first two, error for `LvL=warn`, info for the
+    unterminated line, notice for the unpacked row.
 gap:
   status: open
   impact: edge
