@@ -1,0 +1,201 @@
+{
+ "label": "detlevel-long",
+ "date": "2026-10-13",
+ "set": "json-detected-level",
+ "description": "sum by (detected_level) over a JSON pipeline (row evaluator and pushdown fallbacks).",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 3,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 6
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DLV1 drilldown logs volume, json",
+   "range": "6h",
+   "p50": {
+    "base": 2.882,
+    "pr": 2.944
+   },
+   "p95": {
+    "base": 2.893,
+    "pr": 2.994
+   },
+   "cold": {
+    "base": 2.89,
+    "pr": 3.012
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 71.82,
+    "pr": 56.94
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.98
+  },
+  {
+   "shape": "DLV1 drilldown logs volume, json",
+   "range": "24h",
+   "p50": {
+    "base": 10.112,
+    "pr": 10.524
+   },
+   "p95": {
+    "base": 10.686,
+    "pr": 10.644
+   },
+   "cold": {
+    "base": 8.952,
+    "pr": 9.08
+   },
+   "status": {
+    "base": "502",
+    "pr": "502"
+   },
+   "vl_cpu_max": {
+    "base": 86.88,
+    "pr": 92.12
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV2 json error filter, detected_level",
+   "range": "6h",
+   "p50": {
+    "base": 7.843,
+    "pr": 8.016
+   },
+   "p95": {
+    "base": 8.11,
+    "pr": 8.1
+   },
+   "cold": {
+    "base": 7.786,
+    "pr": 7.655
+   },
+   "status": {
+    "base": "502",
+    "pr": "502"
+   },
+   "vl_cpu_max": {
+    "base": 37.75,
+    "pr": 36.58
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV2 json error filter, detected_level",
+   "range": "24h",
+   "p50": {
+    "base": 8.032,
+    "pr": 8.787
+   },
+   "p95": {
+    "base": 8.259,
+    "pr": 9.217
+   },
+   "cold": {
+    "base": 8.157,
+    "pr": 7.848
+   },
+   "status": {
+    "base": "502",
+    "pr": "502"
+   },
+   "vl_cpu_max": {
+    "base": 46.71,
+    "pr": 40.84
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV3 plain json, detected_level",
+   "range": "6h",
+   "p50": {
+    "base": 3.387,
+    "pr": 3.785
+   },
+   "p95": {
+    "base": 3.531,
+    "pr": 4.001
+   },
+   "cold": {
+    "base": 3.889,
+    "pr": 3.784
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 46.4,
+    "pr": 47.38
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.89
+  },
+  {
+   "shape": "DLV3 plain json, detected_level",
+   "range": "24h",
+   "p50": {
+    "base": 10.637,
+    "pr": 10.346
+   },
+   "p95": {
+    "base": 10.768,
+    "pr": 10.738
+   },
+   "cold": {
+    "base": 10.796,
+    "pr": 11.203
+   },
+   "status": {
+    "base": "502",
+    "pr": "502"
+   },
+   "vl_cpu_max": {
+    "base": 276.1,
+    "pr": 95.56
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  }
+ ]
+}
