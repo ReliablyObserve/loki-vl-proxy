@@ -47,7 +47,7 @@ compare:
     Loki answers.
 gap:
   status: fixed
-  fixed_by: "#TBD"
+  fixed_by: "#760"
   impact: explore-visible
   visual: none
   visual_reason: 'the generator data carries lowercase levels, and the same in the stream label and the body, so main and the branch render the same panel; proven against Loki by the e2e on a fixture with mixed spellings and body-only levels (v1.47 and v1.52)'

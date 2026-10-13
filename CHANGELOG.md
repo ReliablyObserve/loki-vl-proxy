@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`sum by (detected_level)` over a JSON pipeline normalizes a `level` stream
-  label and reads a body `level` key (#TBD).** Loki sets detected_level at
+  label and reads a body `level` key (#760).** Loki sets detected_level at
   ingest, normalized (`distributor/field_detection.go`): a `level` stream
   label, else a `level` key of a JSON body, with `info`, `INFO`, `inf` and
   `information` one level. The row evaluator, which answers plain `| json` and
