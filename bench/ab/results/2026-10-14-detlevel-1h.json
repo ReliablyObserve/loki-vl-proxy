@@ -1,0 +1,232 @@
+{
+ "label": "detlevel-1h",
+ "date": "2026-10-14",
+ "set": "json-detected-level",
+ "description": "sum by (detected_level) over a JSON pipeline (row evaluator, and the stats pushdown with the level computed in VictoriaLogs and its guard probes).",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "timing": "warm",
+ "verdicts": {
+  "same": 5,
+  "faster": 1
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DLV1 drilldown logs volume, json",
+   "range": "1h",
+   "p50": {
+    "base": 0.517,
+    "pr": 0.542,
+    "loki": 0.015
+   },
+   "p95": {
+    "base": 0.544,
+    "pr": 0.553,
+    "loki": 0.018
+   },
+   "cold": {
+    "base": 0.585,
+    "pr": 0.617,
+    "loki": 0.133
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 62.01,
+    "pr": 62.01,
+    "loki": 62.01
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "DLV2 json error filter, detected_level",
+   "range": "1h",
+   "p50": {
+    "base": 2.158,
+    "pr": 2.399,
+    "loki": 0.02
+   },
+   "p95": {
+    "base": 2.25,
+    "pr": 2.627,
+    "loki": 0.027
+   },
+   "cold": {
+    "base": 2.176,
+    "pr": 2.354,
+    "loki": 0.56
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 40.2,
+    "pr": 38.77,
+    "loki": 32.01
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.9
+  },
+  {
+   "shape": "DLV3 plain json, detected_level",
+   "range": "1h",
+   "p50": {
+    "base": 0.532,
+    "pr": 0.553,
+    "loki": 0.01
+   },
+   "p95": {
+    "base": 0.573,
+    "pr": 0.576,
+    "loki": 0.012
+   },
+   "cold": {
+    "base": 0.553,
+    "pr": 0.6,
+    "loki": 0.076
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 32.01,
+    "pr": 23.75,
+    "loki": 23.75
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "DLV4 explore json volume, level and detected_level",
+   "range": "1h",
+   "p50": {
+    "base": 0.04,
+    "pr": 0.04,
+    "loki": 0.007
+   },
+   "p95": {
+    "base": 0.063,
+    "pr": 0.05,
+    "loki": 0.008
+   },
+   "cold": {
+    "base": 0.027,
+    "pr": 0.022,
+    "loki": 0.086
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 28.93,
+    "pr": 28.93,
+    "loki": 28.93
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DLV5 json error dropped, detected_level",
+   "range": "1h",
+   "p50": {
+    "base": 0.048,
+    "pr": 0.023,
+    "loki": 0.019
+   },
+   "p95": {
+    "base": 0.051,
+    "pr": 0.026,
+    "loki": 0.022
+   },
+   "cold": {
+    "base": 0.034,
+    "pr": 0.021,
+    "loki": 0.306
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 36.8,
+    "pr": 36.8,
+    "loki": 36.8
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 2.09
+  },
+  {
+   "shape": "DLV6 drilldown detected_level breakdown, json",
+   "range": "1h",
+   "p50": {
+    "base": 2.38,
+    "pr": 0.02,
+    "loki": 0.013
+   },
+   "p95": {
+    "base": 2.546,
+    "pr": 0.023,
+    "loki": 0.018
+   },
+   "cold": {
+    "base": 2.314,
+    "pr": 0.019,
+    "loki": 0.275
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 34.88,
+    "pr": 33.62,
+    "loki": 33.62
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 119.0
+  }
+ ]
+}
