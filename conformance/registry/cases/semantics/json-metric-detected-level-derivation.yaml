@@ -19,7 +19,7 @@ why: |
   detected_level is detected_level_extracted, and a detected_level stream label
   keeps its stored value (the derived one moves to detected_level_extracted).
 
-  Measured against Loki v3.7.7 on 28 probe lines (the e2e test pins each):
+  Measured against Loki v3.7.7 on 29 probe lines (the e2e test pins each):
   `{"level":30,"msg":"hi"}` is unknown; a pino error line
   (`{"level":50,...,"err":{"type":"Error"}}`) is error; `{"level":"notice"}` is
   unknown but `{"level":"notice","msg":"error connecting"}` is error;
