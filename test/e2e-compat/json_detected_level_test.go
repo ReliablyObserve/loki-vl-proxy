@@ -81,6 +81,10 @@ type detectedLevelProbe struct {
 	want     string
 	dropOnly bool
 	route    string
+	// rowOnly marks a line the stats pushdown reads differently from Loki
+	// without a guard able to see it (semantics/detected-level-pipes-known-
+	// differences): only the raw-row evaluator's form, `| json`, is compared.
+	rowOnly bool
 }
 
 var detectedLevelProbes = []detectedLevelProbe{
@@ -111,6 +115,7 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "body detected_level key, syntax error", msg: `{"detected_level":"warn","x":{bad`, want: "warn", dropOnly: true},
 	{name: "body detected_level and level keys, syntax error", msg: `{"detected_level":"warn","level":"info","x":{bad`, want: "warn", dropOnly: true, route: "raw"},
 	{name: "level key, syntax error", msg: `{"level":"info","x":{bad`, want: "info", dropOnly: true, route: "raw"},
+	{name: "stream severity before stored level metadata", labels: map[string]string{"severity": "error"}, meta: map[string]string{"level": "info"}, msg: `{"n":1}`, want: "error", rowOnly: true},
 	{name: "stored severity metadata", meta: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
 	{name: "stream level, unknown spelling", labels: map[string]string{"level": "notice"}, msg: `{"n":1}`, want: "notice", route: "stats"},
 	{name: "stream severity", labels: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
@@ -157,7 +162,7 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 	start, end := s0, s0.Add(2*time.Minute)
 	for i, probe := range detectedLevelProbes {
 		for _, pipeline := range []string{`| json`, `| json | drop __error__`} {
-			if probe.dropOnly && pipeline == `| json` {
+			if probe.dropOnly && pipeline == `| json` || probe.rowOnly && pipeline != `| json` {
 				continue
 			}
 			query := `sum by (detected_level) (count_over_time({app="` + apps[i] + `"} ` + pipeline + ` [1m]))`

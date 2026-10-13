@@ -116,7 +116,7 @@ func ingestJSONVolumeFixture(t *testing.T, apps map[string][]jsonVolumeStreamLin
 	for app, lines := range apps {
 		var vlRows strings.Builder
 		// Structured metadata is no stream field: each app names its own.
-		streamFields := map[string]bool{"app": true, "level": true}
+		streamFields := map[string]bool{"app": true}
 		type lokiStream struct {
 			labels map[string]string
 			values []any
@@ -128,6 +128,7 @@ func ingestJSONVolumeFixture(t *testing.T, apps map[string][]jsonVolumeStreamLin
 			if line.level != "" {
 				fields["level"] = line.level
 				labels["level"] = line.level
+				streamFields["level"] = true
 			}
 			for k, v := range line.labels {
 				fields[k], labels[k] = v, v

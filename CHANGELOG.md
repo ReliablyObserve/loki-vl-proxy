@@ -29,11 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its stored spelling. A filter on detected_level
   (`| json | detected_level="info"`, Logs Drilldown's detected_level
   breakdown) compares that value too, where it compared the stream's level or
-  the body key.
+  the body key; the breakdown, which main answered from raw rows (2.5 s at 1h,
+  502 at 6h and 24h), is served by the stats pushdown in 0.02 s to 0.35 s.
   The stats pushdown computes the level in VictoriaLogs with the pipes of the
   native metric route, and probes the window for the lines those pipes read
   differently from Loki (two level keys, a level key VictoriaLogs does not
-  unpack, a `detected_level` stream label). One such line, and a line that only
+  unpack, a `detected_level` stream label; not a stream level field outranked
+  by a metadata one, which stays open). One such line, and a line that only
   looks like one (a body with both `level` and `severity`, as audit logs have),
   sends the whole query to the raw-row evaluator: exact, but bounded by the row
   limit, so a long range answers 502 where the pushdown answered 200. A clean

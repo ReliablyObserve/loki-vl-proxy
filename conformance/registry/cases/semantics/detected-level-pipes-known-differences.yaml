@@ -15,10 +15,22 @@ why: |
   searches objects at depth 1, keeps the keys read before a syntax error, folds
   Unicode and keeps a detected_level stream label as stored.
 
+  The pipes also read the stored level fields in one list order without
+  telling a stream label from structured metadata, where Loki and the raw-row
+  evaluator read the stream's before the metadata: a stream `severity=error`
+  with metadata `level=info` is error in Loki and info on the pipes. The JSON
+  pipeline guard does not see it (an exact probe is an OR over pairs of names,
+  and a cheap one would send every stream labelled severity to the raw-row
+  evaluator), so it is recorded here too; the e2e and unit probe
+  `stream severity before stored level metadata` assert the raw-row
+  evaluator's answer only.
+
   Measured against Loki v3.7.7 on VictoriaLogs v1.52.0 with the e2e probe
   fixtures: `{"msg":"x","severity":"error","level":"info"}` is error in Loki and
   info in the proxy; a stream with the label `detected_level="INFO"` is INFO in
-  Loki and info in the proxy. Logs Drilldown's detected_level breakdown
+  Loki and info in the proxy; a stream `severity=error` with metadata
+  `level=info` is error in Loki and under `| json`, and info under
+  `| json | drop __error__`. Logs Drilldown's detected_level breakdown
   (`| json | drop __error__, __error_details__ | detected_level != ""`) is not
   on this route: the label translator maps detected_level to level, so the
   native histogram is never exact for it and the JSON pipeline route answers.
@@ -36,8 +48,8 @@ request:
   headers:
     X-Scope-OrgID: "0"
   precondition: |
-    A line holding `severity` before `level` with different values, or a stream
-    with a detected_level label.
+    A line holding `severity` before `level` with different values, a stream
+    with a detected_level label, or a stream `severity` with metadata `level`.
 compare:
   mode: exact
   fields: [series_labels, values]

@@ -45,7 +45,10 @@ why: |
   holds a line those pipes read differently from Loki: a detected_level stream
   label, two mentions of a level key (the pipes read keys in a fixed order),
   or a level key unpack_json yields no value for (nested other than log.level,
-  leading whitespace, text after the closing brace, a syntax error). A filter
+  leading whitespace, text after the closing brace, a syntax error). One
+  difference it does not see is recorded as open: a stream level field
+  outranked in the pipes' list order by a stored metadata field (stream
+  `severity` with metadata `level`). A filter
   on detected_level is applied after the pipes (`!= ""` always holds), also for
   Logs Drilldown's detected_level breakdown, which is not the native histogram
   (the label translator maps detected_level to level, so

@@ -31,6 +31,10 @@ type detectedLevelProbe struct {
 	// dropOnly marks lines with a parser error: Loki fails the plain `| json`
 	// query on them, so only the form that drops the error is valid.
 	dropOnly bool
+	// rowOnly marks a line the stats pushdown reads differently from Loki
+	// without a guard able to see it (semantics/detected-level-pipes-known-
+	// differences): only the raw-row evaluator's forms are asserted.
+	rowOnly bool
 	// rawRows marks the lines the stats pushdown must not answer: the pipes of
 	// translator.BuildDetectedLevelChain would read them differently, or
 	// might, so a guard probe sends the query to the raw-row evaluator.
@@ -69,6 +73,7 @@ var detectedLevelProbes = []detectedLevelProbe{
 	// A mention of a level key inside a string is no second key.
 	{name: "level key mentioned in the message", msg: `{"level":"info","msg":"set log level=debug"}`, want: "info"},
 	{name: "level name followed by a colon inside a string", msg: `{"msg":"level: high","level":"warn"}`, want: "warn"},
+	{name: "stream severity before a stored level field", stream: map[string]string{"severity": "error"}, vl: map[string]string{"level": "info"}, msg: `{"n":1}`, want: "error", rowOnly: true},
 	{name: "stored severity field", vl: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error"},
 	// Malformed JSON is not JSON for Loki's ingest: the keyword scan reads it.
 	{name: "body detected_level key, syntax error", msg: `{"detected_level":"warn","x":{bad`, want: "warn", dropOnly: true},
@@ -102,7 +107,7 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 			canonicalLabelsKey(map[string]string{"detected_level": probe.want}): {end.Unix(): "1"},
 		}
 		for _, pipeline := range []string{`| json`, `| json | drop __error__`, `| json | __error__=""`} {
-			if probe.dropOnly && pipeline != `| json | drop __error__` {
+			if probe.dropOnly && pipeline != `| json | drop __error__` || probe.rowOnly && pipeline == `| json | drop __error__` {
 				continue
 			}
 			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
@@ -208,7 +213,7 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 	start, end := s0.Add(5*time.Minute), s0.Add(5*time.Minute)
 	pick := func(clean bool) (rows []pushdownRow, levels []string) {
 		for i, probe := range detectedLevelProbes {
-			if probe.dropOnly || clean && probe.rawRows {
+			if probe.dropOnly || clean && (probe.rawRows || probe.rowOnly) {
 				continue
 			}
 			rows = append(rows, probe.row(s0.Add(time.Duration(100+i)*time.Second)))
