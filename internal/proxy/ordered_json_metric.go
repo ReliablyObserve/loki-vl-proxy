@@ -1435,21 +1435,26 @@ func detectedLevelStoredFilter() string {
 }
 
 // detectedLevelKeysRisk reports whether a selected line mentions a level key
-// twice, or spells one with a unicode escape. Loki takes the first level key
-// in document order (and, for a value that is not a known spelling, scans the
-// line), while the pipes of translator.BuildDetectedLevelChain read the keys
-// in a fixed order: a line with two of them can be read differently. A line
-// starting with a brace is read for quoted keys, any other for logfmt keys.
-// The patterns also match a mention inside a longer string, a superset that
-// only costs the raw evaluator.
+// twice, holds a level value with an escape, or is read as logfmt although it
+// starts with a brace. Loki takes the first level key in document order (and,
+// for a value that is not a known spelling, scans the line), while the pipes
+// of translator.BuildDetectedLevelChain read the keys in a fixed order: a line
+// with two of them can be read differently. Loki reads a JSON value's raw
+// bytes, so an escaped spelling (\u0069nfo) is no known level for it, where
+// VictoriaLogs decodes it. A line is JSON for Loki when it starts with a brace
+// and ends with a closing one: one that starts with a brace only is logfmt,
+// which the chain does not unpack. A line starting with a brace is read for
+// quoted keys, any other for logfmt keys. The patterns also match a mention
+// inside a longer string, a superset that only costs the raw evaluator.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
-	const escapedKey = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`
-	const braced = `^\s*\{`
+	const closed = `\}[\s\v\x{85}\p{Z}]*$`
+	braced := strconv.Quote(translator.BracedLineRegexp)
 	twice := func(key string) string { return key + `(?s:.*)` + key }
 	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" ((_msg:~" + strconv.Quote(braced) + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
-		" or (-_msg:~" + strconv.Quote(braced) + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")" +
-		` or (_msg:~"\\\\u" _msg:~` + strconv.Quote(escapedKey) + ")) | limit 1"
+		" ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
+		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")" +
+		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")) | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 

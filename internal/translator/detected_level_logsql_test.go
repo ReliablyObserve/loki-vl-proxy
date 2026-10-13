@@ -25,6 +25,11 @@ func TestBuildHasLevelFilter(t *testing.T) {
 		{[]string{"app", "msg"}, ""},
 		{[]string{"x", "level"}, "level:*"},
 		{[]string{"severity_number", "severity_text", "log.level"}, `(log.level:* OR severity_text:* OR severity_number:*) !(log.level:"" severity_text:="Unspecified" severity_number:="0")`},
+		// VictoriaLogs before v1.50 stores the OTLP severity as one field, with
+		// no number: "Unspecified" carries no level. Every other level field,
+		// not only the ones ranked before it, keeps a row in.
+		{[]string{"severity", "level", "lvl"}, `(level:* OR severity:* OR lvl:*) !(level:"" lvl:"" severity:="Unspecified" -severity_number:*)`},
+		{[]string{"severity_number", "severity_text", "Severity_Text"}, `(severity_text:* OR Severity_Text:* OR severity_number:*) !(Severity_Text:"" severity_text:="Unspecified" severity_number:="0")`},
 	}
 	for _, tc := range cases {
 		if got := BuildHasLevelFilter(tc.fields); got != tc.want {
@@ -68,15 +73,38 @@ func TestBuildStoredLevelFilterOTelSynthesizedText(t *testing.T) {
 	}
 	for _, want := range []string{
 		"severity_text:~`(?i)^(warn|wrn|warning)$`",
-		`!((severity_text:="Trace" severity_number:="1") OR `,
-		`(severity_text:="Warn" severity_number:="13")`,
+		// The names of a number's family, whatever the number's place in it.
+		"(severity_text:~`^Trace[234]?$` severity_number:~`^(1|2|3|4)$`)",
+		"(severity_text:~`^Warn[234]?$` severity_number:~`^(13|14|15|16)$`)",
+		"(severity_text:=\"Unspecified\" severity_number:~`^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`)",
 		`!(severity_text:="Unspecified" severity_number:="0")`,
 		"severity_number:~`^1[3-6]$`",
-		`(severity_text:"" OR (((severity_text:="Trace" severity_number:="1")`,
+		`(severity_text:"" OR (((severity_text:~`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("filter lacks %q:\n%s", want, got)
 		}
+	}
+}
+
+// VictoriaLogs before v1.50 stores an OTLP record's severity as one field named
+// severity and no number: its finer names (Info2) mean the coarse level, and
+// Unspecified means none, so neither is a raw level word.
+func TestBuildStoredLevelFilterSynthesizedSeverityName(t *testing.T) {
+	got, err := BuildStoredLevelFilter("=", "info", []string{"severity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "severity:~`(?i)^(info|inf|information)$`"
+	if !strings.Contains(got, want) || !strings.Contains(got, "(-severity_number:* severity:~`^(Info)[234]?$`)") {
+		t.Fatalf("filter lacks the derived names:\n%s", got)
+	}
+	got, err = BuildStoredLevelFilter("=~", "Unspecified|Info2", []string{"severity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "!(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*)") {
+		t.Fatalf("a derived name matched as a raw word:\n%s", got)
 	}
 }
 
@@ -160,7 +188,12 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		14: `format if (SEVERITY_TEXT:*) "<SEVERITY_TEXT>" as __dl_s keep_original_fields`,
 		15: `format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`,
 		16: `unpack_json from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__j_"`,
-		17: `unpack_logfmt from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__l_"`,
+		// Lines Loki reads as JSON (a leading brace) never go to logfmt.
+		17: "unpack_logfmt if (-_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__l_\"",
+		// A severity text VictoriaLogs derived from the OTLP number is no level
+		// field: Unspecified and the finer names (Info2) of v1.47 (severity,
+		// no number) and the text matching its number of v1.50+ (severity_text).
+		5:  "format if (severity:* !(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*)) \"<severity>\" as __dl_s keep_original_fields",
 		18: `format if (__j_level:*) "<__j_level>" as __dl_v keep_original_fields`,
 		45: `format if (__l_SEVERITY_TEXT:*) "<__l_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
 		46: "format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields",
@@ -182,13 +215,29 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 
 	stored := BuildDetectedLevelChain([]string{"level", "app"}, DetectedLevelChainLogs)
 	for _, want := range []string{
-		`| unpack_json if (!(level:*)) from _msg fields (`,
-		`| unpack_logfmt if (!(level:*)) from _msg fields (`,
-		"| extract_regexp if (!(level:*) __dl:\"\") `",
-		`| format if (!(level:*)) "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`,
+		// A row with a level field is marked once, and skipped by the pipes
+		// that read the line.
+		`| format if (__dl_s:*) "1" as __dl_h | format if (__dl_s:*) "<__dl_s>" as __dl_v`,
+		`| unpack_json if (-__dl_h:*) from _msg fields (`,
+		"| unpack_logfmt if (-__dl_h:* -_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (",
+		"| extract_regexp if (-__dl_h:* __dl:\"\") `",
+		`| format if (-__dl_h:*) "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`,
 	} {
 		if !strings.Contains(stored, want) {
 			t.Fatalf("chain with stored level lacks %q", want)
+		}
+	}
+
+	// The OTLP severity of VictoriaLogs v1.50+ (severity_text, severity_number)
+	// and before (severity alone): a row decides by a level text that is not
+	// synthesised, a number other than 0, or a finer severity name.
+	otlp := BuildDetectedLevelChain([]string{"severity_text", "severity_number", "severity"}, DetectedLevelChainGroup)
+	for _, want := range []string{
+		`| format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`,
+		"| format if (-__dl_h:* (severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) -severity:=\"Unspecified\") \"1\" as __dl_h",
+	} {
+		if !strings.Contains(otlp, want) {
+			t.Fatalf("OTLP chain lacks %q", want)
 		}
 	}
 }

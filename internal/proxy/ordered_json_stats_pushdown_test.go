@@ -255,7 +255,11 @@ func lokiJSONVolumeReference(lines []jsonVolumeLine, fn string, groupBy []string
 }
 
 // lokiLevelVolumeReference is lokiJSONVolumeReference for parser "json",
-// "logfmt" (fixture lines are simple key=value tokens) or "" (no parser).
+// "logfmt" (fixture lines are simple key=value tokens) or "" (no parser). It is
+// a hand-built model of Loki's answer for these simple fixtures, not Loki's
+// own: detected_level follows Loki's ingest (a stream level, else the level
+// key of the body, normalized to a known spelling, else a keyword scan of the
+// line). The real-Loki comparison lives in the e2e tests.
 func lokiLevelVolumeReference(lines []jsonVolumeLine, parser, fn string, groupBy []string, start, end time.Time, step, window time.Duration) map[string]map[int64]string {
 	out := map[string]map[int64]string{}
 	for t := start; !t.After(end); t = t.Add(step) {
@@ -275,11 +279,16 @@ func lokiLevelVolumeReference(lines []jsonVolumeLine, parser, fn string, groupBy
 			// Loki's ingest reads the body of a stream without a level for
 			// detected_level whatever the query parses (a logfmt or JSON level
 			// key here).
-			detected := level
+			detected := line.level
 			if detected == "" {
 				if detected = slidingLogfmtFields(line.msg)["level"]; detected == "" {
 					detected = vlUnpackJSONLevel(line.msg)
 				}
+			}
+			if known := canonicalLevel([]byte(detected)); known != "" {
+				detected = known
+			} else if line.level == "" {
+				detected = levelFromKeywords([]byte(line.msg))
 			}
 			labels := map[string]string{}
 			for _, name := range groupBy {

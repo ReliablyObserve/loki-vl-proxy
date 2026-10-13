@@ -75,10 +75,37 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "level name followed by a colon inside a string", msg: `{"msg":"level: high","level":"warn"}`, want: "warn"},
 	{name: "stream severity before a stored level field", stream: map[string]string{"severity": "error"}, vl: map[string]string{"level": "info"}, msg: `{"n":1}`, want: "error", rowOnly: true},
 	{name: "stored severity field", vl: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error"},
+	// OTLP records. VictoriaLogs from v1.50 stores severity_text (the text, or
+	// the name of the number when the record has none) with severity_number;
+	// before v1.50 one severity field and no number. A synthesised text is no
+	// level for Loki, which reads the number (and the line when it is 0).
+	{name: "OTLP without severity", vl: map[string]string{"severity_text": "Unspecified", "severity_number": "0"}, msg: `hello`, want: "unknown", dropOnly: true},
+	{name: "OTLP without severity, error word", vl: map[string]string{"severity_text": "Unspecified", "severity_number": "0"}, msg: `request error`, want: "error", dropOnly: true},
+	{name: "OTLP fine severity number", vl: map[string]string{"severity_text": "Info2", "severity_number": "10"}, msg: `hello`, want: "info", dropOnly: true},
+	{name: "OTLP severity number", vl: map[string]string{"severity_text": "Warn", "severity_number": "13"}, msg: `hello`, want: "warn", dropOnly: true},
+	{name: "OTLP severity number out of range", vl: map[string]string{"severity_text": "Unspecified", "severity_number": "30"}, msg: `request error`, want: "unknown", dropOnly: true},
+	{name: "OTLP own text", vl: map[string]string{"severity_text": "notice", "severity_number": "0"}, msg: `hello`, want: "notice", dropOnly: true},
+	{name: "OTLP own text over its number", vl: map[string]string{"severity_text": "Fine", "severity_number": "9"}, msg: `hello`, want: "Fine", dropOnly: true},
+	{name: "OTLP without severity, before v1.50", vl: map[string]string{"severity": "Unspecified"}, msg: `hello`, want: "unknown", dropOnly: true},
+	{name: "OTLP without severity, before v1.50, error word", vl: map[string]string{"severity": "Unspecified"}, msg: `request error`, want: "error", dropOnly: true},
+	{name: "OTLP fine severity number, before v1.50", vl: map[string]string{"severity": "Info2"}, msg: `hello`, want: "info", dropOnly: true},
+	{name: "OTLP severity number, before v1.50", vl: map[string]string{"severity": "Warn"}, msg: `hello`, want: "warn", dropOnly: true},
+	{name: "OTLP own text, before v1.50", vl: map[string]string{"severity": "notice"}, msg: `hello`, want: "notice", dropOnly: true},
 	// Malformed JSON is not JSON for Loki's ingest: the keyword scan reads it.
 	{name: "body detected_level key, syntax error", msg: `{"detected_level":"warn","x":{bad`, want: "warn", dropOnly: true},
 	{name: "body detected_level and level keys, syntax error", msg: `{"detected_level":"warn","level":"info","x":{bad`, want: "warn", dropOnly: true, rawRows: true},
 	{name: "level key, syntax error", msg: `{"level":"info","x":{bad`, want: "info", dropOnly: true, rawRows: true},
+	// A line that is JSON for Loki (a brace first and last) never goes to
+	// the logfmt parser, whatever its text holds.
+	{name: "logfmt-looking text inside a JSON message", msg: `{"msg":"error: cannot set level=debug now"}`, want: "error"},
+	{name: "logfmt-looking text inside a JSON message, level key", msg: `{"msg":"set level=debug","level":"info"}`, want: "info"},
+	// One that only starts with a brace is logfmt for Loki.
+	{name: "logfmt after a brace", msg: `{ error level=info`, want: "info", dropOnly: true, rawRows: true},
+	{name: "logfmt level keys of two spellings", msg: `Level=info LEVEL=error`, want: "info", dropOnly: true, rawRows: true},
+	// Loki reads the raw bytes of a JSON value: an escaped spelling is no known
+	// level for it, where VictoriaLogs decodes it. Keys are decoded by both.
+	{name: "escaped level value", msg: `{"level":"\u0069nfo"}`, want: "unknown", rawRows: true},
+	{name: "escaped level key", msg: `{"\u006cevel":"warn"}`, want: "warn"},
 }
 
 func (c detectedLevelProbe) row(ts time.Time) pushdownRow {
@@ -128,6 +155,42 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Two lines the VictoriaLogs pipes cannot read like Loki and no guard probe can
+// see (semantics/detected-level-pipes-known-differences): Loki's logfmt decoder
+// compares keys without case and stops at a syntax error, where unpack_logfmt
+// is case-sensitive and skips over it. The raw-row evaluator reads them like
+// Loki; the stats pushdown keeps the pipes' value, which the entry records.
+// conformance: semantics/detected-level-pipes-known-differences
+func TestOrderedJSONDetectedLevelKnownDifferences(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(2*time.Minute), s0.Add(2*time.Minute)
+	for _, tc := range []struct{ name, msg, loki, pipes string }{
+		{"logfmt level key of another case", `msg="error x" LvL=warn`, "warn", "error"},
+		{"logfmt syntax error before the level", `msg="unterminated error level=info`, "error", "info"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row := pushdownRow{ts: s0.Add(100 * time.Second), stream: map[string]string{"app": "api", "env": "prod"}, msg: tc.msg}
+			srv, fake := newPushdownFakeVL(t, []pushdownRow{row}, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			series := func(level string) map[string]map[int64]string {
+				return map[string]map[int64]string{canonicalLabelsKey(map[string]string{"detected_level": level}): {end.Unix(): "1"}}
+			}
+			plan, ok := compileOrderedJSONMetric(`sum by (detected_level) (count_over_time({env="prod"} | logfmt | drop __error__ [5m]))`)
+			if !ok {
+				t.Fatal("no plan")
+			}
+			if got := detectedLevelRowMatrix(t, p, plan, start, end, time.Minute); !reflect.DeepEqual(got, series(tc.loki)) {
+				t.Errorf("row evaluator: got %v, want Loki's %s", got, tc.loki)
+			}
+			query := `sum by (detected_level) (count_over_time({env="prod"} | logfmt | drop __error__ [5m]))`
+			if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, series(tc.pipes)) {
+				t.Errorf("stats pushdown: status %d %.200s, got %v, want the pipes' %s", code, body, got, tc.pipes)
+			}
+		})
 	}
 }
 

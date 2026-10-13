@@ -3,7 +3,9 @@
 package e2e_compat
 
 import (
+	"cmp"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +87,22 @@ type detectedLevelProbe struct {
 	// without a guard able to see it (semantics/detected-level-pipes-known-
 	// differences): only the raw-row evaluator's form, `| json`, is compared.
 	rowOnly bool
+	// otlp lines are pushed as OTLP records (the severity VictoriaLogs stores
+	// depends on its version: severity_text and severity_number from v1.50, one
+	// severity field before) under the service name; severityNumber and
+	// severityText are the record's.
+	otlp           bool
+	severityNumber int
+	severityText   string
+}
+
+// selector returns the stream selector of the probe's app (an OTLP record
+// carries the app as its service name).
+func (c detectedLevelProbe) selector(app string) string {
+	if c.otlp {
+		return `{service_name="` + app + `"}`
+	}
+	return `{app="` + app + `"}`
 }
 
 var detectedLevelProbes = []detectedLevelProbe{
@@ -124,6 +142,25 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "stream detected_level wins over the body", labels: map[string]string{"detected_level": "Warning"}, msg: `{"level":"error"}`, want: "Warning", route: "raw"},
 	{name: "stored level metadata", meta: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn", route: "stats"},
 	{name: "stored detected_level metadata", meta: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error", route: "stats"},
+	// A line that is JSON for Loki (a brace first and last) never goes to the
+	// logfmt parser; one that only starts with a brace is logfmt for it.
+	{name: "logfmt-looking text inside a JSON message", msg: `{"msg":"error: cannot set level=debug now"}`, want: "error", route: "stats"},
+	{name: "logfmt after a brace", msg: `{ error level=info`, want: "info", dropOnly: true, route: "raw"},
+	{name: "logfmt level keys of two spellings", msg: `Level=info LEVEL=error`, want: "info", dropOnly: true, route: "raw"},
+	// Loki reads the raw bytes of a JSON value, so an escaped spelling is no
+	// known level for it; keys it decodes, as VictoriaLogs does.
+	{name: "escaped level value", msg: `{"level":"\u0069nfo"}`, want: "unknown", route: "raw"},
+	{name: "escaped level key", msg: `{"\u006cevel":"warn"}`, want: "warn", route: "stats"},
+	// OTLP records. A severity text VictoriaLogs synthesised from the number
+	// (Unspecified, Info2) is no level for Loki, which reads the number, or the
+	// line when the record has none.
+	{name: "OTLP without severity", otlp: true, msg: "hello", want: "unknown", dropOnly: true, route: "stats"},
+	{name: "OTLP without severity, error word", otlp: true, msg: "request error", want: "error", dropOnly: true, route: "stats"},
+	{name: "OTLP fine severity number", otlp: true, severityNumber: 10, msg: "hello", want: "info", dropOnly: true, route: "stats"},
+	{name: "OTLP severity number", otlp: true, severityNumber: 13, msg: "hello", want: "warn", dropOnly: true, route: "stats"},
+	{name: "OTLP severity text and number", otlp: true, severityNumber: 17, severityText: "Error", msg: "hello", want: "error", dropOnly: true, route: "stats"},
+	{name: "OTLP own text", otlp: true, severityText: "notice", msg: "hello", want: "notice", dropOnly: true, route: "stats"},
+	{name: "OTLP own text over its number", otlp: true, severityNumber: 9, severityText: "Fine", msg: "hello", want: "Fine", dropOnly: true, route: "stats"},
 }
 
 // Every shape of level a line can hold gets the detected_level Loki's ingest
@@ -142,8 +179,20 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 	s0 := now.Add(-9 * time.Hour).Truncate(time.Hour)
 	apps := make([]string, len(detectedLevelProbes))
 	fixture := map[string][]jsonVolumeStreamLine{}
+	var otlpApps []string
 	for i, probe := range detectedLevelProbes {
 		apps[i] = fmt.Sprintf("json-level-probe-%02d-%d", i, now.UnixNano())
+		if probe.otlp {
+			otlpApps = append(otlpApps, apps[i])
+			var records [][]byte
+			for k := 0; k < 2; k++ {
+				records = append(records, otlpLogRecord(s0.Add(time.Duration(10+k)*time.Second), probe.severityNumber, probe.severityText, probe.msg, nil))
+			}
+			data := otlpLogsData(map[string]string{"service.name": apps[i]}, records)
+			dlPost(t, lokiURL+"/otlp/v1/logs", "application/x-protobuf", data)
+			dlPost(t, vlURL+"/insert/opentelemetry/v1/logs", "application/x-protobuf", data)
+			continue
+		}
 		for k := 0; k < 2; k++ {
 			line := jsonVolumeStreamLine{ts: s0.Add(time.Duration(10+k) * time.Second), msg: probe.msg, labels: map[string]string{}, meta: probe.meta, vlMeta: probe.meta}
 			for name, value := range probe.labels {
@@ -157,15 +206,24 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 		}
 	}
 	ingestJSONVolumeFixture(t, fixture)
+	start, end := s0, s0.Add(2*time.Minute)
+	if len(otlpApps) > 0 {
+		forceVLFlush(t)
+		if status, body := hardeningRequest(t, http.MethodPost, lokiURL+"/flush", "", nil); status >= 300 {
+			t.Fatalf("Loki flush: %d %s", status, body)
+		}
+		for _, app := range otlpApps {
+			dlWaitBothBackends(t, dlFixture{start: start, end: end}, `{service_name="`+app+`"}`, fmt.Sprintf(`{service.name=%q}`, app), 2)
+		}
+	}
 
 	route, rec := newJSONVolumeRouteProxy(t)
-	start, end := s0, s0.Add(2*time.Minute)
 	for i, probe := range detectedLevelProbes {
 		for _, pipeline := range []string{`| json`, `| json | drop __error__`} {
 			if probe.dropOnly && pipeline == `| json` || probe.rowOnly && pipeline != `| json` {
 				continue
 			}
-			query := `sum by (detected_level) (count_over_time({app="` + apps[i] + `"} ` + pipeline + ` [1m]))`
+			query := `sum by (detected_level) (count_over_time(` + probe.selector(apps[i]) + ` ` + pipeline + ` [1m]))`
 			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
 				loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
 				if len(loki) != 1 {
@@ -200,8 +258,12 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 	// histogram: the label translator maps detected_level to level) keeps its
 	// guard. One selector holds the lines the VictoriaLogs pipes read like
 	// Loki and one the lines they do not.
-	var clean, risky, valid []string
+	var clean, risky, valid, otlp []string
 	for i, probe := range detectedLevelProbes {
+		if probe.otlp {
+			otlp = append(otlp, apps[i])
+			continue
+		}
 		switch {
 		case probe.route == "stats":
 			clean = append(clean, apps[i])
@@ -218,18 +280,23 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 		selector []string
 		pipeline string
 		headers  map[string]string
-		guarded  bool // the selector holds only lines the pipes read like Loki
+		guarded  bool   // the selector holds only lines the pipes read like Loki
+		label    string // the selector's label (default app)
 	}{
-		{"Drilldown breakdown, clean lines", clean, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, true},
-		{"Drilldown breakdown, guarded lines", risky, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, false},
-		{"equals, clean lines", clean, `| json | drop __error__ | detected_level="info"`, nil, true},
-		{"regexp, guarded lines", risky, `| json | drop __error__ | detected_level=~"warn|error|INFO"`, nil, false},
-		{"not equals, all lines", append(append([]string{}, clean...), risky...), `| json | drop __error__ | detected_level!="unknown"`, nil, false},
-		{"without the error drop, valid lines", valid, `| json | detected_level="info"`, nil, false},
-		{"error label, valid lines", valid, `| json | __error__="" | detected_level!=""`, nil, false},
+		{"Drilldown breakdown, clean lines", clean, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, true, ""},
+		{"Drilldown breakdown, guarded lines", risky, `| json | drop __error__, __error_details__ | detected_level != ""`, drilldown, false, ""},
+		{"equals, clean lines", clean, `| json | drop __error__ | detected_level="info"`, nil, true, ""},
+		{"regexp, guarded lines", risky, `| json | drop __error__ | detected_level=~"warn|error|INFO"`, nil, false, ""},
+		{"not equals, all lines", append(append([]string{}, clean...), risky...), `| json | drop __error__ | detected_level!="unknown"`, nil, false, ""},
+		{"without the error drop, valid lines", valid, `| json | detected_level="info"`, nil, false, ""},
+		{"error label, valid lines", valid, `| json | __error__="" | detected_level!=""`, nil, false, ""},
+		{"equals, OTLP lines", otlp, `| json | drop __error__ | detected_level="info"`, nil, true, "service_name"},
+		{"regexp, OTLP lines", otlp, `| json | drop __error__ | detected_level=~"warn|error|notice"`, nil, true, "service_name"},
+		{"not equals, OTLP lines", otlp, `| json | drop __error__ | detected_level!="unknown"`, nil, true, "service_name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			query := `sum by (detected_level) (count_over_time({app=~"` + strings.Join(tc.selector, "|") + `"} ` + tc.pipeline + ` [1m]))`
+			label := cmp.Or(tc.label, "app")
+			query := `sum by (detected_level) (count_over_time({` + label + `=~"` + strings.Join(tc.selector, "|") + `"} ` + tc.pipeline + ` [1m]))`
 			loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, tc.headers)
 			rec.reset()
 			assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, tc.headers))
