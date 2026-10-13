@@ -4,6 +4,7 @@ package e2e_compat
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,8 @@ import (
 // `sum by (detected_level)` over `| json` is answered by the row evaluator, or
 // by the stats pushdown with the `drop __error__` form, and both must group
 // the spellings of one level into one series like Loki, with the level in the
-// body, as a stream label, or both (the stream's wins).
+// body, as a stream label, or both (the stream's wins). The pushdown computes
+// the value in VictoriaLogs, the row evaluator in the proxy.
 // conformance: semantics/json-metric-detected-level-derivation
 func TestRangeMetricCompatibilityJSONDetectedLevel(t *testing.T) {
 	now := time.Now()
@@ -60,6 +62,125 @@ func TestRangeMetricCompatibilityJSONDetectedLevel(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// detectedLevelProbe is one stored line and the detected_level Loki gives it
+// (want, checked against Loki itself by the test). labels are further stream
+// labels and meta structured metadata; dropOnly lines have a parser error, so
+// only the `drop __error__` pipeline is valid for them. route, when set, is
+// the evaluator the `drop __error__` query must use: "stats" for a line the
+// VictoriaLogs pipes read like Loki, "raw" for one a guard probe hands to the
+// raw-row evaluator.
+type detectedLevelProbe struct {
+	name     string
+	labels   map[string]string
+	meta     map[string]string
+	msg      string
+	want     string
+	dropOnly bool
+	route    string
+}
+
+var detectedLevelProbes = []detectedLevelProbe{
+	{name: "pino numeric level", msg: `{"level":30,"msg":"hi"}`, want: "unknown", route: "stats"},
+	{name: "pino numeric level with an error object", msg: `{"level":50,"msg":"boom","err":{"type":"Error"}}`, want: "error", route: "stats"},
+	{name: "boolean level", msg: `{"level":true}`, want: "unknown"},
+	{name: "null level", msg: `{"level":null}`, want: "unknown"},
+	{name: "unknown spelling", msg: `{"level":"notice"}`, want: "unknown", route: "stats"},
+	{name: "unknown spelling and an error word", msg: `{"level":"notice","msg":"error connecting"}`, want: "error", route: "stats"},
+	{name: "padded level", msg: `{"level":" info"}`, want: "info", route: "stats"},
+	{name: "severity key", msg: `{"severity":"ERROR"}`, want: "error", route: "stats"},
+	{name: "Level key", msg: `{"Level":"Information"}`, want: "info", route: "stats"},
+	{name: "LEVEL key", msg: `{"LEVEL":"warn"}`, want: "warn", route: "stats"},
+	{name: "nested log.level", msg: `{"log":{"level":"warn"}}`, want: "warn", route: "stats"},
+	{name: "no level key, error word", msg: `{"msg":"request failed with error"}`, want: "error", route: "stats"},
+	{name: "object level", msg: `{"level":{"name":"info"}}`, want: "info"},
+	{name: "array level", msg: `{"level":["info"]}`, want: "info"},
+	{name: "body detected_level key", msg: `{"detected_level":"error","level":"info"}`, want: "info", route: "stats"},
+	{name: "text after the closing brace", msg: `{"level":"info"} trailing`, want: "info", route: "raw"},
+	{name: "no level at all", msg: `{"n":1}`, want: "unknown", route: "stats"},
+	{name: "plain level key", msg: `{"level":"info"}`, want: "info", route: "stats"},
+	{name: "severity before level", msg: `{"msg":"x","severity":"error","level":"info"}`, want: "error", route: "raw"},
+	{name: "level before severity", msg: `{"level":"info","severity":"error"}`, want: "info", route: "raw"},
+	{name: "body detected_level key alone", msg: `{"detected_level":"verbose"}`, want: "unknown", route: "stats"},
+	{name: "syntax error after the level", msg: `{"level":"warn","x":{bad`, want: "warn", dropOnly: true, route: "raw"},
+	{name: "stream level, unknown spelling", labels: map[string]string{"level": "notice"}, msg: `{"n":1}`, want: "notice", route: "stats"},
+	{name: "stream severity", labels: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
+	{name: "stream level wins over the body", labels: map[string]string{"level": "INFO"}, msg: `{"level":"error"}`, want: "info", route: "stats"},
+	{name: "stream detected_level keeps its stored spelling", labels: map[string]string{"detected_level": "INFO"}, msg: `{"n":1}`, want: "INFO", route: "raw"},
+	{name: "stream detected_level wins over the body", labels: map[string]string{"detected_level": "Warning"}, msg: `{"level":"error"}`, want: "Warning", route: "raw"},
+	{name: "stored level metadata", meta: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn", route: "stats"},
+	{name: "stored detected_level metadata", meta: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error", route: "stats"},
+}
+
+// Every shape of level a line can hold gets the detected_level Loki's ingest
+// gave it, on both routes of `sum by (detected_level) (... | json ...)`: a
+// level key that is not a known string spelling falls to a keyword scan of the
+// whole line (pino's numeric levels, `notice`), the first level key in
+// document order wins whatever its name (severity, Level, LEVEL, log.level),
+// a stream label detected_level keeps its stored spelling, and a body key
+// named detected_level never replaces the value. The proxy's two routes are
+// compared with Loki's own answer, which must also be the one recorded in the
+// table; the pushdown must serve the lines the VictoriaLogs pipes read like
+// Loki and hand the others to the raw-row evaluator.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
+	now := time.Now()
+	s0 := now.Add(-9 * time.Hour).Truncate(time.Hour)
+	apps := make([]string, len(detectedLevelProbes))
+	fixture := map[string][]jsonVolumeStreamLine{}
+	for i, probe := range detectedLevelProbes {
+		apps[i] = fmt.Sprintf("json-level-probe-%02d-%d", i, now.UnixNano())
+		for k := 0; k < 2; k++ {
+			line := jsonVolumeStreamLine{ts: s0.Add(time.Duration(10+k) * time.Second), msg: probe.msg, labels: map[string]string{}, meta: probe.meta, vlMeta: probe.meta}
+			for name, value := range probe.labels {
+				if name == "level" {
+					line.level = value
+				} else {
+					line.labels[name] = value
+				}
+			}
+			fixture[apps[i]] = append(fixture[apps[i]], line)
+		}
+	}
+	ingestJSONVolumeFixture(t, fixture)
+
+	route, rec := newJSONVolumeRouteProxy(t)
+	start, end := s0, s0.Add(2*time.Minute)
+	for i, probe := range detectedLevelProbes {
+		for _, pipeline := range []string{`| json`, `| json | drop __error__`} {
+			if probe.dropOnly && pipeline == `| json` {
+				continue
+			}
+			query := `sum by (detected_level) (count_over_time({app="` + apps[i] + `"} ` + pipeline + ` [1m]))`
+			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
+				loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
+				if len(loki) != 1 {
+					t.Fatalf("Loki sanity: expected one detected_level series, got %v", loki)
+				}
+				for key := range loki {
+					if key != "detected_level="+probe.want {
+						t.Errorf("Loki answers {%s}, the table says detected_level=%s", key, probe.want)
+					}
+				}
+				rec.reset()
+				assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, nil))
+				calls := rec.reset()
+				assertSlidingParity(t, query+" [proxy]", loki, slidingRangeSeries(t, proxyURL, query, start, end, time.Minute, nil))
+				if pipeline != `| json | drop __error__` || probe.route == "" {
+					return
+				}
+				stats, raw := false, false
+				for _, call := range calls {
+					stats = stats || strings.HasPrefix(call, "/select/logsql/stats_query_range ")
+					raw = raw || strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1")
+				}
+				if probe.route == "stats" && (raw || !stats) || probe.route == "raw" && !raw {
+					t.Errorf("route %q expected: stats call=%v raw rows read=%v; VictoriaLogs calls %q", probe.route, stats, raw, calls)
+				}
+			})
 		}
 	}
 }

@@ -946,6 +946,32 @@ func (l *logRowLevels) mapRow(entry map[string]interface{}, msg string, s logRow
 	return l.unpackedRow(s, &fields, func() string { return storedLogLineFromEntry(msg, entry, s.labels, nil, l.defaultMsg) })
 }
 
+// stringRow is mapRow for a row held as strings (the raw-row metric
+// evaluator); the stream's labels are not repeated among its fields.
+func (l *logRowLevels) stringRow(entry map[string]string, s logRowStream) detectedLevel {
+	var fields levelFields
+	for k, v := range entry {
+		if v == "" || !mayBeLevelField([]byte(k)) {
+			continue
+		}
+		if _, isStream := s.labels[k]; isStream {
+			continue
+		}
+		fields.observe([]byte(k), []byte(v))
+	}
+	msg := entry["_msg"]
+	if !isVLMissingMsg(msg, l.defaultMsg) {
+		return deriveRowLevel(s.levels, &fields, []byte(msg), false, l.bodyScan)
+	}
+	return l.unpackedRow(s, &fields, func() string {
+		decoded := make(map[string]interface{}, len(entry))
+		for k, v := range entry {
+			decoded[k] = v
+		}
+		return storedLogLineFromEntry(msg, decoded, s.labels, nil, l.defaultMsg)
+	})
+}
+
 // unpackedRow derives detected_level for a row whose _msg is VictoriaLogs'
 // missing-message value (built-in, -backend-default-msg-value, or empty): its
 // fields came from a JSON body. The keyword scan reads the

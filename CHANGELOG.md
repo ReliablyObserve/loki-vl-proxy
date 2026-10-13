@@ -9,20 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`sum by (detected_level)` over a JSON pipeline normalizes a `level` stream
-  label and reads a body `level` key (#760).** Loki sets detected_level at
-  ingest, normalized (`distributor/field_detection.go`): a `level` stream
-  label, else a `level` key of a JSON body, with `info`, `INFO`, `inf` and
-  `information` one level. The row evaluator, which answers plain `| json` and
-  `__error__!=""` shapes and every fallback of the stats pushdown, took the
-  stream's spelling as stored (three series for those four) and never read a
-  `level` key that only the body holds (every such line was `unknown`). It now
-  normalizes the stream's level and adds `level` to its parser hints for a
-  detected_level grouping, as the stats pushdown already did. Only `level` is
-  read: Loki's other level fields (severity, lvl, ...) are not, and a line with
-  text after the closing brace gets its level from Loki's ingest keyword scan,
-  which is not reproduced (`semantics/json-metric-detected-level-derivation`;
-  `semantics/json-metric-detected-level-ingest-keyword-scan`, open).
+- **`sum by (detected_level)` over a JSON pipeline gives every line the level
+  Loki's ingest gave it (#760).** Loki sets detected_level once per line
+  (`distributor/field_detection.go`): a level stream label or structured
+  metadata, else the first string value of a level key (`level`, `LEVEL`,
+  `Level`, `log.level`, `severity`, `lvl`, ...) at depth 0 or 1 in document
+  order, counted only when it is a known spelling (`info`, `INFO`, `inf` and
+  `information` are one level), else the first level word of a keyword scan of
+  the whole line, else `unknown`. The row evaluator (plain `| json`,
+  `__error__!=""`, every pushdown fallback) grouped the stream's spelling as
+  stored and read only a body `level` key, and the stats pushdown read only
+  that key as well: pino's numeric levels (`{"level":30}` was `30`, Loki scans
+  the line and says `unknown`, or `error` for a line with an `Error` object),
+  `notice`, a padded ` info`, `severity` or `Level` keys and a line without a
+  level key that mentions `error` each made a series of their own or were
+  `unknown`. The row evaluator now derives the level with the derivation the
+  log lines use, and a body `detected_level` key is renamed
+  `detected_level_extracted` as in Loki; a `detected_level` stream label keeps
+  its stored spelling. The stats pushdown computes the level in VictoriaLogs
+  with the pipes of the native metric path, and probes the window for the lines
+  those pipes read differently from Loki (two level keys, a level key
+  VictoriaLogs does not unpack, a `detected_level` stream label): one such line
+  sends the query to the raw-row evaluator. One extra bounded VictoriaLogs
+  round trip per uncached window; a query with `-detected-level-body-scan`
+  disabled uses the raw-row evaluator. The native metric route for a plain
+  selector still reads level keys in the pipes' fixed order and overwrites a
+  `detected_level` stream label
+  (`semantics/detected-level-pipes-known-differences`, open).
+  (`semantics/json-metric-detected-level-derivation`)
 
 ## [2.15.0] - 2026-10-12
 

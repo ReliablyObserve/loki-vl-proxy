@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,8 @@ type jsonVolumeStreamLine struct {
 	msg    string
 	meta   map[string]string
 	vlMeta map[string]string
+	// labels are further stream labels (severity, detected_level, ...).
+	labels map[string]string
 }
 
 // vlQueryRecorder forwards to VictoriaLogs and records each request path with
@@ -109,14 +112,26 @@ func newJSONVolumeRouteProxyWithRowLimit(t *testing.T, rowLimit int) (string, *v
 // proves both backends hold every line of each app.
 func ingestJSONVolumeFixture(t *testing.T, apps map[string][]jsonVolumeStreamLine) {
 	t.Helper()
-	var vlRows strings.Builder
 	var streams []any
 	for app, lines := range apps {
-		byLevel := map[string][]any{}
+		var vlRows strings.Builder
+		// Structured metadata is no stream field: each app names its own.
+		streamFields := map[string]bool{"app": true, "level": true}
+		type lokiStream struct {
+			labels map[string]string
+			values []any
+		}
+		byLabels := map[string]*lokiStream{}
 		for _, line := range lines {
 			fields := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "app": app}
+			labels := map[string]string{"app": app}
 			if line.level != "" {
 				fields["level"] = line.level
+				labels["level"] = line.level
+			}
+			for k, v := range line.labels {
+				fields[k], labels[k] = v, v
+				streamFields[k] = true
 			}
 			for k, v := range line.vlMeta {
 				fields[k] = v
@@ -128,22 +143,27 @@ func ingestJSONVolumeFixture(t *testing.T, apps map[string][]jsonVolumeStreamLin
 			if len(line.meta) > 0 {
 				entry = append(entry, line.meta)
 			}
-			byLevel[line.level] = append(byLevel[line.level], entry)
-		}
-		for level, values := range byLevel {
-			labels := map[string]string{"app": app}
-			if level != "" {
-				labels["level"] = level
+			key := fmt.Sprint(labels)
+			if byLabels[key] == nil {
+				byLabels[key] = &lokiStream{labels: labels}
 			}
-			streams = append(streams, map[string]any{"stream": labels, "values": values})
+			byLabels[key].values = append(byLabels[key].values, entry)
 		}
-	}
-	status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=app,level", vlRows.String(), map[string]string{"Content-Type": "application/stream+json"})
-	if status != http.StatusOK {
-		t.Fatalf("VL ingest: %d %s", status, body)
+		for _, stream := range byLabels {
+			streams = append(streams, map[string]any{"stream": stream.labels, "values": stream.values})
+		}
+		names := make([]string, 0, len(streamFields))
+		for name := range streamFields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields="+strings.Join(names, ","), vlRows.String(), map[string]string{"Content-Type": "application/stream+json"})
+		if status != http.StatusOK {
+			t.Fatalf("VL ingest: %d %s", status, body)
+		}
 	}
 	payload, _ := json.Marshal(map[string]any{"streams": streams})
-	status, body = hardeningRequest(t, http.MethodPost, lokiURL+"/loki/api/v1/push", string(payload), map[string]string{"Content-Type": "application/json", "X-Scope-OrgID": "0"})
+	status, body := hardeningRequest(t, http.MethodPost, lokiURL+"/loki/api/v1/push", string(payload), map[string]string{"Content-Type": "application/json", "X-Scope-OrgID": "0"})
 	if status != http.StatusNoContent {
 		t.Fatalf("Loki ingest: %d %s", status, body)
 	}
@@ -236,16 +256,17 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 		step    time.Duration
 		pushed  bool
 		minimum int // Loki series expected for the fixture
+		guards  int // probes of a pushed query: the label parse risk, and three for detected_level
 	}{
 		// Grafana's exact supplementary logs volume query.
-		{`sum by (level, detected_level) (count_over_time({app="` + app + `"} | json | drop __error__[1m]))`, time.Minute, true, 4},
-		{`sum by (level) (count_over_time({app="` + app + `"} | json | drop __error__, __error_details__ [2m]))`, time.Minute, true, 4},
-		{`sum by (app) (count_over_time({app=~"` + app + `"} | json | drop __error__[1m]))`, time.Minute, true, 1},
-		{`sum by (detected_level) (bytes_over_time({app="` + app + `"} | json | drop __error__[90s]))`, 30 * time.Second, true, 4},
-		{`sum by (level) (count_over_time({app="` + partial + `"} | json | drop __error__[1m]))`, time.Minute, false, 3},
+		{`sum by (level, detected_level) (count_over_time({app="` + app + `"} | json | drop __error__[1m]))`, time.Minute, true, 4, 4},
+		{`sum by (level) (count_over_time({app="` + app + `"} | json | drop __error__, __error_details__ [2m]))`, time.Minute, true, 4, 1},
+		{`sum by (app) (count_over_time({app=~"` + app + `"} | json | drop __error__[1m]))`, time.Minute, true, 1, 1},
+		{`sum by (detected_level) (bytes_over_time({app="` + app + `"} | json | drop __error__[90s]))`, 30 * time.Second, true, 4, 3},
+		{`sum by (level) (count_over_time({app="` + partial + `"} | json | drop __error__[1m]))`, time.Minute, false, 3, 1},
 		// Grafana's logs volume for plain and logfmt selectors.
-		{`sum by (level, detected_level) (count_over_time({app="` + plain + `"} | drop __error__[1m]))`, time.Minute, true, 3},
-		{`sum by (level, detected_level) (count_over_time({app="` + logfmt + `"} | logfmt | drop __error__[1m]))`, time.Minute, true, 3},
+		{`sum by (level, detected_level) (count_over_time({app="` + plain + `"} | drop __error__[1m]))`, time.Minute, true, 3, 0},
+		{`sum by (level, detected_level) (count_over_time({app="` + logfmt + `"} | logfmt | drop __error__[1m]))`, time.Minute, true, 3, 4},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			loki := slidingRangeSeries(t, lokiURL, tc.query, start, end, tc.step, nil)
@@ -269,12 +290,8 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 						raw++
 					}
 				}
-				wantGuards := 1
-				if !strings.Contains(tc.query, "json") && !strings.Contains(tc.query, "logfmt") {
-					wantGuards = 0 // no parser: stored fields only
-				}
-				if tc.pushed && (stats != 1 || guards != wantGuards || raw != 0) {
-					t.Fatalf("expected %d guard and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d", wantGuards, stats, guards, raw)
+				if tc.pushed && (stats != 1 || guards != tc.guards || raw != 0) {
+					t.Fatalf("expected %d guards and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d", tc.guards, stats, guards, raw)
 				}
 				// The bucket query runs beside the guard and is cancelled when the
 				// guard finds a line the parsers read differently, so a stats
@@ -308,8 +325,9 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 				rows++
 			}
 		}
-		if guards != 1 || rows != 1 {
-			t.Fatalf("expected one risk check and one row fetch: guards=%d rows=%d", guards, rows)
+		// The detected_level probes run beside the label's; a risky line cancels the rest.
+		if guards == 0 || guards > 4 || rows != 1 {
+			t.Fatalf("expected the risk checks and one row fetch: guards=%d rows=%d", guards, rows)
 		}
 	})
 }

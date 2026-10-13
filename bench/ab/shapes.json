@@ -1726,7 +1726,7 @@
    ]
   },
   "json-detected-level": {
-   "description": "sum by (detected_level) over a JSON pipeline (row evaluator and pushdown fallbacks).",
+   "description": "sum by (detected_level) over a JSON pipeline (row evaluator, and the stats pushdown with the level computed in VictoriaLogs and its guard probes).",
    "ranges": [
     "1h",
     "6h",
@@ -1757,6 +1757,24 @@
     {
      "name": "DLV3 plain json, detected_level",
      "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [1m]))",
+     "covers": [
+      "semantics/json-metric-detected-level-derivation",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DLV4 explore json volume, level and detected_level",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | drop __error__ [$__auto]))",
+     "covers": [
+      "semantics/json-metric-detected-level-derivation",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DLV5 json error dropped, detected_level",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [1m]))",
      "covers": [
       "semantics/json-metric-detected-level-derivation",
       "severity-detected-level-derivation",

@@ -1,61 +1,87 @@
 id: semantics/json-metric-detected-level-derivation
-title: sum by (detected_level) over a JSON pipeline normalizes a level stream label and reads a body level key, as Loki's ingest does for those two (fixed)
+title: sum by (detected_level) over a JSON pipeline gives every line the level Loki's ingest gave it, by level key in document order, by keyword scan, with a detected_level stream label kept as stored (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki sets detected_level at ingest (pkg/distributor/field_detection.go
-  extractLogLevel): a level stream label, else structured metadata, else a
-  level key of the JSON body, then normalizeLogLevel folds the spellings
-  (info, INFO, inf, information are `info`; a line without a level is
-  `unknown`). `sum by (detected_level) (count_over_time({...} | json [1m]))`
-  therefore has one series per level, whatever the spelling or the place the
-  level was found in.
+  Loki sets detected_level once per line at ingest (pkg/distributor/
+  field_detection.go extractLogLevelFromLogLine, discover_log_levels on). A
+  level stream label or structured metadata decides first. Otherwise a line
+  whose first non-space character is `{` and last is `}` is read as JSON: the
+  first string value of an allowed key (level, LEVEL, Level, log.level,
+  severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text,
+  Severity_Text, SEVERITY_TEXT) at depth 0 or 1, in document order, counts only
+  when it is a known spelling (info, INFO, inf and information are `info`).
+  Anything else (a number, a boolean, `notice`, no such key, a line that is not
+  JSON) falls to a keyword scan of the whole line, which finds the first
+  bounded level word; `unknown` is the answer only when the scan finds none.
+  The value is structured metadata present on every line, so a body key named
+  detected_level is detected_level_extracted, and a detected_level stream label
+  keeps its stored value (the derived one moves to detected_level_extracted).
 
-  The proxy's row evaluator answers every `| json` shape the stats pushdown
-  does not take (plain `| json`, `__error__!=""`) and every fallback of the
-  pushdown. It took the stream's level spelling as stored (INFO, inf and
-  information were three series) and, with the parser hints of a
-  detected_level grouping, never read a level key that only the JSON body
-  holds, so those lines were `unknown`. The stats pushdown already grouped the
-  stored level, else the unpacked body key, and normalized after the read. The
-  row evaluator now normalizes the stream's level and adds `level` to its
-  parser hints for a detected_level grouping, so both evaluate alike.
+  Measured against Loki v3.7.7 on 28 probe lines (the e2e test pins each):
+  `{"level":30,"msg":"hi"}` is unknown; a pino error line
+  (`{"level":50,...,"err":{"type":"Error"}}`) is error; `{"level":"notice"}` is
+  unknown but `{"level":"notice","msg":"error connecting"}` is error;
+  `{"level":" info"}` is info; `{"severity":"ERROR"}`, `{"Level":"Information"}`,
+  `{"LEVEL":"warn"}` and `{"log":{"level":"warn"}}` are error, info, warn and
+  warn; `{"msg":"x","severity":"error","level":"info"}` is error (document
+  order) and `{"level":"info","severity":"error"}` is info; a line without a
+  level key that says "error" is error. The proxy took the stream's spelling as
+  stored, read only a body `level` key and made every other value a series of
+  its own (`30`, `notice`, ` info`, `true`) or `unknown`.
 
-  Only the `level` stream label and a top-level `level` key of the body are
-  read; Loki's allowed level fields go further (severity, lvl, ...), a case
-  neither evaluator covers. A body `detected_level` key would be extracted by
-  the same hint set, as before.
+  Both routes of `sum by (detected_level) (... | json ...)` now give Loki's
+  value. The row evaluator (plain `| json`, `__error__!=""`, every pushdown
+  fallback) gives each row Loki's structured metadata before any stage runs,
+  using the derivation the log lines use (deriveRowLevel), so a body
+  detected_level key is renamed and filters on detected_level read it. The
+  stats pushdown computes the level in VictoriaLogs with the pipes of the
+  native metric route (translator.BuildDetectedLevelChain), placed before the
+  unpack of any other label, and a guard (detectedLevelStreamRisk,
+  detectedLevelKeysRisk, detectedLevelUnpackRisk, cached with the other
+  pushdown probes) hands the query to the raw-row evaluator when the window
+  holds a line those pipes read differently from Loki: a detected_level stream
+  label, two mentions of a level key (the pipes read keys in a fixed order),
+  or a level key unpack_json yields no value for (nested other than log.level,
+  leading whitespace, text after the closing brace, a syntax error). With
+  -detected-level-body-scan=false the raw-row evaluator answers, as only the
+  stored fields decide. Cost: one extra bounded VictoriaLogs round trip per
+  uncached window; a window with a guarded line reads raw rows up to the row
+  limit, like the other parse-risk fallbacks.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum by (detected_level) (count_over_time({app="json-level"} | json [1m]))'
+    query: 'sum by (detected_level) (count_over_time({app="json-level-probe"} | json | drop __error__ [1m]))'
     start: now-10m
     end: now
     step: "60"
   headers:
     X-Scope-OrgID: "0"
   precondition: |
-    Lines with the level only in the JSON body, only as a level stream label in
-    mixed spellings, and in both (the stream wins).
+    One stream per probe line: pino numeric levels, notice, a padded level, the
+    severity, Level, LEVEL and nested log.level keys, two level keys in both
+    orders, a line with the word error and no level key, a detected_level
+    stream label, a body detected_level key, structured metadata level and
+    detected_level.
 compare:
   mode: exact
   fields: [status, series_labels, values]
   expect: |
-    One series per normalized level (info, warn, error, debug, unknown), as
-    Loki answers.
+    The series Loki answers for each probe, on `| json` (raw-row evaluator) and
+    `| json | drop __error__` (pushdown or its guarded fallback).
 gap:
   status: fixed
   fixed_by: "#760"
   impact: explore-visible
   visual: none
-  visual_reason: 'the generator data carries lowercase levels, and the same in the stream label and the body, so main and the branch render the same panel; proven against Loki by the e2e on a fixture with mixed spellings and body-only levels (v1.47 and v1.52)'
-  effort: S
-  area: 'internal/proxy ordered_json_metric.go setParserHints and groupLabels (row evaluator)'
-  loki: 'pkg/distributor/field_detection.go extractLogLevel, normalizeLogLevel'
-  proxy: 'the row evaluator kept the stream level as stored and ignored a body-only level key'
-  planned_test: 'TestOrderedJSONDetectedLevelLikeLoki (proxy); TestRangeMetricCompatibilityJSONDetectedLevel (test/e2e-compat, group semantics)'
+  visual_reason: 'the generator data carries one lowercase spelling, the same in the stream label and the body, so main and the branch render the same panel; the e2e probes against Loki are the proof (v1.47 and v1.52)'
+  effort: M
+  area: 'internal/proxy ordered_json_metric.go (withDerivedLevel, setStatsPushdown, detectedLevel*Risk), stream_processing.go stringRow'
+  loki: 'pkg/distributor/field_detection.go extractLogLevelFromLogLine, detectLevelFromLogLine, normalizeLogLevel; pkg/distributor/labels.go (detected_level_extracted)'
+  proxy: 'the row evaluator and the stats pushdown read the stream level or a body level key and normalized it'
+  planned_test: 'TestOrderedJSONDetectedLevelLikeLoki, TestOrderedJSONDetectedLevelMixedRows (proxy); TestRangeMetricCompatibilityJSONDetectedLevelProbes and TestRangeMetricCompatibilityJSONDetectedLevel (test/e2e-compat, group semantics)'
   note: |
     Measured on VictoriaLogs v1.52.0 and v1.47.0 against Loki v3.7.7.
   clusters: []

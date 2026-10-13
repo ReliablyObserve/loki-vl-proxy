@@ -11,93 +11,141 @@ import (
 	"time"
 )
 
-// detected_level is the level Loki sets at ingest, normalized
-// (distributor/field_detection.go: a level stream label, else a top-level
-// level key of the JSON body, spelled info, INFO, inf or information alike).
-// The row evaluator, which answers every `| json` shape the stats pushdown
-// does not take and falls back for the ones it cannot serve, derives it the
-// same way: from the stream's level, else from the body's level key, never
-// from the spelling as stored.
+// detectedLevelProbe is one stored line and the detected_level Loki gives it.
+//
+// The body-only answers are Loki v3.7.7's own: the logic of
+// pkg/distributor/field_detection.go (extractLogLevelFromLogLine: the first
+// string value of an allowed level key, at depth 0 or 1 in document order,
+// counts only as a known spelling, otherwise the whole line is keyword
+// scanned) was run on each line. The answers for a level held by the stream
+// or by a stored field follow the log-line derivation (deriveRowLevel) and
+// are pinned against real Loki by the e2e test
+// TestRangeMetricCompatibilityJSONDetectedLevelProbes.
+type detectedLevelProbe struct {
+	name   string
+	stream map[string]string // stream labels besides app and env
+	vl     map[string]string // stored fields that are not stream labels
+	msg    string
+	want   string // the series' detected_level
+	// rawRows marks the lines the stats pushdown must not answer: the pipes of
+	// translator.BuildDetectedLevelChain would read them differently, or
+	// might, so a guard probe sends the query to the raw-row evaluator.
+	rawRows bool
+}
+
+var detectedLevelProbes = []detectedLevelProbe{
+	{name: "pino numeric level", msg: `{"level":30,"msg":"hi"}`, want: "unknown"},
+	{name: "pino numeric level with an error object", msg: `{"level":50,"msg":"boom","err":{"type":"Error"}}`, want: "error"},
+	{name: "boolean level", msg: `{"level":true}`, want: "unknown"},
+	{name: "null level", msg: `{"level":null}`, want: "unknown", rawRows: true},
+	{name: "unknown spelling", msg: `{"level":"notice"}`, want: "unknown"},
+	{name: "unknown spelling and an error word", msg: `{"level":"notice","msg":"error connecting"}`, want: "error"},
+	{name: "padded level", msg: `{"level":" info"}`, want: "info"},
+	{name: "severity key", msg: `{"severity":"ERROR"}`, want: "error"},
+	{name: "Level key", msg: `{"Level":"Information"}`, want: "info"},
+	{name: "LEVEL key", msg: `{"LEVEL":"warn"}`, want: "warn"},
+	{name: "nested log.level", msg: `{"log":{"level":"warn"}}`, want: "warn"},
+	{name: "no level key, error word", msg: `{"msg":"request failed with error"}`, want: "error"},
+	{name: "object level", msg: `{"level":{"name":"info"}}`, want: "info", rawRows: true},
+	{name: "array level", msg: `{"level":["info"]}`, want: "info"},
+	{name: "body detected_level key", msg: `{"detected_level":"error","level":"info"}`, want: "info"},
+	{name: "text after the closing brace", msg: `{"level":"info"} trailing`, want: "info", rawRows: true},
+	{name: "no level at all", msg: `{"n":1}`, want: "unknown"},
+	{name: "plain level key", msg: `{"level":"info"}`, want: "info"},
+	{name: "severity before level", msg: `{"msg":"x","severity":"error","level":"info"}`, want: "error", rawRows: true},
+	{name: "level before severity", msg: `{"level":"info","severity":"error"}`, want: "info", rawRows: true},
+	{name: "stream level, unknown spelling", stream: map[string]string{"level": "notice"}, msg: `{"n":1}`, want: "notice"},
+	{name: "stream severity", stream: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error"},
+	{name: "stream level wins over the body", stream: map[string]string{"level": "INFO"}, msg: `{"level":"error"}`, want: "info"},
+	{name: "stream detected_level keeps its stored spelling", stream: map[string]string{"detected_level": "INFO"}, msg: `{"n":1}`, want: "INFO", rawRows: true},
+	{name: "stream detected_level wins over the body", stream: map[string]string{"detected_level": "Warning"}, msg: `{"level":"error"}`, want: "Warning", rawRows: true},
+	{name: "stored level field", vl: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn"},
+	{name: "stored detected_level field", vl: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error"},
+	{name: "body detected_level key alone", msg: `{"detected_level":"verbose"}`, want: "unknown"},
+}
+
+func (c detectedLevelProbe) row(ts time.Time) pushdownRow {
+	labels := map[string]string{"app": "api", "env": "prod"}
+	for k, v := range c.stream {
+		labels[k] = v
+	}
+	return pushdownRow{ts: ts, stream: labels, vl: c.vl, msg: c.msg}
+}
+
+// The detected_level of `sum by (detected_level) (... | json ...)` is the
+// level Loki sets at ingest (distributor/field_detection.go), whatever shape
+// the level has in the line: a stream label keeps its stored value, the first
+// string value of a level key in document order counts only as a known
+// spelling, anything else falls to a keyword scan of the line, and a body key
+// named detected_level never replaces it (Loki renames it
+// detected_level_extracted). Every route answers the same: the raw-row
+// evaluator (plain `| json`) and the stats pushdown with its guard
+// (`| json | drop __error__`).
 // conformance: semantics/json-metric-detected-level-derivation
 func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(2*time.Minute), s0.Add(2*time.Minute)
+	for _, probe := range detectedLevelProbes {
+		want := map[string]map[int64]string{
+			canonicalLabelsKey(map[string]string{"detected_level": probe.want}): {end.Unix(): "1"},
+		}
+		for _, pipeline := range []string{`| json`, `| json | drop __error__`, `| json | __error__=""`} {
+			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
+				query := `sum by (detected_level) (count_over_time({env="prod"} ` + pipeline + ` [5m]))`
+				srv, fake := newPushdownFakeVL(t, []pushdownRow{probe.row(s0.Add(100 * time.Second))}, nil)
+				p := newFilterPushdownProxy(t, srv.URL)
+				fake.stored = p.labelTranslator.ToVL
+				if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, want) {
+					t.Fatalf("status %d %.200s, got %v, want %v", code, body, got, want)
+				}
+				if pipeline != `| json | drop __error__` {
+					return
+				}
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				if viaRaw := fake.raw > 0; viaRaw != probe.rawRows {
+					t.Fatalf("raw rows read: %v, want %v (stats queries %d, probes %d)", viaRaw, probe.rawRows, len(fake.stats), len(fake.guards))
+				}
+			})
+		}
+	}
+}
+
+// The raw-row evaluator groups by the same value whether the rows come in
+// one response or many, for count and bytes alike, and a window mixing every
+// shape yields one series per level.
+func TestOrderedJSONDetectedLevelMixedRows(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
 	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
-	type line struct {
-		stream map[string]string
-		msg    string
-		level  string // the detected_level Loki sets
-	}
-	stream := func(level string) map[string]string {
-		labels := map[string]string{"app": "api", "env": "prod"}
-		if level != "" {
-			labels["level"] = level
-		}
-		return labels
-	}
-	lines := []line{
-		{stream("INFO"), `{"n":1}`, "info"},
-		{stream("information"), `{"n":2}`, "info"},
-		{stream("Warning"), `{"n":3}`, "warn"},
-		{stream(""), `{"level":"inf","n":4}`, "info"},
-		{stream(""), `{"level":"ERR","n":5}`, "error"},
-		{stream(""), `{"level":"WARN","n":6}`, "warn"},
-		{stream("debug"), `{"level":"error","n":7}`, "debug"}, // the stream's level wins
-		{stream(""), `{"n":8}`, "unknown"},
-	}
 	var rows []pushdownRow
-	for i, l := range lines {
-		rows = append(rows, pushdownRow{ts: s0.Add(time.Duration(100+i) * time.Second), stream: l.stream, msg: l.msg})
-	}
-	reference := func(bytes bool) map[string]map[int64]string {
-		want := map[string]map[int64]string{}
-		for at := start; !at.After(end); at = at.Add(time.Minute) {
-			sums := map[string]int{}
-			for i, l := range lines {
-				if ts := rows[i].ts; ts.After(at.Add(-5*time.Minute)) && !ts.After(at) {
-					if bytes {
-						sums[l.level] += len(l.msg)
-					} else {
-						sums[l.level]++
-					}
-				}
-			}
-			for level, n := range sums {
-				key := canonicalLabelsKey(map[string]string{"detected_level": level})
-				if want[key] == nil {
-					want[key] = map[int64]string{}
-				}
-				want[key][at.Unix()] = strconv.Itoa(n)
-			}
+	want := map[string]map[string]int{} // level -> function -> sum at the last step
+	for i, probe := range detectedLevelProbes {
+		rows = append(rows, probe.row(s0.Add(time.Duration(100+i)*time.Second)))
+		if want[probe.want] == nil {
+			want[probe.want] = map[string]int{}
 		}
-		return want
+		want[probe.want]["count_over_time"]++
+		want[probe.want]["bytes_over_time"] += len(probe.msg)
 	}
-	for _, tc := range []struct {
-		name, pipeline string
-		function       string
-		pushdown       bool
-	}{
-		{"plain json (row evaluator)", `| json`, "count_over_time", false},
-		{"plain json bytes (row evaluator)", `| json`, "bytes_over_time", false},
-		{"json with the error dropped (plain pushdown)", `| json | drop __error__`, "count_over_time", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			query := `sum by (detected_level) (` + tc.function + `({env="prod"} ` + tc.pipeline + ` [5m]))`
+	for _, function := range []string{"count_over_time", "bytes_over_time"} {
+		t.Run(function, func(t *testing.T) {
+			query := `sum by (detected_level) (` + function + `({env="prod"} | json [5m]))`
 			plan, ok := compileOrderedJSONMetric(query)
-			if !ok || plan.pushdown != tc.pushdown {
-				t.Fatalf("plan ok=%v pushdown=%v, want pushdown=%v", ok, plan != nil && plan.pushdown, tc.pushdown)
+			if !ok {
+				t.Fatal("no plan")
 			}
 			srv, fake := newPushdownFakeVL(t, rows, nil)
 			p := newFilterPushdownProxy(t, srv.URL)
 			fake.stored = p.labelTranslator.ToVL
-			want := reference(tc.function == "bytes_over_time")
-			if len(want) != 5 {
-				t.Fatalf("fixture: %d expected series, want 5", len(want))
+			got := detectedLevelRowMatrix(t, p, plan, start, end, time.Minute)
+			if len(got) != len(want) {
+				t.Fatalf("%d series, want %d: %v", len(got), len(want), got)
 			}
-			if got := detectedLevelRowMatrix(t, p, plan, start, end, time.Minute); !reflect.DeepEqual(got, want) {
-				t.Fatalf("row evaluator %v, want %v", got, want)
-			}
-			if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, want) {
-				t.Fatalf("proxy status %d %.200s, got %v, want %v", code, body, got, want)
+			for level, sums := range want {
+				key := canonicalLabelsKey(map[string]string{"detected_level": level})
+				if have, ok := got[key][end.Unix()]; !ok || have != strconv.Itoa(sums[function]) {
+					t.Errorf("%s at %d: %q, want %d", level, end.Unix(), have, sums[function])
+				}
 			}
 		})
 	}

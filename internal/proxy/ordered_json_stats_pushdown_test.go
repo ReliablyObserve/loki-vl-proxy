@@ -65,7 +65,9 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 	fake := &jsonVolumeFakeVL{lines: lines}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			t.Errorf("parse form: %v", err)
+			if r.Context().Err() == nil { // a cancelled probe is not a failure
+				t.Errorf("parse form: %v", err)
+			}
 			return
 		}
 		query := r.Form.Get("query")
@@ -78,6 +80,13 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			if !ok {
 				return
 			}
+			// The pipes of translator.BuildDetectedLevelChain are emulated whole
+			// below; the unpack they hold is not the plan's own.
+			chain := strings.Contains(query, `"<detected_level>" as __dl_s`)
+			const chainEnd = "| delete __dl, __dl_*, __j_*, __l_*"
+			if chain {
+				query = query[:strings.Index(query, " | format if (detected_level:*)")] + query[strings.Index(query, chainEnd)+len(chainEnd):]
+			}
 			keep := strings.Contains(query, "fields (level) keep_original_fields")
 			groupStart := strings.Index(query, "stats by (")
 			if groupStart < 0 {
@@ -87,7 +96,7 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			rest := query[groupStart+len("stats by ("):]
 			groupBy := strings.Split(rest[:strings.Index(rest, ")")], ", ")
 			bytesMetric := strings.Contains(query, "sum_len(_msg) as c")
-			type key struct{ name, level string }
+			type key struct{ name, level, derived string }
 			points := map[key]map[int64]float64{}
 			add := func(k key, ts int64, v float64) {
 				if points[k] == nil {
@@ -115,19 +124,29 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 				if m := fakeVLLevelFilterRE.FindStringSubmatch(query); m != nil && (level == m[2]) == (m[1] == "-") {
 					continue
 				}
+				derived := ""
+				if chain {
+					stored := map[string]string{"_msg": line.msg}
+					if line.level != "" {
+						stored["level"] = line.level
+					}
+					derived = emulateDetectedLevelChain(stored)
+				}
 				bucket := vlTruncate(ts, step, offset)
 				value := 1.0
 				if bytesMetric {
 					value = float64(len(line.msg))
-					add(key{"__sample_count", level}, bucket, 1)
+					add(key{"__sample_count", level, derived}, bucket, 1)
 				}
-				add(key{"c", level}, bucket, value)
+				add(key{"c", level, derived}, bucket, value)
 			}
 			keys := make([]key, 0, len(points))
 			for k := range points {
 				keys = append(keys, k)
 			}
-			sort.Slice(keys, func(i, j int) bool { return keys[i].name+keys[i].level < keys[j].name+keys[j].level })
+			sort.Slice(keys, func(i, j int) bool {
+				return keys[i].name+keys[i].level+"\x00"+keys[i].derived < keys[j].name+keys[j].level+"\x00"+keys[j].derived
+			})
 			var sb strings.Builder
 			sb.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
 			for i, k := range keys {
@@ -137,8 +156,11 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 				fmt.Fprintf(&sb, `{"metric":{"__name__":%q`, k.name)
 				for _, field := range groupBy {
 					value := ""
-					if field == "level" {
+					switch field {
+					case "level":
 						value = k.level
+					case "detected_level":
+						value = k.derived
 					}
 					// VictoriaLogs reports every grouped field, empty or not.
 					fmt.Fprintf(&sb, `,%q:%q`, field, value)
@@ -164,10 +186,13 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			start := parseFakeVLTime(t, r.Form.Get("start"))
 			end := parseFakeVLTime(t, r.Form.Get("end"))
 			guard := strings.HasSuffix(query, " | limit 1")
-			logfmtGuard := guard && !strings.Contains(query, "unpack_json")
+			// The guard probes of the detected_level pipes, which the generic
+			// fake evaluates over the same lines.
+			levelGuard := guard && (strings.Contains(query, `_msg:"LEVEL"`) || strings.Contains(query, "filter _stream:{detected_level"))
+			logfmtGuard := guard && !levelGuard && !strings.Contains(query, "unpack_json")
 			var msgRE *regexp.Regexp
 			fake.mu.Lock()
-			if logfmtGuard {
+			if levelGuard || logfmtGuard {
 				fake.guardCalls = append(fake.guardCalls, query)
 			} else if guard {
 				fake.guardCalls = append(fake.guardCalls, query)
@@ -187,10 +212,19 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 				if ts < start || ts >= end {
 					continue
 				}
+				if levelGuard {
+					labels := map[string]string{"app": "api"}
+					if line.level != "" {
+						labels["level"] = line.level
+					}
+					if !new(pushdownFakeVL).guardMatches(t, query, pushdownRow{ts: line.ts, stream: labels, msg: line.msg}) {
+						continue
+					}
+				}
 				if logfmtGuard && (line.level != "" || !logfmtLineIsRisk(line.msg, "level")) {
 					continue
 				}
-				if guard && !logfmtGuard && (line.level != "" || !msgRE.MatchString(line.msg) || vlUnpackJSONLevel(line.msg) != "") {
+				if guard && !levelGuard && !logfmtGuard && (line.level != "" || !msgRE.MatchString(line.msg) || vlUnpackJSONLevel(line.msg) != "") {
 					continue
 				}
 				row := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "_stream": `{app="api"}`, "app": "api"}
@@ -347,7 +381,7 @@ func TestOrderedJSONLogsVolumeUsesStatsBuckets(t *testing.T) {
 	}{
 		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__[1m]))`, "count_over_time", []string{"level", "detected_level"}, time.Minute, time.Minute, "unpack_json fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
 		{`sum by (level) (rate({app="api"} | json | drop __error__, __error_details__ [2m]))`, "rate", []string{"level"}, 30 * time.Second, 2 * time.Minute, "unpack_json fields (level) keep_original_fields | stats by (level) count() as c"},
-		{`sum by (detected_level) (bytes_over_time({app="api"} | json | drop __error__ [90s]))`, "bytes_over_time", []string{"detected_level"}, time.Minute, 90 * time.Second, "unpack_json fields (level) keep_original_fields | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count"},
+		{`sum by (detected_level) (bytes_over_time({app="api"} | json | drop __error__ [90s]))`, "bytes_over_time", []string{"detected_level"}, time.Minute, 90 * time.Second, "| delete __dl, __dl_*, __j_*, __l_* | stats by (detected_level) sum_len(_msg) as c, count() as __sample_count"},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newJSONVolumeFakeVL(t, lines)
@@ -359,8 +393,16 @@ func TestOrderedJSONLogsVolumeUsesStatsBuckets(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || len(fake.guardCalls) != 1 {
-				t.Fatalf("expected one guard and one stats call without raw rows: raw=%d stats=%q guard=%q", fake.rawCalls, fake.statsCalls, fake.guardCalls)
+			// The detected_level pipes add the guard probes of levelProbes.
+			guards := 1
+			if strings.Contains(tc.query, "detected_level") {
+				guards += levelProbes
+			}
+			if !strings.Contains(tc.query, "by (level") {
+				guards-- // no label to probe: only the detected_level probes run
+			}
+			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || len(fake.guardCalls) != guards {
+				t.Fatalf("expected %d guards and one stats call without raw rows: raw=%d stats=%q guard=%q", guards, fake.rawCalls, fake.statsCalls, fake.guardCalls)
 			}
 			if !strings.HasSuffix(fake.statsCalls[0], tc.stats) {
 				t.Fatalf("stats query %q does not end with %q", fake.statsCalls[0], tc.stats)
@@ -422,7 +464,7 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		fields []string
 	}{
 		{`sum by (level, detected_level) (count_over_time({env="production"} | json | drop __error__[1m]))`, []string{"level"}},
-		{`sum by (detected_level) (count_over_time({env="production"} |= "x" | json | drop __error_details__, __error__[1m]))`, []string{"level"}},
+		{`sum by (detected_level) (count_over_time({env="production"} |= "x" | json | drop __error_details__, __error__[1m]))`, nil},
 		{`sum by (app, level) (bytes_rate({env="production"} | json | drop __error__ [1m]))`, []string{"app", "level"}},
 		{`sum by (level) (rate({env="production"} | json | drop __error__ | json[1m]))`, nil},
 		{`sum by (level) (count_over_time({env="production"} | json [1m]))`, nil},
@@ -443,8 +485,8 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum by (level) (count_over_time({env="production"} | json | drop __error__, level [1m]))`, nil},
 		{`count_over_time({env="production"} | json | drop __error__ [1m])`, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | drop __error__[1m]))`, []string{"level"}},
-		{`sum by (detected_level) (rate({env="production"} |= "x" | logfmt | drop __error__, __error_details__[1m]))`, []string{"level"}},
-		{`sum by (detected_level) (count_over_time({env="production"} | logfmt | level="error" | drop __error__[1m]))`, []string{"level"}},
+		{`sum by (detected_level) (rate({env="production"} |= "x" | logfmt | drop __error__, __error_details__[1m]))`, nil},
+		{`sum by (detected_level) (count_over_time({env="production"} | logfmt | level="error" | drop __error__[1m]))`, nil},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			plan, ok := compileOrderedJSONMetric(tc.query)
@@ -527,8 +569,8 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 		guards        int
 		stats         string
 	}{
-		{`sum by (level, detected_level) (count_over_time({app="api"} | drop __error__[1m]))`, "", 0, `app:="api" | stats by (level, detected_level) count() as c`},
-		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 1, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | drop __error__[1m]))`, "", 0, "| delete __dl, __dl_*, __j_*, __l_* | stats by (level, detected_level) count() as c"},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 1 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			lines := lines
@@ -538,7 +580,7 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 				lines = append([]jsonVolumeLine(nil), lines...)
 				for i := range lines {
 					if lines[i].level == "" {
-						lines[i].msg = strings.ReplaceAll(lines[i].msg, "level=", "stage=")
+						lines[i].msg = strings.ReplaceAll(lines[i].msg, "level=warn", "stage=load")
 					}
 				}
 			}
@@ -596,7 +638,7 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 	for _, tc := range []struct {
 		query, op, stats string
 	}{
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", ` | filter (level:* or _msg:"level" or _msg:~"\\\\u") | unpack_json if ((-level:*)) fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", ` | filter (level:* or _msg:"level" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*)) fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
 		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | level!="warn" [1m]))`, "!=", `unpack_json fields (level) keep_original_fields | filter -level:="warn" | stats by (level, detected_level) count() as c`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
@@ -667,7 +709,7 @@ func TestCachedStatsPushdownRiskChecksOnlyUncoveredWindow(t *testing.T) {
 		{0, 40 * time.Minute, 2},
 		{-10 * time.Minute, 40 * time.Minute, 3},
 	} {
-		if risky, err := p.cachedStatsPushdownRisk(ctx, "json", `app:="api"`, []string{"level"}, nil, nil, s0.Add(tc.from), s0.Add(tc.to)); err != nil || risky {
+		if risky, err := p.cachedStatsPushdownRisk(ctx, "json", `app:="api"`, []string{"level"}, nil, nil, false, s0.Add(tc.from), s0.Add(tc.to)); err != nil || risky {
 			t.Fatalf("step %d: risky=%v err=%v", i, risky, err)
 		}
 		if got := calls(); got != tc.calls {

@@ -1,0 +1,51 @@
+id: semantics/detected-level-pipes-known-differences
+title: The native metric route for detected_level reads level keys in a fixed order and overwrites a detected_level stream label (open)
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The native metric route (`sum by (detected_level) (count_over_time({...}
+  [1m]))` over a plain selector, which Logs Drilldown sends, and Explore's
+  plain-selector volume shape) computes detected_level in VictoriaLogs with
+  translator.BuildDetectedLevelChain. Those pipes read the level keys of a body
+  in a fixed order, do not search nested objects other than `log.level`, stop
+  at nothing in a line VictoriaLogs cannot parse as a whole, fold only ASCII
+  in the keyword scan, and write the derived level over a stored
+  `detected_level`, where Loki takes the first level key in document order,
+  searches objects at depth 1, keeps the keys read before a syntax error, folds
+  Unicode and keeps a detected_level stream label as stored.
+
+  Measured against Loki v3.7.7 on VictoriaLogs v1.52.0 with the e2e probe
+  fixtures: `{"msg":"x","severity":"error","level":"info"}` is error in Loki and
+  info in the proxy; a stream with the label `detected_level="INFO"` is INFO in
+  Loki and info in the proxy. The JSON pipeline route (`| json`, #760) probes
+  for these lines and answers them with the raw-row evaluator, which is exact;
+  the native route has no raw-row fallback for them.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({app="json-level-probe"}[1m]))'
+    start: now-10m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A line holding `severity` before `level` with different values, or a stream
+    with a detected_level label.
+compare:
+  mode: exact
+  fields: [series_labels, values]
+  expect: |
+    Loki: error for the line with severity first; INFO for the labelled stream.
+    Proxy: info for both.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator detected_level_logsql.go BuildDetectedLevelChain; internal/proxy native metric route'
+  loki: 'pkg/distributor/field_detection.go getLevelUsingJSONParser (document order, depth < 2), labels.go (detected_level_extracted)'
+  proxy: 'BuildDetectedLevelChain reads keys in its list order and overwrites detected_level; the JSON pipeline route guards these lines instead'
+  planned_test: 'an e2e on plain-selector probe lines once the route probes and falls back to a raw-row or keyed evaluation'
+  clusters: []

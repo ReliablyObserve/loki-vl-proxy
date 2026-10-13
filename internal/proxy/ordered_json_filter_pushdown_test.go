@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // pushdownRow is one stored line: stream labels (spelled alike on both
@@ -235,6 +237,19 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return false
 	}
 	f.pos++
+	if name == "_stream" && strings.HasPrefix(f.src[f.pos:], "{") {
+		// A stream filter with one regexp matcher: _stream:{label=~"re"}.
+		end := strings.IndexByte(f.src[f.pos:], '}')
+		label, pattern, _ := strings.Cut(f.src[f.pos+1:f.pos+end], "=~")
+		f.pos += end + 1
+		pattern, _ = strconv.Unquote(pattern)
+		for _, m := range regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"`).FindAllStringSubmatch(f.vals["_stream"], -1) {
+			if m[1] == label && regexp.MustCompile("^(?:"+pattern+")$").MatchString(m[2]) {
+				return true
+			}
+		}
+		return false
+	}
 	value := f.vals[name]
 	switch {
 	case strings.HasPrefix(f.src[f.pos:], "*"):
@@ -296,8 +311,18 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 	if !fakeLogsQLMatch(t, pipes[0], values) {
 		return values, false
 	}
+	inChain := false
 	for _, pipe := range pipes[1:] {
 		switch {
+		case inChain:
+			// The rest of translator.BuildDetectedLevelChain: its result is
+			// already in detected_level.
+			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
+		case strings.HasPrefix(pipe, `format if (detected_level:*) "<detected_level>" as __dl_s`):
+			// The start of translator.BuildDetectedLevelChain; the chain is
+			// emulated whole by emulateDetectedLevelChain.
+			values["detected_level"] = emulateDetectedLevelChain(values)
+			inChain = true
 		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
 			var unpacked map[string]string
 			if strings.HasPrefix(pipe, "unpack_json") {
@@ -395,7 +420,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 	fake := &pushdownFakeVL{rows: rows, stored: stored}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			t.Errorf("parse form: %v", err)
+			if r.Context().Err() == nil { // a cancelled probe is not a failure
+				t.Errorf("parse form: %v", err)
+			}
 			return
 		}
 		query := r.Form.Get("query")
@@ -554,6 +581,9 @@ func lokiPushdownReferenceErr(plan *orderedJSONMetricPlan, rows []pushdownRow, s
 			for k, v := range row.loki {
 				base[k] = v
 			}
+			if plan.derivesLevel {
+				referenceDerivedLevel(base, row)
+			}
 			labels, ok, err := plan.processWithStreamLabels(row.msg, base, row.stream)
 			if err != nil {
 				return nil, fmt.Errorf("%q: %w", row.msg, err)
@@ -622,6 +652,12 @@ func filterPushdownFixture(s0 time.Time) []pushdownRow {
 	return rows
 }
 
+// levelProbes is the number of guard probes a plan deriving detected_level
+// adds to the pushdown's own, and levelChain the pipes that compute it.
+const levelProbes = 3
+
+var levelChain = translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping)
+
 func newFilterPushdownProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()
 	p := newSlidingTestProxy(t, backendURL)
@@ -651,8 +687,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		stats  string
 	}{
 		// Explore's logs volume for `{...} | json | service_version=`0.96.0` | pipeline=`logs/loki``.
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*) or (-pipeline:*)) fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2 + levelProbes,
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*) or (-pipeline:*)) fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
 		// A user's grouped sum: the filter excludes unparsed lines, so errors need not be dropped.
 		{`sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-pipeline:*)) fields (level, pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats by (level) count() as c`},
@@ -667,8 +703,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		// A field breakdown on a body key without dropping errors: `!=""` rejects unparsed lines.
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
-		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*)) fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
+		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2 + levelProbes,
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*)) fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)
@@ -767,7 +803,7 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 			// The probes run concurrently and the first one that finds a risky
 			// line cancels the others, so a sibling probe may not reach
 			// VictoriaLogs at all.
-			if fake.raw != 1 || len(fake.guards) == 0 || len(fake.guards) > tc.guards {
+			if fake.raw != 1 || len(fake.guards) == 0 || len(fake.guards) > tc.guards+levelProbes {
 				t.Fatalf("expected the probe to keep the raw evaluator: raw=%d guards=%q stats=%q", fake.raw, fake.guards, fake.stats)
 			}
 		})
@@ -952,7 +988,7 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="" [1m]))`, false, nil, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="x" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="x" | trace_id!="" | drop __error_details__ [1m]))`, true, []string{"level"}, []string{"pipeline", "trace_id"}},
-		{`sum by (service_version, detected_level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"service_version", "level"}, nil},
+		{`sum by (service_version, detected_level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"service_version"}, nil},
 		{`sum by (k8s_pod_name) (count_over_time({env="production"} | json | drop __error__ | k8s_pod_name!="" [1m]))`, true, []string{"k8s_pod_name"}, nil},
 		{`sum(count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (__error__) (count_over_time({env="production"} | json | pipeline="x" [1m]))`, false, nil, nil},
@@ -1022,7 +1058,8 @@ func TestLogfmtFilterPushdownAliasKeepsRawEvaluator(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.raw != tc.raw || len(fake.guards) != 1 {
+			// A risky line cancels the probes still running.
+			if fake.raw != tc.raw || len(fake.guards) == 0 || len(fake.guards) > 1+levelProbes || tc.raw == 0 && len(fake.guards) != 1+levelProbes {
 				t.Fatalf("raw=%d guards=%q, want raw=%d", fake.raw, fake.guards, tc.raw)
 			}
 		})
@@ -1186,4 +1223,18 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 	if fake.raw != raw || len(fake.guards) != guards+2 {
 		t.Fatalf("expected the stats pushdown and its two probes to answer the filtered query: raw=%d guards=%q", fake.raw-raw, fake.guards[guards:])
 	}
+}
+
+// referenceDerivedLevel gives a fixture row the detected_level the raw
+// evaluator derives from what VictoriaLogs stores for it.
+func referenceDerivedLevel(base map[string]string, row pushdownRow) {
+	entry := map[string]string{"_msg": row.msg}
+	for k, v := range row.stream {
+		entry[k] = v
+	}
+	for k, v := range row.vl {
+		entry[k] = v
+	}
+	levels := logRowLevels{bodyScan: true}
+	withDerivedLevel(base, levels.stringRow(entry, logRowStream{labels: row.stream, levels: levelFieldsFromLabels(row.stream)}), row.stream)
 }
