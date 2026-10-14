@@ -35,12 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `detected_level` and `level` fields (taken before any unpack) and gives each
   bucket the level Loki's ingest gives it, a known spelling in any case as its
   level and any other word as stored: main's query, with no chain and no level
-  guard probe, for every window whose rows all carry a stored level. A
+  guard probe, for every window whose rows all carry a stored level. A filter on
+  detected_level runs in VictoriaLogs on the stored spellings; Loki's series
+  limit is applied to the answer's series, so `INFO`, `info` and `Information`
+  count as one, and a query whose VictoriaLogs groups pass twice the limit is
+  asked again with the chain, whose groups are its series, instead of failing
+  with a 400 Loki does not give. A
   bucket without a stored level, or with a stored `detected_level` (a stream
   label keeps its spelling), asks again with the pipes of the native metric
-  route, built from the level fields and body keys the window holds (one
-  more VictoriaLogs query of counts per uncached window; a failed probe keeps
-  the full chain), and probes the window for lines those pipes read
+  route, built from the level fields and body keys the window holds (a presence
+  probe: one more VictoriaLogs query of counts, over the whole window when it is
+  not remembered and on every request whose window reaches into the last five
+  minutes, because lines may still arrive there; a failed probe keeps the full
+  chain; the narrowed query also flags every row holding what the probe left
+  out, for a line that arrives late inside the remembered part, and is asked
+  again with the full chain), and probes the window for lines those pipes read
   differently from Loki: two level keys, a level value with an escape (Loki
   reads a JSON value's raw bytes), a line that starts with a brace but does not
   end with one (logfmt for Loki), a level key VictoriaLogs does not unpack, a
