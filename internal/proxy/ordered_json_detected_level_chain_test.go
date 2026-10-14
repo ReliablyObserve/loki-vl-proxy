@@ -190,36 +190,65 @@ func presenceBase(query string) string {
 	return query[:strings.Index(query, " | format if (")]
 }
 
+// What the fake counts for the presence probe: its own copies of the stored
+// fields, the body keys and the stored fields that do not decide a row by
+// themselves, in the probe's order (16 stored fields, 14 body keys, the escape
+// flag). They are not shared with the code under test, so a change to the
+// probe's tables or word test there is a difference the tests see.
+var (
+	fakePresenceStored = []string{
+		"detected_level",
+		"level", "LEVEL", "Level", "log.level",
+		"severity", "SEVERITY", "Severity", "SeverityText",
+		"lvl", "LVL", "Lvl",
+		"severity_text", "Severity_Text", "SEVERITY_TEXT",
+		"severity_number",
+	}
+	fakePresenceBody = []string{
+		"level", "LEVEL", "Level", "log.level",
+		"severity", "SEVERITY", "Severity", "SeverityText",
+		"lvl", "LVL", "Lvl",
+		"severity_text", "Severity_Text", "SEVERITY_TEXT",
+	}
+	fakePresenceUndecided = []string{"severity", "severity_text", "severity_number"}
+)
+
+// fakeNotWordRune is true for the runes that end a word of the line (ASCII
+// letters, digits and the underscore continue it).
+func fakeNotWordRune(r rune) bool {
+	return r != '_' && (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z')
+}
+
 // levelPresenceResponse evaluates the presence probe over the values of the
 // rows its base selects, the way VictoriaLogs counts them: a stored field is
 // present when some row holds it non-empty, a body key when its words are
 // tokens of the line of a row no definite level field decides, and an escape
 // when such a line holds a backslash and a u.
 func levelPresenceResponse(rows []map[string]string) string {
-	counts := make([]int, levelPresenceMaskLen())
+	counts := make([]int, len(fakePresenceStored)+len(fakePresenceBody)+1)
 	for _, row := range rows {
 		decided := false
-		for i, name := range levelPresenceStored {
+		for i, name := range fakePresenceStored {
 			if row[name] == "" {
 				continue
 			}
 			counts[i]++
-			decided = decided || !containsString(levelPresenceUndecided, name)
+			decided = decided || !containsString(fakePresenceUndecided, name)
 		}
 		if decided {
 			continue
 		}
 		tokens := map[string]bool{}
-		for _, w := range strings.FieldsFunc(row["_msg"], notLevelWordRune) {
+		for _, w := range strings.FieldsFunc(row["_msg"], fakeNotWordRune) {
 			tokens[w] = true
 		}
-		for i, key := range levelPresenceBody {
+		for i, key := range fakePresenceBody {
 			all := true
-			for _, w := range strings.FieldsFunc(key, notLevelWordRune) {
+			for _, w := range strings.FieldsFunc(key, fakeNotWordRune) {
 				all = all && tokens[w]
 			}
 			if all {
-				counts[len(levelPresenceStored)+i]++
+				counts[len(fakePresenceStored)+i]++
 			}
 		}
 		if strings.Contains(row["_msg"], `\u`) {
