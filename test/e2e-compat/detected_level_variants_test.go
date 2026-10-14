@@ -87,7 +87,7 @@ func variantQuery(t *testing.T, query string, start, end time.Time) map[string]s
 	return out
 }
 
-func TestDetectedLevelPipeVariantsAgreeOnVictoriaLogs(t *testing.T) {
+func TestRangeMetricCompatibilityDetectedLevelPipeVariants(t *testing.T) {
 	now := time.Now()
 	s0 := now.Add(-3 * time.Hour).Truncate(time.Minute)
 	app := fmt.Sprintf("level-variants-%d", now.UnixNano())
@@ -192,7 +192,7 @@ func TestDetectedLevelPipeVariantsAgreeOnVictoriaLogs(t *testing.T) {
 
 // The probe and the witness look for the two bytes backslash and u with a
 // substring filter; it selects the lines the regular expression did.
-func TestEscapeSubstringFilterMatchesTheRegexp(t *testing.T) {
+func TestRangeMetricCompatibilityEscapeSubstringFilter(t *testing.T) {
 	now := time.Now()
 	app := fmt.Sprintf("level-escape-%d", now.UnixNano())
 	msgs := []string{`{"x":"Abc"}`, "no escape here", `u only \ then u`, `a\\u double`, `tail\u`, `U upper \U0041`, `x\ u`, `\u`, `u\`, `\\u`, "a/u", "é\\u00e9", `\u0000`, `p\\\u1`}
