@@ -49,6 +49,11 @@ BACKFILL_INTERVAL = int(os.getenv("LOG_BACKFILL_INTERVAL", str(INTERVAL)))
 BACKFILL_ONLY     = os.getenv("LOG_BACKFILL_ONLY", "0") == "1"
 BACKFILL_SEED     = os.getenv("LOG_BACKFILL_SEED", "")
 BACKFILL_END      = int(os.getenv("LOG_BACKFILL_END", "0"))  # unix seconds; 0 = now
+# LOG_NO_LEVEL_LABEL=1 leaves the level out of the stream labels: the level then
+# lives only in the log line (JSON and logfmt services), or nowhere (plain
+# text), as for a collector that does not promote it. bench/ab uses it to
+# measure the detected_level routes on rows with no stored level.
+NO_LEVEL_LABEL    = os.getenv("LOG_NO_LEVEL_LABEL", "0") == "1"
 
 # Simulated clock for the backfill, in nanoseconds. None in live mode. While
 # set, every line gets its own timestamp 1 µs after the previous one, so no two
@@ -669,6 +674,8 @@ def make_labels(app: str, namespace: str, cluster: str, level: str,
         "pod":          rand_pod(app, pod_sfx),
         "container":    app.split("-")[0],
     }
+    if NO_LEVEL_LABEL:
+        del labels["level"]
     if extra:
         labels.update(extra)
     return labels
