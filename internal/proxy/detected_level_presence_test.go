@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -221,9 +222,6 @@ func TestDetectedLevelPresenceNeverTrustsRecentAbsence(t *testing.T) {
 // check set it, so a window kept alive by a refreshing dashboard is still
 // checked again in full once the entry ages out.
 func TestCoveredWindowProbeKeepsTheAgeOfTheCheck(t *testing.T) {
-	old := statsPushdownRiskCacheTTL
-	statsPushdownRiskCacheTTL = 400 * time.Millisecond
-	defer func() { statsPushdownRiskCacheTTL = old }()
 	srv, _ := newJSONVolumeFakeVL(t, nil)
 	p := newSlidingTestProxy(t, srv.URL)
 	s0 := time.Unix(1700000400, 0).UTC()
@@ -237,11 +235,12 @@ func TestCoveredWindowProbeKeepsTheAgeOfTheCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	age := func(d time.Duration) { t.Cleanup(cache.AdvanceClockForTesting(d)) }
 	probe(30 * time.Minute)
-	time.Sleep(250 * time.Millisecond)
+	age(2 * time.Minute)
 	probe(40 * time.Minute) // extends: only the new ten minutes are checked
-	time.Sleep(200 * time.Millisecond)
-	probe(40 * time.Minute) // the entry is 450 ms old: checked again in full
+	age(4 * time.Minute)
+	probe(40 * time.Minute) // the entry is six minutes old, past its five: checked again in full
 	want := []time.Duration{30 * time.Minute, 10 * time.Minute, 40 * time.Minute}
 	if !reflect.DeepEqual(checked, want) {
 		t.Fatalf("checked windows %v, want %v", checked, want)
@@ -592,5 +591,46 @@ func TestLevelWitnessResponse(t *testing.T) {
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 100)))}
 	if flagged, err := p.levelWitnessResponse(resp); err != nil || !flagged {
 		t.Fatalf("a body past the limit: flagged %v, err %v", flagged, err)
+	}
+}
+
+// The presence probe is a backend request of its own (it may queue for
+// admission), so it runs before the stats request takes a
+// stats_query_range slot: a slot is never held while waiting for it.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestLevelPresenceProbeRunsBeforeTheStatsSlot(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	end := s0.Add(5 * time.Minute)
+	row := pushdownRow{ts: s0.Add(100 * time.Second), stream: map[string]string{"app": "api", "env": "prod"}, msg: `{"msg":"x","severity":"error"}`}
+	srv, fake := newPushdownFakeVL(t, []pushdownRow{row}, nil)
+	fake.presence = true
+	fake.presenceGate = make(chan struct{})
+	p := newFilterPushdownProxy(t, srv.URL)
+	fake.stored = p.labelTranslator.ToVL
+	p.statsQueryRangeSem = makeStatsQueryRangeSem(1)
+	done := make(chan int, 1)
+	go func() {
+		code, _, _ := detectedLevelQuery(t, p, `sum by (detected_level) (count_over_time({env="prod"} | json | drop __error__ [5m]))`, end, end, time.Minute)
+		done <- code
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		fake.mu.Lock()
+		probing := len(fake.presenceCalls) > 0
+		fake.mu.Unlock()
+		if probing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the presence probe never ran")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if free := len(p.statsQueryRangeSem); free != cap(p.statsQueryRangeSem) {
+		t.Errorf("a stats_query_range slot is held while the probe runs: %d of %d free", free, cap(p.statsQueryRangeSem))
+	}
+	close(fake.presenceGate)
+	if code := <-done; code != http.StatusOK {
+		t.Fatalf("status %d", code)
 	}
 }

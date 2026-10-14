@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -206,6 +207,9 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	if full, _ := ctx.Value(levelFullChainKey{}).(bool); full {
 		return params, nil
 	}
+	if done, _ := ctx.Value(levelPrunedKey{}).(*levelPruned); done != nil && done.path == path && sameStatsParams(done.sent, params) {
+		return done.out, done.witness // pruned before the caller took its stats slot
+	}
 	query := params.Get("query")
 	chain := strings.TrimSuffix(fullLevelChain(), levelChainDelete)
 	// One chain only: its base is the probe's, and a second chain (a query of
@@ -246,6 +250,36 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 		return out, nil
 	}
 	return out, &levelWitness{base: base}
+}
+
+type levelPrunedKey struct{}
+
+// levelPruned is a request pruned (pruneLevelChain) ahead of vlPostHTTP.
+type levelPruned struct {
+	path      string
+	sent, out url.Values
+	witness   *levelWitness
+}
+
+func sameStatsParams(a, b url.Values) bool {
+	return a.Get("query") == b.Get("query") && a.Get("start") == b.Get("start") && a.Get("end") == b.Get("end")
+}
+
+// pruneBeforeSlot prunes a stats_query_range request before its caller takes a
+// stats_query_range slot (-stats-query-range-concurrency): the presence probe
+// is a request of its own that may queue for backend admission, and a slot
+// must not wait for it. The returned context makes vlPostHTTP use the result.
+// A request that unwrap checks rewrite on its way is left to vlPostHTTP.
+func (p *Proxy) pruneBeforeSlot(ctx context.Context, params url.Values) context.Context {
+	const path = "/select/logsql/stats_query_range"
+	if p.statsQueryRangeSem == nil || unwrapCheckFrom(ctx) != nil {
+		return ctx
+	}
+	out, witness := p.pruneLevelChain(ctx, path, params)
+	if witness == nil && out.Get("query") == params.Get("query") {
+		return ctx
+	}
+	return context.WithValue(ctx, levelPrunedKey{}, &levelPruned{path: path, sent: params, out: out, witness: witness})
 }
 
 // levelWitnessField is the field the witness pipes set to 1 on a row holding
@@ -411,7 +445,7 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 			return acc, stop, err
 		}
 	}
-	if settled := time.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
+	if settled := cache.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
 		coveredTo = settled
 	}
 	if len(todo) > 0 && coveredTo.After(coveredFrom) {

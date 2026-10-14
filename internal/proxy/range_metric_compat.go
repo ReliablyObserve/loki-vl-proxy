@@ -1272,6 +1272,10 @@ func (p *Proxy) collectRangeMetricHits(
 	params.Set("query", statsQuery)
 	p.setSlidingStatsRangeParams(params, start, end, hitStep)
 
+	// The detected_level chain is narrowed (a probe request) before a slot is
+	// taken, not while holding one.
+	ctx = p.pruneBeforeSlot(ctx, params)
+
 	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
 	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
 	// Block until a slot is free or the request is cancelled.

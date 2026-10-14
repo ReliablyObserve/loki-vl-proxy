@@ -49,6 +49,8 @@ type pushdownFakeVL struct {
 	presenceFail  bool
 	presenceLine  func(honest string) string
 	presenceCalls []string
+	// presenceGate, when set, holds every presence probe until it is closed.
+	presenceGate chan struct{}
 }
 
 var pushdownLiteralFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"([^<\"]+)\" as (\\S+)$")
@@ -534,6 +536,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				fake.mu.Lock()
 				fake.presenceCalls = append(fake.presenceCalls, query)
 				fake.mu.Unlock()
+				if fake.presenceGate != nil {
+					<-fake.presenceGate
+				}
 				if fake.presenceFail {
 					http.Error(w, "backend failure", http.StatusInternalServerError)
 					return
