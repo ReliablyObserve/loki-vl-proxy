@@ -272,3 +272,19 @@ func TestParsedKeyVariantsAreBounded(t *testing.T) {
 		t.Errorf("plain: %v", got)
 	}
 }
+
+// A label name holding the bytes that separate and mark the candidate keys is
+// translated as a plain name; it used to be split as a key list and panic.
+func TestParsedKeyFilterNameWithSeparatorBytes(t *testing.T) {
+	streamFields := map[string]bool{"app": true}
+	for _, name := range []string{"\x01a_b", "\x01a_extracted", "\x01\x01a_b", "a_\x00b"} {
+		query := `{app="x"} | json | ` + name + `="v"`
+		got, err := TranslateLogQLWithStreamFields(query, nil, streamFields)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(got, "filter "+name+`:="v"`) {
+			t.Errorf("%q translated to %q", query, got)
+		}
+	}
+}

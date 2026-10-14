@@ -1394,7 +1394,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			}
 			if labelFn != nil {
 				translated := labelFn(label)
-				if strings.Contains(translated, parsedKeySep) {
+				if strings.Contains(translated, parsedKeySep) && !strings.Contains(label, parsedKeySep) {
 					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.entry, caps)
 				}
 				label = sanitizeFieldIdentifier(translated)

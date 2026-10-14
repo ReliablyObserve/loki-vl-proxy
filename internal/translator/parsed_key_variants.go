@@ -193,8 +193,10 @@ func withParsedKeyVariants(labelFn LabelTranslateFunc, exclude func(string) bool
 		}
 		// A label the translation maps (a known or learned VictoriaLogs field)
 		// names that field; only an unmapped label can be a sanitized key.
+		// A name holding the bytes that separate and mark the candidate keys
+		// cannot be encoded as a key list (and is no key a parser produces).
 		if translated != label || strings.HasPrefix(label, "_") || !strings.Contains(label, "_") ||
-			strings.ContainsAny(label, ".-") || exclude(label) {
+			strings.ContainsAny(label, ".-"+parsedKeySep+extractedMarker) || exclude(label) {
 			return translated
 		}
 		keys := parsedKeyVariants(label)
