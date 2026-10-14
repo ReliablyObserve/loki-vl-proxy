@@ -127,6 +127,7 @@ var lokiKeywordAnswers = []struct{ line, want string }{
 	{"", "unknown"}, {"hello world", "unknown"}, {"GET /api/v1/users 200 12ms", "unknown"},
 }
 
+// conformance: severity-detected-level-derivation
 func TestKeywordScanLikeLoki(t *testing.T) {
 	re := regexp.MustCompile(levelKeywordRegexp)
 	for _, c := range lokiKeywordAnswers {
@@ -152,6 +153,7 @@ func TestKeywordScanLikeLoki(t *testing.T) {
 // (Unicode), the regexp folds ASCII only, so a line that spells a keyword with
 // U+0130 reads info in Loki and unknown here. The gate lowercases like Loki,
 // lets the line through, and the regexp finds nothing.
+// conformance: severity-detected-level-derivation
 func TestKeywordScanUnicodeFoldIsUnchangedByTheGate(t *testing.T) {
 	re := regexp.MustCompile(levelKeywordRegexp)
 	if got := chainKeywordLevel(re, "İNFO ready"); got != "unknown" {
@@ -166,6 +168,7 @@ func TestKeywordScanUnicodeFoldIsUnchangedByTheGate(t *testing.T) {
 // keyword as a whole word of the tokenizer. The lines are made of random
 // pieces around the keywords: every ASCII byte, bytes of multi-byte runes,
 // invalid UTF-8, the other case of the letters.
+// conformance: severity-detected-level-derivation
 func TestKeywordGateIsASupersetOfTheRegexp(t *testing.T) {
 	re := regexp.MustCompile(levelKeywordRegexp)
 	rng := rand.New(rand.NewSource(7))
@@ -208,6 +211,7 @@ func TestKeywordGateIsASupersetOfTheRegexp(t *testing.T) {
 	}
 }
 
+// conformance: severity-detected-level-derivation
 func TestLevelKeywordGateText(t *testing.T) {
 	want := "_msg:(i(trace) OR i(debug) OR i(fatal) OR i(critical) OR i(error) OR i(err) OR i(warning) OR i(warn) OR i(info))"
 	if got := LevelKeywordGate(); got != want {
@@ -227,6 +231,7 @@ func TestLevelKeywordGateText(t *testing.T) {
 // read only for rows no stored level decides although the unpack parses more
 // rows, and every label ends up with the value the plan's own `unpack_json
 // fields (...) keep_original_fields` would give it.
+// conformance: severity-detected-level-derivation
 func TestBuildDetectedLevelChainShared(t *testing.T) {
 	shared := &SharedUnpack{Keys: []string{"level", "app_name"}}
 	chain := BuildDetectedLevelChainShared(DetectedLevelFieldNames, DetectedLevelChainGrouping, nil, shared)
@@ -294,6 +299,7 @@ func TestBuildDetectedLevelChainShared(t *testing.T) {
 // keyword regexp matches and the gate (VictoriaLogs' i() over the nine words)
 // does not, and for a line where the chain's scan disagrees with a plain
 // search for Loki's first bounded keyword.
+// conformance: severity-detected-level-derivation
 func FuzzKeywordGateIsASupersetOfTheRegexp(f *testing.F) {
 	for _, c := range lokiKeywordAnswers {
 		f.Add(c.line)

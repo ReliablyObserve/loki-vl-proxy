@@ -127,6 +127,7 @@ func (c sharedUnpackProbe) row(ts time.Time) pushdownRow {
 // of its own, the stored-level plan has no chain, a key that is no plain name
 // would be quoted or flattened, and a plan that groups by detected_level alone
 // has no label to hand over.
+// conformance: semantics/json-metric-detected-level-derivation
 func TestSharedLevelUnpackEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		name, query string

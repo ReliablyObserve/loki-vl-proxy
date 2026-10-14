@@ -149,11 +149,11 @@ why: |
   the words), and the escape check of the presence probe and its witness is a
   substring filter (`_msg:*"\\u"*`), not a regexp. Measured on one hour of
   that data, VictoriaLogs capped at 2 CPUs, warm p50, VictoriaLogs alone, 15
-  runs in each measurement order (the first target of a pair is the slower
-  one): Explore's volume 84 ms to 105 ms (87 ms to 102 ms with the branch
-  measured first), the detected_level breakdown with the error rows dropped
-  88 ms to 99 ms (85 ms to 101 ms); at 6h and 24h Explore's volume 541 ms to
-  692 ms and 2.39 s to 2.75 s (570 ms to 702 ms and 2.30 s to 2.84 s), the
+  runs in each measurement order at 1h: Explore's volume 84 ms to 105 ms (87 ms
+  to 102 ms with the branch measured first), the detected_level breakdown with
+  the error rows dropped 88 ms to 99 ms (85 ms to 101 ms); at 6h and 24h (3
+  runs, both orders) Explore's volume 541 ms to 692 ms and 2.39 s to 2.75 s
+  (570 ms to 702 ms and 2.30 s to 2.84 s), the
   breakdown 585 ms to 641 ms and 2.24 s to 2.74 s (589 ms to 698 ms and 2.25 s
   to 2.79 s). The previous revision took 38 ms to 282 ms, 0.55 s to 1.5 s and
   2.3 s to 6.1 s for Explore's volume and 56 ms to 99 ms and 2.2 s to 3.8 s for
@@ -170,8 +170,11 @@ why: |
   label from 2.3 s to 7 ms at 1h. The first view of a window (nothing
   remembered: the stored-level attempt, the level probes, the presence probe,
   then the chain) takes about 0.5 s at 1h for Explore's volume where main takes
-  0.08 s (0.55-0.68 s in the previous revision): the probes scan the window and
-  share the 2 CPUs with the chain. A window with a row that has no stored level asks
+  0.08 s (0.55-0.68 s in the previous revision, both builds restarted on one
+  stack): the probes scan the window and share the 2 CPUs with the chain, the
+  heaviest of them (detectedLevelKeysRisk, 260-300 ms: two level keys in a line,
+  an escape in a level value, a brace without its closing brace) one this change
+  adds. A window with a row that has no stored level asks
   twice, the stored-level attempt first (it costs what main's query costs; its
   verdict is remembered for the base for five minutes so the next ask goes to
   the chain at once), and pays the chain with the three guard probes and the

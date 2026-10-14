@@ -18,16 +18,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// The pipes that derive detected_level in VictoriaLogs were made cheaper in
-// three ways, each of which must give the answer of the pipes it replaced on
-// every row, whatever the row holds: the keyword regexp runs behind a filter
-// on the keyword words, the plan's own unpack_json is the chain's (the labels
-// are copied from its prefixed fields), and the presence probe and witness find
-// an escape with a substring filter. This test ingests generated rows into
-// VictoriaLogs alone (no Loki: the answers against Loki are the probe tests')
-// and runs the pipes as they were and as they are, per row.
-// conformance: semantics/json-metric-detected-level-derivation
-
 // variantLine is a generated row: the body and the stored fields besides it.
 type variantLine struct {
 	tag    string
@@ -87,6 +77,15 @@ func variantQuery(t *testing.T, query string, start, end time.Time) map[string]s
 	return out
 }
 
+// The pipes that derive detected_level in VictoriaLogs were made cheaper in
+// three ways, each of which must give the answer of the pipes it replaced on
+// every row, whatever the row holds: the keyword regexp runs behind a filter
+// on the keyword words, the plan's own unpack_json is the chain's (the labels
+// are copied from its prefixed fields), and the presence probe and witness find
+// an escape with a substring filter. This test ingests generated rows into
+// VictoriaLogs alone (no Loki: the answers against Loki are the probe tests')
+// and runs the pipes as they were and as they are, per row.
+// conformance: semantics/json-metric-detected-level-derivation
 func TestRangeMetricCompatibilityDetectedLevelPipeVariants(t *testing.T) {
 	now := time.Now()
 	s0 := now.Add(-3 * time.Hour).Truncate(time.Minute)
@@ -192,6 +191,7 @@ func TestRangeMetricCompatibilityDetectedLevelPipeVariants(t *testing.T) {
 
 // The probe and the witness look for the two bytes backslash and u with a
 // substring filter; it selects the lines the regular expression did.
+// conformance: semantics/json-metric-detected-level-derivation
 func TestRangeMetricCompatibilityEscapeSubstringFilter(t *testing.T) {
 	now := time.Now()
 	app := fmt.Sprintf("level-escape-%d", now.UnixNano())
