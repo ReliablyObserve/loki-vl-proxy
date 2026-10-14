@@ -827,20 +827,33 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
 // with the same semantics: exact comparison, and a fully anchored RE2 regexp.
 func logsQLLabelFilter(filter translator.DropCondition) string {
+	return " | filter " + logsQLLabelCondition(filter)
+}
+
+// logsQLLabelCondition is the condition of logsQLLabelFilter.
+func logsQLLabelCondition(filter translator.DropCondition) string {
 	field := quoteLogsQLIdent(filter.Field)
 	switch filter.Op {
 	case "=":
-		return " | filter " + field + ":=" + logsql.QuoteValue(filter.Value)
+		return field + ":=" + logsql.QuoteValue(filter.Value)
 	case "!=":
-		return " | filter -" + field + ":=" + logsql.QuoteValue(filter.Value)
+		return "-" + field + ":=" + logsql.QuoteValue(filter.Value)
 	case "=~":
 		// strconv.Quote, not QuotePattern: VictoriaLogs unquotes double-quoted
 		// strings with Go rules, so a regexp escape such as \d must stay escaped
 		// or the query is rejected.
-		return " | filter " + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
+		return field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	default:
-		return " | filter -" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
+		return "-" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	}
+}
+
+// levelChainFilter is the filter on detected_level after the chain. A row the
+// witness flagged (levelWitnessPipes: the pruned chain may have misread it)
+// passes it, so that the flag reaches the stats and the request is sent again
+// with the full chain; without a witness nothing is flagged.
+func levelChainFilter(filter translator.DropCondition) string {
+	return " | filter (" + logsQLLabelCondition(filter) + " OR " + levelWitnessField + `:="1")`
 }
 
 // setDetectedLevel records whether the plan reads detected_level (see
@@ -959,6 +972,10 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	// normalised series below.
 	for _, filter := range plan.pushdownFilters {
 		if storedLevel && filter.Field == detectedLevelLabel {
+			continue
+		}
+		if filter.Field == detectedLevelLabel {
+			query += levelChainFilter(filter)
 			continue
 		}
 		query += logsQLLabelFilter(filter)

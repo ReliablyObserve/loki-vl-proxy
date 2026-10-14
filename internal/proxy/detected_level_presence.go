@@ -1,11 +1,15 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -60,28 +64,46 @@ func notLevelWordRune(r rune) bool {
 	return r != '_' && (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z')
 }
 
-// levelPresenceQuery returns the probe: one row of counts, one per stored
-// field, per body key and for the escape flag, in mask order.
-func levelPresenceQuery(base string) string {
+// levelPresenceDecided is the pipe flagging the rows a definite stored level
+// field decides (every other field of the mask when non-empty), which the body
+// predicates leave out because the chain unpacks no body key for them.
+func levelPresenceDecided() string {
 	var decided []string
 	for _, name := range levelPresenceStored {
 		if !containsString(levelPresenceUndecided, name) {
 			decided = append(decided, quoteLogsQLIdent(name)+":*")
 		}
 	}
-	counts := make([]string, 0, levelPresenceMaskLen())
-	for i, name := range levelPresenceStored {
-		counts = append(counts, "count() if ("+quoteLogsQLIdent(name)+":*) as p"+strconv.Itoa(i))
-	}
-	for i, key := range levelPresenceBody {
-		words := strings.FieldsFunc(key, notLevelWordRune)
+	return ` | format if (` + strings.Join(decided, " OR ") + `) "1" as __p_h`
+}
+
+// levelPresencePredicate is the filter a row satisfies when it holds what mask
+// position i stands for: a stored field non-empty, the words of a body key in
+// the line of a row no definite stored field decides, or an escape sequence in
+// such a line. The probe counts the rows satisfying it and, in the pruned
+// query, the witness flags them (levelWitnessPipes), so the two cannot drift.
+func levelPresencePredicate(i int) string {
+	switch {
+	case i < len(levelPresenceStored):
+		return quoteLogsQLIdent(levelPresenceStored[i]) + ":*"
+	case i < len(levelPresenceStored)+len(levelPresenceBody):
+		words := strings.FieldsFunc(levelPresenceBody[i-len(levelPresenceStored)], notLevelWordRune)
 		for j, w := range words {
 			words[j] = "_msg:" + strconv.Quote(w)
 		}
-		counts = append(counts, "count() if (-__p_h:* "+strings.Join(words, " ")+") as p"+strconv.Itoa(len(levelPresenceStored)+i))
+		return "-__p_h:* " + strings.Join(words, " ")
 	}
-	counts = append(counts, `count() if (-__p_h:* _msg:~"\\\\u") as p`+strconv.Itoa(levelPresenceMaskLen()-1))
-	return base + ` | format if (` + strings.Join(decided, " OR ") + `) "1" as __p_h | stats ` + strings.Join(counts, ", ")
+	return `-__p_h:* _msg:~"\\\\u"`
+}
+
+// levelPresenceQuery returns the probe: one row of counts, one per stored
+// field, per body key and for the escape flag, in mask order.
+func levelPresenceQuery(base string) string {
+	counts := make([]string, levelPresenceMaskLen())
+	for i := range counts {
+		counts[i] = "count() if (" + levelPresencePredicate(i) + ") as p" + strconv.Itoa(i)
+	}
+	return base + levelPresenceDecided() + " | stats " + strings.Join(counts, ", ")
 }
 
 // levelPresenceMask runs the probe over [start, end] and returns its mask.
@@ -159,49 +181,179 @@ var fullLevelChain = sync.OnceValue(func() string {
 // so the chain is matched and replaced without it.
 const levelChainDelete = " | delete __dl, __dl_*, __j_*, __l_*"
 
+// levelWitness marks a stats_query_range request whose chain was pruned and
+// which therefore carries the witness (see pruneLevelChain).
+type levelWitness struct{ base string }
+
+type levelFullChainKey struct{}
+
 // pruneLevelChain narrows the detected_level chain of a stats_query_range
 // request to the fields and keys its window holds. The pipes before the chain
 // are the rows the chain reads, so they are the probe's base; the request's
 // start and end are its window. Other requests (an instant query has no
 // window to probe), a probe that fails, and a query without the chain keep
 // the query as it is.
-func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Values) url.Values {
+//
+// The mask the probe gave may be older than the data: a line that arrives
+// late for a timestamp the cache covers, holding a field or key the pruned
+// chain no longer reads, would be misread. So the pruned query also carries a
+// witness: pipes flagging every row that holds what the mask left out (the
+// probe's own predicates, levelWitnessPipes) as a field the stats group by,
+// which levelWitnessResponse reads back; a flagged row sends the request again
+// with the full chain, which is exact. The witness costs one more predicate
+// pass over the rows, on the same scan.
+func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Values) (url.Values, *levelWitness) {
+	if full, _ := ctx.Value(levelFullChainKey{}).(bool); full {
+		return params, nil
+	}
 	query := params.Get("query")
-	full := strings.TrimSuffix(fullLevelChain(), levelChainDelete)
+	chain := strings.TrimSuffix(fullLevelChain(), levelChainDelete)
 	// One chain only: its base is the probe's, and a second chain (a query of
 	// several segments) may sit on a different one.
-	at := strings.Index(query, full)
-	if path != "/select/logsql/stats_query_range" || at < 0 || strings.Count(query, full) != 1 {
-		return params
+	at := strings.Index(query, chain)
+	if path != "/select/logsql/stats_query_range" || at < 0 || strings.Count(query, chain) != 1 {
+		return params, nil
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
 	to, okTo := parseFlexibleUnixNanos(params.Get("end"))
 	if !okFrom || !okTo {
-		return params
+		return params, nil
 	}
-	present := p.detectedLevelPresence(ctx, strings.TrimSpace(query[:at]), time.Unix(0, from), time.Unix(0, to))
-	if present == nil {
-		return params
+	base := strings.TrimSpace(query[:at])
+	mask := p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
+	if mask == "" {
+		return params, nil
+	}
+	pruned := translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, levelPresenceFromMask(mask))
+	pruned = strings.TrimSuffix(pruned, levelChainDelete)
+	// The witness precedes the chain, whose last pipe overwrites the stored
+	// detected_level field: the rows are as the probe read them.
+	rest := query[at+len(chain):]
+	rest, deleted := strings.CutPrefix(rest, levelChainDelete)
+	witness := levelWitnessPipes(mask)
+	if witness != "" {
+		var ok bool
+		if rest, ok = withWitnessGroup(rest); !ok {
+			return params, nil // a stats pipe the witness cannot ride: the full chain
+		}
+	}
+	if deleted {
+		pruned += levelChainDelete
 	}
 	out := cloneURLValues(params)
-	pruned := translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, present)
-	out.Set("query", strings.Replace(query, full, strings.TrimSuffix(pruned, levelChainDelete), 1))
-	return out
+	out.Set("query", query[:at]+witness+" "+pruned+rest)
+	if witness == "" {
+		return out, nil
+	}
+	return out, &levelWitness{base: base}
+}
+
+// levelWitnessField is the field the witness pipes set to 1 on a row holding
+// what the pruned chain no longer reads; the stats group by it.
+const levelWitnessField = "__lw"
+
+// levelWitnessPipes returns the pipes flagging a row that holds a stored field
+// or a body key the mask left out, or "" when it left out nothing.
+func levelWitnessPipes(mask string) string {
+	var left []string
+	for i := 0; i < len(mask); i++ {
+		if mask[i] != '1' {
+			left = append(left, "("+levelPresencePredicate(i)+")")
+		}
+	}
+	if len(left) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(levelPresenceDecided()+` | format if (`+strings.Join(left, " OR ")+`) "1" as `+levelWitnessField, " ")
+}
+
+// withWitnessGroup adds the witness field to the group-by of the first (and
+// only) stats pipe of the pipes after the chain, or reports false when they
+// hold no stats pipe it can extend.
+func withWitnessGroup(rest string) (string, bool) {
+	const stats = " | stats "
+	at := strings.Index(rest, stats)
+	if at < 0 || strings.Count(rest, stats) != 1 {
+		return "", false
+	}
+	tail := rest[at+len(stats):]
+	if !strings.HasPrefix(tail, "by (") {
+		return rest[:at] + stats + "by (" + levelWitnessField + ") " + tail, true
+	}
+	end := strings.IndexByte(tail, ')')
+	if end < 0 || strings.ContainsAny(tail[len("by ("):end], "\"`'(") {
+		return "", false
+	}
+	return rest[:at] + stats + tail[:end] + ", " + levelWitnessField + tail[end:], true
+}
+
+// levelWitnessResponse reads the answer to a request carrying the witness and
+// reports whether a row was flagged (or the answer is too large to check), in
+// which case the request is sent again with the full chain. Otherwise the
+// witness field, empty in every group, is taken out of the labels.
+func (p *Proxy) levelWitnessResponse(resp *http.Response) (flagged bool, err error) {
+	if resp.StatusCode != http.StatusOK {
+		return false, nil
+	}
+	body, err := readBodyLimited(resp.Body, maxStatsBucketResponseBytes)
+	_ = resp.Body.Close()
+	if errors.Is(err, errBodyTooLarge) || bytes.Contains(body, []byte(`"`+levelWitnessField+`":"1"`)) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	empty := []byte(`"` + levelWitnessField + `":""`)
+	body = bytes.ReplaceAll(body, append([]byte(","), empty...), nil)
+	body = bytes.ReplaceAll(body, append(append([]byte(nil), empty...), ','), nil)
+	body = bytes.ReplaceAll(body, empty, nil)
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header.Del("Content-Length")
+	return false, nil
 }
 
 // detectedLevelPresence returns the level fields and body keys the stats query
 // over [start, end] on base can read, or nil (the full chain) when they
 // cannot be told.
 func (p *Proxy) detectedLevelPresence(ctx context.Context, base string, start, end time.Time) *translator.DetectedLevelPresence {
-	key := "level-presence:v1:" + getOrgID(ctx) + ":" + base
-	mask, _, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, acc string) (string, bool, error) {
+	mask := p.detectedLevelMask(ctx, base, start, end)
+	if mask == "" {
+		return nil
+	}
+	return levelPresenceFromMask(mask)
+}
+
+// detectedLevelMask is the presence mask of the window, or "" when it cannot
+// be told.
+func (p *Proxy) detectedLevelMask(ctx context.Context, base string, start, end time.Time) string {
+	mask, _, err := p.coveredWindowProbe(ctx, levelPresenceKey(ctx, base), start, end, func(from, to time.Time, acc string) (string, bool, error) {
 		found, err := p.levelPresenceMask(ctx, base, from, to)
 		return orMasks(acc, found), false, err
 	})
 	if err != nil || len(mask) != levelPresenceMaskLen() {
-		return nil
+		return ""
 	}
-	return levelPresenceFromMask(mask)
+	return mask
+}
+
+func levelPresenceKey(ctx context.Context, base string) string {
+	return "level-presence:v1:" + getOrgID(ctx) + ":" + base
+}
+
+// dropLevelPresence forgets the mask of base: a row it did not account for
+// appeared.
+func (p *Proxy) dropLevelPresence(ctx context.Context, base string) {
+	if p.cache != nil {
+		p.cache.Invalidate(p.windowProbeKey(ctx, levelPresenceKey(ctx, base)))
+	}
+}
+
+// windowProbeKey is the key coveredWindowProbe stores key under: what a
+// window holds depends on what the caller may see, the tenant, the routing and
+// the forwarded identity, as for every cached response.
+func (p *Proxy) windowProbeKey(ctx context.Context, key string) string {
+	return key + ":scope:" + p.contextScopeFingerprint(ctx)
 }
 
 // coveredWindowProbe runs check over the parts of [start, end] that the entry
@@ -218,9 +370,7 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 	if p.cache == nil {
 		return check(start, end, "")
 	}
-	// What a window holds depends on what the caller may see: the tenant, the
-	// routing and the forwarded identity, as for every cached response.
-	key += ":scope:" + p.contextScopeFingerprint(ctx)
+	key = p.windowProbeKey(ctx, key)
 	type window struct{ from, to time.Time }
 	todo := []window{{start, end}}
 	coveredFrom, coveredTo := start, end

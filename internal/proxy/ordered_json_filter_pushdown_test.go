@@ -51,6 +51,8 @@ type pushdownFakeVL struct {
 	presenceCalls []string
 }
 
+var pushdownLiteralFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"([^<\"]+)\" as (\\S+)$")
+
 var pushdownFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"<([^>]+)>\" as (\\S+)$")
 
 // vlUnpackJSONFields mirrors unpack_json: a line that is one JSON object after
@@ -371,6 +373,13 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				}
 			}
 		case strings.HasPrefix(pipe, "format if ("):
+			if lit := pushdownLiteralFormatRE.FindStringSubmatch(pipe); lit != nil {
+				// format if (<filter>) "<text>" as dst: dst is the text where the filter holds.
+				if fakeLogsQLMatch(t, lit[1], values) {
+					values[lit[3]] = lit[2]
+				}
+				continue
+			}
 			m := pushdownFormatRE.FindStringSubmatch(pipe)
 			if m == nil {
 				t.Errorf("fake VL: unsupported format pipe %q", pipe)

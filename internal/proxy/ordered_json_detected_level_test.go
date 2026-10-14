@@ -331,12 +331,12 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 		name, pipeline string
 		keep           func(level string) bool
 		pushdown       bool   // the stats pushdown serves lines the pipes read like Loki
-		filter         string // the pipe the pushdown applies after the level pipes
+		filter         string // the pipe the pushdown applies after the level pipes (a row the witness flags passes it)
 	}{
 		{"not empty", `| json | drop __error__, __error_details__ | detected_level != ""`, func(string) bool { return true }, true, ""},
-		{"equals", `| json | drop __error__ | detected_level="info"`, func(l string) bool { return l == "info" }, true, `| filter detected_level:="info"`},
-		{"regexp", `| json | drop __error__ | detected_level=~"warn|error"`, func(l string) bool { return l == "warn" || l == "error" }, true, `| filter detected_level:~"^(?:warn|error)$"`},
-		{"not equals", `| json | drop __error__ | detected_level!="unknown"`, func(l string) bool { return l != "unknown" }, true, `| filter -detected_level:="unknown"`},
+		{"equals", `| json | drop __error__ | detected_level="info"`, func(l string) bool { return l == "info" }, true, `| filter (detected_level:="info" OR __lw:="1")`},
+		{"regexp", `| json | drop __error__ | detected_level=~"warn|error"`, func(l string) bool { return l == "warn" || l == "error" }, true, `| filter (detected_level:~"^(?:warn|error)$" OR __lw:="1")`},
+		{"not equals", `| json | drop __error__ | detected_level!="unknown"`, func(l string) bool { return l != "unknown" }, true, `| filter (-detected_level:="unknown" OR __lw:="1")`},
 		// No error drop: a parse error survives a filter on detected_level, which
 		// holds for every line, so the raw-row evaluator answers.
 		{"without the error drop", `| json | detected_level="info"`, func(l string) bool { return l == "info" }, false, ""},
@@ -395,7 +395,7 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 					if clean && tc.pushdown && (fake.raw != 0 || len(chain) != 1 || len(fake.guards) == 0) {
 						t.Errorf("drilldown=%v: expected a guarded pushdown answer without raw rows: raw=%d stats=%d guards=%d", drilldown, fake.raw, len(chain), len(fake.guards))
 					}
-					if clean && tc.pushdown && tc.filter != "" && len(chain) == 1 && !strings.Contains(chain[0], tc.filter+" | stats by (detected_level)") {
+					if clean && tc.pushdown && tc.filter != "" && len(chain) == 1 && !strings.Contains(chain[0], tc.filter+" | stats by (detected_level)") && !strings.Contains(chain[0], tc.filter+" | stats by (detected_level, __lw)") {
 						t.Errorf("drilldown=%v: filter not applied after the level pipes: %s", drilldown, chain[0])
 					}
 					fake.mu.Unlock()

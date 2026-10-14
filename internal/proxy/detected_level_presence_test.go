@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -272,7 +273,7 @@ func TestDetectedLevelPresenceNativeRoute(t *testing.T) {
 	if probes != 1 || len(prunedStats) != 1 || len(fullStats) != 1 {
 		t.Fatalf("presence probes %d, stats queries %d (full %d)", probes, len(prunedStats), len(fullStats))
 	}
-	if len(prunedStats[0])*3 > len(fullStats[0]) || !strings.Contains(prunedStats[0], `fields (level) result_prefix "__j_"`) {
+	if len(prunedStats[0])*2 > len(fullStats[0]) || !strings.Contains(prunedStats[0], `fields (level) result_prefix "__j_"`) {
 		t.Fatalf("the chain was not pruned (%d bytes against %d):\n%s", len(prunedStats[0]), len(fullStats[0]), prunedStats[0])
 	}
 }
@@ -357,14 +358,15 @@ func TestPruneLevelChainLeavesTwoChainsAlone(t *testing.T) {
 		{"two chains", `app:="a" ` + chain + ` | stats by (detected_level) count() ||| app:="b" ` + chain + ` | stats by (detected_level) count()`, false},
 	} {
 		params := url.Values{"query": {tc.query}, "start": {"2023-11-14T22:00:00Z"}, "end": {"2023-11-14T22:30:00Z"}}
-		got := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query_range", params).Get("query")
+		out, _ := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query_range", params)
+		got := out.Get("query")
 		if (got != tc.query) != tc.pruned {
 			t.Errorf("%s: pruned=%v, want %v", tc.name, got != tc.query, tc.pruned)
 		}
 	}
 	// an instant query has no window to probe
 	params := url.Values{"query": {`app:="a" ` + chain + ` | stats by (detected_level) count()`}, "time": {"2023-11-14T22:30:00Z"}}
-	if got := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query", params); got.Get("query") != params.Get("query") {
+	if got, _ := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query", params); got.Get("query") != params.Get("query") {
 		t.Errorf("an instant query was changed")
 	}
 }
@@ -483,5 +485,112 @@ func TestStoredLevelAttemptFallsBackToChain(t *testing.T) {
 		if stored != 1 || chain != ask+1 {
 			t.Fatalf("ask %d: %d stored-level and %d chain stats queries so far", ask, stored, chain)
 		}
+	}
+}
+
+// A mask is remembered for the part of its window older than the settle
+// horizon, so a line that arrives late for a timestamp inside it can hold a
+// key the pruned chain no longer reads (here severity, in a window whose
+// remembered mask lists level only). The pruned query flags such a row
+// (levelWitnessPipes); the request is then sent again with the full chain, so
+// the answer is Loki's (the severity key, warn), not the keyword scan's
+// (error), and the mask is probed again.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestDetectedLevelWitnessCatchesALateLine(t *testing.T) {
+	for _, query := range []string{
+		`sum by (detected_level) (count_over_time({env="prod"} | json | drop __error__ [5m]))`, // the pushdown
+		`sum by (detected_level) (count_over_time({env="prod"}[5m]))`,                          // the native route
+	} {
+		t.Run(query, func(t *testing.T) { detectedLevelWitnessLateLine(t, query) })
+	}
+}
+
+func detectedLevelWitnessLateLine(t *testing.T, query string) {
+	t.Helper()
+	s0 := time.Unix(1700000400, 0).UTC()
+	stream := map[string]string{"app": "api", "env": "prod"}
+	var rows []pushdownRow
+	for i := 0; i < 40; i++ {
+		rows = append(rows, pushdownRow{ts: s0.Add(6*time.Minute + time.Duration(i)*time.Second), stream: stream, msg: `{"level":"info","n":` + strconv.Itoa(i) + `}`})
+	}
+	srv, fake := newPushdownFakeVL(t, rows, nil)
+	fake.presence = true
+	p := newFilterPushdownProxy(t, srv.URL)
+	fake.stored = p.labelTranslator.ToVL
+	key := func(level string) string { return canonicalLabelsKey(map[string]string{"detected_level": level}) }
+	ask := func(end time.Time) map[string]map[int64]string {
+		t.Helper()
+		code, got, body := detectedLevelQuery(t, p, query, end, end, time.Minute)
+		if code != http.StatusOK {
+			t.Fatalf("status %d %.200s", code, body)
+		}
+		return got
+	}
+	end := s0.Add(10 * time.Minute)
+	if got, want := ask(end), map[string]map[int64]string{key("info"): {end.Unix(): "40"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first request: got %v, want %v", got, want)
+	}
+	// the late line, stamped inside the window the mask covers
+	fake.mu.Lock()
+	fake.rows = append(fake.rows, pushdownRow{ts: s0.Add(8 * time.Minute), stream: stream, msg: `{"msg":"error retry","severity":"warn"}`})
+	fake.mu.Unlock()
+	end = end.Add(time.Second)
+	if got, want := ask(end), map[string]map[int64]string{key("info"): {end.Unix(): "40"}, key("warn"): {end.Unix(): "1"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("late line: got %v, want %v", got, want)
+	}
+	fake.mu.Lock()
+	chain := chainStatsCalls(fake.stats)
+	probes := len(fake.presenceCalls)
+	fake.mu.Unlock()
+	// request 1: pruned; request 2: pruned, flagged, then the full chain
+	if len(chain) != 3 || !strings.Contains(chain[0], `fields (level) result_prefix "__j_"`) || !strings.Contains(chain[1], "__lw") || !strings.Contains(chain[2], levelChain) {
+		t.Fatalf("expected a pruned query, the same flagged, and the full chain: %d queries", len(chain))
+	}
+	// the mask was dropped: the next request probes again and keeps severity
+	end = end.Add(time.Second)
+	ask(end)
+	fake.mu.Lock()
+	chain, again := chainStatsCalls(fake.stats), len(fake.presenceCalls)
+	fake.mu.Unlock()
+	if again != probes+1 || len(chain) != 4 || !strings.Contains(chain[3], `fields (level, severity) result_prefix "__j_"`) {
+		t.Fatalf("expected a new probe (%d, had %d) and a chain unpacking level and severity: %d queries", again, probes, len(chain))
+	}
+}
+
+// The witness field is empty in every group of a clean answer and is taken out
+// of the labels wherever it sits; a group with it set sends the request again.
+func TestLevelWitnessResponse(t *testing.T) {
+	p := &Proxy{}
+	for _, tc := range []struct {
+		name, body, want string
+		flagged          bool
+	}{
+		{"last", `{"metric":{"__name__":"c","detected_level":"info","__lw":""},"values":[]}`, `{"metric":{"__name__":"c","detected_level":"info"},"values":[]}`, false},
+		{"first", `{"metric":{"__lw":"","__name__":"c"},"values":[]}`, `{"metric":{"__name__":"c"},"values":[]}`, false},
+		{"alone", `{"metric":{"__lw":""},"values":[]}`, `{"metric":{},"values":[]}`, false},
+		{"flagged", `{"metric":{"__name__":"c","__lw":"1"},"values":[]}`, "", true},
+		{"a value that mentions it", `{"metric":{"x":"\"__lw\":\"1\""},"values":[]}`, `{"metric":{"x":"\"__lw\":\"1\""},"values":[]}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}
+			flagged, err := p.levelWitnessResponse(resp)
+			if err != nil || flagged != tc.flagged {
+				t.Fatalf("flagged %v, err %v", flagged, err)
+			}
+			if !tc.flagged {
+				got, _ := io.ReadAll(resp.Body)
+				if string(got) != tc.want {
+					t.Fatalf("got %s, want %s", got, tc.want)
+				}
+			}
+		})
+	}
+	// an answer too large to check is sent again with the full chain
+	old := maxStatsBucketResponseBytes
+	maxStatsBucketResponseBytes = 16
+	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 100)))}
+	if flagged, err := p.levelWitnessResponse(resp); err != nil || !flagged {
+		t.Fatalf("a body past the limit: flagged %v, err %v", flagged, err)
 	}
 }
