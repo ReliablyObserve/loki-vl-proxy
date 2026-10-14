@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -328,6 +330,16 @@ func (p *Proxy) markLevelNeedsChain(ctx context.Context, base string) {
 	}
 }
 
+// levelShapeSeparator follows the base in the verdict of one query shape, which
+// a read past the group guard leaves (the same rows may answer a query with
+// fewer groups from the stored fields).
+const levelShapeSeparator = "\x00"
+
 func levelNeedsChainKey(p *Proxy, ctx context.Context, base string) string {
+	if at := strings.Index(base, levelShapeSeparator); at >= 0 {
+		// the shape is long: its digest stands for it
+		sum := sha256.Sum256([]byte(base[at+1:]))
+		base = base[:at+1] + hex.EncodeToString(sum[:8])
+	}
 	return "level-needs-chain:v1:" + getOrgID(ctx) + ":" + p.contextScopeFingerprint(ctx) + ":" + base
 }

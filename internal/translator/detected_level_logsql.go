@@ -303,6 +303,46 @@ func NormalizeStoredLevel(value string) string {
 	return value
 }
 
+// BuildStoredLevelCopyFilter returns the pipes that keep, of a stats query reading
+// the stored level (stored holds the copy of the level field, meta that of
+// detected_level), the rows a filter on detected_level can match: a row whose
+// stored level normalises (NormalizeStoredLevel) to a value the filter
+// accepts, and every row the stored fields do not decide exactly (a stored
+// detected_level, or no stored level at all), which the caller sees and sends
+// to the full chain. A known spelling, in any case, stands for its canonical
+// level; any other word compares as stored. The caller applies the filters
+// again to the normalised value, so this one only has to keep every row that
+// can match.
+func BuildStoredLevelCopyFilter(stored, meta string, filters []DropCondition) string {
+	if len(filters) == 0 {
+		return ""
+	}
+	known := stored + ":~" + quoteLevelRegexp("(?i)^(?:"+strings.Join(allDetectedLevelSpellings(), "|")+")$")
+	var sb strings.Builder
+	for _, f := range filters {
+		var alts []string
+		for _, s := range detectedLevelSpellings {
+			if f.Matches(s.level) {
+				alts = append(alts, stored+":~"+quoteLevelRegexp("(?i)^(?:"+strings.Join(s.spellings, "|")+")$"))
+			}
+		}
+		var word string
+		switch f.Op {
+		case "=":
+			word = stored + ":=" + logsql.QuoteValue(f.Value)
+		case "!=":
+			word = "-" + stored + ":=" + logsql.QuoteValue(f.Value)
+		case "=~":
+			word = stored + ":~" + strconv.Quote("^(?:"+f.Value+")$")
+		default:
+			word = "-" + stored + ":~" + strconv.Quote("^(?:"+f.Value+")$")
+		}
+		alts = append(alts, "(-"+known+" "+word+")")
+		fmt.Fprintf(&sb, " | filter (%s:* OR -%s:* OR %s)", meta, stored, strings.Join(alts, " OR "))
+	}
+	return sb.String()
+}
+
 func detectedLevelLogLevelFieldNames() []string {
 	return DetectedLevelFieldNames[1 : len(DetectedLevelFieldNames)-1]
 }

@@ -896,7 +896,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	if plan.derivesLevel {
 		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true)
-		if !errors.Is(err, errLevelNotStored) {
+		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
 			return body, served, parseDisagreement, err
 		}
 	}
@@ -938,23 +938,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if err != nil {
 		return nil, false, false, err
 	}
-	if storedLevel && p.levelNeedsChain(ctx, base) {
-		return nil, false, false, errLevelNotStored
-	}
 	windowStart := start.Add(-plan.window)
-	// The parse-risk check and the bucket query run concurrently; the buckets
-	// are discarded when the check finds a line the parsers read differently.
-	riskCtx, cancelRisk := context.WithCancel(ctx)
-	defer cancelRisk()
-	type riskResult struct {
-		risky bool
-		err   error
-	}
-	riskDone := make(chan riskResult, 1)
-	go func() {
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
-		riskDone <- riskResult{risky, err}
-	}()
 	statsCtx, cancelStats := context.WithCancel(ctx)
 	defer cancelStats()
 	groupBy := plan.statsGroupBy(storedLevel)
@@ -971,22 +955,42 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
 	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, plan.levelPipes(storedLevel)) + compute
 	// A filter on detected_level compares the derived value: after the chain in
-	// VictoriaLogs, or on the stored-level series below.
-	var levelFilters []translator.DropCondition
+	// VictoriaLogs, or on the stored spellings (levelPipes) and again on the
+	// normalised series below.
 	for _, filter := range plan.pushdownFilters {
 		if storedLevel && filter.Field == detectedLevelLabel {
-			levelFilters = append(levelFilters, filter)
 			continue
 		}
 		query += logsQLLabelFilter(filter)
 	}
+	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
+		return nil, false, false, errLevelNotStored
+	}
+	// The parse-risk check and the bucket query run concurrently; the buckets
+	// are discarded when the check finds a line the parsers read differently.
+	riskCtx, cancelRisk := context.WithCancel(ctx)
+	defer cancelRisk()
+	type riskResult struct {
+		risky bool
+		err   error
+	}
+	riskDone := make(chan riskResult, 1)
+	go func() {
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
+		riskDone <- riskResult{risky, err}
+	}()
 	type statsResult struct {
 		series map[string]manualSeriesSamples
 		err    error
 	}
 	statsDone := make(chan statsResult, 1)
 	go func() {
-		series, err := p.collectRangeMetricHits(statsCtx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
+		readCtx := statsCtx
+		if storedLevel {
+			// The spellings of one level are groups here, series in the answer.
+			readCtx = guardStatsGroups(statsCtx)
+		}
+		series, err := p.collectRangeMetricHits(readCtx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
 		statsDone <- statsResult{series, err}
 	}()
 	risk := <-riskDone
@@ -996,17 +1000,21 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	stats := <-statsDone
 	series, err := stats.series, stats.err
+	if errors.Is(err, errStatsGroupGuard) {
+		// More groups than the guard reads: the chain's groups are the answer's
+		// series, so it counts them and answers Loki's series limit itself.
+		p.markLevelNeedsChain(ctx, base+levelShapeSeparator+query)
+	}
 	if err != nil {
 		return nil, false, false, err
 	}
 	if storedLevel {
-		if series, ok = storedLevelSeries(series, levelFilters); !ok {
+		if series, ok = storedLevelSeries(series, plan.levelFilters()); !ok {
 			p.markLevelNeedsChain(ctx, base)
 			return nil, false, false, errLevelNotStored
 		}
-	}
-	// Only above the limit: a query with exactly the limit's series passes.
-	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+	} else if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+		// Only above the limit: a query with exactly the limit's series passes.
 		return nil, false, false, err
 	}
 	merged := make(map[string]manualSeriesSamples, len(series))
@@ -1033,6 +1041,13 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		}
 		merged[key] = target
 	}
+	if storedLevel {
+		// The spellings of one level are one series, as in Loki: only the
+		// merged answer meets the limit.
+		if merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+			return nil, false, false, err
+		}
+	}
 	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
 	return body, err == nil, false, err
 }
@@ -1055,9 +1070,24 @@ func (plan *orderedJSONMetricPlan) statsGroupBy(storedLevel bool) []string {
 // unpack, so a body key never looks stored) or the chain.
 func (plan *orderedJSONMetricPlan) levelPipes(storedLevel bool) string {
 	if storedLevel {
-		return " | copy detected_level as " + storedDetectedLevelField + ", level as " + storedLevelField
+		// The filters on detected_level run in VictoriaLogs on the stored
+		// spellings (translator.BuildStoredLevelCopyFilter), so the groups it
+		// returns are those of the rows the filters keep.
+		return " | copy detected_level as " + storedDetectedLevelField + ", level as " + storedLevelField +
+			translator.BuildStoredLevelCopyFilter(storedLevelField, storedDetectedLevelField, plan.levelFilters())
 	}
 	return plan.levelChain()
+}
+
+// levelFilters lists the filters on detected_level of a plan reading it.
+func (plan *orderedJSONMetricPlan) levelFilters() []translator.DropCondition {
+	var filters []translator.DropCondition
+	for _, filter := range plan.pushdownFilters {
+		if filter.Field == detectedLevelLabel {
+			filters = append(filters, filter)
+		}
+	}
+	return filters
 }
 
 // unpackKeys lists the keys the pushdown unpacks: the grouped labels and the

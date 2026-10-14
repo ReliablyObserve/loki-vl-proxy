@@ -66,6 +66,18 @@ var jsonVolumeMsgFilterRE = regexp.MustCompile(`_msg:~("(?:[^"\\]|\\.)*")`)
 // renders for a Loki level=/!= label filter.
 var fakeVLLevelFilterRE = regexp.MustCompile(`\| filter (-?)level:="([^"]*)"`)
 
+// fakeStoredLevelFilters applies the filter pipes on the copies of the stored
+// level fields (translator.BuildStoredLevelCopyFilter) to a stream level.
+func fakeStoredLevelFilters(t testing.TB, query, level string) bool {
+	values := map[string]string{"__dl_l": level}
+	for _, pipe := range splitLogsQLPipes(query) {
+		if strings.HasPrefix(pipe, "filter (__dl_d:*") && !fakeLogsQLMatch(t, strings.TrimPrefix(pipe, "filter "), values) {
+			return false
+		}
+	}
+	return true
+}
+
 func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server, *jsonVolumeFakeVL) {
 	t.Helper()
 	fake := &jsonVolumeFakeVL{lines: lines}
@@ -128,6 +140,9 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 				if unpack && (!keep || level == "") {
 					// Without keep_original_fields unpacking overwrites stored fields.
 					level = unpacked
+				}
+				if storedLevel && !fakeStoredLevelFilters(t, query, line.level) {
+					continue
 				}
 				if m := fakeVLLevelFilterRE.FindStringSubmatch(query); m != nil && (level == m[2]) == (m[1] == "-") {
 					continue

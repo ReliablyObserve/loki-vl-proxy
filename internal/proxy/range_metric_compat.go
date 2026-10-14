@@ -1183,22 +1183,57 @@ func snapSlidingBucketNanos(ts int64, start time.Time, hitStep time.Duration) in
 // series limit error once it holds more result entries than the limit allows
 // (two per series when byte presence counts ride along). A Drilldown request
 // reads it all and keeps the busiest series instead.
+//
+// With the groups of the response guarded (guardStatsGroups) a VictoriaLogs
+// group is no series of the answer: groups merge into fewer series after the
+// read (the spellings of one level), and Loki's limit applies to the merged
+// answer only. The read then stops at splitGroupSlack times the limit as a
+// memory guard, with errStatsGroupGuard instead of the series limit error, and
+// the caller asks again in a form whose groups are its series.
 func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit int, withPresence bool) ([]byte, error) {
 	counter := &seriesCountingReader{r: body}
+	guarded := statsGroupsGuarded(ctx)
 	if !requestKeepsPartialSeries(ctx) {
 		counter.limit = limit
 		if withPresence {
 			counter.limit = 2 * limit
 		}
+		if guarded {
+			counter.limit *= splitGroupSlack
+		}
 	}
 	out, err := readBodyLimited(counter, maxStatsBucketResponseBytes)
 	if errors.Is(err, errSeriesCountExceeded) {
+		if guarded {
+			return nil, errStatsGroupGuard
+		}
 		return nil, &seriesLimitError{limit: limit}
 	}
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// splitGroupSlack scales the series limit into the number of groups a guarded
+// stats read holds in memory before the caller asks in another form.
+const splitGroupSlack = 2
+
+// errStatsGroupGuard reports a guarded stats response with more than
+// splitGroupSlack times the series limit of groups: no verdict on the series
+// the answer holds, the memory guard of the read.
+var errStatsGroupGuard = errors.New("stats response holds more groups than the guarded read keeps")
+
+type statsGroupGuardKey struct{}
+
+// guardStatsGroups marks the stats reads of ctx as guarded (see readStatsBucketBody).
+func guardStatsGroups(ctx context.Context) context.Context {
+	return context.WithValue(ctx, statsGroupGuardKey{}, true)
+}
+
+func statsGroupsGuarded(ctx context.Context) bool {
+	guarded, _ := ctx.Value(statsGroupGuardKey{}).(bool)
+	return guarded
 }
 
 // collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
@@ -1355,6 +1390,11 @@ func (p *Proxy) collectRangeMetricHits(
 		} else {
 			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
 		}
+	}
+	if statsGroupsGuarded(ctx) {
+		// The groups are not the answer's series: the caller applies the limit
+		// to the merged answer.
+		return seriesMap, nil
 	}
 	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
 	// busiest series (complete, with byte values and presence) and a warning.

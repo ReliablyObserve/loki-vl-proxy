@@ -161,8 +161,8 @@ func chainPresence(query string) *translator.DetectedLevelPresence {
 // chainStart reports whether pipe is the first of a detected_level chain,
 // whatever its pruning leaves first.
 func chainStart(pipe string) bool {
-	if strings.HasPrefix(pipe, "copy ") {
-		return false // the stored-level copies of the cheap plan
+	if strings.HasPrefix(pipe, "copy ") || strings.HasPrefix(pipe, "filter (__dl_d:*") {
+		return false // the stored-level copies of the cheap plan and its filters
 	}
 	return strings.Contains(pipe, "__dl") || strings.Contains(pipe, `result_prefix "__j_"`)
 }
