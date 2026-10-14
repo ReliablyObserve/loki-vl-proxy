@@ -1034,6 +1034,22 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		// Only above the limit: a query with exactly the limit's series passes.
 		return nil, false, false, err
 	}
+	merged := plan.mergeGroups(series)
+	if storedLevel {
+		// The spellings of one level are one series, as in Loki: only the
+		// merged answer meets the limit.
+		if merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+			return nil, false, false, err
+		}
+	}
+	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
+	return body, err == nil, false, err
+}
+
+// mergeGroups folds the stats groups into the plan's series: groups that
+// differ only in a field the plan does not group by (the copies of the stored
+// level fields, the spellings of one level) are one series.
+func (plan *orderedJSONMetricPlan) mergeGroups(series map[string]manualSeriesSamples) map[string]manualSeriesSamples {
 	merged := make(map[string]manualSeriesSamples, len(series))
 	var grouped []string
 	if plan.grouping != nil {
@@ -1058,15 +1074,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		}
 		merged[key] = target
 	}
-	if storedLevel {
-		// The spellings of one level are one series, as in Loki: only the
-		// merged answer meets the limit.
-		if merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
-			return nil, false, false, err
-		}
-	}
-	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
-	return body, err == nil, false, err
+	return merged
 }
 
 // statsGroupBy lists the fields the pushdown's stats group by: the grouped
