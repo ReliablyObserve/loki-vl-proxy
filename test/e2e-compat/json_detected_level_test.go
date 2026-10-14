@@ -139,6 +139,7 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "stream severity", labels: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error", route: "stats"},
 	{name: "stream level wins over the body", labels: map[string]string{"level": "INFO"}, msg: `{"level":"error"}`, want: "info", route: "stats"},
 	{name: "stream detected_level keeps its stored spelling", labels: map[string]string{"detected_level": "INFO"}, msg: `{"n":1}`, want: "INFO", route: "raw"},
+	{name: "stream detected_level wins over a stream level", labels: map[string]string{"detected_level": "INFO", "level": "warn"}, msg: `{"n":1}`, want: "INFO", route: "raw"},
 	{name: "stream detected_level wins over the body", labels: map[string]string{"detected_level": "Warning"}, msg: `{"level":"error"}`, want: "Warning", route: "raw"},
 	{name: "stored level metadata", meta: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn", route: "stats"},
 	{name: "stored detected_level metadata", meta: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error", route: "stats"},

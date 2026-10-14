@@ -77,7 +77,10 @@ func emulateDetectedLevelChainFor(values map[string]string, present *translator.
 	if number != "" {
 		return levelFromSeverityNumber([]byte(number))
 	}
-	if m := severityDerivedName.FindStringSubmatch(values["severity"]); m != nil {
+	// the pipes that read a level from the severity names VictoriaLogs derived
+	// from the OTLP number (before v1.50) are part of the chain only when the
+	// window holds a severity field or a number
+	if m := severityDerivedName.FindStringSubmatch(values["severity"]); m != nil && (present == nil || !containsString(present.Stored, noSeverityNamePipes)) {
 		return strings.ToLower(m[1])
 	}
 	return levelUnknown
@@ -127,6 +130,10 @@ func unspecifiedOnly(values map[string]string) bool {
 		values["severity"] == "Unspecified" && values["severity_number"] == "" && others("severity")
 }
 
+// noSeverityNamePipes marks, in the presence read back from a chain, that it
+// lacks the pipes mapping a derived severity name to a level.
+const noSeverityNamePipes = "\x00no-severity-name-pipes"
+
 var (
 	chainStoredPickRE = regexp.MustCompile(`"<([^>]+)>" as __dl_s keep_original_fields`)
 	chainBodyKeysRE   = regexp.MustCompile(`unpack_json[^|]*? fields \(([^)]*)\) result_prefix "__j_"`)
@@ -141,6 +148,9 @@ func chainPresence(query string) *translator.DetectedLevelPresence {
 	}
 	if strings.Contains(query, `severity_number:*) "info" as __dl keep_original_fields`) {
 		present.Stored = append(present.Stored, "severity_number")
+	}
+	if !strings.Contains(query, "-severity_number:* severity:~") {
+		present.Stored = append(present.Stored, noSeverityNamePipes)
 	}
 	if m := chainBodyKeysRE.FindStringSubmatch(query); m != nil {
 		present.BodyKeys = strings.Split(m[1], ", ")

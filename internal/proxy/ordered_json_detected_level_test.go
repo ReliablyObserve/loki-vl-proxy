@@ -66,6 +66,7 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "stream severity", stream: map[string]string{"severity": "error"}, msg: `{"n":1}`, want: "error"},
 	{name: "stream level wins over the body", stream: map[string]string{"level": "INFO"}, msg: `{"level":"error"}`, want: "info"},
 	{name: "stream detected_level keeps its stored spelling", stream: map[string]string{"detected_level": "INFO"}, msg: `{"n":1}`, want: "INFO", rawRows: true},
+	{name: "stream detected_level wins over a stream level", stream: map[string]string{"detected_level": "INFO", "level": "warn"}, msg: `{"n":1}`, want: "INFO", rawRows: true},
 	{name: "stream detected_level wins over the body", stream: map[string]string{"detected_level": "Warning"}, msg: `{"level":"error"}`, want: "Warning", rawRows: true},
 	{name: "stored level field", vl: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, want: "warn"},
 	{name: "stored detected_level field", vl: map[string]string{"detected_level": "Error"}, msg: `{"level":"info"}`, want: "error"},
@@ -186,7 +187,9 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 						}
 						return
 					}
-					if pruned && len(fake.presenceCalls) != 1 {
+					// (a guard that finds a risky line cancels the stats request, and with
+					// it a presence probe not yet sent)
+					if pruned && !probe.rawRows && len(fake.presenceCalls) != 1 {
 						t.Fatalf("%d presence probes, want 1", len(fake.presenceCalls))
 					}
 					if pruned && len(chain) == 1 && len(chain[0]) >= len(levelChain) {
