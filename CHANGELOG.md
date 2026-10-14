@@ -98,6 +98,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dashboard is checked again in full every five minutes (a refresh checks only
   the part younger than five minutes, as before).
   (`semantics/json-metric-detected-level-derivation`)
+- **The in-memory cache's byte budget (`-cache-max-bytes`) counts the key of an
+  entry as well as its value (#760).** Entries keyed by a long query (the
+  window verdicts of the pushdown probes, whose key holds the whole base, 8 to
+  14 KB) were counted as their one-byte value. An entry whose key and value
+  together pass a tenth of the budget is no longer stored, and a cache full of
+  long keys evicts sooner; the cache size metrics grow by the length of the
+  keys.
 
 ## [2.15.0] - 2026-10-12
 
