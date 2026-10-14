@@ -10,10 +10,10 @@
  "valid": true,
  "restart_before": "0",
  "restart_after": "0",
- "noise": 0.25,
+ "noise": 0.3,
  "timing": "warm",
  "verdicts": {
-  "slower": 1
+  "same": 1
  },
  "result_differs_from_reference": 0,
  "result_differs_preexisting": 0,
@@ -27,19 +27,19 @@
    "shape": "D volume, no filters",
    "range": "1h",
    "p50": {
-    "base": 0.059,
-    "pr": 0.144,
-    "loki": 0.024
+    "base": 0.085,
+    "pr": 0.09,
+    "loki": 0.02
    },
    "p95": {
-    "base": 0.071,
-    "pr": 0.196,
-    "loki": 0.03
+    "base": 0.11,
+    "pr": 0.098,
+    "loki": 0.028
    },
    "cold": {
-    "base": 0.054,
-    "pr": 0.115,
-    "loki": 0.033
+    "base": 0.136,
+    "pr": 0.078,
+    "loki": 0.279
    },
    "status": {
     "base": "200",
@@ -47,15 +47,15 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 67.05,
-    "pr": 67.05,
-    "loki": 77.97
+    "base": 76.04,
+    "pr": 76.04,
+    "loki": 76.04
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
-   "verdict": "slower",
-   "speedup": 0.41
+   "verdict": "same",
+   "speedup": 0.94
   }
  ]
 }

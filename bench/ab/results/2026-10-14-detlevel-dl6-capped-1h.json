@@ -6,14 +6,14 @@
  "baseline": "base",
  "candidate": "pr",
  "reference": "loki",
- "runs": 7,
+ "runs": 15,
  "valid": true,
  "restart_before": "0",
  "restart_after": "0",
- "noise": 0.25,
+ "noise": 0.3,
  "timing": "warm",
  "verdicts": {
-  "slower": 1
+  "same": 1
  },
  "result_differs_from_reference": 0,
  "result_differs_preexisting": 0,
@@ -27,19 +27,19 @@
    "shape": "DL6 explore volume, level filter before json",
    "range": "1h",
    "p50": {
-    "base": 0.176,
-    "pr": 0.794,
-    "loki": 0.018
+    "base": 0.236,
+    "pr": 0.251,
+    "loki": 0.02
    },
    "p95": {
-    "base": 0.238,
-    "pr": 0.862,
-    "loki": 0.019
+    "base": 0.288,
+    "pr": 0.385,
+    "loki": 0.081
    },
    "cold": {
-    "base": 0.153,
-    "pr": 0.787,
-    "loki": 0.024
+    "base": 0.716,
+    "pr": 0.611,
+    "loki": 0.69
    },
    "status": {
     "base": "200",
@@ -47,15 +47,15 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 164.96,
-    "pr": 164.96,
-    "loki": 164.96
+    "base": 149.08,
+    "pr": 149.08,
+    "loki": 149.08
    },
-   "parity_vs_reference": "same series, sum \u00b10.28%",
+   "parity_vs_reference": "same series, sum \u00b10.36%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
-   "verdict": "slower",
-   "speedup": 0.22
+   "verdict": "same",
+   "speedup": 0.94
   }
  ]
 }

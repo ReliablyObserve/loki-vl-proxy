@@ -378,6 +378,7 @@
       "internal/proxy/backend_heavy_test.go"
     ],
     "semantics/detected-level-pipes-known-differences": [
+      "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
     ],
     "semantics/extracted-metric-known-differences": [
@@ -424,6 +425,7 @@
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-metric-detected-level-derivation": [
+      "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
       "test/e2e-compat/json_detected_level_test.go"
     ],
@@ -644,6 +646,10 @@
     ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/detected_level_presence_test.go": [
+      "semantics/detected-level-pipes-known-differences",
+      "semantics/json-metric-detected-level-derivation"
     ],
     "internal/proxy/detected_level_response_test.go": [
       "severity-exposure-surfaces"
@@ -1168,7 +1174,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 109,
+  "tests_with_markers": 110,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
