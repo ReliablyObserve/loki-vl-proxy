@@ -110,6 +110,40 @@ var detectedLevelProbes = []detectedLevelProbe{
 	// A spelling the keyword scan cannot find (information is no whole word
 	// of the scan): only the decoded key gives info, as in Loki v3.7.7.
 	{name: "escaped level key, long spelling", msg: `{"\u006cevel":"Information"}`, want: "info"},
+	// The keyword scan of Loki v3.7.7 (detectLevelFromLogLine): the first word
+	// of trace, debug, fatal, critical, error, err, warning, warn, info by
+	// position, between its boundaries, case folded. A plain line is not JSON,
+	// so only the form that drops the parser error is valid for it.
+	{name: "keyword in capitals", msg: "request ERROR upstream", want: "error", dropOnly: true},
+	{name: "keyword in title case", msg: "Error: connection refused", want: "error", dropOnly: true},
+	{name: "keyword in mixed case", msg: "eRrOr in module", want: "error", dropOnly: true},
+	{name: "plural is no keyword", msg: "3 errors found", want: "unknown", dropOnly: true},
+	{name: "keyword inside a word", msg: "terror alert", want: "unknown", dropOnly: true},
+	{name: "long spelling of warn", msg: "disk warning: low", want: "warn", dropOnly: true},
+	{name: "plural of warn", msg: "warnings ignored", want: "unknown", dropOnly: true},
+	{name: "two keywords, the first by position", msg: "info then error", want: "info", dropOnly: true},
+	{name: "two keywords, the long spelling first", msg: "warning: error", want: "warn", dropOnly: true},
+	{name: "critical before error", msg: "critical error", want: "critical", dropOnly: true},
+	{name: "error before critical", msg: "error then critical", want: "error", dropOnly: true},
+	{name: "hyphen before the keyword", msg: "foo-error", want: "unknown", dropOnly: true},
+	{name: "underscore before the keyword", msg: "foo_error", want: "unknown", dropOnly: true},
+	{name: "digit before the keyword", msg: "5error", want: "unknown", dropOnly: true},
+	{name: "digits after the keyword", msg: "error404", want: "unknown", dropOnly: true},
+	{name: "full stop after the keyword", msg: "error.", want: "unknown", dropOnly: true},
+	{name: "short spelling of error", msg: "err: timeout", want: "error", dropOnly: true},
+	{name: "keyword in brackets", msg: "(warn) slow", want: "warn", dropOnly: true},
+	{name: "keyword in quotes", msg: "retry \"debug\" mode", want: "debug", dropOnly: true},
+	{name: "keyword after an equals sign", msg: "x=trace on", want: "trace", dropOnly: true},
+	{name: "fatal in capitals", msg: "FATAL: out of memory", want: "fatal", dropOnly: true},
+	{name: "no-break space before the keyword", msg: "\u00a0error", want: "unknown", dropOnly: true},
+	{name: "letter before the keyword", msg: "éerror", want: "unknown", dropOnly: true},
+	{name: "letter after the keyword", msg: "errorж", want: "unknown", dropOnly: true},
+	{name: "carriage return before the keyword", msg: "x\rerror", want: "unknown", dropOnly: true},
+	{name: "plural in a JSON message", msg: `{"msg":"3 errors found"}`, want: "unknown"},
+	{name: "two keywords in a JSON message", msg: `{"msg":"info then error"}`, want: "info"},
+	{name: "long spelling first in a JSON message", msg: `{"msg":"warning: error"}`, want: "warn"},
+	{name: "keyword alone in a JSON message", msg: `{"msg":"ERROR"}`, want: "error"},
+	{name: "hyphen before the keyword in a JSON message", msg: `{"msg":"foo-error"}`, want: "unknown"},
 }
 
 // storedLevelDecides reports whether a stored level field, and no stored

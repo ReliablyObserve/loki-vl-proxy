@@ -77,6 +77,34 @@ var detectedLevelSeverityNumberRegexp = map[string]string{
 // detectedLevelCanonical lists every value the body chain can produce.
 var detectedLevelCanonical = []string{"trace", "debug", "info", "warn", "error", "critical", "fatal", "unknown"}
 
+// levelKeywords are the words of Loki's keyword scan (field_detection.go
+// levelPatterns), in its order.
+var levelKeywords = []string{"trace", "debug", "fatal", "critical", "error", "err", "warning", "warn", "info"}
+
+// levelKeywordRegexp finds the first keyword of a line that stands between
+// Loki's word boundaries (isLeftWordBoundary, isRightWordBoundary), ASCII
+// case folded, which is what extract_regexp runs over the rows that need it.
+var levelKeywordRegexp = `(?i)(?:^|[ \t\n\[({"=])(?P<__dl_e>` + strings.Join(levelKeywords, "|") + `)(?:$|[ \t\n\[\](){}:,!"=])`
+
+// LevelKeywordGate returns the filter in front of the keyword regexp: a line
+// that holds one of the keywords as a whole word of VictoriaLogs' tokenizer,
+// case-insensitively (i(), which finds the words in the block's token index
+// and lowercases only what is left). It is a superset of the lines the regexp
+// matches, never a second decision: every byte Loki accepts around a keyword
+// (space, tab, newline, brackets, braces, quote, '=', ':', ',', '!') is
+// a token separator, and the folding of (?i) maps no non-ASCII rune onto the
+// letters of the nine words, so the matched text is an ASCII word of the line
+// delimited by separators. The regexp, not the gate, decides which rows are
+// matched, so a line the gate lets through and Loki's boundaries reject
+// (`foo-error`, `error.`) is still no match.
+func LevelKeywordGate() string {
+	words := make([]string, len(levelKeywords))
+	for i, w := range levelKeywords {
+		words[i] = "i(" + w + ")"
+	}
+	return "_msg:(" + strings.Join(words, " OR ") + ")"
+}
+
 // vlSeverityFamilies are the severity texts VictoriaLogs derives from OTel
 // severity numbers 1..24 when an OTLP record has no text: the stem for the
 // first number of a family of four, the stem with 2, 3 and 4 for the rest
@@ -224,8 +252,7 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 			add("format if (__dl_v:~%s) %q as __dl keep_original_fields", quoteLevelRegexp("(?i)^("+strings.Join(s.spellings, "|")+")$"), s.level)
 		}
 	}
-	add("extract_regexp%s %s from _msg", withCond(`__dl:""`),
-		quoteLevelRegexp(`(?i)(?:^|[ \t\n\[({"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \t\n\[\](){}:,!"=])`))
+	add("extract_regexp%s %s from _msg", withCond(`__dl:"" `+LevelKeywordGate()), quoteLevelRegexp(levelKeywordRegexp))
 	add(`format if (__dl:"" __dl_e:~"(?i)^(error|err)$") "error" as __dl keep_original_fields`)
 	add(`format if (__dl:"" __dl_e:~"(?i)^(warning|warn)$") "warn" as __dl keep_original_fields`)
 	add(`format if (__dl:"" __dl_e:*) "<lc:__dl_e>" as __dl keep_original_fields`)

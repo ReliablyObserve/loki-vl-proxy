@@ -199,7 +199,7 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		45: `format if (__l_SEVERITY_TEXT:*) "<__l_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
 		46: "format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields",
 		52: "format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields",
-		53: "extract_regexp if (__dl:\"\") `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
+		53: "extract_regexp if (__dl:\"\" _msg:(i(trace) OR i(debug) OR i(fatal) OR i(critical) OR i(error) OR i(err) OR i(warning) OR i(warn) OR i(info))) `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
 		57: `format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`,
 		66: `format "unknown" as __dl keep_original_fields`,
 		67: `delete __dl_*, __j_*, __l_*`,
@@ -221,7 +221,7 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		`| format if (__dl_s:*) "1" as __dl_h | format if (__dl_s:*) "<__dl_s>" as __dl_v`,
 		`| unpack_json if (-__dl_h:*) from _msg fields (`,
 		"| unpack_logfmt if (-__dl_h:* -_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (",
-		"| extract_regexp if (-__dl_h:* __dl:\"\") `",
+		"| extract_regexp if (-__dl_h:* __dl:\"\" _msg:(i(trace) OR ",
 		`| format if (-__dl_h:*) "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`,
 	} {
 		if !strings.Contains(stored, want) {
