@@ -333,18 +333,33 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 		return values, false
 	}
 	inChain := false
+	// A chain built with translator.SharedUnpack holds the unpack of its plan:
+	// the unpack and the copies after the level are run as VictoriaLogs runs
+	// them, the rest of the chain is emulated whole.
+	sharedChain := chainSharedUnpack(query) != ""
 	for _, pipe := range pipes[1:] {
+		runPipe := true
 		switch {
 		case inChain:
 			// The rest of translator.BuildDetectedLevelChain: its result is
 			// already in detected_level.
 			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
+			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
 		case chainStart(pipe):
 			// The start of translator.BuildDetectedLevelChain; the chain is
 			// emulated whole by emulateDetectedLevelChainFor, for the fields and
 			// keys it was built from.
 			values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			if chainStoredLevelDecides(values, chainPresence(query)) {
+				values["__dl_h"] = "1" // the rows a stored level decides, as the chain's marker pipes flag them
+			}
 			inChain = true
+			runPipe = sharedChain && (strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
+		}
+		if !runPipe {
+			continue
+		}
+		switch {
 		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
 			var unpacked map[string]string
 			if strings.HasPrefix(pipe, "unpack_json") {
@@ -718,6 +733,12 @@ const levelProbes = 3
 
 var levelChain = translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
 
+// sharedLevelChain is the chain of a plan that hands its unpack to it: the
+// labels, and the condition of the plan's own unpack ("" when it has none).
+func sharedLevelChain(cond string, labels ...string) string {
+	return translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, &translator.SharedUnpack{Keys: labels, Cond: cond})
+}
+
 func newFilterPushdownProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()
 	p := newSlidingTestProxy(t, backendURL)
@@ -748,7 +769,7 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 	}{
 		// Explore's logs volume for `{...} | json | service_version=`0.96.0` | pipeline=`logs/loki``.
 		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2 + levelProbes,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*) or (-pipeline:*)) fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*) or (-pipeline:*)", "level", "service_version", "pipeline") + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
 		// A user's grouped sum: the filter excludes unparsed lines, so errors need not be dropped.
 		{`sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-pipeline:*)) fields (level, pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats by (level) count() as c`},
@@ -764,7 +785,7 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
 		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2 + levelProbes,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*)) fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*)", "level", "service_version") + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)

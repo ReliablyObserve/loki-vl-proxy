@@ -216,3 +216,126 @@ func TestLevelKeywordGateText(t *testing.T) {
 		}
 	}
 }
+
+// A chain that also unpacks the labels of its plan parses each line once: the
+// level keys it reads and the labels share one unpack_json, the level keys are
+// read only for rows no stored level decides although the unpack parses more
+// rows, and every label ends up with the value the plan's own `unpack_json
+// fields (...) keep_original_fields` would give it.
+func TestBuildDetectedLevelChainShared(t *testing.T) {
+	shared := &SharedUnpack{Keys: []string{"level", "app_name"}}
+	chain := BuildDetectedLevelChainShared(DetectedLevelFieldNames, DetectedLevelChainGrouping, nil, shared)
+	if n := strings.Count(chain, "unpack_json"); n != 1 {
+		t.Fatalf("%d unpack_json pipes: %s", n, chain)
+	}
+	for _, want := range []string{
+		// every row is parsed (the plan unpacks every row), the level keys and the labels together
+		`| unpack_json from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, app_name) result_prefix "__j_"`,
+		// the level keys are read only where no stored level decides, whichever rows were parsed
+		`| format if (-__dl_h:* __j_level:*) "<__j_level>" as __dl_v keep_original_fields`,
+		`| format if (-__dl_h:* __j_SEVERITY_TEXT:*) "<__j_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
+		// the labels: the body's value where the field is not stored, before the closing delete
+		`| format "<__dl>" as detected_level | format if (-level:* __j_level:*) "<__j_level>" as level | format if (-app_name:* __j_app_name:*) "<__j_app_name>" as app_name | delete __dl, __dl_*, __j_*, __l_*`,
+	} {
+		if !strings.Contains(chain, want) {
+			t.Errorf("shared chain lacks %q:\n%s", want, chain)
+		}
+	}
+	// The logfmt reads are the chain's own and unchanged.
+	if !strings.Contains(chain, "| unpack_logfmt if (-__dl_h:* -_msg:~") {
+		t.Errorf("the logfmt unpack changed: %s", chain)
+	}
+
+	// Without a shared unpack, or in a mode that has no labels, nothing changes.
+	for _, mode := range []DetectedLevelChainMode{DetectedLevelChainGroup, DetectedLevelChainLogs} {
+		if got, want := BuildDetectedLevelChainShared(DetectedLevelFieldNames, mode, nil, shared), BuildDetectedLevelChain(DetectedLevelFieldNames, mode, nil); got != want {
+			t.Errorf("mode %d changed by a shared unpack", mode)
+		}
+	}
+	if got, want := BuildDetectedLevelChainShared(DetectedLevelFieldNames, DetectedLevelChainGrouping, nil, &SharedUnpack{}), BuildDetectedLevelChain(DetectedLevelFieldNames, DetectedLevelChainGrouping, nil); got != want {
+		t.Error("an empty shared unpack changed the chain")
+	}
+
+	// The plan's own condition: a row it parses is parsed whether or not a stored
+	// level decides it, and the chain's rows are parsed too.
+	conditional := BuildDetectedLevelChainShared([]string{"level", "app"}, DetectedLevelChainGrouping, nil, &SharedUnpack{Keys: []string{"app_name"}, Cond: "(-app_name:*)"})
+	if !strings.Contains(conditional, "| unpack_json if (-__dl_h:* or (-app_name:*)) from _msg fields (") {
+		t.Errorf("conditional shared unpack: %s", conditional)
+	}
+
+	// Pruned: a label is no body key of the chain, so the mask never drops it,
+	// and a window with no body key still unpacks the labels (and reads no
+	// level key from them).
+	none := BuildDetectedLevelChainShared(nil, DetectedLevelChainGrouping, &DetectedLevelPresence{Stored: []string{"Level"}}, &SharedUnpack{Keys: []string{"level"}})
+	for _, want := range []string{
+		`| unpack_json from _msg fields (level) result_prefix "__j_"`,
+		`| format if (-level:* __j_level:*) "<__j_level>" as level | delete`,
+	} {
+		if !strings.Contains(none, want) {
+			t.Errorf("chain without body keys lacks %q:\n%s", want, none)
+		}
+	}
+	if strings.Contains(none, "as __dl_v keep_original_fields | format if (-__dl_h:* __j_") || strings.Contains(none, "unpack_logfmt") {
+		t.Errorf("a window without body keys reads a level key: %s", none)
+	}
+	// With a plan condition and no body key the chain asks nothing of its own.
+	only := BuildDetectedLevelChainShared(nil, DetectedLevelChainGrouping, &DetectedLevelPresence{Stored: []string{"level"}}, &SharedUnpack{Keys: []string{"level"}, Cond: "(-level:*)"})
+	if !strings.Contains(only, "| unpack_json if ((-level:*)) from _msg fields (level)") {
+		t.Errorf("plan condition alone: %s", only)
+	}
+}
+
+// FuzzKeywordGateIsASupersetOfTheRegexp lets the fuzzer look for a line the
+// keyword regexp matches and the gate (VictoriaLogs' i() over the nine words)
+// does not, and for a line where the chain's scan disagrees with a plain
+// search for Loki's first bounded keyword.
+func FuzzKeywordGateIsASupersetOfTheRegexp(f *testing.F) {
+	for _, c := range lokiKeywordAnswers {
+		f.Add(c.line)
+	}
+	f.Add("İNFO ready")
+	f.Add("\xff\xfeerror\xc2")
+	re := regexp.MustCompile(levelKeywordRegexp)
+	f.Fuzz(func(t *testing.T, line string) {
+		if re.MatchString(line) && !levelKeywordGateMatches(line) {
+			t.Fatalf("the regexp matches %q and the gate does not", line)
+		}
+		// Loki's own search, written out: the smallest position of a keyword
+		// between its boundaries in the lowercased line (ASCII fold, as the regexp).
+		lower := strings.Map(func(r rune) rune {
+			if r >= 'A' && r <= 'Z' {
+				return r + 'a' - 'A'
+			}
+			return r
+		}, line)
+		best, bestAt := "unknown", len(lower)+1
+		for _, w := range levelKeywords {
+			for from := 0; ; {
+				at := strings.Index(lower[from:], w)
+				if at < 0 {
+					break
+				}
+				at += from
+				left := at == 0 || strings.ContainsRune(" \t\n[({\"=", rune(lower[at-1]))
+				end := at + len(w)
+				right := end == len(lower) || strings.ContainsRune(" \t\n[](){}:,!\"=", rune(lower[end]))
+				if left && right {
+					if at < bestAt {
+						best, bestAt = w, at
+					}
+					break
+				}
+				from = at + 1
+			}
+		}
+		switch best {
+		case "err":
+			best = "error"
+		case "warning":
+			best = "warn"
+		}
+		if got := chainKeywordLevel(re, line); got != best {
+			t.Fatalf("%q: the chain's scan says %q, a search for the first bounded keyword says %q", line, got, best)
+		}
+	})
+}

@@ -451,7 +451,7 @@ func TestOrderedJSONLogsVolumeUsesStatsBuckets(t *testing.T) {
 		window  time.Duration
 		stats   string
 	}{
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__[1m]))`, "count_over_time", []string{"level", "detected_level"}, time.Minute, time.Minute, "unpack_json fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__[1m]))`, "count_over_time", []string{"level", "detected_level"}, time.Minute, time.Minute, "| delete __dl, __dl_*, __j_*, __l_* | stats by (level, detected_level) count() as c"},
 		{`sum by (level) (rate({app="api"} | json | drop __error__, __error_details__ [2m]))`, "rate", []string{"level"}, 30 * time.Second, 2 * time.Minute, "unpack_json fields (level) keep_original_fields | stats by (level) count() as c"},
 		{`sum by (detected_level) (bytes_over_time({app="api"} | json | drop __error__ [90s]))`, "bytes_over_time", []string{"detected_level"}, time.Minute, 90 * time.Second, "| delete __dl, __dl_*, __j_*, __l_* | stats by (detected_level) sum_len(_msg) as c, count() as __sample_count"},
 	} {
@@ -704,8 +704,8 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 	for _, tc := range []struct {
 		query, op, stats string
 	}{
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", ` | filter (level:* or _msg:"level" or _msg:~"\\\\u") ` + levelChain + ` | unpack_json if ((-level:*)) fields (level) keep_original_fields | filter level:="warn" | stats by (level, detected_level) count() as c`},
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | level!="warn" [1m]))`, "!=", `unpack_json fields (level) keep_original_fields | filter -level:="warn" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | level="warn" | drop __error__[1m]))`, "=", ` | filter (level:* or _msg:"level" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*)", "level") + ` | filter level:="warn" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | level!="warn" [1m]))`, "!=", `| delete __dl, __dl_*, __j_*, __l_* | filter -level:="warn" | stats by (level, detected_level) count() as c`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newJSONVolumeFakeVL(t, lines)

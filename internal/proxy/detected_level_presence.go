@@ -181,6 +181,29 @@ var fullLevelChain = sync.OnceValue(func() string {
 	return translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
 })
 
+type levelSharedUnpackKey struct{}
+
+// withLevelSharedUnpack tells pruneLevelChain that the chain of the requests
+// under ctx also unpacks the labels of shared (see translator.SharedUnpack):
+// it finds that chain by its text and builds the narrowed one with the same
+// labels, which no presence mask may drop.
+func withLevelSharedUnpack(ctx context.Context, shared *translator.SharedUnpack) context.Context {
+	return context.WithValue(ctx, levelSharedUnpackKey{}, shared)
+}
+
+// levelChains returns the full chain of a request and the unpack it shares
+// with its plan, if any: the chain that holds the plan's labels when the query
+// carries it, otherwise the plain full chain.
+func levelChains(ctx context.Context, query string) (chain string, shared *translator.SharedUnpack) {
+	if shared, _ = ctx.Value(levelSharedUnpackKey{}).(*translator.SharedUnpack); shared != nil {
+		chain = strings.TrimSuffix(translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, shared), levelChainDelete)
+		if strings.Contains(query, chain) {
+			return chain, shared
+		}
+	}
+	return strings.TrimSuffix(fullLevelChain(), levelChainDelete), nil
+}
+
 // levelChainDelete ends the chain; the native route drops it from its query,
 // so the chain is matched and replaced without it.
 const levelChainDelete = " | delete __dl, __dl_*, __j_*, __l_*"
@@ -214,7 +237,7 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 		return done.out, done.witness // pruned before the caller took its stats slot
 	}
 	query := params.Get("query")
-	chain := strings.TrimSuffix(fullLevelChain(), levelChainDelete)
+	chain, shared := levelChains(ctx, query)
 	// One chain only: its base is the probe's, and a second chain (a query of
 	// several segments) may sit on a different one.
 	at := strings.Index(query, chain)
@@ -231,7 +254,7 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	if mask == "" {
 		return params, nil
 	}
-	pruned := translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, levelPresenceFromMask(mask))
+	pruned := translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, levelPresenceFromMask(mask), shared)
 	pruned = strings.TrimSuffix(pruned, levelChainDelete)
 	// The witness precedes the chain, whose last pipe overwrites the stored
 	// detected_level field: the rows are as the probe read them.

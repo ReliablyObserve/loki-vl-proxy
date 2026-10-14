@@ -86,6 +86,29 @@ func emulateDetectedLevelChainFor(values map[string]string, present *translator.
 	return levelUnknown
 }
 
+// chainStoredLevelDecides reports whether the chain built for present reads a
+// stored level field of the row as its level (the first of
+// emulateDetectedLevelChainFor): a non-empty level field that VictoriaLogs did
+// not derive from the OTLP number, or a number other than the 0 that goes with
+// a synthesised Unspecified. It is the rows the chain's __dl_h marker flags.
+func chainStoredLevelDecides(values map[string]string, present *translator.DetectedLevelPresence) bool {
+	if present != nil {
+		kept := map[string]string{}
+		for _, name := range present.Stored {
+			kept[name] = values[name]
+		}
+		values = kept
+	}
+	number := values["severity_number"]
+	has := number != ""
+	for _, name := range translator.DetectedLevelFieldNames[:len(translator.DetectedLevelFieldNames)-1] {
+		if values[name] != "" {
+			has = true
+		}
+	}
+	return has && !unspecifiedOnly(values)
+}
+
 var (
 	bracedLine          = regexp.MustCompile(translator.BracedLineRegexp)
 	severityDerivedName = regexp.MustCompile(`^(Trace|Debug|Info|Warn|Error|Fatal)[234]?$`)
@@ -153,9 +176,39 @@ func chainPresence(query string) *translator.DetectedLevelPresence {
 		present.Stored = append(present.Stored, noSeverityNamePipes)
 	}
 	if m := chainBodyKeysRE.FindStringSubmatch(query); m != nil {
-		present.BodyKeys = strings.Split(m[1], ", ")
+		// A chain that holds the unpack of its plan lists the plan's labels too.
+		for _, key := range strings.Split(m[1], ", ") {
+			if containsString(translator.DetectedLevelBodyKeys(), key) {
+				present.BodyKeys = append(present.BodyKeys, key)
+			}
+		}
 	}
 	return present
+}
+
+// chainSharedKeysRE finds the copies a chain built with translator.SharedUnpack
+// ends with, one per label of the plan it unpacks for.
+var chainSharedKeysRE = regexp.MustCompile(`format if \(-(\w+):\* __j_(\w+):\*\) "<__j_(\w+)>" as (\w+)`)
+
+// chainSharedCopy reports whether pipe is the copy of a label a chain with a
+// shared unpack ends with.
+func chainSharedCopy(pipe string) bool { return chainSharedUnpack(" | "+pipe) != "" }
+
+// chainSharedUnpack returns the plan's own unpack a chain stands in for:
+// `unpack_json fields (labels) keep_original_fields`, or "" for a chain with
+// none. The unit fakes evaluate that pipe in place of the chain's copies; the
+// equivalence of the two is checked against VictoriaLogs by the e2e tests.
+func chainSharedUnpack(chain string) string {
+	var keys []string
+	for _, m := range chainSharedKeysRE.FindAllStringSubmatch(chain, -1) {
+		if m[1] == m[2] && m[1] == m[3] && m[1] == m[4] { // a copy of the label onto itself, not a body-key pick
+			keys = append(keys, m[1])
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return " | unpack_json fields (" + strings.Join(keys, ", ") + ") keep_original_fields"
 }
 
 // chainStart reports whether pipe is the first of a detected_level chain,
@@ -177,7 +230,12 @@ func withoutLevelChain(query string) string {
 		}
 	}
 	from = strings.LastIndex(query[:from], " | ")
-	return query[:from] + query[strings.Index(query, chainEnd)+len(chainEnd):]
+	at := strings.Index(query, chainEnd)
+	end, unpack := at+len(chainEnd), ""
+	if at >= from { // the native route's chain has no closing delete
+		unpack = chainSharedUnpack(query[from:end])
+	}
+	return query[:from] + unpack + query[end:]
 }
 
 // isLevelPresenceQuery reports whether query is the presence probe.

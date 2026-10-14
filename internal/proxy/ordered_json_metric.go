@@ -966,7 +966,14 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		}
 	}
 	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
-	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, plan.levelPipes(storedLevel)) + compute
+	beforeUnpack := plan.levelPipes(storedLevel)
+	shared := plan.sharedLevelUnpack(storedLevel, allKeys, extracted, stored)
+	if shared != nil {
+		// One parse of every line: the chain's unpack reads the plan's labels too.
+		beforeUnpack = " " + translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, shared)
+		statsCtx = withLevelSharedUnpack(statsCtx, shared)
+	}
+	query := base + remember + orderedJSONUnpackPipesShared(plan.parser, allKeys, stored, required, beforeUnpack, shared != nil) + compute
 	// A filter on detected_level compares the derived value: after the chain in
 	// VictoriaLogs, or on the stored spellings (levelPipes) and again on the
 	// normalised series below.
@@ -1313,6 +1320,14 @@ func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]st
 // run on the lines that can count and see only stored fields. With no label
 // to unpack, only beforeUnpack remains.
 func orderedJSONUnpackPipesAfter(parser string, unpack []string, stored map[string]string, required []string, beforeUnpack string) string {
+	return orderedJSONUnpackPipesShared(parser, unpack, stored, required, beforeUnpack, false)
+}
+
+// orderedJSONUnpackPipesShared is orderedJSONUnpackPipesAfter, optionally
+// without the unpack itself: the pipes of beforeUnpack have unpacked the
+// labels already (a detected_level chain built with translator.SharedUnpack),
+// and only the stored aliases are left to apply.
+func orderedJSONUnpackPipesShared(parser string, unpack []string, stored map[string]string, required []string, beforeUnpack string, unpacked bool) string {
 	var sb strings.Builder
 	if parser != "" {
 		for _, field := range required {
@@ -1324,14 +1339,10 @@ func orderedJSONUnpackPipesAfter(parser string, unpack []string, stored map[stri
 		}
 	}
 	sb.WriteString(beforeUnpack)
-	if parser != "" && (len(unpack) > 0 || beforeUnpack == "") {
-		conditions := make([]string, len(unpack))
-		for i, field := range unpack {
-			conditions[i] = "(" + storedFieldsAbsent(field, stored) + ")"
-		}
+	if parser != "" && !unpacked && (len(unpack) > 0 || beforeUnpack == "") {
 		sb.WriteString(" | unpack_" + parser)
 		if len(required) != 0 {
-			sb.WriteString(" if (" + strings.Join(conditions, " or ") + ")")
+			sb.WriteString(" if (" + orderedJSONUnpackCond(unpack, stored) + ")")
 		}
 		sb.WriteString(" fields (" + strings.Join(unpack, ", ") + ") keep_original_fields")
 	}
@@ -1341,6 +1352,43 @@ func orderedJSONUnpackPipesAfter(parser string, unpack []string, stored map[stri
 		}
 	}
 	return sb.String()
+}
+
+// orderedJSONUnpackCond is the condition of a plan's unpack when it has one:
+// a row is unpacked when any label is missing as a stored field.
+func orderedJSONUnpackCond(unpack []string, stored map[string]string) string {
+	conditions := make([]string, len(unpack))
+	for i, field := range unpack {
+		conditions[i] = "(" + storedFieldsAbsent(field, stored) + ")"
+	}
+	return strings.Join(conditions, " or ")
+}
+
+// sharedLevelUnpackKeyRE is the label names a chain can unpack for its plan:
+// plain JSON keys, which no quoting, flattening of nested objects or renaming
+// (log.level is the label log_level) can make differ from the plan's own
+// unpack, and never a name of the chain's scratch fields.
+var sharedLevelUnpackKeyRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+
+// sharedLevelUnpack returns the unpack a plan hands to the detected_level chain
+// so that the line is parsed once, or nil when the plan keeps its own: the
+// chain exists only for a JSON plan that derives the level, and the labels
+// must be plain keys with no name_extracted label among them (their scratch
+// unpack, ExtractedLabelPipes, reads the body its own way).
+func (plan *orderedJSONMetricPlan) sharedLevelUnpack(storedLevel bool, allKeys, extracted []string, stored map[string]string) *translator.SharedUnpack {
+	if storedLevel || !plan.derivesLevel || plan.parser != "json" || len(extracted) > 0 || len(allKeys) == 0 {
+		return nil
+	}
+	for _, key := range allKeys {
+		if !sharedLevelUnpackKeyRE.MatchString(key) || key == detectedLevelLabel {
+			return nil
+		}
+	}
+	// The unpack parses a row only where a label is missing as a stored field
+	// (the rest keep their stored values whatever the body says), or where the
+	// chain reads the level from the line; the plan's own unpack parses every
+	// row when no label is required, and the chain's before it again.
+	return &translator.SharedUnpack{Keys: allKeys, Cond: orderedJSONUnpackCond(allKeys, stored)}
 }
 
 // statsPushdownStoredFieldRisk reports whether a selected line carries one of

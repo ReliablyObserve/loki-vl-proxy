@@ -166,6 +166,35 @@ func DetectedLevelBodyKeys() []string { return detectedLevelLogLevelFieldNames()
 // present limits the chain to the fields and keys it lists (and replaces
 // existingFields); nil keeps every pick.
 func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence) string {
+	return BuildDetectedLevelChainShared(existingFields, mode, present, nil)
+}
+
+// SharedUnpack names the JSON keys a stats plan unpacks itself, so that the
+// chain's own unpack_json reads them too and the plan runs none: one parse of
+// every line instead of two. Keys are plain label names (letters, digits and
+// underscores), unpacked with the plan's keep_original_fields rule: a field
+// that is already stored and non-empty keeps its value, the body's fills only
+// the others. Cond is the plan's own condition on its unpack ("" when it
+// unpacks every row); a row it excludes holds every key as a stored field.
+type SharedUnpack struct {
+	Keys []string
+	Cond string
+}
+
+// BuildDetectedLevelChainShared is BuildDetectedLevelChain for a plan that
+// unpacks Keys itself (DetectedLevelChainGrouping only; the other modes ignore
+// shared). The chain's unpack_json reads the level keys it needs and Keys with
+// result_prefix "__j_", so a key never mistakes a stored field for a body
+// value, and before the closing delete every key gets the value the plan's own
+// `unpack_json fields (...) keep_original_fields` would have given it: the
+// body's, where the field is not stored. The rows the level keys are read
+// from stay those without a stored level (-__dl_h:*), whatever rows the unpack
+// parsed for the plan.
+func BuildDetectedLevelChainShared(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence, shared *SharedUnpack) string {
+	var sharedKeys []string
+	if shared != nil && mode == DetectedLevelChainGrouping {
+		sharedKeys = shared.Keys
+	}
 	pruned := present != nil
 	bodyKeys := DetectedLevelBodyKeys()
 	if pruned {
@@ -207,42 +236,28 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 
 	var pipes []string
 	add := func(format string, args ...any) { pipes = append(pipes, fmt.Sprintf(format, args...)) }
-	// Stored fields first, in Loki's priority order: the first non-empty one
-	// decides, and keep_original_fields keeps that first write.
-	for _, field := range texts {
-		quotedField := logsqlFieldName(field)
-		cond := quotedField + ":*"
-		// A severity text VictoriaLogs derived from the OTLP number is no level
-		// field of Loki's: the number (or a later field) decides.
-		switch field {
-		case "severity_text":
-			cond += " !" + synthesizedSeverityText() + ` !(severity_text:="Unspecified" severity_number:="0")`
-		case "severity":
-			cond += " !" + synthesizedSeverityName()
-		}
-		add(`format if (%s) "<%s>" as __dl_s keep_original_fields`, cond, field)
-	}
-	if len(stored) > 0 {
-		// A row has a stored level (BuildHasLevelFilter) when __dl_s holds a
-		// level text, or the number is one other than the 0 that goes with a
-		// synthesised Unspecified, or the severity field names a finer level.
-		add(`format if (__dl_s:*) "1" as __dl_h`)
-		if hasField(stored, "severity_number") {
-			add(`format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`)
-		}
-		if hasField(stored, "severity") {
-			add(`format if (-__dl_h:* %s -severity:="Unspecified") "1" as __dl_h`, synthesizedSeverityName())
-		}
-	}
+	pipes = append(pipes, storedLevelPicks(texts, stored)...)
 	if hasText {
 		add(`format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`)
 	}
+	if hasBody || len(sharedKeys) > 0 {
+		unpackFields, unpackCond := fieldList, withCond("")
+		if len(sharedKeys) > 0 {
+			unpackFields = unpackFieldList(quoted, sharedKeys)
+			unpackCond = sharedUnpackCond(cond, hasBody, shared.Cond)
+		}
+		add(`unpack_json%s from _msg fields (%s) result_prefix "__j_"`, unpackCond, unpackFields)
+	}
 	if hasBody {
-		add(`unpack_json%s from _msg fields (%s) result_prefix "__j_"`, withCond(""), fieldList)
 		add(`unpack_logfmt%s from _msg fields (%s) result_prefix "__l_"`, withCond("-_msg:~"+quoteLevelRegexp(BracedLineRegexp)), fieldList)
 		for _, prefix := range []string{"__j_", "__l_"} {
 			for _, n := range bodyKeys {
 				f := logsqlFieldName(prefix + n)
+				if prefix == "__j_" && len(sharedKeys) > 0 {
+					// The shared unpack parsed rows a stored level decides too.
+					add(`format%s "<%s>" as __dl_v keep_original_fields`, withCond(f+":*"), prefix+n)
+					continue
+				}
 				add(`format if (%s:*) "<%s>" as __dl_v keep_original_fields`, f, prefix+n)
 			}
 		}
@@ -269,21 +284,91 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 		add(`format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`)
 	}
 	add(`format "unknown" as __dl keep_original_fields`)
+	pipes = append(pipes, chainEnding(mode, cond, sharedKeys)...)
+	return "| " + strings.Join(pipes, " | ")
+}
+
+// storedLevelPicks returns the pipes that read the stored level fields, in
+// Loki's priority order (the first non-empty one decides, and
+// keep_original_fields keeps that first write), then the ones that mark the
+// rows a stored level decides (__dl_h).
+func storedLevelPicks(texts, stored []string) []string {
+	var pipes []string
+	add := func(format string, args ...any) { pipes = append(pipes, fmt.Sprintf(format, args...)) }
+	for _, field := range texts {
+		quotedField := logsqlFieldName(field)
+		cond := quotedField + ":*"
+		// A severity text VictoriaLogs derived from the OTLP number is no level
+		// field of Loki's: the number (or a later field) decides.
+		switch field {
+		case "severity_text":
+			cond += " !" + synthesizedSeverityText() + ` !(severity_text:="Unspecified" severity_number:="0")`
+		case "severity":
+			cond += " !" + synthesizedSeverityName()
+		}
+		add(`format if (%s) "<%s>" as __dl_s keep_original_fields`, cond, field)
+	}
+	if len(stored) > 0 {
+		// A row has a stored level (BuildHasLevelFilter) when __dl_s holds a
+		// level text, or the number is one other than the 0 that goes with a
+		// synthesised Unspecified, or the severity field names a finer level.
+		add(`format if (__dl_s:*) "1" as __dl_h`)
+		if hasField(stored, "severity_number") {
+			add(`format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`)
+		}
+		if hasField(stored, "severity") {
+			add(`format if (-__dl_h:* %s -severity:="Unspecified") "1" as __dl_h`, synthesizedSeverityName())
+		}
+	}
+	return pipes
+}
+
+// chainEnding returns the closing pipes of the chain: the value written to
+// detected_level (for every row, or where no stored level decided), the labels
+// of a shared unpack, and the delete of the scratch fields.
+func chainEnding(mode DetectedLevelChainMode, cond string, sharedKeys []string) []string {
 	switch mode {
 	case DetectedLevelChainGrouping:
-		add(`format "<__dl>" as detected_level`)
-		add("delete __dl, __dl_*, __j_*, __l_*")
+		out := []string{`format "<__dl>" as detected_level`}
+		for _, key := range sharedKeys {
+			out = append(out, fmt.Sprintf(`format if (-%s:* %s:*) "<__j_%s>" as %s`, logsqlFieldName(key), logsqlFieldName("__j_"+key), key, logsqlFieldName(key)))
+		}
+		return append(out, "delete __dl, __dl_*, __j_*, __l_*")
 	case DetectedLevelChainLogs:
 		if cond == "" {
-			add("rename __dl as detected_level")
-		} else {
-			add(`format if (%s) "<__dl>" as detected_level`, cond)
+			return []string{"rename __dl as detected_level", "delete __dl, __dl_*, __j_*, __l_*"}
 		}
-		add("delete __dl, __dl_*, __j_*, __l_*")
+		return []string{fmt.Sprintf(`format if (%s) "<__dl>" as detected_level`, cond), "delete __dl, __dl_*, __j_*, __l_*"}
 	default:
-		add("delete __dl_*, __j_*, __l_*")
+		return []string{"delete __dl_*, __j_*, __l_*"}
 	}
-	return "| " + strings.Join(pipes, " | ")
+}
+
+// unpackFieldList joins the level keys of the chain (already quoted) and the
+// keys a plan shares, each once.
+func unpackFieldList(levelKeys, shared []string) string {
+	fields := append([]string(nil), levelKeys...)
+	for _, key := range shared {
+		if q := logsqlFieldName(key); !slices.Contains(fields, q) {
+			fields = append(fields, q)
+		}
+	}
+	return strings.Join(fields, ", ")
+}
+
+// sharedUnpackCond is the condition of the unpack both the chain and the plan
+// read: the rows the chain reads level keys from (chainCond, none meaning
+// every row, when needChain) and the rows the plan unpacks (planCond, none
+// meaning every row).
+func sharedUnpackCond(chainCond string, needChain bool, planCond string) string {
+	switch {
+	case planCond == "", needChain && chainCond == "":
+		return ""
+	case !needChain:
+		return " if (" + planCond + ")"
+	default:
+		return " if (" + chainCond + " or " + planCond + ")"
+	}
 }
 
 // levelTextFields returns the level fields of fields that hold a level text

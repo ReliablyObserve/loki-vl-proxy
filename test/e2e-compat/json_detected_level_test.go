@@ -395,3 +395,122 @@ func levelStatsOutcome(plain, level, attempts, stats int) (lo, hi int, ok bool) 
 	}
 	return 0, 0, false
 }
+
+// A plan that groups by `level` and detected_level unpacks `level` from the
+// body, and the pipes that derive detected_level read the same line: they
+// share one parse of it. A level stored under another name decides the row's
+// detected_level, and the parsed `level` still counts as the label; a stored
+// `level` keeps the label and the body's moves to level_extracted. Each line
+// sits in a window with a second line no stored level decides, so that the
+// derivation runs in VictoriaLogs, and the labels are Loki's.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestRangeMetricCompatibilityJSONDetectedLevelSharedUnpack(t *testing.T) {
+	type probe struct {
+		name            string
+		labels, meta    map[string]string
+		msg             string
+		level, detected string // "" level: the line has no level label
+		otlp            bool
+		severityNumber  int
+		severityText    string
+	}
+	probes := []probe{
+		{name: "stored severity, body level", meta: map[string]string{"severity": "warn"}, msg: `{"level":"error","n":1}`, level: "error", detected: "warn"},
+		{name: "stored lvl, body level", meta: map[string]string{"lvl": "info"}, msg: `{"level":"error","n":1}`, level: "error", detected: "info"},
+		{name: "stored Level, body level", meta: map[string]string{"Level": "info"}, msg: `{"level":"debug","n":1}`, level: "debug", detected: "info"},
+		{name: "stored LEVEL, body level of another spelling", meta: map[string]string{"LEVEL": "WARN"}, msg: `{"level":"Information"}`, level: "Information", detected: "warn"},
+		{name: "stream level, body level", labels: map[string]string{"level": "warn"}, msg: `{"level":"error","n":1}`, level: "warn", detected: "warn"},
+		{name: "stored level, body level", meta: map[string]string{"level": "WARN"}, msg: `{"level":"info"}`, level: "WARN", detected: "warn"},
+		{name: "stored severity, no body level", meta: map[string]string{"severity": "warn"}, msg: `{"n":1}`, detected: "warn"},
+		{name: "body level only", msg: `{"level":"debug","n":1}`, level: "debug", detected: "debug"},
+		{name: "body level of an unknown spelling, keyword in the line", msg: `{"level":"notice","msg":"error connecting"}`, level: "notice", detected: "error"},
+		{name: "OTLP severity number, body level", otlp: true, severityNumber: 17, msg: `{"level":"debug","n":1}`, level: "debug", detected: "error"},
+		{name: "OTLP severity number and text, body level", otlp: true, severityNumber: 13, severityText: "Warn", msg: `{"level":"info"}`, level: "info", detected: "warn"},
+	}
+	now := time.Now()
+	s0 := now.Add(-9 * time.Hour).Truncate(time.Hour)
+	apps := make([]string, len(probes))
+	fixture := map[string][]jsonVolumeStreamLine{}
+	var otlpApps []string
+	for i, p := range probes {
+		apps[i] = fmt.Sprintf("json-level-shared-%02d-%d", i, now.UnixNano())
+		if p.otlp {
+			otlpApps = append(otlpApps, apps[i])
+			records := [][]byte{
+				otlpLogRecord(s0.Add(10*time.Second), p.severityNumber, p.severityText, p.msg, nil),
+				otlpLogRecord(s0.Add(11*time.Second), 0, "", `{"n":2}`, nil),
+			}
+			data := otlpLogsData(map[string]string{"service.name": apps[i]}, records)
+			dlPost(t, lokiURL+"/otlp/v1/logs", "application/x-protobuf", data)
+			dlPost(t, vlURL+"/insert/opentelemetry/v1/logs", "application/x-protobuf", data)
+			continue
+		}
+		line := func(at time.Duration, msg string, withLabels bool) jsonVolumeStreamLine {
+			l := jsonVolumeStreamLine{ts: s0.Add(at), msg: msg, labels: map[string]string{}}
+			if withLabels {
+				l.meta, l.vlMeta = p.meta, p.meta
+				for name, value := range p.labels {
+					if name == "level" {
+						l.level = value
+					} else {
+						l.labels[name] = value
+					}
+				}
+			}
+			return l
+		}
+		// the probe's line and one no stored level decides, in separate streams
+		fixture[apps[i]] = append(fixture[apps[i]], line(10*time.Second, p.msg, true), line(11*time.Second, `{"n":2}`, false))
+	}
+	ingestJSONVolumeFixture(t, fixture)
+	start, end := s0, s0.Add(2*time.Minute)
+	if len(otlpApps) > 0 {
+		forceVLFlush(t)
+		if status, body := hardeningRequest(t, http.MethodPost, lokiURL+"/flush", "", nil); status >= 300 {
+			t.Fatalf("Loki flush: %d %s", status, body)
+		}
+		for _, app := range otlpApps {
+			dlWaitBothBackends(t, dlFixture{start: start, end: end}, `{service_name="`+app+`"}`, fmt.Sprintf(`{service.name=%q}`, app), 2)
+		}
+	}
+
+	route, rec := newJSONVolumeRouteProxy(t)
+	for i, p := range probes {
+		selector := `{app="` + apps[i] + `"}`
+		if p.otlp {
+			selector = `{service_name="` + apps[i] + `"}`
+		}
+		query := `sum by (level, detected_level) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`
+		t.Run(p.name, func(t *testing.T) {
+			loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
+			wantKey := "detected_level=" + p.detected
+			if p.level != "" {
+				wantKey = wantKey + ",level=" + p.level
+			}
+			if _, ok := loki[wantKey]; !ok || len(loki) != 2 {
+				t.Fatalf("Loki answers %v, the table says {%s} and detected_level=unknown", loki, wantKey)
+			}
+			rec.reset()
+			assertSlidingParity(t, query+" [in-process]", loki, slidingRangeSeries(t, route, query, start, end, time.Minute, nil))
+			calls := rec.reset()
+			assertSlidingParity(t, query+" [proxy]", loki, slidingRangeSeries(t, proxyURL, query, start, end, time.Minute, nil))
+			// One stats request carries the derivation and one parse of the line;
+			// no raw rows are read.
+			chain, raw := 0, 0
+			for _, call := range calls {
+				switch {
+				case strings.HasPrefix(call, "/select/logsql/stats_query_range ") && !isStoredLevelAttempt(call):
+					chain++
+					if n := strings.Count(call, "unpack_json"); n != 1 {
+						t.Errorf("%d unpack_json pipes in the chain request, want 1: %.300s", n, call)
+					}
+				case strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1") && !isLevelPresenceCall(call):
+					raw++
+				}
+			}
+			if chain != 1 || raw != 0 {
+				t.Errorf("expected one chain stats request without raw rows: chain=%d raw=%d calls %q", chain, raw, calls)
+			}
+		})
+	}
+}
