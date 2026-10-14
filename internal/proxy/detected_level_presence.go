@@ -276,9 +276,8 @@ func (p *Proxy) pruneBeforeSlot(ctx context.Context, params url.Values) context.
 		return ctx
 	}
 	out, witness := p.pruneLevelChain(ctx, path, params)
-	if witness == nil && out.Get("query") == params.Get("query") {
-		return ctx
-	}
+	// Kept even when nothing was narrowed (no chain, or a probe that failed):
+	// vlPostHTTP must not probe again.
 	return context.WithValue(ctx, levelPrunedKey{}, &levelPruned{path: path, sent: params, out: out, witness: witness})
 }
 
