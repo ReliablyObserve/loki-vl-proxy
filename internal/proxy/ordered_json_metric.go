@@ -866,11 +866,25 @@ func withDerivedLevel(base map[string]string, level detectedLevel, stream map[st
 	base[detectedLevelName(stream)] = level.String()
 }
 
+// errLevelNotStored reports that a window holds rows whose detected_level no
+// stored detected_level or level field decides, so the pipes of the chain must
+// compute it.
+var errLevelNotStored = errors.New("rows without a stored level")
+
 // orderedJSONStatsBucketsWithReason serves an eligible plan (setStatsPushdown)
 // from stats_query_range buckets on the anchored sliding grid instead of raw
 // rows. served is false when the raw evaluator must answer: no bucket grid, a
 // possible series-limit overflow, or a line a probe found to be read
 // differently by the two parsers (parseDisagreement).
+//
+// A plan reading detected_level first asks for the stored fields alone: the
+// buckets are grouped by the stored detected_level and level fields, and the
+// level of each is Loki's value for every row they decide (the first
+// non-empty of the two, a known spelling in its canonical form). That is
+// main's plan, with no pipe and no guard probe per row. A bucket without a
+// stored level, or with a stored detected_level (a stream label keeps its
+// spelling, translator.BuildDetectedLevelChain), is a row only the chain and
+// its guards read exactly: the query is asked again with them.
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
 	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
@@ -880,6 +894,20 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		// the stored fields decide, which the raw evaluator derives.
 		return nil, false, false, nil
 	}
+	if plan.derivesLevel {
+		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true)
+		if !errors.Is(err, errLevelNotStored) {
+			return body, served, parseDisagreement, err
+		}
+	}
+	return p.orderedJSONStatsBuckets(ctx, plan, start, end, step, false)
+}
+
+// orderedJSONStatsBuckets is one attempt of orderedJSONStatsBucketsWithReason:
+// storedLevel reads detected_level from the stored fields (and returns
+// errLevelNotStored when they do not decide every row), otherwise the chain
+// computes it.
+func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, storedLevel bool) (body []byte, served bool, parseDisagreement bool, err error) {
 	unpack := plan.unpackKeys()
 	// A name_extracted label is computed after the plain unpack from a scratch
 	// unpack of the key name (translator.ExtractedLabelPipes); the plain unpack
@@ -910,6 +938,9 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	if err != nil {
 		return nil, false, false, err
 	}
+	if storedLevel && p.levelNeedsChain(ctx, base) {
+		return nil, false, false, errLevelNotStored
+	}
 	windowStart := start.Add(-plan.window)
 	// The parse-risk check and the bucket query run concurrently; the buckets
 	// are discarded when the check finds a line the parsers read differently.
@@ -921,15 +952,12 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	riskDone := make(chan riskResult, 1)
 	go func() {
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, windowStart, end)
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
 		riskDone <- riskResult{risky, err}
 	}()
 	statsCtx, cancelStats := context.WithCancel(ctx)
 	defer cancelStats()
-	groupBy := plan.unpackFields
-	if plan.grouping != nil && containsString(plan.grouping.Labels, "detected_level") {
-		groupBy = append(append([]string(nil), groupBy...), "detected_level")
-	}
+	groupBy := plan.statsGroupBy(storedLevel)
 	statsAggFunc := "count() as c"
 	if plan.function == "bytes_rate" || plan.function == "bytes_over_time" {
 		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
@@ -941,8 +969,15 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		}
 	}
 	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
-	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, plan.levelChain()) + compute
+	query := base + remember + orderedJSONUnpackPipesAfter(plan.parser, allKeys, stored, required, plan.levelPipes(storedLevel)) + compute
+	// A filter on detected_level compares the derived value: after the chain in
+	// VictoriaLogs, or on the stored-level series below.
+	var levelFilters []translator.DropCondition
 	for _, filter := range plan.pushdownFilters {
+		if storedLevel && filter.Field == detectedLevelLabel {
+			levelFilters = append(levelFilters, filter)
+			continue
+		}
 		query += logsQLLabelFilter(filter)
 	}
 	type statsResult struct {
@@ -963,6 +998,12 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	series, err := stats.series, stats.err
 	if err != nil {
 		return nil, false, false, err
+	}
+	if storedLevel {
+		if series, ok = storedLevelSeries(series, levelFilters); !ok {
+			p.markLevelNeedsChain(ctx, base)
+			return nil, false, false, errLevelNotStored
+		}
 	}
 	// Only above the limit: a query with exactly the limit's series passes.
 	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
@@ -994,6 +1035,29 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
 	return body, err == nil, false, err
+}
+
+// statsGroupBy lists the fields the pushdown's stats group by: the grouped
+// labels it unpacks, and the field(s) detected_level comes from.
+func (plan *orderedJSONMetricPlan) statsGroupBy(storedLevel bool) []string {
+	groupBy := plan.unpackFields
+	switch {
+	case storedLevel:
+		groupBy = append(append([]string(nil), groupBy...), storedDetectedLevelField, storedLevelField)
+	case plan.grouping != nil && containsString(plan.grouping.Labels, "detected_level"):
+		groupBy = append(append([]string(nil), groupBy...), "detected_level")
+	}
+	return groupBy
+}
+
+// levelPipes returns the pipes before the unpack that give a plan reading
+// detected_level its field: the copies of the stored fields (taken before any
+// unpack, so a body key never looks stored) or the chain.
+func (plan *orderedJSONMetricPlan) levelPipes(storedLevel bool) string {
+	if storedLevel {
+		return " | copy detected_level as " + storedDetectedLevelField + ", level as " + storedLevelField
+	}
+	return plan.levelChain()
 }
 
 // unpackKeys lists the keys the pushdown unpacks: the grouped labels and the
@@ -1040,7 +1104,7 @@ func splitPushdownKeys(unpack []string) (plain, allKeys, extracted, extractedKey
 // lines), and for the name_extracted labels over both keys with the stored
 // value of name deleted, because the scratch unpack reads the body whatever
 // the stream holds.
-func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, start, end time.Time) (bool, error) {
+func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, storedLevel bool, start, end time.Time) (bool, error) {
 	type result struct {
 		risky bool
 		err   error
@@ -1069,9 +1133,10 @@ func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPl
 		}()
 	}
 	var out result
-	if len(plain) > 0 || plan.derivesLevel {
-		// A plan without a parser has no raw evaluator to fall back to.
-		out.risky, out.err = p.cachedStatsPushdownRisk(ctx, plan.parser, base, plain, stored, errorFilters, plan.derivesLevel && plan.parser != "", start, end)
+	if len(plain) > 0 || plan.derivesLevel && !storedLevel {
+		// A plan without a parser has no raw evaluator to fall back to. The
+		// level probes are for the lines only the chain reads.
+		out.risky, out.err = p.cachedStatsPushdownRisk(ctx, plan.parser, base, plain, stored, errorFilters, plan.derivesLevel && !storedLevel && plan.parser != "", start, end)
 	}
 	if extractedRisk != nil {
 		if second := <-extractedRisk; out.err == nil && !out.risky {

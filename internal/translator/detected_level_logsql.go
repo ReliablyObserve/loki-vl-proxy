@@ -289,6 +289,20 @@ func severityNumberPipes() []string {
 	return out
 }
 
+// NormalizeStoredLevel is the detected_level of a row whose first stored level
+// field holds value, as the chain computes it: a known spelling (any case)
+// becomes its canonical level, any other word stays as stored.
+func NormalizeStoredLevel(value string) string {
+	for _, s := range detectedLevelSpellings {
+		for _, spelling := range s.spellings {
+			if strings.EqualFold(value, spelling) {
+				return s.level
+			}
+		}
+	}
+	return value
+}
+
 func detectedLevelLogLevelFieldNames() []string {
 	return DetectedLevelFieldNames[1 : len(DetectedLevelFieldNames)-1]
 }

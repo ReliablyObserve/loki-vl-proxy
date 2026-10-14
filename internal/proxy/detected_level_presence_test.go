@@ -120,7 +120,8 @@ func TestDetectedLevelPresenceKeepsAKeyOfOneLateLine(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.stats) != 1 || !strings.Contains(fake.stats[0], `fields (level, severity) result_prefix "__j_"`) {
+	// the stored-level attempt first (no row has a stored level), then the chain
+	if chain := chainStatsCalls(fake.stats); len(chain) != 1 || !strings.Contains(chain[0], `fields (level, severity) result_prefix "__j_"`) {
 		t.Fatalf("expected the chain to unpack exactly level and severity: %v", fake.stats)
 	}
 	if fake.raw != 0 {
@@ -160,7 +161,7 @@ func TestDetectedLevelPresenceProbeFailureKeepsFullChain(t *testing.T) {
 				return len(fake.presenceCalls), append([]string(nil), fake.stats...)
 			}
 			probes, stats := calls()
-			for _, q := range stats {
+			for _, q := range chainStatsCalls(stats) {
 				if !strings.Contains(q, levelChain) {
 					t.Fatalf("a stats query without the full chain:\n%s", q)
 				}
@@ -365,5 +366,103 @@ func TestPruneLevelChainLeavesTwoChainsAlone(t *testing.T) {
 	params := url.Values{"query": {`app:="a" ` + chain + ` | stats by (detected_level) count()`}, "time": {"2023-11-14T22:30:00Z"}}
 	if got := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query", params); got.Get("query") != params.Get("query") {
 		t.Errorf("an instant query was changed")
+	}
+}
+
+// A window whose rows all carry a stored level (a stream label, as Loki
+// pipelines send it) is answered from stats grouped by the stored fields alone:
+// one stats query, no chain, no level guard and no presence probe, with the
+// level normalised as Loki's ingest does (a known spelling in any case becomes
+// its level, any other word stays) and a filter on detected_level compared on
+// that value. The stored level wins over a different body level.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestStoredLevelDecidesDetectedLevel(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	levels := []string{"INFO", "warn", "Warning", "ERR", "notice", "dbg", "info", "Information", "unknown"}
+	var lines []jsonVolumeLine
+	for i := 0; i < 108; i++ {
+		msg := `{"level":"error","n":` + strconv.Itoa(i) + `}`
+		lines = append(lines, jsonVolumeLine{ts: s0.Add(time.Duration(i) * 5 * time.Second), level: levels[i%len(levels)], msg: msg})
+	}
+	start, end := s0.Add(time.Minute), s0.Add(8*time.Minute)
+	var info []jsonVolumeLine
+	for _, line := range lines {
+		if translator.NormalizeStoredLevel(line.level) == "info" {
+			info = append(info, line)
+		}
+	}
+	for _, tc := range []struct {
+		name, query, parser string
+		kept                []jsonVolumeLine
+	}{
+		{"json", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ [1m]))`, "json", lines},
+		{"logfmt", `sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__ [1m]))`, "logfmt", lines},
+		{"plain", `sum by (level, detected_level) (count_over_time({app="api"} | drop __error__ [1m]))`, "", lines},
+		{"json, detected_level filter", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level="info" [1m]))`, "json", info},
+		{"json, detected_level regexp", `sum by (detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level=~"warn|error|notice" [1m]))`, "json", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, fake := newJSONVolumeFakeVL(t, lines)
+			fake.presence = true
+			p := newSlidingTestProxy(t, srv.URL)
+			got := runJSONVolumeQueryRange(t, p, tc.query, start, end, time.Minute)
+			groupBy := []string{"level", "detected_level"}
+			if tc.kept == nil { // by (detected_level) over the lines with those levels
+				groupBy = []string{"detected_level"}
+				for _, line := range lines {
+					switch translator.NormalizeStoredLevel(line.level) {
+					case "warn", "error", "notice":
+						tc.kept = append(tc.kept, line)
+					}
+				}
+			}
+			want := lokiLevelVolumeReference(tc.kept, tc.parser, "count_over_time", groupBy, start, end, time.Minute, time.Minute)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+			}
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || len(fake.presenceCalls) != 0 || strings.Contains(fake.statsCalls[0], "__dl_s") ||
+				!strings.Contains(fake.statsCalls[0], " | copy detected_level as __dl_d, level as __dl_l") {
+				t.Fatalf("expected one stored-level stats query: raw=%d stats=%q presence probes=%d", fake.rawCalls, fake.statsCalls, len(fake.presenceCalls))
+			}
+			for _, guard := range fake.guardCalls {
+				if strings.Contains(guard, `_msg:"LEVEL"`) || strings.Contains(guard, "_stream:{detected_level") {
+					t.Fatalf("a level guard probe ran: %.120s", guard)
+				}
+			}
+		})
+	}
+}
+
+// One row without a stored level in the window sends the whole query to the
+// chain (the line decides that row), and the verdict is remembered, so the next
+// ask of the base goes there at once instead of repeating the attempt.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestStoredLevelAttemptFallsBackToChain(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	var lines []jsonVolumeLine
+	for i := 0; i < 60; i++ {
+		lines = append(lines, jsonVolumeLine{ts: s0.Add(time.Duration(i) * 5 * time.Second), level: "info", msg: `{"n":` + strconv.Itoa(i) + `}`})
+	}
+	lines[40].level, lines[40].msg = "", `{"severity":"ERROR"}` // the one row a stored level does not decide
+	srv, fake := newJSONVolumeFakeVL(t, lines)
+	fake.presence = true
+	p := newSlidingTestProxy(t, srv.URL)
+	query := `sum by (detected_level) (count_over_time({app="api"} | json | drop __error__ [5m]))`
+	end := s0.Add(5 * time.Minute)
+	for ask := 0; ask < 2; ask++ {
+		at := end.Add(time.Duration(ask) * time.Second) // a window the response cache has not seen
+		want := map[string]map[int64]string{canonicalLabelsKey(map[string]string{"detected_level": "info"}): {at.Unix(): "58"}, canonicalLabelsKey(map[string]string{"detected_level": "error"}): {at.Unix(): "1"}}
+		if got := runJSONVolumeQueryRange(t, p, query, at, at, time.Minute); !reflect.DeepEqual(got, want) {
+			t.Fatalf("ask %d: got %v, want %v", ask, got, want)
+		}
+		fake.mu.Lock()
+		stored, chain := len(fake.statsCalls)-len(chainStatsCalls(fake.statsCalls)), len(chainStatsCalls(fake.statsCalls))
+		fake.mu.Unlock()
+		// the first ask tries the stored fields and then the chain; the second only the chain
+		if stored != 1 || chain != ask+1 {
+			t.Fatalf("ask %d: %d stored-level and %d chain stats queries so far", ask, stored, chain)
+		}
 	}
 }

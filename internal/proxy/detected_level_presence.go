@@ -268,3 +268,66 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 	}
 	return acc, false, nil
 }
+
+// The fields a plan reading detected_level groups by when the stored level
+// fields alone decide it (orderedJSONStatsBucketsWithReason): copies of the
+// stored detected_level and level, taken before any unpack so that a body key
+// never looks stored.
+const (
+	storedDetectedLevelField = "__dl_d"
+	storedLevelField         = "__dl_l"
+)
+
+// storedLevelSeries gives each series of a stats query grouped by the stored
+// level fields its detected_level label, applies the filters on it, and reports
+// false when a series is one the stored fields do not decide exactly: no
+// stored level (the line decides), or a stored detected_level (a stream label
+// keeps its stored spelling, structured metadata is normalised; the stats
+// cannot tell them apart). A stored detected_level outranks level, which
+// outranks every later field, so a series with a level needs no other field.
+func storedLevelSeries(series map[string]manualSeriesSamples, filters []translator.DropCondition) (map[string]manualSeriesSamples, bool) {
+	out := make(map[string]manualSeriesSamples, len(series))
+	for key, entry := range series {
+		stored := entry.Metric[storedLevelField]
+		if stored == "" || entry.Metric[storedDetectedLevelField] != "" {
+			return nil, false
+		}
+		level := translator.NormalizeStoredLevel(stored)
+		keep := true
+		for _, filter := range filters {
+			keep = keep && filter.Matches(level)
+		}
+		if !keep {
+			continue
+		}
+		metric := make(map[string]string, len(entry.Metric)+1)
+		for k, v := range entry.Metric {
+			metric[k] = v
+		}
+		metric["detected_level"] = level
+		entry.Metric = metric
+		out[key] = entry
+	}
+	return out, true
+}
+
+// levelNeedsChain reports whether a window of base held rows the stored level
+// fields do not decide, so the next ask goes to the chain at once; the verdict
+// expires with the guard verdicts, so data that changes is tried again.
+func (p *Proxy) levelNeedsChain(ctx context.Context, base string) bool {
+	if p.cache == nil {
+		return false
+	}
+	_, _, ok := p.cache.GetWithTTL(levelNeedsChainKey(p, ctx, base))
+	return ok
+}
+
+func (p *Proxy) markLevelNeedsChain(ctx context.Context, base string) {
+	if p.cache != nil {
+		p.cache.SetLocalOnlyWithTTL(levelNeedsChainKey(p, ctx, base), []byte("1"), statsPushdownRiskCacheTTL)
+	}
+}
+
+func levelNeedsChainKey(p *Proxy, ctx context.Context, base string) string {
+	return "level-needs-chain:v1:" + getOrgID(ctx) + ":" + p.contextScopeFingerprint(ctx) + ":" + base
+}

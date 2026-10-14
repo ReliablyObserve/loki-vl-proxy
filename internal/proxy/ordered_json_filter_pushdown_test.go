@@ -381,8 +381,10 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				values[m[3]] = values[m[2]]
 			}
 		case strings.HasPrefix(pipe, "copy "):
-			src, dst, _ := strings.Cut(strings.TrimPrefix(pipe, "copy "), " as ")
-			values[dst] = values[strings.Trim(src, "`")]
+			for _, pair := range strings.Split(strings.TrimPrefix(pipe, "copy "), ", ") {
+				src, dst, _ := strings.Cut(pair, " as ")
+				values[dst] = values[strings.Trim(src, "`")]
+			}
 		case strings.HasPrefix(pipe, "delete "):
 			for _, field := range strings.Split(strings.TrimPrefix(pipe, "delete "), ", ") {
 				if prefix, ok := strings.CutSuffix(field, "*"); ok {
@@ -758,11 +760,29 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.raw != 0 || len(fake.stats) != 1 || len(fake.guards) != tc.guards {
-				t.Fatalf("expected %d probes and one stats call without raw rows: raw=%d stats=%q guards=%q", tc.guards, fake.raw, fake.stats, fake.guards)
+			guards, stats := tc.guards, fake.stats
+			if strings.Contains(tc.query, "detected_level") {
+				if chain := chainStatsCalls(fake.stats); len(chain) == 0 {
+					// Every row the filters keep has a stream level: the stored
+					// level fields decide, in one stats query grouped by their
+					// copies and with none of the chain's guard probes.
+					guards -= levelProbes
+					if len(fake.stats) != 1 || !strings.Contains(fake.stats[0], " | copy detected_level as __dl_d, level as __dl_l | unpack_json") || !strings.Contains(fake.stats[0], " | stats by (level, __dl_d, __dl_l) ") {
+						t.Fatalf("expected one stored-level stats query: %q", fake.stats)
+					}
+					stats = nil
+				} else {
+					// Some do not: the stored-level attempt, with its label probes,
+					// then the chain with the level probes.
+					guards += tc.guards - levelProbes
+					stats = chain
+				}
 			}
-			if !strings.HasSuffix(fake.stats[0], tc.stats) {
-				t.Fatalf("stats query %q does not end with %q", fake.stats[0], tc.stats)
+			if fake.raw != 0 || len(fake.guards) != guards || stats != nil && len(stats) != 1 {
+				t.Fatalf("expected %d probes and one stats call without raw rows: raw=%d stats=%d have %d guards", guards, fake.raw, len(stats), len(fake.guards))
+			}
+			if stats != nil && !strings.HasSuffix(stats[0], tc.stats) {
+				t.Fatalf("stats query %q does not end with %q", stats[0], tc.stats)
 			}
 		})
 	}
@@ -1093,9 +1113,11 @@ func TestLogfmtFilterPushdownAliasKeepsRawEvaluator(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			// A risky line cancels the probes still running.
-			if fake.raw != tc.raw || len(fake.guards) == 0 || len(fake.guards) > 1+levelProbes || tc.raw == 0 && len(fake.guards) != 1+levelProbes {
-				t.Fatalf("raw=%d guards=%q, want raw=%d", fake.raw, fake.guards, tc.raw)
+			// A risky line cancels the probes still running; the stored level
+			// fields alone decide the level of a window of stream levels, without
+			// the level probes.
+			if fake.raw != tc.raw || len(fake.guards) == 0 || len(fake.guards) > 1+levelProbes || tc.raw == 0 && len(fake.guards) != 1 && len(fake.guards) != 1+levelProbes {
+				t.Fatalf("raw=%d guards=%d, want raw=%d", fake.raw, len(fake.guards), tc.raw)
 			}
 		})
 	}

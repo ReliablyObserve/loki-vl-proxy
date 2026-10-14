@@ -111,6 +111,17 @@ var detectedLevelProbes = []detectedLevelProbe{
 	{name: "escaped level key, long spelling", msg: `{"\u006cevel":"Information"}`, want: "info"},
 }
 
+// storedLevelDecides reports whether a stored level field, and no stored
+// detected_level, decides the line's level (a level field of the stream or of
+// the structured metadata): the stats grouped by the stored fields answer it.
+func storedLevelDecides(c detectedLevelProbe) bool {
+	_, streamLevel := c.stream["level"]
+	_, metaLevel := c.vl["level"]
+	_, streamDL := c.stream["detected_level"]
+	_, metaDL := c.vl["detected_level"]
+	return (streamLevel || metaLevel) && !streamDL && !metaDL
+}
+
 func (c detectedLevelProbe) row(ts time.Time) pushdownRow {
 	labels := map[string]string{"app": "api", "env": "prod"}
 	for k, v := range c.stream {
@@ -165,11 +176,21 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 					if viaRaw := fake.raw > 0; viaRaw != probe.rawRows {
 						t.Fatalf("raw rows read: %v, want %v (stats queries %d, probes %d)", viaRaw, probe.rawRows, len(fake.stats), len(fake.guards))
 					}
+					// A stored level (and no stored detected_level) decides in one stats
+					// query grouped by the stored fields, with no chain, no guard and
+					// no presence probe; any other line asks again with the chain.
+					chain := chainStatsCalls(fake.stats)
+					if storedLevelDecides(probe) {
+						if len(fake.stats) != 1 || len(chain) != 0 || len(fake.presenceCalls) != 0 {
+							t.Fatalf("a stored level should decide in one stats query: stats=%d chain=%d presence probes=%d", len(fake.stats), len(chain), len(fake.presenceCalls))
+						}
+						return
+					}
 					if pruned && len(fake.presenceCalls) != 1 {
 						t.Fatalf("%d presence probes, want 1", len(fake.presenceCalls))
 					}
-					if pruned && len(fake.stats) == 1 && len(fake.stats[0]) >= len(levelChain) {
-						t.Fatalf("the stats query carries the full chain (%d bytes)", len(fake.stats[0]))
+					if pruned && len(chain) == 1 && len(chain[0]) >= len(levelChain) {
+						t.Fatalf("the stats query carries the full chain (%d bytes)", len(chain[0]))
 					}
 				})
 			}
@@ -365,11 +386,14 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 					// (orderedJSONNativeGroupingIsExact): lines the pipes read like
 					// Loki are answered by the pushdown, behind its guard probes,
 					// with the filter applied after the pipes.
-					if clean && tc.pushdown && (fake.raw != 0 || len(fake.stats) != 1 || len(fake.guards) == 0) {
-						t.Errorf("drilldown=%v: expected a guarded pushdown answer without raw rows: raw=%d stats=%d guards=%d", drilldown, fake.raw, len(fake.stats), len(fake.guards))
+					// The probe lines have no stored level, so the stored-level attempt is
+					// followed by the chain, whose answer is the guarded one.
+					chain := chainStatsCalls(fake.stats)
+					if clean && tc.pushdown && (fake.raw != 0 || len(chain) != 1 || len(fake.guards) == 0) {
+						t.Errorf("drilldown=%v: expected a guarded pushdown answer without raw rows: raw=%d stats=%d guards=%d", drilldown, fake.raw, len(chain), len(fake.guards))
 					}
-					if clean && tc.pushdown && tc.filter != "" && !strings.Contains(fake.stats[0], tc.filter+" | stats by (detected_level)") {
-						t.Errorf("drilldown=%v: filter not applied after the level pipes: %s", drilldown, fake.stats[0])
+					if clean && tc.pushdown && tc.filter != "" && len(chain) == 1 && !strings.Contains(chain[0], tc.filter+" | stats by (detected_level)") {
+						t.Errorf("drilldown=%v: filter not applied after the level pipes: %s", drilldown, chain[0])
 					}
 					fake.mu.Unlock()
 				}

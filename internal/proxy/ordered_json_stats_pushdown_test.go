@@ -88,7 +88,9 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			}
 			// The pipes of translator.BuildDetectedLevelChain are emulated whole
 			// below; the unpack they hold is not the plan's own.
-			chain := strings.Contains(query, "__dl")
+			// The stored-level plan copies the stored fields, the chain computes the level.
+			storedLevel := strings.Contains(query, "copy detected_level as __dl_d, level as __dl_l")
+			chain := !storedLevel && strings.Contains(query, "__dl")
 			chainQuery := query
 			if chain {
 				query = withoutLevelChain(query)
@@ -138,6 +140,9 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 					}
 					derived = emulateDetectedLevelChainFor(stored, chainPresence(chainQuery))
 				}
+				if storedLevel {
+					derived = line.level // __dl_l: the stream's level, before any unpack
+				}
 				bucket := vlTruncate(ts, step, offset)
 				value := 1.0
 				if bytesMetric {
@@ -165,7 +170,7 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 					switch field {
 					case "level":
 						value = k.level
-					case "detected_level":
+					case "detected_level", "__dl_l":
 						value = k.derived
 					}
 					// VictoriaLogs reports every grouped field, empty or not.
@@ -452,12 +457,15 @@ func TestOrderedJSONLogsVolumeUsesStatsBuckets(t *testing.T) {
 			}
 			if !strings.Contains(tc.query, "by (level") {
 				guards-- // no label to probe: only the detected_level probes run
+			} else if strings.Contains(tc.query, "detected_level") {
+				guards++ // the stored-level attempt (a row has no stored level) probes the label on its own
 			}
-			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || len(fake.guardCalls) != guards {
-				t.Fatalf("expected %d guards and one stats call without raw rows: raw=%d stats=%q guard=%q", guards, fake.rawCalls, fake.statsCalls, fake.guardCalls)
+			chain := chainStatsCalls(fake.statsCalls)
+			if fake.rawCalls != 0 || len(chain) != 1 || len(fake.guardCalls) != guards {
+				t.Fatalf("expected %d guards and one chain stats call without raw rows: raw=%d stats=%q guard=%q", guards, fake.rawCalls, fake.statsCalls, fake.guardCalls)
 			}
-			if !strings.HasSuffix(fake.statsCalls[0], tc.stats) {
-				t.Fatalf("stats query %q does not end with %q", fake.statsCalls[0], tc.stats)
+			if !strings.HasSuffix(chain[0], tc.stats) {
+				t.Fatalf("stats query %q does not end with %q", chain[0], tc.stats)
 			}
 		})
 	}
@@ -623,7 +631,7 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 		stats         string
 	}{
 		{`sum by (level, detected_level) (count_over_time({app="api"} | drop __error__[1m]))`, "", 0, "| delete __dl, __dl_*, __j_*, __l_* | stats by (level, detected_level) count() as c"},
-		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 1 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 2 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newJSONVolumeFakeVL(t, lines)
@@ -635,11 +643,12 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || len(fake.guardCalls) != tc.guards {
-				t.Fatalf("expected %d guard and one stats call without raw rows: raw=%d stats=%q guard=%q", tc.guards, fake.rawCalls, fake.statsCalls, fake.guardCalls)
+			chain := chainStatsCalls(fake.statsCalls)
+			if fake.rawCalls != 0 || len(chain) != 1 || len(fake.guardCalls) != tc.guards {
+				t.Fatalf("expected %d guard and one chain stats call without raw rows: raw=%d stats=%q guard=%q", tc.guards, fake.rawCalls, fake.statsCalls, fake.guardCalls)
 			}
-			if !strings.HasSuffix(fake.statsCalls[0], tc.stats) {
-				t.Fatalf("stats query %q does not end with %q", fake.statsCalls[0], tc.stats)
+			if !strings.HasSuffix(chain[0], tc.stats) {
+				t.Fatalf("stats query %q does not end with %q", chain[0], tc.stats)
 			}
 		})
 	}
@@ -703,8 +712,9 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.rawCalls != 0 || len(fake.statsCalls) != 1 || !strings.HasSuffix(fake.statsCalls[0], tc.stats) {
-				t.Fatalf("expected one stats call ending %q without raw rows: raw=%d stats=%q", tc.stats, fake.rawCalls, fake.statsCalls)
+			chain := chainStatsCalls(fake.statsCalls)
+			if fake.rawCalls != 0 || len(chain) != 1 || !strings.HasSuffix(chain[0], tc.stats) {
+				t.Fatalf("expected one chain stats call ending %q without raw rows: raw=%d stats=%q", tc.stats, fake.rawCalls, fake.statsCalls)
 			}
 		})
 	}

@@ -151,6 +151,9 @@ func chainPresence(query string) *translator.DetectedLevelPresence {
 // chainStart reports whether pipe is the first of a detected_level chain,
 // whatever its pruning leaves first.
 func chainStart(pipe string) bool {
+	if strings.HasPrefix(pipe, "copy ") {
+		return false // the stored-level copies of the cheap plan
+	}
 	return strings.Contains(pipe, "__dl") || strings.Contains(pipe, `result_prefix "__j_"`)
 }
 
@@ -219,4 +222,18 @@ func levelPresenceResponse(rows []map[string]string) string {
 	}
 	line, _ := json.Marshal(out)
 	return string(line) + "\n"
+}
+
+// chainStatsCalls drops the stored-level attempts from the stats queries a
+// plan reading detected_level sent: the buckets grouped by the stored fields,
+// which end in errLevelNotStored when a row has no stored level and are asked
+// again with the chain.
+func chainStatsCalls(calls []string) []string {
+	var out []string
+	for _, call := range calls {
+		if !strings.Contains(call, "copy detected_level as __dl_d, level as __dl_l") {
+			out = append(out, call)
+		}
+	}
+	return out
 }
