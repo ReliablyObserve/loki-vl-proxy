@@ -42,11 +42,16 @@ func vlAnyCasePhrase(s, phrase string) bool {
 	}
 }
 
-// levelKeywordGateMatches evaluates LevelKeywordGate() over one line: any of
-// the keywords as a case-insensitive phrase.
+// gateWordRE reads the phrases out of the text of the gate.
+var gateWordRE = regexp.MustCompile(`i\(([^)]*)\)`)
+
+// levelKeywordGateMatches evaluates the text LevelKeywordGate() returns over
+// one line: any of the phrases it lists, case-insensitively. The phrases come
+// from the text, not from the keyword list, so a gate that lists fewer words
+// than the regexp is seen.
 func levelKeywordGateMatches(line string) bool {
-	for _, w := range levelKeywords {
-		if vlAnyCasePhrase(line, w) {
+	for _, m := range gateWordRE.FindAllStringSubmatch(LevelKeywordGate(), -1) {
+		if vlAnyCasePhrase(line, m[1]) {
 			return true
 		}
 	}
