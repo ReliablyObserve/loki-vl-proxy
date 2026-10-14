@@ -360,6 +360,30 @@ func TestBuildDetectedLevelChainPruned(t *testing.T) {
 	}
 }
 
+// The answers of Loki v3.7.7's normalizeLogLevel (pkg/distributor/field_detection.go),
+// written out by hand from its source: a case-insensitive match of exactly
+// these spellings (bytes.EqualFold, no trimming), any other value as it is.
+// The table does not call NormalizeStoredLevel to build its expectations.
+// conformance: severity-detected-level-derivation
+func TestNormalizeStoredLevelIsLokisNormalizeLogLevel(t *testing.T) {
+	for value, want := range map[string]string{
+		"trace": "trace", "TRACE": "trace", "trc": "trace", "Trc": "trace",
+		"debug": "debug", "Debug": "debug", "dbg": "debug", "DBG": "debug",
+		"info": "info", "INFO": "info", "inf": "info", "inf ": "inf ", "information": "info", "Information": "info", "INFORMATION": "info",
+		"warn": "warn", "WARN": "warn", "wrn": "warn", "WRN": "warn", "warning": "warn", "WARNING": "warn",
+		"error": "error", "Error": "error", "err": "error", "Err": "error", "ERR": "error",
+		"critical": "critical", "CRITICAL": "critical",
+		"fatal": "fatal", "Fatal": "fatal",
+		// not Loki's spellings: the value stays as it is
+		"notice": "notice", "30": "30", " info": " info", "info ": "info ", "unknown": "unknown", "": "",
+		"emerg": "emerg", "alert": "alert", "verbose": "verbose", "warnings": "warnings", "errors": "errors", "crit": "crit",
+	} {
+		if got := NormalizeStoredLevel(value); got != want {
+			t.Errorf("NormalizeStoredLevel(%q) = %q, Loki's normalizeLogLevel gives %q", value, got, want)
+		}
+	}
+}
+
 // The level of a row a stored level field decides is computed in Go from the
 // grouped stored value; it must be what the chain's spelling pipes give: the
 // anchored, case-insensitive regexps of detectedLevelSpellings, and any other

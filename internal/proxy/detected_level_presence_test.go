@@ -378,6 +378,10 @@ func TestPruneLevelChainLeavesTwoChainsAlone(t *testing.T) {
 // conformance: semantics/json-metric-detected-level-derivation
 func TestStoredLevelDecidesDetectedLevel(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
+	// The detected_level Loki v3.7.7 gives a stream level (normalizeLogLevel:
+	// a case-insensitive match of its spellings, any other word as it is),
+	// written out by hand.
+	loki := map[string]string{"INFO": "info", "warn": "warn", "Warning": "warn", "ERR": "error", "notice": "notice", "dbg": "debug", "info": "info", "Information": "info", "unknown": "unknown"}
 	levels := []string{"INFO", "warn", "Warning", "ERR", "notice", "dbg", "info", "Information", "unknown"}
 	var lines []jsonVolumeLine
 	for i := 0; i < 108; i++ {
@@ -385,40 +389,55 @@ func TestStoredLevelDecidesDetectedLevel(t *testing.T) {
 		lines = append(lines, jsonVolumeLine{ts: s0.Add(time.Duration(i) * 5 * time.Second), level: levels[i%len(levels)], msg: msg})
 	}
 	start, end := s0.Add(time.Minute), s0.Add(8*time.Minute)
-	var info []jsonVolumeLine
-	for _, line := range lines {
-		if translator.NormalizeStoredLevel(line.level) == "info" {
-			info = append(info, line)
+	// reference counts the lines of (t-1m, t] that keep(detected_level) holds
+	// for, by the labels of groupBy, from the table above.
+	reference := func(groupBy []string, keep func(detected string) bool) map[string]map[int64]string {
+		out := map[string]map[int64]string{}
+		for at := start; !at.After(end); at = at.Add(time.Minute) {
+			counts := map[string]int{}
+			for _, line := range lines {
+				if !line.ts.After(at.Add(-time.Minute)) || line.ts.After(at) {
+					continue
+				}
+				detected := loki[line.level]
+				if !keep(detected) {
+					continue
+				}
+				labels := map[string]string{}
+				for _, name := range groupBy {
+					labels[name] = map[string]string{"level": line.level, "detected_level": detected}[name]
+				}
+				counts[canonicalLabelsKey(labels)]++
+			}
+			for key, n := range counts {
+				if out[key] == nil {
+					out[key] = map[int64]string{}
+				}
+				out[key][at.Unix()] = strconv.Itoa(n)
+			}
 		}
+		return out
 	}
+	all := func(string) bool { return true }
 	for _, tc := range []struct {
-		name, query, parser string
-		kept                []jsonVolumeLine
+		name, query string
+		groupBy     []string
+		keep        func(string) bool
 	}{
-		{"json", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ [1m]))`, "json", lines},
-		{"logfmt", `sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__ [1m]))`, "logfmt", lines},
-		{"plain", `sum by (level, detected_level) (count_over_time({app="api"} | drop __error__ [1m]))`, "", lines},
-		{"json, detected_level filter", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level="info" [1m]))`, "json", info},
-		{"json, detected_level regexp", `sum by (detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level=~"warn|error|notice" [1m]))`, "json", nil},
+		{"json", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ [1m]))`, []string{"level", "detected_level"}, all},
+		{"logfmt", `sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__ [1m]))`, []string{"level", "detected_level"}, all},
+		{"plain", `sum by (level, detected_level) (count_over_time({app="api"} | drop __error__ [1m]))`, []string{"level", "detected_level"}, all},
+		{"json, detected_level filter", `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level="info" [1m]))`, []string{"level", "detected_level"}, func(d string) bool { return d == "info" }},
+		{"json, detected_level regexp", `sum by (detected_level) (count_over_time({app="api"} | json | drop __error__ | detected_level=~"warn|error|notice" [1m]))`, []string{"detected_level"}, func(d string) bool { return d == "warn" || d == "error" || d == "notice" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, fake := newJSONVolumeFakeVL(t, lines)
 			fake.presence = true
 			p := newSlidingTestProxy(t, srv.URL)
 			got := runJSONVolumeQueryRange(t, p, tc.query, start, end, time.Minute)
-			groupBy := []string{"level", "detected_level"}
-			if tc.kept == nil { // by (detected_level) over the lines with those levels
-				groupBy = []string{"detected_level"}
-				for _, line := range lines {
-					switch translator.NormalizeStoredLevel(line.level) {
-					case "warn", "error", "notice":
-						tc.kept = append(tc.kept, line)
-					}
-				}
-			}
-			want := lokiLevelVolumeReference(tc.kept, tc.parser, "count_over_time", groupBy, start, end, time.Minute, time.Minute)
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+			want := reference(tc.groupBy, tc.keep)
+			if len(want) == 0 || !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from Loki's answers\n got: %v\nwant: %v", got, want)
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
