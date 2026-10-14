@@ -129,9 +129,11 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 					continue
 				}
 				after := parserMetricEvaluations(t, route)
-				stats, guards, raw := 0, 0, 0
+				stats, attempts, guards, raw := 0, 0, 0, 0
 				for _, call := range recorder.reset() {
 					switch {
+					case isStoredLevelAttempt(call):
+						attempts++
 					case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
 						stats++
 					case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
@@ -143,18 +145,27 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 				}
 				rawDelta := after["raw_rows/probe"] - before["raw_rows/probe"]
 				statsDelta := after["vl_stats_buckets/pushdown"] - before["vl_stats_buckets/pushdown"]
-				// A grouping by detected_level adds the guard probes of its pipes.
-				wantGuards := tc.guards
+				// A grouping by detected_level adds the guard probes of its pipes
+				// unless the stored level fields answered (levelStatsOutcome).
+				wantGuards, wantMost := tc.guards, tc.guards
 				if strings.Contains(tc.query, "detected_level") {
-					wantGuards += 3
+					lo, hi, ok := levelStatsOutcome(tc.guards, 3, attempts, stats)
+					if !ok {
+						lo, hi = -1, -1
+					}
+					wantGuards, wantMost = lo, hi
+					stats += attempts
+					if attempts == 1 && stats == 2 {
+						stats = 1 // the attempt and the chain are one answer
+					}
 				}
-				if tc.pushed && (stats != 1 || guards != wantGuards || raw != 0 || rawDelta != 0 || statsDelta != 1) {
-					t.Fatalf("expected %d probes and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d counter raw_rows+%d vl_stats_buckets+%d", wantGuards, stats, guards, raw, rawDelta, statsDelta)
+				if tc.pushed && (stats != 1 || guards < wantGuards || guards > wantMost || raw != 0 || rawDelta != 0 || statsDelta != 1) {
+					t.Fatalf("expected %d to %d probes and one stats answer without raw rows: stats=%d (stored-level attempts %d) guards=%d raw=%d counter raw_rows+%d vl_stats_buckets+%d", wantGuards, wantMost, stats, attempts, guards, raw, rawDelta, statsDelta)
 				}
 				// The bucket query runs beside the probe and is cancelled when the
 				// probe finds a line the parsers read differently; the answer must
 				// come from the raw evaluator.
-				if !tc.pushed && (guards == 0 || guards > wantGuards || raw != 1 || rawDelta != 1 || statsDelta != 0) {
+				if !tc.pushed && (guards == 0 || guards > tc.guards+3 || raw != 1 || rawDelta != 1 || statsDelta != 0) {
 					t.Fatalf("expected the probe to keep the raw evaluator: stats=%d guards=%d raw=%d counter raw_rows+%d vl_stats_buckets+%d", stats, guards, raw, rawDelta, statsDelta)
 				}
 			}

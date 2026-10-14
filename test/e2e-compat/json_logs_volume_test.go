@@ -282,9 +282,11 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 				if name != "in-process" {
 					continue
 				}
-				stats, guards, raw := 0, 0, 0
+				stats, attempts, guards, raw := 0, 0, 0, 0
 				for _, call := range recorder.reset() {
 					switch {
+					case isStoredLevelAttempt(call):
+						attempts++
 					case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
 						stats++
 					case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
@@ -294,8 +296,17 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 						raw++
 					}
 				}
-				if tc.pushed && (stats != 1 || guards != tc.guards || raw != 0) {
-					t.Fatalf("expected %d guards and one stats_query_range request without raw rows: stats=%d guards=%d raw=%d", tc.guards, stats, guards, raw)
+				if tc.pushed {
+					// Every shape here reads detected_level: tc.guards counts the
+					// labels' probes and the chain's three.
+					plain, level := tc.guards-3, 3
+					if tc.guards == 0 { // the plain plan has no guard to run
+						plain, level = 0, 0
+					}
+					lo, hi, ok := levelStatsOutcome(plain, level, attempts, stats)
+					if !ok || guards < lo || guards > hi || raw != 0 {
+						t.Fatalf("expected %d to %d guards and one stats_query_range answer without raw rows: stored-level attempts=%d chain stats=%d guards=%d raw=%d", lo, hi, attempts, stats, guards, raw)
+					}
 				}
 				// The bucket query runs beside the guard and is cancelled when the
 				// guard finds a line the parsers read differently, so a stats

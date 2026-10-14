@@ -308,9 +308,11 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 			if !tc.guarded {
 				return
 			}
-			stats, guards, raw := 0, 0, 0
+			stats, attempts, guards, raw := 0, 0, 0, 0
 			for _, call := range calls {
 				switch {
+				case isStoredLevelAttempt(call):
+					attempts++
 				case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
 					stats++
 				case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
@@ -320,8 +322,10 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 					raw++
 				}
 			}
-			if stats != 1 || guards == 0 || raw != 0 {
-				t.Errorf("expected one guarded stats request without raw rows: stats=%d guards=%d raw=%d", stats, guards, raw)
+			// The stored-level attempt answers a window of stored levels (its
+			// guards are the labels' only, none here), the chain the rest, guarded.
+			if (attempts+stats != 1 && !(attempts == 1 && stats == 1)) || raw != 0 || (stats == 1 && guards == 0) {
+				t.Errorf("expected one guarded stats request without raw rows: stored-level attempts=%d chain stats=%d guards=%d raw=%d", attempts, stats, guards, raw)
 			}
 		})
 	}
@@ -331,4 +335,29 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 // presence probe that prunes the detected_level pipes: one stats query, no rows.
 func isLevelPresenceCall(call string) bool {
 	return strings.HasPrefix(call, "/select/logsql/query ") && strings.Contains(call, " | stats count() if (") && strings.Contains(call, " as p0, ")
+}
+
+// isStoredLevelAttempt reports whether a recorded call is the stats query a
+// plan reading detected_level sends first: the buckets grouped by copies of the
+// stored detected_level and level fields. It answers a window whose rows all
+// carry a stored level; any other window asks again with the chain.
+func isStoredLevelAttempt(call string) bool {
+	return strings.HasPrefix(call, "/select/logsql/stats_query_range ") && strings.Contains(call, "copy detected_level as __dl_d, level as __dl_l")
+}
+
+// levelStatsOutcome returns the guard probes a plan reading detected_level may
+// send, given the probes of its parsed labels (plain), the three of the chain
+// (level), the stored-level attempts and the chain stats requests it made: the
+// attempt alone answered (the labels' probes only), the attempt then the chain
+// (both sets), or the chain alone (a remembered verdict).
+func levelStatsOutcome(plain, level, attempts, stats int) (lo, hi int, ok bool) {
+	switch {
+	case attempts == 1 && stats == 0:
+		return plain, plain, true
+	case attempts == 1 && stats == 1:
+		return plain + level, 2*plain + level, true
+	case attempts == 0 && stats == 1:
+		return plain + level, plain + level, true
+	}
+	return 0, 0, false
 }
