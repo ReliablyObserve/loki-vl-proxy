@@ -406,3 +406,46 @@ func TestNormalizeStoredLevelMatchesTheChain(t *testing.T) {
 		}
 	}
 }
+
+// Whatever a Loki label filter holds, the filter pipes sent to VictoriaLogs for
+// the stored level are well formed (balanced parentheses outside quoted text,
+// one pipe per filter) and never panic.
+func FuzzStoredLevelCopyFilter(f *testing.F) {
+	for _, seed := range [][2]string{{"=", "info"}, {"!=", "error"}, {"=~", "warn|error"}, {"!~", "(?i)inf.*"}, {"=", ""}, {"=~", `a"b`}, {"=", "`"}, {"=~", `\d+`}} {
+		f.Add(seed[0], seed[1])
+	}
+	f.Fuzz(func(t *testing.T, op, value string) {
+		filter, err := NewDropCondition("detected_level", op, value)
+		if err != nil || (op != "=" && op != "!=" && op != "=~" && op != "!~") {
+			return
+		}
+		got := BuildStoredLevelCopyFilter("__dl_l", "__dl_d", []DropCondition{filter})
+		if !strings.HasPrefix(got, " | filter (__dl_d:* OR -__dl_l:* OR ") || strings.Count(got, " | filter ") != 1 {
+			t.Fatalf("%q %q: %s", op, value, got)
+		}
+		depth, quote := 0, byte(0)
+		for i := 0; i < len(got); i++ {
+			c := got[i]
+			switch {
+			case quote != 0:
+				if c == '\\' && quote == '"' {
+					i++
+				} else if c == quote {
+					quote = 0
+				}
+			case c == '"' || c == '`':
+				quote = c
+			case c == '(':
+				depth++
+			case c == ')':
+				depth--
+			}
+			if depth < 0 {
+				t.Fatalf("%q %q: unbalanced: %s", op, value, got)
+			}
+		}
+		if depth != 0 || quote != 0 {
+			t.Fatalf("%q %q: unbalanced or unterminated: %s", op, value, got)
+		}
+	})
+}
