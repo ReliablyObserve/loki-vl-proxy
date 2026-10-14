@@ -27,19 +27,19 @@
    "shape": "D volume, no filters",
    "range": "1h",
    "p50": {
-    "base": 0.074,
-    "pr": 0.095,
-    "loki": 0.018
+    "base": 0.079,
+    "pr": 0.098,
+    "loki": 0.029
    },
    "p95": {
-    "base": 0.092,
-    "pr": 0.101,
-    "loki": 0.02
+    "base": 0.105,
+    "pr": 0.106,
+    "loki": 0.06
    },
    "cold": {
-    "base": 0.105,
-    "pr": 0.084,
-    "loki": 0.31
+    "base": 0.064,
+    "pr": 0.096,
+    "loki": 0.909
    },
    "status": {
     "base": "200",
@@ -47,15 +47,15 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 70.51,
-    "pr": 70.51,
-    "loki": 70.51
+    "base": 65.81,
+    "pr": 65.81,
+    "loki": 65.81
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.78
+   "speedup": 0.81
   }
  ]
 }

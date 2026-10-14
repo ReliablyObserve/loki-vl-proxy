@@ -27,19 +27,19 @@
    "shape": "DL6 explore volume, level filter before json",
    "range": "1h",
    "p50": {
-    "base": 0.27,
-    "pr": 0.288,
-    "loki": 0.019
+    "base": 0.181,
+    "pr": 0.279,
+    "loki": 0.017
    },
    "p95": {
-    "base": 0.324,
-    "pr": 0.298,
-    "loki": 0.02
+    "base": 0.2,
+    "pr": 0.28,
+    "loki": 0.021
    },
    "cold": {
-    "base": 0.553,
-    "pr": 0.594,
-    "loki": 0.257
+    "base": 0.54,
+    "pr": 0.617,
+    "loki": 0.331
    },
    "status": {
     "base": "200",
@@ -47,15 +47,15 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 143.52,
-    "pr": 143.52,
-    "loki": 143.52
+    "base": 140.37,
+    "pr": 140.37,
+    "loki": 140.37
    },
-   "parity_vs_reference": "same series, sum \u00b10.31%",
+   "parity_vs_reference": "same series, sum \u00b10.27%",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.94
+   "speedup": 0.65
   }
  ]
 }

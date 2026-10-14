@@ -27,59 +27,59 @@
    "shape": "DL6 explore volume, level filter before json",
    "range": "6h",
    "p50": {
-    "base": 1.393,
-    "pr": 1.543
+    "base": 1.445,
+    "pr": 1.589
    },
    "p95": {
-    "base": 1.397,
-    "pr": 1.575
+    "base": 1.484,
+    "pr": 1.664
    },
    "cold": {
-    "base": 3.437,
-    "pr": 3.31
+    "base": 3.281,
+    "pr": 3.373
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 209.18,
-    "pr": 202.26
+    "base": 199.01,
+    "pr": 199.44
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.9
+   "speedup": 0.91
   },
   {
    "shape": "DL6 explore volume, level filter before json",
    "range": "24h",
    "p50": {
-    "base": 5.877,
-    "pr": 6.205
+    "base": 6.045,
+    "pr": 6.237
    },
    "p95": {
-    "base": 5.972,
-    "pr": 6.211
+    "base": 6.257,
+    "pr": 6.369
    },
    "cold": {
-    "base": 12.115,
-    "pr": 11.696
+    "base": 11.38,
+    "pr": 12.507
    },
    "status": {
     "base": "200",
     "pr": "200"
    },
    "vl_cpu_max": {
-    "base": 201.35,
-    "pr": 202.45
+    "base": 202.31,
+    "pr": 205.74
    },
    "parity_vs_reference": "n/a",
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.95
+   "speedup": 0.97
   }
  ]
 }
