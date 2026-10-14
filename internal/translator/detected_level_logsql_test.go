@@ -164,7 +164,7 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 				}
 				return
 			}
-			chain := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup)
+			chain := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup, nil)
 			if plan.Pipes != chain+" "+tc.filter {
 				t.Fatalf("pipes tail = %q, want chain + %q", strings.TrimPrefix(plan.Pipes, chain), tc.filter)
 			}
@@ -174,7 +174,7 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 
 // conformance: severity-detected-level-derivation
 func TestBuildDetectedLevelChain(t *testing.T) {
-	chain := BuildDetectedLevelChain(nil, DetectedLevelChainGroup)
+	chain := BuildDetectedLevelChain(nil, DetectedLevelChainGroup, nil)
 	pipes := strings.Split(strings.TrimPrefix(chain, "| "), " | ")
 	// 16 stored picks + 1 stored copy + 2 unpack + 28 body picks + 7
 	// normalisers + 1 keyword regexp + 3 keyword finals + 1 stored word +
@@ -208,12 +208,12 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		}
 	}
 
-	logs := BuildDetectedLevelChain(nil, DetectedLevelChainLogs)
+	logs := BuildDetectedLevelChain(nil, DetectedLevelChainLogs, nil)
 	if !strings.HasSuffix(logs, `| format "unknown" as __dl keep_original_fields | rename __dl as detected_level | delete __dl, __dl_*, __j_*, __l_*`) {
 		t.Fatalf("logs chain ending: %s", logs[len(logs)-160:])
 	}
 
-	stored := BuildDetectedLevelChain([]string{"level", "app"}, DetectedLevelChainLogs)
+	stored := BuildDetectedLevelChain([]string{"level", "app"}, DetectedLevelChainLogs, nil)
 	for _, want := range []string{
 		// A row with a level field is marked once, and skipped by the pipes
 		// that read the line.
@@ -231,7 +231,7 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 	// The OTLP severity of VictoriaLogs v1.50+ (severity_text, severity_number)
 	// and before (severity alone): a row decides by a level text that is not
 	// synthesised, a number other than 0, or a finer severity name.
-	otlp := BuildDetectedLevelChain([]string{"severity_text", "severity_number", "severity"}, DetectedLevelChainGroup)
+	otlp := BuildDetectedLevelChain([]string{"severity_text", "severity_number", "severity"}, DetectedLevelChainGroup, nil)
 	for _, want := range []string{
 		`| format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`,
 		"| format if (-__dl_h:* (severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) -severity:=\"Unspecified\") \"1\" as __dl_h",
@@ -266,5 +266,95 @@ func TestMetricGroupingDerivesDetectedLevel(t *testing.T) {
 	}
 	if plain != `app:="x" | stats by (app) count()` {
 		t.Fatalf("unrelated grouping changed: %q", plain)
+	}
+}
+
+// A chain built from the fields and keys a window holds carries only their
+// pipes, keeps the pipes the OTLP severity needs, and with every field and key
+// present is the full chain.
+// conformance: severity-detected-level-derivation
+func TestBuildDetectedLevelChainPruned(t *testing.T) {
+	all := &DetectedLevelPresence{Stored: DetectedLevelFieldNames, BodyKeys: DetectedLevelBodyKeys()}
+	for _, mode := range []DetectedLevelChainMode{DetectedLevelChainGroup, DetectedLevelChainLogs, DetectedLevelChainGrouping} {
+		if got, want := BuildDetectedLevelChain(nil, mode, all), BuildDetectedLevelChain(DetectedLevelFieldNames, mode, nil); got != want {
+			t.Fatalf("mode %d: every field and key present is not the full chain:\n%s\n%s", mode, got, want)
+		}
+	}
+	pipes := func(present *DetectedLevelPresence) []string {
+		chain := BuildDetectedLevelChain(nil, DetectedLevelChainGrouping, present)
+		if !strings.HasPrefix(chain, "| ") {
+			t.Fatalf("chain does not start with a pipe: %.80s", chain)
+		}
+		return strings.Split(strings.TrimPrefix(chain, "| "), " | ")
+	}
+	contains := func(list []string, prefix string) bool {
+		for _, p := range list {
+			if strings.HasPrefix(p, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// One stored field and one body key: 1 pick, the marker, the stored copy, 2
+	// unpacks, 2 key picks, 7 normalisers, the keyword regexp and its 3 finals,
+	// the stored word, unknown, the final copy and delete.
+	level := pipes(&DetectedLevelPresence{Stored: []string{"level"}, BodyKeys: []string{"level"}})
+	if len(level) != 22 {
+		t.Fatalf("level chain has %d pipes, want 22: %v", len(level), level)
+	}
+	for i, want := range map[int]string{
+		0: `format if (level:*) "<level>" as __dl_s keep_original_fields`,
+		1: `format if (__dl_s:*) "1" as __dl_h`,
+		3: `unpack_json if (-__dl_h:*) from _msg fields (level) result_prefix "__j_"`,
+	} {
+		if level[i] != want {
+			t.Fatalf("pipe %d = %q, want %q", i, level[i], want)
+		}
+	}
+	if contains(level, "format if (__dl:\"\" -__dl_s:* severity_number") {
+		t.Fatalf("a window without severity_number or severity keeps the number pipes: %v", level)
+	}
+
+	// Nothing stored and no key: the keyword scan decides, or unknown.
+	none := pipes(&DetectedLevelPresence{})
+	if !strings.HasPrefix(none[0], "extract_regexp ") || len(none) != 7 {
+		t.Fatalf("empty chain: %d pipes, first %.60s: %v", len(none), none[0], none)
+	}
+	for _, gone := range []string{"unpack_", "format if (__dl_s", "format if (__dl_v", "format if (__dl:\"\" -__dl_s", "format if (__dl:\"\" __dl_s"} {
+		if contains(none, gone) {
+			t.Fatalf("empty chain still has a %q pipe: %v", gone, none)
+		}
+	}
+
+	// The OTLP severity: v1.50+ stores severity_text with severity_number, and
+	// the synthesised text defers to the number; before it, severity alone
+	// carries the derived name (severityNameClause), which only the number
+	// pipes read.
+	otlp := pipes(&DetectedLevelPresence{Stored: []string{"severity_text", "severity_number"}})
+	for _, want := range []string{
+		`format if (severity_text:* !`,
+		`format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`,
+		`format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`,
+	} {
+		if !contains(otlp, want) {
+			t.Fatalf("OTLP v1.50 chain lacks %q: %v", want, otlp)
+		}
+	}
+	old := pipes(&DetectedLevelPresence{Stored: []string{"severity"}})
+	if !contains(old, `format if (severity:* !(severity:~`) || !contains(old, `format if (-__dl_h:* (severity:~`) || !contains(old, `format if (__dl:"" -__dl_s:* (severity_number:~`) {
+		t.Fatalf("pre-v1.50 OTLP chain lacks a severity pick, marker or number pipe: %v", old)
+	}
+	if contains(old, `format if (__dl:"" -__dl_s:* severity_number:*) "info"`) {
+		t.Fatalf("a window without severity_number keeps the number fallback: %v", old)
+	}
+	number := pipes(&DetectedLevelPresence{Stored: []string{"severity_number"}})
+	if !strings.HasPrefix(number[0], `format if (__dl_s:*) "1" as __dl_h`) {
+		t.Fatalf("number-only chain starts with %.60s", number[0])
+	}
+	for _, want := range []string{`format if (-__dl_h:* severity_number:*`, `format if (__dl:"" -__dl_s:* severity_number:*) "info"`} {
+		if !contains(number, want) {
+			t.Fatalf("number-only chain lacks %q: %v", want, number)
+		}
 	}
 }

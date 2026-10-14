@@ -33,6 +33,12 @@ type jsonVolumeFakeVL struct {
 	statsCalls []string
 	guardCalls []string
 	rawCalls   int
+	// presence answers the level presence probe from the lines (see
+	// pushdownFakeVL); presenceCalls records the probes.
+	presence      bool
+	presenceFail  bool
+	presenceLine  func(honest string) string
+	presenceCalls []string
 }
 
 // vlUnpackJSONLevel mirrors VictoriaLogs unpack_json for the level key: only a
@@ -82,10 +88,10 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			}
 			// The pipes of translator.BuildDetectedLevelChain are emulated whole
 			// below; the unpack they hold is not the plan's own.
-			chain := strings.Contains(query, `"<detected_level>" as __dl_s`)
-			const chainEnd = "| delete __dl, __dl_*, __j_*, __l_*"
+			chain := strings.Contains(query, "__dl")
+			chainQuery := query
 			if chain {
-				query = query[:strings.Index(query, " | format if (detected_level:*)")] + query[strings.Index(query, chainEnd)+len(chainEnd):]
+				query = withoutLevelChain(query)
 			}
 			keep := strings.Contains(query, "fields (level) keep_original_fields")
 			groupStart := strings.Index(query, "stats by (")
@@ -130,7 +136,7 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 					if line.level != "" {
 						stored["level"] = line.level
 					}
-					derived = emulateDetectedLevelChain(stored)
+					derived = emulateDetectedLevelChainFor(stored, chainPresence(chainQuery))
 				}
 				bucket := vlTruncate(ts, step, offset)
 				value := 1.0
@@ -185,6 +191,34 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 		case "/select/logsql/query":
 			start := parseFakeVLTime(t, r.Form.Get("start"))
 			end := parseFakeVLTime(t, r.Form.Get("end"))
+			if isLevelPresenceQuery(query) {
+				fake.mu.Lock()
+				fake.presenceCalls = append(fake.presenceCalls, query)
+				fake.mu.Unlock()
+				if fake.presenceFail {
+					http.Error(w, "backend failure", http.StatusInternalServerError)
+					return
+				}
+				line := "{}\n"
+				if fake.presence {
+					var rows []map[string]string
+					for _, l := range fake.lines {
+						if ts := l.ts.UnixNano(); ts < start || ts >= end {
+							continue
+						}
+						values := map[string]string{"_msg": l.msg}
+						if l.level != "" {
+							values["level"] = l.level
+						}
+						rows = append(rows, values)
+					}
+					if line = levelPresenceResponse(rows); fake.presenceLine != nil {
+						line = fake.presenceLine(line)
+					}
+				}
+				_, _ = w.Write([]byte(line))
+				return
+			}
 			guard := strings.HasSuffix(query, " | limit 1")
 			// The guard probes of the detected_level pipes, which the generic
 			// fake evaluates over the same lines.

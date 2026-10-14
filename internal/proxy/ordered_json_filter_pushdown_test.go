@@ -42,6 +42,13 @@ type pushdownFakeVL struct {
 	stats  []string
 	guards []string
 	raw    int
+	// presence answers the level presence probe from the rows; otherwise the
+	// probe gets no counts (the proxy then keeps the full chain). presenceFail
+	// makes it a backend error, presenceLine replaces the honest answer.
+	presence      bool
+	presenceFail  bool
+	presenceLine  func(honest string) string
+	presenceCalls []string
 }
 
 var pushdownFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"<([^>]+)>\" as (\\S+)$")
@@ -318,10 +325,11 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			// The rest of translator.BuildDetectedLevelChain: its result is
 			// already in detected_level.
 			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
-		case strings.HasPrefix(pipe, `format if (detected_level:*) "<detected_level>" as __dl_s`):
+		case chainStart(pipe):
 			// The start of translator.BuildDetectedLevelChain; the chain is
-			// emulated whole by emulateDetectedLevelChain.
-			values["detected_level"] = emulateDetectedLevelChain(values)
+			// emulated whole by emulateDetectedLevelChainFor, for the fields and
+			// keys it was built from.
+			values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
 			inChain = true
 		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
 			var unpacked map[string]string
@@ -511,6 +519,32 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 		case "/select/logsql/query":
 			start := parseFakeVLTime(t, r.Form.Get("start"))
 			end := parseFakeVLTime(t, r.Form.Get("end"))
+			if isLevelPresenceQuery(query) {
+				fake.mu.Lock()
+				fake.presenceCalls = append(fake.presenceCalls, query)
+				fake.mu.Unlock()
+				if fake.presenceFail {
+					http.Error(w, "backend failure", http.StatusInternalServerError)
+					return
+				}
+				line := "{}\n"
+				if fake.presence {
+					var rows []map[string]string
+					for _, row := range fake.rows {
+						if ts := row.ts.UnixNano(); ts < start || ts >= end {
+							continue
+						}
+						if values, kept := fake.applyPipes(t, presenceBase(query), row); kept {
+							rows = append(rows, values)
+						}
+					}
+					if line = levelPresenceResponse(rows); fake.presenceLine != nil {
+						line = fake.presenceLine(line)
+					}
+				}
+				_, _ = w.Write([]byte(line))
+				return
+			}
 			guard := strings.HasSuffix(query, " | limit 1")
 			fake.mu.Lock()
 			if guard {
@@ -656,7 +690,7 @@ func filterPushdownFixture(s0 time.Time) []pushdownRow {
 // adds to the pushdown's own, and levelChain the pipes that compute it.
 const levelProbes = 3
 
-var levelChain = translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping)
+var levelChain = translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
 
 func newFilterPushdownProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()

@@ -244,7 +244,7 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 				stats, raw := false, false
 				for _, call := range calls {
 					stats = stats || strings.HasPrefix(call, "/select/logsql/stats_query_range ")
-					raw = raw || strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1")
+					raw = raw || strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1") && !isLevelPresenceCall(call)
 				}
 				if probe.route == "stats" && (raw || !stats) || probe.route == "raw" && !raw {
 					t.Errorf("route %q expected: stats call=%v raw rows read=%v; VictoriaLogs calls %q", probe.route, stats, raw, calls)
@@ -312,6 +312,7 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 					stats++
 				case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
 					guards++
+				case isLevelPresenceCall(call):
 				case strings.HasPrefix(call, "/select/logsql/query "):
 					raw++
 				}
@@ -321,4 +322,10 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// isLevelPresenceCall reports whether a recorded VictoriaLogs call is the
+// presence probe that prunes the detected_level pipes: one stats query, no rows.
+func isLevelPresenceCall(call string) bool {
+	return strings.HasPrefix(call, "/select/logsql/query ") && strings.Contains(call, " | stats count() if (") && strings.Contains(call, " as p0, ")
 }

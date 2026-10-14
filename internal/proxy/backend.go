@@ -765,6 +765,7 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	// A metric checked for unwrap conversion errors counts them in its own stats.
 	params, stripUnwrapCounter, _ := unwrapCheckFrom(ctx).countingStatsQuery(path, params)
+	params = p.pruneLevelChain(ctx, path, params)
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path

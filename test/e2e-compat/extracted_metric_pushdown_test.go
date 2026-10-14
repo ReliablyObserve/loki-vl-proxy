@@ -96,7 +96,7 @@ func TestCompat_ExtractedLabelMetricPushdown(t *testing.T) {
 					after := parserMetricEvaluations(t, route)
 					raw := 0
 					for _, call := range recorder.reset() {
-						if strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1") {
+						if strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1") && !isLevelPresenceCall(call) {
 							raw++
 						}
 					}

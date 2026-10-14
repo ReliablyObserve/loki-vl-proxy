@@ -1015,7 +1015,7 @@ func (plan *orderedJSONMetricPlan) levelChain() string {
 	if !plan.derivesLevel {
 		return ""
 	}
-	return " " + translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping)
+	return " " + fullLevelChain()
 }
 
 // splitPushdownKeys splits the labels a pushdown reads: the plain ones, every
@@ -1479,18 +1479,18 @@ func (p *Proxy) detectedLevelUnpackRisk(ctx context.Context, base string, start,
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
-// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered.
-// Coverage never extends past statsPushdownRiskSettle before now, so lines that
-// arrive late for recent timestamps are still checked on the next request.
-const (
-	statsPushdownRiskCacheTTL = 5 * time.Minute
-	statsPushdownRiskSettle   = 5 * time.Minute
-)
+// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered,
+// counted from the check of its oldest part (coveredWindowProbe). Coverage
+// never extends past statsPushdownRiskSettle before now, so lines that arrive
+// late for recent timestamps are still checked on the next request.
+var statsPushdownRiskCacheTTL = 5 * time.Minute
+
+const statsPushdownRiskSettle = 5 * time.Minute
 
 // cachedStatsPushdownRisk answers the parse-risk check for [start, end],
 // remembering the window already found free of risky lines per tenant, query
-// and field set, so a refresh or a wider range checks only the uncovered part.
-// A window with a risky line is never cached.
+// and field set, so a refresh or a wider range checks only the uncovered part
+// (coveredWindowProbe). A window with a risky line is never cached.
 func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, levelRisk bool, start, end time.Time) (bool, error) {
 	check := func(from, to time.Time) (bool, error) {
 		// The probes run beside each other; one round trip.
@@ -1555,9 +1555,6 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 		}
 		return false, nil
 	}
-	if p.cache == nil {
-		return check(start, end)
-	}
 	spelled := make([]string, len(fields))
 	for i, field := range fields {
 		spelled[i] = field
@@ -1565,45 +1562,12 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 			spelled[i] += "=" + vl
 		}
 	}
-	key := "stats-pushdown-risk:v3:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
-	type window struct{ from, to time.Time }
-	todo := []window{{start, end}}
-	coveredFrom, coveredTo := start, end
-	if raw, _, ok := p.cache.GetWithTTL(key); ok {
-		var fromNs, toNs int64
-		if _, err := fmt.Sscanf(string(raw), "%d %d", &fromNs, &toNs); err == nil {
-			cachedFrom, cachedTo := time.Unix(0, fromNs), time.Unix(0, toNs)
-			if !start.After(cachedTo) && !end.Before(cachedFrom) {
-				todo = todo[:0]
-				if start.Before(cachedFrom) {
-					todo = append(todo, window{start, cachedFrom})
-				} else {
-					coveredFrom = cachedFrom
-				}
-				if end.After(cachedTo) {
-					todo = append(todo, window{cachedTo, end})
-				} else {
-					coveredTo = cachedTo
-				}
-			}
-		}
-	}
-	for _, w := range todo {
-		risky, err := check(w.from, w.to)
-		if err != nil || risky {
-			return risky, err
-		}
-	}
-	if settled := time.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
-		coveredTo = settled
-	}
-	if len(todo) > 0 && coveredTo.After(coveredFrom) {
-		// Only a window that was actually checked refreshes the entry; sliding the
-		// TTL on a pure cache hit would freeze the interior verdict forever, and a
-		// line arriving late for a timestamp inside it would never be seen.
-		p.cache.SetLocalOnlyWithTTL(key, []byte(fmt.Sprintf("%d %d", coveredFrom.UnixNano(), coveredTo.UnixNano())), statsPushdownRiskCacheTTL)
-	}
-	return false, nil
+	key := "stats-pushdown-risk:v4:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
+	_, risky, err := p.coveredWindowProbe(key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
+		risky, err := check(from, to)
+		return "", risky, err
+	})
+	return risky, err
 }
 
 // statsPushdownRiskExists runs a `| limit 1` risk query over [start, end] and

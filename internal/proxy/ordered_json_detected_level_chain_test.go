@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -8,7 +9,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// emulateDetectedLevelChain evaluates translator.BuildDetectedLevelChain over
+// emulateDetectedLevelChainFor evaluates translator.BuildDetectedLevelChain over
 // one row's fields the way VictoriaLogs runs it, so the unit tests can follow
 // the chain's own answer (and where it differs from Loki's) without a
 // VictoriaLogs binary: the first non-empty stored level field decides (a
@@ -20,8 +21,19 @@ import (
 // stored word the scan does not replace stays as it is; last the OTLP number.
 // The chain's real answers are pinned against Loki by the e2e test
 // TestRangeMetricCompatibilityJSONDetectedLevelProbes.
-func emulateDetectedLevelChain(values map[string]string) string {
+// A chain pruned to the fields and keys of present (nil: the full chain) reads
+// no other: a field or key it does not list is not read, as if the row did not
+// hold it.
+func emulateDetectedLevelChainFor(values map[string]string, present *translator.DetectedLevelPresence) string {
 	names := translator.DetectedLevelFieldNames
+	keys := translator.DetectedLevelBodyKeys()
+	if present != nil {
+		kept := map[string]string{"_msg": values["_msg"]}
+		for _, name := range present.Stored {
+			kept[name] = values[name]
+		}
+		values, keys = kept, present.BodyKeys
+	}
 	number := values["severity_number"]
 	stored, has := "", number != ""
 	for _, name := range names[:len(names)-1] {
@@ -44,7 +56,7 @@ func emulateDetectedLevelChain(values map[string]string) string {
 			fields = append(fields, slidingLogfmtFields(values["_msg"]))
 		}
 		for _, fields := range fields {
-			for _, name := range names[1 : len(names)-1] {
+			for _, name := range keys {
 				if v := fields[name]; v != "" && value == "" {
 					value = v
 				}
@@ -113,4 +125,98 @@ func unspecifiedOnly(values map[string]string) bool {
 	}
 	return values["severity_text"] == "Unspecified" && values["severity_number"] == "0" && others("severity_text") ||
 		values["severity"] == "Unspecified" && values["severity_number"] == "" && others("severity")
+}
+
+var (
+	chainStoredPickRE = regexp.MustCompile(`"<([^>]+)>" as __dl_s keep_original_fields`)
+	chainBodyKeysRE   = regexp.MustCompile(`unpack_json[^|]*? fields \(([^)]*)\) result_prefix "__j_"`)
+)
+
+// chainPresence reads the stored fields and body keys a detected_level chain
+// in query was built from.
+func chainPresence(query string) *translator.DetectedLevelPresence {
+	present := &translator.DetectedLevelPresence{}
+	for _, m := range chainStoredPickRE.FindAllStringSubmatch(query, -1) {
+		present.Stored = append(present.Stored, m[1])
+	}
+	if strings.Contains(query, `severity_number:*) "info" as __dl keep_original_fields`) {
+		present.Stored = append(present.Stored, "severity_number")
+	}
+	if m := chainBodyKeysRE.FindStringSubmatch(query); m != nil {
+		present.BodyKeys = strings.Split(m[1], ", ")
+	}
+	return present
+}
+
+// chainStart reports whether pipe is the first of a detected_level chain,
+// whatever its pruning leaves first.
+func chainStart(pipe string) bool {
+	return strings.Contains(pipe, "__dl") || strings.Contains(pipe, `result_prefix "__j_"`)
+}
+
+// withoutLevelChain cuts the detected_level chain out of query.
+func withoutLevelChain(query string) string {
+	const chainEnd = "| delete __dl, __dl_*, __j_*, __l_*"
+	from := len(query)
+	for _, marker := range []string{"__dl", `result_prefix "__j_"`} {
+		if i := strings.Index(query, marker); i >= 0 && i < from {
+			from = i
+		}
+	}
+	from = strings.LastIndex(query[:from], " | ")
+	return query[:from] + query[strings.Index(query, chainEnd)+len(chainEnd):]
+}
+
+// isLevelPresenceQuery reports whether query is the presence probe.
+func isLevelPresenceQuery(query string) bool {
+	return strings.Contains(query, ` | stats count() if (`) && strings.Contains(query, ` as p0, `)
+}
+
+// presenceBase is the part of a presence probe the stats query shares.
+func presenceBase(query string) string {
+	return query[:strings.Index(query, " | format if (")]
+}
+
+// levelPresenceResponse evaluates the presence probe over the values of the
+// rows its base selects, the way VictoriaLogs counts them: a stored field is
+// present when some row holds it non-empty, a body key when its words are
+// tokens of the line of a row no definite level field decides, and an escape
+// when such a line holds a backslash and a u.
+func levelPresenceResponse(rows []map[string]string) string {
+	counts := make([]int, levelPresenceMaskLen())
+	for _, row := range rows {
+		decided := false
+		for i, name := range levelPresenceStored {
+			if row[name] == "" {
+				continue
+			}
+			counts[i]++
+			decided = decided || !containsString(levelPresenceUndecided, name)
+		}
+		if decided {
+			continue
+		}
+		tokens := map[string]bool{}
+		for _, w := range strings.FieldsFunc(row["_msg"], notLevelWordRune) {
+			tokens[w] = true
+		}
+		for i, key := range levelPresenceBody {
+			all := true
+			for _, w := range strings.FieldsFunc(key, notLevelWordRune) {
+				all = all && tokens[w]
+			}
+			if all {
+				counts[len(levelPresenceStored)+i]++
+			}
+		}
+		if strings.Contains(row["_msg"], `\u`) {
+			counts[len(counts)-1]++
+		}
+	}
+	out := map[string]string{}
+	for i, n := range counts {
+		out["p"+strconv.Itoa(i)] = strconv.Itoa(n)
+	}
+	line, _ := json.Marshal(out)
+	return string(line) + "\n"
 }

@@ -136,6 +136,7 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 						stats++
 					case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
 						guards++
+					case isLevelPresenceCall(call):
 					case strings.HasPrefix(call, "/select/logsql/query "):
 						raw++
 					}
@@ -223,6 +224,7 @@ func TestRangeMetricCompatibilityJSONFilterPushdown(t *testing.T) {
 				switch {
 				case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
 					guards++
+				case isLevelPresenceCall(call):
 				case strings.HasPrefix(call, "/select/logsql/query "):
 					raw++
 				}

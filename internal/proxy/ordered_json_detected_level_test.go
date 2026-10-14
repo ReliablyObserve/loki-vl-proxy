@@ -129,31 +129,47 @@ func (c detectedLevelProbe) row(ts time.Time) pushdownRow {
 func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	start, end := s0.Add(2*time.Minute), s0.Add(2*time.Minute)
-	for _, probe := range detectedLevelProbes {
-		want := map[string]map[int64]string{
-			canonicalLabelsKey(map[string]string{"detected_level": probe.want}): {end.Unix(): "1"},
-		}
-		for _, pipeline := range []string{`| json`, `| json | drop __error__`, `| json | __error__=""`} {
-			if probe.dropOnly && pipeline != `| json | drop __error__` || probe.rowOnly && pipeline == `| json | drop __error__` {
-				continue
+	// Each line is asked twice: through the full chain, and through the chain
+	// pruned to the fields and keys the window holds (the presence probe
+	// answered from the rows), which must give the same answer.
+	for _, pruned := range []bool{false, true} {
+		for _, probe := range detectedLevelProbes {
+			want := map[string]map[int64]string{
+				canonicalLabelsKey(map[string]string{"detected_level": probe.want}): {end.Unix(): "1"},
 			}
-			t.Run(probe.name+" "+pipeline, func(t *testing.T) {
-				query := `sum by (detected_level) (count_over_time({env="prod"} ` + pipeline + ` [5m]))`
-				srv, fake := newPushdownFakeVL(t, []pushdownRow{probe.row(s0.Add(100 * time.Second))}, nil)
-				p := newFilterPushdownProxy(t, srv.URL)
-				fake.stored = p.labelTranslator.ToVL
-				if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, want) {
-					t.Fatalf("status %d %.200s, got %v, want %v", code, body, got, want)
+			for _, pipeline := range []string{`| json`, `| json | drop __error__`, `| json | __error__=""`} {
+				if probe.dropOnly && pipeline != `| json | drop __error__` || probe.rowOnly && pipeline == `| json | drop __error__` {
+					continue
 				}
-				if pipeline != `| json | drop __error__` {
-					return
+				name := probe.name + " " + pipeline
+				if pruned {
+					name += " pruned"
 				}
-				fake.mu.Lock()
-				defer fake.mu.Unlock()
-				if viaRaw := fake.raw > 0; viaRaw != probe.rawRows {
-					t.Fatalf("raw rows read: %v, want %v (stats queries %d, probes %d)", viaRaw, probe.rawRows, len(fake.stats), len(fake.guards))
-				}
-			})
+				t.Run(name, func(t *testing.T) {
+					query := `sum by (detected_level) (count_over_time({env="prod"} ` + pipeline + ` [5m]))`
+					srv, fake := newPushdownFakeVL(t, []pushdownRow{probe.row(s0.Add(100 * time.Second))}, nil)
+					fake.presence = pruned
+					p := newFilterPushdownProxy(t, srv.URL)
+					fake.stored = p.labelTranslator.ToVL
+					if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, want) {
+						t.Fatalf("status %d %.200s, got %v, want %v", code, body, got, want)
+					}
+					if pipeline != `| json | drop __error__` {
+						return
+					}
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					if viaRaw := fake.raw > 0; viaRaw != probe.rawRows {
+						t.Fatalf("raw rows read: %v, want %v (stats queries %d, probes %d)", viaRaw, probe.rawRows, len(fake.stats), len(fake.guards))
+					}
+					if pruned && len(fake.presenceCalls) != 1 {
+						t.Fatalf("%d presence probes, want 1", len(fake.presenceCalls))
+					}
+					if pruned && len(fake.stats) == 1 && len(fake.stats[0]) >= len(levelChain) {
+						t.Fatalf("the stats query carries the full chain (%d bytes)", len(fake.stats[0]))
+					}
+				})
+			}
 		}
 	}
 }
@@ -320,8 +336,10 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 					t.Fatal("fixture: the filter keeps nothing")
 				}
 				query := `sum by (detected_level) (count_over_time({env="prod"} ` + tc.pipeline + ` [5m]))`
-				for _, drilldown := range []bool{false, true} {
+				for _, mode := range []struct{ drilldown, pruned bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+					drilldown := mode.drilldown
 					srv, fake := newPushdownFakeVL(t, rows, nil)
+					fake.presence = mode.pruned
 					p := newFilterPushdownProxy(t, srv.URL)
 					fake.stored = p.labelTranslator.ToVL
 					params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"300"}}
@@ -332,10 +350,10 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 					rec := httptest.NewRecorder()
 					p.handleQueryRange(rec, r)
 					if rec.Code != http.StatusOK {
-						t.Fatalf("drilldown=%v: status %d %s", drilldown, rec.Code, rec.Body)
+						t.Fatalf("drilldown=%v pruned=%v: status %d %s", drilldown, mode.pruned, rec.Code, rec.Body)
 					}
 					if got := decodeExtractedMatrix(t, rec.Body.Bytes()); !reflect.DeepEqual(got, want) {
-						t.Fatalf("drilldown=%v: got %v, want %v", drilldown, got, want)
+						t.Fatalf("drilldown=%v pruned=%v: got %v, want %v", drilldown, mode.pruned, got, want)
 					}
 					fake.mu.Lock()
 					// Logs Drilldown's detected_level breakdown has the shape of its

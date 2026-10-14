@@ -289,6 +289,7 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 						stats++
 					case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
 						guards++
+					case isLevelPresenceCall(call):
 					case strings.HasPrefix(call, "/select/logsql/query "):
 						raw++
 					}
@@ -324,6 +325,7 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 			switch {
 			case strings.HasSuffix(call, " | limit 1"):
 				guards++
+			case isLevelPresenceCall(call):
 			case strings.HasPrefix(call, "/select/logsql/query "):
 				rows++
 			}
