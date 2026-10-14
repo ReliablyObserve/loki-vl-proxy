@@ -64,6 +64,13 @@ func newJSONVolumeRouteProxy(t *testing.T) (string, *vlQueryRecorder) {
 // back to the raw-row evaluator over more rows fails with the limit error.
 func newJSONVolumeRouteProxyWithRowLimit(t *testing.T, rowLimit int) (string, *vlQueryRecorder) {
 	t.Helper()
+	return newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) { cfg.RangeMetricRowLimit = rowLimit })
+}
+
+// newJSONVolumeRouteProxyWithConfig is newJSONVolumeRouteProxy with the proxy's
+// configuration adjusted by set (a series limit, a row limit).
+func newJSONVolumeRouteProxyWithConfig(t *testing.T, set func(*proxy.Config)) (string, *vlQueryRecorder) {
+	t.Helper()
 	target, err := url.Parse(vlURL)
 	if err != nil {
 		t.Fatal(err)
@@ -85,11 +92,12 @@ func newJSONVolumeRouteProxyWithRowLimit(t *testing.T, rowLimit int) (string, *v
 	}))
 	t.Cleanup(backend.Close)
 
-	p, err := proxy.New(proxy.Config{
+	cfg := proxy.Config{
 		BackendURL: backend.URL, Cache: cache.NewDisabled(), LogLevel: "error",
 		LabelStyle: proxy.LabelStyleUnderscores, MetadataFieldMode: proxy.MetadataFieldModeHybrid, EmitStructuredMetadata: true,
-		RangeMetricRowLimit: rowLimit,
-	})
+	}
+	set(&cfg)
+	p, err := proxy.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
