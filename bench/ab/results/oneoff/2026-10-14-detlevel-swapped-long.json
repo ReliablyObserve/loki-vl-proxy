@@ -1,0 +1,379 @@
+{
+ "label": "detlevel-swapped-long",
+ "date": "2026-10-14",
+ "set": "json-detected-level",
+ "description": "sum by (detected_level) over a JSON pipeline (row evaluator, and the stats pushdown with the level computed in VictoriaLogs and its guard probes).",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 3,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 8,
+  "faster": 2,
+  "fixed": 2
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DLV1 drilldown logs volume, json",
+   "range": "6h",
+   "p50": {
+    "pr": 3.33,
+    "base": 3.135
+   },
+   "p95": {
+    "pr": 3.344,
+    "base": 3.139
+   },
+   "cold": {
+    "pr": 3.374,
+    "base": 3.171
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 72.17,
+    "base": 40.7
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.94
+  },
+  {
+   "shape": "DLV1 drilldown logs volume, json",
+   "range": "24h",
+   "p50": {
+    "pr": 10.368,
+    "base": 9.809
+   },
+   "p95": {
+    "pr": 10.393,
+    "base": 9.866
+   },
+   "cold": {
+    "pr": 10.432,
+    "base": 9.743
+   },
+   "status": {
+    "pr": "502",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 95.11,
+    "base": 98.38
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV2 json error filter, detected_level",
+   "range": "6h",
+   "p50": {
+    "pr": 8.564,
+    "base": 8.093
+   },
+   "p95": {
+    "pr": 8.579,
+    "base": 8.098
+   },
+   "cold": {
+    "pr": 8.373,
+    "base": 7.77
+   },
+   "status": {
+    "pr": "502",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 39.31,
+    "base": 40.19
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV2 json error filter, detected_level",
+   "range": "24h",
+   "p50": {
+    "pr": 8.725,
+    "base": 7.822
+   },
+   "p95": {
+    "pr": 8.917,
+    "base": 7.862
+   },
+   "cold": {
+    "pr": 8.37,
+    "base": 7.858
+   },
+   "status": {
+    "pr": "502",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 38.48,
+    "base": 52.22
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV3 plain json, detected_level",
+   "range": "6h",
+   "p50": {
+    "pr": 3.357,
+    "base": 3.173
+   },
+   "p95": {
+    "pr": 3.372,
+    "base": 3.194
+   },
+   "cold": {
+    "pr": 3.394,
+    "base": 3.331
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 52.71,
+    "base": 58.14
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "DLV3 plain json, detected_level",
+   "range": "24h",
+   "p50": {
+    "pr": 10.893,
+    "base": 10.634
+   },
+   "p95": {
+    "pr": 11.261,
+    "base": 10.741
+   },
+   "cold": {
+    "pr": 10.622,
+    "base": 10.044
+   },
+   "status": {
+    "pr": "502",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 205.64,
+    "base": 209.91
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "DLV4 explore json volume, level and detected_level",
+   "range": "6h",
+   "p50": {
+    "pr": 0.193,
+    "base": 0.162
+   },
+   "p95": {
+    "pr": 0.195,
+    "base": 0.194
+   },
+   "cold": {
+    "pr": 0.211,
+    "base": 0.177
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 81.72,
+    "base": 81.72
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.84
+  },
+  {
+   "shape": "DLV4 explore json volume, level and detected_level",
+   "range": "24h",
+   "p50": {
+    "pr": 0.705,
+    "base": 0.696
+   },
+   "p95": {
+    "pr": 0.708,
+    "base": 0.699
+   },
+   "cold": {
+    "pr": 0.876,
+    "base": 0.796
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 163.75,
+    "base": 163.75
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.99
+  },
+  {
+   "shape": "DLV5 json error dropped, detected_level",
+   "range": "6h",
+   "p50": {
+    "pr": 0.028,
+    "base": 0.562
+   },
+   "p95": {
+    "pr": 0.028,
+    "base": 0.567
+   },
+   "cold": {
+    "pr": 0.038,
+    "base": 0.596
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 119.2,
+    "base": 138.63
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 20.07,
+   "confirmed": true
+  },
+  {
+   "shape": "DLV5 json error dropped, detected_level",
+   "range": "24h",
+   "p50": {
+    "pr": 0.186,
+    "base": 2.454
+   },
+   "p95": {
+    "pr": 0.194,
+    "base": 2.5
+   },
+   "cold": {
+    "pr": 0.193,
+    "base": 2.414
+   },
+   "status": {
+    "pr": "200",
+    "base": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 200.14,
+    "base": 200.14
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 13.19,
+   "confirmed": true
+  },
+  {
+   "shape": "DLV6 drilldown detected_level breakdown, json",
+   "range": "6h",
+   "p50": {
+    "pr": 0.028,
+    "base": 8.46
+   },
+   "p95": {
+    "pr": 0.029,
+    "base": 8.473
+   },
+   "cold": {
+    "pr": 0.027,
+    "base": 8.349
+   },
+   "status": {
+    "pr": "200",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 200.03,
+    "base": 200.03
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "DLV6 drilldown detected_level breakdown, json",
+   "range": "24h",
+   "p50": {
+    "pr": 0.145,
+    "base": 8.519
+   },
+   "p95": {
+    "pr": 0.15,
+    "base": 8.631
+   },
+   "cold": {
+    "pr": 0.172,
+    "base": 8.534
+   },
+   "status": {
+    "pr": "200",
+    "base": "502"
+   },
+   "vl_cpu_max": {
+    "pr": 48.49,
+    "base": 48.49
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  }
+ ]
+}

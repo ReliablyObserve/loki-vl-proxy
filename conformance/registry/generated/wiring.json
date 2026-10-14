@@ -131,6 +131,7 @@
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "test/e2e-compat/json_detected_level_series_limit_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go"
     ],
     "limits/stats-row-limit-per-grid": [
@@ -425,8 +426,11 @@
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-metric-detected-level-derivation": [
+      "internal/proxy/detected_level_presence_sweep_test.go",
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
+      "internal/proxy/stored_level_series_limit_test.go",
+      "test/e2e-compat/json_detected_level_series_limit_test.go",
       "test/e2e-compat/json_detected_level_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
@@ -646,6 +650,9 @@
     ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/detected_level_presence_sweep_test.go": [
+      "semantics/json-metric-detected-level-derivation"
     ],
     "internal/proxy/detected_level_presence_test.go": [
       "semantics/detected-level-pipes-known-differences",
@@ -868,6 +875,9 @@
       "profiles/parsed-fields-without-parser",
       "profiles/stage-field-exposure"
     ],
+    "internal/proxy/stored_level_series_limit_test.go": [
+      "semantics/json-metric-detected-level-derivation"
+    ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
@@ -1039,6 +1049,10 @@
       "semantics/instant-result-type-missing",
       "semantics/scalar-sample-time-units"
     ],
+    "test/e2e-compat/json_detected_level_series_limit_test.go": [
+      "limits/series-limit-error",
+      "semantics/json-metric-detected-level-derivation"
+    ],
     "test/e2e-compat/json_detected_level_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
@@ -1174,7 +1188,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 110,
+  "tests_with_markers": 113,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

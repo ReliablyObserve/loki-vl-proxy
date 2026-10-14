@@ -634,3 +634,28 @@ func TestLevelPresenceProbeRunsBeforeTheStatsSlot(t *testing.T) {
 		t.Fatalf("status %d", code)
 	}
 }
+
+// VictoriaLogs refuses a query longer than 16 KiB (-search.maxQueryLen). The
+// witness is the largest thing a pruned chain adds: with nothing in the window
+// every position is left out, and a long selector (about 6.7 KB, seven long
+// regexp names) still has to fit with the pruned chain after it.
+func TestPrunedChainWithWitnessFitsTheQueryLimit(t *testing.T) {
+	srv, fake := newJSONVolumeFakeVL(t, nil)
+	fake.presence = true
+	p := newSlidingTestProxy(t, srv.URL)
+	var names []string
+	for i := 0; i < 7; i++ {
+		names = append(names, strings.Repeat("n", 120)+strconv.Itoa(i))
+	}
+	base := `app:~"` + strings.Repeat(strings.Join(names, "|")+"|", 8) + `x"`
+	query := base + " " + fullLevelChain() + " | stats by (detected_level) count() as c"
+	params := url.Values{"query": {query}, "start": {"2023-11-14T22:00:00Z"}, "end": {"2023-11-14T22:30:00Z"}}
+	out, witness := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query_range", params)
+	if witness == nil {
+		t.Fatal("nothing was pruned")
+	}
+	got := out.Get("query")
+	if len(base) < 6000 || len(got) > 16*1024 || len(got) >= len(query) {
+		t.Fatalf("base %d bytes; unpruned request %d, pruned with the witness %d (limit 16384)", len(base), len(query), len(got))
+	}
+}

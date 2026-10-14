@@ -125,10 +125,10 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `semantics/json-metric-detected-level-derivation` | 3 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.24s |
-| `severity-detected-level-derivation` | 8 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.24s |
-| `explore-logs-volume-json` | 6 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `semantics/json-metric-detected-level-derivation` | 3 | 2.23s (DLV2 json error filter, detected_level, 1h) | 0.25s |
+| `severity-detected-level-derivation` | 9 | 2.23s (DLV2 json error filter, detected_level, 1h) | 0.25s |
+| `explore-logs-volume-json` | 7 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `semantics/label-filter-before-parser-pushdown` | 3 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |

@@ -58,15 +58,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the whole query to the raw-row evaluator: exact, but bounded by the row limit,
   so a long range answers 502 where the pushdown answered 200. Each probe stops
   at its first match, which bounds what it returns, not the work. On one hour
-  of the A/B harness's backfill (about 290,000 lines) with VictoriaLogs capped
-  at 2 CPUs, warm p50, Explore's volume over `| json` takes 90 ms where main
-  takes 85 ms and a volume behind a `detected_level` filter before the parser
-  (which unpacks logfmt for every line first) 251 ms where main takes 236 ms
-  (15 runs; the branch run against itself moves its second target by 26%), and
-  6h and 24h stay within 10%;
-  the chain on every row took 59 ms to 144 ms and 176 ms to 794 ms. A window
-  with a row that has no stored level pays the chain: with it pruned, 55 ms to
-  99 ms and 181 ms to 398 ms. With
+  of the A/B harness's backfill (about 290,000 lines, a level stream label on
+  every row) with VictoriaLogs capped at 2 CPUs, warm p50, Explore's volume over
+  `| json` takes 95 ms where main takes 74 ms and a volume behind a
+  `detected_level` filter before the parser (which unpacks logfmt for every line
+  first) 288 ms where main takes 270 ms (the builds measured in the other order:
+  107 ms against 96 ms and 256 ms against 288 ms), and 6h and 24h stay within
+  12%. Rows with no stored level (the level only in the line) pay the chain's
+  own query, which reads every line, and this is slower than main, which
+  answers 4 series there where Loki answers 8: Explore's volume takes 282 ms
+  where main takes 38 ms at 1h (248 ms against 88 ms in the other order),
+  1.5 s against 0.55 s at 6h and 6.1 s against 2.3 s at 24h, and the
+  detected_level breakdown with the error rows dropped 99 ms against 56 ms at
+  1h and 3.8 s against 2.2 s at 24h. The probes are not the cost (with them free
+  and the stored-level attempt skipped the request takes 287 ms against 302 ms);
+  the chain's query is: 295 ms against 104 ms for main's on VictoriaLogs alone.
+  With
   `-detected-level-body-scan=false` the raw-row evaluator answers. A line that
   is JSON for Loki (a brace first and last) is never read as logfmt by the
   pipes either, and the severity VictoriaLogs derives for an OTLP record
