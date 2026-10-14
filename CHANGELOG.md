@@ -31,23 +31,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breakdown) compares that value too, where it compared the stream's level or
   the body key; the breakdown, which main answered from raw rows (2.4 s at 1h,
   502 at 6h and 24h), is served by the stats pushdown in 0.02 s to 0.30 s.
-  The stats pushdown computes the level in VictoriaLogs with the pipes of the
-  native metric route, and probes the window for lines those pipes read
+  The stats pushdown first groups the buckets by copies of the stored
+  `detected_level` and `level` fields (taken before any unpack) and gives each
+  bucket the level Loki's ingest gives it, a known spelling in any case as its
+  level and any other word as stored: main's query, with no per-row pipe and
+  no guard probe, for every window whose rows all carry a stored level. A
+  bucket without a stored level, or with a stored `detected_level` (a stream
+  label keeps its spelling), asks again with the pipes of the native metric
+  route, built from the level fields and body keys the window holds (one
+  more VictoriaLogs query of counts per uncached window; a failed probe keeps
+  the full chain), and probes the window for lines those pipes read
   differently from Loki: two level keys, a level value with an escape (Loki
   reads a JSON value's raw bytes), a line that starts with a brace but does not
   end with one (logfmt for Loki), a level key VictoriaLogs does not unpack, a
   `detected_level` stream label. One such line, and a line that only looks
   like one (a body with both `level` and `severity`, as audit logs have), sends
   the whole query to the raw-row evaluator: exact, but bounded by the row limit,
-  so a long range answers 502 where the pushdown answered 200. The probes are
-  three more VictoriaLogs queries per uncached window, cached with the other
-  probes; each stops at its first match, which bounds what it returns, not the
-  work, so a clean window costs a scan of the lines that hold a level key word.
-  The pipes themselves add work on every row of the window: for an hour of
-  generator data (3.4 million lines) on a VictoriaLogs capped at 2 CPUs,
-  Explore's volume over `| json` takes 144 ms where main took 59 ms, and a
-  volume behind a `detected_level` filter before the parser (which unpacks
-  logfmt for every line first) 794 ms where main took 176 ms. With
+  so a long range answers 502 where the pushdown answered 200. Each probe stops
+  at its first match, which bounds what it returns, not the work. On one hour
+  of the A/B harness's backfill (about 290,000 lines) with VictoriaLogs capped
+  at 2 CPUs, warm p50 against main, Explore's volume over `| json` takes 85 ms
+  against 90 ms and a volume behind a `detected_level` filter before the parser
+  (which unpacks logfmt for every line first) 236 ms against 251 ms (15 runs; the
+  branch run against itself moves its second target by 26%), and 6h and 24h stay
+  within 10%;
+  the chain on every row took 59 ms to 144 ms and 176 ms to 794 ms. A window
+  with a row that has no stored level pays the chain: with it pruned, 55 ms to
+  99 ms and 181 ms to 398 ms. With
   `-detected-level-body-scan=false` the raw-row evaluator answers. A line that
   is JSON for Loki (a brace first and last) is never read as logfmt by the
   pipes either, and the severity VictoriaLogs derives for an OTLP record
@@ -65,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as in Loki, where it was `unknown`. The native metric route for a plain
   selector still reads level keys in the pipes' fixed order and overwrites a
   `detected_level` stream label, with no raw-row fallback.
+  The verdicts of the probes of the JSON and logfmt pushdowns are remembered
+  per request scope (tenant, routing and forwarded identity, where the key held
+  the tenant only), and extending a remembered window no longer renews the
+  expiry of the part checked earlier, so a window kept alive by a refreshing
+  dashboard is checked again in full every five minutes (a refresh checks only
+  the part younger than five minutes, as before).
   (`semantics/json-metric-detected-level-derivation`)
 
 ## [2.15.0] - 2026-10-12

@@ -56,9 +56,24 @@ why: |
   using the derivation the log lines use (deriveRowLevel), so a body
   detected_level key is renamed and a filter on detected_level
   (`| json | detected_level="info"`) compares the derived value. The stats
-  pushdown computes the level in VictoriaLogs with the pipes of the native
-  metric route (translator.BuildDetectedLevelChain), placed before the unpack
-  of any other label, and a guard (detectedLevelStreamRisk,
+  pushdown first groups the buckets by copies of the stored detected_level and
+  level fields, taken before any unpack, and gives each bucket the level Loki's
+  ingest gives it: the first non-empty of the two, a known spelling in any case
+  as its level and any other word as stored (translator.NormalizeStoredLevel,
+  tested against the chain's own spelling regexps). That is main's query with
+  no per-row pipe and no guard probe, and it answers every window whose rows
+  all carry a stored level (a stream label or structured metadata, as Loki
+  pipelines send it); a stored detected_level outranks level and a later field
+  never outranks a level, so a bucket with a level needs no other field. A
+  bucket without a stored level, or with a stored detected_level (a stream
+  label keeps its spelling, structured metadata is normalised, and the stats
+  cannot tell them apart), sends the query again with the pipes of the native
+  metric route (translator.BuildDetectedLevelChain), built from the level
+  fields and body keys the window holds (a presence probe: one stats query of
+  counts per stored field and per body key word, over the same base and
+  window; an escape sequence in a body makes every key present, a failed probe
+  keeps the full chain), placed before the unpack of any other label, and a
+  guard (detectedLevelStreamRisk,
   detectedLevelKeysRisk, detectedLevelUnpackRisk, cached with the other
   pushdown probes) hands the query to the raw-row evaluator when the window
   holds a line those pipes read differently from Loki: a detected_level stream
@@ -81,31 +96,49 @@ why: |
   stored fields decide.
 
   The plain and `| logfmt` logs volume shapes (`sum by (level,
-  detected_level)`) take the same pipes: a stream without a level label gets
+  detected_level)`) take the same plan, and the same pipes when a row has no
+  stored level: a stream without a level label gets
   the level of its body (a `level=warn` key or a keyword), as in Loki, where
   main answered `unknown`. The plain shape has no raw-row fallback, so it runs
   without the guard (see semantics/detected-level-pipes-known-differences).
 
-  Cost: three more VictoriaLogs queries per uncached window, run beside the
-  stats query and cached with the other probes. Each stops at its first
-  matching line (`limit 1`), which bounds what it returns, not the work: on a
-  clean window it scans the lines that hold a level-key word (VictoriaLogs'
-  word index narrows them) and the rows without a stored level, so its cost
-  grows with the window. The guard is a superset of the lines the pipes read
-  differently: a body with both `level` and `severity` (audit logs) trips it
-  although the pipes might agree. One such line sends the whole query to the
-  raw-row evaluator, which is exact and bounded by the row limit, so a long
-  range answers 502 where the pushdown answered 200. The chain itself adds
-  work on every row of the window (about 60 pipes, most of them skipped for a
-  row with a stored level, though each pipe still passes every block).
-  Measured against main on one hour of generator data (3.4 million lines),
-  warm p50: Explore's JSON volume 33 ms to 61 ms, and a volume behind a
-  `detected_level="info"` filter before the parser (VictoriaLogs first
-  unpacks logfmt for every line) 74 ms to 228 ms; with VictoriaLogs capped at
-  2 CPUs, as on a CI runner, 59 ms to 144 ms and 176 ms to 794 ms. The chain is
-  about 7 KB of LogsQL; with a `service_name` selector Explore's volume sends
-  about 10 KB and a regexp selector of seven long names 14.4 KB, against
-  VictoriaLogs' 16 KiB -search.maxQueryLen (a longer query answers 502).
+  Cost: a window whose rows all carry a stored level costs what main's query
+  costs (two more grouped columns and one copy pipe). Measured against main on
+  one hour of the A/B harness's backfill (about 290,000 lines) with
+  VictoriaLogs capped at 2 CPUs as on a CI runner, warm p50: Explore's JSON
+  volume 85 ms to 90 ms (7 runs), the volume behind a `detected_level="info"`
+  filter before the parser (VictoriaLogs first unpacks logfmt for every line)
+  201 ms to 286 ms over 7 runs and 236 ms to 251 ms over 15; the branch run
+  against itself moves its second target by 26% on the second shape and 61% on
+  the first, which is the harness's own bias and noise. At 6h and 24h: 549 ms
+  to 589 ms and 2.38 s to 2.40 s, 1.48 s to 1.62 s and 6.05 s to 6.64 s. On a
+  cache miss (a base the proxy has not seen, in a warm process): 184 ms to
+  191 ms and 676 ms to 621 ms. The chain on every row (the earlier revision of
+  this change) took 59 ms to 144 ms and 176 ms to 794 ms warm, 302 ms and
+  2.2 s on a miss. A window with a row that has no stored level asks twice, the
+  stored-level attempt first (it costs what main's query costs; its verdict is
+  remembered for the base for five minutes so the next ask goes to the chain at
+  once), and pays the chain with the three guard probes and the presence
+  probe: with the chain pruned, 55 ms to 99 ms and 181 ms to 398 ms warm,
+  309 ms and 2.5 s on a miss. Each guard probe stops at its first matching line
+  (`limit 1`), which bounds what it returns, not the work: on a clean window it
+  scans the lines that hold a level-key word (VictoriaLogs' word index narrows
+  them) and the rows without a stored level. The guard is a superset of the
+  lines the pipes read differently: a body with both `level` and `severity`
+  (audit logs) trips it although the pipes might agree. One such line sends the
+  whole query to the raw-row evaluator, which is exact and bounded by the row
+  limit, so a long range answers 502 where the pushdown answered 200. The chain
+  is about 7 KB of LogsQL unpruned and 1.3 KB for a window with one stored level
+  field and no body key: with a `service_name` selector Explore's volume sends
+  4.2 KB (9.8 KB unpruned) and a regexp selector of seven long names 8.0 KB
+  (14.4 KB), the largest request being a guard probe at 9.4 KB, against
+  VictoriaLogs' 16 KiB -search.maxQueryLen (a longer query answers 502; a window
+  whose presence cannot be told keeps the full chain and its size). The
+  remembered verdicts (guard probes and presence) are kept per request scope,
+  cover only the part of a window older than five minutes, and expire five
+  minutes after the check of their oldest part, so a refreshing dashboard
+  checks the last five minutes on every refresh and the whole window again
+  every five minutes.
 request:
   method: GET
   path: /loki/api/v1/query_range
