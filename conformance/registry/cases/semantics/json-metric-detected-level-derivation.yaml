@@ -19,7 +19,7 @@ why: |
   detected_level is detected_level_extracted, and a detected_level stream label
   keeps its stored value (the derived one moves to detected_level_extracted).
 
-  Measured against Loki v3.7.7 on 48 probe lines (the e2e test pins each):
+  Measured against Loki v3.7.7 on 50 probe lines (the e2e test pins each):
   `{"level":30,"msg":"hi"}` is unknown; a pino error line
   (`{"level":50,...,"err":{"type":"Error"}}`) is error; `{"level":"notice"}` is
   unknown but `{"level":"notice","msg":"error connecting"}` is error;
@@ -61,7 +61,7 @@ why: |
   ingest gives it: the first non-empty of the two, a known spelling in any case
   as its level and any other word as stored (translator.NormalizeStoredLevel,
   tested against the chain's own spelling regexps). That is main's query with
-  no per-row pipe and no guard probe, and it answers every window whose rows
+  no chain and no level guard probe, and it answers every window whose rows
   all carry a stored level (a stream label or structured metadata, as Loki
   pipelines send it); a stored detected_level outranks level and a later field
   never outranks a level, so a bucket with a level needs no other field. A
@@ -131,7 +131,9 @@ why: |
   is about 7 KB of LogsQL unpruned and 1.3 KB for a window with one stored level
   field and no body key: with a `service_name` selector Explore's volume sends
   4.2 KB (9.8 KB unpruned) and a regexp selector of seven long names 8.0 KB
-  (14.4 KB), the largest request being a guard probe at 9.4 KB, against
+  (14.4 KB; those names match no row, so the chain is at its smallest: the
+  bound is the full chain, and the presence probe is the base plus 1.4 KB),
+  the largest request being a guard probe at 9.4 KB, against
   VictoriaLogs' 16 KiB -search.maxQueryLen (a longer query answers 502; a window
   whose presence cannot be told keeps the full chain and its size). The
   remembered verdicts (guard probes and presence) are kept per request scope,

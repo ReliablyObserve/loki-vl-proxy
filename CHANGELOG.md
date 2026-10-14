@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The stats pushdown first groups the buckets by copies of the stored
   `detected_level` and `level` fields (taken before any unpack) and gives each
   bucket the level Loki's ingest gives it, a known spelling in any case as its
-  level and any other word as stored: main's query, with no per-row pipe and
-  no guard probe, for every window whose rows all carry a stored level. A
+  level and any other word as stored: main's query, with no chain and no level
+  guard probe, for every window whose rows all carry a stored level. A
   bucket without a stored level, or with a stored `detected_level` (a stream
   label keeps its spelling), asks again with the pipes of the native metric
   route, built from the level fields and body keys the window holds (one
@@ -50,11 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a long range answers 502 where the pushdown answered 200. Each probe stops
   at its first match, which bounds what it returns, not the work. On one hour
   of the A/B harness's backfill (about 290,000 lines) with VictoriaLogs capped
-  at 2 CPUs, warm p50 against main, Explore's volume over `| json` takes 85 ms
-  against 90 ms and a volume behind a `detected_level` filter before the parser
-  (which unpacks logfmt for every line first) 236 ms against 251 ms (15 runs; the
-  branch run against itself moves its second target by 26%), and 6h and 24h stay
-  within 10%;
+  at 2 CPUs, warm p50, Explore's volume over `| json` takes 90 ms where main
+  takes 85 ms and a volume behind a `detected_level` filter before the parser
+  (which unpacks logfmt for every line first) 251 ms where main takes 236 ms
+  (15 runs; the branch run against itself moves its second target by 26%), and
+  6h and 24h stay within 10%;
   the chain on every row took 59 ms to 144 ms and 176 ms to 794 ms. A window
   with a row that has no stored level pays the chain: with it pruned, 55 ms to
   99 ms and 181 ms to 398 ms. With
