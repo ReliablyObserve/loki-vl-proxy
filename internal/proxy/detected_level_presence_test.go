@@ -273,3 +273,35 @@ func TestDetectedLevelPresenceNativeRoute(t *testing.T) {
 		t.Fatalf("the chain was not pruned (%d bytes against %d):\n%s", len(prunedStats[0]), len(fullStats[0]), prunedStats[0])
 	}
 }
+
+// A dashboard refreshing a relative range moves its window forward every few
+// seconds: a refresh checks only the part younger than the settle horizon
+// (plus what the clock moved), not the hour behind it.
+func TestCoveredWindowProbeRefreshChecksOnlyTheRecentTail(t *testing.T) {
+	srv, _ := newJSONVolumeFakeVL(t, nil)
+	p := newSlidingTestProxy(t, srv.URL)
+	now := time.Now()
+	var checked []time.Duration
+	probe := func(shift time.Duration) {
+		t.Helper()
+		if _, _, err := p.coveredWindowProbe("refresh-test", now.Add(-time.Hour+shift), now.Add(shift), func(from, end time.Time, acc string) (string, bool, error) {
+			checked = append(checked, end.Sub(from))
+			return acc, false, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe(0)
+	probe(5 * time.Second)
+	probe(10 * time.Second)
+	probe(15 * time.Second)
+	if len(checked) != 4 || checked[0] != time.Hour {
+		t.Fatalf("checked windows %v", checked)
+	}
+	for i, got := range checked[1:] {
+		// the settle horizon, the seconds the window moved, and the step's slack
+		if limit := statsPushdownRiskSettle + time.Duration(i+1)*5*time.Second + time.Second; got > limit {
+			t.Errorf("refresh %d checked %v, more than the %v the horizon allows", i+1, got, limit)
+		}
+	}
+}

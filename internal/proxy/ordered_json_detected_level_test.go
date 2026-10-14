@@ -106,6 +106,9 @@ var detectedLevelProbes = []detectedLevelProbe{
 	// level for it, where VictoriaLogs decodes it. Keys are decoded by both.
 	{name: "escaped level value", msg: `{"level":"\u0069nfo"}`, want: "unknown", rawRows: true},
 	{name: "escaped level key", msg: `{"\u006cevel":"warn"}`, want: "warn"},
+	// A spelling the keyword scan cannot find (information is no whole word
+	// of the scan): only the decoded key gives info, as in Loki v3.7.7.
+	{name: "escaped level key, long spelling", msg: `{"\u006cevel":"Information"}`, want: "info"},
 }
 
 func (c detectedLevelProbe) row(ts time.Time) pushdownRow {

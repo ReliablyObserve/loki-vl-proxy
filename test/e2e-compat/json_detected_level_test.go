@@ -151,6 +151,9 @@ var detectedLevelProbes = []detectedLevelProbe{
 	// known level for it; keys it decodes, as VictoriaLogs does.
 	{name: "escaped level value", msg: `{"level":"\u0069nfo"}`, want: "unknown", route: "raw"},
 	{name: "escaped level key", msg: `{"\u006cevel":"warn"}`, want: "warn", route: "stats"},
+	// A spelling the keyword scan cannot find (information is no whole word
+	// of the scan): only the decoded key gives info, as in Loki v3.7.7.
+	{name: "escaped level key, long spelling", msg: `{"\u006cevel":"Information"}`, want: "info", route: "stats"},
 	// OTLP records. A severity text VictoriaLogs synthesised from the number
 	// (Unspecified, Info2) is no level for Loki, which reads the number, or the
 	// line when the record has none.
