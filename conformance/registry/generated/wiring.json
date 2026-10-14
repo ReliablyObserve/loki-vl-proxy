@@ -428,8 +428,10 @@
     "semantics/json-metric-detected-level-derivation": [
       "internal/proxy/detected_level_presence_sweep_test.go",
       "internal/proxy/detected_level_presence_test.go",
+      "internal/proxy/detected_level_shared_unpack_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
       "internal/proxy/stored_level_series_limit_test.go",
+      "test/e2e-compat/detected_level_variants_test.go",
       "test/e2e-compat/json_detected_level_series_limit_test.go",
       "test/e2e-compat/json_detected_level_test.go"
     ],
@@ -558,6 +560,7 @@
     ],
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_test.go",
+      "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
       "test/e2e-compat/detected_level_test.go"
@@ -660,6 +663,9 @@
     ],
     "internal/proxy/detected_level_response_test.go": [
       "severity-exposure-surfaces"
+    ],
+    "internal/proxy/detected_level_shared_unpack_test.go": [
+      "semantics/json-metric-detected-level-derivation"
     ],
     "internal/proxy/detected_level_test.go": [
       "severity-detected-level-derivation"
@@ -949,6 +955,9 @@
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
+    "internal/translator/detected_level_keyword_test.go": [
+      "severity-detected-level-derivation"
+    ],
     "internal/translator/detected_level_logsql_test.go": [
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
@@ -1010,6 +1019,9 @@
     "test/e2e-compat/detected_level_test.go": [
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
+    ],
+    "test/e2e-compat/detected_level_variants_test.go": [
+      "semantics/json-metric-detected-level-derivation"
     ],
     "test/e2e-compat/drilldown_field_breakdown_test.go": [
       "limits/drilldown-breakdown-exact",
@@ -1188,7 +1200,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 113,
+  "tests_with_markers": 116,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

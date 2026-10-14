@@ -60,19 +60,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at its first match, which bounds what it returns, not the work. On one hour
   of the A/B harness's backfill (about 290,000 lines, a level stream label on
   every row) with VictoriaLogs capped at 2 CPUs, warm p50, Explore's volume over
-  `| json` takes 95 ms where main takes 74 ms and a volume behind a
+  `| json` takes 98 ms where main takes 79 ms and a volume behind a
   `detected_level` filter before the parser (which unpacks logfmt for every line
-  first) 288 ms where main takes 270 ms (the builds measured in the other order:
-  107 ms against 96 ms and 256 ms against 288 ms), and 6h and 24h stay within
-  12%. Rows with no stored level (the level only in the line) pay the chain's
-  own query, which reads every line, and this is slower than main, which
-  answers 4 series there where Loki answers 8: Explore's volume takes 282 ms
-  where main takes 38 ms at 1h (248 ms against 88 ms in the other order),
-  1.5 s against 0.55 s at 6h and 6.1 s against 2.3 s at 24h, and the
-  detected_level breakdown with the error rows dropped 99 ms against 56 ms at
-  1h and 3.8 s against 2.2 s at 24h. The probes are not the cost (with them free
-  and the stored-level attempt skipped the request takes 287 ms against 302 ms);
-  the chain's query is: 295 ms against 104 ms for main's on VictoriaLogs alone.
+  first) 279 ms where main takes 181 ms (the builds measured in the other order:
+  76 ms against 101 ms and 245 ms against 259 ms), and 6h and 24h stay within
+  8%. Rows with no stored level (the level only in the line) pay the chain's
+  own query, which reads every line; main answers 4 series there where Loki
+  answers 8. The chain parses each line once for the plan's labels and for the
+  level (one `unpack_json`, where the plan unpacked its labels itself and the
+  pipes the level keys again) and runs its keyword regexp only on lines that
+  hold one of the nine words as a whole word (VictoriaLogs' `i()` filter, a
+  superset of what the regexp matches), and the escape check of the presence
+  probe is a substring filter. On one hour of that data, VictoriaLogs alone
+  and capped at 2 CPUs, Explore's volume takes 105 ms where main takes 84 ms
+  (102 ms against 87 ms in the other order, 15 runs each) and was 282 ms
+  against 38 ms in the previous revision; at 6h and 24h it takes 0.69 s
+  against 0.54 s and 2.75 s against 2.39 s (was 1.5 s and 6.1 s). On the
+  VictoriaLogs side, per query: main's 102 ms and 225 CPU-ms, the previous
+  chain 290 ms and 550 CPU-ms, this one 107 ms and 260 CPU-ms. The first view
+  of a window (nothing remembered) still asks the stored-level query, the
+  level probes and the presence probe before the chain, about 0.5 s at 1h
+  where main takes 0.08 s.
   With
   `-detected-level-body-scan=false` the raw-row evaluator answers. A line that
   is JSON for Loki (a brace first and last) is never read as logfmt by the

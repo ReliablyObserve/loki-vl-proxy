@@ -73,7 +73,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 21 | 10 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 9 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 4 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 5 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 5 | partial |
@@ -125,8 +125,8 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `semantics/json-metric-detected-level-derivation` | 3 | 2.23s (DLV2 json error filter, detected_level, 1h) | 0.25s |
-| `severity-detected-level-derivation` | 9 | 2.23s (DLV2 json error filter, detected_level, 1h) | 0.25s |
+| `semantics/json-metric-detected-level-derivation` | 3 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.37s |
+| `severity-detected-level-derivation` | 9 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.37s |
 | `explore-logs-volume-json` | 7 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `semantics/label-filter-before-parser-pushdown` | 3 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
@@ -137,7 +137,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
 | `semantics/json-filter-pushdown-without-error-drop` | 3 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
-| `parser-logfmt` | 2 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
+| `parser-logfmt` | 1 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
 | `semantics/unwrap-sample-validity` | 1 | 0.10s (U13 logfmt latency_ms over every service, 1h) | 0.00s |
