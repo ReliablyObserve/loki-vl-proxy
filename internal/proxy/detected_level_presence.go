@@ -166,8 +166,10 @@ const levelChainDelete = " | delete __dl, __dl_*, __j_*, __l_*"
 func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Values) url.Values {
 	query := params.Get("query")
 	full := strings.TrimSuffix(fullLevelChain(), levelChainDelete)
+	// One chain only: its base is the probe's, and a second chain (a query of
+	// several segments) may sit on a different one.
 	at := strings.Index(query, full)
-	if path != "/select/logsql/stats_query_range" || at < 0 {
+	if path != "/select/logsql/stats_query_range" || at < 0 || strings.Count(query, full) != 1 {
 		return params
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
@@ -181,7 +183,7 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	}
 	out := cloneURLValues(params)
 	pruned := translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, present)
-	out.Set("query", strings.ReplaceAll(query, full, strings.TrimSuffix(pruned, levelChainDelete)))
+	out.Set("query", strings.Replace(query, full, strings.TrimSuffix(pruned, levelChainDelete), 1))
 	return out
 }
 
@@ -190,7 +192,7 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 // cannot be told.
 func (p *Proxy) detectedLevelPresence(ctx context.Context, base string, start, end time.Time) *translator.DetectedLevelPresence {
 	key := "level-presence:v1:" + getOrgID(ctx) + ":" + base
-	mask, _, err := p.coveredWindowProbe(key, start, end, func(from, to time.Time, acc string) (string, bool, error) {
+	mask, _, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, acc string) (string, bool, error) {
 		found, err := p.levelPresenceMask(ctx, base, from, to)
 		return orMasks(acc, found), false, err
 	})
@@ -210,10 +212,13 @@ func (p *Proxy) detectedLevelPresence(ctx context.Context, base string, start, e
 // timestamps are checked on every request, and it keeps the age of the check
 // that covered each part: extending an entry leaves its expiry where it was,
 // because a part checked long ago must not look checked now.
-func (p *Proxy) coveredWindowProbe(key string, start, end time.Time, check func(from, to time.Time, acc string) (string, bool, error)) (string, bool, error) {
+func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end time.Time, check func(from, to time.Time, acc string) (string, bool, error)) (string, bool, error) {
 	if p.cache == nil {
 		return check(start, end, "")
 	}
+	// What a window holds depends on what the caller may see: the tenant, the
+	// routing and the forwarded identity, as for every cached response.
+	key += ":scope:" + p.contextScopeFingerprint(ctx)
 	type window struct{ from, to time.Time }
 	todo := []window{{start, end}}
 	coveredFrom, coveredTo := start, end

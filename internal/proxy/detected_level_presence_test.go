@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -226,7 +228,7 @@ func TestCoveredWindowProbeKeepsTheAgeOfTheCheck(t *testing.T) {
 	var checked []time.Duration // the length of each window a check ran over
 	probe := func(to time.Duration) {
 		t.Helper()
-		if _, _, err := p.coveredWindowProbe("age-test", s0, s0.Add(to), func(from, end time.Time, acc string) (string, bool, error) {
+		if _, _, err := p.coveredWindowProbe(context.Background(), "age-test", s0, s0.Add(to), func(from, end time.Time, acc string) (string, bool, error) {
 			checked = append(checked, end.Sub(from))
 			return acc, false, nil
 		}); err != nil {
@@ -284,7 +286,7 @@ func TestCoveredWindowProbeRefreshChecksOnlyTheRecentTail(t *testing.T) {
 	var checked []time.Duration
 	probe := func(shift time.Duration) {
 		t.Helper()
-		if _, _, err := p.coveredWindowProbe("refresh-test", now.Add(-time.Hour+shift), now.Add(shift), func(from, end time.Time, acc string) (string, bool, error) {
+		if _, _, err := p.coveredWindowProbe(context.Background(), "refresh-test", now.Add(-time.Hour+shift), now.Add(shift), func(from, end time.Time, acc string) (string, bool, error) {
 			checked = append(checked, end.Sub(from))
 			return acc, false, nil
 		}); err != nil {
@@ -303,5 +305,65 @@ func TestCoveredWindowProbeRefreshChecksOnlyTheRecentTail(t *testing.T) {
 		if limit := statsPushdownRiskSettle + time.Duration(i+1)*5*time.Second + time.Second; got > limit {
 			t.Errorf("refresh %d checked %v, more than the %v the horizon allows", i+1, got, limit)
 		}
+	}
+}
+
+// Two callers of one tenant who may see different data (forwarded
+// credentials, routing) never share a remembered window: a mask or verdict
+// measured for the narrower scope says nothing about the wider.
+func TestCoveredWindowProbeKeepsScopesApart(t *testing.T) {
+	srv, _ := newJSONVolumeFakeVL(t, nil)
+	p := newSlidingTestProxy(t, srv.URL)
+	p.forwardHeaders = []string{"Authorization"}
+	scoped := func(token string) context.Context {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Scope-OrgID", "0")
+		r.Header.Set("Authorization", token)
+		return withOrgID(r).Context()
+	}
+	s0 := time.Unix(1700000400, 0).UTC()
+	checks := 0
+	probe := func(ctx context.Context) {
+		t.Helper()
+		if _, _, err := p.coveredWindowProbe(ctx, "scope-test", s0, s0.Add(30*time.Minute), func(_, _ time.Time, acc string) (string, bool, error) {
+			checks++
+			return acc, false, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe(scoped("Bearer narrow"))
+	probe(scoped("Bearer wide"))
+	probe(scoped("Bearer narrow"))
+	if checks != 2 {
+		t.Fatalf("%d checks, want 2: the second scope must not reuse the first's window, the third must reuse its own", checks)
+	}
+}
+
+// A request holding the chain twice (two segments, perhaps on different
+// bases) keeps both full: the mask of the first base says nothing about the
+// second.
+func TestPruneLevelChainLeavesTwoChainsAlone(t *testing.T) {
+	srv, fake := newJSONVolumeFakeVL(t, nil)
+	fake.presence = true
+	p := newSlidingTestProxy(t, srv.URL)
+	chain := fullLevelChain()
+	for _, tc := range []struct {
+		name, query string
+		pruned      bool
+	}{
+		{"one chain", `app:="a" ` + chain + ` | stats by (detected_level) count()`, true},
+		{"two chains", `app:="a" ` + chain + ` | stats by (detected_level) count() ||| app:="b" ` + chain + ` | stats by (detected_level) count()`, false},
+	} {
+		params := url.Values{"query": {tc.query}, "start": {"2023-11-14T22:00:00Z"}, "end": {"2023-11-14T22:30:00Z"}}
+		got := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query_range", params).Get("query")
+		if (got != tc.query) != tc.pruned {
+			t.Errorf("%s: pruned=%v, want %v", tc.name, got != tc.query, tc.pruned)
+		}
+	}
+	// an instant query has no window to probe
+	params := url.Values{"query": {`app:="a" ` + chain + ` | stats by (detected_level) count()`}, "time": {"2023-11-14T22:30:00Z"}}
+	if got := p.pruneLevelChain(context.Background(), "/select/logsql/stats_query", params); got.Get("query") != params.Get("query") {
+		t.Errorf("an instant query was changed")
 	}
 }

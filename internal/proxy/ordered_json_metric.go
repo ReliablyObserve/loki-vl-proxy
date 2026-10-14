@@ -1563,7 +1563,7 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 		}
 	}
 	key := "stats-pushdown-risk:v4:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
-	_, risky, err := p.coveredWindowProbe(key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
+	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
 		risky, err := check(from, to)
 		return "", risky, err
 	})
