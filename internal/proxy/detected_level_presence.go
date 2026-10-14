@@ -94,7 +94,10 @@ func levelPresencePredicate(i int) string {
 		}
 		return "-__p_h:* " + strings.Join(words, " ")
 	}
-	return `-__p_h:* _msg:~"\\\\u"`
+	// A substring filter, not a regexp for the two bytes backslash and u: the
+	// same lines, without the regexp engine over every undecided row, which
+	// was most of what the witness cost.
+	return `-__p_h:* _msg:*"\\u"*`
 }
 
 // levelPresenceQuery returns the probe: one row of counts, one per stored

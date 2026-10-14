@@ -148,7 +148,7 @@ func splitLogsQLPipes(query string) []string {
 
 // fakeLogsQLFilter parses and evaluates the filter expressions the pushdown
 // and its probes emit with VictoriaLogs semantics over a row's values:
-// `field:="v"`, `field:~"re"`, `field:*`, `field:"phrase"` and `field:word`
+// `field:="v"`, `field:~"re"`, `field:*`, `field:*"text"*`, `field:"phrase"` and `field:word`
 // (a word delimited by non-word characters; letters, digits and underscores
 // are word characters), `-`/`!` negation, parentheses, implicit and, `or`.
 type fakeLogsQLFilter struct {
@@ -263,6 +263,16 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	}
 	value := f.vals[name]
 	switch {
+	case strings.HasPrefix(f.src[f.pos:], `*"`):
+		// A substring filter, field:*"text"*.
+		f.pos++
+		sub := f.quoted()
+		if !strings.HasPrefix(f.src[f.pos:], "*") {
+			f.t.Errorf("fake VL: expected * after the substring at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return strings.Contains(value, sub)
 	case strings.HasPrefix(f.src[f.pos:], "*"):
 		f.pos++
 		return value != ""

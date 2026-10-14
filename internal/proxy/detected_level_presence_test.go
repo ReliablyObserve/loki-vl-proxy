@@ -30,7 +30,7 @@ func TestLevelPresenceQuery(t *testing.T) {
 		`count() if (severity_number:*) as p15, count() if (-__p_h:* _msg:"level") as p16,`,
 		`count() if (-__p_h:* _msg:"log" _msg:"level") as p19,`,
 		`count() if (-__p_h:* _msg:"severity_text") as p27,`,
-		`count() if (-__p_h:* _msg:~"\\\\u") as p30`,
+		`count() if (-__p_h:* _msg:*"\\u"*) as p30`,
 	} {
 		if !strings.Contains(query, want) {
 			t.Errorf("probe lacks %s:\n%s", want, query)
