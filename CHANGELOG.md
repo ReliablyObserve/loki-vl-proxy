@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-10-14
+
 ### Fixed
 
 - The query translator no longer panics on a label filter after `| json` or `| logfmt` whose label name contains the byte `\x01` (found by fuzzing). The proxy already rejects such a query with Loki's parse error before it reaches the translator, so clients were not affected; translator callers that skip that check now get a plain filter instead of a crash (#761).
