@@ -33,7 +33,7 @@ Proven in part; the rest is named in the item's cases.
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 10 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 9 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
-| `severity-detected-level-derivation` — detected_level is derived on the read path | — | 5 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
+| `severity-detected-level-derivation` — detected_level is derived on the read path | — | 6 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 3 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
 | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 5 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
 

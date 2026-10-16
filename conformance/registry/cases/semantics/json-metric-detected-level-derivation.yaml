@@ -169,12 +169,20 @@ why: |
   7.5 s to 0.67 s (6h) and 2.6 s (24h), and on the data with a level stream
   label from 2.3 s to 7 ms at 1h. The first view of a window (nothing
   remembered: the stored-level attempt, the level probes, the presence probe,
-  then the chain) takes about 0.5 s at 1h for Explore's volume where main takes
-  0.08 s (0.55-0.68 s in the previous revision, both builds restarted on one
-  stack): the probes scan the window and share the 2 CPUs with the chain, the
-  heaviest of them (detectedLevelKeysRisk, 260-300 ms: two level keys in a line,
-  an escape in a level value, a brace without its closing brace) one this change
-  adds. A window with a row that has no stored level asks
+  then the chain) takes 0.31 s at 1h for Explore's volume where main before #760 takes
+  0.06 s (0.49 s before the first-view cuts) and 7.6 s at 24h against 2.9 s
+  (11.2 s), medians of cold requests with each build restarted before them: the
+  probes scan the window and share the 2 CPUs with the chain. The heaviest of
+  them was detectedLevelKeysRisk (320-380 CPU-ms of an hour of rows: two level
+  keys in a line, an escape in a level value, a brace without its closing
+  brace), whose two-keys patterns now run behind a filter of phrases
+  (logsqlTwiceFilter over detectedLevelKeyNames: one key name twice, or two of
+  the names, answered from VictoriaLogs' token index and a superset of the
+  patterns; 45-55 CPU-ms; a selector of 11.8 KB or more, which would push the
+  longer text past -search.maxQueryLen, gets the probe without the gate), and
+  the probes of the labels are remembered apart from the level probes
+  (cachedStatsPushdownRisk), so the chain does not ask again what the
+  stored-level query asked. A window with a row that has no stored level asks
   twice, the stored-level attempt first (it costs what main's query costs; its
   verdict is remembered for the base for five minutes so the next ask goes to
   the chain at once), and pays the chain with the three guard probes and the

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **The first view of a window of `sum by (detected_level)` / `sum by (level,
+  detected_level)` over `| json`, on rows with no stored level, costs less
+  (follow-up to #760).** A window nothing remembers (probed again every five
+  minutes) asks the stored-level query, the level probes and the presence
+  probe before the chain. Three cuts, none of which changes an answer: the two
+  "two level keys" patterns of the level keys probe (a key twice in a JSON or
+  logfmt line), which scanned the rest of every line holding a level key and
+  were the heaviest probe, 320 to 380 CPU-ms of an hour of rows, run behind a
+  filter of phrases (one key name twice, or two of the names; answered from
+  VictoriaLogs' token index, a superset of the patterns, never a second
+  decision), 45 to 55 CPU-ms; a selector of 11.8 KB or more, for which the
+  longer probe would pass VictoriaLogs' 16 KiB query length, gets the probe
+  without the gate; and the label probes (main's partial-parse probe among
+  them) are remembered apart from the level probes, so the chain takes their
+  verdict from the stored-level query instead of asking the same question
+  again (51 CPU-ms of an hour). Explore's JSON volume on the harness's backfill
+  without the level stream label, a proxy restarted before each request,
+  VictoriaLogs capped at 2 CPUs (median of 7 at 1h, 5 at 24h): 311 ms against
+  494 ms at 1h and 7.6 s against 11.2 s at 24h (main before #760: 56 ms and
+  2.9 s), 761 CPU-ms against 1085 and 15.2 CPU-s against 22.6; the
+  `sum by (detected_level)` breakdown 213 ms against 373 ms and 4.8 s against
+  8.1 s. Warm times are unchanged.
+
 ## [2.16.0] - 2026-10-16
 
 ### Fixed
