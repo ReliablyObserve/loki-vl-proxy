@@ -383,7 +383,10 @@ func isStoredLevelAttempt(call string) bool {
 // send, given the probes of its parsed labels (plain), the three of the chain
 // (level), the stored-level attempts and the chain stats requests it made: the
 // attempt alone answered (the labels' probes only), the attempt then the chain
-// (both sets), or the chain alone (a remembered verdict).
+// (both sets; the labels' probes ask once when the proxy remembers verdicts,
+// as in production, and twice when it has no cache, as in these in-process
+// proxies, which the unit tests count exactly), or the chain alone (a
+// remembered verdict).
 func levelStatsOutcome(plain, level, attempts, stats int) (lo, hi int, ok bool) {
 	switch {
 	case attempts == 1 && stats == 0:

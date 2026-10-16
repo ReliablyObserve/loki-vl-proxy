@@ -1706,70 +1706,13 @@ const statsPushdownRiskSettle = 5 * time.Minute
 // remembering the window already found free of risky lines per tenant, query
 // and field set, so a refresh or a wider range checks only the uncovered part
 // (coveredWindowProbe). A window with a risky line is never cached.
+//
+// The probes of the labels (parse differences of the grouped fields) and the
+// level probes (lines the detected_level pipes read differently) are
+// remembered apart: the stored-level attempt and the chain, which the same
+// request asks one after the other, share the label probes, and only the chain
+// asks for the level probes. A verdict is risky if either is.
 func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, levelRisk bool, start, end time.Time) (bool, error) {
-	check := func(from, to time.Time) (bool, error) {
-		// The probes run beside each other; one round trip.
-		type result struct {
-			risky bool
-			err   error
-		}
-		probes := []func(context.Context) (bool, error){
-			func(ctx context.Context) (bool, error) {
-				if len(errorFilters) == 0 {
-					return false, nil
-				}
-				return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
-			},
-		}
-		if levelRisk {
-			probes = append(probes,
-				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
-				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
-				func(ctx context.Context) (bool, error) { return p.detectedLevelUnpackRisk(ctx, base, from, to) })
-		}
-		// A plan that only derives detected_level has no label to probe.
-		fieldParser := parser
-		if len(fields) == 0 {
-			fieldParser = ""
-		}
-		if fieldParser != "" {
-			probes = append(probes, func(ctx context.Context) (bool, error) {
-				return p.extractedBothKeysRisk(ctx, fieldParser, base, fields, from, to)
-			})
-		}
-		switch fieldParser {
-		case "json":
-			probes = append(probes,
-				func(ctx context.Context) (bool, error) {
-					return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
-				},
-				func(ctx context.Context) (bool, error) {
-					return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to)
-				})
-		case "logfmt":
-			probes = append(probes, func(ctx context.Context) (bool, error) {
-				return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
-			})
-		}
-		// The first risky verdict (or error) decides; the other probes are
-		// cancelled rather than waited for.
-		probeCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		results := make(chan result, len(probes))
-		for _, probe := range probes {
-			go func() {
-				risky, err := probe(probeCtx)
-				results <- result{risky, err}
-			}()
-		}
-		for range probes {
-			r := <-results
-			if r.err != nil || r.risky {
-				return r.risky, r.err
-			}
-		}
-		return false, nil
-	}
 	spelled := make([]string, len(fields))
 	for i, field := range fields {
 		spelled[i] = field
@@ -1777,12 +1720,94 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 			spelled[i] += "=" + vl
 		}
 	}
-	key := "stats-pushdown-risk:v4:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
+	labels := func(ctx context.Context) (bool, error) {
+		key := "stats-pushdown-risk:v5:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + base
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+			probes := []func(context.Context) (bool, error){
+				func(ctx context.Context) (bool, error) {
+					if len(errorFilters) == 0 {
+						return false, nil
+					}
+					return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
+				},
+			}
+			// A plan that only derives detected_level has no label to probe.
+			fieldParser := parser
+			if len(fields) == 0 {
+				fieldParser = ""
+			}
+			if fieldParser != "" {
+				probes = append(probes, func(ctx context.Context) (bool, error) {
+					return p.extractedBothKeysRisk(ctx, fieldParser, base, fields, from, to)
+				})
+			}
+			switch fieldParser {
+			case "json":
+				probes = append(probes,
+					func(ctx context.Context) (bool, error) {
+						return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
+					},
+					func(ctx context.Context) (bool, error) {
+						return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to)
+					})
+			case "logfmt":
+				probes = append(probes, func(ctx context.Context) (bool, error) {
+					return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
+				})
+			}
+			return probes
+		})
+	}
+	if !levelRisk {
+		return labels(ctx)
+	}
+	levels := func(ctx context.Context) (bool, error) {
+		key := "stats-pushdown-risk:v5:level:" + getOrgID(ctx) + ":" + base
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+			return []func(context.Context) (bool, error){
+				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelUnpackRisk(ctx, base, from, to) },
+			}
+		})
+	}
+	return anyRisk(ctx, []func(context.Context) (bool, error){labels, levels})
+}
+
+// rememberedRisk runs the probes of the parts of [start, end] that the verdict
+// under key does not cover (coveredWindowProbe).
+func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.Time, probes func(from, to time.Time) []func(context.Context) (bool, error)) (bool, error) {
 	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
-		risky, err := check(from, to)
+		risky, err := anyRisk(ctx, probes(from, to))
 		return "", risky, err
 	})
 	return risky, err
+}
+
+// anyRisk runs the probes beside each other, one round trip. The first risky
+// verdict (or error) decides; the other probes are cancelled rather than
+// waited for.
+func anyRisk(ctx context.Context, probes []func(context.Context) (bool, error)) (bool, error) {
+	type result struct {
+		risky bool
+		err   error
+	}
+	probeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan result, len(probes))
+	for _, probe := range probes {
+		go func() {
+			risky, err := probe(probeCtx)
+			results <- result{risky, err}
+		}()
+	}
+	for range probes {
+		r := <-results
+		if r.err != nil || r.risky {
+			return r.risky, r.err
+		}
+	}
+	return false, nil
 }
 
 // statsPushdownRiskExists runs a `| limit 1` risk query over [start, end] and

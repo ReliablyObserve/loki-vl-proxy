@@ -836,8 +836,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 					stats = nil
 				} else {
 					// Some do not: the stored-level attempt, with its label probes,
-					// then the chain with the level probes.
-					guards += tc.guards - levelProbes
+					// then the chain with the level probes; the chain takes the
+					// label probes' verdict from the attempt.
 					stats = chain
 				}
 			}
