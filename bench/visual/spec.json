@@ -368,6 +368,19 @@
    ]
   },
   {
+   "id": "explore-json-error-filter-metric",
+   "kind": "explore",
+   "query": "sum by (app) (count_over_time({namespace=\"prod\"} | json | __error__=\"\" [$__auto]))",
+   "fixes": [
+    "semantics/json-error-filter-metric-split-pushdown"
+   ],
+   "covers": [
+    "semantics/json-error-filter-metric-split-pushdown",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

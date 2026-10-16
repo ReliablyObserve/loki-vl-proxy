@@ -1,0 +1,44 @@
+id: semantics/json-empty-value-label-series
+title: A parsed label with an empty value is its own series in Loki, merged into the label-less series by the proxy (open)
+proves:
+  - parser-error-and-label-collision
+consumer: api
+why: |
+  Grouped by a key of the JSON body, Loki keeps a line whose key holds an
+  empty value (`{"a":""}`, or a value its unescape rejects such as a lone
+  surrogate `"\ud800"`, which pkg/logql/log/parser.go readValue turns into
+  "") in a series `{a=""}`, apart from the lines without the key. The
+  proxy's row evaluator drops empty values when it builds the series
+  (orderedJSONMetricPlan.groupLabels), and VictoriaLogs groups a missing and
+  an empty field alike, so both land in the label-less series.
+
+  Measured on VictoriaLogs v1.52.0 against Loki v3.7.7 with a crafted
+  corpus: `sum by (a) (count_over_time({...} | json | __error__="" [1m]))`
+  answered 23 series on Loki and 22 on the proxy (main and this change
+  alike); the 6 lines of `{a=""}` were added to `{}`.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (a) (count_over_time({app="json-empty"} | json | __error__="" [1m]))'
+    start: now-10m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The stream holds lines `{"a":""}`, `{"a":"x"}` and `{"b":1}`.
+compare:
+  mode: exact
+  fields: [series_labels, values]
+  expect: |
+    Three series: {a=""}, {a="x"} and {} (not met: {a=""} is merged into {}).
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy ordered_json_metric.go groupLabels (row evaluator); stats pushdown grouping (VictoriaLogs cannot tell an empty field from a missing one)'
+  loki: 'pkg/logql/log/parser.go:137-211 parseLabelValue/readValue; the vector aggregation keeps the empty label'
+  proxy: 'empty-valued parsed labels dropped from the series'
+  planned_test: 'a row-evaluator unit case and an e2e on a corpus with empty values'
+  clusters: []

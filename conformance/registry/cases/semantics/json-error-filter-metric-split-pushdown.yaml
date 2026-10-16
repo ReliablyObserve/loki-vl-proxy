@@ -1,0 +1,133 @@
+id: semantics/json-error-filter-metric-split-pushdown
+title: A `| json | __error__=""` metric counts Loki's accepted lines from VictoriaLogs stats, reading only the doubtful lines raw (fixed)
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  `sum by (app) (count_over_time({namespace="prod"} | json | __error__="" [5m]))`
+  counts only the lines Loki's JSON parser accepts. VictoriaLogs attaches no
+  parser error, so the stats pushdown refused any `__error__` filter and every
+  such query read all selected lines as raw rows into the row evaluator:
+  1.6 s at 1 h (Loki 0.04 s) and a 502 on the row or byte limit at 6-24 h.
+
+  Loki (pkg/logql/log/parser.go:74-135 JSONParser.Process) runs
+  grafana/jsonparser ObjectEach over the line and walks a nested object only
+  when a required label starts with its key path (parser_hints.go
+  ShouldExtractPrefix); with `__error__` required parsing never stops early.
+  So whether Loki accepts a line depends on the query, and no single LogsQL
+  filter can match its JSONParserErr. The pushdown splits the selected lines
+  instead:
+
+  - a line that does not open with `{` after space, tab, line feed or
+    carriage return fails ObjectEach (jsonparser nextToken), so Loki drops it;
+  - a line VictoriaLogs parses as one JSON object (a sentinel member spliced
+    after the brace and read back with unpack_json; the splice cannot repair a
+    broken line, while wrapping the line in a new object could be closed by
+    trailing text) and that holds none of the constructs fastjson accepts and
+    jsonparser rejects (a backslash in a key, a member value starting with
+    `. e E +`, NaN or Inf: parseRawNumber/parseValue vs getType) is accepted
+    by Loki under every hint set, so VictoriaLogs counts it;
+  - every other brace-opened line is counted per bucket in the same scan and
+    read as a raw row only from those buckets, projected to the fields the
+    row evaluator reads, and evaluated by it.
+
+  The hazard constructs are looked for with a cached `| limit 1` probe; only
+  when it finds one does the scan run again with such lines moved to the raw
+  rows. The parse-risk probes for parsed labels check only lines
+  VictoriaLogs parses. Window sums add the bucket counts and the raw lines at
+  each evaluation point before rate is divided once. service_name is the
+  stream label Loki assigns from the other stream labels: VictoriaLogs takes
+  the first source field that is a stream label of the row (a stream filter
+  in `format if`), never structured metadata, as the row evaluator does.
+
+  Series limit: VictoriaLogs groups are not Loki series. It makes a group for
+  every row reaching stats (label filters therefore run before the stats
+  pipe), groups the spellings of one level apart (info, INFO, inf and
+  information are four groups and one detected_level series) and the empty
+  service name apart from unknown_service, so no count of groups says how many
+  series the answer holds. The split therefore never ends with the series limit
+  error from a group count. The lines read as raw rows have the grouped fields
+  blanked once `format if (<doubtful line>) "1" as __vlr` has marked them
+  (`format if (__vlr:*) "" as <field>`, pipes VictoriaLogs has had since
+  v1.40.0): they are counted per bucket whatever their labels, because the row
+  evaluator derives those itself, and so they form one group. Only the merged
+  answer, after the groups are keyed by their Loki labels and the raw rows are
+  added, is checked against `-max-stats-query-series`, with Loki's error. The
+  stats read keeps at most twice the limit in groups as a memory guard; a read
+  past it, or a response too large to read (`maxStatsBucketResponseBytes`:
+  many series over a long range at a fine step), only means the split does
+  not answer: the row evaluator does, as it did before the split, with its own
+  row and byte limits (`-manual-range-metric-row-limit`,
+  `-ordered-json-metric-max-bytes`) and Loki's series limit error where its
+  series exceed the limit. The fallback costs the stats scan on top of the row
+  evaluator (0.1 s at 1 h; at 24 h 1.5-4.8 s where the row evaluator would
+  have ended at once with the series limit error), because VictoriaLogs
+  aggregates every group before it answers. Grafana Logs Drilldown requests
+  (which keep the busiest series of an over-limit answer) and groupings by a
+  field starting with `_` take the row evaluator as before.
+
+  detected_level is Loki's value at ingest
+  (semantics/json-metric-detected-level-derivation). The split serves a
+  grouping by it only from the stored level fields: the pipes copy the stored
+  detected_level and level fields (`copy detected_level as __dl_d, level as
+  __dl_l`) before the sentinel splice, and nothing of the split touches the
+  copies except the blanking of the lines read as raw rows. It is served when
+  every counted group has a stored level and no stored detected_level (the
+  spellings of one level are separate groups and one series, merged after the
+  read, so the series limit counts series). The derivation chain, its
+  presence probe and its witness are never part of a split plan. A window
+  holding a counted line the stored fields do not decide (a level only the
+  body holds, none at all, a stored detected_level label), a line with another
+  stored level field (severity, lvl, the OTLP severity fields: the copy of
+  `level` cannot tell a stream label from metadata, and Loki reads the
+  stream's before the metadata's, found by a `| limit 1` probe), a read past the
+  group guard and a response too large to read leave the query to the row
+  evaluator, which derives the level of every line itself, as it does for the
+  lines read as raw rows. A filter on detected_level is not split: the filter
+  would need the derived level for the raw rows and the stored one for the
+  counted lines, so that plan keeps the row evaluator. Speed never outranks
+  Loki's answer: every doubtful window takes the row evaluator.
+
+  A step wider than the range leaves gaps between the evaluation windows; the
+  scan covers them, but a series none of whose counted buckets falls in a
+  window has no point in Loki's answer, so it is dropped before the limit is
+  applied.
+
+  Layer: VictoriaLogs native stats (`count() if (-__vlr:* ...)`,
+  `count() if (__vlr:*)`); bounded raw rows for the third set.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (app) (count_over_time({namespace="prod"} | json | __error__="" [5m]))'
+    start: now-24h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values from one stats_query_range scan
+    (two when the hazard probe finds a line) plus raw reads limited to the
+    buckets holding brace-opened lines VictoriaLogs cannot vouch for.
+    Measured on VictoriaLogs v1.52.0 with generator data: 1.68 s -> 0.06 s at
+    1 h (Loki 0.04 s); 502 -> 1.16 s at 24 h.
+gap:
+  status: fixed
+  fixed_by: "#758"
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy ordered_json_valid_split.go, ordered_json_metric.go stats pushdown'
+  loki: 'pkg/logql/log/parser.go:74-135 JSONParser.Process; pkg/logql/log/parser_hints.go:73-188; grafana/jsonparser parser.go ObjectEach/getType'
+  proxy: 'every selected line read as a raw row (502 at the row and byte limits at 6-24 h)'
+  planned_test: 'TestRangeMetricCompatibilityJSONErrorFilterSplit, ...SplitSeriesLimit and ...SplitDetectedLevel (test/e2e-compat, group semantics: the stored-level, body-level, gap-line and deep-nested variants against Loki); proxy TestJSONValidSplitPredicateDifferential, FuzzJSONValidSplitPredicate, TestJSONLokiRejectHazardTable, TestJSONValidSplitEligibility, TestJSONValidSplitMatchesRawEvaluator, TestJSONValidSplitReadsOnlyRawRowBuckets, TestJSONValidSplitCountsDeepLinesLikeLoki, TestJSONValidSplitFilteredOutGroupsStayUnderSeriesLimit, TestJSONValidSplitRawOnlyGroupIsNotASeries, TestJSONValidSplitServiceNameFromStreamLabelWithNewline, TestJSONValidSplitHazardProbeUsesTheSplitBraceFilter, TestJSONValidSplitHazardProbeCancelsTheFirstScan, TestJSONValidSplitMergedAnswerOverTheLimitReturnsLokiError, TestJSONValidSplitOverTwiceTheLimitGroupsFallBackToRowEvaluator, TestJSONValidSplitLevelSpellingsMergeUnderTheLimit, TestJSONValidSplitLimitPlusOneSeriesWithoutRawRows, TestJSONValidSplitOversizedResponseOnlyFallsBackForSplitPlans, TestJSONValidSplitDrilldownRequestsKeepTheRowEvaluator, TestJSONValidSplitMarksRawCandidatesOnce, TestJSONValidSplitGapGroupsAreNoSeries, TestJSONValidSplitHugeResponseFallsBackWithBoundedMemory, TestJSONValidSplitFilteredOutGroupsUnderSizeCap, TestJSONValidSplitSeriesLimitFailsBeforeRawRows, TestJSONValidSplitReadStopsAtTwiceTheSeriesLimit, TestJSONValidSplitRawCandidatesFormOneGroup, TestJSONValidSplitRawCandidatesOverManyStreamsFormOneGroup, TestJSONValidSplitResponseTooLargeFallsBackToRawEvaluator, TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack, TestJSONValidSplitDetectedLevelWindowsMatchTheRowEvaluator, TestOrderedJSONRowProjectionKeepsTheStoredLevelFields'
+  note: |
+    The e2e is green on VictoriaLogs v1.52.0 and v1.47.0. The row evaluator's guards (nesting depth 64,
+    1024 fields, 1 MiB line, 64 KiB value) now apply only to the raw rows: a line VictoriaLogs vouches
+    for is counted as Loki counts it, however wide and up to 300 levels deep (VictoriaLogs' JSON parser
+    limit); a deeper line is read raw and keeps the row evaluator's depth guard. A JSON key with an empty value still merges into the
+    label-less series (semantics/json-empty-value-label-series), on this path as on the row evaluator.
+  clusters: []

@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **`| json | __error__=""` metrics are counted by VictoriaLogs stats instead of
+  reading every line (#758).** `sum by (app) (count_over_time({namespace="prod"}
+  | json | __error__="" [5m]))` and the same shape with rate, bytes, a label
+  filter or a grouping by a parsed key, by a stream label or by service_name
+  read every selected line as a raw row into the proxy, because VictoriaLogs
+  attaches no parser error and Loki's `JSONParserErr` depends on the query
+  (`pkg/logql/log/parser.go` `JSONParser.Process` walks a nested object only
+  when a required label starts with its key path). The stats pushdown now splits
+  the lines: a line not opening with `{` after space, tab, line feed or carriage
+  return fails Loki's parser and is dropped; a line VictoriaLogs parses as one
+  JSON object (a sentinel member spliced after the brace and read back with
+  `unpack_json`) and that holds none of the constructs VictoriaLogs' parser
+  accepts and Loki's rejects (a backslash in a key, a value starting with `.`,
+  `e`, `E` or `+`, NaN or Inf) is accepted by Loki under every hint set and
+  counted by VictoriaLogs; every other brace-opened line is counted per bucket
+  in the same scan and read as a raw row only from those buckets, then evaluated
+  by the row evaluator. A cached `| limit 1` probe looks for the rejected
+  constructs and only when it finds one is the scan repeated (the first scan is
+  cancelled) with such lines moved to the raw rows. Label filters run before the
+  stats pipe, and the lines read as raw rows lose the grouped fields there
+  (marked once with `format if (...) "1" as __vlr`), so they form one group
+  however many labels they hold. Loki's series limit applies to the merged
+  answer only, never to VictoriaLogs groups, which are not series: the
+  spellings of one level are separate groups and one detected_level series,
+  filtered-out or unparseable lines make groups that are no series at all, and
+  a line between two evaluation windows (a step wider than the range) makes a
+  group Loki's answer has no point for. The stats read therefore keeps at most
+  twice `-max-stats-query-series` in groups as a memory guard (a response of
+  300,000 groups is no longer parsed whole), and a read past it, or a response
+  too large to read, only means the split does not answer: the row evaluator
+  does, as before this change, with its own row and byte limits and Loki's
+  series limit error where its series exceed the limit. Grafana Logs Drilldown
+  requests, which keep the busiest series of an over-limit answer, and
+  groupings by a field starting with `_` take the row evaluator as before.
+  A grouping by `detected_level` is split only from the stored level fields
+  (the stored `detected_level` and `level`, copied before anything else
+  touches them): when every counted line has a stored level the spellings of one
+  level merge into one series after the read; a level only the body holds, a
+  line without one, a stored `detected_level` label, another stored level
+  field (`severity`, `lvl`, OTLP severity), a read past the group guard or a
+  filter on `detected_level` leave the query to the row evaluator,
+  which derives the level of each line like Loki's ingest. The derivation of
+  `sum by (detected_level)` itself is #760's. Window sums add the bucket counts and the raw lines at each evaluation point
+  before rate divides once. service_name is taken from the first non-empty
+  source field that is a stream label of the row, as Loki assigns it at
+  ingest, never from structured metadata. Measured on VictoriaLogs v1.52.0 with
+  generator data against main: 1 h 0.56-2.44 s -> 0.03-0.07 s (Loki warm
+  0.01-0.05 s); 6 h 3.3 s or a 502 -> 0.10-0.45 s. A fallback costs one
+  VictoriaLogs stats scan on top of the row evaluator: 0.1 s more at 1 h, and
+  where the row evaluator ends at once with the series limit error (a grouping
+  by a field with thousands of values) 1.5-4.8 s at 24 h, because VictoriaLogs
+  aggregates every group before it answers. The raw row evaluator also reads
+  only the fields it needs (`| fields _time, _stream, _msg, level` plus every
+  stored field that can expose a required label), so `| json` instant queries
+  answer in half the time.
+
+### Fixed
+
+- **`| json | __error__=""` metrics over 6 h and 24 h answer instead of a 502
+  (#758).** These shapes read every selected line as a raw row and failed with
+  `manual range metric row limit exceeded` or `ordered JSON metric response
+  exceeds ... bytes` (502) once a range held about a million lines; Loki answers
+  them. With the stats pushdown above they answer in 0.4-1.4 s at 24 h on the
+  generator data. The row evaluator's guards (nesting depth 64, 1024 fields, 1
+  MiB line, 64 KiB value) now apply only to the lines read raw: a line
+  VictoriaLogs vouches for is counted as Loki counts it, however wide and up to
+  300 levels deep (VictoriaLogs' JSON parser limit); a deeper line is read raw
+  and keeps the row evaluator's depth guard. The row and byte limits
+  (`-manual-range-metric-row-limit`, `-ordered-json-metric-max-bytes`) bound the
+  raw rows with their existing errors.
+  `semantics/json-error-filter-metric-split-pushdown`; the open case
+  `semantics/json-empty-value-label-series` records that a parsed key with an
+  empty value is its own series in Loki and still merges into the label-less
+  series here, as before.
+- **A `| json` metric line that opens with a form feed fails like Loki
+  (#758).** The one-row lookup that answers Loki's `pipeline error` before any
+  row is scanned matched lines opening with `{` after RE2's `\s`, which
+  includes the form feed; Loki's parser skips only space, tab, line feed and
+  carriage return (grafana/jsonparser `nextToken`), so such a line is now found
+  by the lookup instead of the row scan
+  (`semantics/pipeline-error-text-parity`).
+
 ## [2.16.0] - 2026-10-16
 
 ### Fixed
