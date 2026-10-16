@@ -1640,15 +1640,30 @@ func detectedLevelStoredFilter() string {
 // of every line that holds a level key, which is every line of a body-only
 // window, and only a line with two of them can match.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	query := detectedLevelKeysQuery(base, true)
+	if len(query) > vlDefaultMaxQueryLen {
+		// The gate only narrows what the patterns run on, so a selector too long
+		// for the gated text gets the probe without it: the same verdict.
+		query = detectedLevelKeysQuery(base, false)
+	}
+	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// detectedLevelKeysQuery is the probe of detectedLevelKeysRisk, with the two-keys
+// patterns behind detectedLevelTwiceGate or not.
+func detectedLevelKeysQuery(base string, gated bool) string {
 	const closed = `\}[\s\v\x{85}\p{Z}]*$`
 	braced := strconv.Quote(translator.BracedLineRegexp)
 	twice := func(key string) string { return key + `(?s:.*)` + key }
-	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" ((" + detectedLevelTwiceGate() + " ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
-		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")))" +
+	twoKeys := "((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + "))"
+	if gated {
+		twoKeys = "(" + detectedLevelTwiceGate() + " " + twoKeys + ")"
+	}
+	return base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
+		" (" + twoKeys +
 		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
 		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")) | limit 1"
-	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
 // detectedLevelTwiceGate passes the lines that hold two level keys, a superset

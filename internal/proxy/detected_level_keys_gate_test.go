@@ -321,4 +321,22 @@ func TestKeysRiskProbeGatesTheTwoKeyPatterns(t *testing.T) {
 	if strings.Contains(ungated, "seq(") || !strings.Contains(ungated, twiceJSON) {
 		t.Fatalf("removing the gate leaves %s", ungated)
 	}
+	if plain := detectedLevelKeysQuery(base, false); strings.Contains(plain, "seq(") || strings.Count(plain, "(?s:.*)") != 2 || len(plain)+len(gate) > len(q)+2 {
+		t.Fatalf("the probe without the gate: %s", plain)
+	}
+
+	// A selector that fits VictoriaLogs' query length only without the gate (the
+	// gate adds 2.5 KB) gets the probe without it: the same patterns, so the same
+	// verdict, where the gated text would be refused.
+	queries = nil
+	long := `app:~"` + strings.Repeat("n", 12500) + `"`
+	if len(detectedLevelKeysQuery(long, true)) <= vlDefaultMaxQueryLen || len(detectedLevelKeysQuery(long, false)) > vlDefaultMaxQueryLen {
+		t.Fatalf("the long base of %d bytes does not separate the two texts (%d, %d)", len(long), len(detectedLevelKeysQuery(long, true)), len(detectedLevelKeysQuery(long, false)))
+	}
+	if risky, err := p.detectedLevelKeysRisk(context.Background(), long, time.Unix(1700000000, 0), time.Unix(1700003600, 0)); err != nil || risky {
+		t.Fatalf("risky=%v err=%v", risky, err)
+	}
+	if len(queries) != 1 || strings.Contains(queries[0], "seq(") || len(queries[0]) > vlDefaultMaxQueryLen {
+		t.Fatalf("a long selector should send the probe without the gate within %d bytes: %d queries, %d bytes", vlDefaultMaxQueryLen, len(queries), len(queries[0]))
+	}
 }
