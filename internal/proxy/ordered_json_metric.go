@@ -1504,7 +1504,7 @@ func orderedJSONUnpackPipesShared(parser string, unpack []string, stored map[str
 		}
 	}
 	sb.WriteString(beforeUnpack)
-	if parser != "" && !unpacked && (len(unpack) > 0 || beforeUnpack == "") {
+	if parser != "" && !unpacked && len(unpack) > 0 {
 		sb.WriteString(" | unpack_" + parser)
 		if len(required) != 0 {
 			sb.WriteString(" if (" + orderedJSONUnpackCond(unpack, stored) + ")")

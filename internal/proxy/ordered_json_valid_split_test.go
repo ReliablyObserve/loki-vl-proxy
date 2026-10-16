@@ -1616,3 +1616,48 @@ func TestJSONValidSplitGapGroupsAreNoSeries(t *testing.T) {
 		})
 	}
 }
+
+// A split plan with no label to read (an ungrouped sum, no filter) has nothing
+// to unpack: the sentinel splice is its only parse, and no `unpack_json fields
+// ()` is sent. The answer is the row evaluator's.
+// conformance: semantics/json-error-filter-metric-split-pushdown
+func TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
+	stream := map[string]string{"app": "api", "env": "prod"}
+	rows := []pushdownRow{
+		{ts: s0.Add(100 * time.Second), stream: stream, msg: `{"a":1}`},
+		{ts: s0.Add(110 * time.Second), stream: stream, msg: `{"a":2} trailing`},
+		{ts: s0.Add(120 * time.Second), stream: stream, msg: `not json`},
+		{ts: s0.Add(130 * time.Second), stream: stream, msg: `{"a":3,"x":.5}`},
+	}
+	for _, function := range []string{"count_over_time", "bytes_over_time"} {
+		query := `sum(` + function + `({env="prod"} | json | __error__="" [5m]))`
+		t.Run(function, func(t *testing.T) {
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			fake.jsonUnpack = vlFastjsonUnpackFields
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			plan, _ := compileOrderedJSONMetric(query)
+			if !plan.validOnly || !plan.pushdown || len(plan.unpackKeys()) != 0 {
+				t.Fatalf("plan must be a split plan without labels: %+v", plan)
+			}
+			want := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
+			code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
+			if code != http.StatusOK || !reflect.DeepEqual(got, want) {
+				t.Fatalf("status %d %.200s, got %v, want %v", code, body, got, want)
+			}
+			if len(fake.stats) == 0 {
+				t.Fatal("no stats query")
+			}
+			for _, stats := range fake.stats {
+				if strings.Contains(stats, "fields ()") || strings.Contains(stats, "keep_original_fields") {
+					t.Fatalf("stats query unpacks no label but says so: %s", stats)
+				}
+				if !strings.Contains(stats, jsonValidField) {
+					t.Fatalf("stats query lost the sentinel splice: %s", stats)
+				}
+			}
+		})
+	}
+}
