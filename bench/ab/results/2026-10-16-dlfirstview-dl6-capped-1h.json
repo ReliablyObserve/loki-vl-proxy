@@ -1,0 +1,61 @@
+{
+ "label": "dlfirstview-dl6-capped-1h",
+ "date": "2026-10-16",
+ "set": "metric-latency-gap",
+ "description": "Shapes the metric latency work targets: the parse-risk probes of the | json stats pushdown (breakdowns and volumes by underscore labels), label filters before the parser (Logs Drilldown pages with a level filter selected) and Explore volumes with a level filter. Run with the json-filter-pushdown set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 1
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DL6 explore volume, level filter before json",
+   "range": "1h",
+   "p50": {
+    "base": 0.288,
+    "pr": 0.3,
+    "loki": 0.022
+   },
+   "p95": {
+    "base": 0.382,
+    "pr": 0.384,
+    "loki": 0.075
+   },
+   "cold": {
+    "base": 0.561,
+    "pr": 0.595,
+    "loki": 0.658
+   },
+   "status": {
+    "base": "200",
+    "pr": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "base": 104.97,
+    "pr": 142.65,
+    "loki": 142.65
+   },
+   "parity_vs_reference": "same series, sum \u00b10.25%",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  }
+ ]
+}
