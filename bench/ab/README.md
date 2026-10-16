@@ -84,6 +84,20 @@ python3 bench/ab/report.py compare bench/ab/results/2026-09-23-pr611-control.jso
 
 It lists only the shapes that changed beyond noise and prints one summary line.
 
+### Rows with no stored level
+
+The generator puts a `level` stream label on every row, so a run answers
+`detected_level` from the stored fields. To measure the routes that read the
+level from the line (JSON `level`, logfmt, plain text), seed a stack whose
+rows have no stored level and run the same sets on it:
+
+```bash
+python3 bench/ab/pr_smoke.py --base origin/main --no-level-label --out /tmp/ab-body-only
+```
+
+(`stack.py seed --no-level-label` does the same for a hand-run stack; the
+generator option is `LOG_NO_LEVEL_LABEL=1`.)
+
 ## Reading the results
 
 - Timings are warm p50 over the runs after the first; the first run is kept as

@@ -73,7 +73,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 21 | 10 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 9 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 4 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 5 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 5 | partial |
@@ -125,9 +125,10 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
 | `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
 | `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `explore-logs-volume-json` | 6 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `severity-detected-level-derivation` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `semantics/json-metric-detected-level-derivation` | 3 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.37s |
+| `severity-detected-level-derivation` | 9 | 2.31s (DLV2 json error filter, detected_level, 1h) | 0.37s |
+| `explore-logs-volume-json` | 7 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
+| `semantics/label-filter-before-parser-pushdown` | 3 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
 | `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
 | `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |

@@ -371,21 +371,21 @@ func TestSize_TracksCorrectly(t *testing.T) {
 	c := New(60*time.Second, 100)
 	defer c.Close()
 
-	c.Set("k1", []byte("hello")) // 5 bytes
-	c.Set("k2", []byte("world")) // 5 bytes
+	c.Set("k1", []byte("hello")) // 2 + 5 bytes: the key counts
+	c.Set("k2", []byte("world")) // 2 + 5 bytes
 
 	entries, bytes := c.Size()
 	if entries != 2 {
 		t.Errorf("expected 2 entries, got %d", entries)
 	}
-	if bytes != 10 {
-		t.Errorf("expected 10 bytes, got %d", bytes)
+	if bytes != 14 {
+		t.Errorf("expected 14 bytes, got %d", bytes)
 	}
 
 	c.Invalidate("k1")
 	entries, bytes = c.Size()
-	if entries != 1 || bytes != 5 {
-		t.Errorf("after invalidate: entries=%d bytes=%d (expected 1, 5)", entries, bytes)
+	if entries != 1 || bytes != 7 {
+		t.Errorf("after invalidate: entries=%d bytes=%d (expected 1, 7)", entries, bytes)
 	}
 }
 
@@ -447,7 +447,7 @@ func TestSet_ReplaceExisting(t *testing.T) {
 	}
 
 	_, bytes := c.Size()
-	if bytes != len("v2-longer") {
+	if bytes != len("k")+len("v2-longer") {
 		t.Errorf("bytes should reflect replacement, got %d", bytes)
 	}
 }

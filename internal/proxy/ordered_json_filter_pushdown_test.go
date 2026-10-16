@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // pushdownRow is one stored line: stream labels (spelled alike on both
@@ -40,7 +42,18 @@ type pushdownFakeVL struct {
 	stats  []string
 	guards []string
 	raw    int
+	// presence answers the level presence probe from the rows; otherwise the
+	// probe gets no counts (the proxy then keeps the full chain). presenceFail
+	// makes it a backend error, presenceLine replaces the honest answer.
+	presence      bool
+	presenceFail  bool
+	presenceLine  func(honest string) string
+	presenceCalls []string
+	// presenceGate, when set, holds every presence probe until it is closed.
+	presenceGate chan struct{}
 }
+
+var pushdownLiteralFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"([^<\"]+)\" as (\\S+)$")
 
 var pushdownFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"<([^>]+)>\" as (\\S+)$")
 
@@ -135,7 +148,7 @@ func splitLogsQLPipes(query string) []string {
 
 // fakeLogsQLFilter parses and evaluates the filter expressions the pushdown
 // and its probes emit with VictoriaLogs semantics over a row's values:
-// `field:="v"`, `field:~"re"`, `field:*`, `field:"phrase"` and `field:word`
+// `field:="v"`, `field:~"re"`, `field:*`, `field:*"text"*`, `field:"phrase"` and `field:word`
 // (a word delimited by non-word characters; letters, digits and underscores
 // are word characters), `-`/`!` negation, parentheses, implicit and, `or`.
 type fakeLogsQLFilter struct {
@@ -235,8 +248,31 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return false
 	}
 	f.pos++
+	if name == "_stream" && strings.HasPrefix(f.src[f.pos:], "{") {
+		// A stream filter with one regexp matcher: _stream:{label=~"re"}.
+		end := strings.IndexByte(f.src[f.pos:], '}')
+		label, pattern, _ := strings.Cut(f.src[f.pos+1:f.pos+end], "=~")
+		f.pos += end + 1
+		pattern, _ = strconv.Unquote(pattern)
+		for _, m := range regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"`).FindAllStringSubmatch(f.vals["_stream"], -1) {
+			if m[1] == label && regexp.MustCompile("^(?:"+pattern+")$").MatchString(m[2]) {
+				return true
+			}
+		}
+		return false
+	}
 	value := f.vals[name]
 	switch {
+	case strings.HasPrefix(f.src[f.pos:], `*"`):
+		// A substring filter, field:*"text"*.
+		f.pos++
+		sub := f.quoted()
+		if !strings.HasPrefix(f.src[f.pos:], "*") {
+			f.t.Errorf("fake VL: expected * after the substring at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return strings.Contains(value, sub)
 	case strings.HasPrefix(f.src[f.pos:], "*"):
 		f.pos++
 		return value != ""
@@ -296,7 +332,33 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 	if !fakeLogsQLMatch(t, pipes[0], values) {
 		return values, false
 	}
+	inChain := false
+	// A chain built with translator.SharedUnpack holds the unpack of its plan:
+	// the unpack and the copies after the level are run as VictoriaLogs runs
+	// them, the rest of the chain is emulated whole.
+	sharedChain := chainSharedUnpack(query) != ""
 	for _, pipe := range pipes[1:] {
+		runPipe := true
+		switch {
+		case inChain:
+			// The rest of translator.BuildDetectedLevelChain: its result is
+			// already in detected_level.
+			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
+			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
+		case chainStart(pipe):
+			// The start of translator.BuildDetectedLevelChain; the chain is
+			// emulated whole by emulateDetectedLevelChainFor, for the fields and
+			// keys it was built from.
+			values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			if chainStoredLevelDecides(values, chainPresence(query)) {
+				values["__dl_h"] = "1" // the rows a stored level decides, as the chain's marker pipes flag them
+			}
+			inChain = true
+			runPipe = sharedChain && (strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
+		}
+		if !runPipe {
+			continue
+		}
 		switch {
 		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
 			var unpacked map[string]string
@@ -338,6 +400,13 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				}
 			}
 		case strings.HasPrefix(pipe, "format if ("):
+			if lit := pushdownLiteralFormatRE.FindStringSubmatch(pipe); lit != nil {
+				// format if (<filter>) "<text>" as dst: dst is the text where the filter holds.
+				if fakeLogsQLMatch(t, lit[1], values) {
+					values[lit[3]] = lit[2]
+				}
+				continue
+			}
 			m := pushdownFormatRE.FindStringSubmatch(pipe)
 			if m == nil {
 				t.Errorf("fake VL: unsupported format pipe %q", pipe)
@@ -348,8 +417,10 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				values[m[3]] = values[m[2]]
 			}
 		case strings.HasPrefix(pipe, "copy "):
-			src, dst, _ := strings.Cut(strings.TrimPrefix(pipe, "copy "), " as ")
-			values[dst] = values[strings.Trim(src, "`")]
+			for _, pair := range strings.Split(strings.TrimPrefix(pipe, "copy "), ", ") {
+				src, dst, _ := strings.Cut(pair, " as ")
+				values[dst] = values[strings.Trim(src, "`")]
+			}
 		case strings.HasPrefix(pipe, "delete "):
 			for _, field := range strings.Split(strings.TrimPrefix(pipe, "delete "), ", ") {
 				if prefix, ok := strings.CutSuffix(field, "*"); ok {
@@ -395,7 +466,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 	fake := &pushdownFakeVL{rows: rows, stored: stored}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			t.Errorf("parse form: %v", err)
+			if r.Context().Err() == nil { // a cancelled probe is not a failure
+				t.Errorf("parse form: %v", err)
+			}
 			return
 		}
 		query := r.Form.Get("query")
@@ -484,6 +557,35 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 		case "/select/logsql/query":
 			start := parseFakeVLTime(t, r.Form.Get("start"))
 			end := parseFakeVLTime(t, r.Form.Get("end"))
+			if isLevelPresenceQuery(query) {
+				fake.mu.Lock()
+				fake.presenceCalls = append(fake.presenceCalls, query)
+				fake.mu.Unlock()
+				if fake.presenceGate != nil {
+					<-fake.presenceGate
+				}
+				if fake.presenceFail {
+					http.Error(w, "backend failure", http.StatusInternalServerError)
+					return
+				}
+				line := "{}\n"
+				if fake.presence {
+					var rows []map[string]string
+					for _, row := range fake.rows {
+						if ts := row.ts.UnixNano(); ts < start || ts >= end {
+							continue
+						}
+						if values, kept := fake.applyPipes(t, presenceBase(query), row); kept {
+							rows = append(rows, values)
+						}
+					}
+					if line = levelPresenceResponse(rows); fake.presenceLine != nil {
+						line = fake.presenceLine(line)
+					}
+				}
+				_, _ = w.Write([]byte(line))
+				return
+			}
 			guard := strings.HasSuffix(query, " | limit 1")
 			fake.mu.Lock()
 			if guard {
@@ -554,6 +656,9 @@ func lokiPushdownReferenceErr(plan *orderedJSONMetricPlan, rows []pushdownRow, s
 			for k, v := range row.loki {
 				base[k] = v
 			}
+			if plan.derivesLevel {
+				referenceDerivedLevel(base, row)
+			}
 			labels, ok, err := plan.processWithStreamLabels(row.msg, base, row.stream)
 			if err != nil {
 				return nil, fmt.Errorf("%q: %w", row.msg, err)
@@ -622,6 +727,18 @@ func filterPushdownFixture(s0 time.Time) []pushdownRow {
 	return rows
 }
 
+// levelProbes is the number of guard probes a plan deriving detected_level
+// adds to the pushdown's own, and levelChain the pipes that compute it.
+const levelProbes = 3
+
+var levelChain = translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
+
+// sharedLevelChain is the chain of a plan that hands its unpack to it: the
+// labels, and the condition of the plan's own unpack ("" when it has none).
+func sharedLevelChain(cond string, labels ...string) string {
+	return translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, &translator.SharedUnpack{Keys: labels, Cond: cond})
+}
+
 func newFilterPushdownProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()
 	p := newSlidingTestProxy(t, backendURL)
@@ -651,8 +768,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		stats  string
 	}{
 		// Explore's logs volume for `{...} | json | service_version=`0.96.0` | pipeline=`logs/loki``.
-		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*) or (-pipeline:*)) fields (level, service_version, pipeline) keep_original_fields` + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | json | service_version="0.96.0" | pipeline="logs/loki" | drop __error__ [1m]))`, 2 + levelProbes,
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*) or (-pipeline:*)", "level", "service_version", "pipeline") + stored + ` | filter service_version:="0.96.0" | filter pipeline:="logs/loki" | stats by (level, detected_level) count() as c`},
 		// A user's grouped sum: the filter excludes unparsed lines, so errors need not be dropped.
 		{`sum by (level) (count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-pipeline:*)) fields (level, pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats by (level) count() as c`},
@@ -667,8 +784,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		// A field breakdown on a body key without dropping errors: `!=""` rejects unparsed lines.
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
-		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | unpack_json if ((-level:*) or (-service_version:* -` + "`service.version`" + `:*)) fields (level, service_version) keep_original_fields` + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
+		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2 + levelProbes,
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*)", "level", "service_version") + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)
@@ -688,11 +805,29 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.raw != 0 || len(fake.stats) != 1 || len(fake.guards) != tc.guards {
-				t.Fatalf("expected %d probes and one stats call without raw rows: raw=%d stats=%q guards=%q", tc.guards, fake.raw, fake.stats, fake.guards)
+			guards, stats := tc.guards, fake.stats
+			if strings.Contains(tc.query, "detected_level") {
+				if chain := chainStatsCalls(fake.stats); len(chain) == 0 {
+					// Every row the filters keep has a stream level: the stored
+					// level fields decide, in one stats query grouped by their
+					// copies and with none of the chain's guard probes.
+					guards -= levelProbes
+					if len(fake.stats) != 1 || !strings.Contains(fake.stats[0], " | copy detected_level as __dl_d, level as __dl_l | unpack_json") || !strings.Contains(fake.stats[0], " | stats by (level, __dl_d, __dl_l) ") {
+						t.Fatalf("expected one stored-level stats query: %q", fake.stats)
+					}
+					stats = nil
+				} else {
+					// Some do not: the stored-level attempt, with its label probes,
+					// then the chain with the level probes.
+					guards += tc.guards - levelProbes
+					stats = chain
+				}
 			}
-			if !strings.HasSuffix(fake.stats[0], tc.stats) {
-				t.Fatalf("stats query %q does not end with %q", fake.stats[0], tc.stats)
+			if fake.raw != 0 || len(fake.guards) != guards || stats != nil && len(stats) != 1 {
+				t.Fatalf("expected %d probes and one stats call without raw rows: raw=%d stats=%d have %d guards", guards, fake.raw, len(stats), len(fake.guards))
+			}
+			if stats != nil && !strings.HasSuffix(stats[0], tc.stats) {
+				t.Fatalf("stats query %q does not end with %q", stats[0], tc.stats)
 			}
 		})
 	}
@@ -767,7 +902,7 @@ func TestOrderedJSONFilterPushdownProbesKeepRawEvaluator(t *testing.T) {
 			// The probes run concurrently and the first one that finds a risky
 			// line cancels the others, so a sibling probe may not reach
 			// VictoriaLogs at all.
-			if fake.raw != 1 || len(fake.guards) == 0 || len(fake.guards) > tc.guards {
+			if fake.raw != 1 || len(fake.guards) == 0 || len(fake.guards) > tc.guards+levelProbes {
 				t.Fatalf("expected the probe to keep the raw evaluator: raw=%d guards=%q stats=%q", fake.raw, fake.guards, fake.stats)
 			}
 		})
@@ -952,7 +1087,7 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="" [1m]))`, false, nil, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="x" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | pipeline="x" | trace_id!="" | drop __error_details__ [1m]))`, true, []string{"level"}, []string{"pipeline", "trace_id"}},
-		{`sum by (service_version, detected_level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"service_version", "level"}, nil},
+		{`sum by (service_version, detected_level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"service_version"}, nil},
 		{`sum by (k8s_pod_name) (count_over_time({env="production"} | json | drop __error__ | k8s_pod_name!="" [1m]))`, true, []string{"k8s_pod_name"}, nil},
 		{`sum(count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (__error__) (count_over_time({env="production"} | json | pipeline="x" [1m]))`, false, nil, nil},
@@ -967,7 +1102,8 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
 		{`sum by (level_extracted, detected_level) (count_over_time({env="production"} | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, false, nil, nil},
+		// A filter on detected_level compares the derived value after the pipes that compute it.
+		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (a_b_c_d_e_f_g_h) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" [1m]))`, true, []string{"level"}, []string{"service_version"}},
@@ -1022,8 +1158,11 @@ func TestLogfmtFilterPushdownAliasKeepsRawEvaluator(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if fake.raw != tc.raw || len(fake.guards) != 1 {
-				t.Fatalf("raw=%d guards=%q, want raw=%d", fake.raw, fake.guards, tc.raw)
+			// A risky line cancels the probes still running; the stored level
+			// fields alone decide the level of a window of stream levels, without
+			// the level probes.
+			if fake.raw != tc.raw || len(fake.guards) == 0 || len(fake.guards) > 1+levelProbes || tc.raw == 0 && len(fake.guards) != 1 && len(fake.guards) != 1+levelProbes {
+				t.Fatalf("raw=%d guards=%d, want raw=%d", fake.raw, len(fake.guards), tc.raw)
 			}
 		})
 	}
@@ -1186,4 +1325,18 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 	if fake.raw != raw || len(fake.guards) != guards+2 {
 		t.Fatalf("expected the stats pushdown and its two probes to answer the filtered query: raw=%d guards=%q", fake.raw-raw, fake.guards[guards:])
 	}
+}
+
+// referenceDerivedLevel gives a fixture row the detected_level the raw
+// evaluator derives from what VictoriaLogs stores for it.
+func referenceDerivedLevel(base map[string]string, row pushdownRow) {
+	entry := map[string]string{"_msg": row.msg}
+	for k, v := range row.stream {
+		entry[k] = v
+	}
+	for k, v := range row.vl {
+		entry[k] = v
+	}
+	levels := logRowLevels{bodyScan: true}
+	withDerivedLevel(base, levels.stringRow(entry, logRowStream{labels: row.stream, levels: levelFieldsFromLabels(row.stream)}), row.stream)
 }

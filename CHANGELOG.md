@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sum by (detected_level)` over a JSON pipeline follows the level Loki's
+  ingest gave each line (#760).** Loki sets detected_level once per line
+  (`distributor/field_detection.go`): a level stream label or structured
+  metadata, else the first string value of a level key (`level`, `LEVEL`,
+  `Level`, `log.level`, `severity`, `lvl`, ...) at depth 0 or 1 in document
+  order, counted only when it is a known spelling (`info`, `INFO`, `inf` and
+  `information` are one level), else the first level word of a keyword scan of
+  the whole line, else `unknown`. The row evaluator (plain `| json`,
+  `__error__!=""`, every pushdown fallback) grouped the stream's spelling as
+  stored and read only a body `level` key, and the stats pushdown read only
+  that key as well: pino's numeric levels (`{"level":30}` was `30`, Loki scans
+  the line and says `unknown`, or `error` for a line with an `Error` object),
+  `notice`, a padded ` info`, `severity` or `Level` keys and a line without a
+  level key that mentions `error` each made a series of their own or were
+  `unknown`. The row evaluator now derives the level with the derivation the
+  log lines use, and a body `detected_level` key is renamed
+  `detected_level_extracted` as in Loki; a `detected_level` stream label keeps
+  its stored spelling. A filter on detected_level
+  (`| json | detected_level="info"`, Logs Drilldown's detected_level
+  breakdown) compares that value too, where it compared the stream's level or
+  the body key; the breakdown, which main answered from raw rows (2.4 s at 1h,
+  502 at 6h and 24h), is served by the stats pushdown in 0.02 s to 0.30 s.
+  The stats pushdown first groups the buckets by copies of the stored
+  `detected_level` and `level` fields (taken before any unpack) and gives each
+  bucket the level Loki's ingest gives it, a known spelling in any case as its
+  level and any other word as stored: main's query, with no chain and no level
+  guard probe, for every window whose rows all carry a stored level. A filter on
+  detected_level runs in VictoriaLogs on the stored spellings; Loki's series
+  limit is applied to the answer's series, so `INFO`, `info` and `Information`
+  count as one, and a query whose VictoriaLogs groups pass twice the limit is
+  asked again with the chain, whose groups are its series, instead of failing
+  with a 400 Loki does not give. A
+  bucket without a stored level, or with a stored `detected_level` (a stream
+  label keeps its spelling), asks again with the pipes of the native metric
+  route, built from the level fields and body keys the window holds (a presence
+  probe: one more VictoriaLogs query of counts, over the whole window when it is
+  not remembered and on every request whose window reaches into the last five
+  minutes, because lines may still arrive there; a failed probe keeps the full
+  chain; the narrowed query also flags every row holding what the probe left
+  out, for a line that arrives late inside the remembered part, and is asked
+  again with the full chain), and probes the window for lines those pipes read
+  differently from Loki: two level keys, a level value with an escape (Loki
+  reads a JSON value's raw bytes), a line that starts with a brace but does not
+  end with one (logfmt for Loki), a level key VictoriaLogs does not unpack, a
+  `detected_level` stream label. One such line, and a line that only looks
+  like one (a body with both `level` and `severity`, as audit logs have), sends
+  the whole query to the raw-row evaluator: exact, but bounded by the row limit,
+  so a long range answers 502 where the pushdown answered 200. Each probe stops
+  at its first match, which bounds what it returns, not the work. On one hour
+  of the A/B harness's backfill (about 290,000 lines, a level stream label on
+  every row) with VictoriaLogs capped at 2 CPUs, warm p50, Explore's volume over
+  `| json` takes 98 ms where main takes 79 ms and a volume behind a
+  `detected_level` filter before the parser (which unpacks logfmt for every line
+  first) 279 ms where main takes 181 ms (the builds measured in the other order:
+  76 ms against 101 ms and 245 ms against 259 ms), and 6h and 24h stay within
+  8%. Rows with no stored level (the level only in the line) pay the chain's
+  own query, which reads every line; main answers 4 series there where Loki
+  answers 8. The chain parses each line once for the plan's labels and for the
+  level (one `unpack_json`, where the plan unpacked its labels itself and the
+  pipes the level keys again) and runs its keyword regexp only on lines that
+  hold one of the nine words as a whole word (VictoriaLogs' `i()` filter, a
+  superset of what the regexp matches), and the escape check of the presence
+  probe is a substring filter. On one hour of that data, VictoriaLogs alone
+  and capped at 2 CPUs, Explore's volume takes 105 ms where main takes 84 ms
+  (102 ms against 87 ms in the other order, 15 runs each) and was 282 ms
+  against 38 ms in the previous revision; at 6h and 24h it takes 0.69 s
+  against 0.54 s and 2.75 s against 2.39 s (was 1.5 s and 6.1 s). On the
+  VictoriaLogs side, per query: main's 102 ms and 225 CPU-ms, the previous
+  chain 290 ms and 550 CPU-ms, this one 107 ms and 260 CPU-ms. The first view
+  of a window (nothing remembered) still asks the stored-level query, the
+  level probes and the presence probe before the chain, about 0.5 s at 1h
+  where main takes 0.08 s.
+  With
+  `-detected-level-body-scan=false` the raw-row evaluator answers. A line that
+  is JSON for Loki (a brace first and last) is never read as logfmt by the
+  pipes either, and the severity VictoriaLogs derives for an OTLP record
+  without one (`Unspecified`, `Info2`, from v1.50 in `severity_text` with
+  `severity_number`, before in `severity`) is no level for them, as for Loki,
+  which reads the number or the line. A few lines stay different on the stats
+  pushdown and the native route, recorded in
+  `semantics/detected-level-pipes-known-differences` (open): a stream level
+  field outranked by a metadata one, a logfmt level key in another case, a
+  logfmt syntax error before the level key, and a row VictoriaLogs unpacked
+  from a JSON body.
+  The plain and `| logfmt` logs volume shapes
+  (`sum by (level, detected_level)`) take the same pipes, so a stream without a
+  level label now gets the level of its body (a `level=warn` key or a keyword)
+  as in Loki, where it was `unknown`. The native metric route for a plain
+  selector still reads level keys in the pipes' fixed order and overwrites a
+  `detected_level` stream label, with no raw-row fallback.
+  The verdicts of the probes of the JSON and logfmt pushdowns are remembered
+  per request scope (tenant, routing and forwarded identity, where the key held
+  the tenant only), and extending a remembered window no longer renews the
+  expiry of the part checked earlier, so a window kept alive by a refreshing
+  dashboard is checked again in full every five minutes (a refresh checks only
+  the part younger than five minutes, as before).
+  (`semantics/json-metric-detected-level-derivation`)
+- **The in-memory cache's byte budget (`-cache-max-bytes`) counts the key of an
+  entry as well as its value (#760).** Entries keyed by a long query (the
+  window verdicts of the pushdown probes, whose key holds the whole base, 8 to
+  14 KB) were counted as their one-byte value. An entry whose key and value
+  together pass a tenth of the budget is no longer stored, and a cache full of
+  long keys evicts sooner; the cache size metrics grow by the length of the
+  keys.
+
 ## [2.15.1] - 2026-10-14
 
 ### Fixed

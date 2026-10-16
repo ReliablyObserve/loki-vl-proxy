@@ -464,7 +464,7 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	if c == nil || c.disabled {
 		return
 	}
-	size := len(value)
+	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		return
 	}
@@ -502,7 +502,7 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	if c == nil || c.disabled {
 		return
 	}
-	size := len(value)
+	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
 		return
 	}
@@ -525,7 +525,7 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 }
 
 func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagateL3, stamped bool) {
-	size := len(value)
+	size := entrySize(key, value)
 	// Don't cache entries larger than 10% of max bytes
 	if size > c.maxBytes/10 {
 		return
@@ -589,6 +589,11 @@ func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, si
 		c.lruIndex[key] = elem
 	}
 }
+
+// entrySize is what an entry holds in memory for the byte budget: its value
+// and its key, which for the helper entries keyed by a query is as long as
+// the query.
+func entrySize(key string, value []byte) int { return len(key) + len(value) }
 
 func skipL2WriteForKey(key string) bool {
 	return len(key) >= len("patterns:") && key[:len("patterns:")] == "patterns:"

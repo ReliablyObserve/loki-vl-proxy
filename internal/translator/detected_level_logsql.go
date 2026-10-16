@@ -3,6 +3,8 @@ package translator
 import (
 	"fmt"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -22,9 +24,16 @@ import (
 // order rather than document order, nested objects are not searched by key
 // (the keyword scan still sees their words), unpack_logfmt keys are
 // case-sensitive and do not stop at syntax errors, and the keyword regexp
-// folds ASCII only. The stored-field filters do not tell stream fields from
+// folds ASCII only. unpack_logfmt skips the lines Loki reads as JSON, which
+// start with a brace (the guard probes check the ones that do not also end
+// with one). The stored-field filters do not tell stream fields from
 // other fields: a detected_level stream field is an index label for Loki and
 // does not decide the value, so callers leave it out of existingFields.
+
+// BracedLineRegexp matches the start of a line Loki's ingest reads as JSON
+// (field_detection.go isJSON: the first non-space rune is a brace and the last
+// one a closing brace), where it never reads logfmt keys.
+const BracedLineRegexp = `^[\s\v\x{85}\p{Z}]*\{`
 
 // DetectedLevelFieldNames lists the stored fields that decide detected_level,
 // in priority order: detected_level, Loki's log_level_fields, severity_number.
@@ -68,17 +77,42 @@ var detectedLevelSeverityNumberRegexp = map[string]string{
 // detectedLevelCanonical lists every value the body chain can produce.
 var detectedLevelCanonical = []string{"trace", "debug", "info", "warn", "error", "critical", "fatal", "unknown"}
 
-// vlSynthesizedSeverityTexts is VictoriaLogs' severity_text for OTel severity
-// numbers 0..24 when an OTLP record has no text.
-var vlSynthesizedSeverityTexts = []string{
-	"Unspecified",
-	"Trace", "Trace2", "Trace3", "Trace4",
-	"Debug", "Debug2", "Debug3", "Debug4",
-	"Info", "Info2", "Info3", "Info4",
-	"Warn", "Warn2", "Warn3", "Warn4",
-	"Error", "Error2", "Error3", "Error4",
-	"Fatal", "Fatal2", "Fatal3", "Fatal4",
+// levelKeywords are the words of Loki's keyword scan (field_detection.go
+// levelPatterns), in its order.
+var levelKeywords = []string{"trace", "debug", "fatal", "critical", "error", "err", "warning", "warn", "info"}
+
+// levelKeywordRegexp finds the first keyword of a line that stands between
+// Loki's word boundaries (isLeftWordBoundary, isRightWordBoundary), ASCII
+// case folded, which is what extract_regexp runs over the rows that need it.
+var levelKeywordRegexp = `(?i)(?:^|[ \t\n\[({"=])(?P<__dl_e>` + strings.Join(levelKeywords, "|") + `)(?:$|[ \t\n\[\](){}:,!"=])`
+
+// LevelKeywordGate returns the filter in front of the keyword regexp: a line
+// that holds one of the keywords as a whole word of VictoriaLogs' tokenizer,
+// case-insensitively (i(), which finds the words in the block's token index
+// and lowercases only what is left). It is a superset of the lines the regexp
+// matches, never a second decision: every byte Loki accepts around a keyword
+// (space, tab, newline, brackets, braces, quote, '=', ':', ',', '!') is
+// a token separator, and the folding of (?i) maps no non-ASCII rune onto the
+// letters of the nine words, so the matched text is an ASCII word of the line
+// delimited by separators. The regexp, not the gate, decides which rows are
+// matched, so a line the gate lets through and Loki's boundaries reject
+// (`foo-error`, `error.`) is still no match.
+func LevelKeywordGate() string {
+	words := make([]string, len(levelKeywords))
+	for i, w := range levelKeywords {
+		words[i] = "i(" + w + ")"
+	}
+	return "_msg:(" + strings.Join(words, " OR ") + ")"
 }
+
+// vlSeverityFamilies are the severity texts VictoriaLogs derives from OTel
+// severity numbers 1..24 when an OTLP record has no text: the stem for the
+// first number of a family of four, the stem with 2, 3 and 4 for the rest
+// (Info for 9, Info2 for 10), and Unspecified for 0 and every other number.
+var vlSeverityFamilies = []struct {
+	stem   string
+	lo, hi int
+}{{"Trace", 1, 4}, {"Debug", 5, 8}, {"Info", 9, 12}, {"Warn", 13, 16}, {"Error", 17, 20}, {"Fatal", 21, 24}}
 
 // DetectedLevelStoredFields returns the level-deciding fields present in
 // existingFields, in priority order.
@@ -110,13 +144,77 @@ const (
 	DetectedLevelChainGrouping
 )
 
+// DetectedLevelPresence names the level fields and body keys a window holds,
+// so the chain carries only the pipes that can match a row of it. Each pipe
+// of the chain passes every block of the window whether or not it changes a
+// row, which makes the full chain's cost grow with the 16 stored fields and 14
+// body keys it knows. Stored lists the DetectedLevelFieldNames present as
+// fields; BodyKeys lists the DetectedLevelBodyKeys that may occur in a line.
+// Both must over-report: a name left out is never read.
+type DetectedLevelPresence struct {
+	Stored, BodyKeys []string
+}
+
+// DetectedLevelBodyKeys lists the body keys Loki reads a level from, in the
+// order the chain reads them.
+func DetectedLevelBodyKeys() []string { return detectedLevelLogLevelFieldNames() }
+
 // BuildDetectedLevelChain returns the body chain (starting with "| "). When
 // existingFields hold stored level fields, the unpack and regexp pipes skip
-// rows that have one.
-func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMode) string {
+// the rows that have one (BuildHasLevelFilter), which a scratch field
+// __dl_h marks once instead of repeating the filter in every pipe. A non-nil
+// present limits the chain to the fields and keys it lists (and replaces
+// existingFields); nil keeps every pick.
+func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence) string {
+	return BuildDetectedLevelChainShared(existingFields, mode, present, nil)
+}
+
+// SharedUnpack names the JSON keys a stats plan unpacks itself, so that the
+// chain's own unpack_json reads them too and the plan runs none: one parse of
+// every line instead of two. Keys are plain label names (letters, digits and
+// underscores), unpacked with the plan's keep_original_fields rule: a field
+// that is already stored and non-empty keeps its value, the body's fills only
+// the others. Cond is the plan's own condition on its unpack ("" when it
+// unpacks every row); a row it excludes holds every key as a stored field.
+type SharedUnpack struct {
+	Keys []string
+	Cond string
+}
+
+// BuildDetectedLevelChainShared is BuildDetectedLevelChain for a plan that
+// unpacks Keys itself (DetectedLevelChainGrouping only; the other modes ignore
+// shared). The chain's unpack_json reads the level keys it needs and Keys with
+// result_prefix "__j_", so a key never mistakes a stored field for a body
+// value, and before the closing delete every key gets the value the plan's own
+// `unpack_json fields (...) keep_original_fields` would have given it: the
+// body's, where the field is not stored. The rows the level keys are read
+// from stay those without a stored level (-__dl_h:*), whatever rows the unpack
+// parsed for the plan.
+func BuildDetectedLevelChainShared(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence, shared *SharedUnpack) string {
+	var sharedKeys []string
+	if shared != nil && mode == DetectedLevelChainGrouping {
+		sharedKeys = shared.Keys
+	}
+	pruned := present != nil
+	bodyKeys := DetectedLevelBodyKeys()
+	if pruned {
+		existingFields, bodyKeys = present.Stored, present.BodyKeys
+	}
+	stored := DetectedLevelStoredFields(existingFields)
+	// A level text (any stored field but the number) sets __dl_s; the number
+	// decides after the text and the line, and VictoriaLogs before v1.50 holds
+	// the OTLP severity in severity alone (severityNameClause), so the number
+	// pipes stay for either of them.
+	texts := levelTextFields(DetectedLevelFieldNames)
+	if pruned {
+		texts = levelTextFields(stored)
+	}
+	hasText := len(texts) > 0
+	hasNumber := !pruned || hasField(stored, "severity_number")
+	hasBody := len(bodyKeys) > 0
 	cond := ""
-	if has := BuildHasLevelFilter(existingFields); has != "" {
-		cond = "!(" + has + ")"
+	if len(stored) > 0 {
+		cond = "-__dl_h:*"
 	}
 	withCond := func(extra string) string {
 		switch {
@@ -130,81 +228,231 @@ func BuildDetectedLevelChain(existingFields []string, mode DetectedLevelChainMod
 			return " if (" + cond + " " + extra + ")"
 		}
 	}
-	names := detectedLevelLogLevelFieldNames()
-	quoted := make([]string, len(names))
-	for i, n := range names {
+	quoted := make([]string, len(bodyKeys))
+	for i, n := range bodyKeys {
 		quoted[i] = logsqlFieldName(n)
 	}
 	fieldList := strings.Join(quoted, ", ")
 
-	var b strings.Builder
-	// Stored fields first, in Loki's priority order: the first non-empty one
-	// decides, and keep_original_fields keeps that first write.
-	first := true
-	writeStored := func(field string) {
-		quotedField := logsqlFieldName(field)
-		if first {
-			fmt.Fprintf(&b, `| format if (%s:*) "<%s>" as __dl_s keep_original_fields`, quotedField, field)
-			first = false
-			return
+	var pipes []string
+	add := func(format string, args ...any) { pipes = append(pipes, fmt.Sprintf(format, args...)) }
+	pipes = append(pipes, storedLevelPicks(texts, stored)...)
+	if hasText {
+		add(`format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`)
+	}
+	if hasBody || len(sharedKeys) > 0 {
+		unpackFields, unpackCond := fieldList, withCond("")
+		if len(sharedKeys) > 0 {
+			unpackFields = unpackFieldList(quoted, sharedKeys)
+			unpackCond = sharedUnpackCond(cond, hasBody, shared.Cond)
 		}
-		fmt.Fprintf(&b, ` | format if (%s:*) "<%s>" as __dl_s keep_original_fields`, quotedField, field)
+		add(`unpack_json%s from _msg fields (%s) result_prefix "__j_"`, unpackCond, unpackFields)
 	}
-	for _, field := range DetectedLevelFieldNames {
-		if field == "severity_number" {
-			continue
+	if hasBody {
+		add(`unpack_logfmt%s from _msg fields (%s) result_prefix "__l_"`, withCond("-_msg:~"+quoteLevelRegexp(BracedLineRegexp)), fieldList)
+		for _, prefix := range []string{"__j_", "__l_"} {
+			for _, n := range bodyKeys {
+				f := logsqlFieldName(prefix + n)
+				if prefix == "__j_" && len(sharedKeys) > 0 {
+					// The shared unpack parsed rows a stored level decides too.
+					add(`format%s "<%s>" as __dl_v keep_original_fields`, withCond(f+":*"), prefix+n)
+					continue
+				}
+				add(`format if (%s:*) "<%s>" as __dl_v keep_original_fields`, f, prefix+n)
+			}
 		}
-		writeStored(field)
 	}
-	fmt.Fprintf(&b, ` | format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`)
-	fmt.Fprintf(&b, ` | unpack_json%s from _msg fields (%s) result_prefix "__j_"`, withCond(""), fieldList)
-	fmt.Fprintf(&b, ` | unpack_logfmt%s from _msg fields (%s) result_prefix "__l_"`, withCond(""), fieldList)
-	for _, prefix := range []string{"__j_", "__l_"} {
-		for _, n := range names {
-			f := logsqlFieldName(prefix + n)
-			fmt.Fprintf(&b, ` | format if (%s:*) "<%s>" as __dl_v keep_original_fields`, f, prefix+n)
+	if hasText || hasBody {
+		for _, s := range detectedLevelSpellings {
+			add("format if (__dl_v:~%s) %q as __dl keep_original_fields", quoteLevelRegexp("(?i)^("+strings.Join(s.spellings, "|")+")$"), s.level)
 		}
 	}
-	for _, s := range detectedLevelSpellings {
-		fmt.Fprintf(&b, " | format if (__dl_v:~%s) %q as __dl keep_original_fields", quoteLevelRegexp("(?i)^("+strings.Join(s.spellings, "|")+")$"), s.level)
-	}
-	b.WriteString(" | extract_regexp")
-	b.WriteString(withCond(`__dl:""`))
-	b.WriteString(" ")
-	b.WriteString(quoteLevelRegexp(`(?i)(?:^|[ \t\n\[({"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \t\n\[\](){}:,!"=])`))
-	b.WriteString(" from _msg")
-	b.WriteString(` | format if (__dl:"" __dl_e:~"(?i)^(error|err)$") "error" as __dl keep_original_fields`)
-	b.WriteString(` | format if (__dl:"" __dl_e:~"(?i)^(warning|warn)$") "warn" as __dl keep_original_fields`)
-	b.WriteString(` | format if (__dl:"" __dl_e:*) "<lc:__dl_e>" as __dl keep_original_fields`)
+	add("extract_regexp%s %s from _msg", withCond(`__dl:"" `+LevelKeywordGate()), quoteLevelRegexp(levelKeywordRegexp))
+	add(`format if (__dl:"" __dl_e:~"(?i)^(error|err)$") "error" as __dl keep_original_fields`)
+	add(`format if (__dl:"" __dl_e:~"(?i)^(warning|warn)$") "warn" as __dl keep_original_fields`)
+	add(`format if (__dl:"" __dl_e:*) "<lc:__dl_e>" as __dl keep_original_fields`)
 	// A stored word Loki does not know stays as it is (a level field holding
 	// "notice" is "notice"), unlike a word read from the line.
-	b.WriteString(` | format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`)
+	if hasText {
+		add(`format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`)
+	}
 	// severity_number decides only when no level field did, as in Loki.
+	if hasNumber || hasField(stored, "severity") {
+		pipes = append(pipes, severityNumberPipes()...)
+	}
+	if hasNumber {
+		add(`format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`)
+	}
+	add(`format "unknown" as __dl keep_original_fields`)
+	pipes = append(pipes, chainEnding(mode, cond, sharedKeys)...)
+	return "| " + strings.Join(pipes, " | ")
+}
+
+// storedLevelPicks returns the pipes that read the stored level fields, in
+// Loki's priority order (the first non-empty one decides, and
+// keep_original_fields keeps that first write), then the ones that mark the
+// rows a stored level decides (__dl_h).
+func storedLevelPicks(texts, stored []string) []string {
+	var pipes []string
+	add := func(format string, args ...any) { pipes = append(pipes, fmt.Sprintf(format, args...)) }
+	for _, field := range texts {
+		quotedField := logsqlFieldName(field)
+		cond := quotedField + ":*"
+		// A severity text VictoriaLogs derived from the OTLP number is no level
+		// field of Loki's: the number (or a later field) decides.
+		switch field {
+		case "severity_text":
+			cond += " !" + synthesizedSeverityText() + ` !(severity_text:="Unspecified" severity_number:="0")`
+		case "severity":
+			cond += " !" + synthesizedSeverityName()
+		}
+		add(`format if (%s) "<%s>" as __dl_s keep_original_fields`, cond, field)
+	}
+	if len(stored) > 0 {
+		// A row has a stored level (BuildHasLevelFilter) when __dl_s holds a
+		// level text, or the number is one other than the 0 that goes with a
+		// synthesised Unspecified, or the severity field names a finer level.
+		add(`format if (__dl_s:*) "1" as __dl_h`)
+		if hasField(stored, "severity_number") {
+			add(`format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`)
+		}
+		if hasField(stored, "severity") {
+			add(`format if (-__dl_h:* %s -severity:="Unspecified") "1" as __dl_h`, synthesizedSeverityName())
+		}
+	}
+	return pipes
+}
+
+// chainEnding returns the closing pipes of the chain: the value written to
+// detected_level (for every row, or where no stored level decided), the labels
+// of a shared unpack, and the delete of the scratch fields.
+func chainEnding(mode DetectedLevelChainMode, cond string, sharedKeys []string) []string {
+	switch mode {
+	case DetectedLevelChainGrouping:
+		out := []string{`format "<__dl>" as detected_level`}
+		for _, key := range sharedKeys {
+			out = append(out, fmt.Sprintf(`format if (-%s:* %s:*) "<__j_%s>" as %s`, logsqlFieldName(key), logsqlFieldName("__j_"+key), key, logsqlFieldName(key)))
+		}
+		return append(out, "delete __dl, __dl_*, __j_*, __l_*")
+	case DetectedLevelChainLogs:
+		if cond == "" {
+			return []string{"rename __dl as detected_level", "delete __dl, __dl_*, __j_*, __l_*"}
+		}
+		return []string{fmt.Sprintf(`format if (%s) "<__dl>" as detected_level`, cond), "delete __dl, __dl_*, __j_*, __l_*"}
+	default:
+		return []string{"delete __dl_*, __j_*, __l_*"}
+	}
+}
+
+// unpackFieldList joins the level keys of the chain (already quoted) and the
+// keys a plan shares, each once.
+func unpackFieldList(levelKeys, shared []string) string {
+	fields := append([]string(nil), levelKeys...)
+	for _, key := range shared {
+		if q := logsqlFieldName(key); !slices.Contains(fields, q) {
+			fields = append(fields, q)
+		}
+	}
+	return strings.Join(fields, ", ")
+}
+
+// sharedUnpackCond is the condition of the unpack both the chain and the plan
+// read: the rows the chain reads level keys from (chainCond, none meaning
+// every row, when needChain) and the rows the plan unpacks (planCond, none
+// meaning every row).
+func sharedUnpackCond(chainCond string, needChain bool, planCond string) string {
+	switch {
+	case planCond == "", needChain && chainCond == "":
+		return ""
+	case !needChain:
+		return " if (" + planCond + ")"
+	default:
+		return " if (" + chainCond + " or " + planCond + ")"
+	}
+}
+
+// levelTextFields returns the level fields of fields that hold a level text
+// (all but severity_number), in the order given.
+func levelTextFields(fields []string) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f != "severity_number" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// severityNumberPipes maps severity_number (and, before VictoriaLogs v1.50,
+// the severity names derived from it) to a level for rows no level text decided.
+func severityNumberPipes() []string {
+	var out []string
 	for _, level := range detectedLevelCanonical {
 		pattern, ok := detectedLevelSeverityNumberRegexp[level]
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&b, ` | format if (__dl:"" -__dl_s:* severity_number:~%s) %q as __dl keep_original_fields`,
-			quoteLevelRegexp(pattern), level)
-	}
-	b.WriteString(` | format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`)
-	b.WriteString(` | format "unknown" as __dl keep_original_fields`)
-	switch mode {
-	case DetectedLevelChainGrouping:
-		b.WriteString(` | format "<__dl>" as detected_level`)
-		b.WriteString(" | delete __dl, __dl_*, __j_*, __l_*")
-	case DetectedLevelChainLogs:
-		if cond == "" {
-			b.WriteString(" | rename __dl as detected_level")
-		} else {
-			fmt.Fprintf(&b, ` | format if (%s) "<__dl>" as detected_level`, cond)
+		match := "severity_number:~" + quoteLevelRegexp(pattern)
+		if names := severityNameClause([]string{level}); names != "" {
+			match = "(" + match + " OR " + names + ")"
 		}
-		b.WriteString(" | delete __dl, __dl_*, __j_*, __l_*")
-	default:
-		b.WriteString(" | delete __dl_*, __j_*, __l_*")
+		out = append(out, fmt.Sprintf(`format if (__dl:"" -__dl_s:* %s) %q as __dl keep_original_fields`, match, level))
 	}
-	return b.String()
+	return out
+}
+
+// NormalizeStoredLevel is the detected_level of a row whose first stored level
+// field holds value, as the chain computes it: a known spelling (any case)
+// becomes its canonical level, any other word stays as stored.
+func NormalizeStoredLevel(value string) string {
+	for _, s := range detectedLevelSpellings {
+		for _, spelling := range s.spellings {
+			if strings.EqualFold(value, spelling) {
+				return s.level
+			}
+		}
+	}
+	return value
+}
+
+// BuildStoredLevelCopyFilter returns the pipes that keep, of a stats query reading
+// the stored level (stored holds the copy of the level field, meta that of
+// detected_level), the rows a filter on detected_level can match: a row whose
+// stored level normalises (NormalizeStoredLevel) to a value the filter
+// accepts, and every row the stored fields do not decide exactly (a stored
+// detected_level, or no stored level at all), which the caller sees and sends
+// to the full chain. A known spelling, in any case, stands for its canonical
+// level; any other word compares as stored. The caller applies the filters
+// again to the normalised value, so this one only has to keep every row that
+// can match.
+func BuildStoredLevelCopyFilter(stored, meta string, filters []DropCondition) string {
+	if len(filters) == 0 {
+		return ""
+	}
+	known := stored + ":~" + quoteLevelRegexp("(?i)^(?:"+strings.Join(allDetectedLevelSpellings(), "|")+")$")
+	var sb strings.Builder
+	for _, f := range filters {
+		var alts []string
+		for _, s := range detectedLevelSpellings {
+			if f.Matches(s.level) {
+				alts = append(alts, stored+":~"+quoteLevelRegexp("(?i)^(?:"+strings.Join(s.spellings, "|")+")$"))
+			}
+		}
+		var word string
+		switch f.Op {
+		case "=":
+			word = stored + ":=" + logsql.QuoteValue(f.Value)
+		case "!=":
+			word = "-" + stored + ":=" + logsql.QuoteValue(f.Value)
+		case "=~":
+			word = stored + ":~" + strconv.Quote("^(?:"+f.Value+")$")
+		default:
+			word = "-" + stored + ":~" + strconv.Quote("^(?:"+f.Value+")$")
+		}
+		alts = append(alts, "(-"+known+" "+word+")")
+		fmt.Fprintf(&sb, " | filter (%s:* OR -%s:* OR %s)", meta, stored, strings.Join(alts, " OR "))
+	}
+	return sb.String()
 }
 
 func detectedLevelLogLevelFieldNames() []string {
@@ -239,11 +487,37 @@ func BuildHasLevelFilter(existingFields []string) string {
 	if len(parts) > 1 {
 		has = "(" + has + ")"
 	}
-	if hasField(stored, "severity_text") && hasField(stored, "severity_number") {
-		zero := append(emptyPrefix(stored, "severity_text"), `severity_text:="Unspecified"`, `severity_number:="0"`)
-		has += " !(" + strings.Join(zero, " ") + ")"
+	for _, noLevel := range noLevelRows(stored) {
+		has += " !(" + noLevel + ")"
 	}
 	return has
+}
+
+// noLevelRows returns the filters of the rows whose only level text is the
+// "Unspecified" VictoriaLogs synthesises for an OTLP record without severity:
+// severity_text with severity_number 0 (v1.50 and newer), or severity without
+// any number (older). Loki stores no level for them, and the other stored
+// level fields, when set, still decide.
+func noLevelRows(stored []string) []string {
+	var out []string
+	if hasField(stored, "severity_text") && hasField(stored, "severity_number") {
+		out = append(out, strings.Join(append(emptyExcept(stored, "severity_text", "severity_number"), `severity_text:="Unspecified"`, `severity_number:="0"`), " "))
+	}
+	if hasField(stored, "severity") {
+		out = append(out, strings.Join(append(emptyExcept(stored, "severity", "severity_number"), `severity:="Unspecified"`, "-severity_number:*"), " "))
+	}
+	return out
+}
+
+// emptyExcept returns `f:""` filters for the stored fields other than skip.
+func emptyExcept(stored []string, skip ...string) []string {
+	out := make([]string, 0, len(stored))
+	for _, f := range stored {
+		if !hasField(skip, f) {
+			out = append(out, logsqlFieldName(f)+`:""`)
+		}
+	}
+	return out
 }
 
 func hasField(fields []string, name string) bool {
@@ -362,6 +636,24 @@ func (m detectedLevelMatcher) storedTextClause(field string, targets []string) s
 	}
 }
 
+// joinOr joins the non-empty filters with OR.
+func joinOr(parts ...string) string {
+	var alts []string
+	for _, p := range parts {
+		if p != "" {
+			alts = append(alts, p)
+		}
+	}
+	switch len(alts) {
+	case 0:
+		return ""
+	case 1:
+		return alts[0]
+	default:
+		return "(" + strings.Join(alts, " OR ") + ")"
+	}
+}
+
 func severityNumberClause(targets []string) string {
 	var alts []string
 	for _, t := range targets {
@@ -383,14 +675,51 @@ func severityNumberClause(targets []string) string {
 }
 
 // synthesizedSeverityText matches OTLP rows whose severity_text VictoriaLogs
-// derived from a non-zero severity_number.
+// derived from a non-zero severity_number: a name of the number's family (the
+// pairing inside a family is not checked: a record sending Info2 with number
+// 12 is read as synthesised, and still gets info), or Unspecified for a number
+// outside 0..24.
 func synthesizedSeverityText() string {
-	alts := make([]string, 0, len(vlSynthesizedSeverityTexts))
-	for n := 1; n < len(vlSynthesizedSeverityTexts); n++ {
-		alts = append(alts, fmt.Sprintf(`(severity_text:=%q severity_number:="%d")`, vlSynthesizedSeverityTexts[n], n))
+	alts := make([]string, 0, len(vlSeverityFamilies)+1)
+	for _, f := range vlSeverityFamilies {
+		nums := make([]string, 0, 4)
+		for n := f.lo; n <= f.hi; n++ {
+			nums = append(nums, strconv.Itoa(n))
+		}
+		alts = append(alts, "(severity_text:~"+quoteLevelRegexp("^"+f.stem+"[234]?$")+" severity_number:~"+quoteLevelRegexp("^("+strings.Join(nums, "|")+")$")+")")
 	}
-	alts = append(alts, `(severity_text:="Unspecified" severity_number:~"^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$")`)
+	alts = append(alts, `(severity_text:="Unspecified" severity_number:~`+quoteLevelRegexp(`^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`)+")")
 	return "(" + strings.Join(alts, " OR ") + ")"
+}
+
+// severityStems returns the stems of vlSeverityFamilies for the canonical
+// levels given (all of them when none is).
+func severityStems(levels ...string) []string {
+	var stems []string
+	for _, f := range vlSeverityFamilies {
+		if len(levels) == 0 || slices.Contains(levels, strings.ToLower(f.stem)) {
+			stems = append(stems, f.stem)
+		}
+	}
+	return stems
+}
+
+// synthesizedSeverityName matches a severity field holding a name
+// VictoriaLogs before v1.50 derived from the OTLP number (it stores no
+// severity_number then): "Unspecified", which says nothing, and the finer
+// names, which Loki reads from the number as the coarse level.
+func synthesizedSeverityName() string {
+	return "(severity:~" + quoteLevelRegexp("^(Unspecified|("+strings.Join(severityStems(), "|")+")[234]?)$") + " -severity_number:*)"
+}
+
+// severityNameClause matches a severity field holding a derived name of one
+// of the targets (see synthesizedSeverityName), or "" when none has one.
+func severityNameClause(targets []string) string {
+	stems := severityStems(targets...)
+	if len(stems) == 0 || len(targets) == 0 {
+		return ""
+	}
+	return "(-severity_number:* severity:~" + quoteLevelRegexp("^("+strings.Join(stems, "|")+")[234]?$") + ")"
 }
 
 // BuildStoredLevelFilter returns a filter matching rows whose stored fields
@@ -428,6 +757,14 @@ func (m detectedLevelMatcher) storedFilter(existingFields []string) string {
 			match = m.storedTextClause(f, targets)
 			if match != "" && f == "severity_text" && otel {
 				match += ` !` + synthesizedSeverityText() + ` !(severity_text:="Unspecified" severity_number:="0")`
+			}
+			if f == "severity" {
+				if match != "" {
+					match = "(" + match + " !" + synthesizedSeverityName() + ")"
+				}
+				if names := severityNameClause(targets); names != "" {
+					match = joinOr(match, names)
+				}
 			}
 		}
 		if match == "" {
@@ -508,7 +845,7 @@ func BuildDetectedLevelFilter(op, value string, existingFields []string) (Detect
 	} else {
 		plan.Prefilter = detectedLevelPrefilter(targets, has, stored != "")
 	}
-	plan.Pipes = BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup) + " | filter " + final
+	plan.Pipes = BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup, nil) + " | filter " + final
 	return plan, nil
 }
 

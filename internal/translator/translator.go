@@ -2891,7 +2891,7 @@ func applyDetectedLevelGrouping(query string, existingFields []string) string {
 	if !strings.Contains(query, detectedLevelLabelName) {
 		return query
 	}
-	chain := BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping)
+	chain := BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping, nil)
 	return applyDerivedGrouping(query, detectedLevelLabelName, func(q string) string {
 		pipeAt := firstTopLevelPipe(q)
 		if pipeAt < 0 {

@@ -96,6 +96,11 @@ type orderedJSONMetricPlan struct {
 	// parser is "json", "logfmt" or "" (no parser). Only JSON plans have a raw
 	// evaluator; the others answer through the stats pushdown or fall through.
 	parser string
+	// derivesLevel reports that the plan reads Loki's detected_level: it
+	// groups by it, keeps it under `without`, or filters on it. The raw
+	// evaluator then gives every row the value Loki's ingest set
+	// (withDerivedLevel) before any stage runs.
+	derivesLevel bool
 }
 
 // handleOrderedJSONMetric uses the existing metric accumulators, but executes
@@ -302,6 +307,7 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 	if !ok || (hasJSON && hasLogfmt) {
 		return nil, false
 	}
+	plan.setDetectedLevel()
 	if !hasJSON {
 		return plan.levelVolumePlan(hasLogfmt, retained)
 	}
@@ -369,7 +375,9 @@ func (plan *orderedJSONMetricPlan) levelVolumePlan(logfmt bool, lineFilters stri
 	}
 	plan.fetchQuery = plan.selector + lineFilters
 	plan.setStatsPushdown()
-	if plan.grouping == nil || !containsString(plan.grouping.Labels, "detected_level") || len(plan.unpackFields) == 0 {
+	if plan.grouping == nil || !containsString(plan.grouping.Labels, "detected_level") || !plan.pushdown ||
+		plan.parser == "" && len(plan.unpackFields) == 0 {
+		// A plain plan grouped by detected_level alone is the native route's.
 		return nil, false
 	}
 	return plan, true
@@ -718,8 +726,11 @@ func logfmtKeyAliasPattern(labels []string) string {
 // Loki suffixes a parsed key that collides with a stream label or structured
 // metadata with _extracted, which unpack_json keep_original_fields reproduces
 // by keeping stored values. detected_level is structured metadata Loki sets
-// at ingest, so JSON never yields it; it is derived from level like the other
-// metric paths. An ungrouped sum unpacks only its filter keys; without any it
+// at ingest, so JSON never yields it: a JSON plan grouped by it gets Loki's
+// value from the same VictoriaLogs pipes as the native metric path
+// (translator.BuildDetectedLevelChain), guarded by the detectedLevel*Risk
+// probes for the lines those pipes read differently, which the raw evaluator
+// then answers. An ungrouped sum unpacks only its filter keys; without any it
 // is served natively (withoutJSON).
 func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 	if !plan.aggregated || (plan.grouping != nil && plan.grouping.Without) {
@@ -733,8 +744,11 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 	if plan.grouping != nil {
 		for _, label := range plan.grouping.Labels {
 			if label == "detected_level" {
-				label = "level"
-			} else if !orderedJSONPushdownLabelOK(label) || plan.parser == "" && strings.HasSuffix(label, "_extracted") {
+				// Computed by VictoriaLogs from the whole row
+				// (translator.BuildDetectedLevelChain), not from one key.
+				continue
+			}
+			if !orderedJSONPushdownLabelOK(label) || plan.parser == "" && strings.HasSuffix(label, "_extracted") {
 				return
 			}
 			if !containsString(fields, label) {
@@ -742,7 +756,7 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 			}
 		}
 	}
-	if len(fields) == 0 && len(filters) == 0 {
+	if len(fields) == 0 && len(filters) == 0 && !plan.derivesLevel {
 		return
 	}
 	plan.pushdown = true
@@ -775,8 +789,19 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 		case stage.line != nil:
 			continue
 		case stage.filter != nil:
-			if !parsed || !orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted") {
+			// Loki's detected_level is on every line, parsed or not: a filter
+			// on it compares the derived value (it never rejects an unparsed
+			// line, so it cannot stand for the error drop) and `!= ""` always
+			// holds.
+			level := stage.filter.Field == detectedLevelLabel && plan.derivesLevel
+			if !parsed || !level && (!orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted")) {
 				return nil, nil, false
+			}
+			if level {
+				if stage.filter.Op != "!=" || stage.filter.Value != "" {
+					filters = append(filters, *stage.filter)
+				}
+				continue
 			}
 			filters = append(filters, *stage.filter)
 			if !stage.filter.Matches("") && !containsString(errorFilters, stage.filter.Field) {
@@ -802,61 +827,101 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
 // with the same semantics: exact comparison, and a fully anchored RE2 regexp.
 func logsQLLabelFilter(filter translator.DropCondition) string {
+	return " | filter " + logsQLLabelCondition(filter)
+}
+
+// logsQLLabelCondition is the condition of logsQLLabelFilter.
+func logsQLLabelCondition(filter translator.DropCondition) string {
 	field := quoteLogsQLIdent(filter.Field)
 	switch filter.Op {
 	case "=":
-		return " | filter " + field + ":=" + logsql.QuoteValue(filter.Value)
+		return field + ":=" + logsql.QuoteValue(filter.Value)
 	case "!=":
-		return " | filter -" + field + ":=" + logsql.QuoteValue(filter.Value)
+		return "-" + field + ":=" + logsql.QuoteValue(filter.Value)
 	case "=~":
 		// strconv.Quote, not QuotePattern: VictoriaLogs unquotes double-quoted
 		// strings with Go rules, so a regexp escape such as \d must stay escaped
 		// or the query is rejected.
-		return " | filter " + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
+		return field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	default:
-		return " | filter -" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
+		return "-" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	}
 }
 
-// lokiNormalizedLevel mirrors the level normalization Loki applies when it
-// sets detected_level at ingest; an empty level is unknown.
-func lokiNormalizedLevel(level string) string {
-	switch strings.ToLower(level) {
-	case "":
-		return "unknown"
-	case "trace", "trc":
-		return "trace"
-	case "debug", "dbg":
-		return "debug"
-	case "info", "inf", "information":
-		return "info"
-	case "warn", "wrn", "warning":
-		return "warn"
-	case "error", "err":
-		return "error"
-	case "critical":
-		return "critical"
-	case "fatal":
-		return "fatal"
-	}
-	return level
+// levelChainFilter is the filter on detected_level after the chain. A row the
+// witness flagged (levelWitnessPipes: the pruned chain may have misread it)
+// passes it, so that the flag reaches the stats and the request is sent again
+// with the full chain; without a witness nothing is flagged.
+func levelChainFilter(filter translator.DropCondition) string {
+	return " | filter (" + logsQLLabelCondition(filter) + " OR " + levelWitnessField + `:="1")`
 }
+
+// setDetectedLevel records whether the plan reads detected_level (see
+// derivesLevel).
+func (plan *orderedJSONMetricPlan) setDetectedLevel() {
+	if plan.aggregated && plan.grouping != nil && containsString(plan.grouping.Labels, detectedLevelLabel) != plan.grouping.Without {
+		plan.derivesLevel = true
+	}
+	for _, stage := range plan.stages {
+		if stage.filter != nil && stage.filter.Field == detectedLevelLabel {
+			plan.derivesLevel = true
+		}
+	}
+}
+
+// withDerivedLevel gives a row the structured metadata Loki's ingest set
+// before any parser runs: detected_level, which no parser yields. A body key
+// of that name is therefore renamed detected_level_extracted, as Loki does,
+// and a stream label detected_level keeps its stored value, the derived one
+// then living under detected_level_extracted (detectedLevelName). The value is
+// the one the log lines carry (deriveRowLevel): one derivation for every route.
+func withDerivedLevel(base map[string]string, level detectedLevel, stream map[string]string) {
+	base[detectedLevelName(stream)] = level.String()
+}
+
+// errLevelNotStored reports that a window holds rows whose detected_level no
+// stored detected_level or level field decides, so the pipes of the chain must
+// compute it.
+var errLevelNotStored = errors.New("rows without a stored level")
 
 // orderedJSONStatsBucketsWithReason serves an eligible plan (setStatsPushdown)
 // from stats_query_range buckets on the anchored sliding grid instead of raw
 // rows. served is false when the raw evaluator must answer: no bucket grid, a
 // possible series-limit overflow, or a line a probe found to be read
 // differently by the two parsers (parseDisagreement).
+//
+// A plan reading detected_level first asks for the stored fields alone: the
+// buckets are grouped by the stored detected_level and level fields, and the
+// level of each is Loki's value for every row they decide (the first
+// non-empty of the two, a known spelling in its canonical form). That is
+// main's plan, with no pipe and no guard probe per row. A bucket without a
+// stored level, or with a stored detected_level (a stream label keeps its
+// spelling, translator.BuildDetectedLevelChain), is a row only the chain and
+// its guards read exactly: the query is asked again with them.
 func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
 	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
 	}
-	unpack := append([]string(nil), plan.unpackFields...)
-	for _, filter := range plan.pushdownFilters {
-		if !containsString(unpack, filter.Field) {
-			unpack = append(unpack, filter.Field)
+	if plan.derivesLevel && !p.detectedLevelBodyScan {
+		// VictoriaLogs pipes always read the line; without the body scan only
+		// the stored fields decide, which the raw evaluator derives.
+		return nil, false, false, nil
+	}
+	if plan.derivesLevel {
+		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true)
+		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
+			return body, served, parseDisagreement, err
 		}
 	}
+	return p.orderedJSONStatsBuckets(ctx, plan, start, end, step, false)
+}
+
+// orderedJSONStatsBuckets is one attempt of orderedJSONStatsBucketsWithReason:
+// storedLevel reads detected_level from the stored fields (and returns
+// errLevelNotStored when they do not decide every row), otherwise the chain
+// computes it.
+func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, storedLevel bool) (body []byte, served bool, parseDisagreement bool, err error) {
+	unpack := plan.unpackKeys()
 	// A name_extracted label is computed after the plain unpack from a scratch
 	// unpack of the key name (translator.ExtractedLabelPipes); the plain unpack
 	// and the parse-risk probes read both keys, the probes with the stored
@@ -887,25 +952,9 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		return nil, false, false, err
 	}
 	windowStart := start.Add(-plan.window)
-	// The parse-risk check and the bucket query run concurrently; the buckets
-	// are discarded when the check finds a line the parsers read differently.
-	riskCtx, cancelRisk := context.WithCancel(ctx)
-	defer cancelRisk()
-	type riskResult struct {
-		risky bool
-		err   error
-	}
-	riskDone := make(chan riskResult, 1)
-	go func() {
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, windowStart, end)
-		riskDone <- riskResult{risky, err}
-	}()
 	statsCtx, cancelStats := context.WithCancel(ctx)
 	defer cancelStats()
-	groupBy := plan.unpackFields
-	if plan.grouping != nil && containsString(plan.grouping.Labels, "detected_level") {
-		groupBy = append(append([]string(nil), groupBy...), "detected_level")
-	}
+	groupBy := plan.statsGroupBy(storedLevel)
 	statsAggFunc := "count() as c"
 	if plan.function == "bytes_rate" || plan.function == "bytes_over_time" {
 		statsAggFunc = "sum_len(_msg) as c, count() as __sample_count"
@@ -917,17 +966,55 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		}
 	}
 	remember, compute := translator.ExtractedLabelPipes("unpack_"+plan.parser, extracted, stored)
-	query := base + remember + orderedJSONUnpackPipes(plan.parser, allKeys, stored, required) + compute
+	beforeUnpack := plan.levelPipes(storedLevel)
+	shared := plan.sharedLevelUnpack(storedLevel, allKeys, extracted, stored)
+	if shared != nil {
+		// One parse of every line: the chain's unpack reads the plan's labels too.
+		beforeUnpack = " " + translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, shared)
+		statsCtx = withLevelSharedUnpack(statsCtx, shared)
+	}
+	query := base + remember + orderedJSONUnpackPipesShared(plan.parser, allKeys, stored, required, beforeUnpack, shared != nil) + compute
+	// A filter on detected_level compares the derived value: after the chain in
+	// VictoriaLogs, or on the stored spellings (levelPipes) and again on the
+	// normalised series below.
 	for _, filter := range plan.pushdownFilters {
+		if storedLevel && filter.Field == detectedLevelLabel {
+			continue
+		}
+		if filter.Field == detectedLevelLabel {
+			query += levelChainFilter(filter)
+			continue
+		}
 		query += logsQLLabelFilter(filter)
 	}
+	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
+		return nil, false, false, errLevelNotStored
+	}
+	// The parse-risk check and the bucket query run concurrently; the buckets
+	// are discarded when the check finds a line the parsers read differently.
+	riskCtx, cancelRisk := context.WithCancel(ctx)
+	defer cancelRisk()
+	type riskResult struct {
+		risky bool
+		err   error
+	}
+	riskDone := make(chan riskResult, 1)
+	go func() {
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
+		riskDone <- riskResult{risky, err}
+	}()
 	type statsResult struct {
 		series map[string]manualSeriesSamples
 		err    error
 	}
 	statsDone := make(chan statsResult, 1)
 	go func() {
-		series, err := p.collectRangeMetricHits(statsCtx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
+		readCtx := statsCtx
+		if storedLevel {
+			// The spellings of one level are groups here, series in the answer.
+			readCtx = guardStatsGroups(statsCtx)
+		}
+		series, err := p.collectRangeMetricHits(readCtx, query, groupBy, groupBy, false, statsAggFunc, windowStart, end, bucket)
 		statsDone <- statsResult{series, err}
 	}()
 	risk := <-riskDone
@@ -937,13 +1024,39 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	stats := <-statsDone
 	series, err := stats.series, stats.err
+	if errors.Is(err, errStatsGroupGuard) {
+		// More groups than the guard reads: the chain's groups are the answer's
+		// series, so it counts them and answers Loki's series limit itself.
+		p.markLevelNeedsChain(ctx, base+levelShapeSeparator+query)
+	}
 	if err != nil {
 		return nil, false, false, err
 	}
-	// Only above the limit: a query with exactly the limit's series passes.
-	if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+	if storedLevel {
+		if series, ok = storedLevelSeries(series, plan.levelFilters()); !ok {
+			p.markLevelNeedsChain(ctx, base)
+			return nil, false, false, errLevelNotStored
+		}
+	} else if series, err = capSeriesForRequest(ctx, series, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+		// Only above the limit: a query with exactly the limit's series passes.
 		return nil, false, false, err
 	}
+	merged := plan.mergeGroups(series)
+	if storedLevel {
+		// The spellings of one level are one series, as in Loki: only the
+		// merged answer meets the limit.
+		if merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
+			return nil, false, false, err
+		}
+	}
+	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
+	return body, err == nil, false, err
+}
+
+// mergeGroups folds the stats groups into the plan's series: groups that
+// differ only in a field the plan does not group by (the copies of the stored
+// level fields, the spellings of one level) are one series.
+func (plan *orderedJSONMetricPlan) mergeGroups(series map[string]manualSeriesSamples) map[string]manualSeriesSamples {
 	merged := make(map[string]manualSeriesSamples, len(series))
 	var grouped []string
 	if plan.grouping != nil {
@@ -953,12 +1066,6 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		metric := make(map[string]string, len(grouped))
 		for _, label := range grouped {
 			value := entry.Metric[label]
-			if label == "detected_level" {
-				if value == "" {
-					value = entry.Metric["level"]
-				}
-				value = lokiNormalizedLevel(value)
-			}
 			if value != "" {
 				metric[label] = value
 			}
@@ -974,8 +1081,67 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		}
 		merged[key] = target
 	}
-	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
-	return body, err == nil, false, err
+	return merged
+}
+
+// statsGroupBy lists the fields the pushdown's stats group by: the grouped
+// labels it unpacks, and the field(s) detected_level comes from.
+func (plan *orderedJSONMetricPlan) statsGroupBy(storedLevel bool) []string {
+	groupBy := plan.unpackFields
+	switch {
+	case storedLevel:
+		groupBy = append(append([]string(nil), groupBy...), storedDetectedLevelField, storedLevelField)
+	case plan.grouping != nil && containsString(plan.grouping.Labels, "detected_level"):
+		groupBy = append(append([]string(nil), groupBy...), "detected_level")
+	}
+	return groupBy
+}
+
+// levelPipes returns the pipes before the unpack that give a plan reading
+// detected_level its field: the copies of the stored fields (taken before any
+// unpack, so a body key never looks stored) or the chain.
+func (plan *orderedJSONMetricPlan) levelPipes(storedLevel bool) string {
+	if storedLevel {
+		// The filters on detected_level run in VictoriaLogs on the stored
+		// spellings (translator.BuildStoredLevelCopyFilter), so the groups it
+		// returns are those of the rows the filters keep.
+		return " | copy detected_level as " + storedDetectedLevelField + ", level as " + storedLevelField +
+			translator.BuildStoredLevelCopyFilter(storedLevelField, storedDetectedLevelField, plan.levelFilters())
+	}
+	return plan.levelChain()
+}
+
+// levelFilters lists the filters on detected_level of a plan reading it.
+func (plan *orderedJSONMetricPlan) levelFilters() []translator.DropCondition {
+	var filters []translator.DropCondition
+	for _, filter := range plan.pushdownFilters {
+		if filter.Field == detectedLevelLabel {
+			filters = append(filters, filter)
+		}
+	}
+	return filters
+}
+
+// unpackKeys lists the keys the pushdown unpacks: the grouped labels and the
+// filtered ones, except detected_level, which no key holds.
+func (plan *orderedJSONMetricPlan) unpackKeys() []string {
+	unpack := append([]string(nil), plan.unpackFields...)
+	for _, filter := range plan.pushdownFilters {
+		if !containsString(unpack, filter.Field) && (!plan.derivesLevel || filter.Field != detectedLevelLabel) {
+			unpack = append(unpack, filter.Field)
+		}
+	}
+	return unpack
+}
+
+// levelChain returns the pipes that compute detected_level for a plan reading
+// it, placed before the unpack so that the stored level fields and the line
+// decide, and a body key never looks stored.
+func (plan *orderedJSONMetricPlan) levelChain() string {
+	if !plan.derivesLevel {
+		return ""
+	}
+	return " " + fullLevelChain()
 }
 
 // splitPushdownKeys splits the labels a pushdown reads: the plain ones, every
@@ -1000,7 +1166,7 @@ func splitPushdownKeys(unpack []string) (plain, allKeys, extracted, extractedKey
 // lines), and for the name_extracted labels over both keys with the stored
 // value of name deleted, because the scratch unpack reads the body whatever
 // the stream holds.
-func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, start, end time.Time) (bool, error) {
+func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, storedLevel bool, start, end time.Time) (bool, error) {
 	type result struct {
 		risky bool
 		err   error
@@ -1024,13 +1190,15 @@ func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPl
 		}
 		extractedRisk = make(chan result, 1)
 		go func() {
-			risky, err := p.cachedStatsPushdownRisk(ctx, plan.parser, base+" | delete "+strings.Join(names, ", "), extractedKeys, nil, nil, start, end)
+			risky, err := p.cachedStatsPushdownRisk(ctx, plan.parser, base+" | delete "+strings.Join(names, ", "), extractedKeys, nil, nil, false, start, end)
 			extractedRisk <- result{risky, err}
 		}()
 	}
 	var out result
-	if len(plain) > 0 {
-		out.risky, out.err = p.cachedStatsPushdownRisk(ctx, plan.parser, base, plain, stored, errorFilters, start, end)
+	if len(plain) > 0 || plan.derivesLevel && !storedLevel {
+		// A plan without a parser has no raw evaluator to fall back to. The
+		// level probes are for the lines only the chain reads.
+		out.risky, out.err = p.cachedStatsPushdownRisk(ctx, plan.parser, base, plain, stored, errorFilters, plan.derivesLevel && !storedLevel && plan.parser != "", start, end)
 	}
 	if extractedRisk != nil {
 		if second := <-extractedRisk; out.err == nil && !out.risky {
@@ -1128,7 +1296,7 @@ func (plan *orderedJSONMetricPlan) requiredFields(base string) []string {
 	}
 	var fields []string
 	for _, filter := range plan.pushdownFilters {
-		if !filter.Matches("") && !containsString(fields, filter.Field) {
+		if !filter.Matches("") && !containsString(fields, filter.Field) && filter.Field != detectedLevelLabel {
 			fields = append(fields, filter.Field)
 		}
 	}
@@ -1144,6 +1312,22 @@ func (plan *orderedJSONMetricPlan) requiredFields(base string) []string {
 // lines are dropped before the parse (parsedFieldPrefilter), and the parser
 // runs only on lines that lack one of the labels as a stored field.
 func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]string, required []string) string {
+	return orderedJSONUnpackPipesAfter(parser, unpack, stored, required, "")
+}
+
+// orderedJSONUnpackPipesAfter is orderedJSONUnpackPipes with the pipes of
+// beforeUnpack placed after the prefilters and before the unpack, so they
+// run on the lines that can count and see only stored fields. With no label
+// to unpack, only beforeUnpack remains.
+func orderedJSONUnpackPipesAfter(parser string, unpack []string, stored map[string]string, required []string, beforeUnpack string) string {
+	return orderedJSONUnpackPipesShared(parser, unpack, stored, required, beforeUnpack, false)
+}
+
+// orderedJSONUnpackPipesShared is orderedJSONUnpackPipesAfter, optionally
+// without the unpack itself: the pipes of beforeUnpack have unpacked the
+// labels already (a detected_level chain built with translator.SharedUnpack),
+// and only the stored aliases are left to apply.
+func orderedJSONUnpackPipesShared(parser string, unpack []string, stored map[string]string, required []string, beforeUnpack string, unpacked bool) string {
 	var sb strings.Builder
 	if parser != "" {
 		for _, field := range required {
@@ -1153,13 +1337,12 @@ func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]st
 			}
 			sb.WriteString(parsedFieldPrefilter(parser, field, alias...))
 		}
-		conditions := make([]string, len(unpack))
-		for i, field := range unpack {
-			conditions[i] = "(" + storedFieldsAbsent(field, stored) + ")"
-		}
+	}
+	sb.WriteString(beforeUnpack)
+	if parser != "" && !unpacked && (len(unpack) > 0 || beforeUnpack == "") {
 		sb.WriteString(" | unpack_" + parser)
 		if len(required) != 0 {
-			sb.WriteString(" if (" + strings.Join(conditions, " or ") + ")")
+			sb.WriteString(" if (" + orderedJSONUnpackCond(unpack, stored) + ")")
 		}
 		sb.WriteString(" fields (" + strings.Join(unpack, ", ") + ") keep_original_fields")
 	}
@@ -1169,6 +1352,43 @@ func orderedJSONUnpackPipes(parser string, unpack []string, stored map[string]st
 		}
 	}
 	return sb.String()
+}
+
+// orderedJSONUnpackCond is the condition of a plan's unpack when it has one:
+// a row is unpacked when any label is missing as a stored field.
+func orderedJSONUnpackCond(unpack []string, stored map[string]string) string {
+	conditions := make([]string, len(unpack))
+	for i, field := range unpack {
+		conditions[i] = "(" + storedFieldsAbsent(field, stored) + ")"
+	}
+	return strings.Join(conditions, " or ")
+}
+
+// sharedLevelUnpackKeyRE is the label names a chain can unpack for its plan:
+// plain JSON keys, which no quoting, flattening of nested objects or renaming
+// (log.level is the label log_level) can make differ from the plan's own
+// unpack, and never a name of the chain's scratch fields.
+var sharedLevelUnpackKeyRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+
+// sharedLevelUnpack returns the unpack a plan hands to the detected_level chain
+// so that the line is parsed once, or nil when the plan keeps its own: the
+// chain exists only for a JSON plan that derives the level, and the labels
+// must be plain keys with no name_extracted label among them (their scratch
+// unpack, ExtractedLabelPipes, reads the body its own way).
+func (plan *orderedJSONMetricPlan) sharedLevelUnpack(storedLevel bool, allKeys, extracted []string, stored map[string]string) *translator.SharedUnpack {
+	if storedLevel || !plan.derivesLevel || plan.parser != "json" || len(extracted) > 0 || len(allKeys) == 0 {
+		return nil
+	}
+	for _, key := range allKeys {
+		if !sharedLevelUnpackKeyRE.MatchString(key) || key == detectedLevelLabel {
+			return nil
+		}
+	}
+	// The unpack parses a row only where a label is missing as a stored field
+	// (the rest keep their stored values whatever the body says), or where the
+	// chain reads the level from the line; the plan's own unpack parses every
+	// row when no label is required, and the chain's before it again.
+	return &translator.SharedUnpack{Keys: allKeys, Cond: orderedJSONUnpackCond(allKeys, stored)}
 }
 
 // statsPushdownStoredFieldRisk reports whether a selected line carries one of
@@ -1331,19 +1551,115 @@ func (p *Proxy) extractedBothKeysRisk(ctx context.Context, parser, base string, 
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
-// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered.
-// Coverage never extends past statsPushdownRiskSettle before now, so lines that
-// arrive late for recent timestamps are still checked on the next request.
-const (
-	statsPushdownRiskCacheTTL = 5 * time.Minute
-	statsPushdownRiskSettle   = 5 * time.Minute
+// detectedLevelStreamRisk reports whether a selected line belongs to a stream
+// with a detected_level label. Loki keeps that label's stored value for
+// detected_level (the derived level becomes detected_level_extracted), where
+// the pipes of translator.BuildDetectedLevelChain overwrite the field with the
+// derived one.
+func (p *Proxy) detectedLevelStreamRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	query := base + ` | filter _stream:{detected_level=~".+"} | limit 1`
+	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// detectedLevelKeyNames lists the body keys Loki reads a level from.
+var detectedLevelKeyNames = translator.DetectedLevelFieldNames[1 : len(translator.DetectedLevelFieldNames)-1]
+
+// detectedLevelNames is the alternation of the level key names, escaped.
+var detectedLevelNames = func() string {
+	names := make([]string, len(detectedLevelKeyNames))
+	for i, name := range detectedLevelKeyNames {
+		names[i] = regexp.QuoteMeta(name)
+	}
+	return strings.Join(names, "|")
+}()
+
+// detectedLevelJSONKey matches a level key of a JSON line, quoted and followed
+// by a colon (a mention inside a string, such as "log level: high", does not
+// match); detectedLevelLogfmtKey matches one of a logfmt line.
+var (
+	detectedLevelJSONKey   = `"(?:` + detectedLevelNames + `)"\s*:`
+	detectedLevelLogfmtKey = `(?:^|\s)(?:` + detectedLevelNames + `)=`
 )
+
+// detectedLevelWordFilter passes the lines that hold a level key as a word,
+// which VictoriaLogs answers from its token index.
+func detectedLevelWordFilter() string {
+	var words []string
+	for _, name := range detectedLevelKeyNames {
+		if !strings.Contains(name, ".") {
+			words = append(words, name)
+		}
+	}
+	return logsqlWordPrefilter(append(words, "level"))
+}
+
+// detectedLevelStoredFilter is the filter excluding the lines a stored level
+// field decides, which the pipes read first, as Loki does.
+func detectedLevelStoredFilter() string {
+	if has := translator.BuildHasLevelFilter(translator.DetectedLevelFieldNames); has != "" {
+		return " | filter !(" + has + ")"
+	}
+	return ""
+}
+
+// detectedLevelKeysRisk reports whether a selected line mentions a level key
+// twice, holds a level value with an escape, or is read as logfmt although it
+// starts with a brace. Loki takes the first level key in document order (and,
+// for a value that is not a known spelling, scans the line), while the pipes
+// of translator.BuildDetectedLevelChain read the keys in a fixed order: a line
+// with two of them can be read differently. Loki reads a JSON value's raw
+// bytes, so an escaped spelling (\u0069nfo) is no known level for it, where
+// VictoriaLogs decodes it. A line is JSON for Loki when it starts with a brace
+// and ends with a closing one: one that starts with a brace only is logfmt,
+// which the chain does not unpack. A line starting with a brace is read for
+// quoted keys, any other for logfmt keys. The patterns also match a mention
+// inside a longer string, a superset that only costs the raw evaluator.
+func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	const closed = `\}[\s\v\x{85}\p{Z}]*$`
+	braced := strconv.Quote(translator.BracedLineRegexp)
+	twice := func(key string) string { return key + `(?s:.*)` + key }
+	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
+		" ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
+		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")" +
+		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")) | limit 1"
+	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// detectedLevelUnpackRisk reports whether a selected JSON line mentions a
+// level key that unpack_json yields no value for: a key nested other than
+// under log (Loki reads level keys at depth 0 and 1), a line VictoriaLogs
+// does not parse as a whole (leading whitespace, text after the closing brace,
+// a syntax error: Loki keeps the keys read before it), an array or a
+// mention inside text. Loki reads such a key, the pipes of
+// translator.BuildDetectedLevelChain do not.
+func (p *Proxy) detectedLevelUnpackRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	names := make([]string, len(detectedLevelKeyNames))
+	empty := make([]string, len(detectedLevelKeyNames))
+	for i, name := range detectedLevelKeyNames {
+		names[i] = quoteLogsQLIdent(name)
+		empty[i] = quoteLogsQLIdent("__lr_"+name) + `:=""`
+	}
+	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
+		" _msg:~" + strconv.Quote(`^\s*\{(?s:.*)`+detectedLevelJSONKey) +
+		" | unpack_json from _msg fields (" + strings.Join(names, ", ") + `) result_prefix "__lr_"` +
+		" | filter " + strings.Join(empty, " ") + " | limit 1"
+	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered,
+// counted from the check of its oldest part (coveredWindowProbe). Coverage
+// never extends past statsPushdownRiskSettle before now, so lines that arrive
+// late for recent timestamps are still checked on the next request.
+var statsPushdownRiskCacheTTL = 5 * time.Minute
+
+const statsPushdownRiskSettle = 5 * time.Minute
 
 // cachedStatsPushdownRisk answers the parse-risk check for [start, end],
 // remembering the window already found free of risky lines per tenant, query
-// and field set, so a refresh or a wider range checks only the uncovered part.
-// A window with a risky line is never cached.
-func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, start, end time.Time) (bool, error) {
+// and field set, so a refresh or a wider range checks only the uncovered part
+// (coveredWindowProbe). A window with a risky line is never cached.
+func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, levelRisk bool, start, end time.Time) (bool, error) {
 	check := func(from, to time.Time) (bool, error) {
 		// The probes run beside each other; one round trip.
 		type result struct {
@@ -1358,12 +1674,23 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 				return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
 			},
 		}
-		if parser != "" {
+		if levelRisk {
+			probes = append(probes,
+				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelUnpackRisk(ctx, base, from, to) })
+		}
+		// A plan that only derives detected_level has no label to probe.
+		fieldParser := parser
+		if len(fields) == 0 {
+			fieldParser = ""
+		}
+		if fieldParser != "" {
 			probes = append(probes, func(ctx context.Context) (bool, error) {
-				return p.extractedBothKeysRisk(ctx, parser, base, fields, from, to)
+				return p.extractedBothKeysRisk(ctx, fieldParser, base, fields, from, to)
 			})
 		}
-		switch parser {
+		switch fieldParser {
 		case "json":
 			probes = append(probes,
 				func(ctx context.Context) (bool, error) {
@@ -1396,9 +1723,6 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 		}
 		return false, nil
 	}
-	if p.cache == nil {
-		return check(start, end)
-	}
 	spelled := make([]string, len(fields))
 	for i, field := range fields {
 		spelled[i] = field
@@ -1406,45 +1730,12 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 			spelled[i] += "=" + vl
 		}
 	}
-	key := "stats-pushdown-risk:v2:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + base
-	type window struct{ from, to time.Time }
-	todo := []window{{start, end}}
-	coveredFrom, coveredTo := start, end
-	if raw, _, ok := p.cache.GetWithTTL(key); ok {
-		var fromNs, toNs int64
-		if _, err := fmt.Sscanf(string(raw), "%d %d", &fromNs, &toNs); err == nil {
-			cachedFrom, cachedTo := time.Unix(0, fromNs), time.Unix(0, toNs)
-			if !start.After(cachedTo) && !end.Before(cachedFrom) {
-				todo = todo[:0]
-				if start.Before(cachedFrom) {
-					todo = append(todo, window{start, cachedFrom})
-				} else {
-					coveredFrom = cachedFrom
-				}
-				if end.After(cachedTo) {
-					todo = append(todo, window{cachedTo, end})
-				} else {
-					coveredTo = cachedTo
-				}
-			}
-		}
-	}
-	for _, w := range todo {
-		risky, err := check(w.from, w.to)
-		if err != nil || risky {
-			return risky, err
-		}
-	}
-	if settled := time.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
-		coveredTo = settled
-	}
-	if len(todo) > 0 && coveredTo.After(coveredFrom) {
-		// Only a window that was actually checked refreshes the entry; sliding the
-		// TTL on a pure cache hit would freeze the interior verdict forever, and a
-		// line arriving late for a timestamp inside it would never be seen.
-		p.cache.SetLocalOnlyWithTTL(key, []byte(fmt.Sprintf("%d %d", coveredFrom.UnixNano(), coveredTo.UnixNano())), statsPushdownRiskCacheTTL)
-	}
-	return false, nil
+	key := "stats-pushdown-risk:v4:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
+	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
+		risky, err := check(from, to)
+		return "", risky, err
+	})
+	return risky, err
 }
 
 // statsPushdownRiskExists runs a `| limit 1` risk query over [start, end] and
@@ -1970,12 +2261,6 @@ func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[str
 			group[name] = value
 		}
 	}
-	// detected_level is structured metadata Loki sets at ingest, so no parser
-	// yields it; derive it from the level this row carries, normalised the way
-	// Loki normalises it, exactly as the stats pushdown does.
-	if group["detected_level"] == "" && containsString(plan.grouping.Labels, "detected_level") != plan.grouping.Without {
-		group["detected_level"] = lokiNormalizedLevel(labels["level"])
-	}
 	return group
 }
 
@@ -2024,6 +2309,7 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 	streamLabels := make(map[string]map[string]string)
 	descriptors := make(map[string]cachedLogQueryStreamDescriptor)
 	exposures := make(map[string][]metadataFieldExposure)
+	levels := p.newLogRowLevels()
 	rows := 0
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
@@ -2051,6 +2337,9 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 		base, err := p.orderedJSONBaseLabels(row, desc, exposures)
 		if err != nil {
 			return nil, err
+		}
+		if plan.derivesLevel {
+			withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
 		}
 		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels)
 		if err != nil {

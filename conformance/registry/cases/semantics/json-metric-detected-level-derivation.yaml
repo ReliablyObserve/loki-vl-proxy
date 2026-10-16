@@ -1,0 +1,237 @@
+id: semantics/json-metric-detected-level-derivation
+title: sum by (detected_level) over a JSON pipeline follows the level Loki's ingest gave each line, by level key in document order, by keyword scan, with a detected_level stream label kept as stored (fixed; a few lines stay different, see semantics/detected-level-pipes-known-differences)
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki sets detected_level once per line at ingest (pkg/distributor/
+  field_detection.go extractLogLevelFromLogLine, discover_log_levels on). A
+  level stream label or structured metadata decides first. Otherwise a line
+  whose first non-space character is `{` and last is `}` is read as JSON: the
+  first string value of an allowed key (level, LEVEL, Level, log.level,
+  severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text,
+  Severity_Text, SEVERITY_TEXT) at depth 0 or 1, in document order, counts only
+  when it is a known spelling (info, INFO, inf and information are `info`).
+  Anything else (a number, a boolean, `notice`, no such key, a line that is not
+  JSON) falls to a keyword scan of the whole line, which finds the first
+  bounded level word; `unknown` is the answer only when the scan finds none.
+  The value is structured metadata present on every line, so a body key named
+  detected_level is detected_level_extracted, and a detected_level stream label
+  keeps its stored value (the derived one moves to detected_level_extracted).
+
+  Measured against Loki v3.7.7 on 50 probe lines (the e2e test pins each):
+  `{"level":30,"msg":"hi"}` is unknown; a pino error line
+  (`{"level":50,...,"err":{"type":"Error"}}`) is error; `{"level":"notice"}` is
+  unknown but `{"level":"notice","msg":"error connecting"}` is error;
+  `{"level":" info"}` is info; `{"severity":"ERROR"}`, `{"Level":"Information"}`,
+  `{"LEVEL":"warn"}` and `{"log":{"level":"warn"}}` are error, info, warn and
+  warn; `{"msg":"x","severity":"error","level":"info"}` is error (document
+  order) and `{"level":"info","severity":"error"}` is info; a line without a
+  level key that says "error" is error. A JSON line is read for keys only: the
+  logfmt-looking text in `{"msg":"error: cannot set level=debug now"}` is no
+  level, so it is error. A line that starts with a brace but does not end with
+  one is logfmt (`{ error level=info` is info). Loki compares a JSON value's raw
+  bytes, so `{"level":"\u0069nfo"}` is unknown, and decodes keys, so
+  `{"\u006cevel":"warn"}` is warn. For logfmt the first level key in document
+  order wins within a spelling family (`Level=info LEVEL=error` is info). An
+  OTLP record is its severity number's level, or its text when the text is its
+  own: `Unspecified` or no number is unknown (or the keyword scan of the line),
+  number 10 is info, `notice` is notice. The proxy took the stream's spelling as
+  stored, read only a body `level` key and made every other value a series of
+  its own (`30`, `notice`, ` info`, `true`) or `unknown`.
+
+  VictoriaLogs stores an OTLP record's severity in two shapes: from v1.50
+  severity_text (the record's text, or a name it derives from the number:
+  `Unspecified` for 0, `Info2` for 10) with severity_number, and before one
+  severity field with no number. The derived text is no level field of Loki's,
+  so the pipes skip it and the number decides (a record without a severity
+  falls to the line, as in Loki). The e2e probes run on v1.47.0 and v1.52.0 and
+  cover both shapes; the pairing of a derived name with its number is checked
+  by family (a record sending `Info2` with number 12 is read as derived).
+
+  Both routes of `sum by (detected_level) (... | json ...)` now give Loki's
+  value for every probe line above, bar the differences recorded in
+  semantics/detected-level-pipes-known-differences. The row evaluator (plain `| json`, `__error__!=""`, every pushdown
+  fallback) gives each row Loki's structured metadata before any stage runs,
+  using the derivation the log lines use (deriveRowLevel), so a body
+  detected_level key is renamed and a filter on detected_level
+  (`| json | detected_level="info"`) compares the derived value. The stats
+  pushdown first groups the buckets by copies of the stored detected_level and
+  level fields, taken before any unpack, and gives each bucket the level Loki's
+  ingest gives it: the first non-empty of the two, a known spelling in any case
+  as its level and any other word as stored (translator.NormalizeStoredLevel, tested against
+  the chain's own spelling regexps and against a table of Loki v3.7.7's
+  normalizeLogLevel answers). That is main's query with
+  no chain and no level guard probe, and it answers every window whose rows
+  all carry a stored level (a stream label or structured metadata, as Loki
+  pipelines send it); the proxy reads a stored detected_level, then level, and
+  a bucket with a level needs no other field of the proxy's list. Loki takes any
+  allowed stream label before any structured metadata, so a stream `severity`
+  with metadata `level` is error in Loki and info here: a recorded known
+  difference (semantics/detected-level-pipes-known-differences), not part of
+  this check. A filter on detected_level runs in VictoriaLogs on the stored
+  spellings (translator.BuildStoredLevelCopyFilter, which keeps every row the
+  stored fields do not decide so that those reach the chain) and again in Go on
+  the normalised level. Loki's series limit is applied to the answer's series:
+  the spellings of one level (`INFO`, `info`, `Information`) are one series,
+  and a read of more than twice the limit of VictoriaLogs groups
+  (`errStatsGroupGuard`, a memory guard) is asked again with the chain, whose
+  groups are its series. A
+  bucket without a stored level, or with a stored detected_level (a stream
+  label keeps its spelling, structured metadata is normalised, and the stats
+  cannot tell them apart), sends the query again with the pipes of the native
+  metric route (translator.BuildDetectedLevelChain), built from the level
+  fields and body keys the window holds (a presence probe: one stats query of
+  counts per stored field and per body key word, over the same base and
+  window, run on every request over the part of the window younger than five
+  minutes; an escape sequence in a body makes every key present, a failed probe
+  keeps the full chain; the narrowed query flags each row holding a field or key
+  the probe left out, a line that arrived late inside the remembered part, and
+  is then asked again with the full chain), placed before the unpack of any other label, and a
+  guard (detectedLevelStreamRisk,
+  detectedLevelKeysRisk, detectedLevelUnpackRisk, cached with the other
+  pushdown probes) hands the query to the raw-row evaluator when the window
+  holds a line those pipes read differently from Loki: a detected_level stream
+  label, two mentions of a level key (the pipes read keys in a fixed order),
+  a level key whose JSON value has an escape (Loki reads raw bytes),
+  logfmt keys in a line that starts with a brace but does not end with one
+  (Loki reads that as logfmt, the pipes do not unpack it), or a level key
+  unpack_json yields no value for (nested other than log.level, leading
+  whitespace, text after the closing brace, a syntax error). Differences it
+  does not see are recorded as open in the known-differences row: a stream
+  level field outranked in the pipes' list order by a stored metadata field
+  (stream `severity` with metadata `level`), a logfmt level key in another case
+  (`LvL=warn`), a logfmt syntax error before the level key, and a row
+  VictoriaLogs unpacked from a JSON body. A filter
+  on detected_level is applied after the pipes (`!= ""` always holds), also for
+  Logs Drilldown's detected_level breakdown, which is not the native histogram
+  (the label translator maps detected_level to level, so
+  orderedJSONNativeGroupingIsExact is false for it). With
+  -detected-level-body-scan=false the raw-row evaluator answers, as only the
+  stored fields decide.
+
+  The plain and `| logfmt` logs volume shapes (`sum by (level,
+  detected_level)`) take the same plan, and the same pipes when a row has no
+  stored level: a stream without a level label gets
+  the level of its body (a `level=warn` key or a keyword), as in Loki, where
+  main answered `unknown`. The plain shape has no raw-row fallback, so it runs
+  without the guard (see semantics/detected-level-pipes-known-differences).
+
+  Cost: a window whose rows all carry a stored level costs what main's query
+  costs (two more grouped columns and one copy pipe). Measured against main on
+  one hour of the A/B harness's backfill (about 290,000 lines, a level stream
+  label on every row) with VictoriaLogs capped at 2 CPUs as on a CI runner,
+  warm p50 of 5 to 7 runs, the two builds measured in each order (the second
+  target of the harness runs slower by up to 30% even for the same binary):
+  Explore's JSON volume 79 ms to 98 ms (101 ms to 76 ms in the other order),
+  the volume behind a `detected_level="info"` filter before the parser
+  (VictoriaLogs first unpacks logfmt for every line) 181 ms to 279 ms (259 ms to
+  245 ms); at 6h and 24h 574 ms to 608 ms and 2.37 s to 2.40 s (596 ms to
+  589 ms and 2.25 s to 2.33 s), 1.55 s to 1.60 s and 6.38 s to 6.90 s (1.50 s to
+  1.59 s and 5.98 s to 6.45 s).
+
+  A row with no stored level (the level only in the line: the same backfill
+  with the level left out of the stream labels, which the harness seeds with
+  `--no-level-label`) is read by the chain, which reads every line; main
+  answers 4 series for Explore's volume there where Loki answers 8. The chain
+  parses each line once, for the plan's labels and for the level: the plan's
+  own `unpack_json` and the level keys' are one (translator.SharedUnpack: the
+  chain's unpack reads the level keys and the plan's labels with
+  result_prefix "__j_", the level keys are read only for rows no stored level
+  decides, and before the closing delete each label is copied from its
+  prefixed field where the field is not stored, which is what the plan's
+  unpack with keep_original_fields wrote; the unpack parses a row only where a
+  label is missing as a stored field or the chain reads the line). The keyword
+  regexp runs only on lines that hold one of its nine words as a whole word of
+  VictoriaLogs' tokenizer (`_msg:(i(trace) OR ... OR i(info))`, a superset of
+  the regexp's matches: every byte Loki accepts around a keyword is a token
+  separator and the folding of (?i) maps no non-ASCII rune onto the letters of
+  the words), and the escape check of the presence probe and its witness is a
+  substring filter (`_msg:*"\\u"*`), not a regexp. Measured on one hour of
+  that data, VictoriaLogs capped at 2 CPUs, warm p50, VictoriaLogs alone, 15
+  runs in each measurement order at 1h: Explore's volume 84 ms to 105 ms (87 ms
+  to 102 ms with the branch measured first), the detected_level breakdown with
+  the error rows dropped 88 ms to 99 ms (85 ms to 101 ms); at 6h and 24h (3
+  runs, both orders) Explore's volume 541 ms to 692 ms and 2.39 s to 2.75 s
+  (570 ms to 702 ms and 2.30 s to 2.84 s), the
+  breakdown 585 ms to 641 ms and 2.24 s to 2.74 s (589 ms to 698 ms and 2.25 s
+  to 2.79 s). The previous revision took 38 ms to 282 ms, 0.55 s to 1.5 s and
+  2.3 s to 6.1 s for Explore's volume and 56 ms to 99 ms and 2.2 s to 3.8 s for
+  the breakdown. On VictoriaLogs alone, one hour, per query: main's query 102
+  ms and 225 CPU-ms (cgroup CPU time; the wall time at 2 CPUs moves in steps of
+  the 100 ms quota period), the stored-level plan 100 ms, the previous chain
+  290 ms and 550 CPU-ms, this one 107 ms and 260 CPU-ms. Where the CPU of the
+  chain went (one group of pipes left out at a time): the plan's own unpack 194
+  CPU-ms, the keyword regexp 144, the witness 102 before; the witness 87, the
+  keyword regexp 48 and the json unpack 20 now. The detected_level breakdown of
+  Logs Drilldown (a filter, `| json | drop __error__`), which main answered
+  from raw rows, goes on that data from 2.2 s to 0.05-0.11 s at 1h and from
+  7.5 s to 0.67 s (6h) and 2.6 s (24h), and on the data with a level stream
+  label from 2.3 s to 7 ms at 1h. The first view of a window (nothing
+  remembered: the stored-level attempt, the level probes, the presence probe,
+  then the chain) takes about 0.5 s at 1h for Explore's volume where main takes
+  0.08 s (0.55-0.68 s in the previous revision, both builds restarted on one
+  stack): the probes scan the window and share the 2 CPUs with the chain, the
+  heaviest of them (detectedLevelKeysRisk, 260-300 ms: two level keys in a line,
+  an escape in a level value, a brace without its closing brace) one this change
+  adds. A window with a row that has no stored level asks
+  twice, the stored-level attempt first (it costs what main's query costs; its
+  verdict is remembered for the base for five minutes so the next ask goes to
+  the chain at once), and pays the chain with the three guard probes and the
+  presence probe. Each guard probe stops at its first matching line (`limit 1`),
+  which bounds what it returns, not the work: on a clean window it scans the
+  lines that hold a level-key word (VictoriaLogs' word index narrows them) and
+  the rows without a stored level. The guard is a superset of the lines the
+  pipes read differently: a body with both `level` and `severity` (audit logs)
+  trips it although the pipes might agree. One such line sends the whole query
+  to the raw-row evaluator, which is exact and bounded by the row limit, so a
+  long range answers 502 where the pushdown answered 200. The chain is about
+  7.1 KB of LogsQL unpruned and 1.5 KB for a window with one stored level field
+  and no body key, plus the witness (up to 1.5 KB, none when the window holds
+  every field and key): with a `service_name` selector Explore's volume sends
+  4.2 KB (9.8 KB unpruned) and a regexp selector of seven long names about
+  9.6 KB with the witness (14.4 KB unpruned; those names match no row, so the
+  chain is at its smallest), against VictoriaLogs' 16 KiB -search.maxQueryLen (a
+  longer query answers 502; a window whose presence cannot be told keeps the
+  full chain and its size; a unit test pins the witnessed request under the
+  limit). The remembered verdicts (guard probes and presence) are kept per
+  request scope, cover only the part of a window older than five minutes, and
+  expire five minutes after the check of their oldest part, so a refreshing
+  dashboard checks the last five minutes on every refresh and the whole window
+  again every five minutes.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({app="json-level-probe"} | json | drop __error__ [1m]))'
+    start: now-10m
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    One stream per probe line: pino numeric levels, notice, a padded level, the
+    severity, Level, LEVEL and nested log.level keys, two level keys in both
+    orders, a line with the word error and no level key, a detected_level
+    stream label, a body detected_level key, structured metadata level and
+    detected_level.
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    The series Loki answers for each probe, on `| json` (raw-row evaluator) and
+    `| json | drop __error__` (pushdown or its guarded fallback).
+gap:
+  status: fixed
+  fixed_by: "#760"
+  impact: explore-visible
+  visual: none
+  visual_reason: 'the generator data carries one lowercase spelling, the same in the stream label and the body, so main and the branch render the same panel; the e2e probes against Loki are the proof (v1.47 and v1.52)'
+  effort: M
+  area: 'internal/proxy ordered_json_metric.go (withDerivedLevel, setStatsPushdown, detectedLevel*Risk), stream_processing.go stringRow'
+  loki: 'pkg/distributor/field_detection.go extractLogLevelFromLogLine, detectLevelFromLogLine, normalizeLogLevel; pkg/distributor/labels.go (detected_level_extracted)'
+  proxy: 'the row evaluator and the stats pushdown read the stream level or a body level key and normalized it'
+  planned_test: 'TestOrderedJSONDetectedLevelLikeLoki, TestOrderedJSONDetectedLevelMixedRows, TestOrderedJSONDetectedLevelKnownDifferences (proxy); TestRangeMetricCompatibilityJSONDetectedLevelProbes, TestRangeMetricCompatibilityJSONDetectedLevelSharedUnpack, TestRangeMetricCompatibilityDetectedLevelPipeVariants, TestRangeMetricCompatibilityEscapeSubstringFilter and TestRangeMetricCompatibilityJSONDetectedLevel (test/e2e-compat, group semantics); TestKeywordScanLikeLoki, TestKeywordGateIsASupersetOfTheRegexp, TestBuildDetectedLevelChainShared (translator); TestSharedUnpackKeepsThePlansLabelsLikeLoki, TestSharedLevelUnpackEligibility (proxy)'
+  note: |
+    Measured on VictoriaLogs v1.52.0 and v1.47.0 against Loki v3.7.7.
+  clusters: []

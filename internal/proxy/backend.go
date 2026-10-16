@@ -764,7 +764,9 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	// A metric checked for unwrap conversion errors counts them in its own stats.
+	sentParams := params
 	params, stripUnwrapCounter, _ := unwrapCheckFrom(ctx).countingStatsQuery(path, params)
+	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path
@@ -803,6 +805,17 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	if stripUnwrapCounter != nil {
 		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
 			return nil, err
+		}
+	}
+	if witness != nil {
+		flagged, err := p.levelWitnessResponse(resp)
+		if err != nil {
+			return nil, err
+		}
+		if flagged {
+			// A row holds what the pruned chain does not read: the mask is stale.
+			p.dropLevelPresence(ctx, witness.base)
+			return p.vlPostHTTP(context.WithValue(ctx, levelFullChainKey{}, true), path, sentParams)
 		}
 	}
 	return resp, nil

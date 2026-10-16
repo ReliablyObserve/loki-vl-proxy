@@ -1,0 +1,61 @@
+{
+ "label": "detlevel-bodyonly-swapped-d-1h",
+ "date": "2026-10-14",
+ "set": "json-filter-pushdown",
+ "description": "| json / | logfmt range metrics with label filters on parsed fields (PR #611). Grafana Explore log volume and Logs Drilldown field breakdowns over a JSON stream.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "same": 1
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "D volume, no filters",
+   "range": "1h",
+   "p50": {
+    "pr": 0.169,
+    "base": 0.095,
+    "loki": 0.062
+   },
+   "p95": {
+    "pr": 0.21,
+    "base": 0.104,
+    "loki": 0.07
+   },
+   "cold": {
+    "pr": 0.458,
+    "base": 0.18,
+    "loki": 0.863
+   },
+   "status": {
+    "pr": "200",
+    "base": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "pr": 153.13,
+    "base": 153.13,
+    "loki": 153.13
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "differs",
+   "verdict": "same",
+   "speedup": 0.56
+  }
+ ]
+}

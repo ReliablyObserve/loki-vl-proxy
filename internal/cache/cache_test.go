@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -135,8 +136,8 @@ func TestCache_Size(t *testing.T) {
 	if entries != 2 {
 		t.Errorf("expected 2 entries, got %d", entries)
 	}
-	if bytes != 10 {
-		t.Errorf("expected 10 bytes, got %d", bytes)
+	if bytes != 12 { // two keys of one byte and two values of five
+		t.Errorf("expected 12 bytes, got %d", bytes)
 	}
 }
 
@@ -226,8 +227,8 @@ func TestCache_ReplaceExistingKey(t *testing.T) {
 	if entries != 1 {
 		t.Errorf("expected 1 entry (replaced), got %d", entries)
 	}
-	if bytes != 3 {
-		t.Errorf("expected 3 bytes (len('new')), got %d", bytes)
+	if want := len("new") + len("key"); bytes != want {
+		t.Errorf("expected %d bytes (the key and 'new'), got %d", want, bytes)
 	}
 }
 
@@ -317,4 +318,20 @@ func TestCache_Close(t *testing.T) {
 	}
 	// Double close should not panic
 	c.Close()
+}
+
+// A key as long as a query is memory the entry holds: it counts toward the
+// byte budget, so a helper entry keyed by a long query cannot hide behind a
+// one-byte value, and the budget evicts it.
+func TestCache_SizeCountsTheKey(t *testing.T) {
+	c := NewWithMaxBytes(time.Hour, 100, 1000)
+	long := strings.Repeat("q", 60)
+	c.Set(long, []byte("1"))
+	if _, bytes := c.Size(); bytes != 61 {
+		t.Fatalf("a 60-byte key and a 1-byte value: %d bytes, want 61", bytes)
+	}
+	c.Set(strings.Repeat("r", 150), []byte("1")) // over a tenth of the budget: not stored
+	if entries, _ := c.Size(); entries != 1 {
+		t.Fatalf("an entry whose key alone is over the per-entry limit was stored: %d entries", entries)
+	}
 }

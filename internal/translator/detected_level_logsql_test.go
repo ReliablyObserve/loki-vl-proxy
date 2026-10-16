@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,11 @@ func TestBuildHasLevelFilter(t *testing.T) {
 		{[]string{"app", "msg"}, ""},
 		{[]string{"x", "level"}, "level:*"},
 		{[]string{"severity_number", "severity_text", "log.level"}, `(log.level:* OR severity_text:* OR severity_number:*) !(log.level:"" severity_text:="Unspecified" severity_number:="0")`},
+		// VictoriaLogs before v1.50 stores the OTLP severity as one field, with
+		// no number: "Unspecified" carries no level. Every other level field,
+		// not only the ones ranked before it, keeps a row in.
+		{[]string{"severity", "level", "lvl"}, `(level:* OR severity:* OR lvl:*) !(level:"" lvl:"" severity:="Unspecified" -severity_number:*)`},
+		{[]string{"severity_number", "severity_text", "Severity_Text"}, `(severity_text:* OR Severity_Text:* OR severity_number:*) !(Severity_Text:"" severity_text:="Unspecified" severity_number:="0")`},
 	}
 	for _, tc := range cases {
 		if got := BuildHasLevelFilter(tc.fields); got != tc.want {
@@ -68,15 +74,38 @@ func TestBuildStoredLevelFilterOTelSynthesizedText(t *testing.T) {
 	}
 	for _, want := range []string{
 		"severity_text:~`(?i)^(warn|wrn|warning)$`",
-		`!((severity_text:="Trace" severity_number:="1") OR `,
-		`(severity_text:="Warn" severity_number:="13")`,
+		// The names of a number's family, whatever the number's place in it.
+		"(severity_text:~`^Trace[234]?$` severity_number:~`^(1|2|3|4)$`)",
+		"(severity_text:~`^Warn[234]?$` severity_number:~`^(13|14|15|16)$`)",
+		"(severity_text:=\"Unspecified\" severity_number:~`^(-[1-9][0-9]*|2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})$`)",
 		`!(severity_text:="Unspecified" severity_number:="0")`,
 		"severity_number:~`^1[3-6]$`",
-		`(severity_text:"" OR (((severity_text:="Trace" severity_number:="1")`,
+		`(severity_text:"" OR (((severity_text:~`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("filter lacks %q:\n%s", want, got)
 		}
+	}
+}
+
+// VictoriaLogs before v1.50 stores an OTLP record's severity as one field named
+// severity and no number: its finer names (Info2) mean the coarse level, and
+// Unspecified means none, so neither is a raw level word.
+func TestBuildStoredLevelFilterSynthesizedSeverityName(t *testing.T) {
+	got, err := BuildStoredLevelFilter("=", "info", []string{"severity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "severity:~`(?i)^(info|inf|information)$`"
+	if !strings.Contains(got, want) || !strings.Contains(got, "(-severity_number:* severity:~`^(Info)[234]?$`)") {
+		t.Fatalf("filter lacks the derived names:\n%s", got)
+	}
+	got, err = BuildStoredLevelFilter("=~", "Unspecified|Info2", []string{"severity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "!(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*)") {
+		t.Fatalf("a derived name matched as a raw word:\n%s", got)
 	}
 }
 
@@ -136,7 +165,7 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 				}
 				return
 			}
-			chain := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup)
+			chain := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup, nil)
 			if plan.Pipes != chain+" "+tc.filter {
 				t.Fatalf("pipes tail = %q, want chain + %q", strings.TrimPrefix(plan.Pipes, chain), tc.filter)
 			}
@@ -146,7 +175,7 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 
 // conformance: severity-detected-level-derivation
 func TestBuildDetectedLevelChain(t *testing.T) {
-	chain := BuildDetectedLevelChain(nil, DetectedLevelChainGroup)
+	chain := BuildDetectedLevelChain(nil, DetectedLevelChainGroup, nil)
 	pipes := strings.Split(strings.TrimPrefix(chain, "| "), " | ")
 	// 16 stored picks + 1 stored copy + 2 unpack + 28 body picks + 7
 	// normalisers + 1 keyword regexp + 3 keyword finals + 1 stored word +
@@ -160,12 +189,17 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		14: `format if (SEVERITY_TEXT:*) "<SEVERITY_TEXT>" as __dl_s keep_original_fields`,
 		15: `format if (__dl_s:*) "<__dl_s>" as __dl_v keep_original_fields`,
 		16: `unpack_json from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__j_"`,
-		17: `unpack_logfmt from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix "__l_"`,
+		// Lines Loki reads as JSON (a leading brace) never go to logfmt.
+		17: "unpack_logfmt if (-_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (level, LEVEL, Level, log.level, severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT) result_prefix \"__l_\"",
+		// A severity text VictoriaLogs derived from the OTLP number is no level
+		// field: Unspecified and the finer names (Info2) of v1.47 (severity,
+		// no number) and the text matching its number of v1.50+ (severity_text).
+		5:  "format if (severity:* !(severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*)) \"<severity>\" as __dl_s keep_original_fields",
 		18: `format if (__j_level:*) "<__j_level>" as __dl_v keep_original_fields`,
 		45: `format if (__l_SEVERITY_TEXT:*) "<__l_SEVERITY_TEXT>" as __dl_v keep_original_fields`,
 		46: "format if (__dl_v:~`(?i)^(trace|trc)$`) \"trace\" as __dl keep_original_fields",
 		52: "format if (__dl_v:~`(?i)^(fatal)$`) \"fatal\" as __dl keep_original_fields",
-		53: "extract_regexp if (__dl:\"\") `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
+		53: "extract_regexp if (__dl:\"\" _msg:(i(trace) OR i(debug) OR i(fatal) OR i(critical) OR i(error) OR i(err) OR i(warning) OR i(warn) OR i(info))) `(?i)(?:^|[ \\t\\n\\[({\"=])(?P<__dl_e>trace|debug|fatal|critical|error|err|warning|warn|info)(?:$|[ \\t\\n\\[\\](){}:,!\"=])` from _msg",
 		57: `format if (__dl:"" __dl_s:*) "<__dl_s>" as __dl keep_original_fields`,
 		66: `format "unknown" as __dl keep_original_fields`,
 		67: `delete __dl_*, __j_*, __l_*`,
@@ -175,20 +209,36 @@ func TestBuildDetectedLevelChain(t *testing.T) {
 		}
 	}
 
-	logs := BuildDetectedLevelChain(nil, DetectedLevelChainLogs)
+	logs := BuildDetectedLevelChain(nil, DetectedLevelChainLogs, nil)
 	if !strings.HasSuffix(logs, `| format "unknown" as __dl keep_original_fields | rename __dl as detected_level | delete __dl, __dl_*, __j_*, __l_*`) {
 		t.Fatalf("logs chain ending: %s", logs[len(logs)-160:])
 	}
 
-	stored := BuildDetectedLevelChain([]string{"level", "app"}, DetectedLevelChainLogs)
+	stored := BuildDetectedLevelChain([]string{"level", "app"}, DetectedLevelChainLogs, nil)
 	for _, want := range []string{
-		`| unpack_json if (!(level:*)) from _msg fields (`,
-		`| unpack_logfmt if (!(level:*)) from _msg fields (`,
-		"| extract_regexp if (!(level:*) __dl:\"\") `",
-		`| format if (!(level:*)) "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`,
+		// A row with a level field is marked once, and skipped by the pipes
+		// that read the line.
+		`| format if (__dl_s:*) "1" as __dl_h | format if (__dl_s:*) "<__dl_s>" as __dl_v`,
+		`| unpack_json if (-__dl_h:*) from _msg fields (`,
+		"| unpack_logfmt if (-__dl_h:* -_msg:~`^[\\s\\v\\x{85}\\p{Z}]*\\{`) from _msg fields (",
+		"| extract_regexp if (-__dl_h:* __dl:\"\" _msg:(i(trace) OR ",
+		`| format if (-__dl_h:*) "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`,
 	} {
 		if !strings.Contains(stored, want) {
 			t.Fatalf("chain with stored level lacks %q", want)
+		}
+	}
+
+	// The OTLP severity of VictoriaLogs v1.50+ (severity_text, severity_number)
+	// and before (severity alone): a row decides by a level text that is not
+	// synthesised, a number other than 0, or a finer severity name.
+	otlp := BuildDetectedLevelChain([]string{"severity_text", "severity_number", "severity"}, DetectedLevelChainGroup, nil)
+	for _, want := range []string{
+		`| format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`,
+		"| format if (-__dl_h:* (severity:~`^(Unspecified|(Trace|Debug|Info|Warn|Error|Fatal)[234]?)$` -severity_number:*) -severity:=\"Unspecified\") \"1\" as __dl_h",
+	} {
+		if !strings.Contains(otlp, want) {
+			t.Fatalf("OTLP chain lacks %q", want)
 		}
 	}
 }
@@ -218,4 +268,184 @@ func TestMetricGroupingDerivesDetectedLevel(t *testing.T) {
 	if plain != `app:="x" | stats by (app) count()` {
 		t.Fatalf("unrelated grouping changed: %q", plain)
 	}
+}
+
+// A chain built from the fields and keys a window holds carries only their
+// pipes, keeps the pipes the OTLP severity needs, and with every field and key
+// present is the full chain.
+// conformance: severity-detected-level-derivation
+func TestBuildDetectedLevelChainPruned(t *testing.T) {
+	all := &DetectedLevelPresence{Stored: DetectedLevelFieldNames, BodyKeys: DetectedLevelBodyKeys()}
+	for _, mode := range []DetectedLevelChainMode{DetectedLevelChainGroup, DetectedLevelChainLogs, DetectedLevelChainGrouping} {
+		if got, want := BuildDetectedLevelChain(nil, mode, all), BuildDetectedLevelChain(DetectedLevelFieldNames, mode, nil); got != want {
+			t.Fatalf("mode %d: every field and key present is not the full chain:\n%s\n%s", mode, got, want)
+		}
+	}
+	pipes := func(present *DetectedLevelPresence) []string {
+		chain := BuildDetectedLevelChain(nil, DetectedLevelChainGrouping, present)
+		if !strings.HasPrefix(chain, "| ") {
+			t.Fatalf("chain does not start with a pipe: %.80s", chain)
+		}
+		return strings.Split(strings.TrimPrefix(chain, "| "), " | ")
+	}
+	contains := func(list []string, prefix string) bool {
+		for _, p := range list {
+			if strings.HasPrefix(p, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// One stored field and one body key: 1 pick, the marker, the stored copy, 2
+	// unpacks, 2 key picks, 7 normalisers, the keyword regexp and its 3 finals,
+	// the stored word, unknown, the final copy and delete.
+	level := pipes(&DetectedLevelPresence{Stored: []string{"level"}, BodyKeys: []string{"level"}})
+	if len(level) != 22 {
+		t.Fatalf("level chain has %d pipes, want 22: %v", len(level), level)
+	}
+	for i, want := range map[int]string{
+		0: `format if (level:*) "<level>" as __dl_s keep_original_fields`,
+		1: `format if (__dl_s:*) "1" as __dl_h`,
+		3: `unpack_json if (-__dl_h:*) from _msg fields (level) result_prefix "__j_"`,
+	} {
+		if level[i] != want {
+			t.Fatalf("pipe %d = %q, want %q", i, level[i], want)
+		}
+	}
+	if contains(level, "format if (__dl:\"\" -__dl_s:* severity_number") {
+		t.Fatalf("a window without severity_number or severity keeps the number pipes: %v", level)
+	}
+
+	// Nothing stored and no key: the keyword scan decides, or unknown.
+	none := pipes(&DetectedLevelPresence{})
+	if !strings.HasPrefix(none[0], "extract_regexp ") || len(none) != 7 {
+		t.Fatalf("empty chain: %d pipes, first %.60s: %v", len(none), none[0], none)
+	}
+	for _, gone := range []string{"unpack_", "format if (__dl_s", "format if (__dl_v", "format if (__dl:\"\" -__dl_s", "format if (__dl:\"\" __dl_s"} {
+		if contains(none, gone) {
+			t.Fatalf("empty chain still has a %q pipe: %v", gone, none)
+		}
+	}
+
+	// The OTLP severity: v1.50+ stores severity_text with severity_number, and
+	// the synthesised text defers to the number; before it, severity alone
+	// carries the derived name (severityNameClause), which only the number
+	// pipes read.
+	otlp := pipes(&DetectedLevelPresence{Stored: []string{"severity_text", "severity_number"}})
+	for _, want := range []string{
+		`format if (severity_text:* !`,
+		`format if (-__dl_h:* severity_number:* !(severity_number:="0" severity_text:="Unspecified")) "1" as __dl_h`,
+		`format if (__dl:"" -__dl_s:* severity_number:*) "info" as __dl keep_original_fields`,
+	} {
+		if !contains(otlp, want) {
+			t.Fatalf("OTLP v1.50 chain lacks %q: %v", want, otlp)
+		}
+	}
+	old := pipes(&DetectedLevelPresence{Stored: []string{"severity"}})
+	if !contains(old, `format if (severity:* !(severity:~`) || !contains(old, `format if (-__dl_h:* (severity:~`) || !contains(old, `format if (__dl:"" -__dl_s:* (severity_number:~`) {
+		t.Fatalf("pre-v1.50 OTLP chain lacks a severity pick, marker or number pipe: %v", old)
+	}
+	if contains(old, `format if (__dl:"" -__dl_s:* severity_number:*) "info"`) {
+		t.Fatalf("a window without severity_number keeps the number fallback: %v", old)
+	}
+	number := pipes(&DetectedLevelPresence{Stored: []string{"severity_number"}})
+	if !strings.HasPrefix(number[0], `format if (__dl_s:*) "1" as __dl_h`) {
+		t.Fatalf("number-only chain starts with %.60s", number[0])
+	}
+	for _, want := range []string{`format if (-__dl_h:* severity_number:*`, `format if (__dl:"" -__dl_s:* severity_number:*) "info"`} {
+		if !contains(number, want) {
+			t.Fatalf("number-only chain lacks %q: %v", want, number)
+		}
+	}
+}
+
+// The answers of Loki v3.7.7's normalizeLogLevel (pkg/distributor/field_detection.go),
+// written out by hand from its source: a case-insensitive match of exactly
+// these spellings (bytes.EqualFold, no trimming), any other value as it is.
+// The table does not call NormalizeStoredLevel to build its expectations.
+// conformance: severity-detected-level-derivation
+func TestNormalizeStoredLevelIsLokisNormalizeLogLevel(t *testing.T) {
+	for value, want := range map[string]string{
+		"trace": "trace", "TRACE": "trace", "trc": "trace", "Trc": "trace",
+		"debug": "debug", "Debug": "debug", "dbg": "debug", "DBG": "debug",
+		"info": "info", "INFO": "info", "inf": "info", "inf ": "inf ", "information": "info", "Information": "info", "INFORMATION": "info",
+		"warn": "warn", "WARN": "warn", "wrn": "warn", "WRN": "warn", "warning": "warn", "WARNING": "warn",
+		"error": "error", "Error": "error", "err": "error", "Err": "error", "ERR": "error",
+		"critical": "critical", "CRITICAL": "critical",
+		"fatal": "fatal", "Fatal": "fatal",
+		// not Loki's spellings: the value stays as it is
+		"notice": "notice", "30": "30", " info": " info", "info ": "info ", "unknown": "unknown", "": "",
+		"emerg": "emerg", "alert": "alert", "verbose": "verbose", "warnings": "warnings", "errors": "errors", "crit": "crit",
+	} {
+		if got := NormalizeStoredLevel(value); got != want {
+			t.Errorf("NormalizeStoredLevel(%q) = %q, Loki's normalizeLogLevel gives %q", value, got, want)
+		}
+	}
+}
+
+// The level of a row a stored level field decides is computed in Go from the
+// grouped stored value; it must be what the chain's spelling pipes give: the
+// anchored, case-insensitive regexps of detectedLevelSpellings, and any other
+// word as stored.
+// conformance: severity-detected-level-derivation
+func TestNormalizeStoredLevelMatchesTheChain(t *testing.T) {
+	corpus := []string{"info", "INFO", "Info", "inf", "Information", "INFORMATION", "warn", "WRN", "Warning", "WARNING", "error", "ERR", "Err",
+		"critical", "CRITICAL", "fatal", "Fatal", "trace", "TRC", "debug", "DBG", "unknown", "notice", "NOTICE", "verbose", "30", "true", "",
+		" info", "info ", "info\n", "infoo", "in fo", "warning2", "ünfo", "ınfo", "ſtrace"}
+	for _, value := range corpus {
+		want := value
+		for _, s := range detectedLevelSpellings {
+			if regexp.MustCompile("(?i)^(" + strings.Join(s.spellings, "|") + ")$").MatchString(value) {
+				want = s.level
+				break
+			}
+		}
+		if got := NormalizeStoredLevel(value); got != want {
+			t.Errorf("NormalizeStoredLevel(%q) = %q, the chain's pipes give %q", value, got, want)
+		}
+	}
+}
+
+// Whatever a Loki label filter holds, the filter pipes sent to VictoriaLogs for
+// the stored level are well formed (balanced parentheses outside quoted text,
+// one pipe per filter) and never panic.
+func FuzzStoredLevelCopyFilter(f *testing.F) {
+	for _, seed := range [][2]string{{"=", "info"}, {"!=", "error"}, {"=~", "warn|error"}, {"!~", "(?i)inf.*"}, {"=", ""}, {"=~", `a"b`}, {"=", "`"}, {"=~", `\d+`}} {
+		f.Add(seed[0], seed[1])
+	}
+	f.Fuzz(func(t *testing.T, op, value string) {
+		filter, err := NewDropCondition("detected_level", op, value)
+		if err != nil || (op != "=" && op != "!=" && op != "=~" && op != "!~") {
+			return
+		}
+		got := BuildStoredLevelCopyFilter("__dl_l", "__dl_d", []DropCondition{filter})
+		if !strings.HasPrefix(got, " | filter (__dl_d:* OR -__dl_l:* OR ") || strings.Count(got, " | filter ") != 1 {
+			t.Fatalf("%q %q: %s", op, value, got)
+		}
+		depth, quote := 0, byte(0)
+		for i := 0; i < len(got); i++ {
+			c := got[i]
+			switch {
+			case quote != 0:
+				if c == '\\' && quote == '"' {
+					i++
+				} else if c == quote {
+					quote = 0
+				}
+			case c == '"' || c == '`':
+				quote = c
+			case c == '(':
+				depth++
+			case c == ')':
+				depth--
+			}
+			if depth < 0 {
+				t.Fatalf("%q %q: unbalanced: %s", op, value, got)
+			}
+		}
+		if depth != 0 || quote != 0 {
+			t.Fatalf("%q %q: unbalanced or unterminated: %s", op, value, got)
+		}
+	})
 }

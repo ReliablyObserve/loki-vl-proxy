@@ -81,8 +81,10 @@ def port_free(port):
 
 
 class Stack:
-    def __init__(self, project, loki_port=23101, vl_port=29428, loki_mem=None, vl_mem=None, root=ROOT, overlays=()):
+    def __init__(self, project, loki_port=23101, vl_port=29428, loki_mem=None, vl_mem=None, root=ROOT, overlays=(),
+                 no_level_label=False):
         self.project, self.loki_port, self.vl_port, self.root = project, loki_port, vl_port, root
+        self.no_level_label = no_level_label  # seed rows whose level lives only in the line
         self.overlays = list(overlays)  # further compose files after OVERLAY (relative to root)
         self.env = dict(os.environ, AB_PROJECT=project, AB_LOKI_PORT=str(loki_port), AB_VL_PORT=str(vl_port))
         if loki_mem:
@@ -124,6 +126,8 @@ class Stack:
         env = dict(os.environ, LOKI_URL=self.loki, VL_URL=self.vl, LOG_BATCH=str(batch),
                    LOG_BACKFILL_SECONDS=str(seconds), LOG_BACKFILL_INTERVAL=str(interval),
                    LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=str(end))
+        if self.no_level_label:
+            env["LOG_NO_LEVEL_LABEL"] = "1"
         t0 = time.time()
         subprocess.run([sys.executable, GENERATOR], cwd=self.root, env=env, check=True, stdout=sys.stderr)
         try:
@@ -334,10 +338,13 @@ def stack_args(ap):
     ap.add_argument("--vl-port", type=int, default=29428)
     ap.add_argument("--loki-mem", default="", help="Loki memory limit, e.g. 4g (default: the base stack's)")
     ap.add_argument("--vl-mem", default="", help="VictoriaLogs memory limit (default: the base stack's)")
+    ap.add_argument("--no-level-label", action="store_true",
+                    help="seed rows with no stored level (the level only in the line), for the detected_level routes")
 
 
 def stack_from(args):
-    return Stack(args.project, args.loki_port, args.vl_port, args.loki_mem or None, args.vl_mem or None)
+    return Stack(args.project, args.loki_port, args.vl_port, args.loki_mem or None, args.vl_mem or None,
+                 no_level_label=args.no_level_label)
 
 
 def main():
