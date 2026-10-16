@@ -1231,6 +1231,15 @@ func guardStatsGroups(ctx context.Context) context.Context {
 	return context.WithValue(ctx, statsGroupGuardKey{}, true)
 }
 
+// guardAuxStatsGroups guards the groups of a read with an aux result: they are
+// the groups of a split plan, no series of the answer.
+func guardAuxStatsGroups(ctx context.Context, aux string) context.Context {
+	if aux != "" {
+		return guardStatsGroups(ctx)
+	}
+	return ctx
+}
+
 func statsGroupsGuarded(ctx context.Context) bool {
 	guarded, _ := ctx.Value(statsGroupGuardKey{}).(bool)
 	return guarded
@@ -1280,9 +1289,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	if hitStep <= 0 {
 		hitStep = time.Minute
 	}
-	if aux != "" {
-		ctx = guardStatsGroups(ctx)
-	}
+	ctx = guardAuxStatsGroups(ctx, aux)
 
 	// Build LogsQL stats query so VL returns pre-aggregated bucket values.
 	// stats_query_range understands stream labels (stored in _stream), unlike /hits.

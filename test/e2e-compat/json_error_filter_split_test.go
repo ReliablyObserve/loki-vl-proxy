@@ -177,45 +177,57 @@ func TestRangeMetricCompatibilityJSONErrorFilterSplitSeriesLimit(t *testing.T) {
 }
 
 // detected_level is the level Loki derives at ingest, normalized, from a stream
-// label or from the JSON body. The split groups it from the stored level or the
-// body's level key and must answer like Loki, VictoriaLogs groups (one per
+// label or from the JSON body. The split serves it from the stored level fields
+// alone, and only when they decide the level of every counted line; a level the
+// body holds, a counted line without one, or a read past the group guard is left
+// to the row evaluator, which derives the level of each line like Loki's
+// ingest. Either way the answer is Loki's, VictoriaLogs groups (one per
 // spelling) notwithstanding: the spellings of one level are one series, and the
-// series limit counts series. The body variant also holds lines only Loki's
-// parser accepts (nested deeper than VictoriaLogs reads), which the split reads
-// as raw rows.
+// series limit counts series. The last variant holds lines only Loki's parser
+// accepts (nested deeper than VictoriaLogs reads), which the split reads as raw
+// rows and whose level the row evaluator derives from the body.
 // conformance: semantics/json-error-filter-metric-split-pushdown
 func TestRangeMetricCompatibilityJSONErrorFilterSplitDetectedLevel(t *testing.T) {
 	now := time.Now()
 	s0 := now.Add(-9 * time.Hour).Truncate(time.Hour)
 	body := fmt.Sprintf("json-error-split-lvl-body-%d", now.UnixNano())
 	stream := fmt.Sprintf("json-error-split-lvl-stream-%d", now.UnixNano())
+	gap := fmt.Sprintf("json-error-split-lvl-gap-%d", now.UnixNano())
 	spellings := []string{"info", "INFO", "Info", "inf", "information", "warn", "WARN", "warning", "error", "ERR", "debug"}
-	var bodyLines, streamLines, rawLines []jsonVolumeStreamLine
+	var bodyLines, streamLines, gapLines, rawLines []jsonVolumeStreamLine
 	for i := 0; i < 66; i++ {
 		ts := s0.Add(time.Duration(i) * 5 * time.Second)
 		level := spellings[i%len(spellings)]
 		bodyLines = append(bodyLines, jsonVolumeStreamLine{ts: ts, msg: fmt.Sprintf(`{"level":%q,"n":%d}`, level, i)})
 		streamLines = append(streamLines, jsonVolumeStreamLine{ts: ts, level: level, msg: fmt.Sprintf(`{"n":%d}`, i)})
+		gapLines = append(gapLines, jsonVolumeStreamLine{ts: ts, level: level, msg: fmt.Sprintf(`{"n":%d}`, i)})
 		// Nested deeper than VictoriaLogs' parser reads (300 levels): Loki's
 		// parser accepts the line, so the split reads it as a raw row.
 		rawLines = append(rawLines, jsonVolumeStreamLine{ts: ts, msg: fmt.Sprintf(`{"level":%q,"deep":%s1%s,"n":%d}`, level, strings.Repeat(`{"a":`, 320), strings.Repeat(`}`, 320), i)})
 	}
 	// A line without any level, the last of the fixture.
 	bodyLines = append(bodyLines, jsonVolumeStreamLine{ts: s0.Add(331 * time.Second), msg: `{"n":-1}`})
-	streamLines = append(streamLines, jsonVolumeStreamLine{ts: s0.Add(331 * time.Second), msg: `{"n":-1}`})
+	streamLines = append(streamLines, jsonVolumeStreamLine{ts: s0.Add(331 * time.Second), level: "info", msg: `{"n":-1}`})
+	gapLines = append(gapLines, jsonVolumeStreamLine{ts: s0.Add(331 * time.Second), msg: `{"n":-1}`})
 	raw := fmt.Sprintf("json-error-split-lvl-raw-%d", now.UnixNano())
-	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{body: bodyLines, stream: streamLines, raw: rawLines})
+	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{body: bodyLines, stream: streamLines, gap: gapLines, raw: rawLines})
 
-	route, _ := newJSONVolumeRouteProxyWithLimits(t, 0, 50)
+	route, routeRecorder := newJSONVolumeRouteProxyWithLimits(t, 0, 50)
 	// 11 spellings and the line without a level are 12 groups past twice the
 	// limit of 5, but 5 series: the row evaluator answers that read.
 	fallback, fallbackRecorder := newJSONVolumeRouteProxyWithLimits(t, 0, 5)
 	targets := map[string]string{"proxy": proxyURL, "in-process": route, "in-process limit 5": fallback}
 	start, end := s0.Add(-2*time.Minute), s0.Add(9*time.Minute)
-	for _, tc := range []struct{ name, app string }{
-		{"level in the body", body},
-		{"level as a stream label with mixed spellings", stream},
-		{"level in the body of lines nested deeper than VictoriaLogs reads", raw},
+	// split: the stats answer from the stored level fields (the raw app reads
+	// its lines as raw rows too); otherwise the row evaluator answers.
+	for _, tc := range []struct {
+		name, app string
+		split     bool
+	}{
+		{"level in the body", body, false},
+		{"level as a stream label with mixed spellings", stream, true},
+		{"a counted line without a stored level among stored ones", gap, false},
+		{"level in the body of lines nested deeper than VictoriaLogs reads", raw, true},
 	} {
 		for _, function := range []string{"count_over_time", "bytes_over_time"} {
 			query := `sum by (detected_level) (` + function + `({app="` + tc.app + `"} | json | __error__="" [1m]))`
@@ -227,7 +239,11 @@ func TestRangeMetricCompatibilityJSONErrorFilterSplitDetectedLevel(t *testing.T)
 				}
 				for name, base := range targets {
 					fallbackRecorder.reset()
+					routeRecorder.reset()
 					assertSlidingParity(t, query+" ["+name+"]", loki, slidingRangeSeries(t, base, query, start, end, time.Minute, nil))
+					if name == "in-process" {
+						assertDetectedLevelSplitRoute(t, routeRecorder.reset(), tc.split)
+					}
 					if name != "in-process limit 5" {
 						continue
 					}
@@ -238,11 +254,40 @@ func TestRangeMetricCompatibilityJSONErrorFilterSplitDetectedLevel(t *testing.T)
 						}
 					}
 					// The raw app reads its lines as raw rows only: one group.
-					if rowReads == 0 && tc.app != raw {
+					if rowReads == 0 && tc.app != raw && tc.app != stream {
 						t.Errorf("limit 5: the row evaluator did not answer the read of past twice the limit in groups")
 					}
 				}
 			})
 		}
+	}
+}
+
+// assertDetectedLevelSplitRoute checks which route answered a detected_level
+// query of the split: with split the stats read the stored level fields and no
+// line is read as a row but the raw candidates (bounded by the sentinel);
+// without it the row evaluator read the selected rows. The derivation chain is
+// never part of a split plan.
+func assertDetectedLevelSplitRoute(t *testing.T, calls []string, split bool) {
+	t.Helper()
+	statsCalls, rowReads := 0, 0
+	for _, call := range calls {
+		switch {
+		case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
+			if strings.Contains(call, `result_prefix "__j_"`) || strings.Contains(call, "__dl_h") {
+				t.Errorf("a split plan sent the detected_level chain: %.300s", call)
+			}
+			if strings.Contains(call, "copy detected_level as __dl_d, level as __dl_l") {
+				statsCalls++
+			}
+		case strings.HasPrefix(call, "/select/logsql/query ") && !strings.HasSuffix(call, " | limit 1") && !strings.Contains(call, "__vlp:*"):
+			rowReads++
+		}
+	}
+	if split && (statsCalls == 0 || rowReads != 0) {
+		t.Errorf("expected the stats over the stored level fields and no row read, got %d stats reads and %d row reads", statsCalls, rowReads)
+	}
+	if !split && rowReads == 0 {
+		t.Errorf("expected the row evaluator to answer, got %d stats reads and no row read", statsCalls)
 	}
 }

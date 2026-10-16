@@ -43,7 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   series limit error where its series exceed the limit. Grafana Logs Drilldown
   requests, which keep the busiest series of an over-limit answer, and
   groupings by a field starting with `_` take the row evaluator as before.
-  Window sums add the bucket counts and the raw lines at each evaluation point
+  A grouping by `detected_level` is split only from the stored level fields
+  (the stored `detected_level` and `level`, copied before anything else
+  touches them): when every counted line has a stored level the spellings of one
+  level merge into one series after the read; a level only the body holds, a
+  line without one, a stored `detected_level` label, another stored level
+  field (`severity`, `lvl`, OTLP severity), a read past the group guard or a
+  filter on `detected_level` leave the query to the row evaluator,
+  which derives the level of each line like Loki's ingest. The derivation of
+  `sum by (detected_level)` itself is #760's. Window sums add the bucket counts and the raw lines at each evaluation point
   before rate divides once. service_name is taken from the first non-empty
   source field that is a stream label of the row, as Loki assigns it at
   ingest, never from structured metadata. Measured on VictoriaLogs v1.52.0 with

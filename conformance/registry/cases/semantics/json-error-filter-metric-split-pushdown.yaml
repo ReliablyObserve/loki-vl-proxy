@@ -67,11 +67,27 @@ why: |
   (which keep the busiest series of an over-limit answer) and groupings by a
   field starting with `_` take the row evaluator as before.
 
-  detected_level is derived like Loki derives it at ingest, normalized, from
-  the stream label, else the body's level key
-  (semantics/json-metric-detected-level-derivation): the split groups the
-  stored level or the unpacked body key and normalizes them after the read, as
-  the row evaluator does for the raw rows and every fallback.
+  detected_level is Loki's value at ingest
+  (semantics/json-metric-detected-level-derivation). The split serves a
+  grouping by it only from the stored level fields: the pipes copy the stored
+  detected_level and level fields (`copy detected_level as __dl_d, level as
+  __dl_l`) before the sentinel splice, and nothing of the split touches the
+  copies except the blanking of the lines read as raw rows. It is served when
+  every counted group has a stored level and no stored detected_level (the
+  spellings of one level are separate groups and one series, merged after the
+  read, so the series limit counts series). The derivation chain, its
+  presence probe and its witness are never part of a split plan. A window
+  holding a counted line the stored fields do not decide (a level only the
+  body holds, none at all, a stored detected_level label), a line with another
+  stored level field (severity, lvl, the OTLP severity fields: the copy of
+  `level` cannot tell a stream label from metadata, and Loki reads the
+  stream's before the metadata's, found by a `| limit 1` probe), a read past the
+  group guard and a response too large to read leave the query to the row
+  evaluator, which derives the level of every line itself, as it does for the
+  lines read as raw rows. A filter on detected_level is not split: the filter
+  would need the derived level for the raw rows and the stored one for the
+  counted lines, so that plan keeps the row evaluator. Speed never outranks
+  Loki's answer: every doubtful window takes the row evaluator.
 
   A step wider than the range leaves gaps between the evaluation windows; the
   scan covers them, but a series none of whose counted buckets falls in a
@@ -107,7 +123,7 @@ gap:
   area: 'internal/proxy ordered_json_valid_split.go, ordered_json_metric.go stats pushdown'
   loki: 'pkg/logql/log/parser.go:74-135 JSONParser.Process; pkg/logql/log/parser_hints.go:73-188; grafana/jsonparser parser.go ObjectEach/getType'
   proxy: 'every selected line read as a raw row (502 at the row and byte limits at 6-24 h)'
-  planned_test: 'TestRangeMetricCompatibilityJSONErrorFilterSplit, ...SplitSeriesLimit and ...SplitDetectedLevel (test/e2e-compat, group semantics); proxy TestJSONValidSplitPredicateDifferential, FuzzJSONValidSplitPredicate, TestJSONLokiRejectHazardTable, TestJSONValidSplitEligibility, TestJSONValidSplitMatchesRawEvaluator, TestJSONValidSplitReadsOnlyRawRowBuckets, TestJSONValidSplitCountsDeepLinesLikeLoki, TestJSONValidSplitFilteredOutGroupsStayUnderSeriesLimit, TestJSONValidSplitRawOnlyGroupIsNotASeries, TestJSONValidSplitServiceNameFromStreamLabelWithNewline, TestJSONValidSplitHazardProbeUsesTheSplitBraceFilter, TestJSONValidSplitHazardProbeCancelsTheFirstScan, TestJSONValidSplitMergedAnswerOverTheLimitReturnsLokiError, TestJSONValidSplitOverTwiceTheLimitGroupsFallBackToRowEvaluator, TestJSONValidSplitLevelSpellingsMergeUnderTheLimit, TestJSONValidSplitLimitPlusOneSeriesWithoutRawRows, TestJSONValidSplitOversizedResponseOnlyFallsBackForSplitPlans, TestJSONValidSplitDrilldownRequestsKeepTheRowEvaluator, TestJSONValidSplitMarksRawCandidatesOnce, TestJSONValidSplitGapGroupsAreNoSeries, TestJSONValidSplitHugeResponseFallsBackWithBoundedMemory, TestJSONValidSplitFilteredOutGroupsUnderSizeCap, TestJSONValidSplitSeriesLimitFailsBeforeRawRows, TestJSONValidSplitReadStopsAtTwiceTheSeriesLimit, TestJSONValidSplitRawCandidatesFormOneGroup, TestJSONValidSplitRawCandidatesOverManyStreamsFormOneGroup, TestJSONValidSplitResponseTooLargeFallsBackToRawEvaluator'
+  planned_test: 'TestRangeMetricCompatibilityJSONErrorFilterSplit, ...SplitSeriesLimit and ...SplitDetectedLevel (test/e2e-compat, group semantics: the stored-level, body-level, gap-line and deep-nested variants against Loki); proxy TestJSONValidSplitPredicateDifferential, FuzzJSONValidSplitPredicate, TestJSONLokiRejectHazardTable, TestJSONValidSplitEligibility, TestJSONValidSplitMatchesRawEvaluator, TestJSONValidSplitReadsOnlyRawRowBuckets, TestJSONValidSplitCountsDeepLinesLikeLoki, TestJSONValidSplitFilteredOutGroupsStayUnderSeriesLimit, TestJSONValidSplitRawOnlyGroupIsNotASeries, TestJSONValidSplitServiceNameFromStreamLabelWithNewline, TestJSONValidSplitHazardProbeUsesTheSplitBraceFilter, TestJSONValidSplitHazardProbeCancelsTheFirstScan, TestJSONValidSplitMergedAnswerOverTheLimitReturnsLokiError, TestJSONValidSplitOverTwiceTheLimitGroupsFallBackToRowEvaluator, TestJSONValidSplitLevelSpellingsMergeUnderTheLimit, TestJSONValidSplitLimitPlusOneSeriesWithoutRawRows, TestJSONValidSplitOversizedResponseOnlyFallsBackForSplitPlans, TestJSONValidSplitDrilldownRequestsKeepTheRowEvaluator, TestJSONValidSplitMarksRawCandidatesOnce, TestJSONValidSplitGapGroupsAreNoSeries, TestJSONValidSplitHugeResponseFallsBackWithBoundedMemory, TestJSONValidSplitFilteredOutGroupsUnderSizeCap, TestJSONValidSplitSeriesLimitFailsBeforeRawRows, TestJSONValidSplitReadStopsAtTwiceTheSeriesLimit, TestJSONValidSplitRawCandidatesFormOneGroup, TestJSONValidSplitRawCandidatesOverManyStreamsFormOneGroup, TestJSONValidSplitResponseTooLargeFallsBackToRawEvaluator, TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack, TestJSONValidSplitDetectedLevelWindowsMatchTheRowEvaluator, TestOrderedJSONRowProjectionKeepsTheStoredLevelFields'
   note: |
     The e2e is green on VictoriaLogs v1.52.0 and v1.47.0. The row evaluator's guards (nesting depth 64,
     1024 fields, 1 MiB line, 64 KiB value) now apply only to the raw rows: a line VictoriaLogs vouches

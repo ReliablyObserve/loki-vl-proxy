@@ -807,10 +807,11 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 //
 // A JSON parser followed by `__error__=""` (with no drop of the error label in
 // between) keeps only the lines the parser accepts; validOnly reports it, and
-// such a plan needs neither dropped errors nor error filters. A plan reading
-// detected_level is not split: its level comes from the pipes of the
-// detected_level derivation, which the split's marking of the lines it reads as
-// raw rows is not built for, so it stays with the row evaluator.
+// such a plan needs neither dropped errors nor error filters. A split plan may
+// group by detected_level (the stored level fields decide it, see
+// orderedJSONStatsBucketsWithReason) but not filter on it: the filter would have
+// to run on the stored fields for the counted lines and on the derived level
+// for the lines read as raw rows, so that plan stays with the row evaluator.
 func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.DropCondition, errorFilters []string, validOnly, ok bool) {
 	parsed, errorCleared := false, false
 	for _, stage := range plan.stages {
@@ -824,28 +825,13 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 			continue
 		case stage.filter != nil && stage.filter.Field == "__error__" && stage.filter.Op == "=" && stage.filter.Value == "":
 			// After a drop of __error__ the filter passes every line.
-			if !parsed || plan.parser != "json" || plan.derivesLevel {
+			if !parsed || plan.parser != "json" {
 				return nil, nil, false, false
 			}
 			validOnly = validOnly || !errorCleared
 		case stage.filter != nil:
-			// Loki's detected_level is on every line, parsed or not: a filter
-			// on it compares the derived value (it never rejects an unparsed
-			// line, so it cannot stand for the error drop) and `!= ""` always
-			// holds.
-			level := stage.filter.Field == detectedLevelLabel && plan.derivesLevel
-			if !parsed || !level && (!orderedJSONPushdownLabelOK(stage.filter.Field) || plan.parser == "" && strings.HasSuffix(stage.filter.Field, "_extracted")) {
+			if !plan.addPushdownFilter(stage.filter, parsed, &filters, &errorFilters) {
 				return nil, nil, false, false
-			}
-			if level {
-				if stage.filter.Op != "!=" || stage.filter.Value != "" {
-					filters = append(filters, *stage.filter)
-				}
-				continue
-			}
-			filters = append(filters, *stage.filter)
-			if !stage.filter.Matches("") && !containsString(errorFilters, stage.filter.Field) {
-				errorFilters = append(errorFilters, stage.filter.Field)
 			}
 		case stage.keep || len(stage.match) != 0:
 			return nil, nil, false, false
@@ -858,10 +844,54 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 			errorCleared = errorCleared || stage.fields["__error__"]
 		}
 	}
+	if validOnly && filtersOnLevel(filters) {
+		return nil, nil, false, false
+	}
 	if errorCleared || validOnly {
 		return filters, nil, validOnly, true
 	}
 	return filters, errorFilters, false, len(errorFilters) > 0
+}
+
+// addPushdownFilter adds a string label filter stage to the pushdown's filters,
+// and to the error filters when it rejects the empty value; false when the
+// stats pushdown cannot apply it.
+//
+// Loki's detected_level is on every line, parsed or not: a filter on it
+// compares the derived value (it never rejects an unparsed line, so it cannot
+// stand for the error drop) and `!= ""` always holds.
+func (plan *orderedJSONMetricPlan) addPushdownFilter(filter *translator.DropCondition, parsed bool, filters *[]translator.DropCondition, errorFilters *[]string) bool {
+	level := filter.Field == detectedLevelLabel && plan.derivesLevel
+	if !parsed || !level && !plan.pushdownFilterLabelOK(filter.Field) {
+		return false
+	}
+	if level {
+		if filter.Op != "!=" || filter.Value != "" {
+			*filters = append(*filters, *filter)
+		}
+		return true
+	}
+	*filters = append(*filters, *filter)
+	if !filter.Matches("") && !containsString(*errorFilters, filter.Field) {
+		*errorFilters = append(*errorFilters, filter.Field)
+	}
+	return true
+}
+
+// pushdownFilterLabelOK reports whether the stats pushdown can filter on a
+// parsed label.
+func (plan *orderedJSONMetricPlan) pushdownFilterLabelOK(label string) bool {
+	return orderedJSONPushdownLabelOK(label) && (plan.parser != "" || !strings.HasSuffix(label, "_extracted"))
+}
+
+// filtersOnLevel reports a filter on detected_level among filters.
+func filtersOnLevel(filters []translator.DropCondition) bool {
+	for _, filter := range filters {
+		if filter.Field == detectedLevelLabel {
+			return true
+		}
+	}
+	return false
 }
 
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
@@ -935,6 +965,14 @@ var errLevelNotStored = errors.New("rows without a stored level")
 // that counts the other brace-opened lines per bucket, and reads only those as
 // raw rows; Loki's series limit applies to its merged answer only.
 //
+// A split plan grouped by detected_level asks for the stored fields alone and
+// never for the chain: it is served only when the stored level fields decide
+// the level of every counted line exactly as Loki's ingest does
+// (storedLevelSeries). A window with a counted line they do not decide, a read
+// past the group guard, or a response too large to read leaves the query to
+// the row evaluator, which derives the level of every line itself; so do the
+// lines read as raw rows.
+//
 // A plan reading detected_level first asks for the stored fields alone: the
 // buckets are grouped by the stored detected_level and level fields, and the
 // level of each is Loki's value for every row they decide (the first
@@ -960,6 +998,9 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	if plan.derivesLevel {
 		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true)
+		if plan.validOnly && (errors.Is(err, errLevelNotStored) || errors.Is(err, errStatsGroupGuard)) {
+			return nil, false, false, nil
+		}
 		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
 			return body, served, parseDisagreement, err
 		}
@@ -1005,6 +1046,109 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	windowStart := start.Add(-plan.window)
 	statsCtx, cancelStats := context.WithCancel(ctx)
 	defer cancelStats()
+	pipes := p.orderedJSONStatsPipeline(plan, base, storedLevel, allKeys, extracted, stored)
+	if pipes.shared != nil {
+		statsCtx = withLevelSharedUnpack(statsCtx, pipes.shared)
+	}
+	groupBy, lokiGroupBy, bytesMetric, statsAggFunc, query := pipes.groupBy, pipes.lokiGroupBy, pipes.bytesMetric, pipes.aggFunc, pipes.query
+	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
+		return nil, false, false, errLevelNotStored
+	}
+	// The parse-risk check and the bucket query run concurrently; the buckets
+	// are discarded when the check finds a line the parsers read differently.
+	riskCtx, cancelRisk := context.WithCancel(ctx)
+	defer cancelRisk()
+	type riskResult struct {
+		risky bool
+		err   error
+	}
+	riskDone := make(chan riskResult, 1)
+	go func() {
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
+		riskDone <- riskResult{risky, err}
+	}()
+	// A split plan's stored level is only Loki's when no other stored level
+	// field can outrank it (storedLevelForeignFieldRisk).
+	foreignDone := make(chan riskResult, 1)
+	if plan.validOnly && storedLevel {
+		go func() {
+			foreign, err := p.storedLevelForeignFieldRisk(riskCtx, base, windowStart, end)
+			foreignDone <- riskResult{foreign, err}
+		}()
+	} else {
+		foreignDone <- riskResult{}
+	}
+	hazardDone := make(chan riskResult, 1)
+	if plan.validOnly {
+		go func() {
+			hazard, err := p.jsonLokiRejectHazardRisk(riskCtx, base, windowStart, end)
+			hazardDone <- riskResult{hazard, err}
+		}()
+	} else {
+		hazardDone <- riskResult{}
+	}
+	runStats := func(ctx context.Context, hazard bool) orderedJSONStatsResult {
+		q, agg, aux := query, statsAggFunc, ""
+		if plan.validOnly {
+			q, agg = plan.splitStatsQuery(query, bytesMetric, hazard, groupBy)
+			aux = jsonInvalidRowsName
+		}
+		if storedLevel {
+			// The spellings of one level are groups here, series in the answer.
+			ctx = guardStatsGroups(ctx)
+		}
+		series, rowEdges, err := p.collectRangeMetricHitsAux(ctx, q, groupBy, lokiGroupBy, false, agg, windowStart, end, bucket, aux)
+		return orderedJSONStatsResult{series, rowEdges, err}
+	}
+	statsDone := make(chan orderedJSONStatsResult, 1)
+	go func() { statsDone <- runStats(statsCtx, false) }()
+	risk := <-riskDone
+	if risk.err != nil || risk.risky {
+		cancelStats()
+		return nil, false, risk.risky, risk.err
+	}
+	foreign := <-foreignDone
+	if foreign.err != nil {
+		cancelStats()
+		return nil, false, false, foreign.err
+	}
+	if foreign.risky {
+		// Not provably Loki's level: the row evaluator derives it.
+		cancelStats()
+		return nil, false, false, nil
+	}
+	hazard := <-hazardDone
+	if hazard.err != nil {
+		cancelStats()
+		return nil, false, false, hazard.err
+	}
+	var stats orderedJSONStatsResult
+	if hazard.risky {
+		// A line Loki's parser may reject among the ones VictoriaLogs parses:
+		// count again with such lines moved to the raw rows, without waiting
+		// for the scan that would be discarded.
+		cancelStats()
+		<-statsDone
+		stats = runStats(ctx, true)
+	} else {
+		stats = <-statsDone
+	}
+	return p.finishOrderedJSONStats(ctx, plan, stats, base, query, storedLevel, hazard.risky, bucket, start, end, step)
+}
+
+// orderedJSONStatsPipes is the query text of the stats pushdown and what its
+// stats group by.
+type orderedJSONStatsPipes struct {
+	query                string
+	aggFunc              string
+	groupBy, lokiGroupBy []string
+	bytesMetric          bool
+	shared               *translator.SharedUnpack
+}
+
+// orderedJSONStatsPipeline builds the pipes of one attempt of the stats
+// pushdown (see orderedJSONStatsBuckets).
+func (p *Proxy) orderedJSONStatsPipeline(plan *orderedJSONMetricPlan, base string, storedLevel bool, allKeys, extracted []string, stored map[string]string) orderedJSONStatsPipes {
 	groupBy := plan.statsGroupBy(storedLevel)
 	lokiGroupBy := groupBy
 	if plan.groupServiceName {
@@ -1032,10 +1176,13 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if shared != nil {
 		// One parse of every line: the chain's unpack reads the plan's labels too.
 		beforeUnpack = " " + translator.BuildDetectedLevelChainShared(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil, shared)
-		statsCtx = withLevelSharedUnpack(statsCtx, shared)
 	}
 	query := base
 	if plan.validOnly {
+		// The copies of the stored level fields come first: nothing of the
+		// split (the splice, the marker, the blanked groups) may touch them.
+		query += beforeUnpack
+		beforeUnpack = ""
 		// The brace filter and the sentinel splice, then the service_name
 		// derivation from the stream labels, before any unpack.
 		query += " | filter " + jsonObjectStartFilter + jsonValidityPipes(bytesMetric)
@@ -1058,73 +1205,24 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		}
 		query += logsQLLabelFilter(filter)
 	}
-	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
-		return nil, false, false, errLevelNotStored
-	}
-	// The parse-risk check and the bucket query run concurrently; the buckets
-	// are discarded when the check finds a line the parsers read differently.
-	riskCtx, cancelRisk := context.WithCancel(ctx)
-	defer cancelRisk()
-	type riskResult struct {
-		risky bool
-		err   error
-	}
-	riskDone := make(chan riskResult, 1)
-	go func() {
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
-		riskDone <- riskResult{risky, err}
-	}()
-	hazardDone := make(chan riskResult, 1)
-	if plan.validOnly {
-		go func() {
-			hazard, err := p.jsonLokiRejectHazardRisk(riskCtx, base, windowStart, end)
-			hazardDone <- riskResult{hazard, err}
-		}()
-	} else {
-		hazardDone <- riskResult{}
-	}
-	type statsResult struct {
-		series   map[string]manualSeriesSamples
-		rowEdges []int64
-		err      error
-	}
-	runStats := func(ctx context.Context, hazard bool) statsResult {
-		q, agg, aux := query, statsAggFunc, ""
-		if plan.validOnly {
-			q, agg = plan.splitStatsQuery(query, bytesMetric, hazard, groupBy)
-			aux = jsonInvalidRowsName
-		}
-		if storedLevel {
-			// The spellings of one level are groups here, series in the answer.
-			ctx = guardStatsGroups(ctx)
-		}
-		series, rowEdges, err := p.collectRangeMetricHitsAux(ctx, q, groupBy, lokiGroupBy, false, agg, windowStart, end, bucket, aux)
-		return statsResult{series, rowEdges, err}
-	}
-	statsDone := make(chan statsResult, 1)
-	go func() { statsDone <- runStats(statsCtx, false) }()
-	risk := <-riskDone
-	if risk.err != nil || risk.risky {
-		cancelStats()
-		return nil, false, risk.risky, risk.err
-	}
-	hazard := <-hazardDone
-	if hazard.err != nil {
-		cancelStats()
-		return nil, false, false, hazard.err
-	}
-	var stats statsResult
-	if hazard.risky {
-		// A line Loki's parser may reject among the ones VictoriaLogs parses:
-		// count again with such lines moved to the raw rows, without waiting
-		// for the scan that would be discarded.
-		cancelStats()
-		<-statsDone
-		stats = runStats(ctx, true)
-	} else {
-		stats = <-statsDone
-	}
+	return orderedJSONStatsPipes{query: query, aggFunc: statsAggFunc, groupBy: groupBy, lokiGroupBy: lokiGroupBy, bytesMetric: bytesMetric, shared: shared}
+}
+
+// orderedJSONStatsResult is one stats_query_range read of the pushdown: the
+// series, and for a split plan the bucket edges holding lines read as raw rows.
+type orderedJSONStatsResult struct {
+	series   map[string]manualSeriesSamples
+	rowEdges []int64
+	err      error
+}
+
+// finishOrderedJSONStats turns the stats read of orderedJSONStatsBuckets into the
+// answer: the guards that leave the query to another route, the groups merged
+// under their Loki labels, the series limit applied to the merged answer, and
+// for a split plan the raw rows added.
+func (p *Proxy) finishOrderedJSONStats(ctx context.Context, plan *orderedJSONMetricPlan, stats orderedJSONStatsResult, base, query string, storedLevel, hazard bool, bucket time.Duration, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
 	series, err := stats.series, stats.err
+	var ok bool
 	if storedLevel && errors.Is(err, errStatsGroupGuard) {
 		// More groups than the guard reads: the chain's groups are the answer's
 		// series, so it counts them and answers Loki's series limit itself.
@@ -1163,7 +1261,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 			if _, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx)); err != nil {
 				return nil, false, false, err
 			}
-			merged, err = p.addOrderedJSONRowLines(ctx, plan, merged, base, stats.rowEdges, hazard.risky, bucket, start, end, step)
+			merged, err = p.addOrderedJSONRowLines(ctx, plan, merged, base, stats.rowEdges, hazard, bucket, start, end, step)
 		} else {
 			merged, err = capSeriesForRequest(ctx, merged, p.resolvedMaxStatsQuerySeries(ctx))
 		}

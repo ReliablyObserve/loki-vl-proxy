@@ -342,6 +342,13 @@ func TestJSONValidSplitEligibility(t *testing.T) {
 		{`sum by (level, detected_level) (bytes_over_time({env="production"} | json | __error__="" [5m]))`, true, true},
 		{`sum by (method) (count_over_time({env="production"} |= "GET" | json | __error__="" | status="500" [5m]))`, true, true},
 		{`sum by (method) (count_over_time({env="production"} | json | __error__="" | drop __error_details__ [5m]))`, true, true},
+		// detected_level may be grouped by (the stored level fields decide it),
+		// not filtered on: the filter would need the derived level for the
+		// lines read as raw rows.
+		{`sum by (detected_level) (count_over_time({env="production"} | json | __error__="" [5m]))`, true, true},
+		{`sum by (app, detected_level) (rate({env="production"} | json | __error__="" [5m]))`, true, true},
+		{`sum by (method) (count_over_time({env="production"} | json | __error__="" | detected_level="info" [5m]))`, false, false},
+		{`sum by (detected_level) (count_over_time({env="production"} | json | __error__="" | detected_level!="debug" [5m]))`, false, false},
 		// service_name is the stream label Loki assigns, derived before any unpack.
 		{`sum by (service_name) (count_over_time({service_name="api-gateway"} | json | __error__="" [5m]))`, true, true},
 		{`sum by (service_name, method) (count_over_time({env="production"} | json | __error__="" [5m]))`, true, true},
@@ -440,6 +447,49 @@ var jsonSplitQueries = []string{
 	`sum by (service_name, status) (bytes_over_time({env="prod"} | json | __error__="" [1m]))`,
 }
 
+// withStoredLevels gives every row a level the way a stream label stores it,
+// in several spellings of the same few levels.
+func withStoredLevels(rows []pushdownRow) []pushdownRow {
+	spellings := []string{"info", "INFO", "error", "Warning", "inf", "debug"}
+	out := make([]pushdownRow, len(rows))
+	for i, row := range rows {
+		stream := map[string]string{}
+		for k, v := range row.stream {
+			stream[k] = v
+		}
+		stream["level"] = spellings[i%len(spellings)]
+		row.stream = stream
+		out[i] = row
+	}
+	return out
+}
+
+// assertStoredLevelStats fails when a stats query sent for a split plan
+// grouped by detected_level is not the stored-level form: the copies of the
+// stored fields, and none of the pipes, probes or flags of the derivation chain.
+func assertStoredLevelStats(t *testing.T, fake *pushdownFakeVL, label string) {
+	t.Helper()
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.stats) == 0 {
+		t.Fatalf("%s: no stats query", label)
+	}
+	for _, stats := range fake.stats {
+		if !strings.Contains(stats, "copy detected_level as "+storedDetectedLevelField+", level as "+storedLevelField) {
+			t.Fatalf("%s: stats query does not read the stored level fields: %s", label, stats)
+		}
+		if strings.Contains(stats, `result_prefix "__j_"`) || strings.Contains(stats, levelWitnessField) || strings.Contains(stats, "__dl_h") {
+			t.Fatalf("%s: stats query carries the derivation chain: %s", label, stats)
+		}
+		if strings.Index(stats, "copy detected_level") > strings.Index(stats, jsonValidField) {
+			t.Fatalf("%s: the stored level fields are copied after the sentinel splice: %s", label, stats)
+		}
+	}
+	if len(fake.presenceCalls) != 0 {
+		t.Fatalf("%s: %d level presence probes sent", label, len(fake.presenceCalls))
+	}
+}
+
 // rowEvaluatorMatrix answers plan with the proxy's row evaluator over every
 // selected row, the path these shapes took before the split.
 func rowEvaluatorMatrix(t *testing.T, p *Proxy, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) map[string]map[int64]string {
@@ -471,41 +521,71 @@ func TestJSONValidSplitMatchesRawEvaluator(t *testing.T) {
 	for seed := int64(1); seed <= int64(seeds); seed++ {
 		rng := rand.New(rand.NewSource(seed))
 		hazards := seed%2 == 0
-		rows := jsonSplitRows(rng, s0, 400, hazards)
+		mixed := jsonSplitRows(rng, s0, 400, hazards)
 		for _, query := range jsonSplitQueries {
-			label := fmt.Sprintf("seed %d: %s", seed, query)
-			srv, fake := newPushdownFakeVL(t, rows, nil)
-			fake.jsonUnpack = vlFastjsonUnpackFields
-			p := newFilterPushdownProxy(t, srv.URL)
-			fake.stored = p.labelTranslator.ToVL
-			plan, ok := compileOrderedJSONMetric(query)
-			if !ok || !plan.pushdown || !plan.validOnly {
-				t.Fatalf("%s: expected a split pushdown plan", label)
+			// A query grouped by detected_level is served by the split only when
+			// the stored level fields decide the level of every counted line;
+			// the fixture with body-only levels leaves it to the row evaluator.
+			// Either way the answer is the row evaluator's.
+			variants := []bool{false}
+			if strings.Contains(query, "detected_level") {
+				variants = []bool{true, false}
 			}
-			want := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
-			fake.mu.Lock()
-			fake.raw, fake.rawQueries, fake.stats, fake.guards = 0, nil, nil, nil
-			fake.mu.Unlock()
-			code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
-			if code != http.StatusOK {
-				t.Fatalf("%s: status %d: %s", label, code, body)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("%s: differs from the row evaluator\n got: %v\nwant: %v", label, got, want)
-			}
-			fake.mu.Lock()
-			stats, rawQueries := len(fake.stats), fake.rawQueries
-			fake.mu.Unlock()
-			wantStats := 1
-			if hazards {
-				wantStats = 2
-			}
-			if stats != wantStats || len(rawQueries) == 0 || len(rawQueries) > maxOrderedJSONRowSpans {
-				t.Fatalf("%s: stats=%d raw=%d, want %d stats scans and a bounded raw read", label, stats, len(rawQueries), wantStats)
-			}
-			for _, raw := range rawQueries {
-				if !strings.Contains(raw.query, " | filter "+jsonInvalidCondition(hazards)) {
-					t.Fatalf("%s: raw read %q is not limited to the lines VictoriaLogs cannot vouch for", label, raw.query)
+			for _, stored := range variants {
+				rows := mixed
+				if stored {
+					rows = withStoredLevels(mixed)
+				}
+				served := stored || !strings.Contains(query, "detected_level")
+				label := fmt.Sprintf("seed %d stored=%v: %s", seed, stored, query)
+				srv, fake := newPushdownFakeVL(t, rows, nil)
+				fake.jsonUnpack = vlFastjsonUnpackFields
+				p := newFilterPushdownProxy(t, srv.URL)
+				fake.stored = p.labelTranslator.ToVL
+				plan, ok := compileOrderedJSONMetric(query)
+				if !ok || !plan.pushdown || !plan.validOnly {
+					t.Fatalf("%s: expected a split pushdown plan", label)
+				}
+				want := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
+				fake.mu.Lock()
+				fake.raw, fake.rawQueries, fake.stats, fake.guards = 0, nil, nil, nil
+				fake.mu.Unlock()
+				code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
+				if code != http.StatusOK {
+					t.Fatalf("%s: status %d: %s", label, code, body)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("%s: differs from the row evaluator\n got: %v\nwant: %v", label, got, want)
+				}
+				fake.mu.Lock()
+				stats, rawQueries := len(fake.stats), fake.rawQueries
+				fake.mu.Unlock()
+				if !served {
+					// The stored fields do not decide every line: the row evaluator
+					// read every selected row and derived each level itself.
+					full := false
+					for _, raw := range rawQueries {
+						full = full || !strings.Contains(raw.query, " | filter "+jsonInvalidCondition(hazards))
+					}
+					if !full {
+						t.Fatalf("%s: expected the row evaluator over every row, got %d bounded raw reads", label, len(rawQueries))
+					}
+					continue
+				}
+				wantStats := 1
+				if hazards {
+					wantStats = 2
+				}
+				if stats != wantStats || len(rawQueries) == 0 || len(rawQueries) > maxOrderedJSONRowSpans {
+					t.Fatalf("%s: stats=%d raw=%d, want %d stats scans and a bounded raw read", label, stats, len(rawQueries), wantStats)
+				}
+				for _, raw := range rawQueries {
+					if !strings.Contains(raw.query, " | filter "+jsonInvalidCondition(hazards)) {
+						t.Fatalf("%s: raw read %q is not limited to the lines VictoriaLogs cannot vouch for", label, raw.query)
+					}
+				}
+				if strings.Contains(query, "detected_level") {
+					assertStoredLevelStats(t, fake, label)
 				}
 			}
 		}
@@ -1068,9 +1148,15 @@ func TestJSONValidSplitLevelSpellingsMergeUnderTheLimit(t *testing.T) {
 					if code != http.StatusOK || !reflect.DeepEqual(got, want) {
 						t.Fatalf("limit %d: status %d %.200s, got %v, want %v", limit, code, body, got, want)
 					}
-					if !withRaw && fake.raw != 0 {
+					if inStream && !withRaw && fake.raw != 0 {
 						t.Fatalf("limit %d: %d raw-row queries issued", limit, fake.raw)
 					}
+					if !inStream && fake.raw == 0 {
+						t.Fatalf("limit %d: a level held only by the body was counted from stats", limit)
+					}
+				}
+				if inStream {
+					assertStoredLevelStats(t, fake, "stored")
 				}
 				// Past the guard the row evaluator answers, the same series.
 				p.maxStatsQuerySeries = 3
@@ -1531,9 +1617,9 @@ func TestJSONValidSplitMarksRawCandidatesOnce(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
 	rows := []pushdownRow{
-		{ts: s0.Add(100 * time.Second), stream: map[string]string{"app": "api", "env": "prod"}, msg: `{"path":"/a","status":"500","x":.5}`},
-		{ts: s0.Add(110 * time.Second), stream: map[string]string{"app": "web", "env": "prod"}, msg: `{"path":"/b","status":"500"}`},
-		{ts: s0.Add(120 * time.Second), stream: map[string]string{"app": "web", "env": "prod"}, msg: `{"path":"/c","status":"200"}`},
+		{ts: s0.Add(100 * time.Second), stream: map[string]string{"app": "api", "env": "prod", "level": "info"}, msg: `{"path":"/a","status":"500","x":.5}`},
+		{ts: s0.Add(110 * time.Second), stream: map[string]string{"app": "web", "env": "prod", "level": "error"}, msg: `{"path":"/b","status":"500"}`},
+		{ts: s0.Add(120 * time.Second), stream: map[string]string{"app": "web", "env": "prod", "level": "WARN"}, msg: `{"path":"/c","status":"200"}`},
 	}
 	for _, query := range []string{
 		`sum by (path, service_name, detected_level) (count_over_time({env="prod"} | json | __error__="" [5m]))`,
@@ -1666,7 +1752,7 @@ func TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack(t *testing.T) {
 // row (the stored level fields, the OTLP severity_text, severity_number and
 // severity), none of which a label of the plan names: its raw read keeps every
 // field instead of projecting to the plan's labels.
-// conformance: semantics/json-metric-detected-level-derivation
+// conformance: semantics/json-error-filter-metric-split-pushdown
 func TestOrderedJSONRowProjectionKeepsTheStoredLevelFields(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
@@ -1707,5 +1793,117 @@ func TestOrderedJSONRowProjectionKeepsTheStoredLevelFields(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A split plan grouped by detected_level is served by the stats only when the
+// stored level fields decide the level of every counted line as Loki's ingest
+// does; in every other window the row evaluator answers. Whichever answers, the
+// matrix is the row evaluator's, which derives the level of each line itself:
+// a window mixing stored and body-only levels, a stored detected_level label,
+// a stored spelling Loki does not know, the level in structured metadata, only
+// an OTLP severity, and lines read as raw rows with and without a stored level.
+// conformance: semantics/json-error-filter-metric-split-pushdown
+func TestJSONValidSplitDetectedLevelWindowsMatchTheRowEvaluator(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
+	row := func(sec int, stream, vl map[string]string, msg string) pushdownRow {
+		labels := map[string]string{"app": "api", "env": "prod"}
+		for k, v := range stream {
+			labels[k] = v
+		}
+		return pushdownRow{ts: s0.Add(time.Duration(sec) * time.Second), stream: labels, vl: vl, msg: msg}
+	}
+	lvl := func(level string) map[string]string { return map[string]string{"level": level} }
+	const (
+		split    = "split"
+		fallback = "fallback"
+	)
+	for _, tc := range []struct {
+		name string
+		want string
+		rows []pushdownRow
+	}{
+		{"stored on every line", split, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1}`), row(110, lvl("INFO"), nil, `{"n":2}`), row(120, lvl("warning"), nil, `{"n":3}`), row(130, lvl("error"), nil, `{"n":4,"level":"debug"}`),
+		}},
+		{"stored in structured metadata", split, []pushdownRow{
+			row(100, nil, lvl("warn"), `{"n":1}`), row(110, nil, lvl("Information"), `{"n":2}`),
+		}},
+		{"stored spellings Loki does not normalise", split, []pushdownRow{
+			row(100, lvl("notice"), nil, `{"n":1}`), row(110, lvl("NOTICE"), nil, `{"n":2}`), row(120, lvl("Trace"), nil, `{"n":3}`), row(130, lvl("fatal"), nil, `{"n":4}`), row(140, lvl("crit"), nil, `{"n":5}`),
+		}},
+		{"stored and body-only", fallback, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1}`), row(110, nil, nil, `{"n":2,"level":"error"}`), row(120, nil, nil, `{"n":3}`),
+		}},
+		{"body-only only", fallback, []pushdownRow{
+			row(100, nil, nil, `{"level":"WARN"}`), row(110, nil, nil, `{"level":"notice"}`), row(120, nil, nil, `{"msg":"request failed with an error"}`),
+		}},
+		{"stored detected_level label", fallback, []pushdownRow{
+			row(100, map[string]string{"detected_level": "Custom"}, nil, `{"n":1}`), row(110, lvl("info"), nil, `{"n":2}`),
+		}},
+		{"a stream severity beside metadata level", fallback, []pushdownRow{
+			row(100, map[string]string{"severity": "error"}, lvl("info"), `{"n":1}`), row(110, lvl("info"), nil, `{"n":2}`),
+		}},
+		{"a body severity key beside a stored level", split, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1,"severity":"error"}`), row(110, nil, lvl("warn"), `{"severity":"error","level":"debug"}`),
+		}},
+		{"stored OTLP severity fields beside a stored level", fallback, []pushdownRow{
+			row(100, nil, map[string]string{"level": "info", "severity_text": "Error", "severity_number": "17"}, `{"n":1}`),
+		}},
+		{"only an OTLP severity", fallback, []pushdownRow{
+			row(100, nil, map[string]string{"severity": "error"}, `{"n":1}`), row(110, nil, map[string]string{"severity_text": "Warn", "severity_number": "13"}, `{"n":2}`),
+		}},
+		{"stored on every counted line, a raw line without one", split, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1}`), row(110, lvl("error"), nil, `{"n":2}`), row(120, nil, nil, `{"n":3,"level":"warn"} trailing`),
+		}},
+		{"stored on every counted line, a raw line with another one", split, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1}`), row(110, lvl("error"), nil, `{"n":2}`), row(120, lvl("DEBUG"), nil, `{"n":3,"level":"warn"} trailing`), row(130, lvl("Info"), nil, `{"n":4,"x":.5}`),
+		}},
+		{"a counted line without a stored level beside a raw one", fallback, []pushdownRow{
+			row(100, lvl("info"), nil, `{"n":1}`), row(110, nil, nil, `{"n":2}`), row(120, lvl("error"), nil, `{"n":3} trailing`),
+		}},
+	} {
+		for _, function := range []string{"count_over_time", "bytes_over_time"} {
+			query := `sum by (detected_level) (` + function + `({env="prod"} | json | __error__="" [5m]))`
+			t.Run(tc.name+"/"+function, func(t *testing.T) {
+				srv, fake := newPushdownFakeVL(t, tc.rows, nil)
+				fake.jsonUnpack = vlFastjsonUnpackFields
+				p := newFilterPushdownProxy(t, srv.URL)
+				fake.stored = p.labelTranslator.ToVL
+				plan, ok := compileOrderedJSONMetric(query)
+				if !ok || !plan.validOnly || !plan.pushdown {
+					t.Fatal("plan must be a split plan")
+				}
+				want := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
+				if len(want) == 0 {
+					t.Fatal("fixture: the row evaluator answers no series")
+				}
+				fake.mu.Lock()
+				fake.raw, fake.rawQueries, fake.stats, fake.guards = 0, nil, nil, nil
+				fake.mu.Unlock()
+				code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
+				if code != http.StatusOK {
+					t.Fatalf("status %d: %s", code, body)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("differs from the row evaluator\n got: %v\nwant: %v", got, want)
+				}
+				fake.mu.Lock()
+				rawQueries := fake.rawQueries
+				fake.mu.Unlock()
+				full := false
+				for _, raw := range rawQueries {
+					bounded := strings.Contains(raw.query, " | filter "+jsonInvalidCondition(false)) || strings.Contains(raw.query, " | filter "+jsonInvalidCondition(true))
+					full = full || !bounded
+				}
+				if gotPath := map[bool]string{true: fallback, false: split}[full]; gotPath != tc.want {
+					t.Fatalf("answered by the %s, want the %s", gotPath, tc.want)
+				}
+				if tc.want == split {
+					assertStoredLevelStats(t, fake, tc.name)
+				}
+			})
+		}
 	}
 }

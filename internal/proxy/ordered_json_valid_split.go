@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // A `| json | __error__=""` metric counts the lines Loki's JSON parser accepts
@@ -380,4 +382,26 @@ func dropSeriesWithoutPoints(series map[string]manualSeriesSamples, start, end t
 			delete(series, key)
 		}
 	}
+}
+
+// storedLevelForeignFieldRisk reports whether a selected line holds a stored
+// level field other than detected_level and level (severity, lvl, the OTLP
+// severity fields, ...). The stored level of a split plan is the copy of level,
+// which cannot tell a stream label from structured metadata, and Loki reads
+// the stream's level fields before the metadata's: a stream severity=error with
+// metadata level=info is error for Loki and info for the copy. Such a window is
+// left to the row evaluator, which derives the level like Loki's ingest.
+func (p *Proxy) storedLevelForeignFieldRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	var has []string
+	for _, name := range translator.DetectedLevelFieldNames {
+		if name != detectedLevelLabel && name != "level" {
+			has = append(has, quoteLogsQLIdent(name)+":*")
+		}
+	}
+	key := "json-split-level-foreign:v1:" + getOrgID(ctx) + ":" + base
+	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
+		risky, err := p.statsPushdownRiskExists(ctx, base+" | filter ("+strings.Join(has, " OR ")+") | limit 1", from, to)
+		return "", risky, err
+	})
+	return risky, err
 }
