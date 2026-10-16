@@ -136,7 +136,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)).
 | `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
 | `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 3 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
+| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
 | `parser-logfmt` | 1 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
 | `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
