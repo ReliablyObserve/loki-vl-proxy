@@ -3,6 +3,7 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,6 +65,42 @@ func extractLevelTwiceGate(t *testing.T, query string) (gate string, start int) 
 	return "", 0
 }
 
+// ingestVictoriaLogsLines writes the lines of each app into VictoriaLogs only
+// (one stream per app) and waits until they are searchable. The probes under
+// test read nothing else, and a test that pushed them to Loki too would leave
+// Loki's ingesters and index in a state the other tests of the suite do not
+// expect (ingestJSONVolumeFixture flushes it).
+func ingestVictoriaLogsLines(t *testing.T, apps map[string][]jsonVolumeStreamLine) {
+	t.Helper()
+	for app, lines := range apps {
+		var rows strings.Builder
+		for _, line := range lines {
+			row, _ := json.Marshal(map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "app": app})
+			rows.Write(row)
+			rows.WriteByte('\n')
+		}
+		status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=app", rows.String(), map[string]string{"Content-Type": "application/stream+json"})
+		if status != http.StatusOK {
+			t.Fatalf("VictoriaLogs ingest: %d %s", status, body)
+		}
+	}
+	forceVLFlush(t)
+	deadline := time.Now().Add(60 * time.Second)
+	for app, lines := range apps {
+		for {
+			form := url.Values{"query": {`app:=` + fmt.Sprintf("%q", app) + ` | stats count() as n`}, "start": {lines[0].ts.Add(-time.Hour).UTC().Format(time.RFC3339Nano)}, "end": {lines[0].ts.Add(time.Hour).UTC().Format(time.RFC3339Nano)}}
+			_, body := hardeningRequest(t, http.MethodPost, vlURL+"/select/logsql/query", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+			if strings.Contains(string(body), fmt.Sprintf(`"n":"%d"`, len(lines))) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: %d lines never became searchable in VictoriaLogs", app, len(lines))
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+}
+
 // The gate in front of the keys probe's two-keys patterns changes no verdict:
 // the probe the proxy sent, and the same probe without the gate, give the same
 // answer on each line of the fixture, one line to a stream, on this
@@ -79,7 +116,7 @@ func TestRangeMetricCompatibilityDetectedLevelKeysGate(t *testing.T) {
 		apps[i] = fmt.Sprintf("level-keys-gate-%02d-%d", i, now.UnixNano())
 		fixture[apps[i]] = []jsonVolumeStreamLine{{ts: s0.Add(10 * time.Second), msg: line.msg}}
 	}
-	ingestJSONVolumeFixture(t, fixture)
+	ingestVictoriaLogsLines(t, fixture)
 	start, end := s0, s0.Add(2*time.Minute)
 
 	// The probe is whatever the proxy sends: captured for a line that clears
