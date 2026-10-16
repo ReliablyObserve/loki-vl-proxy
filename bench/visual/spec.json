@@ -16,6 +16,7 @@
   }
  ],
  "ranges": {
+  "5m": 300,
   "15m": 900,
   "1h": 3600,
   "6h": 21600,
@@ -24,6 +25,7 @@
   "live": 300
  },
  "default_ranges": [
+  "5m",
   "15m",
   "1h",
   "6h",
@@ -65,6 +67,26 @@
     "semantics/json-filter-pushdown-translated-label",
     "explore-logs-volume-json",
     "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-D",
+   "kind": "explore",
+   "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [$__auto]))",
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-DLV5",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | drop __error__ [$__auto]))",
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
     "loki_api_v1_query_range"
    ]
   },
