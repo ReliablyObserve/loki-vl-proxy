@@ -577,6 +577,28 @@ func logsqlWordPrefilter(words []string) string {
 	return "(" + strings.Join(alts, " or ") + ")"
 }
 
+// logsqlTwiceFilter renders a filter that passes every line holding two
+// occurrences of the phrases: one phrase twice (seq, which finds the second
+// after the first) or two of them (both present). Occurrences that a regexp
+// "key ... key" matches are such, so the filter is a superset of it, answered
+// from VictoriaLogs' token index and a substring search where the regexp
+// would run over every line that holds one key.
+func logsqlTwiceFilter(phrases []string) string {
+	var alts []string
+	for i, a := range phrases {
+		quoted := strconv.Quote(a)
+		alts = append(alts, "_msg:seq("+quoted+","+quoted+")")
+		var rest []string
+		for _, b := range phrases[i+1:] {
+			rest = append(rest, "_msg:"+strconv.Quote(b))
+		}
+		if len(rest) > 0 {
+			alts = append(alts, "(_msg:"+quoted+" ("+strings.Join(rest, " or ")+"))")
+		}
+	}
+	return "(" + strings.Join(alts, " or ") + ")"
+}
+
 // orderedJSONSpellingPrefilter renders the filters every line holding a key
 // Loki reads into one of the labels from another spelling passes. Such a key
 // differs from the label only where the label has underscores (a sanitized
@@ -1614,17 +1636,27 @@ func detectedLevelStoredFilter() string {
 // which the chain does not unpack. A line starting with a brace is read for
 // quoted keys, any other for logfmt keys. The patterns also match a mention
 // inside a longer string, a superset that only costs the raw evaluator.
+// The two-keys patterns run behind detectedLevelTwiceGate: they scan the rest
+// of every line that holds a level key, which is every line of a body-only
+// window, and only a line with two of them can match.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
 	const closed = `\}[\s\v\x{85}\p{Z}]*$`
 	braced := strconv.Quote(translator.BracedLineRegexp)
 	twice := func(key string) string { return key + `(?s:.*)` + key }
 	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" ((" + detectedLevelTwiceGate() + " ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")))" +
 		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
-		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")" +
-		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")) | limit 1"
+		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")) | limit 1"
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
+
+// detectedLevelTwiceGate passes the lines that hold two level keys, a superset
+// of both two-keys patterns of detectedLevelKeysRisk: each occurrence they
+// match is a key name between non-word characters (a quote, a space, the
+// start of the line, an equals sign), which is a phrase of the name for
+// VictoriaLogs, and the two do not overlap.
+func detectedLevelTwiceGate() string { return logsqlTwiceFilter(detectedLevelKeyNames) }
 
 // detectedLevelUnpackRisk reports whether a selected JSON line mentions a
 // level key that unpack_json yields no value for: a key nested other than
