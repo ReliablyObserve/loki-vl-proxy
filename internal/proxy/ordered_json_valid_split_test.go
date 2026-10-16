@@ -1661,3 +1661,51 @@ func TestJSONValidSplitWithoutLabelsSendsNoEmptyUnpack(t *testing.T) {
 		})
 	}
 }
+
+// A plan that derives detected_level reads every stored level field of a raw
+// row (the stored level fields, the OTLP severity_text, severity_number and
+// severity), none of which a label of the plan names: its raw read keeps every
+// field instead of projecting to the plan's labels.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestOrderedJSONRowProjectionKeepsTheStoredLevelFields(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(2*time.Minute), s0.Add(5*time.Minute)
+	stream := map[string]string{"app": "api", "env": "prod"}
+	rows := []pushdownRow{
+		{ts: s0.Add(100 * time.Second), stream: stream, vl: map[string]string{"severity": "error"}, msg: `{"n":1}`},
+		{ts: s0.Add(110 * time.Second), stream: stream, vl: map[string]string{"severity_text": "Warn", "severity_number": "13"}, msg: `{"n":2}`},
+		{ts: s0.Add(120 * time.Second), stream: stream, vl: map[string]string{"level": "info"}, msg: `{"n":3}`},
+	}
+	for _, query := range []string{
+		`sum by (detected_level) (count_over_time({env="prod"} | json | drop __error__ [5m]))`,
+		`sum by (app, detected_level) (count_over_time({env="prod"} | json | drop __error__ [5m]))`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			plan, ok := compileOrderedJSONMetric(query)
+			if !ok || !plan.derivesLevel {
+				t.Fatal("expected a plan deriving detected_level")
+			}
+			if got := p.orderedJSONRowProjection(plan); got != "" {
+				t.Fatalf("projection %q hides the stored level fields from the derivation", got)
+			}
+			got := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
+			for _, level := range []string{"error", "warn", "info"} {
+				found := false
+				for key := range got {
+					found = found || strings.Contains(key, `detected_level="`+level+`"`)
+				}
+				if !found {
+					t.Fatalf("no %s series in %v", level, got)
+				}
+			}
+			for _, raw := range fake.rawQueries {
+				if strings.Contains(raw.query, " | fields ") {
+					t.Fatalf("raw read projects the rows: %s", raw.query)
+				}
+			}
+		})
+	}
+}

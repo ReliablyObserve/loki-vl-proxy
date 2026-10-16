@@ -245,9 +245,11 @@ func mergeOrderedJSONRowSeries(merged, rows map[string]manualSeriesSamples, byte
 // is read from the field of its own name, its query spelling (ToVL), a custom
 // mapping, or any field it sanitizes from, which starts with the label's
 // leading letters and digits. Empty when the plan needs every label (no hints)
-// or a label has no such prefix.
+// or a label has no such prefix. Also empty for a plan that derives
+// detected_level: the derivation reads every stored level field (and the OTLP
+// severity fields), which no label of the plan names.
 func (p *Proxy) orderedJSONRowProjection(plan *orderedJSONMetricPlan) string {
-	if plan.required == nil {
+	if plan.required == nil || plan.derivesLevel {
 		return ""
 	}
 	fields := []string{"_time", "_stream", "_msg", "level"}
