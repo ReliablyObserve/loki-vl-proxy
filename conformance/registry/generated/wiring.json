@@ -588,11 +588,11 @@
       "internal/proxy/without_open_shapes_test.go"
     ],
     "semantics/without-nested-under-aggregation": [
-      "internal/proxy/without_open_shapes_test.go"
-    ],
-    "semantics/without-over-inner-aggregation-collapses": [
       "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go"
+    ],
+    "semantics/without-over-inner-aggregation-collapses": [
+      "internal/proxy/without_open_shapes_test.go"
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
@@ -645,7 +645,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 317,
+  "registry_items": 318,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1291,7 +1291,7 @@
       "loki_api_v1_query_range",
       "metric-series-identity",
       "semantics/unwrap-sum-without-collapses",
-      "semantics/without-over-inner-aggregation-collapses"
+      "semantics/without-nested-under-aggregation"
     ],
     "test/e2e-compat/unwrap_ungrouped_sum_test.go": [
       "loki_api_v1_query",
@@ -1410,6 +1410,7 @@
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
+    "semantics/without-instant-detected-level-unknown",
     "service-name-derivation",
     "severity/detected-level-filter-json-level",
     "severity/detected-level-stage-side-effects",

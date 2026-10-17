@@ -22,6 +22,13 @@ why: |
 
   Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant): Loki answers 30700.83 (the larger of the two level sums, error 3912.87 and info 30700.83); the proxy answers 34613.70, the total.
 
+  On the e2e fixtures (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant),
+  `max(sum without (route) (rate({app=~"uwsum-lf-.+"} | logfmt amount, route | unwrap amount [5m])))`
+  is 0.6917 on Loki (the largest of three streams' sums) and 2.025 on the proxy (their total);
+  TestCompat_UnwrapSumWithoutUnderMaxStillDiffers pins both. `min` over the
+  same inner differs the same way (Loki 0.6583, proxy 2.025), while `sum`,
+  `stddev`, `stdvar` and `topk(2, ...)` over it match Loki.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
