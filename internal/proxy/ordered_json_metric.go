@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1648,14 +1649,23 @@ func detectedLevelStoredFilter() string {
 // of every line that holds a level key, which is every line of a body-only
 // window, and only a line with two of them can match.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
-	query := detectedLevelKeysQuery(base, true)
-	if len(query) > vlDefaultMaxQueryLen {
-		// The gate only narrows what the patterns run on, so a selector too long
-		// for the gated text gets the probe without it: the same verdict.
-		query = detectedLevelKeysQuery(base, false)
+	// The gate only narrows what the patterns run on, so a base too long for the
+	// gated text, or one VictoriaLogs refuses as too long (an operator may have
+	// lowered -search.maxQueryLen), gets the probe without it: the same verdict.
+	if query := detectedLevelKeysQuery(base, true); len(query) <= vlDefaultMaxQueryLen {
+		risky, err := p.statsPushdownRiskExists(ctx, query, start, end)
+		var tooLong *queryTooLongError
+		if !errors.As(err, &tooLong) {
+			return risky, err
+		}
 	}
-	return p.statsPushdownRiskExists(ctx, query, start, end)
+	return p.statsPushdownRiskExists(ctx, detectedLevelKeysQuery(base, false), start, end)
 }
+
+// queryTooLongError is VictoriaLogs' refusal of a query longer than -search.maxQueryLen.
+type queryTooLongError struct{ error }
+
+func (e *queryTooLongError) Unwrap() error { return e.error }
 
 // detectedLevelKeysQuery is the probe of detectedLevelKeysRisk, with the two-keys
 // patterns behind detectedLevelTwiceGate or not.
@@ -1829,7 +1839,11 @@ func (p *Proxy) statsPushdownRiskExists(ctx context.Context, query string, start
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return false, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
+		err := p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
+		if resp.StatusCode == http.StatusBadRequest && bytes.Contains(body, []byte("-search.maxQueryLen")) {
+			err = &queryTooLongError{err}
+		}
+		return false, err
 	}
 	head, err := io.ReadAll(io.LimitReader(resp.Body, 64))
 	if err != nil {

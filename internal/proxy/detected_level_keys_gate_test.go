@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -360,4 +361,87 @@ func TestTwiceGateOmitsTheDottedPair(t *testing.T) {
 			t.Errorf("%s is missing from the gate", name)
 		}
 	}
+}
+
+// The longest base the gated probe fits is exactly vlDefaultMaxQueryLen minus the
+// probe without a base; one byte more gets the probe without the gate.
+// conformance: severity-detected-level-derivation
+func TestKeysRiskProbeGateEdgeOfTheQueryLength(t *testing.T) {
+	overhead := len(detectedLevelKeysQuery("", true))
+	for _, tc := range []struct {
+		extra int
+		gated bool
+	}{{0, true}, {1, false}, {-1, true}} {
+		var got []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			got = append(got, r.Form.Get("query"))
+		}))
+		p := newSlidingTestProxy(t, srv.URL)
+		base := strings.Repeat("a", vlDefaultMaxQueryLen-overhead+tc.extra)
+		if _, err := p.detectedLevelKeysRisk(context.Background(), base, time.Unix(1700000000, 0), time.Unix(1700003600, 0)); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+		if len(got) != 1 || strings.Contains(got[0], "seq(") == !tc.gated || len(got[0]) > vlDefaultMaxQueryLen {
+			t.Errorf("base of %d bytes (limit %d, gated probe %d without a base): %d queries, gated=%v, lengths %v", len(base), vlDefaultMaxQueryLen, overhead, len(got), tc.gated, queryLengths(got))
+		}
+		if tc.gated && len(got) == 1 && len(got[0]) != vlDefaultMaxQueryLen+tc.extra {
+			t.Errorf("the gated probe is %d bytes, want %d", len(got[0]), vlDefaultMaxQueryLen+tc.extra)
+		}
+	}
+}
+
+func queryLengths(qs []string) []int {
+	out := make([]int, len(qs))
+	for i, q := range qs {
+		out[i] = len(q)
+	}
+	return out
+}
+
+// An operator may have lowered VictoriaLogs' -search.maxQueryLen below the gated
+// probe: it answers 400 for the longer text, and the probe is asked again
+// without the gate, which main's probe is. Any other refusal is returned.
+// conformance: severity-detected-level-derivation
+func TestKeysRiskProbeRetriesWithoutTheGateWhenRefusedAsTooLong(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		limit   int
+		refusal string
+		queries int
+		wantErr bool
+	}{
+		{"limit below the gated text", 3000, "the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", 2, false},
+		{"limit below both", 1000, "the `query` arg length cannot exceed -search.maxQueryLen=%d bytes; the current query length is %d bytes", 2, true},
+		{"another 400 is not retried", 0, "cannot parse `query` arg: unexpected token", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				q := r.Form.Get("query")
+				got = append(got, q)
+				if len(q) > tc.limit {
+					http.Error(w, fmtRefusal(tc.refusal, tc.limit, len(q)), http.StatusBadRequest)
+				}
+			}))
+			defer srv.Close()
+			p := newSlidingTestProxy(t, srv.URL)
+			risky, err := p.detectedLevelKeysRisk(context.Background(), `app:="a"`, time.Unix(1700000000, 0), time.Unix(1700003600, 0))
+			if (err != nil) != tc.wantErr || risky || len(got) != tc.queries {
+				t.Fatalf("risky=%v err=%v, %d queries %v", risky, err, len(got), queryLengths(got))
+			}
+			if tc.queries == 2 && (!strings.Contains(got[0], "seq(") || strings.Contains(got[1], "seq(")) {
+				t.Errorf("the first ask should be gated and the retry not")
+			}
+		})
+	}
+}
+
+func fmtRefusal(format string, args ...any) string {
+	if !strings.Contains(format, "%d") {
+		return format
+	}
+	return fmt.Sprintf(format, args...)
 }
