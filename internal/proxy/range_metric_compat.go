@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -962,7 +963,9 @@ const vlDefaultMaxQueryLen = 16384
 // in when they rank. The series of the kept values are exact.
 func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	field := quoteLogsQLIdent(spec.GroupBy[0])
-	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	// The tenant's limit, not the raw-row budget of a request that folds its
+	// series: this ranks values and sends the limit to VictoriaLogs.
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
 	params := url.Values{}
 	params.Set("query", spec.BaseQuery+" | stats by ("+field+") count() as _c | sort by (_c desc) | limit "+strconv.Itoa(limit+1))
 	params.Set("start", windowStart.UTC().Format(time.RFC3339Nano))
@@ -1000,7 +1003,8 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		return nil, err
 	}
 	if len(values) < ranked {
-		if err := seriesLimitReached(ctx, len(values)); err != nil {
+		// The ranking is bound by the tenant's limit, whatever the request folds.
+		if err := seriesLimitReached(tenantSeriesLimitContext(ctx), len(values)); err != nil {
 			return nil, err
 		}
 	}
@@ -1207,7 +1211,7 @@ func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit i
 		if guarded {
 			return nil, errStatsGroupGuard
 		}
-		return nil, &seriesLimitError{limit: limit}
+		return nil, newSeriesLimitError(ctx, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -1339,6 +1343,9 @@ func (p *Proxy) collectRangeMetricHits(
 		var metric map[string]string
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
+			if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
+				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
+			}
 		} else {
 			metric = make(map[string]string)
 			metricObj.Visit(func(k []byte, mv *fj.Value) {
@@ -1638,6 +1645,32 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 		translated:   translated,
 		key:          canonicalLabelsKey(translated),
 	}
+}
+
+// withParsedGroupLabels adds to the labels of a stream-grouped series the other
+// fields the stats group by: the labels a parser extracts and the translation
+// groups by (an extraction list) tell series of one stream apart. metric is
+// shared, so it is copied before it grows.
+func (p *Proxy) withParsedGroupLabels(metric map[string]string, row *fj.Object, groupBy []string, vlToLoki map[string]string) map[string]string {
+	cloned := false
+	for _, g := range groupBy {
+		value := string(row.Get(g).GetStringBytes())
+		if value == "" || g == "level" || isVLInternalField(g) || strings.HasPrefix(g, "__") {
+			continue
+		}
+		lokiKey, ok := vlToLoki[g]
+		if !ok {
+			lokiKey = p.labelTranslator.ToLoki(g)
+		}
+		if _, has := metric[lokiKey]; has {
+			continue
+		}
+		if !cloned {
+			metric, cloned = maps.Clone(metric), true
+		}
+		metric[lokiKey] = value
+	}
+	return metric
 }
 
 // buildParsedGroupByCacheKey builds a cache key for the slow path (parsed labels).
@@ -1962,7 +1995,17 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 // -tenant-limits, -tenant-default-limits, -max-stats-query-series, or Loki's
 // default of 500 (see queryLimitsFor).
 func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
-	return p.requestQueryLimits(ctx).MaxQuerySeries
+	limit := p.requestQueryLimits(ctx).MaxQuerySeries
+	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
+		// A `without` request reads a row per stream and folds them before Loki's
+		// limit applies (withWithoutFold records the raw-row budget it reads
+		// under, unless the tenant's limit is lower). An ungrouped sum folded
+		// afterwards records none and keeps the tenant's limit here.
+		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > 0 {
+			return scope.foldBudget
+		}
+	}
+	return limit
 }
 
 // defaultStatsQuerySeries is Loki's stock max_query_series, the default of
@@ -2017,7 +2060,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if maxSeries > 0 && len(series) > maxSeries {
-		return nil, &seriesLimitError{limit: maxSeries}
+		return nil, newSeriesLimitError(ctx, maxSeries)
 	}
 	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
@@ -2188,7 +2231,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		return nil, err
 	}
 	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
-		return nil, &seriesLimitError{limit: maxSeries[0]}
+		return nil, newSeriesLimitError(ctx, maxSeries[0])
 	}
 	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))

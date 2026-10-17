@@ -1,0 +1,53 @@
+id: semantics/without-empty-grouping-range-collapses
+title: sum without () over an over-time unwrap function on query_range answers one series, Loki keeps every series (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum without () (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
+  on query_range answers one series `{}` (the translation ends in an ungrouped
+  `stats sum(__lvp_inner)`); on the fixture 1 series against Loki's 8, one per
+  stream. At an instant the proxy keeps the 8 series. `without ()` drops no
+  label: the grammar accepts it (pkg/logql/syntax/syntax.y: `WITHOUT
+  OPEN_PARENTHESIS CLOSE_PARENTHESIS` gives Groups nil), `Grouping.Noop()`
+  ("grouping doesn't change the result", pkg/logql/syntax/ast.go) and
+  VectorAggEvaluator.Next (pkg/logql/evaluator.go:451-466) hashes with
+  HashWithoutLabels and no names, so each input series is its own group and
+  keeps its labels. A `rate` unwrap range answers the 8 series on both routes.
+
+  Cause: the translator records a `without` fold only for a clause with at least
+  one label (withoutMarkerRE), so the clause is dropped without a marker and
+  the last stats pipe has no `by`, as before semantics/unwrap-sum-without-collapses
+  (which keeps a row per stream for the non-empty clause). Compared by series:
+  the range values of the over-time functions are
+  semantics/unwrap-over-time-range-windows. Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestWithoutShapesStillDifferFromLoki, internal/proxy); Loki's answer is computed from the same rows with the evaluator of Loki v3.7.7 and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+
+  Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack): on query_range over 10 minutes Loki answers 364 series (every stream, `without ()` dropping no label); the proxy answers one series `{}`. At an instant the proxy answers 2035 series that carry every parsed label (msg, error_code, currency) against Loki's 268 (semantics/unwrap-bare-range-exposes-parsed-labels).
+
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without () (max_over_time({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    The series of the inner range aggregation, unchanged.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator extractWithoutLabels / withoutMarkerRE (a clause with no label records no fold); tryTranslateMetricQueryWithout'
+  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (HashWithoutLabels with no names); pkg/logql/syntax/ast.go Grouping.Noop; pkg/logql/syntax/syntax.y (WITHOUT OPEN_PARENTHESIS CLOSE_PARENTHESIS)'
+  proxy: 'one series on query_range (the last stats pipe has no by); the instant answers a series per stream'
+  planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, the series of the registered request); an e2e test vs Loki in group core when fixed'
+  note: 'Related: semantics/unwrap-sum-without-collapses (fixed; a clause with labels), semantics/unwrap-over-time-range-windows (the values). The empty clause is Loki-correct from the source (Noop grouping); not run against a Loki here.'
+  clusters: []

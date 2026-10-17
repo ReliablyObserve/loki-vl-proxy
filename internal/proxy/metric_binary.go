@@ -237,7 +237,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		}
 		return
 	case errors.Is(err, errSeriesCountExceeded):
-		p.writeError(w, http.StatusBadRequest, (&seriesLimitError{limit: limit}).Error())
+		p.writeError(w, http.StatusBadRequest, newSeriesLimitError(ctx, limit).Error())
 		return
 	case errors.Is(err, errBodyTooLarge):
 		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))

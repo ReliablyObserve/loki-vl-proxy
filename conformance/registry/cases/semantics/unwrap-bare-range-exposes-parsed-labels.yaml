@@ -1,0 +1,43 @@
+id: semantics/unwrap-bare-range-exposes-parsed-labels
+title: a range function with unwrap and no outer aggregation exposes every parsed label although the parser names one key (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m])` has
+  one series per stream on Loki 3.7.7: `| logfmt amount` extracts only the
+  unwrapped label, which the series identity drops
+  (pkg/logql/log/metrics_extraction.go:150-178). The proxy answers a series per
+  stream and per value of every other key of the lines (msg, error_code,
+  currency, provider, latency_ms ...), because the raw-row route that answers a
+  bare range function with unwrap keeps all parsed labels.
+
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated
+  stack): at an instant Loki answers 268 series, the proxy 2035; on query_range
+  over 10 minutes 364 against 2769. The same for `sum without () (...)` at an
+  instant (semantics/without-empty-grouping-range-collapses).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m])'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series count, series labels]
+  expect: |
+    One series per stream, labelled with the stream labels only.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy raw-row range metric evaluator (the labels of a series built from the parsed fields)'
+  loki: 'pkg/logql/log/metrics_extraction.go:150-178 labelSampleExtractor (series = stream + the labels the parsers extract, less the unwrapped one)'
+  proxy: 'a series per stream and per value of every parsed key'
+  planned_test: 'TestCompat_UnwrapBareRangeSeriesLabels (test/e2e-compat, group core) over rate and the over-time functions, extraction list, range and instant'
+  note: 'Found while fixing semantics/unwrap-sum-without-collapses; related semantics/unwrap-per-series-identity-raw-rows and profiles/json-extraction-list-exposes-only-listed (the same for log queries).'
+  clusters: []

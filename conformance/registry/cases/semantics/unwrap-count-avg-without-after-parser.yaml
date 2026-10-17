@@ -1,0 +1,61 @@
+id: semantics/unwrap-count-avg-without-after-parser
+title: count without and avg without over an unwrap function after a bare parser keep a series per remaining label set, like Loki (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `count without (route) (max_over_time({app=~"uwsum-lf-.+"} | logfmt | unwrap amount [5m]))`
+  answers on Loki 3.7.7 one series per stream and parsed label set (here 3, with
+  value 3: the three `route` series of each stream fold into one) and, for `avg
+  without`, the average of those per-series maxima per group. The proxy answers
+  one series with value 1 for `count` and the average of every stream's value
+  for `avg` (measured on the e2e fixtures with VictoriaLogs v1.52.0, query_range
+  and instant alike).
+
+  `sum`, `max` and `min without` over an unwrap function keep a series per
+  stream since semantics/unwrap-sum-without-collapses. `count` and `avg` cannot
+  use the per-stream rows that fix reads: a stream row holds one value, the
+  per-line maxima of the parsed label sets that Loki counts or averages are not
+  exposed (`stats by (_stream)` folds them), so count would answer 1 per stream
+  and avg the stream's own value instead of Loki's group count and mean. The fix
+  needs the series identity of a parser
+  (semantics/unwrap-per-series-identity-raw-rows, parsed-identity/dynamic-key-parsers).
+  Without a parser the stream is the series and `count without` and `avg
+  without` are already right. So they are after a parser that names the keys it
+  extracts (`| logfmt amount`, `| logfmt amount, currency`): the series is the
+  stream plus the named labels, the inner stats groups by them, and count and
+  avg answer Loki's values (measured on generator data: `count without (pod)
+  (max_over_time({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))`
+  is 118 for error and 150 for info on both). The row stays open for a bare
+  `| logfmt` or `| json`, where every key of every line is a label.
+
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an
+  isolated stack, instant): the registered request, a bare `| logfmt` over one
+  minute, answers 415 series on Loki (a series per parsed label set, each
+  valued 1 or more) and one series `{}` valued 1 on the proxy. A longer window
+  makes Loki's answer too large to compare, so the request stays at one minute.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'count without (pod) (max_over_time({service_name="payment-service"} | logfmt | unwrap amount [1m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per label set without pod, valued with the number of series folded into it.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator tryTranslateMetricQueryWithout (keepWithoutSeries covers sum, max, min); the raw evaluators series key'
+  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (count and avg over the series of the inner range aggregation, HashWithoutLabels); pkg/logql/log/metrics_extraction.go:150-178 (series = stream + parsed labels)'
+  proxy: 'one series: the last stats pipe groups by the stream only, so count is 1 per group and avg the stream value'
+  planned_test: 'TestCompat_UnwrapCountAvgWithoutAfterParser (test/e2e-compat, group core) over count and avg without, logfmt and json, range and instant'
+  note: 'Found while fixing semantics/unwrap-sum-without-collapses. Depends on semantics/unwrap-per-series-identity-raw-rows (the parsed labels of a series); no stream-level translation gives Loki''s count or mean.'
+  clusters: []

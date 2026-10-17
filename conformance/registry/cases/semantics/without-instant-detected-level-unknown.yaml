@@ -1,0 +1,46 @@
+id: semantics/without-instant-detected-level-unknown
+title: an instant without answer lacks the detected_level=unknown label Loki puts on a stream with no level (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum without (route) (count_over_time({app=~"uwsum-lf-.+"}[5m]))` at /query keeps
+  every label of the stream but `route`. For a stream with no `level` label Loki
+  3.7.7 labels the series `detected_level="unknown"` next to the stream labels
+  (app, service_name); the proxy answers the same series and values without
+  `detected_level` at an instant, where query_range carries it
+  (buildMetricSeriesEntry adds `unknown` when the row has no level). A stream with
+  a level label has `level` and `detected_level` on both.
+
+  Measured on the e2e fixtures (streams with only an `app` label; Loki 3.7.7 and
+  VictoriaLogs v1.52.0 on an isolated stack): the three series of a fixture group
+  are {app, detected_level=unknown, service_name} on Loki and {app, service_name}
+  on the proxy, for `sum without (route)` over `count_over_time` and over `rate`
+  with `| logfmt amount`. Every stream of the generator data has a level label, so
+  the generator data does not show it; the new e2e tests of
+  semantics/unwrap-sum-without-collapses compare instant answers after dropping the
+  label.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum without (route) (count_over_time({app=~"uwsum-lf-.+"}[5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    detected_level="unknown" on every series of a stream with no level label.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy instant stats answer labels (the stream-derived label set of an instant vector; the range path adds detected_level in buildMetricSeriesEntry)'
+  loki: 'detected_level is a label of every stream when log level discovery is on (unknown without a level)'
+  proxy: 'the instant vector has the stream labels without detected_level'
+  planned_test: 'TestCompat_UnwrapSumWithoutExtractionList compares the instant answers after dropping the label (test/e2e-compat); a parity case without the normalization when fixed'
+  note: 'Found while hardening semantics/unwrap-sum-without-collapses; related semantics/detected-level-pipes-known-differences.'
+  clusters: []
