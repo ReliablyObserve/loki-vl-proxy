@@ -21,11 +21,14 @@ why: |
   The fold of semantics/unwrap-sum-without-collapses is for sum, min, max, avg and
   count; topk and bottomk without are answered as they were before it.
   Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestWithoutShapesStillDifferFromLoki, internal/proxy); Loki's answer is computed from the same rows with the evaluator of Loki v3.7.7 and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+
+  Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack): at an instant Loki answers two series (the top series of the error group and of the info group, each with its pod label); the proxy answers one, the info group without pod and with the same value (310.23). On query_range over 10 minutes Loki answers 7 series and the proxy 1.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'topk without (pod) (1, rate({app="payment-service"} | logfmt | unwrap amount [5m]))'
+    query: 'topk without (pod) (1, rate({service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'

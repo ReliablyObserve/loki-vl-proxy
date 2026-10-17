@@ -172,9 +172,8 @@ func TestCompat_UnwrapSumWithoutExtractionList(t *testing.T) {
 }
 
 // withoutUnknownDetectedLevel drops the `detected_level=unknown` label from the
-// series keys: Loki keeps it on every series of a `without`, and the proxy
-// does on query_range but not at an instant
-// (semantics/without-instant-detected-level-label), which these tests do not
+// series keys: Loki adds it to every series of a stream that has no level, and
+// the proxy does on query_range but not at an instant, which these tests do not
 // compare.
 func withoutUnknownDetectedLevel(series map[string]map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string, len(series))

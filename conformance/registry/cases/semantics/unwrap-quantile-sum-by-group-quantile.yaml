@@ -26,11 +26,14 @@ why: |
   identity and fold the quantiles in the proxy; the row stays open until that
   lands and the e2e below passes. Related: semantics/unwrap-per-series-identity-raw-rows
   (the same fold for avg, max, min and rate_counter).
+
+  Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant): Loki answers {level=error} = 719207.41 and {level=info} = 1333274.28 (the sum of the per-series quantiles); the proxy answers 9756.73 and 9498.06 (the quantile of each level's values).
+
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum by (namespace) (quantile_over_time(0.95, {app="payment-service"} | logfmt | unwrap amount [5m]))'
+    query: 'sum by (level) (quantile_over_time(0.95, {service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'

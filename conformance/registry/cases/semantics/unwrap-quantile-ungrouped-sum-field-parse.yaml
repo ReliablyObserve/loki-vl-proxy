@@ -28,11 +28,14 @@ why: |
   semantics/unwrap-quantile-response-limit) is expected to replace this path for
   a quantile under an outer aggregation; the row stays open until that change
   lands and the e2e below passes.
+
+  Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant and query_range): Loki answers one series `{}` = 2052481.69 (the sum of the per-series quantiles); the proxy answers no series.
+
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'sum(quantile_over_time(0.95, {app="payment-service"} | logfmt | unwrap amount [5m]))'
+    query: 'sum(quantile_over_time(0.95, {service_name="payment-service"} | logfmt amount | unwrap amount [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'

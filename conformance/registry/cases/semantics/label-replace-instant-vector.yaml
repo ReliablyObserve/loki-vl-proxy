@@ -13,11 +13,14 @@ why: |
   while query_range adds it ({dst=x,ns=x}, {dst=y,ns=y}). applyLabelReplace
   (internal/proxy/vector_matching.go) returns early unless the response is a matrix.
   semantics/label-replace-new-label covers query_range only. Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestInstantLabelReplaceOnAVectorAddsNoLabel, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant query): Loki answers the three series error, info and warn with `dst` equal to `level`; the proxy answers the same three series and values without `dst`. On query_range both carry it. The registered request uses the `level` stream label of the generator data.
+
 request:
   method: GET
   path: /loki/api/v1/query
   params:
-    query: 'label_replace(sum by (ns) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")'
+    query: 'label_replace(sum by (level) (count_over_time({service_name="payment-service"}[5m])), "dst", "$1", "level", "(.*)")'
     time: 'now'
   headers:
     X-Scope-OrgID: "0"
@@ -25,7 +28,7 @@ compare:
   mode: observed
   fields: [series labels]
   expect: |
-    dst on every series whose source label matches.
+    dst on every series whose source label matches (level).
 gap:
   status: open
   impact: explore-visible
