@@ -173,6 +173,9 @@ func TestFoldingWithoutOp(t *testing.T) {
 		{`sum(sum without (pod) (` + m + `)) by (ns)`, ""},
 		{`topk(2, max(sum without (pod) (` + m + `)))`, ""},
 		{`sum without (pod) (` + m + `) > 1`, ""},
+		// Text after the call a wrapper peels: the wrapper is not the whole query.
+		{`topk(5, sum without (pod) (` + m + `)) > 10`, ""},
+		{`stddev(sum without (pod) (` + m + `)) by (level)`, ""},
 		{`sum without (pod) (` + m + `) / sum without (pod) (` + m + `)`, ""},
 		// More than one without clause, none with labels, no aggregation.
 		{`sum without (pod) (sum without (ns) (` + m + `))`, ""},
