@@ -2077,7 +2077,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			// conversion (duration(), bytes()) is parsed by the proxy's raw
 			// evaluator, as VictoriaLogs reads the units differently.
 			gate, gateConv := unwrapGateField(inner, unwrapField)
-			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
+			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels, foldWithout)
 
 			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
 			if funcName == "stdvar_over_time" {
@@ -2093,7 +2093,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			}
 
 			if seriesAgg, ok := seriesLevelOuterAggregation(outerAgg); ok && byLabels != "" {
-				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query)), "__lvp_inner", gate, gateConv)
+				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, joinByLabels(innerBy, defaultRateInnerGrouping(query, false)), "__lvp_inner", gate, gateConv)
 				result = addByClauseLast(innerAliased+" "+logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String(), byLabels, labelFn)
 				unwrapByLabelsEmbedded = true
 			} else if outerAgg != "" && byLabels == "" {
@@ -2114,7 +2114,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			// series identity and the outer stats aggregates those values.
 			// Loki: count by (pod) (count_over_time(...)) is the number of
 			// series per pod, not the number of lines.
-			innerBy := joinByLabels(normalizeByLabels(byLabels, labelFn), defaultRateInnerGrouping(query))
+			innerBy := joinByLabels(normalizeByLabels(byLabels, labelFn), defaultRateInnerGrouping(query, foldWithout))
 			innerAliased := buildStatsQuery(logsqlQuery, logsqlFunc, innerBy, "__lvp_inner")
 			result = innerAliased + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String()
 			switch {
@@ -2166,8 +2166,16 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 	return "", false
 }
 
-func defaultRateInnerGrouping(query string) string {
+// defaultRateInnerGrouping is the series identity of a rate-like function:
+// with a parser, the stream, plus (for the `without` fold only, foldWithout) the
+// labels an extraction list names.
+func defaultRateInnerGrouping(query string, foldWithout bool) string {
 	if hasParserPipeline(query) {
+		if foldWithout {
+			if labels, ok := parsedSeriesLabels(query, extractUnwrapField(query)); ok {
+				return joinByLabels("_stream", strings.Join(labels, ", "))
+			}
+		}
 		return "_stream"
 	}
 	// Keep level-split streams distinct when level isn't configured as a VL _stream field.
@@ -2180,7 +2188,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 		return "", false
 	}
 
-	innerBy := defaultRateInnerGrouping(originalQuery)
+	innerBy := defaultRateInnerGrouping(originalQuery, foldWithout)
 	seriesAgg, seriesLevel := seriesLevelOuterAggregation(outerAgg)
 	switch {
 	case seriesLevel:
@@ -2439,7 +2447,11 @@ func extractRangeByClause(suffix string) (labels string, explicit bool) {
 
 // unwrapInnerGrouping returns the by-labels string for buildStatsQuery.
 // It selects the effective group-by labels for unwrap/range aggregations.
-func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string) string {
+//
+// foldWithout marks the `<op> without (...)` the proxy folds itself
+// (foldingWithoutOp): only there a series is told apart by the labels an
+// extraction list names. Every other query groups a parser's lines by `_msg`.
+func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string, foldWithout bool) string {
 	// Explicit range-level by (...) takes precedence over all heuristics.
 	// by () means aggregate all entries into one series (no label grouping).
 	if rangeByExplicit {
@@ -2454,6 +2466,14 @@ func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslat
 		return normalizeByLabels(byLabels, labelFn)
 	}
 	if hasParserPipeline(query) {
+		// A series is the stream plus the labels the parsers extract, less the
+		// unwrapped one: _msg stands for them when a parser extracts every key
+		// of every line.
+		if foldWithout {
+			if labels, ok := parsedSeriesLabels(query, extractUnwrapField(query)); ok {
+				return joinByLabels("_stream", strings.Join(labels, ", "))
+			}
+		}
 		return "_stream, _msg"
 	}
 	if outerAgg != "" {
@@ -2916,7 +2936,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	statsExpr := "quantile(" + phi + ", " + unwrapField + ")"
 	gate, gateConv := unwrapGateField(queryPart, unwrapField)
 	rangeByLabels, rangeByExplicit := extractRangeByClause(strings.TrimSpace(rest[end+1:]))
-	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
+	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels, false)
 
 	if outerAgg != "" && byLabels == "" {
 		innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)

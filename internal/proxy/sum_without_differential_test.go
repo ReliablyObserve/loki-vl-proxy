@@ -38,6 +38,19 @@ import (
 // lokiWithout is the reference: timestamp -> stream labels without pod ->
 // Loki's value projected onto them.
 func lokiWithout(rows []emuRow, fn, op string, window int64, times []int64) map[int64]map[string]float64 {
+	return lokiWithoutIdentity(rows, fn, op, window, times, func(row emuRow) string {
+		parsed := make([]string, 0, len(row.labels))
+		for k, v := range row.labels {
+			parsed = append(parsed, k+"="+v)
+		}
+		sort.Strings(parsed)
+		return row.stream + "|" + strings.Join(parsed, ",")
+	}, func(row emuRow) string { return withoutPodKey(row.stream) })
+}
+
+// lokiWithoutIdentity is lokiWithout for a series identity and a result group
+// the caller names for a row.
+func lokiWithoutIdentity(rows []emuRow, fn, op string, window int64, times []int64, identity, group func(emuRow) string) map[int64]map[string]float64 {
 	out := map[int64]map[string]float64{}
 	for _, t := range times {
 		type series struct {
@@ -49,14 +62,9 @@ func lokiWithout(rows []emuRow, fn, op string, window int64, times []int64) map[
 			if row.ts <= t-window || row.ts > t {
 				continue
 			}
-			parsed := make([]string, 0, len(row.labels))
-			for k, v := range row.labels {
-				parsed = append(parsed, k+"="+v)
-			}
-			sort.Strings(parsed)
-			key := row.stream + "|" + strings.Join(parsed, ",")
+			key := identity(row)
 			if perSeries[key] == nil {
-				perSeries[key] = &series{group: withoutPodKey(row.stream)}
+				perSeries[key] = &series{group: group(row)}
 			}
 			perSeries[key].values = append(perSeries[key].values, row.value)
 		}
@@ -217,7 +225,7 @@ func runWithoutScenarioQ(t *testing.T, emu *vlEmulator, s withoutScenario, query
 			t.Fatalf("%s: a series keeps the excluded label: %v", query, series.Metric)
 		}
 		var parts []string
-		for _, k := range []string{"app", "ns", "dst"} {
+		for _, k := range []string{"app", "ns", "dst", "route"} {
 			if v, ok := series.Metric[k]; ok {
 				parts = append(parts, k+"="+v)
 			}

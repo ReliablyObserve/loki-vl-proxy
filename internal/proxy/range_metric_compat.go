@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -1342,6 +1343,9 @@ func (p *Proxy) collectRangeMetricHits(
 		var metric map[string]string
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
+			if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
+				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
+			}
 		} else {
 			metric = make(map[string]string)
 			metricObj.Visit(func(k []byte, mv *fj.Value) {
@@ -1641,6 +1645,32 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 		translated:   translated,
 		key:          canonicalLabelsKey(translated),
 	}
+}
+
+// withParsedGroupLabels adds to the labels of a stream-grouped series the other
+// fields the stats group by: the labels a parser extracts and the translation
+// groups by (an extraction list) tell series of one stream apart. metric is
+// shared, so it is copied before it grows.
+func (p *Proxy) withParsedGroupLabels(metric map[string]string, row *fj.Object, groupBy []string, vlToLoki map[string]string) map[string]string {
+	cloned := false
+	for _, g := range groupBy {
+		value := string(row.Get(g).GetStringBytes())
+		if value == "" || g == "level" || isVLInternalField(g) || strings.HasPrefix(g, "__") {
+			continue
+		}
+		lokiKey, ok := vlToLoki[g]
+		if !ok {
+			lokiKey = p.labelTranslator.ToLoki(g)
+		}
+		if _, has := metric[lokiKey]; has {
+			continue
+		}
+		if !cloned {
+			metric, cloned = maps.Clone(metric), true
+		}
+		metric[lokiKey] = value
+	}
+	return metric
 }
 
 // buildParsedGroupByCacheKey builds a cache key for the slow path (parsed labels).

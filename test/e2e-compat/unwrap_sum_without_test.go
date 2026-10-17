@@ -136,3 +136,80 @@ func TestCompat_UnwrapSumWithoutKeepsSeries(t *testing.T) {
 		}
 	}
 }
+
+// TestCompat_UnwrapSumWithoutExtractionList: a parser that names the keys it
+// extracts makes a Loki series the stream plus those labels less the unwrapped
+// one, so the unique `msg`/`route` values of the fixture's lines do not split
+// it. `<op> without (route)` over `| logfmt amount` is then a value per stream
+// and over `| logfmt amount, route` a value per stream and route folded across
+// routes; both are compared with Loki's values exactly (no projection), at an
+// instant for every function and on query_range for rate.
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_UnwrapSumWithoutExtractionList(t *testing.T) {
+	fx := ensureUnwrapSumFixtures(t)
+	fx.waitForLoki(t)
+	instant, sliding := unwrapSumShapes[len(unwrapSumShapes)-1], unwrapSumShapes[0]
+	for _, parser := range []string{"logfmt amount", "logfmt amount, route"} {
+		for _, function := range []string{"rate", "sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
+			for _, op := range []string{"sum", "max", "min", "count", "avg"} {
+				for _, shape := range []unwrapSumShape{instant, sliding} {
+					if shape.step != 0 && function != "rate" {
+						continue // semantics/unwrap-over-time-range-windows
+					}
+					query := fmt.Sprintf("%s without (route) (%s(%s | %s | unwrap amount [%s]))", op, function, fx.selLogfmt, parser, shape.window)
+					t.Run(fmt.Sprintf("%s/%s/%s/%s", parser, function, op, shape.name), func(t *testing.T) {
+						loki := shape.run(t, fx, lokiURL, query)
+						proxy := shape.run(t, fx, proxyURL, query)
+						if len(loki) < 3 {
+							t.Fatalf("%s: Loki sanity: %d series, want one per stream at least", query, len(loki))
+						}
+						compareUnwrapSumSeries(t, query, withoutUnknownDetectedLevel(loki), withoutUnknownDetectedLevel(proxy))
+					})
+				}
+			}
+		}
+	}
+}
+
+// withoutUnknownDetectedLevel drops the `detected_level=unknown` label from the
+// series keys: Loki keeps it on every series of a `without`, and the proxy
+// does on query_range but not at an instant
+// (semantics/without-instant-detected-level-label), which these tests do not
+// compare.
+func withoutUnknownDetectedLevel(series map[string]map[string]string) map[string]map[string]string {
+	out := make(map[string]map[string]string, len(series))
+	for key, points := range series {
+		parts := strings.Split(key, ",")
+		kept := parts[:0]
+		for _, part := range parts {
+			if part != "detected_level=unknown" {
+				kept = append(kept, part)
+			}
+		}
+		out[strings.Join(kept, ",")] = points
+	}
+	return out
+}
+
+// TestCompat_UnwrapSumWithoutUnderAnotherAggregation: a `without` under a sum,
+// stddev or stdvar is Loki's answer too, with the proxy leaving the fold to the
+// outer operation. max, min, avg, count and topk over it still collapse the inner
+// series on the proxy (semantics/without-over-inner-aggregation-collapses).
+// conformance: semantics/unwrap-sum-without-collapses, semantics/without-over-inner-aggregation-collapses, metric-series-identity, loki_api_v1_query
+func TestCompat_UnwrapSumWithoutUnderAnotherAggregation(t *testing.T) {
+	fx := ensureUnwrapSumFixtures(t)
+	fx.waitForLoki(t)
+	instant := unwrapSumShapes[len(unwrapSumShapes)-1]
+	inner := fmt.Sprintf("sum without (route) (rate(%s | logfmt amount, route | unwrap amount [5m]))", fx.selLogfmt)
+	for _, outer := range []string{"stddev(%s)", "stdvar(%s)", "sum(%s)"} {
+		query := strings.Replace(outer, "%s", inner, 1)
+		t.Run(strings.ReplaceAll(outer, "%s", "…"), func(t *testing.T) {
+			loki := instant.run(t, fx, lokiURL, query)
+			proxy := instant.run(t, fx, proxyURL, query)
+			if len(loki) == 0 {
+				t.Fatalf("%s: Loki answered nothing", query)
+			}
+			compareUnwrapSumSeries(t, query, withoutUnknownDetectedLevel(loki), withoutUnknownDetectedLevel(proxy))
+		})
+	}
+}

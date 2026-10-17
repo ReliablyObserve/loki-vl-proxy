@@ -126,8 +126,15 @@ func (p *Proxy) withWithoutFold(r *http.Request) *http.Request {
 			scope.foldBudget = budget
 		}
 	}
-	return r.WithContext(context.WithValue(r.Context(), foldedSumKey{}, true))
+	ctx := context.WithValue(r.Context(), withoutFoldKey{}, true)
+	return r.WithContext(context.WithValue(ctx, foldedSumKey{}, true))
 }
+
+// withoutFoldKey marks a request whose `without` the proxy folds
+// (withWithoutFold), unlike foldedSumKey, which an ungrouped sum sets too and
+// the series limit checks clear. Only such a request names the labels an
+// extraction list extracts in its series (withParsedGroupLabels).
+type withoutFoldKey struct{}
 
 // capWithoutFold applies max_query_series to the folded answer of a
 // withWithoutFold request: Loki's error for a plain client, the busiest series
