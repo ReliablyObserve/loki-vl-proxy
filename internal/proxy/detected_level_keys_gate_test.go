@@ -220,6 +220,11 @@ func TestTwiceGateRejectsSingleKeys(t *testing.T) {
 		`{"SEVERITY_TEXT":"info","severity_text":"warn"}`:    true,
 		`{"msg":"xlevel and level2 and severity_texts"}`:     false,
 		`{"level":"info"} {"level":"warn"} \u006cevel=error`: true,
+		`{"log.level":"info"}`:                               false, // one occurrence holds the word level once
+		`{"log.level":"a","log.level":"b"}`:                  true,
+		`{"log.level":"a","level":"b"}`:                      true,
+		`{"level":"a","log.level":"b"}`:                      true,
+		`{"log.level":"a","severity":"b"}`:                   true,
 	} {
 		if got := twiceGateMatches(t, gate, line); got != want {
 			t.Errorf("gate over %q = %v, want %v", line, got, want)
@@ -338,5 +343,21 @@ func TestKeysRiskProbeGatesTheTwoKeyPatterns(t *testing.T) {
 	}
 	if len(queries) != 1 || strings.Contains(queries[0], "seq(") || len(queries[0]) > vlDefaultMaxQueryLen {
 		t.Fatalf("a long selector should send the probe without the gate within %d bytes: %d queries, %d bytes", vlDefaultMaxQueryLen, len(queries), len(queries[0]))
+	}
+}
+
+// The gate leaves out the pair of a dotted name and its last word (the one
+// occurrence of log.level holds the word level), and the lines with both still
+// pass through seq("level","level").
+// conformance: severity-detected-level-derivation
+func TestTwiceGateOmitsTheDottedPair(t *testing.T) {
+	gate := detectedLevelTwiceGate()
+	if strings.Contains(gate, `(_msg:"level" (_msg:"LEVEL" or _msg:"Level" or _msg:"log.level"`) {
+		t.Fatalf("the pair of level and log.level is in the gate: %s", gate)
+	}
+	for _, name := range detectedLevelKeyNames {
+		if name != "log.level" && !strings.Contains(gate, `_msg:"`+name+`"`) && name != detectedLevelKeyNames[0] {
+			t.Errorf("%s is missing from the gate", name)
+		}
 	}
 }

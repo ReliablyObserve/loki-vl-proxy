@@ -583,6 +583,11 @@ func logsqlWordPrefilter(words []string) string {
 // "key ... key" matches are such, so the filter is a superset of it, answered
 // from VictoriaLogs' token index and a substring search where the regexp
 // would run over every line that holds one key.
+//
+// A dotted phrase ends in a word that is a phrase of its own (log.level, level):
+// the pair of the two is left out, because the one occurrence of log.level
+// already holds the word level and the pair would admit every line with that
+// single key, while a line with both keys holds the word twice and passes seq.
 func logsqlTwiceFilter(phrases []string) string {
 	var alts []string
 	for i, a := range phrases {
@@ -590,6 +595,9 @@ func logsqlTwiceFilter(phrases []string) string {
 		alts = append(alts, "_msg:seq("+quoted+","+quoted+")")
 		var rest []string
 		for _, b := range phrases[i+1:] {
+			if strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a) {
+				continue
+			}
 			rest = append(rest, "_msg:"+strconv.Quote(b))
 		}
 		if len(rest) > 0 {
