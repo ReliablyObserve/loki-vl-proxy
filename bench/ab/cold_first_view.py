@@ -327,7 +327,9 @@ class Run:
         self.write("probes.json", {"shape": "D", "range": "1h", "builds": result})
 
     def write(self, name, body):
-        doc = {"command": [os.path.basename(sys.argv[0])] + sys.argv[1:], "date": time.strftime("%Y-%m-%d"),
+        argv = sys.argv[1:]
+        argv = [("<dir>" if argv[i - 1] == "--out" else a) for i, a in enumerate(argv)]
+        doc = {"command": ["bench/ab/" + os.path.basename(sys.argv[0])] + argv, "date": time.strftime("%Y-%m-%d"),
                "vl_cpus": self.args.vl_cpus, "data": {"hours": self.args.hours, "end": self.end, "rows_without_stored_level": True},
                "builds": self.sha, **body}
         with open(os.path.join(self.out, name), "w") as f:
