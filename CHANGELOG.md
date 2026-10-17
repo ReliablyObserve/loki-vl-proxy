@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sum without (...)` over a range function with `unwrap`, and over `rate` at
+  an instant, keeps a series per remaining stream label set instead of folding
+  every series into one.** `sum without (pod) (max_over_time({app="payment-service"}
+  | logfmt | unwrap amount [5m]))` answered one series on query_range and on an
+  instant query, where Loki 3.7.7 keeps every label but `pod` and folds each
+  group (`pkg/logql/evaluator.go:451-466`). The last stats pipe now keeps the
+  stream, VictoriaLogs answers a row per stream from stats, and the proxy drops
+  the excluded labels and folds the rows with the operator of the aggregation
+  (`sum`, `max`, `min`, `count`, `avg`), also when a `topk`, `sort`,
+  `label_replace` or a comparison wraps it; a binary expression folds each
+  operand on its own. `max_query_series` now applies to the folded answer, as on
+  Loki (`pkg/logql/engine.go:536-548`): four streams folded into two series fit
+  a limit of two, a plain client over the limit gets Loki's 400, and Logs
+  Drilldown gets the busiest series with Loki's warning; the per-stream rows read
+  before the fold are bounded by `-manual-range-metric-row-limit`, whose error
+  names that flag. What remains different from Loki, and the label sets after a
+  parser, is registered with `semantics/unwrap-sum-without-collapses` (fixed,
+  #739) and the rows it names.
+
 ## [2.17.0] - 2026-10-17
 
 ### Performance
