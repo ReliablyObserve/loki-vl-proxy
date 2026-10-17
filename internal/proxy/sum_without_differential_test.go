@@ -217,7 +217,7 @@ func runWithoutScenarioQ(t *testing.T, emu *vlEmulator, s withoutScenario, query
 			t.Fatalf("%s: a series keeps the excluded label: %v", query, series.Metric)
 		}
 		var parts []string
-		for _, k := range []string{"app", "ns"} {
+		for _, k := range []string{"app", "ns", "dst"} {
 			if v, ok := series.Metric[k]; ok {
 				parts = append(parts, k+"="+v)
 			}
@@ -549,25 +549,32 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 }
 
 // TestWithoutWrappedByAnOperator: the operator of a `<op> without (...)` decides
-// how the series that share a label set are folded, whatever wraps it. Every
-// pod holds a different value, so a fold by sum instead of the operator is
-// visible: a max without (pod) over pods valued 10 and 4 is 10, not 14.
+// how the series that share a label set are folded, whatever wraps it (the
+// wrappers the proxy applies to the folded series: topk, sort, label_replace and
+// a comparison). Every pod holds a different value, so a fold by sum instead of
+// the operator is visible: a max without (pod) over pods valued 10 and 4 is 10,
+// not 14. A label_replace is pinned by the label it adds, and a comparison by a
+// threshold between the groups' values, so it drops some of them.
 //
 // conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
 func TestWithoutWrappedByAnOperator(t *testing.T) {
+	type answer = map[int64]map[string]float64
 	type wrapper struct {
 		name    string
-		wrap    func(inner string) string
-		instant bool                                                                 // only an instant query
-		anyKey  bool                                                                 // compared by value, not by label set
-		keep    func(want map[int64]map[string]float64) map[int64]map[string]float64 // the wrapper applied to Loki's answer
+		wrap    func(inner string, threshold float64) string
+		instant bool                                        // only an instant query
+		anyKey  bool                                        // compared by value, not by label set
+		filters bool                                        // the wrapper drops series: some must be dropped and some kept
+		keep    func(want answer, threshold float64) answer // the wrapper applied to Loki's answer
+		// keepInstant is keep for an instant query, when it differs.
+		keepInstant func(want answer, threshold float64) answer
 	}
-	identity := func(w map[int64]map[string]float64) map[int64]map[string]float64 { return w }
-	positive := func(w map[int64]map[string]float64) map[int64]map[string]float64 {
-		out := map[int64]map[string]float64{}
+	identity := func(w answer, _ float64) answer { return w }
+	above := func(w answer, threshold float64) answer {
+		out := answer{}
 		for ts, groups := range w {
 			for key, v := range groups {
-				if v > 0 {
+				if v > threshold {
 					if out[ts] == nil {
 						out[ts] = map[string]float64{}
 					}
@@ -577,11 +584,12 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 		}
 		return out
 	}
+	text := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 	wrappers := []wrapper{
-		{"topk(10)", func(q string) string { return "topk(10, " + q + ")" }, false, false, identity},
+		{"topk(10)", func(q string, _ float64) string { return "topk(10, " + q + ")" }, false, false, false, identity, nil},
 		// Ties between label sets pick either: only the winning value is pinned.
-		{"topk(1)", func(q string) string { return "topk(1, " + q + ")" }, false, true, func(w map[int64]map[string]float64) map[int64]map[string]float64 {
-			out := map[int64]map[string]float64{}
+		{"topk(1)", func(q string, _ float64) string { return "topk(1, " + q + ")" }, false, true, false, func(w answer, _ float64) answer {
+			out := answer{}
 			for ts, groups := range w {
 				best := math.Inf(-1)
 				for _, v := range groups {
@@ -590,16 +598,32 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 				out[ts] = map[string]float64{"*": best}
 			}
 			return out
-		}},
-		{"sort", func(q string) string { return "sort(" + q + ")" }, true, false, identity},
-		{"label_replace", func(q string) string { return `label_replace(` + q + `, "dst", "$1", "app", "(.*)")` }, false, false, identity},
+		}, nil},
+		{"sort", func(q string, _ float64) string { return "sort(" + q + ")" }, true, false, false, identity, nil},
+		// The label the wrapper adds is part of the series: dst holds app.
+		{"label_replace", func(q string, _ float64) string { return `label_replace(` + q + `, "dst", "$1", "app", "(.*)")` }, false, false, false, func(w answer, _ float64) answer {
+			out := answer{}
+			for ts, groups := range w {
+				out[ts] = map[string]float64{}
+				for key, v := range groups {
+					out[ts][key+",dst=uw"] = v
+				}
+			}
+			return out
+		}, identity /* an instant label_replace on a vector adds no label (open row semantics/label-replace-instant-vector) */},
 		// On query_range a topk over a binary expression is answered 502 with or
 		// without `without` (the binary marker reaches VictoriaLogs): instant only.
-		{"topk(10) of a comparison", func(q string) string { return "topk(10, " + q + " > 0)" }, true, false, positive},
-		{"comparison", func(q string) string { return q + " > 0" }, false, false, positive},
+		{"topk(10) of a comparison", func(q string, threshold float64) string { return "topk(10, " + q + " > " + text(threshold) + ")" }, true, false, true, above, nil},
+		{"comparison", func(q string, threshold float64) string { return q + " > " + text(threshold) }, false, false, true, above, nil},
 	}
 	type inner struct{ fn, op string }
 	inners := []inner{{"rate", "max"}, {"rate", "min"}, {"max_over_time", "max"}, {"min_over_time", "min"}, {"max_over_time", "count"}}
+	count := func(w answer) (n int) {
+		for _, groups := range w {
+			n += len(groups)
+		}
+		return n
+	}
 	for _, version := range []string{"v1.52.0", "v1.40.0"} {
 		for _, w := range wrappers {
 			for _, in := range inners {
@@ -610,19 +634,44 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 					name := fmt.Sprintf("%s/%s/%s_without(%s)/instant=%v", version, w.name, in.op, in.fn, instant)
 					t.Run(name, func(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name)) * 6101))
+						dropped, kept, varied := 0, 0, false
 						for i := 0; i < 8; i++ {
 							s := generateWithoutScenario(rnd, in.fn, in.op, "", instant)
 							// A value per pod that differs from every other, so the operators differ.
 							for j := range s.rows {
 								s.rows[j].value = float64(1+j%7) * 1.5
 							}
-							query := w.wrap(s.query())
+							ref := lokiWithout(s.rows, in.fn, in.op, int64(s.window), s.times())
+							// A threshold between the groups' values: the lowest drops.
+							lo, hi := math.Inf(1), math.Inf(-1)
+							for _, groups := range ref {
+								for _, v := range groups {
+									lo, hi = math.Min(lo, v), math.Max(hi, v)
+								}
+							}
+							varied = varied || lo < hi
+							threshold := math.Round((lo+hi)/2*1e6) / 1e6
+							if !instant && in.fn != "rate" {
+								// The over-time functions of a query_range read a step-sized bucket for
+								// the window (semantics/unwrap-over-time-range-windows): their values
+								// are not Loki's, so a threshold between them is not pinned here.
+								threshold = lo - 1
+							}
+							query := w.wrap(s.query(), threshold)
 							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
 							got := runWithoutScenarioQ(t, emu, s, query)
-							want := w.keep(lokiWithout(s.rows, in.fn, in.op, int64(s.window), s.times()))
+							keep := w.keep
+							if instant && w.keepInstant != nil {
+								keep = w.keepInstant
+							}
+							want := keep(ref, threshold)
+							if instant || in.fn == "rate" {
+								dropped += count(ref) - count(want)
+								kept += count(want)
+							}
 							if w.anyKey {
-								rekey := func(m map[int64]map[string]float64) map[int64]map[string]float64 {
-									out := map[int64]map[string]float64{}
+								rekey := func(m answer) answer {
+									out := answer{}
 									for ts, groups := range m {
 										for _, v := range groups {
 											if out[ts] == nil {
@@ -645,8 +694,62 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 							}
 							compareWithout(t, fmt.Sprintf("%s #%d: %s", name, i, query), s, got, want, mode)
 						}
+						if w.filters && (instant || in.fn == "rate") && varied && (dropped == 0 || kept == 0) {
+							t.Fatalf("%s: the comparison dropped %d and kept %d points over the scenarios, it must do both", name, dropped, kept)
+						}
 					})
 				}
+			}
+		}
+	}
+}
+
+// TestWithoutOffset: `<op> without (pod) (<range function> [w] offset o)` is the
+// fold of the window that ends o earlier, at the evaluation time: the points
+// are Loki's values at t-o, labelled t.
+//
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+func TestWithoutOffset(t *testing.T) {
+	type tc struct{ fn, op string }
+	cases := []tc{{"rate", "sum"}, {"max_over_time", "max"}, {"sum_over_time", "sum"}, {"count_rate", "sum"}}
+	for _, version := range []string{"v1.52.0", "v1.40.0"} {
+		for _, c := range cases {
+			for _, instant := range []bool{true, false} {
+				name := fmt.Sprintf("%s/%s_without(%s) offset/instant=%v", version, c.op, c.fn, instant)
+				t.Run(name, func(t *testing.T) {
+					rnd := rand.New(rand.NewSource(int64(len(name)) * 3301))
+					for i := 0; i < 8; i++ {
+						const offset = 5 * time.Minute
+						s := generateWithoutScenario(rnd, c.fn, c.op, "", instant)
+						for j := range s.rows {
+							s.rows[j].value = float64(1+j%7) * 1.5
+						}
+						// Loki's window at t is (t-o-w, t-o]: the same rows, o earlier, are
+						// what an evaluation without an offset reads at t.
+						unshifted := slices.Clone(s.rows)
+						for j := range s.rows {
+							s.rows[j].ts -= int64(offset)
+						}
+						window := uwWindowText(s.window)
+						query := fmt.Sprintf(`%s without (pod) (%s({app="uw"} | unwrap amount [%s] offset %s))`, c.op, c.fn, window, uwWindowText(offset))
+						if c.fn == "count_rate" {
+							query = fmt.Sprintf(`%s without (pod) (rate({app="uw"} [%s] offset %s))`, c.op, window, uwWindowText(offset))
+						}
+						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+						got := runWithoutScenarioQ(t, emu, s, query)
+						// Loki's window at t-o holds the rows the rows' shift put there.
+						want := lokiWithout(unshifted, c.fn, c.op, int64(s.window), s.times())
+						mode := compareValues
+						switch {
+						case instant:
+						case c.fn != "rate" && c.fn != "count_rate":
+							mode = compareSubset
+						case version == "v1.40.0":
+							mode = compareSeries
+						}
+						compareWithout(t, fmt.Sprintf("%s #%d: %s", name, i, query), s, got, want, mode)
+					}
+				})
 			}
 		}
 	}
