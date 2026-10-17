@@ -546,6 +546,7 @@ func TestLabelSurface_LabelValuesIndexStartupWarmsFromPeersWhenDiskStale(t *test
 		DiscoveryType: "static",
 		StaticPeers:   peerAddr,
 		Timeout:       800 * time.Millisecond,
+		AuthToken:     "shared-secret",
 	})
 
 	localCache := cache.New(5*time.Minute, 1000)
