@@ -98,6 +98,22 @@ python3 bench/ab/pr_smoke.py --base origin/main --no-level-label --out /tmp/ab-b
 (`stack.py seed --no-level-label` does the same for a hand-run stack; the
 generator option is `LOG_NO_LEVEL_LABEL=1`.)
 
+### The first view of a window
+
+A proxy remembers what it learned about a window (which level fields and keys it
+holds, that no line needs the slower path), so a warm run does not measure the
+first request after a restart, which is what a dashboard opened after a deploy or
+a new time range costs. `cold_first_view.py` measures it: a stack seeded with rows
+that have no stored level (the data the detected_level pipes read), VictoriaLogs
+capped at 2 CPUs, and every build started fresh before each request.
+`cold_first_view.py cold --build before=054d1706 --build main=d12a062c --build
+head=HEAD --runs 1h=7,24h=5 --out <dir>` writes `coldrestart.json`: wall time and
+VictoriaLogs' cgroup CPU (Docker's container stats) of every sample, the builds
+interleaved round by round, and the medians; `probes` mode writes `probes.json`:
+the requests one first view sends to VictoriaLogs and what each costs when replayed.
+The results of a run are committed as `results/oneoff/<date>-<name>-coldrestart.json`
+and `-probes.json`.
+
 ## Reading the results
 
 - Timings are warm p50 over the runs after the first; the first run is kept as
