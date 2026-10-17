@@ -133,6 +133,12 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		// label set, limited on the folded answer.
 		{`max without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`,
 			[4]string{`200 {app=uw,ns=x,service_name=uw}=20,12 {app=uw,ns=y,service_name=uw}=24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
+		// stddev and stdvar wrap the folded series: the deviation of the two ns
+		// sums (138 and 154) is 8, of the two ns maxima (36 and 40) the variance is 4.
+		{`stddev(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
+			[4]string{`200 {}=8,8`, `200 {}=8,8`, `200 {}=8`, `200 {}=8`}},
+		{`stdvar(max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
+			[4]string{`200 {}=4,4`, `200 {}=4,4`, `200 {}=4`, `200 {}=4`}},
 		{`topk(5, max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 			[4]string{`200 {app=uw,ns=x,service_name=uw}=20,12 {app=uw,ns=y,service_name=uw}=24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
 	} {
