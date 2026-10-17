@@ -191,16 +191,17 @@ func withoutUnknownDetectedLevel(series map[string]map[string]string) map[string
 }
 
 // TestCompat_UnwrapSumWithoutUnderAnotherAggregation: a `without` under a sum,
-// stddev or stdvar is Loki's answer too, with the proxy leaving the fold to the
-// outer operation. max, min, avg, count and topk over it still collapse the inner
-// series on the proxy (semantics/without-over-inner-aggregation-collapses).
-// conformance: semantics/unwrap-sum-without-collapses, semantics/without-over-inner-aggregation-collapses, metric-series-identity, loki_api_v1_query
+// topk, stddev or stdvar is Loki's answer too, with the proxy leaving the fold to
+// the outer operation. max, min, avg and count over it still collapse the inner
+// series on the proxy (semantics/without-nested-under-aggregation, pinned by
+// TestCompat_UnwrapSumWithoutUnderMaxStillDiffers).
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity, loki_api_v1_query
 func TestCompat_UnwrapSumWithoutUnderAnotherAggregation(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)
 	fx.waitForLoki(t)
 	instant := unwrapSumShapes[len(unwrapSumShapes)-1]
 	inner := fmt.Sprintf("sum without (route) (rate(%s | logfmt amount, route | unwrap amount [5m]))", fx.selLogfmt)
-	for _, outer := range []string{"stddev(%s)", "stdvar(%s)", "sum(%s)"} {
+	for _, outer := range []string{"stddev(%s)", "stdvar(%s)", "sum(%s)", "topk(2, %s)"} {
 		query := strings.Replace(outer, "%s", inner, 1)
 		t.Run(strings.ReplaceAll(outer, "%s", "…"), func(t *testing.T) {
 			loki := instant.run(t, fx, lokiURL, query)
@@ -210,5 +211,51 @@ func TestCompat_UnwrapSumWithoutUnderAnotherAggregation(t *testing.T) {
 			}
 			compareUnwrapSumSeries(t, query, withoutUnknownDetectedLevel(loki), withoutUnknownDetectedLevel(proxy))
 		})
+	}
+}
+
+// TestCompat_UnwrapSumWithoutUnderMaxStillDiffers: `max` over a `without` is the
+// largest value of the inner series on Loki, and the total of them on the proxy,
+// which collapses the inner `without` (semantics/without-nested-under-aggregation,
+// open). The test pins both answers, so a fix of the row makes it fail and asks
+// for it to become a parity case.
+// conformance: semantics/without-nested-under-aggregation, metric-series-identity, loki_api_v1_query
+func TestCompat_UnwrapSumWithoutUnderMaxStillDiffers(t *testing.T) {
+	fx := ensureUnwrapSumFixtures(t)
+	fx.waitForLoki(t)
+	instant := unwrapSumShapes[len(unwrapSumShapes)-1]
+	inner := fmt.Sprintf("sum without (route) (rate(%s | logfmt amount, route | unwrap amount [5m]))", fx.selLogfmt)
+	query := "max(" + inner + ")"
+	values := func(series map[string]map[string]string) (out []float64) {
+		for _, points := range series {
+			for _, raw := range points {
+				v, err := strconv.ParseFloat(raw, 64)
+				if err != nil {
+					t.Fatalf("%s: sample %q: %v", query, raw, err)
+				}
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	parts := values(instant.run(t, fx, lokiURL, inner))
+	loki := values(instant.run(t, fx, lokiURL, query))
+	proxy := values(instant.run(t, fx, proxyURL, query))
+	if len(parts) < 3 || len(loki) != 1 || len(proxy) != 1 {
+		t.Fatalf("%s: %d inner series, Loki %d, proxy %d series", query, len(parts), len(loki), len(proxy))
+	}
+	largest, total := parts[0], 0.0
+	for _, v := range parts {
+		largest, total = math.Max(largest, v), total+v
+	}
+	near := func(a, b float64) bool { return math.Abs(a-b) <= 1e-9*math.Max(1, math.Abs(b)) }
+	if !near(loki[0], largest) {
+		t.Fatalf("%s: Loki %g, the largest inner series is %g", query, loki[0], largest)
+	}
+	if near(proxy[0], largest) {
+		t.Fatalf("%s: the proxy answers the largest inner series (%g) like Loki: semantics/without-nested-under-aggregation is fixed, turn this into a parity case", query, proxy[0])
+	}
+	if !near(proxy[0], total) {
+		t.Fatalf("%s: the proxy answers %g, the total of the inner series is %g", query, proxy[0], total)
 	}
 }
