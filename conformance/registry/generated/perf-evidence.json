@@ -843,12 +843,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.013,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.015,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.337,
-      "loki_warm_p50": 0.02,
+      "loki_cold": 0.323,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -857,14 +857,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.017
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.133,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.263,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -876,7 +876,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.17
+      "warm_p50": 0.292
     },
     {
       "baseline": "main",
@@ -898,11 +898,11 @@
       "warm_p50": 0.023
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.054,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.071,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -914,17 +914,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.05
+      "warm_p50": 0.07
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.012,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.343,
-      "loki_warm_p50": 0.016,
+      "loki_cold": 0.293,
+      "loki_warm_p50": 0.015,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -933,14 +933,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.017
+      "warm_p50": 0.013
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.129,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.306,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -952,7 +952,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.146
+      "warm_p50": 0.306
     },
     {
       "baseline": "main",
@@ -974,11 +974,11 @@
       "warm_p50": 0.02
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.04,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.06,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -990,7 +990,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.046
+      "warm_p50": 0.079
     }
   ],
   "explore-logs-volume-json": [
@@ -1225,12 +1225,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.1,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.089,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.421,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.373,
+      "loki_warm_p50": 0.02,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -1239,14 +1239,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.093
+      "warm_p50": 0.091
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.802,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.781,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -1258,7 +1258,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.696
+      "warm_p50": 2.591
     },
     {
       "baseline": "main",
@@ -1280,11 +1280,11 @@
       "warm_p50": 0.053
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.121,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.592,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -1296,26 +1296,26 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.115
+      "warm_p50": 0.599
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.215,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.207,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.046,
-      "loki_warm_p50": 0.05,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant json volume",
-      "slower_than_loki_cold": true,
+      "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.215
+      "warm_p50": 0.203
     },
     {
       "baseline": "base",
@@ -5769,13 +5769,13 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.007,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.008,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.044,
-      "loki_warm_p50": 0.031,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant ungrouped rate",
@@ -5788,40 +5788,40 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.215,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.207,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.046,
-      "loki_warm_p50": 0.05,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant json volume",
-      "slower_than_loki_cold": true,
+      "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.215
+      "warm_p50": 0.203
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.179,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.161,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.032,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant json filtered",
-      "slower_than_loki_cold": true,
+      "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.175
+      "warm_p50": 0.167
     },
     {
       "baseline": "main",
@@ -5978,8 +5978,8 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.008,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -5992,13 +5992,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.005
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -6011,13 +6011,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.004
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.004,
-      "date": "2026-10-12",
+      "cold": 0.002,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -6030,7 +6030,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.005
+      "warm_p50": 0.002
     }
   ],
   "loki_api_v1_query_range": [
@@ -6721,12 +6721,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.028,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.026,
-      "loki_warm_p50": 0.025,
+      "loki_cold": 0.018,
+      "loki_warm_p50": 0.017,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6735,14 +6735,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.021
+      "warm_p50": 0.029
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.108,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.184,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6754,7 +6754,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.038
+      "warm_p50": 0.021
     },
     {
       "baseline": "main",
@@ -6776,11 +6776,11 @@
       "warm_p50": 0.02
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.075,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.032,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6792,17 +6792,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.055
+      "warm_p50": 0.025
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.022,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.043,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.054,
-      "loki_warm_p50": 0.043,
+      "loki_cold": 0.037,
+      "loki_warm_p50": 0.031,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6811,14 +6811,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.036
+      "warm_p50": 0.043
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.046,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.006,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6830,7 +6830,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.028
+      "warm_p50": 0.007
     },
     {
       "baseline": "main",
@@ -6852,11 +6852,11 @@
       "warm_p50": 0.032
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.082,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.059,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6868,33 +6868,33 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.07
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.036,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.102,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.036,
-      "loki_warm_p50": 0.032,
+      "loki_cold": 0.022,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
       "shape": "logs | logfmt",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_cold": true,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.099
+      "warm_p50": 0.085
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.035,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.01,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6906,7 +6906,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.044
+      "warm_p50": 0.006
     },
     {
       "baseline": "main",
@@ -6928,11 +6928,11 @@
       "warm_p50": 0.049
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.149,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.068,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6944,17 +6944,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.082
+      "warm_p50": 0.037
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.1,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.089,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.421,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.373,
+      "loki_warm_p50": 0.02,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -6963,14 +6963,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.093
+      "warm_p50": 0.091
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.802,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.781,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -6982,7 +6982,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.696
+      "warm_p50": 2.591
     },
     {
       "baseline": "main",
@@ -7004,11 +7004,11 @@
       "warm_p50": 0.053
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.121,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.592,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7020,17 +7020,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.115
+      "warm_p50": 0.599
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.066,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.109,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.605,
-      "loki_warm_p50": 0.043,
+      "loki_cold": 0.554,
+      "loki_warm_p50": 0.029,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7039,14 +7039,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.096
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.683,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.486,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7058,7 +7058,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.673
+      "warm_p50": 2.391
     },
     {
       "baseline": "main",
@@ -7080,11 +7080,11 @@
       "warm_p50": 0.059
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.599,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7096,17 +7096,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.104
+      "warm_p50": 0.587
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.008,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.341,
-      "loki_warm_p50": 0.024,
+      "loki_cold": 0.301,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7115,14 +7115,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.009
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.066,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.199,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7134,7 +7134,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.067
+      "warm_p50": 0.196
     },
     {
       "baseline": "main",
@@ -7156,11 +7156,11 @@
       "warm_p50": 0.013
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.031,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.061,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7172,17 +7172,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.033
+      "warm_p50": 0.028
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.012,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.014,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.319,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.324,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7191,14 +7191,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.014
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.187,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7210,7 +7210,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.095
+      "warm_p50": 0.186
     },
     {
       "baseline": "main",
@@ -7232,11 +7232,11 @@
       "warm_p50": 0.017
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.056,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.046,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7248,17 +7248,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.042
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.005,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.006,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.046,
+      "loki_cold": 0.298,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7267,14 +7267,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.007
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.055,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.097,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7286,7 +7286,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.058
+      "warm_p50": 0.1
     },
     {
       "baseline": "main",
@@ -7308,11 +7308,11 @@
       "warm_p50": 0.009
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.024,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.028,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7324,17 +7324,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.025
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.035,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.354,
-      "loki_warm_p50": 0.04,
+      "loki_cold": 0.321,
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7343,14 +7343,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.032
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.272,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.866,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7362,7 +7362,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.286
+      "warm_p50": 0.799
     },
     {
       "baseline": "main",
@@ -7384,11 +7384,11 @@
       "warm_p50": 0.095
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.091,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.193,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7400,17 +7400,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.125
+      "warm_p50": 0.178
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.044,
+      "loki_cold": 0.332,
+      "loki_warm_p50": 0.043,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -7419,14 +7419,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.02
+      "warm_p50": 0.027
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.182,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.41,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7438,7 +7438,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.162
+      "warm_p50": 0.391
     },
     {
       "baseline": "main",
@@ -7460,11 +7460,11 @@
       "warm_p50": 0.035
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.092,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7476,17 +7476,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.102
+      "warm_p50": 0.093
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.029,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.025,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.334,
-      "loki_warm_p50": 0.021,
+      "loki_cold": 0.312,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7495,14 +7495,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.025
+      "warm_p50": 0.026
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.069,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 1.287,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7514,7 +7514,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.069
+      "warm_p50": 0.934
     },
     {
       "baseline": "main",
@@ -7536,11 +7536,11 @@
       "warm_p50": 0.013
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.033,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.385,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7552,17 +7552,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.031
+      "warm_p50": 0.205
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.013,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.015,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.337,
-      "loki_warm_p50": 0.02,
+      "loki_cold": 0.323,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7571,14 +7571,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.017
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.133,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.263,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7590,7 +7590,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.17
+      "warm_p50": 0.292
     },
     {
       "baseline": "main",
@@ -7612,11 +7612,11 @@
       "warm_p50": 0.023
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.054,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.071,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7628,17 +7628,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.05
+      "warm_p50": 0.07
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.011,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.345,
-      "loki_warm_p50": 0.015,
+      "loki_cold": 0.29,
+      "loki_warm_p50": 0.017,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7652,9 +7652,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.067,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.181,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7666,7 +7666,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
+      "warm_p50": 0.188
     },
     {
       "baseline": "main",
@@ -7688,11 +7688,11 @@
       "warm_p50": 0.015
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.031,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.034,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7704,17 +7704,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.029
+      "warm_p50": 0.03
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.012,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.343,
-      "loki_warm_p50": 0.016,
+      "loki_cold": 0.293,
+      "loki_warm_p50": 0.015,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7723,14 +7723,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.017
+      "warm_p50": 0.013
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.129,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.306,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7742,7 +7742,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.146
+      "warm_p50": 0.306
     },
     {
       "baseline": "main",
@@ -7764,11 +7764,11 @@
       "warm_p50": 0.02
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.04,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.06,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7780,17 +7780,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.046
+      "warm_p50": 0.079
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.017,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.343,
-      "loki_warm_p50": 0.017,
+      "loki_cold": 0.299,
+      "loki_warm_p50": 0.014,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7799,14 +7799,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.019
+      "warm_p50": 0.018
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.309,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.809,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7818,7 +7818,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.32
+      "warm_p50": 0.897
     },
     {
       "baseline": "main",
@@ -7840,11 +7840,11 @@
       "warm_p50": 0.028
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.057,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.182,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7856,17 +7856,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.194
     },
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.078,
-      "loki_warm_p50": 0.054,
+      "loki_cold": 0.044,
+      "loki_warm_p50": 0.052,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7875,14 +7875,14 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7894,7 +7894,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.004
     },
     {
       "baseline": "main",
@@ -7916,11 +7916,11 @@
       "warm_p50": 0.002
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.005,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7932,17 +7932,17 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.273,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.193,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.546,
-      "loki_warm_p50": 0.039,
+      "loki_cold": 0.499,
+      "loki_warm_p50": 0.03,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -7951,14 +7951,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.245
+      "warm_p50": 0.191
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.279,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 4.507,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -7970,7 +7970,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.376
+      "warm_p50": 4.432
     },
     {
       "baseline": "main",
@@ -7992,11 +7992,11 @@
       "warm_p50": 0.112
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.208,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 1.472,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -8008,7 +8008,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.214
+      "warm_p50": 1.485
     },
     {
       "baseline": "base",
@@ -13713,12 +13713,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.036,
-      "date": "2026-10-12",
+      "cold": 0.051,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -13727,13 +13727,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.027
+      "warm_p50": 0.025
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.854,
-      "date": "2026-10-12",
+      "cold": 1.028,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13742,93 +13742,93 @@
       "range": "24h",
       "set": "unwrap-sum-without",
       "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 1.179
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.178,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.164
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 1.209,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "7d",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.635
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.073,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-1h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "differs",
-      "range": "1h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.034
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.756,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.744
+      "warm_p50": 0.905
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.339,
-      "date": "2026-10-12",
+      "cold": 0.241,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.132
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 3.248,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "7d",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "slower",
+      "warm_p50": 3.324
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-1h",
+      "loki_cache_served": false,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
+      "parity_vs_loki": "differs",
+      "range": "1h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.062
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.974,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.948
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.223,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13841,13 +13841,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.148
+      "warm_p50": 0.208
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.634,
-      "date": "2026-10-12",
+      "cold": 3.872,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13860,17 +13860,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.617
+      "warm_p50": 3.25
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-12",
+      "cold": 0.105,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -13879,13 +13879,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.075
+      "warm_p50": 0.09
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.508,
-      "date": "2026-10-12",
+      "cold": 0.896,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13898,13 +13898,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.445
+      "warm_p50": 0.911
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.314,
-      "date": "2026-10-12",
+      "cold": 0.27,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13917,13 +13917,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.386
+      "warm_p50": 0.292
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.689,
-      "date": "2026-10-12",
+      "cold": 1.945,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -13936,93 +13936,93 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.704
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.025,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-1h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "differs",
-      "range": "1h",
-      "set": "unwrap-sum-without",
-      "shape": "W4 max without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.031
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 1.135,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-sum-without",
-      "shape": "W4 max without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 1.005
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.151,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "unwrap-sum-without",
-      "shape": "W4 max without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.149
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.703,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "7d",
-      "set": "unwrap-sum-without",
-      "shape": "W4 max without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.685
+      "warm_p50": 2.059
     },
     {
       "baseline": "base",
       "baseline_status": "200",
       "cold": 0.024,
-      "date": "2026-10-12",
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
+      "loki_cache_served": false,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 39.998,
+      "parity_vs_loki": "differs",
+      "range": "1h",
+      "set": "unwrap-sum-without",
+      "shape": "W4 max without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.026
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 1.241,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "unwrap-sum-without",
+      "shape": "W4 max without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 1.153
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.209,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "unwrap-sum-without",
+      "shape": "W4 max without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.126
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 3.501,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "7d",
+      "set": "unwrap-sum-without",
+      "shape": "W4 max without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "slower",
+      "warm_p50": 3.365
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.022,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-1h",
+      "loki_cache_served": false,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -14031,13 +14031,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.03
+      "warm_p50": 0.021
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.604,
-      "date": "2026-10-12",
+      "cold": 1.032,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14049,14 +14049,14 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.659
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.978
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
+      "cold": 0.224,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14069,13 +14069,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.211
+      "warm_p50": 0.214
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.764,
-      "date": "2026-10-12",
+      "cold": 3.36,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14088,17 +14088,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.921
+      "warm_p50": 3.305
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.593,
-      "date": "2026-10-12",
+      "cold": 0.374,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -14107,13 +14107,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.637
+      "warm_p50": 0.317
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 4.233,
-      "date": "2026-10-12",
+      "cold": 2.084,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14126,13 +14126,13 @@
       "status": "502",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 3.514
+      "warm_p50": 2.223
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 10.654,
-      "date": "2026-10-12",
+      "cold": 5.237,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14145,13 +14145,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 11.247
+      "warm_p50": 5.837
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 2.134,
-      "date": "2026-10-12",
+      "cold": 7.987,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14164,19 +14164,19 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 2.848
+      "warm_p50": 7.839
     }
   ],
   "metric-series-identity": [
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.012,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.014,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.319,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.324,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -14185,14 +14185,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.014
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.187,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -14204,7 +14204,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.095
+      "warm_p50": 0.186
     },
     {
       "baseline": "main",
@@ -14226,11 +14226,11 @@
       "warm_p50": 0.017
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.056,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.046,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -14242,7 +14242,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.042
     },
     {
       "baseline": "base",
@@ -14760,12 +14760,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.036,
-      "date": "2026-10-12",
+      "cold": 0.051,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -14774,13 +14774,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.027
+      "warm_p50": 0.025
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.854,
-      "date": "2026-10-12",
+      "cold": 1.028,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14789,93 +14789,93 @@
       "range": "24h",
       "set": "unwrap-sum-without",
       "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 1.179
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.178,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.164
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 1.209,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "7d",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.635
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.073,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-1h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "differs",
-      "range": "1h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.034
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.756,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.744
+      "warm_p50": 0.905
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.339,
-      "date": "2026-10-12",
+      "cold": 0.241,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.132
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 3.248,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "7d",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "slower",
+      "warm_p50": 3.324
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-1h",
+      "loki_cache_served": false,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
+      "parity_vs_loki": "differs",
+      "range": "1h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.062
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.974,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.948
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.223,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14888,13 +14888,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.148
+      "warm_p50": 0.208
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.634,
-      "date": "2026-10-12",
+      "cold": 3.872,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14907,17 +14907,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.617
+      "warm_p50": 3.25
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-12",
+      "cold": 0.105,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -14926,13 +14926,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.075
+      "warm_p50": 0.09
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.508,
-      "date": "2026-10-12",
+      "cold": 0.896,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14945,13 +14945,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.445
+      "warm_p50": 0.911
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.314,
-      "date": "2026-10-12",
+      "cold": 0.27,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14964,13 +14964,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.386
+      "warm_p50": 0.292
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.689,
-      "date": "2026-10-12",
+      "cold": 1.945,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -14983,17 +14983,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.704
+      "warm_p50": 2.059
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.025,
-      "date": "2026-10-12",
+      "cold": 0.024,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 39.998,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -15002,13 +15002,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.031
+      "warm_p50": 0.026
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.135,
-      "date": "2026-10-12",
+      "cold": 1.241,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15020,14 +15020,14 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 1.005
+      "verdict_vs_baseline": "same",
+      "warm_p50": 1.153
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.151,
-      "date": "2026-10-12",
+      "cold": 0.209,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15040,13 +15040,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.149
+      "warm_p50": 0.126
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.703,
-      "date": "2026-10-12",
+      "cold": 3.501,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15059,13 +15059,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.685
+      "warm_p50": 3.365
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.008,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15078,13 +15078,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.005
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15097,17 +15097,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.004
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.024,
-      "date": "2026-10-12",
+      "cold": 0.022,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -15116,13 +15116,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.03
+      "warm_p50": 0.021
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.604,
-      "date": "2026-10-12",
+      "cold": 1.032,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15134,14 +15134,14 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.659
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.978
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
+      "cold": 0.224,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15154,13 +15154,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.211
+      "warm_p50": 0.214
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.764,
-      "date": "2026-10-12",
+      "cold": 3.36,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15173,17 +15173,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.921
+      "warm_p50": 3.305
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.593,
-      "date": "2026-10-12",
+      "cold": 0.374,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -15192,13 +15192,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.637
+      "warm_p50": 0.317
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 4.233,
-      "date": "2026-10-12",
+      "cold": 2.084,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15211,13 +15211,13 @@
       "status": "502",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 3.514
+      "warm_p50": 2.223
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 10.654,
-      "date": "2026-10-12",
+      "cold": 5.237,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15230,13 +15230,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 11.247
+      "warm_p50": 5.837
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 2.134,
-      "date": "2026-10-12",
+      "cold": 7.987,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15249,13 +15249,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 2.848
+      "warm_p50": 7.839
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.004,
-      "date": "2026-10-12",
+      "cold": 0.002,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -15268,19 +15268,19 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.005
+      "warm_p50": 0.002
     }
   ],
   "operator-sum": [
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.012,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.014,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.319,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.324,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -15289,14 +15289,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.014
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.187,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15308,7 +15308,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.095
+      "warm_p50": 0.186
     },
     {
       "baseline": "main",
@@ -15330,11 +15330,11 @@
       "warm_p50": 0.017
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.056,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.046,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15346,17 +15346,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.042
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.005,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.006,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.046,
+      "loki_cold": 0.298,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -15365,14 +15365,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.007
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.055,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.097,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15384,7 +15384,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.058
+      "warm_p50": 0.1
     },
     {
       "baseline": "main",
@@ -15406,11 +15406,11 @@
       "warm_p50": 0.009
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.024,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.028,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15422,17 +15422,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.025
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.035,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.354,
-      "loki_warm_p50": 0.04,
+      "loki_cold": 0.321,
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -15441,14 +15441,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.032
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.272,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.866,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15460,7 +15460,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.286
+      "warm_p50": 0.799
     },
     {
       "baseline": "main",
@@ -15482,11 +15482,11 @@
       "warm_p50": 0.095
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.091,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.193,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15498,19 +15498,19 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.125
+      "warm_p50": 0.178
     }
   ],
   "operator-topk": [
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.044,
+      "loki_cold": 0.332,
+      "loki_warm_p50": 0.043,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -15519,14 +15519,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.02
+      "warm_p50": 0.027
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.182,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.41,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15538,7 +15538,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.162
+      "warm_p50": 0.391
     },
     {
       "baseline": "main",
@@ -15560,11 +15560,11 @@
       "warm_p50": 0.035
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.092,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -15576,7 +15576,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.102
+      "warm_p50": 0.093
     }
   ],
   "parsed-label-series-identity": [
@@ -16269,12 +16269,12 @@
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.078,
-      "loki_warm_p50": 0.054,
+      "loki_cold": 0.044,
+      "loki_warm_p50": 0.052,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -16283,14 +16283,14 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16302,7 +16302,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.004
     },
     {
       "baseline": "main",
@@ -16324,11 +16324,11 @@
       "warm_p50": 0.002
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.005,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -16340,7 +16340,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "main",
@@ -17886,12 +17886,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.022,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.043,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.054,
-      "loki_warm_p50": 0.043,
+      "loki_cold": 0.037,
+      "loki_warm_p50": 0.031,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -17900,14 +17900,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.036
+      "warm_p50": 0.043
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.046,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.006,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -17919,7 +17919,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.028
+      "warm_p50": 0.007
     },
     {
       "baseline": "main",
@@ -17941,11 +17941,11 @@
       "warm_p50": 0.032
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.082,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.059,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -17957,17 +17957,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.07
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.078,
-      "loki_warm_p50": 0.054,
+      "loki_cold": 0.044,
+      "loki_warm_p50": 0.052,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -17976,14 +17976,14 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.003,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -17995,7 +17995,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.004
     },
     {
       "baseline": "main",
@@ -18017,11 +18017,11 @@
       "warm_p50": 0.002
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "400",
-      "cold": 0.002,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.005,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18033,7 +18033,7 @@
       "status": "400",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.002
+      "warm_p50": 0.003
     },
     {
       "baseline": "main",
@@ -18325,28 +18325,28 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.036,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.102,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.036,
-      "loki_warm_p50": 0.032,
+      "loki_cold": 0.022,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
       "shape": "logs | logfmt",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_cold": true,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.099
+      "warm_p50": 0.085
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.035,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.01,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18358,7 +18358,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.044
+      "warm_p50": 0.006
     },
     {
       "baseline": "main",
@@ -18380,11 +18380,11 @@
       "warm_p50": 0.049
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.149,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.068,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18396,17 +18396,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.082
+      "warm_p50": 0.037
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.066,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.109,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.605,
-      "loki_warm_p50": 0.043,
+      "loki_cold": 0.554,
+      "loki_warm_p50": 0.029,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -18415,14 +18415,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.096
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.683,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.486,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18434,7 +18434,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.673
+      "warm_p50": 2.391
     },
     {
       "baseline": "main",
@@ -18456,11 +18456,11 @@
       "warm_p50": 0.059
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.599,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18472,17 +18472,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.104
+      "warm_p50": 0.587
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.273,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.193,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.546,
-      "loki_warm_p50": 0.039,
+      "loki_cold": 0.499,
+      "loki_warm_p50": 0.03,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -18491,14 +18491,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.245
+      "warm_p50": 0.191
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.279,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 4.507,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18510,7 +18510,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.376
+      "warm_p50": 4.432
     },
     {
       "baseline": "main",
@@ -18532,11 +18532,11 @@
       "warm_p50": 0.112
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.208,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 1.472,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -18548,7 +18548,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.214
+      "warm_p50": 1.485
     },
     {
       "baseline": "main",
@@ -19876,12 +19876,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.035,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.354,
-      "loki_warm_p50": 0.04,
+      "loki_cold": 0.321,
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -19890,14 +19890,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.032
+      "warm_p50": 0.024
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.272,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.866,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -19909,7 +19909,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.286
+      "warm_p50": 0.799
     },
     {
       "baseline": "main",
@@ -19931,11 +19931,11 @@
       "warm_p50": 0.095
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.091,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.193,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -19947,19 +19947,19 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.125
+      "warm_p50": 0.178
     }
   ],
   "range_function-count-over-time": [
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.012,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.014,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.319,
-      "loki_warm_p50": 0.019,
+      "loki_cold": 0.324,
+      "loki_warm_p50": 0.023,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -19968,14 +19968,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.014
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.187,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -19987,7 +19987,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.095
+      "warm_p50": 0.186
     },
     {
       "baseline": "main",
@@ -20009,11 +20009,11 @@
       "warm_p50": 0.017
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.056,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.046,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -20025,19 +20025,19 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.042
     }
   ],
   "range_function-rate": [
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.005,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.006,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.046,
+      "loki_cold": 0.298,
+      "loki_warm_p50": 0.045,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -20046,14 +20046,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.007
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.055,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.097,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -20065,7 +20065,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.058
+      "warm_p50": 0.1
     },
     {
       "baseline": "main",
@@ -20087,11 +20087,11 @@
       "warm_p50": 0.009
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.024,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.028,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -20103,17 +20103,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.025
+      "warm_p50": 0.023
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.02,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.338,
-      "loki_warm_p50": 0.044,
+      "loki_cold": 0.332,
+      "loki_warm_p50": 0.043,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "control",
@@ -20122,14 +20122,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.02
+      "warm_p50": 0.027
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.182,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.41,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -20141,7 +20141,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.162
+      "warm_p50": 0.391
     },
     {
       "baseline": "main",
@@ -20163,11 +20163,11 @@
       "warm_p50": 0.035
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.092,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -20179,18 +20179,18 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.102
+      "warm_p50": 0.093
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.007,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.008,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.044,
-      "loki_warm_p50": 0.031,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant ungrouped rate",
@@ -21469,21 +21469,21 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.179,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.161,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
-      "loki_cold": 0.03,
-      "loki_warm_p50": 0.032,
-      "parity_vs_loki": "same",
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
       "range": "instant",
       "set": "control",
       "shape": "instant json filtered",
-      "slower_than_loki_cold": true,
+      "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.175
+      "warm_p50": 0.167
     }
   ],
   "semantics/json-label-spelling-probe": [
@@ -28210,12 +28210,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.036,
-      "date": "2026-10-12",
+      "cold": 0.051,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -28224,13 +28224,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.027
+      "warm_p50": 0.025
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.854,
-      "date": "2026-10-12",
+      "cold": 1.028,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28239,93 +28239,93 @@
       "range": "24h",
       "set": "unwrap-sum-without",
       "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 1.179
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.178,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.164
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 1.209,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "7d",
-      "set": "unwrap-sum-without",
-      "shape": "W1 sum without pod, max_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.635
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.073,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-1h",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "differs",
-      "range": "1h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "same",
-      "warm_p50": 0.034
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.756,
-      "date": "2026-10-12",
-      "label": "unwrapwithout-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "unwrap-sum-without",
-      "shape": "W2 sum without pod, sum_over_time",
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.744
+      "warm_p50": 0.905
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.339,
-      "date": "2026-10-12",
+      "cold": 0.241,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.132
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 3.248,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "7d",
+      "set": "unwrap-sum-without",
+      "shape": "W1 sum without pod, max_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "slower",
+      "warm_p50": 3.324
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-1h",
+      "loki_cache_served": false,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
+      "parity_vs_loki": "differs",
+      "range": "1h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.062
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.974,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "unwrap-sum-without",
+      "shape": "W2 sum without pod, sum_over_time",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.948
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.223,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28338,13 +28338,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.148
+      "warm_p50": 0.208
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.634,
-      "date": "2026-10-12",
+      "cold": 3.872,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28357,17 +28357,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.617
+      "warm_p50": 3.25
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-12",
+      "cold": 0.105,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -28376,13 +28376,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.075
+      "warm_p50": 0.09
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.508,
-      "date": "2026-10-12",
+      "cold": 0.896,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28395,13 +28395,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 1.445
+      "warm_p50": 0.911
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.314,
-      "date": "2026-10-12",
+      "cold": 0.27,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28414,13 +28414,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.386
+      "warm_p50": 0.292
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.689,
-      "date": "2026-10-12",
+      "cold": 1.945,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28433,17 +28433,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.704
+      "warm_p50": 2.059
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.025,
-      "date": "2026-10-12",
+      "cold": 0.024,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 39.998,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -28452,13 +28452,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.031
+      "warm_p50": 0.026
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 1.135,
-      "date": "2026-10-12",
+      "cold": 1.241,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28470,14 +28470,14 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 1.005
+      "verdict_vs_baseline": "same",
+      "warm_p50": 1.153
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.151,
-      "date": "2026-10-12",
+      "cold": 0.209,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28490,13 +28490,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.149
+      "warm_p50": 0.126
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.703,
-      "date": "2026-10-12",
+      "cold": 3.501,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28509,13 +28509,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.685
+      "warm_p50": 3.365
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.008,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28528,13 +28528,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.008
+      "warm_p50": 0.005
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
-      "date": "2026-10-12",
+      "cold": 0.005,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28547,17 +28547,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.006
+      "warm_p50": 0.004
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.024,
-      "date": "2026-10-12",
+      "cold": 0.022,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.002,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -28566,13 +28566,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.03
+      "warm_p50": 0.021
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.604,
-      "date": "2026-10-12",
+      "cold": 1.032,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28584,14 +28584,14 @@
       "slower_than_loki_cold": false,
       "status": "200",
       "valid": true,
-      "verdict_vs_baseline": "slower",
-      "warm_p50": 0.659
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.978
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.161,
-      "date": "2026-10-12",
+      "cold": 0.224,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28604,13 +28604,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.211
+      "warm_p50": 0.214
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.764,
-      "date": "2026-10-12",
+      "cold": 3.36,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28623,17 +28623,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "slower",
-      "warm_p50": 0.921
+      "warm_p50": 3.305
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.593,
-      "date": "2026-10-12",
+      "cold": 0.374,
+      "date": "2026-10-17",
       "label": "unwrapwithout-1h",
       "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
+      "loki_cold": 40.001,
+      "loki_warm_p50": 40.002,
       "parity_vs_loki": "differs",
       "range": "1h",
       "set": "unwrap-sum-without",
@@ -28642,13 +28642,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.637
+      "warm_p50": 0.317
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 4.233,
-      "date": "2026-10-12",
+      "cold": 2.084,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28661,13 +28661,13 @@
       "status": "502",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 3.514
+      "warm_p50": 2.223
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 10.654,
-      "date": "2026-10-12",
+      "cold": 5.237,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28680,13 +28680,13 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 11.247
+      "warm_p50": 5.837
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 2.134,
-      "date": "2026-10-12",
+      "cold": 7.987,
+      "date": "2026-10-17",
       "label": "unwrapwithout-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -28699,7 +28699,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 2.848
+      "warm_p50": 7.839
     }
   ],
   "series-limits-and-partial-results": [
@@ -29088,12 +29088,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.013,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.015,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.337,
-      "loki_warm_p50": 0.02,
+      "loki_cold": 0.323,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29102,14 +29102,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.015
+      "warm_p50": 0.017
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.133,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.263,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29121,7 +29121,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.17
+      "warm_p50": 0.292
     },
     {
       "baseline": "main",
@@ -29143,11 +29143,11 @@
       "warm_p50": 0.023
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.054,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.071,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29159,17 +29159,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.05
+      "warm_p50": 0.07
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.012,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.343,
-      "loki_warm_p50": 0.016,
+      "loki_cold": 0.293,
+      "loki_warm_p50": 0.015,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29178,14 +29178,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.017
+      "warm_p50": 0.013
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.129,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.306,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29197,7 +29197,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.146
+      "warm_p50": 0.306
     },
     {
       "baseline": "main",
@@ -29219,11 +29219,11 @@
       "warm_p50": 0.02
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.04,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.06,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29235,7 +29235,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.046
+      "warm_p50": 0.079
     }
   ],
   "severity-detected-level-derivation": [
@@ -29318,12 +29318,12 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.1,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.089,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.421,
-      "loki_warm_p50": 0.026,
+      "loki_cold": 0.373,
+      "loki_warm_p50": 0.02,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29332,14 +29332,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.093
+      "warm_p50": 0.091
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.802,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.781,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29351,7 +29351,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.696
+      "warm_p50": 2.591
     },
     {
       "baseline": "main",
@@ -29373,11 +29373,11 @@
       "warm_p50": 0.053
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.121,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.592,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29389,17 +29389,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.115
+      "warm_p50": 0.599
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.066,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.109,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.605,
-      "loki_warm_p50": 0.043,
+      "loki_cold": 0.554,
+      "loki_warm_p50": 0.029,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29408,14 +29408,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.122
+      "warm_p50": 0.096
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.683,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 2.486,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29427,7 +29427,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.673
+      "warm_p50": 2.391
     },
     {
       "baseline": "main",
@@ -29449,11 +29449,11 @@
       "warm_p50": 0.059
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.104,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.599,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29465,17 +29465,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.104
+      "warm_p50": 0.587
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.006,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.008,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.341,
-      "loki_warm_p50": 0.024,
+      "loki_cold": 0.301,
+      "loki_warm_p50": 0.027,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29484,14 +29484,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.009
+      "warm_p50": 0.008
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.066,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.199,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29503,7 +29503,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.067
+      "warm_p50": 0.196
     },
     {
       "baseline": "main",
@@ -29525,11 +29525,11 @@
       "warm_p50": 0.013
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.031,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.061,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29541,17 +29541,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.033
+      "warm_p50": 0.028
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.029,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.025,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.334,
-      "loki_warm_p50": 0.021,
+      "loki_cold": 0.312,
+      "loki_warm_p50": 0.019,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29560,14 +29560,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.025
+      "warm_p50": 0.026
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.069,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 1.287,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29579,7 +29579,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.069
+      "warm_p50": 0.934
     },
     {
       "baseline": "main",
@@ -29601,11 +29601,11 @@
       "warm_p50": 0.013
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.033,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.385,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29617,17 +29617,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.031
+      "warm_p50": 0.205
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.01,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.011,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.345,
-      "loki_warm_p50": 0.015,
+      "loki_cold": 0.29,
+      "loki_warm_p50": 0.017,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29641,9 +29641,9 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.067,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.181,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29655,7 +29655,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.096
+      "warm_p50": 0.188
     },
     {
       "baseline": "main",
@@ -29677,11 +29677,11 @@
       "warm_p50": 0.015
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.031,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.034,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29693,17 +29693,17 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.029
+      "warm_p50": 0.03
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.019,
-      "date": "2026-10-16",
-      "label": "dlfirstview-control-1h",
+      "cold": 0.017,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-1h",
       "loki_cache_served": false,
-      "loki_cold": 0.343,
-      "loki_warm_p50": 0.017,
+      "loki_cold": 0.299,
+      "loki_warm_p50": 0.014,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "control",
@@ -29712,14 +29712,14 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.019
+      "warm_p50": 0.018
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.309,
-      "date": "2026-10-12",
-      "label": "patanchor-control-24h",
+      "cold": 0.809,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29731,7 +29731,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.32
+      "warm_p50": 0.897
     },
     {
       "baseline": "main",
@@ -29753,11 +29753,11 @@
       "warm_p50": 0.028
     },
     {
-      "baseline": "main",
+      "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.057,
-      "date": "2026-10-01",
-      "label": "ordered-json-control-long",
+      "cold": 0.182,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
       "loki_cache_served": false,
       "loki_cold": null,
       "loki_warm_p50": null,
@@ -29769,7 +29769,7 @@
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "same",
-      "warm_p50": 0.065
+      "warm_p50": 0.194
     },
     {
       "baseline": "base",

@@ -65,8 +65,6 @@ why: |
   `without` aggregation (`__without__:<op>:pod`), so every consumer folds the
   series that share a label set with it, whatever wraps the aggregation. A fold
   by sum of a max, min, count or avg gave 14 for pods valued 10 and 4.
-  A failing instant `without` (or group/label_replace/label_join) query keeps
-  its status instead of answering 200 with an error body.
 
   What VictoriaLogs does and what the proxy adds: VictoriaLogs computes the
   range function per stream with stats (a row per stream and bucket, no raw
