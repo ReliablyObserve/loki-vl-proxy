@@ -21,11 +21,13 @@ why: |
   minutes the same factor at every step. `sum_over_time` and `rate` under
   `sum by` are not affected: a sum of sums is the sum.
 
-  Since semantics/unwrap-sum-without-collapses the series identity of a parser
-  that names the keys it extracts is known (parsedSeriesLabels), so the fix is the
-  same shape: group the inner stats by the by labels plus `_stream` and those keys,
-  then aggregate. A bare `| logfmt` or `| json` stays under
-  semantics/unwrap-per-series-identity-raw-rows.
+  The series identity of a parser that names the keys it extracts is known
+  (parsedSeriesLabels), and semantics/unwrap-sum-without-collapses reads it for
+  the `without` fold only, so the fix here is the same shape: group the inner
+  stats by the by labels plus `_stream` and those keys, then aggregate. It is not
+  applied to `sum by` yet (semantics/unwrap-extraction-list-series-identity: the
+  series it adds count against the limit and need measuring). A bare `| logfmt`
+  or `| json` stays under semantics/unwrap-per-series-identity-raw-rows.
 request:
   method: GET
   path: /loki/api/v1/query

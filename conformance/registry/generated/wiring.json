@@ -252,8 +252,10 @@
       "test/e2e-compat/tail_pipeline_test.go"
     ],
     "metric-series-identity": [
+      "internal/proxy/extraction_list_outside_without_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/sum_without_extraction_list_test.go",
+      "internal/proxy/sum_without_label_collision_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "internal/translator/series_aggregation_test.go",
@@ -554,6 +556,9 @@
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go"
     ],
+    "semantics/unwrap-extraction-list-series-identity": [
+      "internal/proxy/extraction_list_outside_without_test.go"
+    ],
     "semantics/unwrap-gate-parsefloat-divergences": [
       "internal/proxy/unwrap_bytes_gate_property_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -580,6 +585,9 @@
       "internal/proxy/without_open_shapes_test.go",
       "internal/translator/without_grouping_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go"
+    ],
+    "semantics/unwrap-sum-without-extracted-label-collision": [
+      "internal/proxy/sum_without_label_collision_test.go"
     ],
     "semantics/without-comparison-inside-ignored": [
       "internal/proxy/without_open_shapes_test.go"
@@ -645,7 +653,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 318,
+  "registry_items": 320,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -758,6 +766,10 @@
       "loki_api_v1_tail",
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
+    ],
+    "internal/proxy/extraction_list_outside_without_test.go": [
+      "metric-series-identity",
+      "semantics/unwrap-extraction-list-series-identity"
     ],
     "internal/proxy/gaps_test.go": [
       "loki_api_v1_index_stats"
@@ -956,6 +968,10 @@
     "internal/proxy/sum_without_extraction_list_test.go": [
       "metric-series-identity",
       "semantics/unwrap-sum-without-collapses"
+    ],
+    "internal/proxy/sum_without_label_collision_test.go": [
+      "metric-series-identity",
+      "semantics/unwrap-sum-without-extracted-label-collision"
     ],
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
@@ -1306,7 +1322,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 128,
+  "tests_with_markers": 130,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1418,5 +1434,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 121
+  "wired_items": 123
 }

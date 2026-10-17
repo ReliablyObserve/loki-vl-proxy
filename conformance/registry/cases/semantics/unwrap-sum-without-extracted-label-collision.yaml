@@ -1,0 +1,50 @@
+id: semantics/unwrap-sum-without-extracted-label-collision
+title: a parsed key that is also a stream label is not renamed to key_extracted after a without fold (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  When a key a parser extracts is also a label of the stream, Loki keeps the
+  stream label and names the parsed one `<key>_extracted`
+  (pkg/logql/log/labels.go: duplicateSuffix, parser.go). `sum without (ns)
+  (max_over_time({app="uw"} | logfmt amount, pod | unwrap amount [5m]))` over
+  streams that carry a `pod` label therefore has series labelled
+  {app, pod=<stream's pod>, pod_extracted=<parsed pod>}.
+
+  The `without` fold groups the inner stats by the stream and the labels the
+  extraction list names. When the selector names a label the list also names
+  (`{app="uw", pod=~".+"} | logfmt amount, pod`) the translation sees the
+  collision and groups by the stream, as the fold did before the extraction list
+  was read (parsedSeriesLabels): the answer carries the stream's `pod` and no
+  `pod_extracted`. When the selector does not name the label, the translation
+  cannot know the stream's labels, groups by the parsed `pod`, and the answer
+  carries the parsed value under the name `pod` (measured through the handler on
+  emulated VictoriaLogs v1.52.0, instant: `{app=uw,pod=p1}` = 172 and
+  `{app=uw,pod=p2}` = 186 for streams pod=a,b,c whose lines parse pod=p1 or p2;
+  Loki's labels from the sources above, not run against a real Loki). Both
+  differ from Loki's labels; the values are right per label set the answer has.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum without (namespace) (max_over_time({service_name="payment-service"} | logfmt amount, pod | unwrap amount [5m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    The stream's pod and the parsed one as pod_extracted.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/proxy withParsedGroupLabels (a parsed group key that equals a stream label of the series); internal/translator parsedSeriesLabels'
+  loki: 'pkg/logql/log/labels.go and parser.go (duplicateSuffix "_extracted")'
+  proxy: 'the parsed value under the stream label''s name, or no pod_extracted label'
+  planned_test: 'TestSumWithoutExtractedLabelCollision (internal/proxy, emulator); an e2e test vs Loki in group semantics when fixed'
+  note: 'Found while narrowing semantics/unwrap-sum-without-collapses. The stream labels the selector does not name are unknown to the translation; the proxy could name the parsed label key_extracted when the series already has the key.'
+  clusters: []
