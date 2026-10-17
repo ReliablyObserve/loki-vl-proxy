@@ -17,16 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   group (`pkg/logql/evaluator.go:451-466`). The last stats pipe now keeps the
   stream, VictoriaLogs answers a row per stream from stats, and the proxy drops
   the excluded labels and folds the rows with the operator of the aggregation
-  (`sum`, `max`, `min`, `count`, `avg`), also when a `topk`, `sort`,
-  `label_replace` or a comparison wraps it; a binary expression folds each
-  operand on its own. `max_query_series` now applies to the folded answer, as on
-  Loki (`pkg/logql/engine.go:536-548`): four streams folded into two series fit
-  a limit of two, a plain client over the limit gets Loki's 400, and Logs
+  (`sum`, `max`, `min`, `count` or `avg`, when it is the outermost aggregation of
+  the query). A `topk`, `bottomk`, `sort`, `stddev` or `stdvar` around it is
+  applied to the folded series, and so is a comparison around it and, on
+  query_range, a `label_replace` (on an instant query the label is not added:
+  `semantics/label-replace-instant-vector`); a binary expression folds each
+  operand on its own. `topk`, `bottomk`, `stddev` and `stdvar` with a `without`
+  clause, and a `without` under another aggregation, are answered as before.
+  `max_query_series` now applies to the folded answer, as on Loki
+  (`pkg/logql/engine.go:536-548`): four streams folded into two series fit a
+  limit of two, a plain client over the limit gets Loki's 400, and Logs
   Drilldown gets the busiest series with Loki's warning; the per-stream rows read
-  before the fold are bounded by `-manual-range-metric-row-limit`, whose error
-  names that flag. What remains different from Loki, and the label sets after a
-  parser, is registered with `semantics/unwrap-sum-without-collapses` (fixed,
-  #739) and the rows it names.
+  before the fold are bounded by `-manual-range-metric-row-limit` (when it is not
+  below `-max-stats-query-series`), whose error names that flag and answers 400. What remains different from Loki, and the
+  label sets after a parser, is registered with
+  `semantics/unwrap-sum-without-collapses` (fixed, #739) and the rows it names.
 
 ## [2.17.0] - 2026-10-17
 
