@@ -2,7 +2,7 @@
  "label": "unwrapwithout-1h",
  "date": "2026-10-17",
  "set": "unwrap-sum-without",
- "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer, W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
+ "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), parsed with `| logfmt amount` so a Loki series is the stream (a bare `| logfmt` makes every payment line a series of its own on Loki: thousands of series, and Loki cannot answer within the timeout; semantics/unwrap-per-series-identity-raw-rows), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer, W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
  "baseline": "base",
  "candidate": "pr",
  "reference": "loki",
@@ -15,8 +15,8 @@
  "verdicts": {
   "same": 9
  },
- "result_differs_from_reference": 8,
- "result_differs_preexisting": 8,
+ "result_differs_from_reference": 5,
+ "result_differs_preexisting": 5,
  "stale_answers": {
   "base": 0,
   "pr": 0,
@@ -27,155 +27,155 @@
    "shape": "W1 sum without pod, max_over_time",
    "range": "1h",
    "p50": {
-    "base": 0.018,
-    "pr": 0.025,
-    "loki": 40.002
+    "base": 0.015,
+    "pr": 0.015,
+    "loki": 0.017
    },
    "p95": {
-    "base": 0.078,
-    "pr": 0.04,
-    "loki": 40.003
+    "base": 0.023,
+    "pr": 0.016,
+    "loki": 0.017
    },
    "cold": {
     "base": 0.042,
-    "pr": 0.051,
-    "loki": 40.002
+    "pr": 0.024,
+    "loki": 0.079
    },
    "status": {
     "base": "200",
     "pr": "200",
-    "loki": "0"
+    "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 26.67,
-    "pr": 26.67,
-    "loki": 49.47
+    "base": 39.36,
+    "pr": 39.36,
+    "loki": 39.36
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.72
+   "speedup": 1.0
   },
   {
    "shape": "W2 sum without pod, sum_over_time",
    "range": "1h",
    "p50": {
-    "base": 0.031,
-    "pr": 0.062,
-    "loki": 40.002
+    "base": 0.015,
+    "pr": 0.017,
+    "loki": 0.009
    },
    "p95": {
-    "base": 0.22,
-    "pr": 0.203,
-    "loki": 40.003
+    "base": 0.017,
+    "pr": 0.017,
+    "loki": 0.011
    },
    "cold": {
-    "base": 0.015,
-    "pr": 0.021,
-    "loki": 40.001
+    "base": 0.019,
+    "pr": 0.016,
+    "loki": 0.059
    },
    "status": {
     "base": "200",
     "pr": "200",
-    "loki": "0"
+    "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 2.69,
-    "pr": 58.76,
-    "loki": 58.76
+    "base": 14.6,
+    "pr": 14.6,
+    "loki": 14.6
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.5
+   "speedup": 0.88
   },
   {
    "shape": "W3 sum without pod, rate",
    "range": "1h",
    "p50": {
-    "base": 0.112,
-    "pr": 0.09,
-    "loki": 40.002
+    "base": 0.054,
+    "pr": 0.05,
+    "loki": 0.01
    },
    "p95": {
-    "base": 0.137,
-    "pr": 0.134,
-    "loki": 40.002
+    "base": 0.058,
+    "pr": 0.057,
+    "loki": 0.013
    },
    "cold": {
-    "base": 0.135,
-    "pr": 0.105,
-    "loki": 40.001
+    "base": 0.06,
+    "pr": 0.06,
+    "loki": 0.031
    },
    "status": {
     "base": "200",
     "pr": "200",
-    "loki": "0"
+    "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 15.78,
-    "pr": 15.78,
-    "loki": 15.78
+    "base": 13.76,
+    "pr": 13.76,
+    "loki": 13.76
    },
-   "parity_vs_reference": "differs",
-   "baseline_parity_vs_reference": "differs",
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.24
+   "speedup": 1.08
   },
   {
    "shape": "W4 max without pod, max_over_time",
    "range": "1h",
    "p50": {
-    "base": 0.022,
-    "pr": 0.026,
-    "loki": 39.998
+    "base": 0.015,
+    "pr": 0.016,
+    "loki": 0.009
    },
    "p95": {
-    "base": 0.033,
-    "pr": 0.041,
-    "loki": 40.002
+    "base": 0.016,
+    "pr": 0.016,
+    "loki": 0.009
    },
    "cold": {
-    "base": 0.024,
-    "pr": 0.024,
-    "loki": 40.001
+    "base": 0.012,
+    "pr": 0.016,
+    "loki": 0.032
    },
    "status": {
     "base": "200",
     "pr": "200",
-    "loki": "0"
+    "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 0.7,
-    "pr": 17.4,
-    "loki": 18.96
+    "base": 13.2,
+    "pr": 17.41,
+    "loki": 17.41
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.85
+   "speedup": 0.94
   },
   {
    "shape": "W5 sum without pod, max_over_time, instant",
    "range": "instant",
    "p50": {
-    "base": 0.004,
-    "pr": 0.005,
-    "loki": 0.026
+    "base": 0.005,
+    "pr": 0.004,
+    "loki": 0.009
    },
    "p95": {
-    "base": 0.004,
-    "pr": 0.006,
-    "loki": 0.029
+    "base": 0.006,
+    "pr": 0.005,
+    "loki": 0.01
    },
    "cold": {
     "base": 0.004,
-    "pr": 0.007,
-    "loki": 0.035
+    "pr": 0.004,
+    "loki": 0.009
    },
    "status": {
     "base": "200",
@@ -183,33 +183,33 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 2.93,
-    "pr": 2.93,
-    "loki": 2.93
+    "base": 17.41,
+    "pr": 17.41,
+    "loki": 17.41
    },
-   "parity_vs_reference": "differs",
+   "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.8
+   "speedup": 1.25
   },
   {
    "shape": "W6 sum without pod, rate, instant",
    "range": "instant",
    "p50": {
-    "base": 0.005,
-    "pr": 0.005,
-    "loki": 0.027
+    "base": 0.004,
+    "pr": 0.004,
+    "loki": 0.007
    },
    "p95": {
     "base": 0.005,
     "pr": 0.006,
-    "loki": 0.028
+    "loki": 0.008
    },
    "cold": {
     "base": 0.004,
-    "pr": 0.005,
-    "loki": 0.027
+    "pr": 0.004,
+    "loki": 0.008
    },
    "status": {
     "base": "200",
@@ -217,11 +217,11 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 3.53,
-    "pr": 3.53,
-    "loki": 3.53
+    "base": 2.99,
+    "pr": 2.99,
+    "loki": 2.99
    },
-   "parity_vs_reference": "differs",
+   "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
@@ -231,53 +231,53 @@
    "shape": "W7 topk 5 of sum without pod",
    "range": "1h",
    "p50": {
-    "base": 0.017,
-    "pr": 0.021,
-    "loki": 40.002
+    "base": 0.015,
+    "pr": 0.015,
+    "loki": 0.009
    },
    "p95": {
-    "base": 0.021,
-    "pr": 0.032,
-    "loki": 40.002
+    "base": 0.016,
+    "pr": 0.018,
+    "loki": 0.01
    },
    "cold": {
-    "base": 0.016,
-    "pr": 0.022,
-    "loki": 40.002
+    "base": 0.014,
+    "pr": 0.013,
+    "loki": 0.036
    },
    "status": {
     "base": "200",
     "pr": "200",
-    "loki": "0"
+    "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 0.73,
-    "pr": 16.81,
-    "loki": 35.64
+    "base": 13.36,
+    "pr": 17.12,
+    "loki": 17.12
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "differs",
    "verdict": "same",
-   "speedup": 0.81
+   "speedup": 1.0
   },
   {
    "shape": "W8 sum without pod, count_over_time (production)",
    "range": "1h",
    "p50": {
-    "base": 0.318,
-    "pr": 0.317,
+    "base": 0.35,
+    "pr": 0.35,
     "loki": 40.002
    },
    "p95": {
-    "base": 0.334,
-    "pr": 0.365,
+    "base": 0.418,
+    "pr": 0.398,
     "loki": 40.002
    },
    "cold": {
-    "base": 0.341,
-    "pr": 0.374,
-    "loki": 40.001
+    "base": 0.388,
+    "pr": 0.387,
+    "loki": 40.002
    },
    "status": {
     "base": "200",
@@ -285,9 +285,9 @@
     "loki": "0"
    },
    "vl_cpu_max": {
-    "base": 15.18,
-    "pr": 29.27,
-    "loki": 29.27
+    "base": 17.12,
+    "pr": 27.16,
+    "loki": 27.16
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
@@ -299,19 +299,19 @@
    "shape": "W9 label_replace control, instant",
    "range": "instant",
    "p50": {
-    "base": 0.004,
-    "pr": 0.004,
-    "loki": 0.041
+    "base": 0.003,
+    "pr": 0.003,
+    "loki": 0.038
    },
    "p95": {
-    "base": 0.005,
-    "pr": 0.004,
-    "loki": 0.051
+    "base": 0.004,
+    "pr": 0.003,
+    "loki": 0.044
    },
    "cold": {
     "base": 0.003,
-    "pr": 0.006,
-    "loki": 0.051
+    "pr": 0.002,
+    "loki": 0.034
    },
    "status": {
     "base": "200",
@@ -319,9 +319,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "base": 1.61,
-    "pr": 1.64,
-    "loki": 1.64
+    "base": 1.89,
+    "pr": 1.89,
+    "loki": 1.89
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",

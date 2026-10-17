@@ -13,7 +13,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 
 | shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |
 |---|---|---|---|---|---|---|
-| logs \| logfmt | 1h | 0.10s | 0.02s | 0.09s | 0.02s | `parser-logfmt` |
+| logs \| logfmt | 1h | 0.10s | 0.03s | 0.09s | 0.03s | `parser-logfmt` |
 | X1 json filter level_extracted, by level | 1h | 0.50s | 0.01s | 0.07s | 0.00s | `parser-error-and-label-collision`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | X1 json filter level_extracted, by level | 6h | 2.65s | 0.01s | 0.40s | 0.00s | `parser-error-and-label-collision`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | X2 json group by level_extracted | 1h | 0.07s | 0.00s | 0.07s | 0.00s | `parser-error-and-label-collision`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
@@ -72,7 +72,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 |---|---|---|---|---|---|
 | `backend-admission-and-heavy-query-queueing` | 7 × 4 ranges | 28 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | differs; 2 slower than Loki cold |
 | `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.00s / 0.00s | differs |
-| `drilldown-service-landing` | 2 × 4 ranges | 8 same | worst 0.31s / 0.31s (24h) | — / — | same |
+| `drilldown-service-landing` | 2 × 4 ranges | 8 same | worst 0.29s / 0.29s (24h) | — / — | same |
 | `explore-logs-volume-json` | 7 × 5 ranges | 4 faster, 20 same, 1 slower | worst 12.60s / 6.54s (24h) | — / — | differs; 5 slower than Loki cold |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 32 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | same |
 | `limits/drilldown-breakdown-exact` | 4 × 5 ranges | 20 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
@@ -84,23 +84,23 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `loki_api_v1_index_volume` | 1 × 4 ranges | 4 same | worst 0.12s / 0.10s (7d) | 0.03s / 0.00s | differs; 2 slower than Loki cold |
 | `loki_api_v1_label_name_values` | 6 × 4 ranges | 24 same | worst 0.45s / 0.00s (7d) | 0.02s / 0.01s | differs |
 | `loki_api_v1_labels` | 6 × 4 ranges | 24 same | worst 0.26s / 0.00s (7d) | 0.04s / 0.02s | differs |
-| `loki_api_v1_query` | 14 × 1 ranges | 2 fixed, 12 same | worst 0.25s / 0.13s (instant) | — / — | same |
-| `loki_api_v1_query_range` | 137 × 6 ranges | 32 faster, 62 fixed, 328 same, 6 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 48 slower than Loki cold |
-| `metric-series-identity` | 19 × 6 ranges | 8 faster, 6 fixed, 40 same, 4 slower | worst 7.99s / 7.84s (7d) | — / — | differs |
-| `operator-sum` | 3 × 4 ranges | 12 same | worst 0.87s / 0.80s (24h) | — / — | same |
-| `operator-topk` | 1 × 4 ranges | 4 same | worst 0.41s / 0.39s (24h) | — / — | differs |
+| `loki_api_v1_query` | 14 × 1 ranges | 2 fixed, 12 same | worst 0.29s / 0.24s (instant) | — / — | same |
+| `loki_api_v1_query_range` | 137 × 6 ranges | 38 faster, 62 fixed, 326 same, 2 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 48 slower than Loki cold |
+| `metric-series-identity` | 19 × 6 ranges | 14 faster, 6 fixed, 38 same | worst 8.55s / 8.62s (7d) | — / — | differs |
+| `operator-sum` | 3 × 4 ranges | 12 same | worst 1.09s / 1.24s (24h) | — / — | same |
+| `operator-topk` | 1 × 4 ranges | 4 same | worst 0.50s / 0.61s (24h) | — / — | differs |
 | `parsed-label-series-identity` | 6 × 4 ranges | 5 faster, 18 same, 1 slower | worst 4.52s / 0.15s (24h) | — / — | differs; 5 slower than Loki cold |
 | `parser-error-and-label-collision` | 32 × 6 ranges | 12 faster, 16 fixed, 61 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 32 slower than Loki cold |
 | `parser-json` | 8 × 6 ranges | 1 faster, 29 same, 1 slower | worst **502** / **502** (7d) | 155.58s / 1.36s | differs; 2 slower than Loki cold |
-| `parser-logfmt` | 5 × 5 ranges | 1 faster, 16 same | worst 4.51s / 4.43s (24h) | — / — | differs; 2 slower than Loki cold |
+| `parser-logfmt` | 5 × 5 ranges | 1 faster, 16 same | worst 4.99s / 4.64s (24h) | — / — | differs; 2 slower than Loki cold |
 | `profiles/dotted-name-parse-error` | 2 × 4 ranges | 2 faster, 4 fixed, 2 same | worst **400** / **400** (1h) | 0.00s / 0.00s | same |
 | `profiles/label-filter-on-line-field` | 3 × 4 ranges | 12 same | worst 0.10s / 0.01s (24h) | 0.33s / 0.03s | same |
 | `profiles/stage-field-exposure` | 7 × 4 ranges | 28 same | worst 0.21s / 0.23s (24h) | 0.74s / 0.02s | same |
 | `profiles/structured-metadata-keys-per-profile` | 2 × 4 ranges | 2 faster, 6 same | worst 0.96s / 0.23s (3h) | 0.86s / 0.60s | differs; 1 slower than Loki cold |
 | `profiles/structured-metadata-label-collision` | 8 × 2 ranges | 8 same | worst 0.52s / 0.52s (1h) | 0.09s / 0.01s | same; 1 slower than Loki cold |
-| `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.87s / 0.80s (24h) | — / — | same |
+| `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 1.09s / 1.24s (24h) | — / — | same |
 | `range_function-count-over-time` | 1 × 4 ranges | 4 same | worst 0.19s / 0.19s (24h) | — / — | same |
-| `range_function-rate` | 3 × 5 ranges | 9 same | worst 0.41s / 0.39s (24h) | — / — | differs |
+| `range_function-rate` | 3 × 5 ranges | 9 same | worst 0.50s / 0.61s (24h) | — / — | differs |
 | `semantics/extracted-suffix-collision` | 13 × 4 ranges | 4 faster, 8 fixed, 11 same | worst 2.65s / 0.40s (6h) | 0.01s / 0.00s | same; 14 slower than Loki cold |
 | `semantics/json-extracted-metric-pushdown` | 5 × 3 ranges | 4 faster, 8 fixed, 3 same | worst 2.65s / 0.40s (6h) | 0.01s / 0.00s | same; 13 slower than Loki cold |
 | `semantics/json-filter-pushdown-translated-label` | 1 × 4 ranges | 1 faster, 3 same | worst 2.97s / 0.52s (24h) | — / — | same; 1 slower than Loki cold |
@@ -123,7 +123,7 @@ Runs: pr611-latency-gap-json-filter-pushdown (2026-09-23), pr611-latency-gap-met
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.18s / 0.17s (24h) | — / — | same |
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 8 faster, 6 fixed, 13 same | worst 1.18s / 1.06s (7d) | — / — | differs |
 | `semantics/unwrap-sample-validity` | 14 × 3 ranges | 1 faster, 24 same | worst 2.09s / 2.17s (24h) | — / — | differs; 1 slower than Loki cold |
-| `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 22 same, 4 slower | worst 7.99s / 7.84s (7d) | — / — | differs |
+| `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 6 faster, 20 same | worst 8.55s / 8.62s (7d) | — / — | differs |
 | `series-limits-and-partial-results` | 4 × 5 ranges | 20 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
-| `service-name-derivation` | 2 × 4 ranges | 8 same | worst 0.31s / 0.31s (24h) | — / — | same |
+| `service-name-derivation` | 2 × 4 ranges | 8 same | worst 0.29s / 0.29s (24h) | — / — | same |
 | `severity-detected-level-derivation` | 18 × 5 ranges | 3 faster, 59 same, 1 slower | worst 12.60s / 6.54s (24h) | — / — | differs; 8 slower than Loki cold |
