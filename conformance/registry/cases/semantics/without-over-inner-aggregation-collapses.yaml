@@ -1,0 +1,46 @@
+id: semantics/without-over-inner-aggregation-collapses
+title: sum without over an inner sum by or count_over_time aggregation answers one series, Loki keeps a series per remaining label set (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum without (pod) (sum by (pod, ns) (rate({app="payment-service"} | logfmt | unwrap amount [5m])))`
+  keeps `ns` on Loki (the inner aggregation leaves {pod, ns}; the outer drops pod
+  and sums per ns). The proxy answers one series `{}`. On the fixture, query_range:
+  `{}` = 0.74,0.26 against Loki's {ns=x} = 0.813333,1.06,1.23333 and {ns=y} =
+  0.92,1.41333,1.5; instant: `{}` = 2.73333 against {ns=x} = 1.23333, {ns=y} = 1.5.
+  The same collapse for `sum without (pod) (sum by (pod, ns) (count_over_time({app="payment-service"}[1m])))`:
+  `{}` = 12,12,12 and 12 against {ns=x} = 8,4,8 and 8, {ns=y} = 4,8,4 and 4.
+
+  Cause: the translation is `stats by (pod, ns) <range function> | stats
+  sum(__lvp_inner)`, whose last pipe has no `by`: VictoriaLogs answers one row
+  and the proxy's `without` fold has no labels left to group by, as for a `without`
+  over a range function before semantics/unwrap-sum-without-collapses (which
+  keeps a row per series in the last pipe of that shape). Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestWithoutShapesStillDifferFromLoki, internal/proxy); Loki's answer is computed from the same rows with the evaluator of Loki v3.7.7 and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (sum by (pod, ns) (rate({app="payment-service"} | logfmt | unwrap amount [5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per ns.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator tryTranslateMetricQueryWithout (an outer aggregation over an aggregation: the last stats pipe has no by)'
+  loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next (the outer without groups the inner vector by every label but the excluded ones)'
+  proxy: 'one series {} on query_range and at an instant'
+  planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, rate and count_over_time, range and instant); an e2e test vs Loki in group core when fixed'
+  note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/without-nested-under-aggregation (the without under an outer aggregation).'
+  clusters: []

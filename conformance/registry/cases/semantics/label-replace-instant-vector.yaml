@@ -1,0 +1,38 @@
+id: semantics/label-replace-instant-vector
+title: label_replace around a vector at an instant adds no destination label (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `label_replace(sum by (ns) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")`
+  at /query returns the series unchanged on the proxy; Loki adds `dst` to every series
+  whose `ns` matches (LabelReplaceEvaluator.Next, pkg/logql/evaluator.go:1275-1310).
+  On the fixture the instant answer holds {ns=x} = 36 and {ns=y} = 40 without dst,
+  while query_range adds it ({dst=x,ns=x}, {dst=y,ns=y}). applyLabelReplace
+  (internal/proxy/vector_matching.go) returns early unless the response is a matrix.
+  semantics/label-replace-new-label covers query_range only. Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestInstantLabelReplaceOnAVectorAddsNoLabel, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'label_replace(sum by (ns) (max_over_time({app="payment-service"} | logfmt | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    dst on every series whose source label matches.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy applyLabelReplace (matrix only)'
+  loki: 'pkg/logql/evaluator.go:1275-1310 LabelReplaceEvaluator.Next'
+  proxy: 'the instant vector is returned without dst'
+  planned_test: 'TestInstantLabelReplaceOnAVectorAddsNoLabel (internal/proxy); an e2e test vs Loki in group semantics when fixed'
+  note: 'Related: semantics/label-replace-new-label (query_range), semantics/unwrap-sum-without-collapses (fixed). TestWithoutWrappedByAnOperator also pins the instant answer without dst for a label_replace around a without (keepInstant): update both tests with the fix.'
+  clusters: []
