@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **The first view of a window of `sum by (detected_level)` / `sum by (level,
+  detected_level)` over `| json`, on rows with no stored level, costs less
+  (#764, follow-up to #760).** A window nothing remembers (probed again every
+  five minutes) asks the stored-level query, the level probes and the presence
+  probe before the chain. Three cuts, none of which changes an answer: the two
+  "two level keys" patterns of the level keys probe (a key twice in a JSON or
+  logfmt line), which scanned the rest of every line holding a level key and
+  were the heaviest probe, 325 CPU-ms of an hour of rows, run behind a
+  filter of phrases (one key name twice, or two of the names; answered from
+  VictoriaLogs' token index, a superset of the patterns, never a second
+  decision), 45 CPU-ms; a base (the translated LogsQL before the pipes) of
+  11.8 KB or more, for which the longer probe would exceed VictoriaLogs' 16 KiB
+  query length, and a VictoriaLogs whose `-search.maxQueryLen` is lower than the
+  longer probe, get the probe without the gate; and the label probes (main's
+  partial-parse probe among them) are remembered apart from the level probes,
+  so the chain takes their verdict from the stored-level query instead of asking
+  the same question again (56 CPU-ms of an hour). Explore's JSON volume on the
+  harness's backfill without the level stream label, a proxy started fresh
+  before each request, VictoriaLogs capped at 2 CPUs (median of 7 at 1h, 5 at
+  24h): 319 ms against 502 ms at 1h and 7.8 s against 11.7 s at 24h (main before
+  #760: 119 ms and 3.0 s), 744 CPU-ms against 1096 and 15.7 CPU-s against 23.5;
+  the `sum by (detected_level)` breakdown 218 ms against 403 ms and 4.9 s
+  against 8.3 s. Warm times are unchanged. Samples and per-request costs:
+  `bench/ab/results/oneoff/2026-10-16-dlfirstview-coldrestart.json` and
+  `-probes.json`, from `python3 bench/ab/cold_first_view.py cold --build
+  before=054d1706 --build main=d12a062c --build head=HEAD --runs 1h=7,24h=5
+  --out <dir>` (`probes` for the second).
+
 ## [2.16.0] - 2026-10-16
 
 ### Fixed

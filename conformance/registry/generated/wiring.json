@@ -426,11 +426,15 @@
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
     "semantics/json-metric-detected-level-derivation": [
+      "internal/proxy/detected_level_cache_scope_test.go",
+      "internal/proxy/detected_level_label_probes_test.go",
+      "internal/proxy/detected_level_long_selector_test.go",
       "internal/proxy/detected_level_presence_sweep_test.go",
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/detected_level_shared_unpack_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
       "internal/proxy/stored_level_series_limit_test.go",
+      "test/e2e-compat/detected_level_keys_gate_test.go",
       "test/e2e-compat/detected_level_variants_test.go",
       "test/e2e-compat/json_detected_level_series_limit_test.go",
       "test/e2e-compat/json_detected_level_test.go"
@@ -559,6 +563,7 @@
       "test/e2e-compat/series_count_aggregation_test.go"
     ],
     "severity-detected-level-derivation": [
+      "internal/proxy/detected_level_keys_gate_test.go",
       "internal/proxy/detected_level_test.go",
       "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
@@ -653,6 +658,18 @@
     ],
     "internal/proxy/compat_cache_freshness_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/detected_level_cache_scope_test.go": [
+      "semantics/json-metric-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_keys_gate_test.go": [
+      "severity-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_label_probes_test.go": [
+      "semantics/json-metric-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_long_selector_test.go": [
+      "semantics/json-metric-detected-level-derivation"
     ],
     "internal/proxy/detected_level_presence_sweep_test.go": [
       "semantics/json-metric-detected-level-derivation"
@@ -1016,6 +1033,9 @@
       "severity-detected-level-derivation",
       "severity/normalisation-table"
     ],
+    "test/e2e-compat/detected_level_keys_gate_test.go": [
+      "semantics/json-metric-detected-level-derivation"
+    ],
     "test/e2e-compat/detected_level_test.go": [
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
@@ -1200,7 +1220,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 116,
+  "tests_with_markers": 121,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

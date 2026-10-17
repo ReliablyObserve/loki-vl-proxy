@@ -472,8 +472,6 @@ func TestOrderedJSONLogsVolumeUsesStatsBuckets(t *testing.T) {
 			}
 			if !strings.Contains(tc.query, "by (level") {
 				guards-- // no label to probe: only the detected_level probes run
-			} else if strings.Contains(tc.query, "detected_level") {
-				guards++ // the stored-level attempt (a row has no stored level) probes the label on its own
 			}
 			chain := chainStatsCalls(fake.statsCalls)
 			if fake.rawCalls != 0 || len(chain) != 1 || len(fake.guardCalls) != guards {
@@ -646,7 +644,7 @@ func TestLevelVolumePlainAndLogfmtUseStatsBuckets(t *testing.T) {
 		stats         string
 	}{
 		{`sum by (level, detected_level) (count_over_time({app="api"} | drop __error__[1m]))`, "", 0, "| delete __dl, __dl_*, __j_*, __l_* | stats by (level, detected_level) count() as c"},
-		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 2 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
+		{`sum by (level, detected_level) (count_over_time({app="api"} | logfmt | drop __error__[1m]))`, "logfmt", 1 + levelProbes, "unpack_logfmt fields (level) keep_original_fields | stats by (level, detected_level) count() as c"},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newJSONVolumeFakeVL(t, lines)

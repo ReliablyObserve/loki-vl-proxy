@@ -285,17 +285,35 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	case strings.HasPrefix(f.src[f.pos:], "!"):
 		f.pos++
 		return value != f.quoted()
+	case strings.HasPrefix(f.src[f.pos:], "seq("):
+		// seq("a","b"): the phrases in this order, each after the one before.
+		f.pos += len("seq(")
+		var phrases []string
+		for {
+			phrases = append(phrases, f.quoted())
+			f.skipSpace()
+			if f.pos < len(f.src) && f.src[f.pos] == ',' {
+				f.pos++
+				continue
+			}
+			break
+		}
+		if f.pos >= len(f.src) || f.src[f.pos] != ')' {
+			f.t.Errorf("fake VL: expected ) closing seq at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return vlSequence(value, phrases)
 	default:
 		// A word or phrase, or with a trailing * a word prefix. VictoriaLogs'
 		// tokenizer takes every Unicode letter and digit and the underscore
 		// as word runes (isTokenRune).
 		word := f.quoted()
-		boundary := `[\p{L}\p{Nd}_]`
 		if strings.HasPrefix(f.src[f.pos:], "*") {
 			f.pos++
 			return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])` + regexp.QuoteMeta(word)).MatchString(value)
 		}
-		return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])`+regexp.QuoteMeta(word)+`([^\p{L}\p{Nd}_]|$)`).MatchString(value) && boundary != ""
+		return vlPhrasePos(value, word) >= 0
 	}
 }
 
@@ -818,8 +836,8 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 					stats = nil
 				} else {
 					// Some do not: the stored-level attempt, with its label probes,
-					// then the chain with the level probes.
-					guards += tc.guards - levelProbes
+					// then the chain with the level probes; the chain takes the
+					// label probes' verdict from the attempt.
 					stats = chain
 				}
 			}

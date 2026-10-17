@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -573,6 +574,36 @@ func logsqlWordPrefilter(words []string) string {
 	}
 	if len(alts) == 0 {
 		return ""
+	}
+	return "(" + strings.Join(alts, " or ") + ")"
+}
+
+// logsqlTwiceFilter renders a filter that passes every line holding two
+// occurrences of the phrases: one phrase twice (seq, which finds the second
+// after the first) or two of them (both present). Occurrences that a regexp
+// "key ... key" matches are such, so the filter is a superset of it, answered
+// from VictoriaLogs' token index and a substring search where the regexp
+// would run over every line that holds one key.
+//
+// A dotted phrase ends in a word that is a phrase of its own (log.level, level):
+// the pair of the two is left out, because the one occurrence of log.level
+// already holds the word level and the pair would admit every line with that
+// single key, while a line with both keys holds the word twice and passes seq.
+func logsqlTwiceFilter(phrases []string) string {
+	var alts []string
+	for i, a := range phrases {
+		quoted := strconv.Quote(a)
+		alts = append(alts, "_msg:seq("+quoted+","+quoted+")")
+		var rest []string
+		for _, b := range phrases[i+1:] {
+			if strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a) {
+				continue
+			}
+			rest = append(rest, "_msg:"+strconv.Quote(b))
+		}
+		if len(rest) > 0 {
+			alts = append(alts, "(_msg:"+quoted+" ("+strings.Join(rest, " or ")+"))")
+		}
 	}
 	return "(" + strings.Join(alts, " or ") + ")"
 }
@@ -1614,17 +1645,51 @@ func detectedLevelStoredFilter() string {
 // which the chain does not unpack. A line starting with a brace is read for
 // quoted keys, any other for logfmt keys. The patterns also match a mention
 // inside a longer string, a superset that only costs the raw evaluator.
+// The two-keys patterns run behind detectedLevelTwiceGate: they scan the rest
+// of every line that holds a level key, which is every line of a body-only
+// window, and only a line with two of them can match.
 func (p *Proxy) detectedLevelKeysRisk(ctx context.Context, base string, start, end time.Time) (bool, error) {
+	// The gate only narrows what the patterns run on, so a base too long for the
+	// gated text, or one VictoriaLogs refuses as too long (an operator may have
+	// lowered -search.maxQueryLen), gets the probe without it: the same verdict.
+	if query := detectedLevelKeysQuery(base, true); len(query) <= vlDefaultMaxQueryLen {
+		risky, err := p.statsPushdownRiskExists(ctx, query, start, end)
+		var tooLong *queryTooLongError
+		if !errors.As(err, &tooLong) {
+			return risky, err
+		}
+	}
+	return p.statsPushdownRiskExists(ctx, detectedLevelKeysQuery(base, false), start, end)
+}
+
+// queryTooLongError is VictoriaLogs' refusal of a query longer than -search.maxQueryLen.
+type queryTooLongError struct{ error }
+
+func (e *queryTooLongError) Unwrap() error { return e.error }
+
+// detectedLevelKeysQuery is the probe of detectedLevelKeysRisk, with the two-keys
+// patterns behind detectedLevelTwiceGate or not.
+func detectedLevelKeysQuery(base string, gated bool) string {
 	const closed = `\}[\s\v\x{85}\p{Z}]*$`
 	braced := strconv.Quote(translator.BracedLineRegexp)
 	twice := func(key string) string { return key + `(?s:.*)` + key }
-	query := base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
-		" ((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+	twoKeys := "((_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelJSONKey)) + ")" +
+		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + "))"
+	if gated {
+		twoKeys = "(" + detectedLevelTwiceGate() + " " + twoKeys + ")"
+	}
+	return base + detectedLevelStoredFilter() + " | filter " + detectedLevelWordFilter() +
+		" (" + twoKeys +
 		" or (_msg:~" + braced + " _msg:~" + strconv.Quote(detectedLevelJSONKey+`\s*"[^"\\]*\\`) + ")" +
-		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")" +
-		" or (-_msg:~" + braced + " _msg:~" + strconv.Quote(twice(detectedLevelLogfmtKey)) + ")) | limit 1"
-	return p.statsPushdownRiskExists(ctx, query, start, end)
+		" or (_msg:~" + braced + " -_msg:~" + strconv.Quote(closed) + " _msg:~" + strconv.Quote(detectedLevelLogfmtKey) + ")) | limit 1"
 }
+
+// detectedLevelTwiceGate passes the lines that hold two level keys, a superset
+// of both two-keys patterns of detectedLevelKeysRisk: each occurrence they
+// match is a key name between non-word characters (a quote, a space, the
+// start of the line, an equals sign), which is a phrase of the name for
+// VictoriaLogs, and the two do not overlap.
+func detectedLevelTwiceGate() string { return logsqlTwiceFilter(detectedLevelKeyNames) }
 
 // detectedLevelUnpackRisk reports whether a selected JSON line mentions a
 // level key that unpack_json yields no value for: a key nested other than
@@ -1659,70 +1724,13 @@ const statsPushdownRiskSettle = 5 * time.Minute
 // remembering the window already found free of risky lines per tenant, query
 // and field set, so a refresh or a wider range checks only the uncovered part
 // (coveredWindowProbe). A window with a risky line is never cached.
+//
+// The probes of the labels (parse differences of the grouped fields) and the
+// level probes (lines the detected_level pipes read differently) are
+// remembered apart: the stored-level attempt and the chain, which the same
+// request asks one after the other, share the label probes, and only the chain
+// asks for the level probes. A verdict is risky if either is.
 func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string, fields []string, stored map[string]string, errorFilters []string, levelRisk bool, start, end time.Time) (bool, error) {
-	check := func(from, to time.Time) (bool, error) {
-		// The probes run beside each other; one round trip.
-		type result struct {
-			risky bool
-			err   error
-		}
-		probes := []func(context.Context) (bool, error){
-			func(ctx context.Context) (bool, error) {
-				if len(errorFilters) == 0 {
-					return false, nil
-				}
-				return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
-			},
-		}
-		if levelRisk {
-			probes = append(probes,
-				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
-				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
-				func(ctx context.Context) (bool, error) { return p.detectedLevelUnpackRisk(ctx, base, from, to) })
-		}
-		// A plan that only derives detected_level has no label to probe.
-		fieldParser := parser
-		if len(fields) == 0 {
-			fieldParser = ""
-		}
-		if fieldParser != "" {
-			probes = append(probes, func(ctx context.Context) (bool, error) {
-				return p.extractedBothKeysRisk(ctx, fieldParser, base, fields, from, to)
-			})
-		}
-		switch fieldParser {
-		case "json":
-			probes = append(probes,
-				func(ctx context.Context) (bool, error) {
-					return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
-				},
-				func(ctx context.Context) (bool, error) {
-					return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to)
-				})
-		case "logfmt":
-			probes = append(probes, func(ctx context.Context) (bool, error) {
-				return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
-			})
-		}
-		// The first risky verdict (or error) decides; the other probes are
-		// cancelled rather than waited for.
-		probeCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		results := make(chan result, len(probes))
-		for _, probe := range probes {
-			go func() {
-				risky, err := probe(probeCtx)
-				results <- result{risky, err}
-			}()
-		}
-		for range probes {
-			r := <-results
-			if r.err != nil || r.risky {
-				return r.risky, r.err
-			}
-		}
-		return false, nil
-	}
 	spelled := make([]string, len(fields))
 	for i, field := range fields {
 		spelled[i] = field
@@ -1730,12 +1738,94 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 			spelled[i] += "=" + vl
 		}
 	}
-	key := "stats-pushdown-risk:v4:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + strconv.FormatBool(levelRisk) + ":" + base
+	labels := func(ctx context.Context) (bool, error) {
+		key := "stats-pushdown-risk:v5:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + base
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+			probes := []func(context.Context) (bool, error){
+				func(ctx context.Context) (bool, error) {
+					if len(errorFilters) == 0 {
+						return false, nil
+					}
+					return p.statsPushdownStoredFieldRisk(ctx, parser, base, errorFilters, stored, from, to)
+				},
+			}
+			// A plan that only derives detected_level has no label to probe.
+			fieldParser := parser
+			if len(fields) == 0 {
+				fieldParser = ""
+			}
+			if fieldParser != "" {
+				probes = append(probes, func(ctx context.Context) (bool, error) {
+					return p.extractedBothKeysRisk(ctx, fieldParser, base, fields, from, to)
+				})
+			}
+			switch fieldParser {
+			case "json":
+				probes = append(probes,
+					func(ctx context.Context) (bool, error) {
+						return p.orderedJSONPartialParseRisk(ctx, base, fields, stored, from, to)
+					},
+					func(ctx context.Context) (bool, error) {
+						return p.orderedJSONKeySpellingRisk(ctx, base, fields, stored, from, to)
+					})
+			case "logfmt":
+				probes = append(probes, func(ctx context.Context) (bool, error) {
+					return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
+				})
+			}
+			return probes
+		})
+	}
+	if !levelRisk {
+		return labels(ctx)
+	}
+	levels := func(ctx context.Context) (bool, error) {
+		key := "stats-pushdown-risk:v5:level:" + getOrgID(ctx) + ":" + base
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+			return []func(context.Context) (bool, error){
+				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
+				func(ctx context.Context) (bool, error) { return p.detectedLevelUnpackRisk(ctx, base, from, to) },
+			}
+		})
+	}
+	return anyRisk(ctx, []func(context.Context) (bool, error){labels, levels})
+}
+
+// rememberedRisk runs the probes of the parts of [start, end] that the verdict
+// under key does not cover (coveredWindowProbe).
+func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.Time, probes func(from, to time.Time) []func(context.Context) (bool, error)) (bool, error) {
 	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
-		risky, err := check(from, to)
+		risky, err := anyRisk(ctx, probes(from, to))
 		return "", risky, err
 	})
 	return risky, err
+}
+
+// anyRisk runs the probes beside each other, one round trip. The first risky
+// verdict (or error) decides; the other probes are cancelled rather than
+// waited for.
+func anyRisk(ctx context.Context, probes []func(context.Context) (bool, error)) (bool, error) {
+	type result struct {
+		risky bool
+		err   error
+	}
+	probeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan result, len(probes))
+	for _, probe := range probes {
+		go func() {
+			risky, err := probe(probeCtx)
+			results <- result{risky, err}
+		}()
+	}
+	for range probes {
+		r := <-results
+		if r.err != nil || r.risky {
+			return r.risky, r.err
+		}
+	}
+	return false, nil
 }
 
 // statsPushdownRiskExists runs a `| limit 1` risk query over [start, end] and
@@ -1749,7 +1839,11 @@ func (p *Proxy) statsPushdownRiskExists(ctx context.Context, query string, start
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return false, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
+		err := p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
+		if resp.StatusCode == http.StatusBadRequest && bytes.Contains(body, []byte("-search.maxQueryLen")) {
+			err = &queryTooLongError{err}
+		}
+		return false, err
 	}
 	head, err := io.ReadAll(io.LimitReader(resp.Body, 64))
 	if err != nil {
