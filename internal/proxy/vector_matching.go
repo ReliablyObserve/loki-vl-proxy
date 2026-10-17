@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -33,6 +34,33 @@ func (w *bufferedResponseWriter) Write(b []byte) (int, error) {
 }
 func (w *bufferedResponseWriter) WriteHeader(code int) {
 	w.code = code
+}
+
+// withoutAggregationOp returns the outer aggregation of a `<op> without (...)`
+// query, which decides how the series that share a label set are combined.
+func withoutAggregationOp(logql string) string {
+	expr, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	if err != nil {
+		return ""
+	}
+	aggregation, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(string(aggregation.Op))
+}
+
+// withoutFoldOp returns the operator that combines the rows sharing a label set
+// after a `without` marker's labels are dropped (see ParseWithoutMarker), and
+// whether the query is one the proxy folds from a row per stream: a sum, min,
+// max, avg or count without, the outermost aggregation of the query. The marker
+// of any other query leaves the answer to the aggregation of the whole query
+// (logql), as it was before the fold.
+func withoutFoldOp(markerOp, logql string) (op string, fold bool) {
+	if markerOp != "" {
+		return markerOp, true
+	}
+	return withoutAggregationOp(logql), false
 }
 
 // withoutMerge is how the values of the series that share a label set after

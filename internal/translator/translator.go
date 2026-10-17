@@ -469,9 +469,9 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 
 	// Extract without() labels before translation.
 	// The proxy will post-process VL results to remove these labels from metric grouping.
+	withoutOp := foldingWithoutOp(logql)
 	var withoutLabels []string
-	var withoutOp string
-	logql, withoutOp, withoutLabels = extractWithoutLabels(logql)
+	logql, withoutLabels = extractWithoutLabels(logql)
 
 	// Strip "bool" modifier from comparison operators before translation.
 	// Loki: "A > bool B" returns 1/0 instead of filtering. Our applyOp always
@@ -490,7 +490,7 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
-	if metricResult, ok := tryTranslateMetricQueryWithout(logql, labelFn, len(withoutLabels) > 0); ok {
+	if metricResult, ok := tryTranslateMetricQueryWithout(logql, labelFn, len(withoutLabels) > 0, withoutOp != ""); ok {
 		return appendWithoutMarker(applyDerivedGroupings(metricResult, caps, streamFields), withoutOp, withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
@@ -508,22 +508,27 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 }
 
 // WithoutMarkerSuffix is appended to translated queries that need without() post-processing.
-// Format: "...actual_query...__without__:<op>:pod,node", where <op> is the
-// aggregation of the `<op> without (...)` (sum, max, count, ...; empty when it
-// cannot be told), which decides how the series that share a label set once the
-// labels are dropped are folded, whatever wraps the aggregation.
+// Format: "...actual_query...__without__:pod,node" folds the rows with the
+// aggregation of the whole query (the proxy reads it from the LogQL).
+// "...actual_query...__without__:<op>:pod,node" says the query is a
+// `<op> without (...)` the proxy folds itself, and with <op> (sum, min, max, avg
+// or count): see foldingWithoutOp.
 const WithoutMarkerSuffix = "__without__:"
 
 func appendWithoutMarker(query, op string, labels []string) string {
 	if len(labels) == 0 {
 		return query
 	}
-	return query + WithoutMarkerSuffix + op + ":" + strings.Join(labels, ",")
+	if op != "" {
+		op += ":"
+	}
+	return query + WithoutMarkerSuffix + op + strings.Join(labels, ",")
 }
 
 // ParseWithoutMarker extracts the aggregation and the without labels from a
 // translated query. Returns the clean query, the operator of the `without`
-// aggregation (empty when unknown) and the list of labels to exclude.
+// aggregation the proxy folds itself (empty for any other query) and the list
+// of labels to exclude.
 func ParseWithoutMarker(query string) (cleanQuery, op string, excludeLabels []string) {
 	idx := strings.LastIndex(query, WithoutMarkerSuffix)
 	if idx < 0 {
@@ -553,57 +558,89 @@ func ParseWithoutMarker(query string) (cleanQuery, op string, excludeLabels []st
 	return cleanQuery, op, excludeLabels
 }
 
-// withoutOpRE reads the aggregation name that ends a prefix.
-var withoutOpRE = regexp.MustCompile(`(sum|avg|min|max|count|stddev|stdvar|group|topk|bottomk)\s*$`)
+// The aggregations whose `without` form the proxy folds itself are sum, min,
+// max, avg and count: it asks VictoriaLogs for a row per series and combines the
+// rows that share the labels left with the operator, which
+// TestSumWithoutDifferential pins to Loki's answer. topk, bottomk, stddev and
+// stdvar are not folded: their values are not a combination of per-series rows.
+var (
+	// withoutHeadAggRE: `<op> without (labels) (`, the clause before the vector.
+	withoutHeadAggRE = regexp.MustCompile(`^(sum|min|max|avg|count)\s+without\s*\([^)]*\)\s*\(`)
+	// withoutTailAggRE: `<op> (`, whose vector is followed by `without (labels)`.
+	withoutTailAggRE = regexp.MustCompile(`^(sum|min|max|avg|count)\s*\(`)
+	withoutTailRE    = regexp.MustCompile(`^without\s*\([^)]*\)$`)
+)
 
-// withoutAggregationBefore returns the operator of the aggregation a `without`
-// clause at idx belongs to: `max without (pod) (...)` names it just before the
-// clause, `max(...) without (pod)` before the parenthesis the clause follows.
-func withoutAggregationBefore(logql string, idx int) string {
-	prefix := strings.TrimRight(logql[:idx], " \t")
-	if strings.HasSuffix(prefix, ")") {
-		depth, inQuote := 0, byte(0)
-		for i := len(prefix) - 1; i >= 0; i-- {
-			c := prefix[i]
-			switch {
-			case inQuote != 0:
-				if c == inQuote && (i == 0 || prefix[i-1] != '\\' || inQuote == '`') {
-					inQuote = 0
-				}
-			case c == '"' || c == '`':
-				inQuote = c
-			case c == ')':
-				depth++
-			case c == '(':
-				depth--
-				if depth == 0 {
-					prefix = strings.TrimRight(prefix[:i], " \t")
-					i = -1
-				}
-			}
-		}
-	}
-	m := withoutOpRE.FindStringSubmatchIndex(prefix)
-	if m == nil || (m[0] > 0 && isLabelNameByte(prefix[m[0]-1])) {
+// foldingWithoutOp returns the operator of the `<op> without (...)` the proxy
+// folds, or "" when the query is anything else. The fold is only for the
+// aggregation that is the outermost one: the query may be wrapped by the
+// ranking, sorting and label transforms (topk, bottomk, sort, sort_desc,
+// stddev, stdvar, label_replace, label_join), which the proxy applies to the
+// folded series. A `without` under another aggregation (`max(sum without ...)`),
+// a binary expression, another operator (topk without, bottomk without, stddev without), or more
+// than one `without` clause is answered as it was before the fold existed.
+func foldingWithoutOp(logql string) string {
+	if !strings.Contains(logql, "without") || len(withoutMarkerRE.FindAllStringIndex(logql, 2)) != 1 {
 		return ""
 	}
-	return prefix[m[2]:m[3]]
-}
-
-func isLabelNameByte(c byte) bool {
-	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-}
-
-// extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker
-// and the operator of the aggregation they belong to.
-// Called by the translator to attach metadata to the translated query.
-func extractWithoutLabels(logql string) (cleaned, op string, labels []string) {
-	loc := withoutMarkerRE.FindStringSubmatchIndex(logql)
-	if loc == nil {
-		return logql, "", nil
+	s := strings.TrimSpace(logql)
+	for {
+		inner, ok := peelWithoutWrapper(s)
+		if !ok {
+			break
+		}
+		s = inner
 	}
-	op = withoutAggregationBefore(logql, loc[0])
-	labelStr := logql[loc[2]:loc[3]]
+	if m := withoutHeadAggRE.FindStringSubmatch(s); m != nil {
+		rest := s[len(m[0]):]
+		if end := findLastMatchingParen(rest); end >= 0 && strings.TrimSpace(rest[end+1:]) == "" {
+			return m[1]
+		}
+		return ""
+	}
+	if m := withoutTailAggRE.FindStringSubmatch(s); m != nil {
+		rest := s[len(m[0]):]
+		if end := findLastMatchingParen(rest); end >= 0 && withoutTailRE.MatchString(strings.TrimSpace(rest[end+1:])) {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// peelWithoutWrapper returns the expression a ranking, sorting or label
+// transform wraps, when s is exactly that call.
+func peelWithoutWrapper(s string) (string, bool) {
+	for _, name := range []string{"sort_desc", "sort", "stddev", "stdvar", "topk", "bottomk", "label_replace", "label_join"} {
+		if !strings.HasPrefix(s, name+"(") {
+			continue
+		}
+		rest := s[len(name)+1:]
+		end := findLastMatchingParen(rest)
+		if end < 0 || strings.TrimSpace(rest[end+1:]) != "" {
+			return "", false
+		}
+		args := rest[:end]
+		switch name {
+		case "topk", "bottomk":
+			_, expr, ok := splitFuncFirstArg(args)
+			return expr, ok && expr != ""
+		case "label_replace", "label_join":
+			expr, _, ok := splitFuncFirstArg(args)
+			return expr, ok && expr != ""
+		}
+		return strings.TrimSpace(args), true
+	}
+	return "", false
+}
+
+// extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker.
+// Called by the translator to attach metadata to the translated query.
+func extractWithoutLabels(logql string) (cleaned string, labels []string) {
+	m := withoutMarkerRE.FindStringSubmatch(logql)
+	if m == nil {
+		return logql, nil
+	}
+	labelStr := m[1]
 	for _, l := range strings.Split(labelStr, ",") {
 		l = strings.TrimSpace(l)
 		if l != "" {
@@ -614,7 +651,7 @@ func extractWithoutLabels(logql string) (cleaned, op string, labels []string) {
 	for strings.Contains(cleaned, "  ") {
 		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
 	}
-	return cleaned, op, labels
+	return cleaned, labels
 }
 
 // StoredLineField is the field TranslateLogQueryKeepingLine copies the
@@ -1919,14 +1956,14 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
 func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
-	return tryTranslateMetricQueryWithout(logql, labelFn, false)
+	return tryTranslateMetricQueryWithout(logql, labelFn, false, false)
 }
 
 // tryTranslateMetricQueryWithout is tryTranslateMetricQuery for a query whose
 // `without (...)` clause the caller stripped: the outer aggregation then keeps
 // the series identity in its grouping, so the proxy can drop the excluded
 // labels and aggregate what remains.
-func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, hasWithout bool) (string, bool) { //nolint:gocyclo // multi-function metric dispatcher: quantile, rate, unwrap, stdvar, outer-agg, recursive nested — each branch is a distinct translation rule
+func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, hasWithout, foldWithout bool) (string, bool) { //nolint:gocyclo // multi-function metric dispatcher: quantile, rate, unwrap, stdvar, outer-agg, recursive nested — each branch is a distinct translation rule
 	// Match patterns like: sum(rate({...}[5m])) by (label)
 	// or: count_over_time({...}[5m])
 	// or: rate({...}[5m])
@@ -2015,7 +2052,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 					rateExpr, rateGate, rateConv = "sum("+field+")", gate, conv
 				}
 			}
-			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, rateExpr, duration, outerAgg, byLabels, labelFn, hasWithout, rateGate, rateConv); ok {
+			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, rateExpr, duration, outerAgg, byLabels, labelFn, hasWithout, foldWithout, rateGate, rateConv); ok {
 				if isGroup {
 					return rateResult + groupMarker, true
 				}
@@ -2048,7 +2085,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 					innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 					withVariance := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String()
 					if outerResult, ok := applyOuterAggregation(withVariance, outerAgg, "__lvp_inner_var"); ok {
-						return keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout), true
+						return keepWithoutSeries(outerResult, innerBy, outerAgg, foldWithout), true
 					}
 				}
 				baseStddev := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
@@ -2062,7 +2099,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			} else if outerAgg != "" && byLabels == "" {
 				innerAliased := buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "__lvp_inner", gate, gateConv)
 				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
-					result = keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout)
+					result = keepWithoutSeries(outerResult, innerBy, outerAgg, foldWithout)
 				} else {
 					result = buildStatsQueryGated(logsqlQuery, statsExpr, innerBy, "", gate, gateConv)
 				}
@@ -2137,7 +2174,7 @@ func defaultRateInnerGrouping(query string) string {
 	return "_stream, level"
 }
 
-func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc, hasWithout bool, gateField, gateConv string) (string, bool) {
+func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc, hasWithout, foldWithout bool, gateField, gateConv string) (string, bool) {
 	seconds := durationSeconds(duration)
 	if seconds <= 0 {
 		return "", false
@@ -2182,7 +2219,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 
 	if outerAgg != "" && byLabels == "" {
 		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
-			return keepWithoutSeries(outerResult, innerBy, outerAgg, hasWithout), true
+			return keepWithoutSeries(outerResult, innerBy, outerAgg, foldWithout), true
 		}
 	}
 
@@ -2324,8 +2361,8 @@ func addByClauseLast(query, labels string, labelFn LabelTranslateFunc) string {
 // not expose those labels, and a row per line would be raw-row volume. sum, max
 // and min fold the rows of a stream to the same value either way; count and avg
 // read one value per series, which only a grouping without `_msg` keeps.
-func keepWithoutSeries(result, innerBy, outerAgg string, hasWithout bool) string {
-	if !hasWithout || innerBy == emptyByGrouping {
+func keepWithoutSeries(result, innerBy, outerAgg string, fold bool) string {
+	if !fold || innerBy == emptyByGrouping {
 		return result
 	}
 	keep := make([]string, 0, 2)

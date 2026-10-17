@@ -271,7 +271,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
@@ -280,7 +281,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		// The operands of a binary expression fold and are limited on their own.
 		withoutLabels = nil
 	}
-	if len(withoutLabels) > 0 {
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
 
@@ -308,7 +310,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if !dispatched {
 		if isStatsQuery(translatedInner) {
 			statsR := r
-			if len(withoutLabels) > 0 {
+			if foldWithout {
 				// The ranking wraps the folded series: the stats query must not apply
 				// it to the per-stream rows, which hold a different set than the fold.
 				statsR = cloneMetricQueryRequest(r, postAgg.inner)
@@ -339,7 +341,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	result := applyInstantVectorPostAggregation(bw.body, postAgg)
-	if len(withoutLabels) > 0 {
+	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
 			p.writeError(w, http.StatusBadRequest, capErr.Error())
@@ -366,7 +368,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
@@ -376,7 +379,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 			withoutLabels = nil
 		}
 	}
-	if len(withoutLabels) > 0 {
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
 
@@ -434,7 +438,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	result := applyMatrixPostAggregation(bw.body, postAgg)
-	if len(withoutLabels) > 0 {
+	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
 			p.writeError(w, http.StatusBadRequest, capErr.Error())

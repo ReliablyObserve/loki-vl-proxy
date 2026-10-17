@@ -2350,7 +2350,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Extract without() labels and label-transform markers for post-processing.
-	logsqlQuery, withoutOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
@@ -2380,7 +2381,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
-	if len(withoutLabels) > 0 {
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
 	var (
@@ -2438,7 +2440,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
 		var capErr error
-		if len(withoutLabels) > 0 && sc.code == http.StatusOK {
+		if foldWithout && sc.code == http.StatusOK {
 			if cacheOut, capErr = p.capWithoutFold(r.Context(), cacheOut); capErr != nil {
 				sc.code, cacheable = http.StatusBadRequest, false
 			}
@@ -2638,7 +2640,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract without() labels and label-transform markers for post-processing.
-	logsqlQuery, withoutOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
 	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
@@ -2675,7 +2678,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
-	if len(withoutLabels) > 0 {
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
 	var bw *bufferedResponseWriter
@@ -2723,7 +2727,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			result = applyLabelJoin(result, *labelJoinSpec)
 		}
 		var capErr error
-		if len(withoutLabels) > 0 {
+		if foldWithout {
 			result, capErr = p.capWithoutFold(r.Context(), result)
 		}
 		if capErr != nil {

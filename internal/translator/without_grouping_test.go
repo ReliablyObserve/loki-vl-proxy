@@ -69,7 +69,12 @@ func TestWithoutKeepsSeriesInLastStatsPipe(t *testing.T) {
 			t.Errorf("%s: last stats pipe grouped by (%s), want (%s)\n%s", tc.logql, g, tc.want, got)
 		}
 		excluded := strings.ReplaceAll(tc.logql[strings.Index(tc.logql, "(")+1:strings.Index(tc.logql, ")")], " ", "")
-		if strings.Contains(tc.logql, "without") && !strings.HasSuffix(got, WithoutMarkerSuffix+tc.logql[:strings.Index(tc.logql, " ")]+":"+excluded) {
+		// stddev and stdvar without are not folded: their marker names no operator.
+		op := ""
+		if i := strings.Index(tc.logql, " "); i > 0 && !strings.HasPrefix(tc.logql, "std") {
+			op = tc.logql[:i] + ":"
+		}
+		if strings.Contains(tc.logql, "without") && !strings.HasSuffix(got, WithoutMarkerSuffix+op+excluded) {
 			t.Errorf("%s: the without marker is missing: %s", tc.logql, got)
 		}
 	}
@@ -117,7 +122,8 @@ func TestWithoutMarkerCarriesTheAggregation(t *testing.T) {
 		{`max without (pod) (max_over_time(` + inner + `))`, "max"},
 		{`min without (pod) (min_over_time(` + inner + `))`, "min"},
 		{`label_replace(max without (pod) (max_over_time(` + inner + `)), "d", "$1", "app", "(.*)")`, "max"},
-		{`count without (pod) (max_over_time(` + inner + `)) > 0`, "count"},
+		// A binary expression is folded operand by operand, not as a whole.
+		{`count without (pod) (max_over_time(` + inner + `)) > 0`, ""},
 		{`avg(max_over_time(` + inner + `)) without (pod)`, "avg"},
 		{`max(max_over_time({app="a(b"} | logfmt | unwrap amount [5m])) without (pod)`, "max"},
 		{`sum without (pod) (rate({app="x"}[5m]))`, "sum"},
@@ -129,6 +135,53 @@ func TestWithoutMarkerCarriesTheAggregation(t *testing.T) {
 		_, op, labels := ParseWithoutMarker(query)
 		if op != tc.op || len(labels) != 1 || labels[0] != "pod" {
 			t.Fatalf("%s: marker op=%q labels=%v, want %q [pod]\n%s", tc.logql, op, labels, tc.op, query)
+		}
+	}
+}
+
+// TestFoldingWithoutOp: the proxy folds a `without` from a row per stream only
+// for a sum, min, max, avg or count that is the outermost aggregation (a ranking,
+// sorting or label transform may wrap it: the proxy applies it to the folded
+// series). Every other query that holds a `without` clause carries a marker
+// without an operator and is answered as before the fold existed.
+//
+// conformance: semantics/unwrap-sum-without-collapses
+func TestFoldingWithoutOp(t *testing.T) {
+	const m = `max_over_time({app="x"} | unwrap amount [5m])`
+	for _, tc := range []struct{ logql, want string }{
+		{`sum without (pod) (` + m + `)`, "sum"},
+		{`min without (pod, ns) (` + m + `)`, "min"},
+		{`max   without(pod)(` + m + `)`, "max"},
+		{`avg(` + m + `) without (pod)`, "avg"},
+		{`count (` + m + `) without (pod)`, "count"},
+		{`topk(3, sum without (pod) (` + m + `))`, "sum"},
+		{`bottomk(3, max without (pod) (` + m + `))`, "max"},
+		{`sort(sum without (pod) (` + m + `))`, "sum"},
+		{`sort_desc(sum without (pod) (` + m + `))`, "sum"},
+		{`label_replace(sum without (pod) (` + m + `), "d", "$1", "app", "(.*)")`, "sum"},
+		{`label_join(sum without (pod) (` + m + `), "d", "-", "app", "ns")`, "sum"},
+		{`topk(3, label_replace(sum without (pod) (` + m + `), "d", "$1", "app", "(.*)"))`, "sum"},
+		{`stddev(sum without (pod) (` + m + `))`, "sum"},
+		// Operators the fold does not prove.
+		{`topk without (pod) (3, ` + m + `)`, ""},
+		{`bottomk without (pod) (3, ` + m + `)`, ""},
+		{`stddev without (pod) (` + m + `)`, ""},
+		{`stdvar without (pod) (` + m + `)`, ""},
+		// A without under another aggregation, or not the outermost aggregation.
+		{`max(sum without (pod) (` + m + `))`, ""},
+		{`sum by (ns) (sum without (pod) (` + m + `))`, ""},
+		{`sum(sum without (pod) (` + m + `)) by (ns)`, ""},
+		{`topk(2, max(sum without (pod) (` + m + `)))`, ""},
+		{`sum without (pod) (` + m + `) > 1`, ""},
+		{`sum without (pod) (` + m + `) / sum without (pod) (` + m + `)`, ""},
+		// More than one without clause, none with labels, no aggregation.
+		{`sum without (pod) (sum without (ns) (` + m + `))`, ""},
+		{`sum without () (` + m + `)`, ""},
+		{`sum(` + m + `)`, ""},
+		{m, ""},
+	} {
+		if got := foldingWithoutOp(tc.logql); got != tc.want {
+			t.Errorf("foldingWithoutOp(%s) = %q, want %q", tc.logql, got, tc.want)
 		}
 	}
 }
