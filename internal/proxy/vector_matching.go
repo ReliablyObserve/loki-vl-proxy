@@ -114,12 +114,15 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 // and Loki counts max_query_series on the folded answer
 // (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). It reuses
 // foldedSumKey, the mark of an ungrouped sum folded afterwards: the reads before
-// the fold are bounded by the raw-row budget (-manual-range-metric-row-limit),
-// whose error they answer, and capWithoutFold applies the tenant's limit to the
-// answer.
+// the fold are bounded by the raw-row budget (-manual-range-metric-row-limit)
+// unless the tenant's limit is lower, the budget's error is what they answer,
+// and capWithoutFold applies the tenant's limit to the answer.
 func (p *Proxy) withWithoutFold(r *http.Request) *http.Request {
 	if scope, _ := r.Context().Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil {
-		if budget, err := p.manualMetricRowBudget(); err == nil {
+		// The budget bounds the reads before the fold unless the tenant's limit is
+		// the lower of the two, which then stays the bound (equal limits: the
+		// budget, which is what the request is reading under).
+		if budget, err := p.manualMetricRowBudget(); err == nil && budget >= p.requestQueryLimits(r.Context()).MaxQuerySeries {
 			scope.foldBudget = budget
 		}
 	}

@@ -759,6 +759,84 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 	}
 }
 
+// TestWithoutFoldRowBudgetError: the error a request that folds its series hits
+// before the fold is told by the request, not by whether the budget and the
+// tenant's limit happen to be equal: under the budget (budget at or above the
+// tenant's limit) the row-limit message names the flag, as a rejection (400);
+// when the tenant's limit is the lower bound it stays Loki's series message; and
+// a check against the tenant's own limit is Loki's message even at the budget's
+// value.
+//
+// conformance: semantics/unwrap-sum-without-collapses, limits/series-limit-error
+func TestWithoutFoldRowBudgetError(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	var rows []emuRow
+	for i := 0; i < 40; i++ {
+		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
+		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf("amount=%d", i+1)})
+	}
+	const query = `sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`
+	for _, tc := range []struct {
+		name        string
+		series, row int
+		wantRowText bool
+	}{
+		{"budget above the tenant's limit", 2, 3, true},
+		{"equal limits", 3, 3, true},
+		{"budget below the tenant's limit", 4, 3, false},
+	} {
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/instant=%v", tc.name, instant), func(t *testing.T) {
+				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+				backend := httptest.NewServer(emu.handler())
+				defer backend.Close()
+				p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: tc.series, RangeMetricRowLimit: tc.row})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				params := url.Values{"query": {query}}
+				target := "/loki/api/v1/query_range?"
+				if instant {
+					target = "/loki/api/v1/query?"
+					params.Set("time", strconv.FormatInt(base/1e9, 10))
+				} else {
+					params.Set("start", strconv.FormatInt(base/1e9-120, 10))
+					params.Set("end", strconv.FormatInt(base/1e9, 10))
+					params.Set("step", "60")
+				}
+				res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+				body := res.Body.String()
+				if tc.wantRowText && (res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit")) {
+					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
+				}
+				if !tc.wantRowText && (res.Code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (4)") || strings.Contains(body, "-manual-range-metric-row-limit")) {
+					t.Fatalf("%d %s, want Loki's series limit error of the tenant's limit as a 400", res.Code, body)
+				}
+			})
+		}
+	}
+	// The error constructor: the scope tells whether the budget is the bound.
+	folding := func(foldBudget int) context.Context {
+		ctx := context.WithValue(context.Background(), foldedSumKey{}, true)
+		return context.WithValue(ctx, seriesLimitScopeKey{}, &seriesLimitScope{foldBudget: foldBudget})
+	}
+	if err := newSeriesLimitError(folding(7), 7); !strings.Contains(err.Error(), "-manual-range-metric-row-limit") {
+		t.Fatalf("a request reading under the budget: %v", err)
+	}
+	if err := newSeriesLimitError(folding(7), 3); !strings.Contains(err.Error(), "-manual-range-metric-row-limit") {
+		t.Fatalf("a request reading under the budget, whatever the limit it reports: %v", err)
+	}
+	if err := newSeriesLimitError(folding(0), 7); strings.Contains(err.Error(), "-manual-range-metric-row-limit") || !strings.Contains(err.Error(), "maximum number of series (7)") {
+		t.Fatalf("a request the tenant's limit bounds: %v", err)
+	}
+	if err := seriesLimitReached(tenantSeriesLimitContext(folding(7)), 7); strings.Contains(err.Error(), "-manual-range-metric-row-limit") || !strings.Contains(err.Error(), "maximum number of series (7)") {
+		t.Fatalf("the tenant's own limit, equal to the budget: %v", err)
+	}
+}
+
 // seriesTotalsByNS is the sum of the sample values of each series of a response,
 // keyed by its ns label.
 func seriesTotalsByNS(t *testing.T, body string) map[string]float64 {

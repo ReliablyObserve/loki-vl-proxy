@@ -72,15 +72,24 @@ type seriesLimitError struct {
 }
 
 // newSeriesLimitError is the error of a metric result over limit series. While
-// a request folds its series afterwards (withWithoutFold) the reads before the
-// fold are bounded by the raw-row budget, and that is the limit they hit.
+// a request folds its series afterwards and reads them under the raw-row budget
+// (withWithoutFold records it in the scope), the budget is the limit that
+// request hits before the fold, whatever its value: it answers the row-limit
+// message. A caller that applies the tenant's own limit to such a request clears
+// the fold from its context first (see tenantSeriesLimitContext).
 func newSeriesLimitError(ctx context.Context, limit int) error {
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
-		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget == limit {
+		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > 0 {
 			return &seriesLimitError{limit: limit, rowBudget: true}
 		}
 	}
 	return &seriesLimitError{limit: limit}
+}
+
+// tenantSeriesLimitContext is ctx for a check against the tenant's own series
+// limit: the request is not read under the raw-row budget there.
+func tenantSeriesLimitContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, foldedSumKey{}, false)
 }
 
 func (e *seriesLimitError) Error() string {
@@ -100,7 +109,7 @@ func isSeriesLimitError(err error) bool {
 // (pkg/logql/engine.go JoinSampleVector) and every other client an error.
 type seriesLimitScope struct {
 	drilldown  bool
-	foldBudget int          // the raw-row budget of a request that folds its series afterwards; 0 = none
+	foldBudget int          // the raw-row budget a request that folds its series afterwards reads under, unless the tenant's limit is lower; 0 = none
 	truncated  atomic.Int64 // the limit that cut a Drilldown result; 0 = none
 }
 

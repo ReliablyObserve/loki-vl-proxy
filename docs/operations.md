@@ -383,7 +383,7 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 
 Not every `502` or `503` means VictoriaLogs is down. Built-in execution limits reject oversized work instead of returning truncated data:
 
-- `502` with `manual range metric row limit exceeded` — raise `-manual-range-metric-row-limit` or narrow the query
+- `502` with `manual range metric row limit exceeded` — raise `-manual-range-metric-row-limit` or narrow the query. A `sum`, `min`, `max`, `avg` or `count` `without (...)` reads a series per stream before the proxy folds them; when those series pass the limit the same message answers `400` (if the limit is below `-max-stats-query-series`, that limit bounds the reads and Loki's series message answers instead), and the folded answer is then held to `max_query_series`
 - `400` with `maximum number of series (N) reached for a single query` — Loki's own answer above `max_query_series`; narrow the query or raise `-max-stats-query-series`. The log line for the rejected request names that flag. Grafana Logs Drilldown requests instead receive a partial result with the warning `... returning partial results`
 - `503` with `too many concurrent queries` — the `-max-concurrent` admission cap was reached
 - `429` with `too many outstanding requests: heavy VictoriaLogs queries are limited to -backend-max-concurrent-heavy-queries=N` — heavy long-range VictoriaLogs calls waited longer than `-backend-heavy-query-queue-wait` for a slot. Retry, narrow the time range, or raise `-backend-max-concurrent-heavy-queries` together with VictoriaLogs memory (see [Heavy VictoriaLogs Query Admission](configuration.md#heavy-victorialogs-query-admission))

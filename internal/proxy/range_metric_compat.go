@@ -1002,7 +1002,8 @@ func (p *Proxy) collectTopValueRangeMetricHits(ctx context.Context, spec statsCo
 		return nil, err
 	}
 	if len(values) < ranked {
-		if err := seriesLimitReached(ctx, len(values)); err != nil {
+		// The ranking is bound by the tenant's limit, whatever the request folds.
+		if err := seriesLimitReached(tenantSeriesLimitContext(ctx), len(values)); err != nil {
 			return nil, err
 		}
 	}
@@ -1968,9 +1969,9 @@ func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 	if folding, _ := ctx.Value(foldedSumKey{}).(bool); folding {
 		// A `without` request reads a row per stream and folds them before Loki's
 		// limit applies (withWithoutFold records the raw-row budget it reads
-		// under). An ungrouped sum folded afterwards records none and keeps the
-		// tenant's limit here.
-		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > limit {
+		// under, unless the tenant's limit is lower). An ungrouped sum folded
+		// afterwards records none and keeps the tenant's limit here.
+		if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil && scope.foldBudget > 0 {
 			return scope.foldBudget
 		}
 	}
