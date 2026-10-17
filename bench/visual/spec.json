@@ -529,7 +529,17 @@
   {
    "id": "explore-unwrap-sum-without",
    "kind": "explore",
-   "query": "sum without (pod) (max_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+   "query": "sum without (pod) (max_over_time({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))",
+   "covers": [
+    "semantics/unwrap-sum-without-collapses",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-sum-without-rate",
+   "kind": "explore",
+   "query": "sum without (pod) (rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [$__auto]))",
    "covers": [
     "semantics/unwrap-sum-without-collapses",
     "metric-series-identity",
@@ -540,19 +550,9 @@
    ]
   },
   {
-   "id": "explore-sum-without-rate",
-   "kind": "explore",
-   "query": "sum without (pod) (rate({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
-   "covers": [
-    "semantics/unwrap-sum-without-collapses",
-    "metric-series-identity",
-    "loki_api_v1_query_range"
-   ]
-  },
-  {
    "id": "explore-topk-sum-without",
    "kind": "explore",
-   "query": "topk(5, sum without (pod) (max_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m])))",
+   "query": "topk(5, sum without (pod) (rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [$__auto])))",
    "covers": [
     "semantics/unwrap-sum-without-collapses",
     "metric-series-identity",
