@@ -169,20 +169,22 @@ why: |
   7.5 s to 0.67 s (6h) and 2.6 s (24h), and on the data with a level stream
   label from 2.3 s to 7 ms at 1h. The first view of a window (nothing
   remembered: the stored-level attempt, the level probes, the presence probe,
-  then the chain) takes 0.31 s at 1h for Explore's volume where main before #760 takes
-  0.06 s (0.49 s before the first-view cuts) and 7.6 s at 24h against 2.9 s
-  (11.2 s), medians of cold requests with each build restarted before them: the
-  probes scan the window and share the 2 CPUs with the chain. The heaviest of
-  them was detectedLevelKeysRisk (320-380 CPU-ms of an hour of rows: two level
-  keys in a line, an escape in a level value, a brace without its closing
-  brace), whose two-keys patterns now run behind a filter of phrases
-  (logsqlTwiceFilter over detectedLevelKeyNames: one key name twice, or two of
-  the names, answered from VictoriaLogs' token index and a superset of the
-  patterns; 45-55 CPU-ms; a selector of 11.8 KB or more, which would push the
-  longer text past -search.maxQueryLen, gets the probe without the gate), and
-  the probes of the labels are remembered apart from the level probes
-  (cachedStatsPushdownRisk), so the chain does not ask again what the
-  stored-level query asked. A window with a row that has no stored level asks
+  then the chain) takes 0.32 s at 1h for Explore's volume where main before #760 takes
+  0.12 s (0.50 s before the first-view cuts) and 7.8 s at 24h against 3.0 s
+  (11.7 s), medians of cold requests with each build started fresh before them
+  (bench/ab/cold_first_view.py; samples in
+  bench/ab/results/oneoff/2026-10-16-dlfirstview-coldrestart.json, per-request
+  costs in -probes.json): the probes scan the window and share the 2 CPUs with
+  the chain. The heaviest of them was detectedLevelKeysRisk (311-325 CPU-ms of an
+  hour of rows: two level keys in a line, an escape in a level value, a brace
+  without its closing brace), whose two-keys patterns now run behind a filter of
+  phrases (logsqlTwiceFilter over detectedLevelKeyNames: one key name twice, or
+  two of the names, answered from VictoriaLogs' token index and a superset of
+  the patterns; 45 CPU-ms; a base of 11.8 KB or more, which would push the
+  longer text past -search.maxQueryLen, or a VictoriaLogs that refuses it as too
+  long, gets the probe without the gate), and the probes of the labels are
+  remembered apart from the level probes (cachedStatsPushdownRisk), so the chain
+  does not ask again what the stored-level query asked. A window with a row that has no stored level asks
   twice, the stored-level attempt first (it costs what main's query costs; its
   verdict is remembered for the base for five minutes so the next ask goes to
   the chain at once), and pays the chain with the three guard probes and the
