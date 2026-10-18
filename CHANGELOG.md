@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-10-18
+
 ### Fixed
 
 - **`sum without (...)` over a range function with `unwrap`, and over `rate` at
