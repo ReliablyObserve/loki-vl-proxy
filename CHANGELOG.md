@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.1] - 2026-10-18
+
 ### Changed
 
 - **The compatibility stack runs Grafana 13.2.3 and Logs Drilldown 2.6.0**
