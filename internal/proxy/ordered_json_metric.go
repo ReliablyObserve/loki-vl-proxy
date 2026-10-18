@@ -958,13 +958,6 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	// and the parse-risk probes read both keys, the probes with the stored
 	// value of name ignored because the scratch unpack reads the body anyway.
 	plain, allKeys, extracted, extractedKeys := splitPushdownKeys(unpack)
-	// The name_extracted pushdown needs the bucket edges of the stats range
-	// offset arg (VictoriaLogs v1.45+): without it a line on a bucket edge
-	// lands one bucket late, so older backends keep the raw evaluator these
-	// shapes always had (versions/stats-bucket-label-v1.45).
-	if len(extracted) > 0 && !p.supportsStatsRangeOffset() {
-		return nil, false, false, nil
-	}
 	// A stream label or structured metadata VictoriaLogs stores under another
 	// spelling (service_version as service.version) is read from that field:
 	// Loki gives such a label precedence over a parsed key of the same name.
@@ -974,7 +967,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 			stored[field] = vl
 		}
 	}
-	bucket, ok := p.slidingStatsBucket(start, step, plan.window)
+	bucket, ok := slidingStatsBucket(step, plan.window)
 	if !ok {
 		return nil, false, false, nil
 	}

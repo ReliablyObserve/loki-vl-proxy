@@ -188,7 +188,7 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 	if strings.TrimSpace(limit) != "" {
 		params.Set("limit", limit)
 	}
-	if search = strings.TrimSpace(search); search != "" && p.supportsMetadataSubstringFilter() {
+	if search = strings.TrimSpace(search); search != "" {
 		params.Set("q", search)
 		params.Set("filter", "substring")
 	}

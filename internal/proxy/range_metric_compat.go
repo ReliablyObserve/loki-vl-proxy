@@ -388,7 +388,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if strings.Contains(queryWithoutUnwrapGate(logsqlQuery), "| math ") {
 		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
-		if stepOk && hasOrigSpec && origSpec.Window > 0 && p.statsRangeIsTumbling(r, origSpec.Window, step) {
+		if stepOk && hasOrigSpec && origSpec.Window > 0 && statsRangeIsTumbling(origSpec.Window, step) {
 			spec, specOk := parseStatsCompatSpec(logsqlQuery)
 			// Parser stages without an explicit drop-error opt-in require the manual path
 			// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
@@ -418,7 +418,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		return false
 	}
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
-	rangeEqualsStep := p.statsRangeIsTumbling(r, origSpec.Window, step)
+	rangeEqualsStep := statsRangeIsTumbling(origSpec.Window, step)
 	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
 	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
 	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
@@ -452,26 +452,13 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 
 // statsRangeIsTumbling reports whether native step buckets answer a range
 // metric: only when the range equals the step, where one VictoriaLogs bucket is
-// exactly one Loki window, and the backend can place bucket edges on the
-// request's windows (tumblingBucketsAligned). With range < step a bucket also
-// holds the lines between windows, which Loki never counts, and with range >
-// step the windows overlap; both use the anchored window evaluator, for Grafana
-// Logs Drilldown requests too.
-func (p *Proxy) statsRangeIsTumbling(r *http.Request, window, step time.Duration) bool {
-	return step > 0 && window > 0 && window == step && p.tumblingBucketsAligned(r, window)
-}
-
-// tumblingBucketsAligned reports whether stats_query_range buckets of window can
-// cover the request's evaluation windows: whenever the backend honours the
-// offset arg (VictoriaLogs v1.45+, and an unknown version, which ignores the arg
-// at worst), otherwise only when the start is epoch-aligned to window, like
-// slidingStatsBucket.
-func (p *Proxy) tumblingBucketsAligned(r *http.Request, window time.Duration) bool {
-	if p.supportsStatsRangeOffset() {
-		return true
-	}
-	startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start"))
-	return ok && window > 0 && startNs%int64(window) == 0
+// exactly one Loki window (the stats_query_range offset arg places the bucket
+// edges on the request's windows). With range < step a bucket also holds the
+// lines between windows, which Loki never counts, and with range > step the
+// windows overlap; both use the anchored window evaluator, for Grafana Logs
+// Drilldown requests too.
+func statsRangeIsTumbling(window, step time.Duration) bool {
+	return step > 0 && window > 0 && window == step
 }
 
 func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
@@ -682,7 +669,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// fetchStart is the left edge of the first bucket (or raw fetch), and
 	// sampleShift moves bucket labels onto the window they hold.
 	fetchStart, sampleShift := startTS.Add(-origSpec.Window), time.Duration(0)
-	bucket, bucketsOK := p.slidingStatsBucket(startTS, step, origSpec.Window)
+	bucket, bucketsOK := slidingStatsBucket(step, origSpec.Window)
 	if origSpec.Window < step {
 		// Windows shorter than the step are disjoint. Keep only lines inside one,
 		// so a bucket per step, (t-step, t], holds exactly the window (t-range, t]
@@ -692,7 +679,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		spec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
 		rawSpec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
-		bucket, bucketsOK = p.slidingStatsBucket(startTS, step, step)
+		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
 	if p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
 		p.writeSlidingWindowStatsRange(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
@@ -1124,10 +1111,8 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 // lines the raw evaluator would transfer, and collectRangeMetricHits already
 // bounds the response bytes (an oversized response falls back to the raw
 // evaluator). ok is false below a 1ms bucket, where float response timestamps
-// cannot be snapped reliably, and when the backend cannot anchor bucket edges to
-// the request (stats_query_range offset, VictoriaLogs v1.45+) and the anchor is
-// not epoch-aligned; callers then use the raw-sample evaluator.
-func (p *Proxy) slidingStatsBucket(start time.Time, step, window time.Duration) (time.Duration, bool) {
+// cannot be snapped reliably; callers then use the raw-sample evaluator.
+func slidingStatsBucket(step, window time.Duration) (time.Duration, bool) {
 	bucket, rest := step, window
 	for rest > 0 {
 		bucket, rest = rest, bucket%rest
@@ -1135,18 +1120,15 @@ func (p *Proxy) slidingStatsBucket(start time.Time, step, window time.Duration) 
 	if bucket < time.Millisecond {
 		return 0, false
 	}
-	if !p.supportsStatsRangeOffset() && start.Add(-window).UnixNano()%int64(bucket) != 0 {
-		return 0, false
-	}
 	return bucket, true
 }
 
 // setSlidingStatsRangeParams requests buckets of hitStep whose edges sit at
-// start+k*hitStep. With offset support each bucket is (edge, edge+hitStep],
-// Loki's left-open, right-closed range boundary: VictoriaLogs buckets cover
-// [T, T+step) with edges at k*step-offset, so edges are shifted by 1ns. The end
-// is exclusive in VictoriaLogs and inclusive in Loki, hence end+1ns.
-func (p *Proxy) setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep time.Duration) {
+// start+k*hitStep. Each bucket is (edge, edge+hitStep], Loki's left-open,
+// right-closed range boundary: VictoriaLogs buckets cover [T, T+step) with edges
+// at k*step-offset, so edges are shifted by 1ns. The end is exclusive in
+// VictoriaLogs and inclusive in Loki, hence end+1ns.
+func setSlidingStatsRangeParams(params url.Values, start, end time.Time, hitStep time.Duration) {
 	params.Set("start", start.UTC().Format(time.RFC3339Nano))
 	params.Set("end", end.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
 	if hitStep%time.Second == 0 {
@@ -1154,10 +1136,8 @@ func (p *Proxy) setSlidingStatsRangeParams(params url.Values, start, end time.Ti
 	} else {
 		params.Set("step", strconv.FormatInt(int64(hitStep), 10)+"ns")
 	}
-	if p.supportsStatsRangeOffset() {
-		shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
-		params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
-	}
+	shift := ((start.UnixNano()+1)%int64(hitStep) + int64(hitStep)) % int64(hitStep)
+	params.Set("offset", strconv.FormatInt(-shift, 10)+"ns")
 }
 
 // snapSlidingBucketTimestamp maps a stats_query_range timestamp (float seconds)
@@ -1274,7 +1254,7 @@ func (p *Proxy) collectRangeMetricHits(
 
 	params := url.Values{}
 	params.Set("query", statsQuery)
-	p.setSlidingStatsRangeParams(params, start, end, hitStep)
+	setSlidingStatsRangeParams(params, start, end, hitStep)
 
 	// The detected_level chain is narrowed (a probe request) before a slot is
 	// taken, not while holding one.

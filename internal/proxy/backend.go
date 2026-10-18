@@ -145,6 +145,16 @@ func (p *Proxy) observeBackendVersionFromHeaders(headers http.Header) {
 		p.storeBackendVersion(candidate, semver)
 		return
 	}
+	// No version in the response: while it stays unknown (failed or pending
+	// startup probe) retry the metrics probe in the background. An unknown
+	// version behaves as the v1.49.0 floor; only the v1.50+ behaviour waits for
+	// the probe.
+	p.backendVersionMu.RLock()
+	known := p.backendVersionSemver != ""
+	p.backendVersionMu.RUnlock()
+	if !known {
+		p.maybeReprobeBackendVersion(time.Now())
+	}
 }
 
 func extractBackendSemver(raw string) string {
@@ -257,20 +267,19 @@ type backendCapabilities struct {
 	profile                   string
 	supportsStreamMetadata    bool
 	supportsDensePatternWin   bool
-	supportsMetadataSubstring bool
 	supportsColumnFieldValues bool // v1.50+: stream fields stored in column index; field_values == stream_field_values but 20x faster
 }
 
 func deriveBackendCapabilities(semver string) backendCapabilities {
 	switch {
 	case semverAtLeast(semver, 1, 50, 0):
-		return backendCapabilities{"vl-v1.50-plus", true, true, true, true}
+		return backendCapabilities{"vl-v1.50-plus", true, true, true}
 	case semverAtLeast(semver, 1, 49, 0):
-		return backendCapabilities{"vl-v1.49-plus", true, false, true, false}
+		return backendCapabilities{"vl-v1.49-plus", true, false, false}
 	case semverAtLeast(semver, 1, 30, 0):
-		return backendCapabilities{"vl-v1.30-plus", true, false, false, false}
+		return backendCapabilities{"vl-v1.30-plus", true, false, false}
 	default:
-		return backendCapabilities{"legacy-pre-v1.30", false, false, false, false}
+		return backendCapabilities{"legacy-pre-v1.30", false, false, false}
 	}
 }
 
@@ -290,9 +299,7 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 	p.backendCapabilityProfile = caps.profile
 	p.backendSupportsStreamMetadata = caps.supportsStreamMetadata
 	p.backendSupportsDensePatternWindowing = caps.supportsDensePatternWin
-	p.backendSupportsMetadataSubstring = caps.supportsMetadataSubstring
 	p.backendSupportsColumnFieldValues = caps.supportsColumnFieldValues
-	p.backendSupportsStatsRangeOffset = semverAtLeast(semver, 1, 45, 0)
 	if !p.backendVersionLogged {
 		p.backendVersionLogged = true
 		p.log.Info(
@@ -301,7 +308,6 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 			"backend.version.semver", semver,
 			"backend.capability_profile", p.backendCapabilityProfile,
 			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
-			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
 			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
 			"field_values.column_index", p.backendSupportsColumnFieldValues,
 			"service_name.derivation", serviceNameDerivationForm(logsql.CapabilitiesFor(semver)),
@@ -372,12 +378,6 @@ func (p *Proxy) supportsDensePatternWindowingForRequest(r *http.Request) bool {
 	return true
 }
 
-func (p *Proxy) supportsMetadataSubstringFilter() bool {
-	p.backendVersionMu.RLock()
-	defer p.backendVersionMu.RUnlock()
-	return p.backendSupportsMetadataSubstring
-}
-
 // supportsColumnIndexedFields returns true on VL v1.50+ where stream fields are
 // stored in the column index. On these backends field_values is equivalent to
 // stream_field_values but ~20x faster, so we prefer it for label value lookups.
@@ -390,24 +390,6 @@ func (p *Proxy) supportsColumnIndexedFields() bool {
 // backendVersionReprobeInterval spaces metrics version probes while the backend
 // version is still unknown.
 const backendVersionReprobeInterval = 5 * time.Minute
-
-// supportsStatsRangeOffset reports whether stats_query_range honours the offset
-// arg (VictoriaLogs v1.45+). Older releases silently ignore it and align buckets
-// to the epoch. An unknown version (failed or pending probe) is treated as
-// supported: the arg is then ignored rather than rejected, which is no worse
-// than the epoch-aligned buckets such a backend has anyway, while buffering raw
-// log rows instead would scale the query with the stored data. While the version
-// is unknown, the metrics probe is retried in the background.
-func (p *Proxy) supportsStatsRangeOffset() bool {
-	p.backendVersionMu.RLock()
-	known, supported := p.backendVersionSemver != "", p.backendSupportsStatsRangeOffset
-	p.backendVersionMu.RUnlock()
-	if !known {
-		p.maybeReprobeBackendVersion(time.Now())
-		return true
-	}
-	return supported
-}
 
 // maybeReprobeBackendVersion starts at most one background metrics probe per
 // backendVersionReprobeInterval, bounded by the version check timeout, so a
@@ -465,7 +447,6 @@ func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadat
 		p.backendCapabilityProfile = "legacy-probed-pre-v1.30"
 	}
 	p.backendSupportsStreamMetadata = supportsStreamMetadata
-	p.backendSupportsMetadataSubstring = supportsMetadataSubstring
 	// Keep dense-windowing and column-field-values conservative without explicit semver evidence.
 	p.backendSupportsDensePatternWindowing = false
 	p.backendSupportsColumnFieldValues = false
@@ -476,7 +457,6 @@ func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadat
 			"backend.version.source", source,
 			"backend.capability_profile", p.backendCapabilityProfile,
 			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
-			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
 			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
 		)
 	}

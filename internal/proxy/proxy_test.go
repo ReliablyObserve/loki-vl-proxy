@@ -290,43 +290,6 @@ func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
 	}
 }
 
-func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T) {
-	var receivedQ, receivedFilter string
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/field_names":
-			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/stream_field_names":
-			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/stream_field_values":
-			// v1.48 supports stream_field_values (stream endpoints exist on every supported version)
-			// but NOT the substring filter=substring param (added in v1.49).
-			receivedQ = r.URL.Query().Get("q")
-			receivedFilter = r.URL.Query().Get("filter")
-			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-	}))
-	defer vlBackend.Close()
-
-	p := newTestProxy(t, vlBackend.URL)
-	h := http.Header{}
-	h.Set("Server", "VictoriaLogs/v1.48.0")
-	p.observeBackendVersionFromHeaders(h)
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/label/app/values?search=arg", nil)
-	p.handleLabelValues(w, r)
-
-	if receivedQ != "" {
-		t.Fatalf("expected q to stay unset for VictoriaLogs < v1.49.0, got %q", receivedQ)
-	}
-	if receivedFilter != "" {
-		t.Fatalf("expected filter to stay unset for VictoriaLogs < v1.49.0, got %q", receivedFilter)
-	}
-}
-
 func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1493,29 +1456,8 @@ func TestBackendVersionDetection_OlderVersionKeepsConservativeProfile(t *testing
 	if !p.supportsStreamMetadataEndpoints() {
 		t.Fatalf("expected stream metadata endpoints enabled for VictoriaLogs >= v1.30.0")
 	}
-	if !p.supportsMetadataSubstringFilter() {
-		t.Fatalf("expected metadata substring filter enabled for VictoriaLogs >= v1.49.0")
-	}
 	if got := p.backendCapabilityProfile; got != "vl-v1.49-plus" {
 		t.Fatalf("expected capability profile vl-v1.49-plus, got %q", got)
-	}
-}
-
-func TestBackendVersionDetection_V148KeepsSubstringFilterDisabled(t *testing.T) {
-	p := newTestProxy(t, "http://unused")
-
-	h := http.Header{}
-	h.Set("Server", "VictoriaLogs/v1.48.0")
-	p.observeBackendVersionFromHeaders(h)
-
-	if got := p.backendVersionSemver; got != "v1.48.0" {
-		t.Fatalf("expected semver v1.48.0 from headers, got %q", got)
-	}
-	if p.supportsMetadataSubstringFilter() {
-		t.Fatalf("expected metadata substring filter disabled for VictoriaLogs < v1.49.0")
-	}
-	if got := p.backendCapabilityProfile; got != "vl-v1.30-plus" {
-		t.Fatalf("expected capability profile vl-v1.30-plus, got %q", got)
 	}
 }
 
@@ -1537,6 +1479,53 @@ func TestBackendVersionDetection_LegacyVersionDisablesStreamMetadataFastPath(t *
 	}
 	if got := p.backendCapabilityProfile; got != "legacy-pre-v1.30" {
 		t.Fatalf("expected capability profile legacy-pre-v1.30, got %q", got)
+	}
+}
+
+// An unknown backend version (no header, no /metrics) behaves as the v1.49.0
+// floor: the metadata substring filter is forwarded to VictoriaLogs.
+func TestMetadataQueryParams_UnknownVersionForwardsSubstringFilter(t *testing.T) {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
+		t.Run("backend "+version, func(t *testing.T) {
+			p := newTestProxy(t, "http://unused")
+			if version != "" {
+				p.storeBackendVersion(version, version)
+			}
+			params, err := p.metadataQueryParams(context.Background(), `{app="api"}`, "", "", "", " err ")
+			if err != nil {
+				t.Fatalf("metadataQueryParams: %v", err)
+			}
+			if params.Get("q") != "err" || params.Get("filter") != "substring" {
+				t.Fatalf("expected q=err and filter=substring, got %v", params)
+			}
+			params, err = p.metadataQueryParams(context.Background(), `{app="api"}`, "", "", "", "")
+			if err != nil {
+				t.Fatalf("metadataQueryParams: %v", err)
+			}
+			if _, ok := params["q"]; ok || params.Get("filter") != "" {
+				t.Fatalf("expected no q/filter without a search, got %v", params)
+			}
+		})
+	}
+}
+
+// ip() label filters translate to the native ipv4_range() whatever backend
+// version is known, an unknown one included.
+func TestTranslateIPFilter_UnknownVersionEmitsIPv4Range(t *testing.T) {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
+		t.Run("backend "+version, func(t *testing.T) {
+			p := newTestProxy(t, "http://unused")
+			if version != "" {
+				p.storeBackendVersion(version, version)
+			}
+			got, err := p.translateQueryWithContext(context.Background(), `{app="api"} | addr = ip("10.0.0.0/8")`)
+			if err != nil {
+				t.Fatalf("translate: %v", err)
+			}
+			if !strings.Contains(got, "ipv4_range(10.0.0.0, 10.255.255.255)") {
+				t.Fatalf("expected ipv4_range(), got %q", got)
+			}
+		})
 	}
 }
 
@@ -1721,9 +1710,6 @@ func TestBackendVersionCompatibilityGate_EndpointProbeInfersCapabilities(t *test
 	}
 	if !p.supportsStreamMetadataEndpoints() {
 		t.Fatalf("expected stream metadata support inferred via endpoint probe")
-	}
-	if !p.supportsMetadataSubstringFilter() {
-		t.Fatalf("expected metadata substring support inferred via endpoint probe")
 	}
 	if p.supportsDensePatternWindowing() {
 		t.Fatalf("expected dense windowing to remain conservative without explicit semver")

@@ -88,9 +88,6 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 			return false
 		}
 	}
-	if !p.supportsStatsRangeOffset() {
-		return false
-	}
 	// Ranking every series only matters when grouping can produce more series
 	// than -max-stats-query-series; an aggregate-all topk keeps its fast path.
 	if _, ranked := rangeTopKFromContext(ctx); ranked && len(spec.GroupBy) > 0 {

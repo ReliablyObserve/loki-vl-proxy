@@ -1253,7 +1253,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 	spec bareParserMetricCompatSpec,
 	evalStart, evalEnd, stepNs int64,
 ) (series map[string]manualSeriesSamples, ok bool, err error) {
-	bucket, ok := p.slidingStatsBucket(time.Unix(0, evalStart), time.Duration(stepNs), spec.rangeWindow)
+	bucket, ok := slidingStatsBucket(time.Duration(stepNs), spec.rangeWindow)
 	if !ok {
 		return nil, false, nil
 	}
@@ -1266,7 +1266,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 	fetchStart := time.Unix(0, evalStart).Add(-spec.rangeWindow)
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
-	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
+	setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	// Group by declared stream label fields so we get per-stream series.
 	p.configMu.RLock()
@@ -1340,7 +1340,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	statsAggFunc, pre string,
 	evalStart, evalEnd, stepNs int64,
 ) (seriesMap map[string]manualSeriesSamples, ok bool, err error) {
-	bucket, ok := p.slidingStatsBucket(time.Unix(0, evalStart), time.Duration(stepNs), spec.rangeWindow)
+	bucket, ok := slidingStatsBucket(time.Duration(stepNs), spec.rangeWindow)
 	if !ok {
 		return nil, false, nil
 	}
@@ -1360,7 +1360,7 @@ func (p *Proxy) fetchBareParserStatsBuckets(
 	}
 	params := url.Values{}
 	params.Set("query", logsqlQuery+pre+" | stats by ("+group+") "+statsAggFunc)
-	p.setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
+	setSlidingStatsRangeParams(params, fetchStart, time.Unix(0, evalEnd), bucket)
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {

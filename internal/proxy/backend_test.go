@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -320,4 +321,42 @@ func TestBackendVersionCompatibilityGate_DefaultFloorIsV149(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A response without a version header retries the /metrics version probe only
+// while the version is unknown: once it is known, the probe never runs again.
+func TestBackendVersionReprobe_OnlyWhileVersionUnknown(t *testing.T) {
+	var probes atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			probes.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	waitProbes := func(want int32) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for probes.Load() < want && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(50 * time.Millisecond) // let a probe that should not run show up
+		if got := probes.Load(); got != want {
+			t.Fatalf("expected %d /metrics probes, got %d", want, got)
+		}
+	}
+	elapsed := func(p *Proxy) {
+		p.backendVersionProbedAt.Store(time.Now().Add(-backendVersionReprobeInterval).UnixNano())
+	}
+
+	p := newTestProxy(t, backend.URL)
+	elapsed(p)
+	p.observeBackendVersionFromHeaders(http.Header{"X-Other": {"1"}})
+	waitProbes(1)
+
+	p.storeBackendVersion("VictoriaLogs/v1.52.0", "v1.52.0")
+	elapsed(p)
+	p.observeBackendVersionFromHeaders(http.Header{"X-Other": {"1"}})
+	waitProbes(1)
 }

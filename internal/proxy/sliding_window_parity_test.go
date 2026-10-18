@@ -649,35 +649,33 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 	}
 }
 
-// VictoriaLogs before v1.45 ignores the stats_query_range offset arg and aligns
-// buckets to the epoch, and a failed version probe leaves the release unknown.
-// A release known to be older keeps buckets only for epoch-aligned grids (a line
-// exactly on a window edge then counts in the neighbouring window, a documented
-// limit, so these fixtures keep lines off the edges); other grids use the raw
-// evaluator instead of silently misaligned buckets. An unknown version stays on
-// buckets: the arg is ignored at worst, while raw rows scale with the stored
-// data. This includes the range == step topk path.
-func TestSlidingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
+// Bucket edges come from the stats_query_range offset arg on every supported
+// backend, and a failed version probe leaves the release unknown, which behaves
+// as the v1.49.0 floor: epoch-aligned and unaligned grids alike use anchored
+// buckets and never the raw evaluator. This includes the range == step topk
+// path.
+func TestSlidingRangeMetric_AnchoredBucketsOnFloorAndUnknownVersion(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	var lines []slidingFixtureLine
 	for i := 0; i < 180; i++ {
-		lines = append(lines, slidingFixtureLine{ts: s0.Add(time.Duration(i)*10*time.Second + 3*time.Second).UnixNano(), app: "old-vl", msg: "tick"})
+		lines = append(lines, slidingFixtureLine{ts: s0.Add(time.Duration(i)*10*time.Second + 3*time.Second).UnixNano(), app: "floor-vl", msg: "tick"})
 	}
-	sliding := `sum(count_over_time({app="old-vl"}[2m]))`
-	ranked := `topk(1, sum by (app) (count_over_time({app="old-vl"}[1m])))`
-	for _, version := range []string{"v1.44.0", ""} {
+	sliding := `sum(count_over_time({app="floor-vl"}[2m]))`
+	ranked := `topk(1, sum by (app) (count_over_time({app="floor-vl"}[1m])))`
+	for _, version := range []string{"v1.49.0", ""} {
 		for _, tc := range []struct {
 			name, query string
 			byApp       bool
 			window      time.Duration
 			start       time.Time
-			unaligned   bool
-			ranked      bool // topk: one stats call with in-query _time buckets
+			wantOffset  string
 		}{
-			{name: "sliding epoch-aligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5 * time.Minute)},
-			{name: "sliding unaligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), unaligned: true},
-			{name: "topk range equals step epoch-aligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5 * time.Minute), ranked: true},
-			{name: "topk range equals step unaligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), unaligned: true, ranked: true},
+			{name: "sliding epoch-aligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5 * time.Minute), wantOffset: "-1ns"},
+			{name: "sliding unaligned grid", query: sliding, window: 2 * time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), wantOffset: "-30000000001ns"},
+			// The topk path buckets inside the query (stats by (_time:...)), so
+			// its anchor is the positive complement of the request offset.
+			{name: "topk range equals step epoch-aligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5 * time.Minute), wantOffset: "59999999999"},
+			{name: "topk range equals step unaligned grid", query: ranked, byApp: true, window: time.Minute, start: s0.Add(5*time.Minute + 30*time.Second), wantOffset: "29999999999"},
 		} {
 			t.Run(fmt.Sprintf("version=%q/%s", version, tc.name), func(t *testing.T) {
 				srv, fake := newSlidingFakeVL(t, lines)
@@ -689,34 +687,12 @@ func TestSlidingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
 				got := runSlidingQueryRange(t, p, tc.query, tc.start, end, time.Minute, nil)
 				assertSlidingSeriesEqual(t, tc.query, lokiSlidingReference(lines, "count_over_time", tc.byApp, 0, tc.start, end, time.Minute, tc.window), got)
 				calls, raw := fake.snapshot()
-				if tc.unaligned && version != "" {
-					if len(calls) != 0 || raw == 0 {
-						t.Fatalf("known old release, unaligned grid: expected the raw evaluator, got %+v stats calls and %d raw scans", calls, raw)
-					}
-					return
-				}
-				// The topk path buckets inside the query (stats by (_time:...)), so
-				// its anchor is the positive complement of the request offset.
-				wantStep, wantOffset := "60s", ""
-				if tc.ranked && version == "" {
-					// In-query _time buckets only where the anchor is honoured;
-					// a known-old release gets plain epoch buckets.
+				wantStep := "60s"
+				if strings.HasPrefix(tc.name, "topk") {
 					wantStep = "1m0s"
 				}
-				if version == "" { // unknown version: anchored buckets, arg ignored at worst
-					switch {
-					case tc.ranked && tc.unaligned:
-						wantOffset = "29999999999"
-					case tc.ranked:
-						wantOffset = "59999999999"
-					case tc.unaligned:
-						wantOffset = "-30000000001ns"
-					default:
-						wantOffset = "-1ns"
-					}
-				}
-				if raw != 0 || len(calls) != 1 || calls[0].step != wantStep || calls[0].offset != wantOffset {
-					t.Fatalf("expected one stats call with %s buckets and offset %q, got %+v and %d raw scans", wantStep, wantOffset, calls, raw)
+				if raw != 0 || len(calls) != 1 || calls[0].step != wantStep || calls[0].offset != tc.wantOffset {
+					t.Fatalf("expected one stats call with %s buckets and offset %q, got %+v and %d raw scans", wantStep, tc.wantOffset, calls, raw)
 				}
 			})
 		}

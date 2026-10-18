@@ -56,7 +56,6 @@ type State struct {
 	backendCapabilityProfile             *string
 	backendSupportsStreamMetadata        *bool
 	backendSupportsDensePatternWindowing *bool
-	backendSupportsMetadataSubstring     *bool
 	backendVersionLogged                 *bool
 
 	// labelValuesIndexMu guards the per-tenant label-values indexed cache.

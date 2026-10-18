@@ -210,27 +210,23 @@ func TestOrderedJSONExtractedMetricStructuredMetadataCollision(t *testing.T) {
 	}
 }
 
-// The name_extracted pushdown needs the stats range offset arg (VictoriaLogs
-// v1.45+) for its bucket edges; an older backend keeps the raw-row evaluator
-// these shapes always had, with the same answer, and an unknown version
-// stays on the pushdown.
+// The name_extracted pushdown runs on every supported backend and on an unknown
+// version (which behaves as the v1.49.0 floor): the stats range offset arg
+// places its bucket edges, so it never falls back to the raw-row evaluator.
 // conformance: parser-error-and-label-collision, semantics/json-extracted-metric-pushdown, versions/stats-bucket-label-v1.45
-func TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset(t *testing.T) {
+func TestOrderedJSONExtractedMetricPushdownOnSupportedBackends(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	rows := extractedPushdownFixture(s0)
 	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
 	query := `sum by (level) (count_over_time({app="api"} | json | level_extracted!="" [1m]))`
-	for _, tc := range []struct {
-		version string
-		pushed  bool
-	}{{"", true}, {"v1.40.0", false}, {"v1.44.2", false}, {"v1.45.0", true}, {"v1.52.0", true}} {
-		t.Run("backend "+tc.version, func(t *testing.T) {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
+		t.Run("backend "+version, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)
 			p := newFilterPushdownProxy(t, srv.URL)
 			fake.stored = p.labelTranslator.ToVL
 			// newSlidingTestProxy stored v1.50.0 first and the first version wins.
 			p.backendVersionMu.Lock()
-			p.backendVersionSemver, p.backendSupportsStatsRangeOffset = tc.version, tc.version != "" && semverAtLeast(tc.version, 1, 45, 0)
+			p.backendVersionSemver = version
 			p.backendVersionMu.Unlock()
 			plan, ok := compileOrderedJSONMetric(query)
 			if !ok || !plan.pushdown {
@@ -243,11 +239,8 @@ func TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset(t *testing.T) {
 			}
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
-			if tc.pushed && (fake.raw != 0 || len(fake.stats) != 1) {
+			if fake.raw != 0 || len(fake.stats) != 1 {
 				t.Fatalf("expected the stats pushdown: raw=%d stats=%d", fake.raw, len(fake.stats))
-			}
-			if !tc.pushed && (fake.raw != 1 || len(fake.stats) != 0) {
-				t.Fatalf("expected the raw evaluator below v1.45: raw=%d stats=%d", fake.raw, len(fake.stats))
 			}
 		})
 	}
