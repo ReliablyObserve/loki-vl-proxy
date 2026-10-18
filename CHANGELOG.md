@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The compatibility stack runs Grafana 13.2.3 and Logs Drilldown 2.6.0**
+  (were Grafana 13.2.1 and Drilldown 2.5.2) in the e2e-compat stack, the root
+  compose file, the review override and the compatibility workflows; the
+  previous-family smoke runs Grafana 12.4.12 (was 12.4.10). The VictoriaLogs
+  datasource stays on 0.32.0. `compatibility-matrix.json` pins Drilldown 2.6.0
+  at commit `e894c0eb` and keeps the previous pins in the datasource and
+  Drilldown contract matrices. Drilldown 2.6.0 keeps the Patterns tab
+  initialisation guard of 2.0.4 to 2.5.2, so the patterns-autodetect variant
+  stays the default datasource; its volume aggregated by other fields is behind
+  the `drilldown.logs.logsVolumeByField` feature flag, off by default.
+
 ## [2.18.0] - 2026-10-18
 
 ### Fixed

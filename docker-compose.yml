@@ -51,7 +51,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:13.2.1
+    image: grafana/grafana:13.2.3
     container_name: grafana-proxy-test
     ports:
       - "3000:3000"

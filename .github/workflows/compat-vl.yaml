@@ -34,7 +34,7 @@ jobs:
     env:
       LOKI_IMAGE: grafana/loki:3.7.7
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:13.2.1
+      GRAFANA_IMAGE: grafana/grafana:13.2.3
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -75,7 +75,7 @@ jobs:
         vl_version: ${{ fromJson(needs.vl-matrix-source.outputs.vl_versions) }}
     env:
       LOKI_IMAGE: grafana/loki:3.7.7
-      GRAFANA_IMAGE: grafana/grafana:13.2.1
+      GRAFANA_IMAGE: grafana/grafana:13.2.3
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7

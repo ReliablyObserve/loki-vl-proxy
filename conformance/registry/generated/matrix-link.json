@@ -38,7 +38,7 @@
   "versions": {
     "grafana": {
       "matrix": [],
-      "pinned": "13.2.1"
+      "pinned": "13.2.3"
     },
     "grafana_client_detection": {
       "matrix": [],
@@ -46,8 +46,10 @@
     },
     "grafana_loki_datasource_contract": {
       "matrix": [
+        "13.2.3",
         "13.2.1",
         "13.0.1",
+        "12.4.12",
         "12.4.10",
         "12.4.2",
         "12.4.1"
@@ -56,6 +58,7 @@
     },
     "logs_drilldown_contract": {
       "matrix": [
+        "2.6.0",
         "2.5.2",
         "2.5.1",
         "2.5.0",
@@ -82,7 +85,7 @@
         "1.0.35",
         "1.0.34"
       ],
-      "pinned": "2.5.2"
+      "pinned": "2.6.0"
     },
     "loki": {
       "matrix": [
