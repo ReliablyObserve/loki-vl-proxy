@@ -28,8 +28,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.2.1` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
-| `12.4.10` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
+| `13.2.3` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
+| `12.4.12` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
 | `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
 
@@ -37,7 +37,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `2.5.2` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; label/field filter inputs located by placeholder; patterns tab requires patterns-autodetect as Grafana default |
+| `2.6.0` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; label/field filter inputs located by placeholder; patterns tab requires patterns-autodetect as Grafana default; volume by other fields is behind the `drilldown.logs.logsVolumeByField` feature flag (off by default) |
+| `2.5.2` | Scheduled and manual contract matrix | Previous pinned contract |
 | `2.2.0`–`2.5.1` | Scheduled and manual contract matrix | Mixed parser expression in `MIXED_FORMAT_EXPR` |
 | `2.1.0`–`2.1.5` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `2.0.4` | Scheduled and manual contract matrix | Previous pinned contract; patterns tab requires patterns-autodetect as Grafana default |
@@ -226,9 +227,9 @@ These profiles are matrix-level compatibility profiles (contract and CI guidance
 
 ## Known Issues
 
-### Drilldown 2.0.4 through 2.5.2: Patterns Tab Initialization
+### Drilldown 2.0.4 through 2.6.0: Patterns Tab Initialization
 
-Drilldown 2.0.4 through 2.5.2 contain a bug in `ServiceScene.subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:
+Drilldown 2.0.4 through 2.6.0 contain a bug in `ServiceScene.subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:
 
 - If the Grafana default datasource has `pattern_ingester_enabled=false` in `/loki/api/v1/drilldown-limits`, `$patternsData` is set to `null`.
 - Switching to a datasource where `pattern_ingester_enabled=true` does NOT re-show the tab because the `void 0 === null` guard treats `null` as "already initialized".
@@ -241,7 +242,7 @@ In the e2e-compat compose stack, `loki-vl-proxy-patterns-autodetect` is set as `
 
 Potential next family move:
 
-- current: `2.x` (pinned: `2.5.2`)
+- current: `2.x` (pinned: `2.6.0`)
 - next expected family to evaluate: `3.0.x` when released
 
 Promotion criteria for a new family:

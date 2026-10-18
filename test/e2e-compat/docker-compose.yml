@@ -1091,7 +1091,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:13.2.1}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.2.3}
     container_name: e2e-grafana
     ports:
       - "3002:3000"
@@ -1105,7 +1105,7 @@ services:
       # Playwright selectors — deterministically breaking e2e-ui (drilldown-core)
       # and (drilldown-multitenant) in CI while a cached older plugin still passes
       # locally. Bump this pin deliberately alongside any selector updates.
-      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.32.0,grafana-lokiexplore-app@2.5.2
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.32.0,grafana-lokiexplore-app@2.6.0
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro

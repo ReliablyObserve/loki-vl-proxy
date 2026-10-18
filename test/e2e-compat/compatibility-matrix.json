@@ -92,7 +92,7 @@
     },
     "grafana": {
       "image_repo": "grafana/grafana",
-      "pinned_version": "13.2.1",
+      "pinned_version": "13.2.3",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
       "support_window": {
         "policy": "latest_full_plus_current_and_previous_smoke",
@@ -103,18 +103,18 @@
       },
       "runtime_profiles": [
         {
-          "version": "13.2.1",
+          "version": "13.2.3",
           "profile": "full",
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "13.2.1",
+          "version": "13.2.3",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "12.4.10",
+          "version": "12.4.12",
           "profile": "previous_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
@@ -157,8 +157,10 @@
         "previous_family": "12.x"
       },
       "matrix_versions": [
+        "13.2.3",
         "13.2.1",
         "13.0.1",
+        "12.4.12",
         "12.4.10",
         "12.4.2",
         "12.4.1"
@@ -196,8 +198,8 @@
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "2.5.2",
-      "pinned_commit": "7587eede6a3b0b26feb74281997d1f780cfd58c2",
+      "pinned_version": "2.6.0",
+      "pinned_commit": "e894c0eb6a6d3924b1cdba5aca4bcaccf51cab05",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
@@ -205,6 +207,7 @@
         "previous_family": "1.0.x"
       },
       "matrix_versions": [
+        "2.6.0",
         "2.5.2",
         "2.5.1",
         "2.5.0",
@@ -355,7 +358,8 @@
             "2.4.0",
             "2.5.0",
             "2.5.1",
-            "2.5.2"
+            "2.5.2",
+            "2.6.0"
           ],
           "focus": [
             "mixed parser expression via MIXED_FORMAT_EXPR",
