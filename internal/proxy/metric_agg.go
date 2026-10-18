@@ -271,10 +271,20 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
+	if innerIsBinary {
+		// The operands of a binary expression fold and are limited on their own.
+		withoutLabels = nil
+	}
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
+		r = p.withWithoutFold(r)
+	}
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -299,7 +309,13 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	if !dispatched {
 		if isStatsQuery(translatedInner) {
-			p.proxyStatsQuery(sc, r, translatedInner)
+			statsR := r
+			if foldWithout {
+				// The ranking wraps the folded series: the stats query must not apply
+				// it to the per-stream rows, which hold a different set than the fold.
+				statsR = cloneMetricQueryRequest(r, postAgg.inner)
+			}
+			p.proxyStatsQuery(sc, statsR, translatedInner)
 		} else {
 			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
 			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -308,7 +324,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutOp)
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -325,6 +341,14 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	result := applyInstantVectorPostAggregation(bw.body, postAgg)
+	if foldWithout {
+		var capErr error
+		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
+			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			return
+		}
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -344,10 +368,21 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
+	if parsedInner, _ := logqlpkg.Parse(postAgg.inner); parsedInner != nil {
+		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
+			// The operands of a binary expression fold on their own.
+			withoutLabels = nil
+		}
+	}
+	foldWithout = foldWithout && len(withoutLabels) > 0
+	if foldWithout {
+		r = p.withWithoutFold(r)
+	}
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
@@ -386,7 +421,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	if len(withoutLabels) > 0 {
-		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutAggregationOp(originalQuery))
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels, withoutOp)
 	}
 
 	if sc.code >= http.StatusBadRequest {
@@ -403,6 +438,14 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	result := applyMatrixPostAggregation(bw.body, postAgg)
+	if foldWithout {
+		var capErr error
+		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
+			p.writeError(w, http.StatusBadRequest, capErr.Error())
+			p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			return
+		}
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")

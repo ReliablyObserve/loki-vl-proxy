@@ -36,10 +36,6 @@ func (w *bufferedResponseWriter) WriteHeader(code int) {
 	w.code = code
 }
 
-// applyWithoutGrouping removes excluded labels from metric results and re-aggregates.
-// This implements proper `without(label1, label2)` semantics:
-// - VL returns results with all labels
-// - We remove the excluded labels and sum values for series that now share the same key
 // withoutAggregationOp returns the outer aggregation of a `<op> without (...)`
 // query, which decides how the series that share a label set are combined.
 func withoutAggregationOp(logql string) string {
@@ -52,6 +48,19 @@ func withoutAggregationOp(logql string) string {
 		return ""
 	}
 	return strings.ToLower(string(aggregation.Op))
+}
+
+// withoutFoldOp returns the operator that combines the rows sharing a label set
+// after a `without` marker's labels are dropped (see ParseWithoutMarker), and
+// whether the query is one the proxy folds from a row per stream: a sum, min,
+// max, avg or count without, the outermost aggregation of the query. The marker
+// of any other query leaves the answer to the aggregation of the whole query
+// (logql), as it was before the fold.
+func withoutFoldOp(markerOp, logql string) (op string, fold bool) {
+	if markerOp != "" {
+		return markerOp, true
+	}
+	return withoutAggregationOp(logql), false
 }
 
 // withoutMerge is how the values of the series that share a label set after
@@ -99,10 +108,51 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 	}
 }
 
+// withWithoutFold marks a request whose series the proxy folds by `without` once
+// VictoriaLogs has answered (applyWithoutGrouping): VictoriaLogs returns a row
+// per stream, since a LogsQL `by` cannot name every label but the excluded ones,
+// and Loki counts max_query_series on the folded answer
+// (pkg/logql/engine.go:536-548 and :575-590 JoinSampleVector). It reuses
+// foldedSumKey, the mark of an ungrouped sum folded afterwards: the reads before
+// the fold are bounded by the raw-row budget (-manual-range-metric-row-limit)
+// unless the tenant's limit is lower, the budget's error is what they answer,
+// and capWithoutFold applies the tenant's limit to the answer.
+func (p *Proxy) withWithoutFold(r *http.Request) *http.Request {
+	if scope, _ := r.Context().Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil {
+		// The budget bounds the reads before the fold unless the tenant's limit is
+		// the lower of the two, which then stays the bound (equal limits: the
+		// budget, which is what the request is reading under).
+		if budget, err := p.manualMetricRowBudget(); err == nil && budget >= p.requestQueryLimits(r.Context()).MaxQuerySeries {
+			scope.foldBudget = budget
+		}
+	}
+	ctx := context.WithValue(r.Context(), withoutFoldKey{}, true)
+	return r.WithContext(context.WithValue(ctx, foldedSumKey{}, true))
+}
+
+// withoutFoldKey marks a request whose `without` the proxy folds
+// (withWithoutFold), unlike foldedSumKey, which an ungrouped sum sets too and
+// the series limit checks clear. Only such a request names the labels an
+// extraction list extracts in its series (withParsedGroupLabels).
+type withoutFoldKey struct{}
+
+// capWithoutFold applies max_query_series to the folded answer of a
+// withWithoutFold request: Loki's error for a plain client, the busiest series
+// with Loki's warning for Logs Drilldown.
+func (p *Proxy) capWithoutFold(ctx context.Context, body []byte) ([]byte, error) {
+	ctx = context.WithValue(ctx, foldedSumKey{}, false)
+	return capSeriesToLimit(ctx, body, p.resolvedMaxStatsQuerySeries(ctx))
+}
+
 // withoutAllLabels, as an excluded label, drops every label: the series of the
 // response fold into one, an aggregation with no by() or without().
 const withoutAllLabels = "*"
 
+// applyWithoutGrouping removes excluded labels from metric results and folds the
+// series that now share a label set with op, the `without` aggregation:
+//   - VL returns a row per stream, with all its labels
+//   - the excluded labels are removed and the values of the series that share the
+//     key are combined as op says (sum when it is unknown)
 func applyWithoutGrouping(body []byte, excludeLabels []string, op string) []byte {
 	var resp struct {
 		Status string `json:"status"`

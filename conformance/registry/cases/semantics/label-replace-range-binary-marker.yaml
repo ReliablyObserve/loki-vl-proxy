@@ -1,0 +1,44 @@
+id: semantics/label-replace-range-binary-marker
+title: label_replace around a binary expression on query_range sends the binary marker to VictoriaLogs and answers no series or an error (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `label_replace(sum by (ns) (rate({app="payment-service"}[5m])) / sum by (ns) (rate({app="payment-service"}[5m])), "dst", "$1", "ns", "(.*)")`
+  on query_range reaches VictoriaLogs as a stats query starting with the
+  proxy's `__binary__:` marker, which VictoriaLogs cannot parse; the client
+  gets an error (here the stub backend rejects it as VictoriaLogs' parser does,
+  400 `cannot parse query`, and the proxy answers 502 `backend returned 400: cannot parse query`).
+  Loki evaluates the binary expression and replaces the label. The instant
+  query strips the transform before routing (stripLabelTransforms in handleQuery) and
+  answers; handleQueryRange never calls it. Measured through the handlers against a stub backend that rejects the marker (TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, query_range over 10 minutes): Loki answers three series (error, info, warn, each valued 1 with `dst`); the proxy answers 200 with no series, VictoriaLogs v1.52.0 not failing on the marker the way the stub does. The registered request uses the `level` stream label of the generator data.
+
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'label_replace(sum by (level) (rate({service_name="payment-service"}[5m])) / sum by (level) (rate({service_name="payment-service"}[5m])), "dst", "$1", "level", "(.*)")'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, series]
+  expect: |
+    The ratio per level with dst on every series.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy handleQueryRange (stripLabelTransforms for a label transform around a binary expression)'
+  loki: 'pkg/logql/evaluator.go:1275-1310 LabelReplaceEvaluator.Next over the binary vector'
+  proxy: 'the binary marker reaches VictoriaLogs; an empty matrix from VictoriaLogs v1.52.0, 502 from a backend that rejects the query'
+  planned_test: 'TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker (internal/proxy); an e2e test vs Loki in group semantics when fixed'
+  note: 'Related: semantics/label-replace-instant-vector, semantics/label-replace-new-label.'
+  clusters: []

@@ -459,6 +459,65 @@ func TestSeriesLimit_SlidingWindowStatsFollowsLoki(t *testing.T) {
 	}
 }
 
+// A request that folds its series afterwards (a `without` aggregation reads a
+// row per stream, withWithoutFold) must not have the sliding window evaluator
+// cut those series with the tenant's limit before the fold: Loki counts
+// max_query_series on the folded answer, which capWithoutFold applies. The
+// evaluator takes the same bound as the other routes (resolvedMaxStatsQuerySeries).
+//
+// conformance: series-limits-and-partial-results, limits/series-limit-error
+// conformance: loki_api_v1_query_range
+func TestSeriesLimit_SlidingWindowStatsKeepsTheStreamsOfAFoldingRequest(t *testing.T) {
+	end := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
+	rng := 24 * time.Hour
+	step := rng / 1000
+	start := end.Add(-rng)
+	var rows []emulatedRow
+	for _, at := range []time.Time{start.Add(time.Hour), end.Add(-time.Hour)} {
+		for i := 0; i < 6; i++ {
+			for k := 0; k <= i; k++ {
+				rows = append(rows, emulatedRow{ts: at.Add(time.Duration(k) * time.Second).UnixNano(), pod: fmt.Sprintf("p%d", i)})
+			}
+		}
+	}
+	spec := statsCompatSpec{BaseQuery: `app:="api"`, GroupBy: []string{"pod"}, Func: "count_over_time"}
+	run := func(t *testing.T, folding bool) *httptest.ResponseRecorder {
+		emu := &vlStatsRangeEmulator{t: t, rows: rows}
+		srv := httptest.NewServer(emu)
+		defer srv.Close()
+		p := newSlidingTestProxy(t, srv.URL)
+		p.maxStatsQuerySeries = 2
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range", nil)
+		req, _ = withSeriesLimitScope(req)
+		if folding {
+			p.rangeMetricRowLimit = 1000
+			req = p.withWithoutFold(req)
+		}
+		rec := httptest.NewRecorder()
+		p.writeSlidingWindowStatsRange(rec, req.Context(), spec, "count_over_time", "__count__", start, end, step, 5*time.Minute)
+		emu.mu.Lock()
+		defer emu.mu.Unlock()
+		if len(emu.calls) == 0 || emu.rawCalls != 0 {
+			t.Fatalf("folding=%v: expected the sliding window stats route, got %d stats pipes and %d raw fetches", folding, len(emu.calls), emu.rawCalls)
+		}
+		return rec
+	}
+	// Control: an ordinary request keeps the tenant's limit on the six series.
+	if rec := run(t, false); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "maximum number of series (2)") {
+		t.Fatalf("an ordinary request over the limit: %d %s, want Loki's 400 series limit error", rec.Code, rec.Body.String())
+	}
+	// The folding request hands the six streams to the fold; the limit is
+	// applied to what the fold leaves (capWithoutFold).
+	rec := run(t, true)
+	var answer seriesLimitAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("%d %s: %v", rec.Code, rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusOK || len(answer.Data.Result) != 6 {
+		t.Fatalf("a folding request: %d with %d series, want 200 with the six streams for the fold: %s", rec.Code, len(answer.Data.Result), rec.Body.String())
+	}
+}
+
 // A binary operand cut by the series limit reaches the combined answer: a
 // Drilldown request gets Loki's warning on it, and a union (the one operation
 // that can hold more series than its operands) is held to the limit too.

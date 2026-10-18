@@ -121,9 +121,9 @@
       "default": "1000000",
       "unit": "rows",
       "bounds": "rows one proxy-side range-metric evaluation reads: raw log rows, or stats rows (one per non-empty step bucket and series) per bucket grid on the window stats path",
-      "error": "502 `manual range metric row limit exceeded (N); narrow the query or increase -manual-range-metric-row-limit`",
-      "metric": "loki_vl_proxy_requests_total{status=\"502\"}",
-      "alert": "LokiVLProxyHighErrorRate (any sustained 5xx)",
+      "error": "502 `manual range metric row limit exceeded (N); narrow the query or increase -manual-range-metric-row-limit`; the same text answers 400 when a `without` aggregation, which reads a series per stream before it folds them, holds more series than this limit and the limit is not below the tenant's effective max_query_series (-max-stats-query-series, or the tenant's own override; below it, that series limit is the bound and Loki's series message answers). The 400 is a client error: it does not count toward the 5xx alert",
+      "metric": "loki_vl_proxy_requests_total{status=\"502\"} (400 for a `without` aggregation)",
+      "alert": "LokiVLProxyHighErrorRate (any sustained 5xx; the 400 of a `without` aggregation does not trip it)",
       "loki_parity": "",
       "per_tenant": false,
       "sizing": "Proxy memory is about 100 bytes per stats row and about 32 bytes per raw sample, so the default bounds one evaluation to roughly 100 MiB. Raise it for high-cardinality groupings over days; lower it to reject expensive scans earlier."
