@@ -122,16 +122,11 @@ range different from the step, plus `topk`/`bottomk` over them) follow Loki for
 every client, including Drilldown-tagged requests: a step whose window
 `(t-range, t]` holds no log line is absent, not `0`. Each window is summed from
 `stats_query_range` buckets of `gcd(step, range)` whose edges are anchored to
-the request start with the `offset` argument (VictoriaLogs v1.45+) and shifted
+the request start with the `offset` argument and shifted
 by one nanosecond, so a line on a window edge counts where Loki counts it. The
 bucket count has no budget because VictoriaLogs returns only non-empty buckets.
 The raw-sample evaluator answers with the same `(t-range, t]` boundaries when a
-bucket would be below 1 ms, when the stats response exceeds its byte limit, or
-when an unaligned grid meets a backend known to be older than v1.45 (an
-undetected version keeps the bucket path: such a backend ignores the `offset`
-argument at worst). On such older backends an
-epoch-aligned grid still uses buckets without the one-nanosecond shift, so a
-line exactly on a window edge counts in the neighbouring window.
+bucket would be below 1 ms or when the stats response exceeds its byte limit.
 
 Routing does not depend on the client: Explore, Drilldown, dashboard panels
 and direct API clients reach the same exact stats path. Only the answer above

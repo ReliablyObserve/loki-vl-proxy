@@ -77,11 +77,11 @@ Those cases belong in the proxy contract suite, not the strict Loki semantics pa
 The matrix is intentionally not open-ended. For every upstream we support a moving window that advances as new releases land:
 
 - Loki: current minor family plus one minor family behind, including patch releases in those two families
-- VictoriaLogs: the latest line plus the previous one (`v1.5x.x` and `v1.4x.x`), tested on at most the latest 3 releases of each line
+- VictoriaLogs: the latest `v1.4x` release (`v1.49.0`) plus every `v1.5x` release, each supported minor tested at its latest patch with a published image
 - Logs Drilldown: current release family plus one family behind, including patch releases in those two families
 - Grafana runtime (for built-in Loki datasource): current runtime family plus one family behind
 
-When a new upstream family becomes current, the oldest family drops out of the matrix. For VictoriaLogs the same rule applies per minor line: when `v1.6x` appears, `v1.6x` and `v1.5x` are supported and `v1.4x` drops out. `TestVictoriaLogsSupportPolicy` keeps the manifest, the `-backend-min-version` default and the capability floor in step.
+When a new upstream family becomes current, the oldest family drops out of the matrix. VictoriaLogs is versioned per minor instead: a new minor joins the matrix as soon as it is released, and `v1.49.0` is the floor. `TestVictoriaLogsSupportPolicy` keeps the manifest, the `-backend-min-version` default, the capability floor and the README supported-versions table in step. See [VictoriaLogs compatibility](compatibility-victorialogs.md#support-policy).
 
 ## Matrix Summary
 
@@ -90,7 +90,7 @@ When a new upstream family becomes current, the oldest family drops out of the m
 | Loki | `3.6.x` and `3.7.x` | Real runtime matrix in GitHub Actions |
 | Grafana Loki datasource runtime | `12.x` and `13.x` | Runtime contracts through Grafana datasource API in GitHub Actions |
 | Logs Drilldown | `1.0.x` and `2.x` (current pinned: `2.6.0`) | Pinned runtime e2e plus source-contract matrix |
-| VictoriaLogs | `v1.47.x` to `v1.49.x` and `v1.51.x` to `v1.53.x` (latest 3 releases of `v1.4x` and `v1.5x`) | Real runtime matrix in GitHub Actions |
+| VictoriaLogs | `v1.49.0`, `v1.50.0`, `v1.51.1`, `v1.52.0`, `v1.53.0` (the latest `v1.4x` release and every `v1.5x` minor) | Real runtime matrix in GitHub Actions |
 
 ## Grafana Version Sensing Model
 

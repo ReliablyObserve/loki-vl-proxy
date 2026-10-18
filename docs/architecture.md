@@ -413,7 +413,7 @@ flowchart LR
     end
 
     subgraph Build["Build — internal/logsql"]
-        BUILDER["Capabilities-aware Builder\n(VL v1.40 → v1.5x)"]
+        BUILDER["Capabilities-aware Builder\n(VL v1.49 → v1.5x)"]
         LOGSQL["LogsQL query string"]
     end
 
