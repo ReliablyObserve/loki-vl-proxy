@@ -374,15 +374,13 @@
       "edge_cases": [
         {
           "versions": [
-            "v1.47.x",
-            "v1.48.x",
             "v1.49.x"
           ],
           "focus": [
             "stats_query_range shape",
             "structured metadata shaping",
             "drilldown-derived labels and values",
-            "stats_query_range offset (v1.45+) and metadata substring filter (v1.49)"
+            "stats_query_range offset and metadata substring filter (always on: the v1.49.0 floor)"
           ]
         },
         {

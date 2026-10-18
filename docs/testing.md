@@ -587,7 +587,7 @@ The stack is version-parameterized through compose environment variables:
 
 ```bash
 LOKI_IMAGE=grafana/loki:3.6.10 \
-VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.48.0 \
+VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.49.0 \
 GRAFANA_IMAGE=grafana/grafana:12.4.2 \
 docker compose -f test/e2e-compat/docker-compose.yml up -d --build
 ```
