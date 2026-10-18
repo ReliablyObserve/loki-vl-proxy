@@ -12,30 +12,26 @@ func TestCapabilitiesFor(t *testing.T) {
 		semver string
 		want   logsql.Capabilities
 	}{
-		// Versions below v1.40 are not supported; return baseline (all false).
-		{"v1.30.0", logsql.Capabilities{}},
-		{"v1.39.9", logsql.Capabilities{}},
-		// v1.40 baseline — all optional features false.
-		{"v1.40.0", logsql.Capabilities{}},
-		{"v1.43.9", logsql.Capabilities{}},
-		// v1.44 adds rate_sum.
-		{"v1.44.0", logsql.Capabilities{StatsRateSum: true}},
-		// v1.45 adds ipv4_range.
-		{"v1.45.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		{"v1.48.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		// v1.49 adds metadata substring.
-		{"v1.49.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true}},
+		// The floor (v1.49.0) is the zero value: every feature at or before it is
+		// always on and has no flag.
+		{"v1.49.0", logsql.Capabilities{}},
+		{"v1.49.9", logsql.Capabilities{}},
 		// v1.50 adds dense pattern windowing.
-		{"v1.50.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
+		{"v1.50.0", logsql.Capabilities{DensePatternWindowing: true}},
+		{"v1.50.9", logsql.Capabilities{DensePatternWindowing: true}},
 		// v1.51 adds the coalesce pipe.
-		{"v1.51.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
-		{"v1.99.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
-		// Empty string — safe baseline.
+		{"v1.51.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.99.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
+		// An unknown or unparsable version behaves as the floor.
 		{"", logsql.Capabilities{}},
+		{"not-a-version", logsql.Capabilities{}},
+		// Below the floor is unsupported and gets no extra capabilities.
+		{"v1.48.9", logsql.Capabilities{}},
+		{"v1.40.0", logsql.Capabilities{}},
 		// no "v" prefix
-		{"1.44.0", logsql.Capabilities{StatsRateSum: true}},
+		{"1.51.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
 		// two-component version (no patch)
-		{"v1.40", logsql.Capabilities{}},
+		{"v1.50", logsql.Capabilities{DensePatternWindowing: true}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.semver, func(t *testing.T) {

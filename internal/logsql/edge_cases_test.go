@@ -229,34 +229,22 @@ func TestPipeStatsNoBy(t *testing.T) {
 	}
 }
 
-// TestCapabilitiesAllMinorVersions tests every minor version v1.40–v1.50.
+// TestCapabilitiesAllMinorVersions tests every minor version from the floor
+// (v1.49) through v1.53 and the boundaries between them.
 func TestCapabilitiesAllMinorVersions(t *testing.T) {
 	tests := []struct {
 		semver string
 		want   logsql.Capabilities
 	}{
-		{"v1.40.0", logsql.Capabilities{}},
-		{"v1.41.0", logsql.Capabilities{}},
-		{"v1.42.0", logsql.Capabilities{}},
-		{"v1.43.0", logsql.Capabilities{}},
-		// boundary: v1.43.9 vs v1.44.0
-		{"v1.43.9", logsql.Capabilities{}},
-		{"v1.44.0", logsql.Capabilities{StatsRateSum: true}},
-		// boundary: v1.44.9 vs v1.45.0
-		{"v1.44.9", logsql.Capabilities{StatsRateSum: true}},
-		{"v1.45.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		{"v1.46.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		{"v1.47.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		{"v1.48.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		// boundary: v1.48.9 vs v1.49.0
-		{"v1.48.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true}},
-		{"v1.49.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true}},
+		{"v1.49.0", logsql.Capabilities{}},
 		// boundary: v1.49.9 vs v1.50.0
-		{"v1.49.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true}},
-		{"v1.50.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
+		{"v1.49.9", logsql.Capabilities{}},
+		{"v1.50.0", logsql.Capabilities{DensePatternWindowing: true}},
 		// boundary: v1.50.9 vs v1.51.0
-		{"v1.50.9", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
-		{"v1.51.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.50.9", logsql.Capabilities{DensePatternWindowing: true}},
+		{"v1.51.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.52.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
+		{"v1.53.0", logsql.Capabilities{DensePatternWindowing: true, PipeCoalesce: true}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.semver, func(t *testing.T) {

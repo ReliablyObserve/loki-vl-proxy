@@ -11,11 +11,11 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
-// The VictoriaLogs support policy (owner decision 2026-10-05): the latest minor
-// line and the previous one are fully supported (today v1.5x and v1.4x), and the
-// tested matrix holds at most the latest 3 releases of each line. When a new line
-// appears the window shifts one line; this test fails until the matrix, the
-// -backend-min-version default and logsql.MinSupportedMinor move together.
+// The VictoriaLogs support policy: the latest v1.4x release and every v1.5x
+// release are supported, and the tested matrix holds each supported minor at its
+// latest patch with a published image. The floor is the one v1.4x entry; this
+// test fails until the manifest, the -backend-min-version default (flag, Go
+// fallback, Helm), logsql.MinSupportedMinor and the README table agree.
 
 var lineRE = regexp.MustCompile(`^v1\.(\d)x(?:\.x)?$`)
 var versionRE = regexp.MustCompile(`^v1\.(\d+)\.(\d+)$`)
@@ -33,7 +33,6 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 					CurrentFamily      string   `json:"current_family"`
 					PreviousFamily     string   `json:"previous_family"`
 					AdditionalFamilies []string `json:"additional_families"`
-					MaxPerFamily       int      `json:"max_versions_per_family"`
 					MinimumSupported   string   `json:"minimum_supported_version"`
 				} `json:"support_window"`
 				MatrixVersions []string `json:"matrix_versions"`
@@ -61,16 +60,17 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 	if len(w.AdditionalFamilies) != 0 {
 		t.Fatalf("only the latest two lines are supported; additional_families = %v", w.AdditionalFamilies)
 	}
-	if w.MaxPerFamily != 3 {
-		t.Fatalf("max_versions_per_family must be 3, got %d", w.MaxPerFamily)
-	}
 
-	minMinor := prevLine * 10
-	if want := "v1." + strconv.Itoa(minMinor) + ".0"; w.MinimumSupported != want {
-		t.Fatalf("minimum_supported_version = %q, want %q (first minor of the oldest supported line)", w.MinimumSupported, want)
+	floor := versionRE.FindStringSubmatch(w.MinimumSupported)
+	if floor == nil {
+		t.Fatalf("minimum_supported_version %q is not vMAJOR.MINOR.PATCH", w.MinimumSupported)
 	}
-	if logsql.MinSupportedMajor != 1 || logsql.MinSupportedMinor != minMinor {
-		t.Fatalf("logsql.MinSupported = %d.%d, want 1.%d", logsql.MinSupportedMajor, logsql.MinSupportedMinor, minMinor)
+	floorMinor, _ := strconv.Atoi(floor[1])
+	if floorMinor/10 != prevLine {
+		t.Fatalf("minimum_supported_version = %q must be a release of the previous line %s", w.MinimumSupported, w.PreviousFamily)
+	}
+	if logsql.MinSupportedMajor != 1 || logsql.MinSupportedMinor != floorMinor {
+		t.Fatalf("logsql.MinSupported = %d.%d, want 1.%d", logsql.MinSupportedMajor, logsql.MinSupportedMinor, floorMinor)
 	}
 
 	main, err := os.ReadFile("../../cmd/proxy/main.go")
@@ -129,8 +129,10 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 		}
 	}
 
+	// The tested matrix: exactly one entry of the previous line (the floor) and
+	// every minor of the current line from its first one to the newest, each once.
 	minors := map[int]string{}
-	perLine := map[int]int{}
+	lowest, highest := 1<<30, 0
 	for _, v := range m.Stack.VL.MatrixVersions {
 		sm := versionRE.FindStringSubmatch(v)
 		if sm == nil {
@@ -141,35 +143,66 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 			t.Fatalf("matrix lists minor v1.%d twice (%s, %s); keep the latest patch only", minor, other, v)
 		}
 		minors[minor] = v
-		line := minor / 10
-		if line != curLine && line != prevLine {
+		switch minor / 10 {
+		case prevLine:
+			if v != w.MinimumSupported {
+				t.Fatalf("the only %s entry in matrix_versions must be the floor %s, found %s", w.PreviousFamily, w.MinimumSupported, v)
+			}
+		case curLine:
+			lowest, highest = min(lowest, minor), max(highest, minor)
+		default:
 			t.Fatalf("matrix version %s is outside the supported lines %s and %s", v, w.CurrentFamily, w.PreviousFamily)
 		}
-		perLine[line]++
 	}
-	for _, line := range []int{curLine, prevLine} {
-		if perLine[line] == 0 || perLine[line] > w.MaxPerFamily {
-			t.Fatalf("line v1.%dx has %d matrix versions, want 1..%d", line, perLine[line], w.MaxPerFamily)
+	if minors[floorMinor] != w.MinimumSupported {
+		t.Fatalf("matrix_versions %v must contain the floor %s", m.Stack.VL.MatrixVersions, w.MinimumSupported)
+	}
+	if lowest != curLine*10 {
+		t.Fatalf("matrix_versions %v must start the %s line at v1.%d", m.Stack.VL.MatrixVersions, w.CurrentFamily, curLine*10)
+	}
+	for minor := lowest; minor <= highest; minor++ {
+		if _, ok := minors[minor]; !ok {
+			t.Fatalf("matrix_versions %v skips supported minor v1.%d", m.Stack.VL.MatrixVersions, minor)
 		}
-	}
-	if _, tested := minors[pinMinorOf(t, m.Stack.VL.PinnedVersion)]; !tested || minors[pinMinorOf(t, m.Stack.VL.PinnedVersion)] != m.Stack.VL.PinnedVersion {
-		t.Fatalf("pinned_version %q must be one of the tested matrix_versions %v", m.Stack.VL.PinnedVersion, m.Stack.VL.MatrixVersions)
 	}
 	pin := versionRE.FindStringSubmatch(m.Stack.VL.PinnedVersion)
 	if pin == nil {
 		t.Fatalf("pinned_version %q is not vMAJOR.MINOR.PATCH", m.Stack.VL.PinnedVersion)
 	}
-	if pinMinor, _ := strconv.Atoi(pin[1]); pinMinor/10 != curLine {
+	pinMinor, _ := strconv.Atoi(pin[1])
+	if minors[pinMinor] != m.Stack.VL.PinnedVersion {
+		t.Fatalf("pinned_version %q must be one of the tested matrix_versions %v", m.Stack.VL.PinnedVersion, m.Stack.VL.MatrixVersions)
+	}
+	if pinMinor/10 != curLine {
 		t.Fatalf("pinned_version %q must stay in the current line %s", m.Stack.VL.PinnedVersion, w.CurrentFamily)
 	}
-}
 
-func pinMinorOf(t *testing.T, v string) int {
-	t.Helper()
-	sm := versionRE.FindStringSubmatch(v)
-	if sm == nil {
-		t.Fatalf("%q is not vMAJOR.MINOR.PATCH", v)
+	// The README names the same matrix, pin and floor between its markers.
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
 	}
-	minor, _ := strconv.Atoi(sm[1])
-	return minor
+	block := regexp.MustCompile(`(?s)<!-- vl-support:start -->(.*?)<!-- vl-support:end -->`).FindStringSubmatch(string(readme))
+	if block == nil {
+		t.Fatal("README.md has no <!-- vl-support:start --> ... <!-- vl-support:end --> table")
+	}
+	rows := map[string][]string{} // first cell -> versions named in the second cell
+	for _, line := range strings.Split(block[1], "\n") {
+		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		if len(cells) == 2 {
+			rows[strings.TrimSpace(cells[0])] = regexp.MustCompile(`v\d+\.\d+\.\d+`).FindAllString(cells[1], -1)
+		}
+	}
+	for row, want := range map[string][]string{
+		"Tested in CI":                           m.Stack.VL.MatrixVersions,
+		"Pull-request CI pin":                    {m.Stack.VL.PinnedVersion},
+		"Startup floor (`-backend-min-version`)": {w.MinimumSupported},
+	} {
+		if got := rows[row]; strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("README supported-versions row %q lists %v, want %v", row, got, want)
+		}
+	}
+	if got := rows["Supported"]; len(got) == 0 || got[0] != w.MinimumSupported {
+		t.Fatalf("README supported-versions row \"Supported\" lists %v, want it to start with the floor %s", got, w.MinimumSupported)
+	}
 }

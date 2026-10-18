@@ -920,7 +920,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	backendMinVersion := normalizeSemverString(cfg.BackendMinVersion)
 	if backendMinVersion == "" {
-		backendMinVersion = "v1.40.0"
+		backendMinVersion = "v1.49.0"
 	}
 	if _, _, _, ok := parseSemverTriplet(backendMinVersion); !ok {
 		return nil, fmt.Errorf("invalid backend minimum version %q", backendMinVersion)

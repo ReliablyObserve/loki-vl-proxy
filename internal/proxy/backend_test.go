@@ -244,7 +244,7 @@ func TestBackendVersionStrict_OverridesAllowUnsupported(t *testing.T) {
 	}
 }
 
-// A detected backend below the supported VictoriaLogs lines (v1.40) is warned
+// A detected backend below the supported VictoriaLogs versions (v1.49.0) is warned
 // about at startup whatever -backend-min-version says: Helm values or an
 // operator can still carry v1.30.0 explicitly.
 func TestBackendVersionBelowSupportedLinesWarns(t *testing.T) {
@@ -253,8 +253,8 @@ func TestBackendVersionBelowSupportedLinesWarns(t *testing.T) {
 		wantWarn bool
 	}{
 		{"VictoriaLogs/v1.35.0", true},
-		{"VictoriaLogs/v1.39.9", true},
-		{"VictoriaLogs/v1.40.0", false},
+		{"VictoriaLogs/v1.48.9", true},
+		{"VictoriaLogs/v1.49.0", false},
 		{"VictoriaLogs/v1.52.0", false},
 	} {
 		t.Run(tc.server, func(t *testing.T) {
@@ -267,6 +267,56 @@ func TestBackendVersionBelowSupportedLinesWarns(t *testing.T) {
 			got := strings.Contains(buf.String(), "below the supported VictoriaLogs lines")
 			if got != tc.wantWarn {
 				t.Fatalf("warning=%v want %v; log: %s", got, tc.wantWarn, buf.String())
+			}
+		})
+	}
+}
+
+// With the default -backend-min-version (v1.49.0) a v1.48.0 backend blocks
+// startup with an error naming the override flag, v1.49.0 and a v1.5x release
+// start, and the override flag lets the unsupported version through.
+func TestBackendVersionCompatibilityGate_DefaultFloorIsV149(t *testing.T) {
+	for _, tc := range []struct {
+		version  string
+		allow    bool
+		wantFail bool
+	}{
+		{"v1.48.0", false, true},
+		{"v1.48.0", true, false},
+		{"v1.49.0", false, false},
+		{"v1.52.0", false, false},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Server", "VictoriaLogs/"+tc.version)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer backend.Close()
+
+			p, err := New(Config{
+				BackendURL:                     backend.URL,
+				Cache:                          cache.New(60*time.Second, 1000),
+				BackendVersionCheckTimeout:     time.Second,
+				BackendAllowUnsupportedVersion: tc.allow,
+			})
+			if err != nil {
+				t.Fatalf("new proxy: %v", err)
+			}
+			err = p.ValidateBackendVersionCompatibility(context.Background())
+			if !tc.wantFail {
+				if err != nil {
+					t.Fatalf("expected startup to pass, got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected startup to be blocked for %s", tc.version)
+			}
+			for _, want := range []string{"backend-allow-unsupported-version", "v1.49.0", tc.version} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("expected %q in the startup error, got: %v", want, err)
+				}
 			}
 		})
 	}

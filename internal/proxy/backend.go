@@ -313,7 +313,7 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 				"backend version is below the supported VictoriaLogs lines",
 				"backend.version.semver", semver,
 				"minimum_supported_version", fmt.Sprintf("v%d.%d.0", logsql.MinSupportedMajor, logsql.MinSupportedMinor),
-				"note", "VictoriaLogs v1.4x and v1.5x are supported; this version is unsupported and untested",
+				"note", "VictoriaLogs v1.49.0 and every v1.5x release are supported; this version is unsupported and untested",
 			)
 		}
 	}

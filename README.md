@@ -167,6 +167,21 @@ Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model
 
 ---
 
+## Supported versions
+
+<!-- vl-support:start -->
+| VictoriaLogs | Version |
+|---|---|
+| Supported | `v1.49.0` (the latest v1.4x release) and every v1.5x release |
+| Tested in CI | `v1.49.0`, `v1.50.0`, `v1.51.1`, `v1.52.0`, `v1.53.0` |
+| Pull-request CI pin | `v1.52.0` |
+| Startup floor (`-backend-min-version`) | `v1.49.0` |
+<!-- vl-support:end -->
+
+The proxy refuses to start against a VictoriaLogs older than the floor unless `-backend-allow-unsupported-version=true` is set; such a version is unsupported and untested. Every supported minor is tested at its latest patch release that has a published image; the weekly matrix run includes the range-metric table compared with Loki. Loki, Grafana, Logs Drilldown and the Loki datasource plugin versions are listed in the [compatibility matrix](docs/compatibility-matrix.md); the VictoriaLogs policy and capability bands are in [VictoriaLogs compatibility](docs/compatibility-victorialogs.md).
+
+---
+
 ## Quick Start
 
 ### Docker

@@ -1234,7 +1234,7 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc, caps logsq
 		return logsql.PipeDecolorize{}.String() // "| decolorize"
 	}
 
-	// ip() CIDR pipeline filter — emit VL-native ipv4_range() (v1.45+) or regexp fallback.
+	// ip() CIDR pipeline filter — emit VL-native ipv4_range(), or the regexp approximation for IPv6.
 	if strings.HasPrefix(stage, `ip("`) && strings.HasSuffix(stage, `")`) {
 		cidr := stage[4 : len(stage)-2]
 		filter := logsql.NewBuilder(caps).BestIPv4Range("_msg", cidr)
