@@ -29,7 +29,7 @@ why: |
   The `name_extracted` stats pushdown is gated on `supportsStatsRangeOffset`
   (v1.45+); older backends keep the raw-row evaluator these shapes had, which
   is exact within `-manual-range-metric-row-limit`
-  (TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset). Not gated: the
+  (TestOrderedJSONExtractedMetricPushdownOnSupportedBackends). Not gated: the
   other pushdowns.
 request:
   method: GET
