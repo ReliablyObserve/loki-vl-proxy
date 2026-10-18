@@ -69,6 +69,9 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: vl-matrix-source
     runs-on: ubuntu-latest
+    # Each version runs the range-metric table on top of the compatibility
+    # checks; bound a hung stack well below the 6 hour default.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -102,10 +105,11 @@ jobs:
       - name: Run VictoriaLogs compatibility score
         env:
           VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:${{ matrix.vl_version }}
-        # The score plus the two checks whose outcome depends on how the
+        # The score plus the checks whose outcome depends on how the
         # VictoriaLogs version words or stores things: OTLP severity as
-        # detected_level, and the status of rejected queries (parse errors).
-        run: go test -v -tags=e2e -run '^(TestSetup_IngestLogs|TestVLTrackScore|TestCompat_DetectedLevelQueryRange|TestCompat_RejectedQueryStatusParity)$' ./test/e2e-compat/
+        # detected_level, the status of rejected queries (parse errors), and the
+        # range-metric table compared with Loki (bucket edges, offsets, unwrap).
+        run: go test -v -tags=e2e -timeout=25m -run '^(TestSetup_IngestLogs|TestVLTrackScore|TestCompat_DetectedLevelQueryRange|TestCompat_RejectedQueryStatusParity|TestCompat_Unwrap.*|TestRangeMetric.*|TestGrafanaClickout_.*)$' ./test/e2e-compat/
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat
