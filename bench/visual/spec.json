@@ -527,16 +527,6 @@
    ]
   },
   {
-   "id": "explore-unwrap-sum-without",
-   "kind": "explore",
-   "query": "sum without (pod) (max_over_time({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))",
-   "covers": [
-    "semantics/unwrap-sum-without-collapses",
-    "metric-series-identity",
-    "loki_api_v1_query_range"
-   ]
-  },
-  {
    "id": "explore-sum-without-rate",
    "kind": "explore",
    "query": "sum without (pod) (rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [$__auto]))",
