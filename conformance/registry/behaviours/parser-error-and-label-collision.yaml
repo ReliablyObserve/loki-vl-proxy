@@ -40,7 +40,11 @@ proxy: |
   regexp VictoriaLogs is slow to prepare. A filter that rejects the empty
   value stands in for `drop __error__`, since no unparsed line has the key.
   A label filter before the parser is applied by VictoriaLogs, as for a log
-  query. A metric Loki fails on an unparsed line fails with Loki's
+  query; on the ordered-JSON route one on detected_level (the same value
+  before and after the parser) is applied like the same filter after it, from
+  the stored level fields or the level chain, not by unpacking every line as
+  logfmt (`| logfmt` plans and the routes that skip `| json` keep the earlier
+  rendering). A metric Loki fails on an unparsed line fails with Loki's
   `pipeline error` text from one lookup, before any row is read. An unwrap
   whose value its conversion rejects (SampleExtractionErr) fails the same way,
   unless a filter after the unwrap drops the error: the metric's own stats
@@ -71,6 +75,7 @@ cases:
   - semantics/json-label-spelling-probe
   - semantics/json-instant-volume-stats
   - semantics/label-filter-before-parser-pushdown
+  - semantics/detected-level-filter-before-parser-pushdown
   - semantics/pipeline-error-text-parity
   - semantics/parse-error-labels-on-log-lines
   - semantics/unwrap-sample-validity

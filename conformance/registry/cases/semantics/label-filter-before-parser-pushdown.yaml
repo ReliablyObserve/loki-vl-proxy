@@ -11,8 +11,10 @@ why: |
   Loki a label filter before the first parser reads stream labels and
   structured metadata only (nothing has been parsed yet), so it is the same
   filter the log query `{...} | detected_level="info"` applies, which the
-  translator already renders in LogsQL (a stream or field filter; for
-  `detected_level` the read-path derivation). The stats pushdown refused
+  translator already renders in LogsQL (a stream or field filter). A filter
+  on `detected_level` is the exception on the ordered-JSON route: it is
+  applied like the same filter after the parser (semantics/detected-level-filter-before-parser-pushdown).
+  The stats pushdown refused
   any plan with a filter before the parser, so the query fell to the
   raw-row evaluator: 1.6-2.0 s inside the proxy over the namespace's 24 h
   with 4 ms of VictoriaLogs time, and Grafana cancelled a quarter of them
@@ -24,7 +26,7 @@ why: |
   evaluator reads only the selected lines. A filter on `__error__` or
   `__error_details__` before the parser stays out (nothing can carry them
   there). Layer: VictoriaLogs native stats; exactness of the filter is the
-  translator's log-query contract.
+  translator's log-query contract for the filters other than detected_level.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -41,6 +43,8 @@ compare:
   fields: [status, series_labels, values]
   expect: |
     HTTP 200 with Loki's series and values, answered from `stats_query_range`
-    over `... namespace:="monitoring" | ... level:="info" | unpack_json ...`
-    with the probes on the same base and no raw-row fetch: 0.29 s at 24 h
-    against 1.65 s before and Loki's 0.33 s.
+    over `... namespace:="monitoring" | copy detected_level as __dl_d, level
+    as __dl_l | filter (...) | unpack_json ...` with the probes on the same
+    base and no raw-row fetch (0.29 s at 24 h against 1.65 s before and
+    Loki's 0.33 s, measured when the level filter was still rendered as a
+    logfmt unpack).

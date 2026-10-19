@@ -421,6 +421,9 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/detected-level-filter-before-parser-pushdown": [
+      "internal/proxy/ordered_json_filter_pushdown_test.go"
+    ],
     "semantics/detected-level-pipes-known-differences": [
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
@@ -706,7 +709,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 321,
+  "registry_items": 322,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -961,6 +964,7 @@
     ],
     "internal/proxy/ordered_json_filter_pushdown_test.go": [
       "parser-error-and-label-collision",
+      "semantics/detected-level-filter-before-parser-pushdown",
       "semantics/json-filter-pushdown-translated-label",
       "semantics/json-filter-pushdown-underscore-label",
       "semantics/json-filter-pushdown-ungrouped-sum",
@@ -1521,5 +1525,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 136
+  "wired_items": 137
 }

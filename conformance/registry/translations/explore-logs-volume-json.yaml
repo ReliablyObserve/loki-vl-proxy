@@ -72,7 +72,7 @@ deltas:
     where: internal/proxy/ordered_json_metric.go
     cost: |
       one key-spelling probe beside the partial-parse probe (both read only the lines VictoriaLogs' word index holds the label's pieces in; cached per window); one more `field:*` probe when errors are not dropped
-    cases: [semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe, semantics/label-filter-before-parser-pushdown]
+    cases: [semantics/json-filter-pushdown-underscore-label, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/json-filter-pushdown-translated-label, semantics/json-label-spelling-probe, semantics/label-filter-before-parser-pushdown, semantics/detected-level-filter-before-parser-pushdown]
     state: proven
   - id: bucket-edges
     difference: |

@@ -79,6 +79,13 @@ type orderedJSONMetricPlan struct {
 	required      map[string]bool
 	earlyFilters  []translator.DropCondition
 	withoutJSON   string
+	// preLevelFilters are the label filters on detected_level before the
+	// parser of a JSON plan. fetchQuery keeps them for the raw-row fetch;
+	// pushdownQuery is the base of the stats pushdown without them (see
+	// statsQuery): the pushdown applies them from the stored level fields, as
+	// it does a filter after the parser.
+	preLevelFilters []translator.DropCondition
+	pushdownQuery   string
 	// pushdown reports that VictoriaLogs stats buckets can answer the plan
 	// exactly (see setStatsPushdown), subject to the parse-risk probes.
 	pushdown bool
@@ -309,6 +316,7 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 	}
 	plan.setDetectedLevel()
 	if !hasJSON {
+		plan.preLevelFilters, plan.pushdownQuery = nil, ""
 		return plan.levelVolumePlan(hasLogfmt, retained)
 	}
 	plan.parser = "json"
@@ -338,8 +346,16 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 // filters before the first parser, which read stream labels and structured
 // metadata only (Loki has parsed nothing yet) and so are applied by the
 // translator like a log query's filters.
+//
+// A filter on detected_level before the parser is also recorded in
+// preLevelFilters, and the plan's pushdownQuery leaves it out: the translator
+// renders it by unpacking every body as logfmt (a `level=` token in a message
+// then overrides the stored level, which Loki's ingest-assigned
+// detected_level never does), where the stats pushdown reads the stored level
+// fields (pushdownLabelFilters). It holds the same value before and after the
+// parser, which cannot change it.
 func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (retained string, hasJSON, hasLogfmt, ok bool) {
-	var sb strings.Builder
+	var sb, pushdown strings.Builder
 	unmodified := true // no stage so far changes the labels a filter reads
 	for _, stage := range pipeline {
 		compiled, valid := compileOrderedJSONStage(stage)
@@ -354,6 +370,12 @@ func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (r
 			sb.WriteByte(' ')
 			sb.WriteString(stage.String())
 		}
+		if preParserFilter && compiled.filter.Field == detectedLevelLabel {
+			plan.preLevelFilters = append(plan.preLevelFilters, *compiled.filter)
+		} else if lineFilter || preParserFilter {
+			pushdown.WriteByte(' ')
+			pushdown.WriteString(stage.String())
+		}
 		if preParserFilter {
 			continue
 		}
@@ -363,7 +385,76 @@ func (plan *orderedJSONMetricPlan) compilePipeline(pipeline []logqlpkg.Stage) (r
 		plan.reducesLabels = plan.reducesLabels || compiled.fields != nil
 		plan.stages = append(plan.stages, compiled)
 	}
+	if len(plan.preLevelFilters) > 0 {
+		plan.pushdownQuery = plan.selector + pushdown.String()
+	}
 	return sb.String(), hasJSON, hasLogfmt, true
+}
+
+// statsQuery is the LogQL whose translation is the base of the stats pushdown,
+// of its probes and of the raw-row fetch: the fetch query, without the filters
+// on detected_level before the parser (preLevelFilters), which the pushdown
+// applies itself and the raw evaluator applies to the derived level
+// (passesLevelFilters).
+func (plan *orderedJSONMetricPlan) statsQuery() string {
+	if plan.pushdownQuery != "" {
+		return plan.pushdownQuery
+	}
+	return plan.fetchQuery
+}
+
+// withTranslatedLevelFilters returns the plan with the filters on detected_level
+// before the parser left to the fetch query (the translator renders them), for
+// a server that does not scan the body for the level. It is the plan itself
+// when it has none.
+func (plan *orderedJSONMetricPlan) withTranslatedLevelFilters() *orderedJSONMetricPlan {
+	if len(plan.preLevelFilters) == 0 {
+		return plan
+	}
+	translated := *plan
+	translated.preLevelFilters, translated.pushdownQuery = nil, ""
+	translated.derivesLevel, translated.pushdown = false, false
+	translated.unpackFields, translated.pushdownFilters, translated.pushdownErrorFilters = nil, nil, nil
+	translated.setDetectedLevel()
+	translated.setStatsPushdown()
+	return &translated
+}
+
+// levelRestriction is the pipes that keep, of a query on statsQuery, the rows
+// a filter on detected_level before the parser can match: a row whose stored
+// level fields name a level the filters accept, and every row they do not
+// decide (translator.BuildStoredLevelCopyFilter). It is a superset of the rows
+// that pass the filters, so a probe or a fetch that reads only these rows
+// misses none of them; the raw evaluator applies the filters exactly.
+func (plan *orderedJSONMetricPlan) levelRestriction() string {
+	if len(plan.preLevelFilters) == 0 {
+		return ""
+	}
+	const meta, stored = "__lr_d", "__lr_l" // scratch copies, deleted again
+	return " | copy detected_level as " + meta + ", level as " + stored +
+		translator.BuildStoredLevelCopyFilter(stored, meta, plan.preLevelFilters) +
+		" | delete " + meta + ", " + stored
+}
+
+// acceptDerivedLevel gives a row of the raw evaluator the detected_level
+// Loki's ingest set (withDerivedLevel) when the plan reads it, and reports
+// whether the filters on it before the parser let the row through.
+func (plan *orderedJSONMetricPlan) acceptDerivedLevel(base map[string]string, levels *logRowLevels, row map[string]string, desc cachedLogQueryStreamDescriptor) bool {
+	if plan.derivesLevel {
+		withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
+	}
+	return plan.passesLevelFilters(base)
+}
+
+// passesLevelFilters applies the filters on detected_level before the parser
+// to the labels of a row that has its derived level (withDerivedLevel).
+func (plan *orderedJSONMetricPlan) passesLevelFilters(labels map[string]string) bool {
+	for _, filter := range plan.preLevelFilters {
+		if !filter.Matches(labels[detectedLevelLabel]) {
+			return false
+		}
+	}
+	return true
 }
 
 // levelVolumePlan completes a plan without a JSON parser. Grafana's plain and
@@ -809,6 +900,14 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 // key is a stored label of the line (the stored-field probe).
 func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.DropCondition, errorFilters []string, ok bool) {
 	parsed, errorCleared := false, false
+	// A filter on detected_level before the parser holds the value it holds
+	// after it (the parser cannot set it), so it is rendered like one after
+	// the parser; any other filter before the parser is the fetch query's.
+	for _, filter := range plan.preLevelFilters {
+		if filter.Op != "!=" || filter.Value != "" {
+			filters = append(filters, filter)
+		}
+	}
 	for _, stage := range plan.stages {
 		switch {
 		case stage.parser:
@@ -892,6 +991,7 @@ func (plan *orderedJSONMetricPlan) setDetectedLevel() {
 	if plan.aggregated && plan.grouping != nil && containsString(plan.grouping.Labels, detectedLevelLabel) != plan.grouping.Without {
 		plan.derivesLevel = true
 	}
+	plan.derivesLevel = plan.derivesLevel || len(plan.preLevelFilters) > 0
 	for _, stage := range plan.stages {
 		if stage.filter != nil && stage.filter.Field == detectedLevelLabel {
 			plan.derivesLevel = true
@@ -935,8 +1035,13 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	if plan.derivesLevel && !p.detectedLevelBodyScan {
 		// VictoriaLogs pipes always read the line; without the body scan only
-		// the stored fields decide, which the raw evaluator derives.
-		return nil, false, false, nil
+		// the stored fields decide, which the raw evaluator derives. A plan
+		// that reads the level only in a filter before the parser keeps the
+		// translator's rendering of that filter, as it did before the pushdown
+		// read the level itself.
+		if plan = plan.withTranslatedLevelFilters(); plan.derivesLevel || !plan.pushdown {
+			return nil, false, false, nil
+		}
 	}
 	if plan.derivesLevel {
 		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true, instant)
@@ -975,7 +1080,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if !ok {
 		return nil, false, false, nil
 	}
-	base, err := p.translateQueryWithContext(ctx, plan.fetchQuery)
+	base, err := p.translateQueryWithContext(ctx, plan.statsQuery())
 	if err != nil {
 		return nil, false, false, err
 	}
@@ -1028,7 +1133,8 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	riskDone := make(chan riskResult, 1)
 	go func() {
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base, plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
+		// A line no filter on detected_level can let through is none the probes need to read.
+		risky, err := p.pushdownParseRisk(riskCtx, plan, base+plan.levelRestriction(), plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
 		riskDone <- riskResult{risky, err}
 	}()
 	type statsResult struct {
@@ -2168,6 +2274,12 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if err != nil {
 		return nil, err
 	}
+	// The lookup reads the rows a filter on the level can let through; the one
+	// it finds may be a row the filter rejects, which Loki never parses.
+	levels := p.newLogRowLevels()
+	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
+		return nil, nil
+	}
 	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
@@ -2407,10 +2519,11 @@ func (plan *orderedJSONMetricPlan) groupLabels(labels map[string]string) map[str
 }
 
 func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
-	query, err := p.translateQueryWithContext(ctx, plan.fetchQuery)
+	query, err := p.translateQueryWithContext(ctx, plan.statsQuery())
 	if err != nil {
 		return nil, err
 	}
+	query += plan.levelRestriction()
 	limit := p.rangeMetricRowLimit
 	if limit <= 0 {
 		limit = 1_000_000
@@ -2480,8 +2593,8 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 		if err != nil {
 			return nil, err
 		}
-		if plan.derivesLevel {
-			withDerivedLevel(base, levels.stringRow(row, levels.streamLabels(row["_stream"], desc.streamLabels)), desc.streamLabels)
+		if !plan.acceptDerivedLevel(base, &levels, row, desc) {
+			continue
 		}
 		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels)
 		if err != nil {

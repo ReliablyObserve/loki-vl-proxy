@@ -42,6 +42,8 @@ type pushdownFakeVL struct {
 	stats  []string
 	guards []string
 	raw    int
+	// rawQueries are the queries of the raw-row fetches.
+	rawQueries []string
 	// presence answers the level presence probe from the rows; otherwise the
 	// probe gets no counts (the proxy then keeps the full chain). presenceFail
 	// makes it a backend error, presenceLine replaces the honest answer.
@@ -610,6 +612,7 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				fake.guards = append(fake.guards, query)
 			} else {
 				fake.raw++
+				fake.rawQueries = append(fake.rawQueries, query)
 			}
 			fake.mu.Unlock()
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -1122,6 +1125,12 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		// A filter on detected_level compares the derived value after the pipes that compute it.
 		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, true, []string{"level"}, nil},
+		// The same filter before the parser holds the same value (the parser cannot set detected_level).
+		{`sum by (level) (count_over_time({env="production"} | detected_level="error" | json | drop __error__ [1m]))`, true, []string{"level"}, nil},
+		{`sum by (level, detected_level) (count_over_time({env="production"} | detected_level!~"info|warn" | json | drop __error__ [1m]))`, true, []string{"level"}, nil},
+		{`sum by (level) (count_over_time({env="production"} | detected_level!="" | json | drop __error__ [1m]))`, true, []string{"level"}, nil},
+		{`sum by (level) (count_over_time({env="production"} | detected_level="error" | json | pipeline="x" [1m]))`, true, []string{"level"}, []string{"pipeline"}},
+		{`sum by (level) (count_over_time({env="production"} | detected_level="error" | json [1m]))`, false, nil, nil},
 		{`sum by (a_b_c_d_e_f_g_h) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | service_version="1" [1m]))`, true, []string{"level"}, []string{"service_version"}},
@@ -1269,6 +1278,447 @@ func TestOrderedJSONFilterPushdownLabelFilterBeforeParser(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.raw != 0 || len(fake.stats) != 1 || !strings.Contains(fake.stats[0], `namespace:="prod"`) {
 		t.Fatalf("expected one stats call filtered on the stream label without raw rows: raw=%d stats=%q", fake.raw, fake.stats)
+	}
+}
+
+// detectedLevelFilterFixture is the lines of the detected_level filter tests:
+// every stream has a level, and lines 1, 2 and 7 hold a `level=debug` token (or
+// JSON level key) of their own in a stream whose level is info, which Loki
+// counts as info, while line 5 holds a `level=info` token in a stream whose
+// level is debug, which Loki counts as debug. With withChain, every fourth line has no stored level and
+// the body decides (the chain).
+func detectedLevelFilterFixture(s0 time.Time, withChain bool) []pushdownRow {
+	var rows []pushdownRow
+	for i := 0; i < 120; i++ {
+		ts := s0.Add(time.Duration(i) * 5 * time.Second)
+		row := pushdownRow{ts: ts, stream: map[string]string{"app": "api", "level": "info"}}
+		switch i % 8 {
+		case 0:
+			row.msg = `{"msg":"ok","n":` + strconv.Itoa(i) + `}`
+		case 1:
+			row.msg = "level=debug user=bob request served"
+		case 2:
+			row.msg = `{"msg":"x level=debug","level":"debug"}`
+		case 3:
+			row.stream["level"] = "warn"
+			row.msg = `{"level":"error","msg":"collision"}`
+		case 4:
+			row.stream["level"] = "WARNING"
+			row.msg = `{"msg":"upper case spelling"}`
+		case 5:
+			row.stream["level"] = "debug"
+			row.msg = `level=info msg="cache miss"`
+		case 6:
+			row.stream["level"] = "error"
+			row.msg = `{"msg":"boom"}`
+		default:
+			row.msg = `msg="a level=debug b"`
+		}
+		if withChain && i%4 == 0 {
+			// No stored level: the body decides (the chain).
+			delete(row.stream, "level")
+			switch i % 16 {
+			case 0:
+				row.msg = `{"level":"debug","n":` + strconv.Itoa(i) + `}`
+			case 4:
+				row.msg = "level=warn op=select"
+			case 8:
+				row.msg = `{"msg":"request failed with error"}`
+			default:
+				row.msg = `{"counter":` + strconv.Itoa(i) + `}`
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// The Explore logs volume filtered on the level before the parser
+// (`{...} | detected_level="info" | json | drop __error__`) reads the stored
+// level fields, as the same filter after the parser does, instead of
+// unpacking every line as logfmt: that unpack lets a `level=` token of the
+// message override the stored level, which Loki's ingest-assigned
+// detected_level never does. The VictoriaLogs queries (the stats and every
+// probe) carry no logfmt unpack, and the answer equals the raw evaluator's
+// (the Loki reference) for the same filter after the parser and a count of
+// the lines whose level the filter accepts, whatever the operator, with a
+// stored level and without (the chain).
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown, semantics/label-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserReadsStoredLevel(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
+	for _, fixture := range []struct {
+		name  string
+		chain bool
+	}{{"stored level", false}, {"no stored level", true}} {
+		rows := detectedLevelFilterFixture(s0, fixture.chain)
+		for _, grouping := range []string{"level, detected_level", "detected_level", "level"} {
+			for _, f := range []struct{ op, value string }{{"=", "info"}, {"!=", "info"}, {"=~", "info|warn"}, {"!~", "info|warn"}, {"=~", "debu.*"}} {
+				filter := "detected_level" + f.op + strconv.Quote(f.value)
+				query := `sum by (` + grouping + `) (count_over_time({app="api"} | ` + filter + ` | json | drop __error__ [1m]))`
+				t.Run(fixture.name+"/"+grouping+"/"+filter, func(t *testing.T) {
+					plan, ok := compileOrderedJSONMetric(query)
+					if !ok || !plan.pushdown || len(plan.preLevelFilters) != 1 || strings.Contains(plan.statsQuery(), "detected_level") {
+						t.Fatalf("expected a pushdown plan reading the level filter itself: ok=%v plan=%+v", ok, plan)
+					}
+					// The Loki reference: the filter after the parser, on the
+					// detected_level the raw evaluator derives for every row.
+					afterParser := strings.Replace(query, `| `+filter+` | json | drop __error__`, `| json | drop __error__ | `+filter, 1)
+					reference, ok := compileOrderedJSONMetric(afterParser)
+					if !ok {
+						t.Fatalf("reference plan for %s", afterParser)
+					}
+					want := lokiPushdownReference(t, reference, rows, start, end, time.Minute)
+					// An independent count of the rows each window holds whose
+					// level (the stream's, else the body's) the filter accepts.
+					condition, err := translator.NewDropCondition("detected_level", f.op, f.value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					total := 0
+					for _, row := range rows {
+						base := map[string]string{}
+						referenceDerivedLevel(base, row)
+						if row.ts.After(start.Add(-time.Minute)) && !row.ts.After(end) && condition.Matches(base["detected_level"]) {
+							total++
+						}
+					}
+					if total == 0 {
+						t.Fatal("fixture: the filter keeps nothing")
+					}
+					srv, fake := newPushdownFakeVL(t, rows, nil)
+					p := newFilterPushdownProxy(t, srv.URL)
+					fake.stored = p.labelTranslator.ToVL
+					got := runJSONVolumeQueryRange(t, p, query, start, end, time.Minute)
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+					}
+					sum := 0
+					for _, series := range got {
+						for _, v := range series {
+							n, _ := strconv.Atoi(v)
+							sum += n
+						}
+					}
+					if sum != total {
+						t.Fatalf("the answer counts %d lines, the filter accepts %d", sum, total)
+					}
+					fake.mu.Lock()
+					defer fake.mu.Unlock()
+					if fake.raw != 0 || len(fake.stats) == 0 {
+						t.Fatalf("expected stats buckets without raw rows: raw=%d stats=%d guards=%q", fake.raw, len(fake.stats), fake.guards)
+					}
+					for _, call := range append(append([]string(nil), fake.stats...), fake.guards...) {
+						// The chain unpacks logfmt itself to read a body level; the
+						// legacy rendering of the filter is the unpack followed by
+						// a filter on the level it overwrote.
+						if strings.Contains(call, "| unpack_logfmt | filter") || !fixture.chain && strings.Contains(call, "unpack_logfmt") {
+							t.Fatalf("the level is read from the stored fields; the query unpacks logfmt: %s", call)
+						}
+						if base, _, _ := strings.Cut(call, " | "); base != `app:="api"` {
+							t.Fatalf("the query starts from the bare selector, got %q in %s", base, call)
+						}
+					}
+					if !fixture.chain {
+						// A stored level decides: one stats query over the stored
+						// fields, filtered by the stored-level pipes.
+						if len(fake.stats) != 1 || !strings.Contains(fake.stats[0], "copy detected_level as __dl_d, level as __dl_l | filter (__dl_d:* OR -__dl_l:* OR ") {
+							t.Fatalf("expected one stored-level stats query: %q", fake.stats)
+						}
+						// The parse-risk probe of the grouped level label reads the same base.
+						if grouping != "detected_level" && len(fake.guards) == 0 {
+							t.Fatal("expected the parse-risk probe of the level label")
+						}
+						return
+					}
+					// Lines without a stored level ask again with the chain, whose
+					// filter (a row the witness flagged passes it) is on the result.
+					chain := chainStatsCalls(fake.stats)
+					if len(chain) != 1 || !strings.Contains(chain[0], `__lw:="1")`) {
+						t.Fatalf("expected one chain stats query with the level filter: %q", fake.stats)
+					}
+				})
+			}
+		}
+	}
+}
+
+// When a probe finds a line the two parsers read differently (a level-less
+// stream holding truncated JSON), the raw-row evaluator answers the volume
+// filtered on the level before the parser. It must give Loki's answer too: the
+// rows come from the selector narrowed to those the filter can let through
+// (never by a logfmt unpack that lets a `level=` token override the stored
+// level), and the filter is applied to the level each row is given.
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserRawEvaluator(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	rows := detectedLevelFilterFixture(s0, false)
+	for i, msg := range []string{`{"level":"error","msg": truncated`, `{"level":"debug","msg": cut`} {
+		rows = append(rows, pushdownRow{ts: s0.Add(time.Duration(30+i*60) * time.Second), stream: map[string]string{"app": "api"}, msg: msg})
+	}
+	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
+	for _, filter := range []string{`detected_level="info"`, `detected_level="error"`, `detected_level!="info"`, `detected_level=~"info|debug"`} {
+		query := `sum by (level, detected_level) (count_over_time({app="api"} | ` + filter + ` | json | drop __error__ [1m]))`
+		t.Run(filter, func(t *testing.T) {
+			reference, ok := compileOrderedJSONMetric(strings.Replace(query, `| `+filter+` | json | drop __error__`, `| json | drop __error__ | `+filter, 1))
+			if !ok {
+				t.Fatal("reference plan")
+			}
+			want := lokiPushdownReference(t, reference, rows, start, end, time.Minute)
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			if got := runJSONVolumeQueryRange(t, p, query, start, end, time.Minute); !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+			}
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.raw != 1 || len(fake.rawQueries) != 1 {
+				t.Fatalf("expected the raw-row evaluator after the probe: raw=%d", fake.raw)
+			}
+			raw := fake.rawQueries[0]
+			if strings.Contains(raw, "unpack_logfmt") || !strings.HasPrefix(raw, `app:="api" | copy detected_level as __lr_d, level as __lr_l | filter (__lr_d:* OR -__lr_l:*`) || !strings.Contains(raw, "| delete __lr_d, __lr_l") {
+				t.Fatalf("the raw fetch is the selector narrowed by the stored-level filter: %s", raw)
+			}
+		})
+	}
+}
+
+// Without `drop __error__` Loki fails a metric on a line that is not JSON, but
+// only on a line the filter before the parser lets through: a level-less line
+// whose body says "error" is filtered out of `detected_level="info"` before
+// Loki parses it, a `level=debug` message in an info stream is not. The lookup
+// of an unparsed line reads the rows the filter can let through and must skip
+// one the filter rejects.
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown, semantics/pipeline-error-text-parity
+func TestOrderedJSONDetectedLevelFilterBeforeParserPipelineError(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	valid := []pushdownRow{
+		{ts: s0.Add(10 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: `{"status":"200"}`},
+		{ts: s0.Add(20 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: `{"status":"500"}`},
+	}
+	query := `sum by (level) (count_over_time({app="api"} | detected_level="info" | json [1m]))`
+	at := s0.Add(time.Minute)
+	for _, tc := range []struct {
+		name string
+		line pushdownRow
+		fail bool
+	}{
+		{"level-less error line is filtered out", pushdownRow{ts: s0.Add(30 * time.Second), stream: map[string]string{"app": "api"}, msg: "plain text error occurred"}, false},
+		{"level token in an info stream is counted", pushdownRow{ts: s0.Add(30 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: "level=debug user=bob request served"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := append(append([]pushdownRow(nil), valid...), tc.line)
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			params := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.UnixNano(), 10)}, "step": {"60"}}
+			rec := httptest.NewRecorder()
+			p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+			if tc.fail {
+				if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "pipeline error: 'JSONParserErr'") || !strings.Contains(rec.Body.String(), `detected_level=\"info\"`) {
+					t.Fatalf("expected Loki's pipeline error for the info line: %d %s", rec.Code, rec.Body)
+				}
+				return
+			}
+			reference, ok := compileOrderedJSONMetric(`sum by (level) (count_over_time({app="api"} | json | detected_level="info" [1m]))`)
+			if !ok {
+				t.Fatal("reference plan")
+			}
+			want := lokiPushdownReference(t, reference, rows, at, at, time.Minute)
+			if got := runJSONVolumeQueryRange(t, p, query, at, at, time.Minute); !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+			}
+		})
+	}
+}
+
+// A metric that keeps the stream's labels (no vector aggregation, or `sum
+// without`) carries the detected_level Loki assigned at ingest on every
+// series, and answers alike whether the filter on it comes before or after the
+// parser.
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserKeepsStreamLabels(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	rows := detectedLevelFilterFixture(s0, true)
+	start, end := s0.Add(time.Minute), s0.Add(3*time.Minute)
+	for _, shape := range []struct{ query, afterParser string }{
+		{`count_over_time({app="api"} | detected_level="info" | json | drop __error__ [1m])`, `count_over_time({app="api"} | json | drop __error__ | detected_level="info" [1m])`},
+		{`sum without (level) (count_over_time({app="api"} | detected_level!="info" | json | drop __error__ [1m]))`, `sum without (level) (count_over_time({app="api"} | json | drop __error__ | detected_level!="info" [1m]))`},
+	} {
+		t.Run(shape.query, func(t *testing.T) {
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			// The same filter after the parser is a stage of the raw evaluator.
+			want := runJSONVolumeQueryRange(t, p, shape.afterParser, start, end, time.Minute)
+			if len(want) == 0 {
+				t.Fatal("fixture: the filter keeps nothing")
+			}
+			if got := runJSONVolumeQueryRange(t, p, shape.query, start, end, time.Minute); !reflect.DeepEqual(got, want) {
+				t.Fatalf("result differs from the filter after the parser\n got: %v\nwant: %v", got, want)
+			}
+		})
+	}
+}
+
+// The two directions of the old logfmt rendering: a `level=info` token in the
+// message of a stream whose level is debug was counted as info (the unpack
+// overwrote the stored level), and a `level=error` token in an info stream
+// dropped its line from the info count. Loki's detected_level is the stream's
+// level whatever the message says, in its canonical spelling (`Information`
+// is info). The counts are Loki's, from the stored level fields alone.
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserIgnoresMessageLevelToken(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	stream := func(level string) map[string]string { return map[string]string{"app": "api", "level": level} }
+	rows := []pushdownRow{
+		{ts: s0.Add(10 * time.Second), stream: stream("info"), msg: `{"msg":"ok"}`},
+		{ts: s0.Add(20 * time.Second), stream: stream("info"), msg: "level=error user=bob request served"},
+		{ts: s0.Add(30 * time.Second), stream: stream("debug"), msg: `level=info msg="cache miss"`},
+		{ts: s0.Add(40 * time.Second), stream: stream("debug"), msg: `{"msg":"plain debug"}`},
+		{ts: s0.Add(50 * time.Second), stream: stream("Information"), msg: `{"msg":"stored spelling"}`},
+	}
+	at := s0.Add(time.Minute)
+	for _, tc := range []struct {
+		filter string
+		want   map[string]string // lines the filter lets through, by detected_level
+	}{
+		{`detected_level="info"`, map[string]string{`{detected_level="info"}`: "3"}},
+		{`detected_level="debug"`, map[string]string{`{detected_level="debug"}`: "2"}},
+		{`detected_level="error"`, map[string]string{}},
+	} {
+		t.Run(tc.filter, func(t *testing.T) {
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			query := `sum by (detected_level) (count_over_time({app="api"} | ` + tc.filter + ` | json | drop __error__ [1m]))`
+			got := map[string]string{}
+			for key, series := range runJSONVolumeQueryRange(t, p, query, at, at, time.Minute) {
+				got[key] = series[at.Unix()]
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("answer %v, want %v", got, tc.want)
+			}
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.raw != 0 {
+				t.Fatalf("expected stats buckets without raw rows: raw=%d", fake.raw)
+			}
+		})
+	}
+}
+
+// Two filters on detected_level in a row before the parser both apply, from
+// the stored level fields (or the level chain), as the same two filters after
+// the parser do; and an instant query on the shape is answered from the stats
+// buckets (one vector), not from raw rows, with Loki's answer.
+// conformance: parser-error-and-label-collision, semantics/detected-level-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserTwoFiltersAndInstant(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	start, end := s0.Add(time.Minute), s0.Add(10*time.Minute)
+	for _, chain := range []bool{false, true} {
+		rows := detectedLevelFilterFixture(s0, chain)
+		for _, filters := range []string{
+			`detected_level!="debug" | detected_level=~"info|warn"`,
+			`detected_level=~"info|warn|error" | detected_level!~"warn"`,
+		} {
+			name := filters
+			if chain {
+				name += "/chain"
+			}
+			query := `sum by (level, detected_level) (count_over_time({app="api"} | ` + filters + ` | json | drop __error__ [1m]))`
+			reference := `sum by (level, detected_level) (count_over_time({app="api"} | json | drop __error__ | ` + filters + ` [1m]))`
+			t.Run("range/"+name, func(t *testing.T) {
+				plan, ok := compileOrderedJSONMetric(query)
+				if !ok || !plan.pushdown || len(plan.preLevelFilters) != 2 {
+					t.Fatalf("expected a pushdown plan holding both level filters: ok=%v plan=%+v", ok, plan)
+				}
+				referencePlan, ok := compileOrderedJSONMetric(reference)
+				if !ok {
+					t.Fatalf("reference plan for %s", reference)
+				}
+				want := lokiPushdownReference(t, referencePlan, rows, start, end, time.Minute)
+				if len(want) == 0 {
+					t.Fatal("fixture: the filters keep nothing")
+				}
+				srv, fake := newPushdownFakeVL(t, rows, nil)
+				p := newFilterPushdownProxy(t, srv.URL)
+				fake.stored = p.labelTranslator.ToVL
+				if got := runJSONVolumeQueryRange(t, p, query, start, end, time.Minute); !reflect.DeepEqual(got, want) {
+					t.Fatalf("result differs from the Loki reference\n got: %v\nwant: %v", got, want)
+				}
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				if fake.raw != 0 || len(fake.stats) == 0 {
+					t.Fatalf("expected stats buckets without raw rows: raw=%d stats=%d", fake.raw, len(fake.stats))
+				}
+				for _, call := range fake.stats {
+					if strings.Contains(call, "| unpack_logfmt | filter") {
+						t.Fatalf("the level is read from the stored fields; the query unpacks logfmt: %s", call)
+					}
+				}
+			})
+			t.Run("instant/"+name, func(t *testing.T) {
+				srv, fake := newPushdownFakeVL(t, rows, nil)
+				p := newFilterPushdownProxy(t, srv.URL)
+				fake.stored = p.labelTranslator.ToVL
+				at := s0.Add(5 * time.Minute)
+				want := rawInstantVolume(t, p, reference, at)
+				if len(want.values) == 0 {
+					t.Fatal("fixture: the filters keep nothing")
+				}
+				fake.mu.Lock()
+				raw := fake.raw
+				fake.mu.Unlock()
+				got, rec := runJSONVolumeQueryInstant(t, p, query, at)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status %d: %s", rec.Code, rec.Body)
+				}
+				if !reflect.DeepEqual(got.values, want.values) {
+					t.Fatalf("instant result differs from the Loki reference\n got: %v\nwant: %v", got.values, want.values)
+				}
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				if fake.raw != raw || len(fake.stats) == 0 {
+					t.Fatalf("expected the instant query on stats buckets without raw rows: raw=%d (before %d) stats=%d", fake.raw, raw, len(fake.stats))
+				}
+			})
+		}
+	}
+}
+
+// A server that does not scan the body for the level (-detected-level-body-scan=false) keeps answering the Drilldown field breakdown filtered on the
+// level before the parser from stats buckets, with the filter rendered by the
+// translator, and answers a volume grouped by the level from raw rows.
+// conformance: parser-error-and-label-collision, semantics/label-filter-before-parser-pushdown
+func TestOrderedJSONDetectedLevelFilterBeforeParserWithoutBodyScan(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	var rows []pushdownRow
+	for i := 0; i < 24; i++ {
+		rows = append(rows, pushdownRow{ts: s0.Add(time.Duration(i) * 5 * time.Second), stream: map[string]string{"app": "api", "level": "info"}, msg: `{"export_ms":"` + strconv.Itoa(i%3) + `"}`})
+	}
+	start, end := s0.Add(time.Minute), s0.Add(2*time.Minute)
+	for _, tc := range []struct {
+		query    string
+		rawRows  bool
+		unpacked string
+	}{
+		{`sum by (export_ms) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, false, "| unpack_logfmt | filter level:=\"info\""},
+		{`sum by (export_ms, detected_level) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, true, ""},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			srv, fake := newPushdownFakeVL(t, rows, nil)
+			p := newFilterPushdownProxy(t, srv.URL)
+			fake.stored = p.labelTranslator.ToVL
+			p.detectedLevelBodyScan = false
+			runJSONVolumeQueryRange(t, p, tc.query, start, end, time.Minute)
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if (fake.raw > 0) != tc.rawRows || !tc.rawRows && (len(fake.stats) != 1 || !strings.Contains(fake.stats[0], tc.unpacked)) {
+				t.Fatalf("raw=%d stats=%q, want raw rows %v", fake.raw, fake.stats, tc.rawRows)
+			}
+		})
 	}
 }
 
