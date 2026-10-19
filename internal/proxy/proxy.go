@@ -672,9 +672,7 @@ type Proxy struct {
 	backendCapabilityProfile              string
 	backendSupportsStreamMetadata         bool
 	backendSupportsDensePatternWindowing  bool
-	backendSupportsMetadataSubstring      bool
 	backendSupportsColumnFieldValues      bool
-	backendSupportsStatsRangeOffset       bool
 	backendVersionProbedAt                atomic.Int64 // Unix ns of the last metrics version probe
 	backendVersionLogged                  bool
 	labelValuesIndexWarmReady             atomic.Bool
@@ -920,7 +918,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	backendMinVersion := normalizeSemverString(cfg.BackendMinVersion)
 	if backendMinVersion == "" {
-		backendMinVersion = "v1.40.0"
+		backendMinVersion = "v1.49.0"
 	}
 	if _, _, _, ok := parseSemverTriplet(backendMinVersion); !ok {
 		return nil, fmt.Errorf("invalid backend minimum version %q", backendMinVersion)
@@ -1471,7 +1469,6 @@ func New(cfg Config) (*Proxy, error) {
 			backendCapabilityProfile:             &p.backendCapabilityProfile,
 			backendSupportsStreamMetadata:        &p.backendSupportsStreamMetadata,
 			backendSupportsDensePatternWindowing: &p.backendSupportsDensePatternWindowing,
-			backendSupportsMetadataSubstring:     &p.backendSupportsMetadataSubstring,
 			backendVersionLogged:                 &p.backendVersionLogged,
 			labelValuesIndexMu:                   &p.labelValuesIndexMu,
 			labelValuesIndex:                     p.labelValuesIndex,

@@ -230,7 +230,7 @@ func (p *Proxy) fusedFieldHits(
 
 		params := url.Values{}
 		params.Set("query", fusedQuery)
-		p.setSlidingStatsRangeParams(params, start, end, step)
+		setSlidingStatsRangeParams(params, start, end, step)
 
 		// Acquire the same concurrency slot used by individual stats_query_range calls
 		// so burst-fused calls don't bypass the back-pressure contract.

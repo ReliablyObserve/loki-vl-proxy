@@ -82,7 +82,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | LogQL | Implementation |
 |---|---|
 | `\| decolorize` | ANSI escape sequence stripping via regex |
-| `\| ip("10.0.0.0/8")` | IP address, CIDR or range filtering. Arguments are validated at parse time; line filters accept only `\|= ip(...)` and `!= ip(...)`. Line filters translate to regular-expression approximations, so non-octet IPv4 prefixes, IPv4 ranges and IPv6 forms are not matched exactly. Label filters (`addr = ip("cidr")`) use VictoriaLogs `ipv4_range()` for IPv4 CIDRs when the backend supports it, otherwise a regular expression |
+| `\| ip("10.0.0.0/8")` | IP address, CIDR or range filtering. Arguments are validated at parse time; line filters accept only `\|= ip(...)` and `!= ip(...)`. Line filters translate to regular-expression approximations, so non-octet IPv4 prefixes, IPv4 ranges and IPv6 forms are not matched exactly. Label filters (`addr = ip("cidr")`) use VictoriaLogs `ipv4_range()` for IPv4 CIDRs and a regular expression for the other forms |
 | `\| line_format` (templates) | Go `text/template` (ToUpper, ToLower, default, etc.) with bounded work: 64 KiB output per line and 16 MiB per response, plus template depth, input and execution limits. Exceeding a limit returns HTTP 400 |
 
 ## Metric Queries

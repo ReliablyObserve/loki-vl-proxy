@@ -182,7 +182,7 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `compat-drilldown.yaml` | `drilldown-grafana-pr-matrix` | runtime profiles with `run_on_pr` (Grafana 13.2.3 `current_smoke`, 12.4.12 `previous_smoke`) |
 | `compat-drilldown.yaml` | `drilldown-contract-matrix`, `drilldown-grafana-runtime-matrix` | weekly/manual: Drilldown app contract checks per version and every Grafana runtime profile |
 | `compat-vl.yaml` | `vl-pinned` | Loki 3.7.7, VictoriaLogs v1.52.0, Grafana 13.2.3: `TestVLTrackScore` |
-| `compat-vl.yaml` | `vl-matrix` | weekly/manual: `TestVLTrackScore` for every `stack.victorialogs.matrix_versions` entry |
+| `compat-vl.yaml` | `vl-matrix` | weekly/manual, for every `stack.victorialogs.matrix_versions` entry: `TestVLTrackScore`, the version-sensitive checks (`TestCompat_DetectedLevelQueryRange`, `TestCompat_RejectedQueryStatusParity`) and the range-metric table compared with Loki (`TestCompat_Unwrap*`, `TestRangeMetric*`, `TestGrafanaClickout_*`) |
 | `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard guardrails |
 | `security-pr.yaml` | `Security / runtime` | compose stack, `scripts/ci/run_security_regressions.sh`, ZAP baseline |
 | `security-heavy.yaml` | `Heavy / image and sbom`, `Heavy / semgrep`, `Heavy / fuzz`, `Heavy / dast` | scheduled/manual only: Trivy image scan and SBOM, Semgrep 1.161.0, 2-minute fuzzing, ZAP active scan and curated nuclei |
@@ -536,7 +536,7 @@ The repo now keeps four separate compatibility tracks/contracts:
 | Loki | `TestLokiTrackScore` | Loki `3.6.x` and `3.7.x` |
 | Logs Drilldown | `TestDrilldownTrackScore` | Logs Drilldown `1.0.x` and `2.x` families |
 | Grafana Loki datasource | `TestGrafanaDatasourceCatalogAndHealth` | Grafana runtime `13.x` (current) and `12.x` (previous) families |
-| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.4x.x` and `v1.5x.x`, latest 3 releases of each |
+| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.49.0` (the latest `v1.4x` release) and every `v1.5x` minor at its latest patch |
 
 The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 
@@ -568,7 +568,7 @@ Support window policy:
 - Loki: current minor family plus one minor behind
 - Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, and pull requests also run smaller current-family and previous-family smoke profiles; the full runtime matrix stays on scheduled/manual coverage
 - Logs Drilldown: current family plus one family behind
-- VictoriaLogs: the latest line plus the previous one (`v1.5x.x` and `v1.4x.x`), tested on at most the latest 3 releases of each; `v1.3x.x` and older are unsupported (see [VictoriaLogs compatibility](compatibility-victorialogs.md#support-policy))
+- VictoriaLogs: `v1.49.0` (the latest `v1.4x` release) plus every `v1.5x` release, each supported minor tested at its latest patch with a published image; `v1.48.x` and older are unsupported (see [VictoriaLogs compatibility](compatibility-victorialogs.md#support-policy))
 
 Grafana runtime profiles from the manifest:
 
@@ -587,7 +587,7 @@ The stack is version-parameterized through compose environment variables:
 
 ```bash
 LOKI_IMAGE=grafana/loki:3.6.10 \
-VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.48.0 \
+VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.49.0 \
 GRAFANA_IMAGE=grafana/grafana:12.4.2 \
 docker compose -f test/e2e-compat/docker-compose.yml up -d --build
 ```

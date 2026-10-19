@@ -502,10 +502,24 @@ func (s uwScenario) query() string {
 }
 
 func uwWindowText(d time.Duration) string {
+	if d%time.Second != 0 {
+		return strconv.Itoa(int(d/time.Millisecond)) + "ms"
+	}
 	if d%time.Minute == 0 {
 		return strconv.Itoa(int(d/time.Minute)) + "m"
 	}
 	return strconv.Itoa(int(d/time.Second)) + "s"
+}
+
+// forceRawWindow makes the window one millisecond longer than the step, so the
+// gcd(step, window) bucket grid is 1 ms wide and holds more than
+// heavyQueryBucketThreshold buckets: the raw-sample evaluator answers, whatever
+// the backend version. Instant scenarios have no grid and are left alone.
+func (s uwScenario) forceRawWindow() uwScenario {
+	if s.step > 0 {
+		s.window = s.step + time.Millisecond
+	}
+	return s
 }
 
 func generateUnwrapScenario(rnd *rand.Rand, fn, parser string, instant bool) uwScenario {
@@ -635,35 +649,48 @@ func compareUnwrapSum(t *testing.T, label string, s uwScenario, got, want map[in
 // multiple of the step, instant), the proxy's answer to an ungrouped
 // `sum(rate(... | unwrap amount [r]))` is the one series Loki's vector aggregation
 // makes of the per-series values, at every step, on every VictoriaLogs line the
-// proxy supports: v1.52 buckets anchored with the offset argument, and v1.40,
-// which ignores it. The answer comes from stats: raw rows are read only on
-// v1.40 when the start is not on its epoch grid.
+// proxy supports (v1.49.0 and v1.52.0) and on an unknown version, which behaves
+// as the floor. The answer comes from stats on buckets anchored with the offset
+// argument; no raw rows are read. With raw=true a 1 ms bucket grid (see
+// forceRawWindow) sends a query_range through the raw-sample evaluator, which
+// must read the same (t-range, t] window (isLogRangeWindowFunc covers
+// unwrap_rate) and call /select/logsql/query.
 //
 // conformance: semantics/unwrap-rate-ungrouped-sum-per-stream, metric-series-identity, window-bounds-and-step-alignment
 func TestUngroupedSumUnwrapDifferential(t *testing.T) {
-	for _, version := range []string{"", "v1.52.0", "v1.40.0"} {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
 		for _, parser := range []string{"", "logfmt", "json"} {
 			for _, instant := range []bool{false, true} {
-				name := fmt.Sprintf("version=%s/parser=%s/instant=%v", version, parser, instant)
-				t.Run(name, func(t *testing.T) {
-					rnd := rand.New(rand.NewSource(int64(len(name))*7919 + 17))
-					for i := 0; i < 25; i++ {
-						s := generateUnwrapScenario(rnd, "rate", parser, instant)
-						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
-						got, series := runUnwrapScenario(t, emu, s)
-						want := lokiUnwrapSum(s.rows, "rate", int64(s.window), s.times())
-						compareUnwrapSum(t, fmt.Sprintf("%s #%d", name, i), s, got, want, series)
-						if rawRows := emu.endpointCalls("/select/logsql/query"); len(rawRows) > 0 {
-							// Only v1.40 can read rows, for a start off its epoch bucket grid.
-							if version != "v1.40.0" {
-								t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, rawRows[0])
-							}
-						} else if emu.widest > 1 {
-							// One series from VictoriaLogs, not one per stream for the proxy to add up.
-							t.Fatalf("%s #%d: VictoriaLogs answered %d series for an ungrouped sum", name, i, emu.widest)
-						}
+				for _, raw := range []bool{false, true} {
+					if raw && instant {
+						continue
 					}
-				})
+					name := fmt.Sprintf("version=%s/parser=%s/instant=%v/raw=%v", version, parser, instant, raw)
+					t.Run(name, func(t *testing.T) {
+						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + 17))
+						for i := 0; i < 25; i++ {
+							s := generateUnwrapScenario(rnd, "rate", parser, instant)
+							if raw {
+								s = s.forceRawWindow()
+							}
+							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							got, series := runUnwrapScenario(t, emu, s)
+							want := lokiUnwrapSum(s.rows, "rate", int64(s.window), s.times())
+							compareUnwrapSum(t, fmt.Sprintf("%s #%d", name, i), s, got, want, series)
+							rawRows := emu.endpointCalls("/select/logsql/query")
+							switch {
+							case raw && len(rawRows) == 0:
+								t.Fatalf("%s #%d: expected the raw-sample evaluator, got stats calls only", name, i)
+							case raw:
+							case len(rawRows) > 0:
+								t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, rawRows[0])
+							case emu.widest > 1:
+								// One series from VictoriaLogs, not one per stream for the proxy to add up.
+								t.Fatalf("%s #%d: VictoriaLogs answered %d series for an ungrouped sum", name, i, emu.widest)
+							}
+						}
+					})
+				}
 			}
 		}
 	}
@@ -757,17 +784,18 @@ func TestUngroupedSumUnwrapPerSeriesFoldIgnoresSeriesLimit(t *testing.T) {
 	}
 }
 
-// The raw evaluator a rate over an unwrapped label falls back to (VictoriaLogs
-// before v1.45 with a start off its epoch grid) reads Loki's window (t-range, t]
-// for a grouped sum too: a line on the lower edge belongs to the previous
-// window, the line at t to this one.
+// A grouped sum of a rate over an unwrapped label reads Loki's window
+// (t-range, t]: a line on the lower edge belongs to the previous window, the
+// line at t to this one. The raw-sample evaluator answers (a 1 ms bucket grid
+// is over heavyQueryBucketThreshold, whatever the backend version) and must
+// have read /select/logsql/query.
 //
 // conformance: semantics/unwrap-range-last-point, window-bounds-and-step-alignment
 func TestGroupedSumUnwrapRateRawWindow(t *testing.T) {
 	rnd := rand.New(rand.NewSource(424242))
 	for i := 0; i < 30; i++ {
-		s := generateUnwrapScenario(rnd, "rate", "", false)
-		emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: "v1.40.0"}
+		s := generateUnwrapScenario(rnd, "rate", "", false).forceRawWindow()
+		emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: "v1.49.0"}
 		backend := httptest.NewServer(emu.handler())
 		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 		if err != nil {
@@ -782,6 +810,9 @@ func TestGroupedSumUnwrapRateRawWindow(t *testing.T) {
 		backend.Close()
 		if res.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", query, res.Code, res.Body)
+		}
+		if len(emu.endpointCalls("/select/logsql/query")) == 0 {
+			t.Fatalf("%s: expected the raw-sample evaluator, got stats calls only", query)
 		}
 		var resp struct {
 			Data struct {

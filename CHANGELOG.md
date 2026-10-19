@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **The supported VictoriaLogs floor is v1.49.0: VictoriaLogs v1.48.0 and older
+  are no longer supported.** Supported is v1.49.0 (the latest v1.4x release) and
+  every v1.5x release. `-backend-min-version` now defaults to `v1.49.0` (was
+  `v1.40.0`), in the flag, the Go fallback used when it is empty and the Helm
+  value `extraArgs.backend-min-version`; `logsql.MinSupportedMinor` is 49. A
+  deployment on VictoriaLogs v1.40 to v1.48 stops at startup with an error that
+  names `-backend-allow-unsupported-version`: upgrade VictoriaLogs to v1.49.0 or
+  newer. A Helm release that pins an older `backend-min-version` still starts
+  against an older backend, with a warning on every start; a version below the
+  floor is unsupported and untested, and the proxy no longer carries the
+  fallbacks that served it (see Changed). `-backend-allow-unsupported-version=true`
+  starts the proxy against such a backend at the operator's risk, and
+  `-backend-version-strict=true` still turns a missing or too old version into a
+  startup failure.
+
+### Changed
+
+- **Supported and tested VictoriaLogs versions are named in the README and the
+  compatibility docs.** Tested in CI: v1.49.0, v1.50.0, v1.51.1, v1.52.0 and
+  v1.53.0, every supported minor at its latest patch that has a published image
+  (v1.52.1 has none, so v1.52.0); pull requests keep the v1.52.0 pin. The
+  support window in `compatibility-matrix.json` is now "the latest v1.4x release
+  plus every v1.5x release" (was "the latest two lines, three releases each"):
+  v1.47.0 and v1.48.0 leave the matrix and v1.50.0 joins it.
+  `TestVictoriaLogsSupportPolicy` enforces the rule: the floor, the lowest
+  matrix version, the `-backend-min-version` default (flag, Go fallback, Helm
+  value) and `logsql.MinSupportedMinor` agree, the matrix holds exactly one v1.4x
+  entry (the floor) and every v1.5x minor from v1.50 up once, the pin is a
+  tested version, and the README supported-versions table lists the same
+  versions.
+- **The weekly VictoriaLogs matrix runs the range-metric table on every tested
+  version.** Besides the compatibility score and the two version-sensitive
+  checks, each version now runs `TestCompat_Unwrap*`, `TestRangeMetric*` and
+  `TestGrafanaClickout_*` against Loki (the checks that failed on VictoriaLogs
+  v1.40.0 because it ignores the `stats_query_range` `offset` argument), with an
+  explicit test and job timeout.
+- **The fallbacks for VictoriaLogs before v1.49.0 are removed, and an unknown
+  backend version behaves as v1.49.0.** The `stats_query_range` `offset`
+  argument (v1.45) is always sent: the epoch-aligned-only tumbling and sliding
+  grids, the raw-row route for unaligned starts and the gate of the
+  `name_extracted` pushdown are gone (raw evaluation remains only where it does
+  not depend on the version: buckets below 1 ms, byte and row limits). The
+  metadata substring filter (v1.49) is always forwarded as `q` and
+  `filter=substring`; the proxy-side search window stays because it also serves
+  the label-values browse index and offset/limit paging. `ip()` filters always
+  use `ipv4_range()` (v1.45) for IPv4 and keep the regular expression only for
+  IPv6 and unparsable input. `logsql.Capabilities` no longer has `StatsRateSum`,
+  `FieldIPv4Range` or `MetadataSubstring`. The v1.50+ behaviour (dense pattern
+  windowing, column-index `field_values`, the v1.51 `coalesce` pipe and the
+  v1.52 parse-error echo) keeps its fallback down to v1.49.0. The background
+  `/metrics` version probe still retries every five minutes while the version
+  is unknown.
+
 ## [2.18.1] - 2026-10-18
 
 ### Changed

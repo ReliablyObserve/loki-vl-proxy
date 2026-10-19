@@ -56,7 +56,7 @@ flowchart TD
             SS["translateStreamSelector\n→ logsql.FilterExpr"]
             PIPE_STAGES["translateLogQuery\n→ []logsql.Pipe"]
             LABEL_FN["LabelFn applied\n(OTel dotted → underscore)"]
-            CAPS_GATE["Capabilities gating\n(VL v1.40 min, v1.5x features)"]
+            CAPS_GATE["Capabilities gating\n(VL v1.49 min, v1.5x features)"]
             FT["errFallthrough\n→ String Translator"]
         end
         subgraph STR["String Translator — TranslateLogQLWithCapabilities"]

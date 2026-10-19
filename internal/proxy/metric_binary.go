@@ -72,11 +72,8 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// Range == step: Loki's sample at T covers (T-W, T] while VL's bucket
 	// labelled T covers [T, T+W). Fetch from start-W on a grid whose buckets are
 	// (edge, edge+W] and relabel every bucket to its Loki evaluation timestamp
-	// (relabelSnappedTumblingStatsQueryRange). A backend known to be without the
-	// offset arg has only epoch-aligned buckets, which match no window of an
-	// unaligned start; tumblingBucketsAligned sends those requests to the window
-	// evaluator instead.
-	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok && p.tumblingBucketsAligned(r, origSpec.Window) {
+	// (relabelSnappedTumblingStatsQueryRange).
+	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
 		buf := &bufferedResponseWriter{}
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
@@ -133,8 +130,8 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 }
 
 // proxyStatsQueryRangeDirectAnchored is proxyStatsQueryRangeDirect with an
-// optional tumbling window. When tumblingWindow > 0 and the backend honours the
-// offset arg, buckets of that width are anchored at the request start with
+// optional tumbling window. When tumblingWindow > 0, buckets of that width are
+// anchored at the request start (stats_query_range offset arg) with
 // Loki's (edge, edge+window] boundaries: the start is exclusive and the end
 // inclusive.
 //
@@ -297,11 +294,11 @@ func (p *Proxy) fetchStatsQueryRangeBody(r *http.Request, logsqlQuery string, tu
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if tumblingWindow > 0 && p.supportsStatsRangeOffset() {
+	if tumblingWindow > 0 {
 		startNs, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 		endNs, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
 		if startOK && endOK {
-			p.setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
+			setSlidingStatsRangeParams(params, time.Unix(0, startNs), time.Unix(0, endNs), tumblingWindow)
 			// The first window is (start, start+window]: a line exactly at start
 			// belongs to the window before, which no sample covers.
 			params.Set("start", time.Unix(0, startNs+1).UTC().Format(time.RFC3339Nano))

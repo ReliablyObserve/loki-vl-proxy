@@ -157,20 +157,23 @@ func TestDecolorizePipelineStage(t *testing.T) {
 	}
 }
 
-// TestIPFilterTranslation verifies that | ip("cidr") stages emit VL-native
-// ipv4_range() on v1.45+ and regexp fallback on older versions.
+// TestIPFilterTranslation verifies that | ip("cidr") stages emit the VL-native
+// ipv4_range() for IPv4, whatever capabilities are known (an unknown backend
+// version has none), and the regexp approximation only for IPv6.
 func TestIPFilterTranslation(t *testing.T) {
-	// With zero capabilities (pre-v1.45): regexp fallback via | filter _msg:~"..."
-	got := translatePipelineStage(`ip("10.0.0.0/8")`, nil, logsql.Capabilities{})
-	if !strings.HasPrefix(got, "| filter _msg:~") {
-		t.Fatalf("expected regexp fallback for ip() without FieldIPv4Range cap, got: %q", got)
+	for name, caps := range map[string]logsql.Capabilities{
+		"unknown version": {},
+		"v1.52.0":         logsql.CapabilitiesFor("v1.52.0"),
+	} {
+		got := translatePipelineStage(`ip("192.168.0.0/16")`, nil, caps)
+		if got != `| filter _msg:ipv4_range(192.168.0.0, 192.168.255.255)` {
+			t.Fatalf("%s: expected native ipv4_range() filter, got: %q", name, got)
+		}
 	}
 
-	// With v1.45+ capabilities: native ipv4_range() filter
-	caps := logsql.Capabilities{FieldIPv4Range: true}
-	got = translatePipelineStage(`ip("192.168.0.0/16")`, nil, caps)
-	if got != `| filter _msg:ipv4_range(192.168.0.0, 192.168.255.255)` {
-		t.Fatalf("expected native ipv4_range() filter, got: %q", got)
+	got := translatePipelineStage(`ip("2001:db8::/32")`, nil, logsql.Capabilities{})
+	if !strings.HasPrefix(got, "| filter _msg:~") {
+		t.Fatalf("expected regexp fallback for an IPv6 ip() filter, got: %q", got)
 	}
 }
 

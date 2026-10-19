@@ -52,7 +52,7 @@ type Builder struct{ caps Capabilities }
 func NewBuilder(caps Capabilities) *Builder { return &Builder{caps: caps} }
 
 // BestTopN returns pipe stages that keep the top-K entries by the named field.
-// On all supported versions (v1.40+) this is | sort by (field desc) | limit K.
+// On all supported versions (v1.49+) this is | sort by (field desc) | limit K.
 func (b *Builder) BestTopN(k int, field string) []Pipe {
 	return []Pipe{
 		PipeSort{By: []SortField{{Field: field, Desc: true}}},
@@ -61,21 +61,18 @@ func (b *Builder) BestTopN(k int, field string) []Pipe {
 }
 
 // BestIPv4Range returns a filter that matches field against the CIDR range.
-// On v1.45+ it emits the native ipv4_range() field filter.
-// On earlier versions it falls back to a regexp approximation.
+// It emits the native ipv4_range() field filter and falls back to a regexp
+// approximation for CIDRs ipv4_range() cannot express (IPv6, unparsable).
 func (b *Builder) BestIPv4Range(field, cidr string) FilterExpr {
-	if b.caps.FieldIPv4Range {
-		first, last, ok := cidrToRange(cidr)
-		if !ok {
-			return FieldFilter{Field: field, Op: FieldOpRegexp, Value: cidrToRegexp(cidr)}
-		}
-		return FieldFilter{
-			Field: field,
-			Op:    FieldOpIPv4Range,
-			Value: first + ", " + last,
-		}
+	first, last, ok := cidrToRange(cidr)
+	if !ok {
+		return FieldFilter{Field: field, Op: FieldOpRegexp, Value: cidrToRegexp(cidr)}
 	}
-	return FieldFilter{Field: field, Op: FieldOpRegexp, Value: cidrToRegexp(cidr)}
+	return FieldFilter{
+		Field: field,
+		Op:    FieldOpIPv4Range,
+		Value: first + ", " + last,
+	}
 }
 
 // cidrToRange parses a CIDR and returns the first and last IP as strings.

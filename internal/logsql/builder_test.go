@@ -89,24 +89,18 @@ func TestBestTopN_v150(t *testing.T) {
 	}
 }
 
-func TestBestIPv4Range_pre145(t *testing.T) {
-	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.44.0"))
-	f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
-	// VictoriaLogs unquotes with Go rules, so the pattern's backslashes are
-	// escaped in the literal it receives (v1.52.0 rejects the single-backslash
-	// form with "compound token cannot start with").
-	want := `client_ip:~"^192\\.168\\.1\\."`
-	if got := f.String(); got != want {
-		t.Errorf("v1.44 fallback = %q, want %q", got, want)
-	}
-}
-
-func TestBestIPv4Range_v145(t *testing.T) {
-	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.45.0"))
-	f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
-	want := "client_ip:ipv4_range(192.168.1.0, 192.168.1.255)"
-	if got := f.String(); got != want {
-		t.Errorf("got %q, want %q", got, want)
+// The native ipv4_range() filter is emitted for every backend version, the
+// unknown one (zero capabilities) included.
+func TestBestIPv4Range(t *testing.T) {
+	for _, semver := range []string{"", "v1.49.0", "v1.52.0"} {
+		t.Run(semver, func(t *testing.T) {
+			b := logsql.NewBuilder(logsql.CapabilitiesFor(semver))
+			f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
+			want := "client_ip:ipv4_range(192.168.1.0, 192.168.1.255)"
+			if got := f.String(); got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 

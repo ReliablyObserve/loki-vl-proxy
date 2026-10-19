@@ -57,10 +57,10 @@ gap:
   area: 'internal/proxy ordered_json_metric.go stats pushdown (name_extracted labels) and translator.ExtractedLabelPipes'
   loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; pkg/logql/log/labels.go ParserHint/Extracted'
   proxy: 'orderedJSONPushdownLabelOK refused name_extracted; raw-row evaluator answered (502 at the row limit)'
-  planned_test: 'TestCompat_ExtractedLabelMetricPushdown (test/e2e-compat, group core); proxy TestOrderedJSONExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricProbeKeepsRawEvaluator, TestLogfmtExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricDifferential, TestOrderedJSONExtractedMetricPushdownNeedsStatsRangeOffset; translator TestExtractedLabelPipes'
+  planned_test: 'TestCompat_ExtractedLabelMetricPushdown (test/e2e-compat, group core); proxy TestOrderedJSONExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricProbeKeepsRawEvaluator, TestLogfmtExtractedMetricPushdownMatchesLoki, TestOrderedJSONExtractedMetricDifferential, TestOrderedJSONExtractedMetricPushdownOnSupportedBackends; translator TestExtractedLabelPipes'
   note: |
-    Gated off below VictoriaLogs v1.45 (versions/stats-bucket-label-v1.45), where the raw-row evaluator
-    answers as before. Open items: an ungrouped range metric stays on raw rows
+    Runs on every supported VictoriaLogs version: the stats_query_range offset arg it needs for bucket
+    edges is present from v1.45 (versions/stats-bucket-label-v1.45). Open items: an ungrouped range metric stays on raw rows
     (semantics/extracted-ungrouped-metric-raw-rows); service_name_extracted and detected_level_extracted
     stay on the raw evaluator (semantics/extracted-derived-labels-raw-evaluator); two differences against
     Loki (semantics/extracted-metric-known-differences). Related, unchanged: semantics/unwrap-range-last-point

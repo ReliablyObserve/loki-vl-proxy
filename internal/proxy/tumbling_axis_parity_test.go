@@ -717,36 +717,34 @@ func TestShortRangeMetric_TooManySeriesFollowsLokiLimit(t *testing.T) {
 	}
 }
 
-// A backend known to be without the stats_query_range offset arg has only
-// epoch-aligned buckets. They serve the tumbling relabel when the start is
-// aligned to the range; any other start would count lines of the wrong windows,
-// so the window evaluator answers. Lines sit off window edges, as epoch buckets
-// are [T, T+range) while Loki's windows are (T-range, T].
-func TestTumblingRangeMetric_BackendWithoutOffsetSupport(t *testing.T) {
+// The stats_query_range offset arg places the bucket edges on the request's
+// windows on every supported backend, so one anchored stats call answers the
+// tumbling relabel whatever the start, and so does an unknown version (it
+// behaves as the v1.49.0 floor). Lines sit off window edges only to keep the
+// fixture independent of the 1ns edge shift.
+func TestTumblingRangeMetric_AnchoredBucketsOnFloorAndUnknownVersion(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	lines := tumblingFixture(base.Add(2500 * time.Millisecond))
 	step := 5 * time.Minute
 	query := `sum by (pod) (count_over_time({app="tumble"}[5m]))`
-	for _, offset := range []time.Duration{0, 123 * time.Millisecond, 7 * time.Second, 150 * time.Second} {
-		t.Run(fmt.Sprintf("start+%s", offset), func(t *testing.T) {
-			start, end := base.Add(5*time.Minute+offset), base.Add(15*time.Minute+offset)
-			srv, fake := newTumblingFakeVL(t, lines)
-			p := newGapTestProxy(t, srv.URL)
-			p.storeBackendVersion("v1.44.0", "v1.44.0")
-			got := runTumblingQuery(t, p, "/loki/api/v1/query_range", tumblingRangeParams(query, start, end, step))
-			assertTumblingEqual(t, query, lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, 5*time.Minute), got)
-			fake.mu.Lock()
-			defer fake.mu.Unlock()
-			if offset == 0 {
-				if len(fake.statsCalls) != 1 || fake.statsCalls[0].offset != "" || fake.rawCalls != 0 {
-					t.Fatalf("aligned start: expected one offset-free stats call, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
+	for _, version := range []string{"v1.49.0", ""} {
+		for _, offset := range []time.Duration{0, 123 * time.Millisecond, 7 * time.Second, 150 * time.Second} {
+			t.Run(fmt.Sprintf("version=%q/start+%s", version, offset), func(t *testing.T) {
+				start, end := base.Add(5*time.Minute+offset), base.Add(15*time.Minute+offset)
+				srv, fake := newTumblingFakeVL(t, lines)
+				p := newGapTestProxy(t, srv.URL)
+				if version != "" {
+					p.storeBackendVersion(version, version)
 				}
-				return
-			}
-			if len(fake.statsCalls) != 0 || fake.rawCalls != 1 {
-				t.Fatalf("unaligned start: expected the window evaluator, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
-			}
-		})
+				got := runTumblingQuery(t, p, "/loki/api/v1/query_range", tumblingRangeParams(query, start, end, step))
+				assertTumblingEqual(t, query, lokiTumblingReference(lines, "count_over_time", []string{"pod"}, start, end, step, 5*time.Minute), got)
+				fake.mu.Lock()
+				defer fake.mu.Unlock()
+				if len(fake.statsCalls) != 1 || fake.statsCalls[0].offset == "" || fake.rawCalls != 0 {
+					t.Fatalf("expected one offset-anchored stats call and no raw scans, got %+v and %d raw scans", fake.statsCalls, fake.rawCalls)
+				}
+			})
+		}
 	}
 }
 

@@ -7,26 +7,24 @@ import (
 )
 
 // MinSupportedMajor and MinSupportedMinor define the oldest VictoriaLogs
-// release that this package targets. Queries targeting earlier versions
-// must fall back to the proxy's string-concatenation translator.
+// release that this package targets (v1.49.0). Queries targeting earlier
+// versions must fall back to the proxy's string-concatenation translator.
 const (
 	MinSupportedMajor = 1
-	MinSupportedMinor = 40
+	MinSupportedMinor = 49
 )
 
 // Capabilities describes which optional LogsQL constructs are available
 // in a specific VictoriaLogs deployment.
 //
-// The package targets v1.4x and v1.5x families only. All features listed
-// in the v1.40 baseline (PipeHits, PipeRunning, PipeBlock, PipeUniq,
-// PipeTop, StatsHistogram) are assumed always available; they are not
-// represented as flags because every supported version includes them.
+// The package targets v1.49.0 and newer. Everything introduced up to v1.49.0
+// (PipeHits, PipeRunning, PipeBlock, PipeUniq, PipeTop, StatsHistogram,
+// rate_sum(), ipv4_range(), the metadata substring filter) is assumed always
+// available; it is not represented as a flag because every supported version
+// includes it. An unknown version gets the zero value, the v1.49.0 floor.
 //
-// Features that vary within the v1.40–v1.5x range are:
+// Features that vary within the v1.49–v1.5x range are:
 //
-//	StatsRateSum          — rate_sum() stats function.       Added in v1.44.
-//	FieldIPv4Range        — ipv4_range() field filter.       Added in v1.45.
-//	MetadataSubstring     — substring in metadata fields.    Added in v1.49.
 //	DensePatternWindowing — dense windowing for patterns.    Added in v1.50.
 //	PipeCoalesce          — coalesce pipe.                   Added in v1.51.
 //
@@ -34,17 +32,14 @@ const (
 // compatible but slower alternative (regexp approximation, proxy-side
 // post-filtering, etc.).
 type Capabilities struct {
-	StatsRateSum          bool // v1.44+
-	FieldIPv4Range        bool // v1.45+
-	MetadataSubstring     bool // v1.49+
 	DensePatternWindowing bool // v1.50+
 	PipeCoalesce          bool // v1.51+
 }
 
 // CapabilitiesFor returns the Capabilities for the given VictoriaLogs semver
-// string (e.g. "v1.50.0" or "1.44.2").
+// string (e.g. "v1.50.0" or "1.52.1").
 //
-// Versions earlier than v1.40 are not supported; they return the zero value
+// Versions earlier than v1.49 are not supported; they return the zero value
 // (all features false) rather than panicking, so callers always get a safe
 // degraded capability set.
 func CapabilitiesFor(semver string) Capabilities {
@@ -53,9 +48,6 @@ func CapabilitiesFor(semver string) Capabilities {
 		return Capabilities{}
 	}
 	return Capabilities{
-		StatsRateSum:          atLeast(maj, min, 1, 44),
-		FieldIPv4Range:        atLeast(maj, min, 1, 45),
-		MetadataSubstring:     atLeast(maj, min, 1, 49),
 		DensePatternWindowing: atLeast(maj, min, 1, 50),
 		PipeCoalesce:          atLeast(maj, min, 1, 51),
 	}

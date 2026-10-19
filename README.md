@@ -101,7 +101,7 @@ LogQL→LogsQL translation is **4.7–15.5 µs per query** (arm64). For a 100–
 | Selector `{app="nginx"}` | 4.7 µs | 18 |
 | `rate({...}[5m])` | 6.1 µs | 45 |
 | `sum(rate({...}[5m])) by (host)` | 8.9 µs | 48 |
-| `ip("10.0.0.0/8")` filter (v1.45+, capability-aware) | 8.4 µs | 36 |
+| `ip("10.0.0.0/8")` filter (native `ipv4_range()`) | 8.4 µs | 36 |
 | Binary metric `sum(rate) / sum(rate)` | 12.5 µs | 76 |
 
 Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64).
@@ -164,6 +164,21 @@ For comparison, [Loki's own documentation](https://grafana.com/docs/loki/latest/
 **Migration cost:** Zero changes to Grafana, dashboards, alerts, or any Loki API client. The proxy handles translation transparently; remove it and point back at Loki if needed.
 
 Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model](docs/cost-model.md) · [Scaling](docs/scaling.md)
+
+---
+
+## Supported versions
+
+<!-- vl-support:start -->
+| VictoriaLogs | Version |
+|---|---|
+| Supported | `v1.49.0` (the latest v1.4x release) and every v1.5x release |
+| Tested in CI | `v1.49.0`, `v1.50.0`, `v1.51.1`, `v1.52.0`, `v1.53.0` |
+| Pull-request CI pin | `v1.52.0` |
+| Startup floor (`-backend-min-version`) | `v1.49.0` |
+<!-- vl-support:end -->
+
+The proxy refuses to start against a VictoriaLogs older than the floor unless `-backend-allow-unsupported-version=true` is set; such a version is unsupported and untested. Every supported minor is tested at its latest patch release that has a published image; the weekly matrix run includes the range-metric table compared with Loki. Loki, Grafana, Logs Drilldown and the Loki datasource plugin versions are listed in the [compatibility matrix](docs/compatibility-matrix.md); the VictoriaLogs policy and capability bands are in [VictoriaLogs compatibility](docs/compatibility-victorialogs.md).
 
 ---
 

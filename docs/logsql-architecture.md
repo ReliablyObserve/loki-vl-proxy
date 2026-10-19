@@ -2,7 +2,7 @@
 
 ## Overview
 
-`internal/logsql` provides a typed AST, recursive-descent parser, capability-aware builder, and version gating for VictoriaLogs LogsQL queries. It mirrors the structure of `internal/logql` (the existing LogQL parser) and targets VictoriaLogs v1.40 and later.
+`internal/logsql` provides a typed AST, recursive-descent parser, capability-aware builder, and version gating for VictoriaLogs LogsQL queries. It mirrors the structure of `internal/logql` (the existing LogQL parser) and targets VictoriaLogs v1.49.0 and later (the supported floor; see [VictoriaLogs compatibility](compatibility-victorialogs.md)).
 
 The package is used in two modes:
 1. **Direct construction** — callers assemble `logsql.Expr` nodes with the builder API and call `String()` to emit the final query.
@@ -170,17 +170,14 @@ sequenceDiagram
 
 ## VictoriaLogs Version Capability Matrix
 
-The package targets **v1.40 minimum**. All features in the v1.40 baseline are always available.
+The package targets **v1.49.0 minimum**. Everything introduced up to v1.49.0 is always available and has no flag: the baseline pipes and stats functions (`PipeHits`, `PipeRunning`, `PipeBlock`, `PipeUniq`, `PipeTop`, `StatsHistogram`), `rate_sum()` (v1.44), `ipv4_range()` (v1.45), the `stats_query_range` `offset` argument (v1.45) and the metadata substring filter (v1.49).
 
 | Version range | Feature additions |
 |---------------|-------------------|
-| v1.40–v1.43 | Baseline: `PipeHits`, `PipeRunning`, `PipeBlock`, `PipeUniq`, `PipeTop`, `StatsHistogram` |
-| v1.44 | `rate_sum()` stats function (`Capabilities.StatsRateSum`) |
-| v1.45–v1.48 | `ipv4_range()` field filter (`Capabilities.FieldIPv4Range`) |
-| v1.49 | Metadata substring filter (`Capabilities.MetadataSubstring`) |
+| v1.49 | Floor: the zero `Capabilities` value |
 | v1.50+ | Dense pattern windowing (`Capabilities.DensePatternWindowing`) |
 
-`CapabilitiesFor(semver)` is called once at proxy startup from `storeBackendVersion()`. Unsupported versions (pre-v1.40, malformed) return a zero `Capabilities` (all false), which is the safest possible degraded state.
+`CapabilitiesFor(semver)` is called from `storeBackendVersion()` and `logsqlCapabilities()`. An unknown or malformed version, and a version below the floor (unsupported, only started with `-backend-allow-unsupported-version`), return the zero `Capabilities`, the floor: no fallbacks are kept for older releases.
 
 ---
 
@@ -270,4 +267,4 @@ Once the AST-to-AST path is wired to handlers, the full pipeline becomes:
 2. **Parser** (`scanner.go` + `parser.go`) — recursive-descent parser that round-trips what the translator emits
 3. **Capability-aware builder** (`capabilities.go` + `builder.go`) — selects the best LogsQL construct for the detected VL version
 
-Callers import the package and construct queries using the builder API. The minimum supported VictoriaLogs version is v1.40.
+Callers import the package and construct queries using the builder API. The minimum supported VictoriaLogs version is v1.49.0.

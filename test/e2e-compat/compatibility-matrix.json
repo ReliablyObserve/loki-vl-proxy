@@ -42,17 +42,15 @@
       "image_repo": "victoriametrics/victoria-logs",
       "pinned_version": "v1.52.0",
       "support_window": {
-        "policy": "latest_two_lines_three_releases_each",
-        "description": "Fully support the latest VictoriaLogs minor line and the previous one (today v1.5x and v1.4x); older lines are unsupported. Test at most the latest 3 releases of each supported line, using the latest patch of each minor. When a new line appears (for example v1.6x) it becomes current, the previous current line becomes previous, and the oldest line and its matrix_versions drop out. The pinned_version (PR CI image) must be one of the tested versions and moves separately, with its own parity proof. Moving the window also means: update the -backend-min-version default (Go fallback, flag and Helm value: first minor of the oldest supported line), logsql.MinSupportedMinor and, only if a capability boundary moves, the capability profiles below (their names describe where a capability starts, not the support floor).",
+        "policy": "latest_1_4x_release_plus_every_1_5x_release",
+        "description": "Fully support the latest VictoriaLogs v1.4x release (v1.49.0) and every v1.5x release; anything older is unsupported. Test every supported minor at its latest patch that has a published Docker image: v1.49.0 for the v1.4x line and each v1.5x minor. A new minor joins matrix_versions as soon as it is released. The pinned_version (PR CI image) must be one of the tested versions and moves separately, with its own parity proof. Moving the floor also means: update the -backend-min-version default (Go fallback, flag and Helm value), logsql.MinSupportedMinor, the supported-versions table in README.md and, only if a capability boundary moves, the capability profiles below (their names describe where a capability starts, not the support floor).",
         "current_family": "v1.5x.x",
         "previous_family": "v1.4x.x",
-        "max_versions_per_family": 3,
-        "minimum_supported_version": "v1.40.0"
+        "minimum_supported_version": "v1.49.0"
       },
       "matrix_versions": [
-        "v1.47.0",
-        "v1.48.0",
         "v1.49.0",
+        "v1.50.0",
         "v1.51.1",
         "v1.52.0",
         "v1.53.0"
@@ -376,15 +374,13 @@
       "edge_cases": [
         {
           "versions": [
-            "v1.47.x",
-            "v1.48.x",
             "v1.49.x"
           ],
           "focus": [
             "stats_query_range shape",
             "structured metadata shaping",
             "drilldown-derived labels and values",
-            "stats_query_range offset (v1.45+) and metadata substring filter (v1.49)"
+            "stats_query_range offset and metadata substring filter (always on: the v1.49.0 floor)"
           ]
         },
         {
