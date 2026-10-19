@@ -70,7 +70,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 7 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
-| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 21 | 10 | partial |
+| semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 22 | 10 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 10 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 6 | partial |

@@ -69,6 +69,7 @@ cases:
   - semantics/json-filter-pushdown-ungrouped-sum
   - semantics/json-filter-pushdown-translated-label
   - semantics/json-label-spelling-probe
+  - semantics/json-instant-volume-stats
   - semantics/label-filter-before-parser-pushdown
   - semantics/pipeline-error-text-parity
   - semantics/parse-error-labels-on-log-lines

@@ -437,6 +437,10 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go"
     ],
+    "semantics/json-instant-volume-stats": [
+      "internal/proxy/ordered_json_instant_stats_test.go",
+      "test/e2e-compat/json_instant_volume_stats_test.go"
+    ],
     "semantics/json-label-spelling-probe": [
       "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
@@ -662,7 +666,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 317,
+  "registry_items": 318,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -909,6 +913,9 @@
       "semantics/partial-parse-before-error",
       "semantics/pipeline-error-text-parity",
       "status-400"
+    ],
+    "internal/proxy/ordered_json_instant_stats_test.go": [
+      "semantics/json-instant-volume-stats"
     ],
     "internal/proxy/ordered_json_metric_test.go": [
       "semantics/pipeline-error-text-parity"
@@ -1206,6 +1213,9 @@
       "semantics/json-filter-pushdown-without-error-drop",
       "semantics/json-label-spelling-probe"
     ],
+    "test/e2e-compat/json_instant_volume_stats_test.go": [
+      "semantics/json-instant-volume-stats"
+    ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -1344,7 +1354,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 133,
+  "tests_with_markers": 135,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1455,5 +1465,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 124
+  "wired_items": 125
 }

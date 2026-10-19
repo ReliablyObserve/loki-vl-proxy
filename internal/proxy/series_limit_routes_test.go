@@ -343,7 +343,8 @@ func TestSeriesLimit_EveryMetricRouteFollowsLoki(t *testing.T) {
 	}{
 		// A second parser keeps an ordered | json metric off the stats pushdown.
 		{"ordered json raw evaluator range", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | json | drop __error__, __error_details__ | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "raw"},
-		{"ordered json raw evaluator instant", "/loki/api/v1/query", instantParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`), nil, "raw"},
+		{"ordered json raw evaluator instant", "/loki/api/v1/query", instantParams(`sum by (pod) (count_over_time({app="top"} | json | drop __error__, __error_details__ | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`), nil, "raw"},
+		{"ordered json stats pushdown instant", "/loki/api/v1/query", instantParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`), nil, "stats_query_range"},
 		{"ordered json stats pushdown", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "stats_query_range"},
 		// The reported Drilldown labels breakdown: a label filter before the
 		// parser, pushed down with the stats query.

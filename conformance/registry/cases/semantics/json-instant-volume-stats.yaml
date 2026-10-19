@@ -1,0 +1,42 @@
+id: semantics/json-instant-volume-stats
+title: An instant `| json | drop __error__` volume is answered from one stats bucket
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query
+consumer: api
+why: |
+  `sum by (level, detected_level) (count_over_time({env="production"} | json |
+  drop __error__ [5m]))` evaluated at one time (`/loki/api/v1/query`) read every
+  raw row of its window and counted them in the proxy: 22.5k rows cost 475 ms
+  against Loki's 94 ms warm, and at `[24h]` the row cap (1,000,000) turned the
+  answer into an error where Loki answers. Only the range route used the
+  VictoriaLogs stats pushdown.
+
+  The instant route now asks `stats_query_range` for the one bucket that is
+  Loki's window (t-range, t], on the same anchored grid as the range route
+  (start t-range, end t+1ns, step range, offset shifting the edges by 1ns). A
+  line exactly at t-range falls into the preceding bucket and is ignored; a line
+  exactly at t is inside. The same probes, series limit and fallbacks apply: a
+  line the two parsers read differently, or a pipeline the pushdown does not
+  cover, keeps the raw-row evaluator. The vector carries the evaluation time in
+  seconds with millisecond precision.
+
+  Layer: VictoriaLogs native stats; no raw rows are read.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({env="production"} | json | drop __error__ [5m]))'
+    time: now
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The window holds lines of the e2e generator, JSON and plain; no line holds
+    a key the two parsers read differently.
+compare:
+  mode: exact
+  fields: [status, series_labels, values, timestamps]
+  expect: |
+    HTTP 200, a vector with Loki's series, values and the evaluation time,
+    answered from one `stats_query_range` bucket with no raw-row fetch. A
+    window of `[24h]` answers instead of failing on the row cap.
