@@ -10,8 +10,11 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // lokiQuantile is Loki v3.7.7's Quantile (pkg/logql/range_vector.go:465-487)
@@ -190,6 +193,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 	}
 	for _, phi := range []float64{0, 0.5, 0.95, 0.99, 1} {
 		for grouping := range seriesOf {
+			rawBefore := len(emu.endpointCalls("/select/logsql/query"))
 			for _, shape := range []struct {
 				window, step time.Duration
 			}{
@@ -272,10 +276,11 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 					t.Fatalf("instant %q %v: got %v, want %v", query, s.Metric, v, w)
 				}
 			}
+			// Grouped quantiles read value counts; per-stream ones the raw rows.
+			if readRaw := len(emu.endpointCalls("/select/logsql/query")) > rawBefore; readRaw != (grouping == "") {
+				t.Fatalf("phi=%v %q: read raw rows %v", phi, grouping, readRaw)
+			}
 		}
-	}
-	if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
-		t.Fatalf("quantile read raw rows: %d queries", len(q))
 	}
 }
 
@@ -353,6 +358,7 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 		{`sum without (pod) (%s)`, func(r row) string { return r.pod + r.level }, func(r row) string { return r.level }, "sum", func(m map[string]string) string { return m["level"] }},
 	} {
 		for _, pipeline := range []string{`{app="api"} | unwrap lat`, `{app="api"} | json | unwrap lat`} {
+			rawBefore := len(emu.endpointCalls("/select/logsql/query"))
 			reference := func(at time.Time, window time.Duration) map[string]float64 {
 				perSeries := map[string][]float64{}
 				groupOf := map[string]string{}
@@ -446,9 +452,29 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 					t.Fatalf("instant %s %v: got %v, want %v", query, s.Metric, v, w)
 				}
 			}
+			// Grouped quantiles read value counts; per-stream ones the raw rows.
+			if readRaw := len(emu.endpointCalls("/select/logsql/query")) > rawBefore; readRaw == strings.Contains(tc.query, "%s by (") {
+				t.Fatalf("%s over %s: read raw rows %v", tc.query, pipeline, readRaw)
+			}
 		}
 	}
-	if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
-		t.Fatalf("quantile read raw rows: %d queries", len(q))
+}
+
+// The counts group by every field of a grouped quantile, level included at any
+// position; per-stream counts group by stream and level once.
+func TestQuantileStatsGroupByKeepsLevel(t *testing.T) {
+	for _, tc := range []struct {
+		spec statsCompatSpec
+		want string
+	}{
+		{statsCompatSpec{GroupBy: []string{"service_name", "level"}}, "service_name, level, " + translator.UnwrapValueAlias},
+		{statsCompatSpec{GroupBy: []string{"level"}}, "level, " + translator.UnwrapValueAlias},
+		{statsCompatSpec{GroupBy: []string{"level", "region"}}, "level, region, " + translator.UnwrapValueAlias},
+		{statsCompatSpec{GroupBy: []string{"_stream", "level"}}, "_stream, level, " + translator.UnwrapValueAlias},
+		{statsCompatSpec{}, "_stream, level, " + translator.UnwrapValueAlias},
+	} {
+		if got := strings.Join(quantileStatsGroupBy(tc.spec), ", "); got != tc.want {
+			t.Errorf("%v: got %q, want %q", tc.spec.GroupBy, got, tc.want)
+		}
 	}
 }

@@ -25,8 +25,8 @@ type unwrapQuantileFixtures struct {
 	// selPlain: three streams whose JSON lines hold only the unwrapped field, so
 	// a series is the stream (Loki adds no parsed label but the unwrapped one).
 	selPlain string
-	// selRoute: three streams whose lines also hold a route, for a range
-	// aggregation grouped by a parsed label.
+	// selRoute: three streams whose lines also hold a route and a level, for a
+	// range aggregation grouped by parsed labels.
 	selRoute string
 }
 
@@ -61,7 +61,7 @@ func ensureUnwrapQuantileFixtures(t *testing.T) *unwrapQuantileFixtures {
 					}
 					msg := fmt.Sprintf(`{"duration_ms":%s}`, value)
 					if kind == "route" {
-						msg = fmt.Sprintf(`{"route":"/r%d","duration_ms":%s}`, (i+k)%3, value)
+						msg = fmt.Sprintf(`{"route":"/r%d","level":"%s","duration_ms":%s}`, (i+k)%3, []string{"info", "error"}[i%2], value)
 					}
 					ts := fx.s0.Add(time.Duration(3+2*k)*time.Second + time.Duration(i)*10*time.Second)
 					stream.lines = append(stream.lines, slidingLiveLine{ts: ts, msg: msg})
@@ -111,6 +111,7 @@ func TestCompat_UnwrapQuantile(t *testing.T) {
 		{"by stream label", fx.selPlain, "", "by (app)"},
 		{"by ()", fx.selPlain, "", "by ()"},
 		{"by parsed label", fx.selRoute, "", "by (route)"},
+		{"by stream label and level", fx.selRoute, "", "by (app, level)"},
 		{"by () over parsed labels", fx.selRoute, "", "by ()"},
 		{"sum", fx.selPlain, "sum", ""},
 		{"sum by stream label", fx.selPlain, "sum by (app)", ""},

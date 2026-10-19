@@ -75,11 +75,12 @@ func quantileGroupsByFields(spec statsCompatSpec) bool {
 // series fields and the value.
 func quantileStatsGroupBy(spec statsCompatSpec) []string {
 	var by []string
-	if !quantileGroupsByFields(spec) {
+	perStream := !quantileGroupsByFields(spec)
+	if perStream {
 		by = append(by, "_stream", "level")
 	}
 	for _, g := range spec.GroupBy {
-		if isVLInternalField(g) || (g == "level" && len(by) > 0) {
+		if isVLInternalField(g) || (g == "level" && perStream) {
 			continue
 		}
 		by = append(by, quoteLogsQLIdent(g))
@@ -292,9 +293,11 @@ func quantileSeriesEvaluator(phi float64, series map[string]quantileSeries) ([]s
 
 // readsQuantileCounts reports whether a manual range metric is a
 // quantile_over_time answered from value counts: its translation converts the
-// value in the unwrap gate.
-func readsQuantileCounts(manualFunc, base string) bool {
-	return manualFunc == "quantile" && hasUnwrapGate(base)
+// value in the unwrap gate, and its series are the groups of fields. Per-stream
+// series count every value of every stream, which VictoriaLogs holds in
+// memory; they stay on the raw evaluator, bounded by the row and byte limits.
+func readsQuantileCounts(manualFunc string, spec statsCompatSpec) bool {
+	return manualFunc == "quantile" && hasUnwrapGate(spec.BaseQuery) && quantileGroupsByFields(spec)
 }
 
 // hasUnwrapGate reports whether a translated base query holds the unwrap gate,
