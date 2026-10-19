@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-10-19
+
 ### Breaking Changes
 
 - **The supported VictoriaLogs floor is v1.49.0: VictoriaLogs v1.48.0 and older
