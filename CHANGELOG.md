@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.1] - 2026-10-19
+
 ### Fixed
 
 - **`quantile_over_time(...) by (<label>, level)` over an unwrap answers one
