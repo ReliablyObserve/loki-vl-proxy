@@ -11,6 +11,11 @@ why: |
   and sums per ns). The proxy answers one series `{}`. On the fixture, query_range:
   `{}` = 0.74,0.26 against Loki's {ns=x} = 0.813333,1.06,1.23333 and {ns=y} =
   0.92,1.41333,1.5; instant: `{}` = 2.73333 against {ns=x} = 1.23333, {ns=y} = 1.5.
+  The query_range rate over an unwrapped field is fixed by #734 (the nested
+  aggregation is read down to the rate, and the series are folded per ns): the
+  proxy answers Loki's {ns=x} and {ns=y} there
+  (TestWithoutOverInnerAggregationRateRangeMatchesLoki). The instant query and
+  both count_over_time[1m] cases still collapse.
   The same collapse for `sum without (pod) (sum by (pod, ns) (count_over_time({app="payment-service"}[1m])))`:
   `{}` = 12,12,12 and 12 against {ns=x} = 8,4,8 and 8, {ns=y} = 4,8,4 and 4.
 

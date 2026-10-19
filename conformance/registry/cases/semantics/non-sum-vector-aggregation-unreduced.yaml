@@ -36,7 +36,9 @@ why: |
   VictoriaLogs stats query (one row per series and bucket), so no raw rows are
   read for it; a sliding window needs the per-series window before any fold, so
   VictoriaLogs cannot do the fold. parseOriginalRangeMetricSpec strips every
-  aggregation above the range function.
+  aggregation above the range function, down to a nested `without`, which it
+  leaves as it was. The series keep a label the grouping names that a parser
+  extracts (`count by (route)` over `| logfmt route`).
 
   count and avg depend on the inner series identity, which
   metric-identity/structured-metadata-splits-series records as an owner-accepted
@@ -48,7 +50,8 @@ why: |
   rows by the label before taking the quantile), `group(...)` (Loki 3.7.7 has no
   such operator and rejects it), a nested aggregation with an outer `by` on an
   instant query or a tumbling window (the label is dropped), the detected_level
-  label VictoriaLogs stats answers do not carry.
+  label VictoriaLogs stats answers do not carry, and a `without` nested under
+  another aggregation (semantics/without-nested-under-aggregation).
 request:
   method: GET
   path: /loki/api/v1/query_range

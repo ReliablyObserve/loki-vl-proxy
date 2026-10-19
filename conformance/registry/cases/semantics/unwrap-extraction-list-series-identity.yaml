@@ -32,7 +32,9 @@ why: |
     * `count by (ns) (max_over_time(... | logfmt amount, route | unwrap amount [5m]))`:
       proxy 2 / 2 (one value per stream), Loki 6 / 6 (a series per stream and route);
     * `count by (ns) (count_over_time({app="uw"} | logfmt route [5m]))`:
-      proxy 2 / 2, Loki 6 / 6;
+      proxy 2 / 2, Loki 6 / 6; on a sliding query_range the proxy answers
+      {ns=x} = 2 at every step and {ns=y} = 1, then 2 (a value per stream),
+      Loki a series per stream and route;
     * `topk(2, max_over_time(... | logfmt amount, route | unwrap amount [5m]))`:
       the proxy labels each series with the line (`_msg`) next to the stream
       labels (six series on a tumbling window and 28 on a sliding one over the
