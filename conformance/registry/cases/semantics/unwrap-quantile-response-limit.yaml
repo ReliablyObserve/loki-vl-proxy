@@ -39,7 +39,7 @@ gap:
   area: 'internal/proxy quantile_histogram.go (collectQuantileHistogram, quantileOfCounts, quantileOuter), range_metric_compat.go (proxyManualRangeMetricRange, proxyManualRangeMetricInstant)'
   loki: 'pkg/logql/range_vector.go:449-487 quantileOverTime, Quantile (sorted samples of the window, linear interpolation at rank phi*(n-1)); pkg/logql/syntax/extractor.go:21-60 (a range by groups the samples); pkg/logql/evaluator.go newVectorAggEvaluator (a vector aggregation folds per-series values)'
   proxy: 'VictoriaLogs counts the rows per converted value and anchored bucket; the proxy merges the buckets of each window and interpolates like Loki'
-  planned_test: 'TestUnwrapQuantileResponseLimit, TestQuantileOfCountsEdges, TestQuantileWindowMergesBuckets, TestQuantileHistogramDifferential, TestQuantileHistogramOuterAggregationDifferential (internal/proxy); TestCompat_UnwrapQuantile (test/e2e-compat, group core)'
+  planned_test: 'TestUnwrapQuantileResponseLimit, TestQuantileOfCountsEdges, TestQuantileWindowMergesBuckets, TestQuantileHistogramDifferential, TestQuantileHistogramOuterAggregationDifferential, TestQuantileStatsGroupByKeepsLevel (internal/proxy); TestCompat_UnwrapQuantile (test/e2e-compat, group core)'
   note: |
     VictoriaLogs' quantile stats function is not Loki's: it returns the sorted
     value at index int(phi*n) with no interpolation, keeps a random
@@ -53,10 +53,12 @@ gap:
     -backend-max-buffered-response-bytes and -manual-range-metric-row-limit;
     the (series, value) series of the stats_query_range answer are not cut at
     -max-stats-query-series, which bounds the series the response returns.
-    A range aggregation's by (...) groups the counts by its fields alone; the
-    per-series forms (no range grouping, under a vector aggregation or not)
-    group them by stream, and after a parser Loki's series also carry the
-    parsed labels (semantics/unwrap-per-series-identity-raw-rows, unchanged).
-    Not changed: an ungrouped quantile after a parser keeps the raw evaluator
-    (Loki's series are every parsed label set).
+    A range aggregation's by (...) groups the counts by its fields alone,
+    level included at any position. The per-series forms (no range grouping,
+    under a vector aggregation or not) keep the raw evaluator, bounded by
+    -manual-range-metric-row-limit and the response limit: their counts per
+    stream and value grew VictoriaLogs' memory past 5 GiB at 7d on generator
+    data. A vector aggregation over them still folds per-stream quantiles.
+    After a parser Loki's series also carry the parsed labels
+    (semantics/unwrap-per-series-identity-raw-rows, unchanged).
   clusters: []

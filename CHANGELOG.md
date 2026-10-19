@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`quantile_over_time(...) by (<label>, level)` over an unwrap answers one
+  series per level again, and a quantile without its own `by (...)` no longer
+  asks VictoriaLogs for its value counts.** Since 2.20.0 the proxy dropped
+  `level` from the grouping when another label came first:
+  `quantile_over_time(0.9, {env="production",service_name="api-gateway"} | json
+  | unwrap duration_ms [1m]) by (service_name, level)` answered one series where
+  Loki answers one per level. A quantile without its own `by (...)`, alone or
+  under `sum`, `avg`, `min`, `max` or `count`, asked VictoriaLogs to count every
+  value of every stream; on the log generator's 7 days of data that took
+  VictoriaLogs past its 5 GiB memory limit and restarted it, where 2.19.0
+  answered 502 at once. Those forms are evaluated from raw rows again, within
+  `-manual-range-metric-row-limit` and the response limit, and a vector
+  aggregation over them still folds per-stream quantiles as Loki does. Range
+  aggregations with their own `by (...)` keep the value counts.
+
 ## [2.20.0] - 2026-10-19
 
 ### Fixed

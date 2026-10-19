@@ -667,7 +667,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// needs VL to enumerate all distinct streams — skip), (3) labels are explicit
 	// (non-empty groupBy or byExplicit aggregate-all).
 	// quantile_over_time reads VictoriaLogs' counts of the converted value.
-	gated, quantileCounts := spec, readsQuantileCounts(manualFunc, spec.BaseQuery)
+	gated, quantileCounts := spec, readsQuantileCounts(manualFunc, spec)
 	spec, rawSpec, statsAggFunc := unwrapManualSpecs(spec, manualFunc)
 	switch field {
 	case "__count__":
@@ -896,7 +896,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	if readsQuantileCounts(manualFunc, spec.BaseQuery) {
+	if readsQuantileCounts(manualFunc, spec) {
 		series, err := p.collectQuantileHistogram(r.Context(), spec, evalTS.Add(-origSpec.Window), evalTS, 0)
 		if err != nil {
 			p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())

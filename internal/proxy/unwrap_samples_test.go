@@ -199,25 +199,24 @@ func TestUnwrapTumblingWindowsKeepTheRawEvaluator(t *testing.T) {
 	}
 }
 
-// quantile_over_time reads VictoriaLogs' row counts of the gate's converted
-// value (duration() and bytes() in Loki's syntax, rejected values counted
-// apart), tumbling or sliding, and never the rows themselves.
+// quantile_over_time grouped by fields reads VictoriaLogs' row counts of the
+// gate's converted value (duration() and bytes() in Loki's syntax, rejected
+// values counted apart), tumbling or sliding, and never the rows themselves.
+// Per-stream quantiles stay on the raw evaluator
+// (TestQuantileHistogramDifferential).
 func TestUnwrapQuantileReadsValueCounts(t *testing.T) {
 	t0 := time.Unix(1700000400, 0).UTC()
 	for _, tc := range []struct {
 		name, query, gate, by, want string
 	}{
-		{"tumbling", `quantile_over_time(0.5, {app="x"} | unwrap n [1m])`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
-		{"sliding", `quantile_over_time(0.5, {app="x"} | unwrap n [2m])`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
-		// A vector aggregation folds per-stream quantiles: VictoriaLogs groups by stream.
-		{"summed per stream", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]))`, unwrapCountedGate("n", ""), "_stream, level, ", "20"},
-		// A range aggregation's own grouping groups the samples.
-		{"range grouping", `quantile_over_time(0.5, {app="x"} | unwrap n [1m]) by (app)`, unwrapCountedGate("n", ""), "app, ", "20"},
-		{"duration", `quantile_over_time(0.5, {app="x"} | unwrap duration(n) [1m])`, unwrapCountedGate("n", "duration"), "_stream, level, ", "20"},
-		{"bytes", `quantile_over_time(0.5, {app="x"} | unwrap bytes(n) [1m])`, unwrapCountedGate("n", "bytes"), "_stream, level, ", "20"},
-		{"duration_seconds", `quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(n) [1m])`, unwrapCountedGate("n", "duration"), "_stream, level, ", "20"},
-		{"summed duration_seconds", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(n) [1m]))`, unwrapCountedGate("n", "duration"), "_stream, level, ", "20"},
-		{"error filter", `quantile_over_time(0.5, {app="x"} | unwrap n | __error__="" [1m])`, translator.UnwrapGate("n"), "_stream, level, ", "20"},
+		{"tumbling", `quantile_over_time(0.5, {app="x"} | unwrap n [1m]) by (app)`, unwrapCountedGate("n", ""), "app, ", "20"},
+		{"sliding", `quantile_over_time(0.5, {app="x"} | unwrap n [2m]) by (app)`, unwrapCountedGate("n", ""), "app, ", "20"},
+		{"summed", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap n [1m]) by (app))`, unwrapCountedGate("n", ""), "app, ", "20"},
+		{"duration", `quantile_over_time(0.5, {app="x"} | unwrap duration(n) [1m]) by (app)`, unwrapCountedGate("n", "duration"), "app, ", "20"},
+		{"bytes", `quantile_over_time(0.5, {app="x"} | unwrap bytes(n) [1m]) by (app)`, unwrapCountedGate("n", "bytes"), "app, ", "20"},
+		{"duration_seconds", `quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(n) [1m]) by (app)`, unwrapCountedGate("n", "duration"), "app, ", "20"},
+		{"summed duration_seconds", `sum by (app) (quantile_over_time(0.5, {app="x"} | unwrap duration_seconds(n) [1m]) by (app))`, unwrapCountedGate("n", "duration"), "app, ", "20"},
+		{"error filter", `quantile_over_time(0.5, {app="x"} | unwrap n | __error__="" [1m]) by (app)`, translator.UnwrapGate("n"), "app, ", "20"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			emu := &vlEmulator{t: t, field: "n"}
