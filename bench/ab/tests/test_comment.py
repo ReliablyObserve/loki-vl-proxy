@@ -87,6 +87,33 @@ class RenderTest(unittest.TestCase):
         self.assertIn("did not complete", text)
         self.assertEqual(verdict["exit"], 3)
 
+    def test_refresh_and_cache_marks_go_in_the_cold_section_and_never_fail_the_run(self):
+        r = row("logs plain", "same", 0.2, 0.21, 0.1, cold_cache_served=["loki"],
+                refresh={"base": 0.1, "pr": 0.3, "loki": 0.05}, refresh_status={"base": "200", "pr": "200", "loki": "200"})
+        text, verdict = comment.render([summary([r])], SELECTION, dict(META, refresh_s=60))
+        self.assertEqual(verdict["exit"], 0)
+        self.assertIn("Cold (first-run) and refresh timings", text)
+        self.assertIn("| base refresh | PR refresh | Loki refresh | PR ÷ Loki refresh |".strip(), text.replace("  ", " "))
+        self.assertIn("| 300 ms | 50 ms | 6.00× |", text)
+        self.assertIn("300 ms † |", text)
+        self.assertIn("† Loki's own counters say its results cache answered this cold run", text)
+        self.assertNotIn("no-cache", text)
+        self.assertIn("refresh p50: windows moving forward 60 s per run", text)
+
+    def test_a_reused_loki_cold_is_marked_and_explained(self):
+        r = row("logs plain", "same", 0.2, 0.21, 0.1, loki_cold_reused_from={"set": "control", "shape": "x"})
+        text, _ = comment.render([summary([r])], SELECTION, META)
+        self.assertIn("↺ |", text)
+        self.assertIn("↺ Loki cold taken from the first set that ran the same query", text)
+        plain, _ = comment.render([summary([row("logs plain", "same", 0.2, 0.21, 0.1)])], SELECTION, META)
+        self.assertNotIn("↺", plain)
+
+    def test_without_refresh_the_cold_table_is_unchanged(self):
+        text, _ = comment.render([summary([row("logs plain", "same", 0.2, 0.21, 0.1)])], SELECTION, META)
+        self.assertIn("| shape | range | base cold | PR cold | Loki cold | PR ÷ Loki cold |\n|---|---|--:|--:|--:|--:|\n", text)
+        self.assertNotIn("refresh", text)
+        self.assertNotIn("†", text)
+
     def test_selection_reasons_listed(self):
         text, _ = comment.render([summary([row("logs plain", "same", 0.2, 0.2, 0.1)])], SELECTION, META)
         self.assertIn("`internal/proxy/x.go` → 1: control/json \\| volume", text)

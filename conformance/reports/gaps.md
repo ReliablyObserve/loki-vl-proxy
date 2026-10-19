@@ -117,29 +117,32 @@ LogQL constructs the proxy supports with no VictoriaLogs equivalent (23): `!=`, 
 ## Slower than Loki on first load
 
 Registry items whose measured shapes the proxy answers slower than Loki on a
-cold request (bench/ab runs; details in [performance.md](performance.md)).
+cold request (bench/ab runs; details in [performance.md](performance.md)). Warm is the
+p50 of the runs after the first, on the worst cold row; `also slower warm` counts the rows
+slower warm too (— when no row comes from a run that can say). Rows Loki's results cache
+answered (by its own counters or the identical-answer heuristic) are excluded.
 
-| registry item | slower shape×range | worst proxy cold | Loki cold there |
-|---|---|---|---|
-| `parser-error-and-label-collision` | 32 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
-| `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s |
-| `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s |
-| `semantics/json-metric-detected-level-derivation` | 3 | 2.25s (DLV2 json error filter, detected_level, 1h) | 0.41s |
-| `severity-detected-level-derivation` | 8 | 2.25s (DLV2 json error filter, detected_level, 1h) | 0.41s |
-| `explore-logs-volume-json` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s |
-| `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
-| `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s |
-| `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
-| `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s |
-| `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
-| `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s |
-| `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s |
-| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s |
-| `parser-logfmt` | 2 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s |
-| `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s |
-| `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s |
-| `semantics/unwrap-sample-validity` | 1 | 0.10s (U13 logfmt latency_ms over every service, 1h) | 0.00s |
-| `backend-admission-and-heavy-query-queueing` | 2 | 0.12s (drilldown landing volume, 7d) | 0.03s |
-| `semantics/plain-name-after-parser-reads-stream-label` | 1 | 0.06s (P8 json count by a name that is no stream label, 3h) | 0.00s |
+| registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
+|---|---|---|---|---|---|---|
+| `parser-error-and-label-collision` | 32 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
+| `semantics/unwrap-conversion-error` | 15 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
+| `semantics/extracted-suffix-collision` | 14 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s | 0.40s | 0.00s | — |
+| `semantics/json-extracted-metric-pushdown` | 13 | 2.65s (X1 json filter level_extracted, by level, 6h) | 0.01s | 0.40s | 0.00s | — |
+| `semantics/json-metric-detected-level-derivation` | 3 | 2.25s (DLV2 json error filter, detected_level, 1h) | 0.41s | 2.21s | 0.03s | — |
+| `severity-detected-level-derivation` | 8 | 2.25s (DLV2 json error filter, detected_level, 1h) | 0.41s | 2.21s | 0.03s | — |
+| `explore-logs-volume-json` | 5 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s | 0.14s | 0.00s | — |
+| `semantics/label-filter-before-parser-pushdown` | 2 | 0.57s (DL6 explore volume, level filter before json, 3h) | 0.01s | 0.14s | 0.00s | — |
+| `parsed-label-series-identity` | 5 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s | 0.36s | 0.03s | — |
+| `parser-json` | 2 | 0.49s (E field breakdown pipeline (explore), 3h) | 0.03s | 0.36s | 0.03s | — |
+| `loki-compatible-profile` | 3 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s | 0.52s | 0.01s | — |
+| `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.09s | 0.52s | 0.01s | — |
+| `semantics/json-filter-pushdown-translated-label` | 1 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s | 0.11s | 0.01s | — |
+| `semantics/json-filter-pushdown-underscore-label` | 3 | 0.37s (A explore volume, 2 filters, drop, 3h) | 0.00s | 0.11s | 0.01s | — |
+| `semantics/json-label-spelling-probe` | 2 | 0.30s (F field breakdown service_version (explore), 3h) | 0.03s | 0.16s | 0.04s | — |
+| `semantics/json-filter-pushdown-without-error-drop` | 2 | 0.30s (B grouped sum, filter, no drop, 3h) | 0.03s | 0.10s | 0.01s | — |
+| `parser-logfmt` | 2 | 0.34s (DL3 drilldown logfmt field breakdown, level filter, 3h) | 0.12s | 0.33s | 0.13s | — |
+| `profiles/structured-metadata-keys-per-profile` | 1 | 0.18s (O2 explore log volume (Grafana form), underscore structured-metadata filter, 3h) | 0.02s | 0.11s | 0.02s | — |
+| `semantics/json-filter-pushdown-ungrouped-sum` | 1 | 0.11s (C ungrouped sum, filter, no drop, 3h) | 0.00s | 0.07s | 0.00s | — |
+| `semantics/unwrap-sample-validity` | 1 | 0.10s (U13 logfmt latency_ms over every service, 1h) | 0.00s | 0.09s | 0.00s | — |
+| `backend-admission-and-heavy-query-queueing` | 2 | 0.12s (drilldown landing volume, 7d) | 0.03s | 0.10s | 0.00s | — |
+| `semantics/plain-name-after-parser-reads-stream-label` | 1 | 0.06s (P8 json count by a name that is no stream label, 3h) | 0.00s | 0.03s | 0.00s | — |

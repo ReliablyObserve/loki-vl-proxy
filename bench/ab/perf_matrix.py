@@ -9,6 +9,27 @@ repeated runs are not response-cache hits. VictoriaLogs CPU is sampled with `doc
 container's RestartCount is recorded before and after: a run that spans a
 restart is marked invalid and stops.
 
+Cache handling, so a cold number is a computed one:
+  - No Cache-Control header is sent to any target. Loki 3.7.7 does not honour
+    `Cache-Control: no-cache` on query_range or index/volume_range: it still
+    looks up and stores results-cache entries with it, so the header would only
+    claim a bypass that does not happen.
+  - Whether Loki's cache answered a request is read from Loki's own counters
+    (`data.stats.cache.result` and the other *Result sub-caches), recorded per
+    request. `statsResult` is the index-stats cache Loki uses for query planning;
+    it is hit on almost every request, is not a cached answer and is ignored.
+  - Each set gets its own block of windows (plan_windows). Loki's results cache
+    reuses overlapping time extents of the same query string, so a query that
+    two sets share can still be answered from the earlier set's extents; the
+    counters above detect it and pr_smoke takes the first set's computed run as
+    Loki's cold reference for that query.
+  - --refresh-s N is the refresh mode: instead of moving the window backwards
+    by a shift each run, run k ends at end + k*N (so the last run ends at --end
+    and no window is in the future), like a Grafana dashboard that refreshes.
+    N must be a multiple of every selected range's step. Its first run fills
+    Loki's cache the way the first load of a dashboard does, and the refresh
+    timing is taken from the runs after it.
+
 Writes the raw per-request rows to --out. Reduce them with report.py.
 
   perf_matrix.py --set control --runs 5 \\
@@ -55,6 +76,114 @@ class CPUSampler(threading.Thread):
     def between(self, t0, t1):
         vals = [c for t, c in self.samples if t0 - 1.5 <= t <= t1 + 1.5]
         return (max(vals), sum(vals) / len(vals)) if vals else (None, None)
+
+
+DEFAULT_SHIFT = 60
+
+
+def shape_shift(shape, rname):
+    """Seconds a shape moves its window per run: "shift" is a number or a per-range dict."""
+    shift = shape.get("shift", DEFAULT_SHIFT)
+    if isinstance(shift, dict):
+        shift = shift.get(rname, DEFAULT_SHIFT)
+    return int(shift)
+
+
+def run_end_for(end, shape, rname, run, runs, refresh_s=0):
+    """The end of run `run`'s window.
+
+    Shifted mode (default): backwards, `shift` seconds per run, so repeated runs
+    are not response-cache hits. Refresh mode: forwards by refresh_s per run,
+    ending at `end` on the last run. "end_offset" moves the whole window back.
+    """
+    base = end - int(shape.get("end_offset", 0))
+    if refresh_s:
+        return base - (runs - 1 - run) * refresh_s
+    return base - shape_shift(shape, rname) * run
+
+
+def request_headers(shape):
+    """Headers of one request: the shape's own. No target gets a Cache-Control header."""
+    return dict(shape.get("headers", {}))
+
+
+def loki_cache_stats(body):
+    """Loki's per-request result-cache counters, or None when the answer carries none.
+
+    Loki reports them as data.stats.cache.result (entriesFound / entriesRequested /
+    bytesReceived ...) and, for other query kinds, in sibling *Result sub-caches
+    (statsResult, volumeResult, ...). Every such sub-cache is kept under its own name.
+    """
+    if b'"cache"' not in body:
+        return None
+    try:
+        cache = json.loads(body)["data"]["stats"]["cache"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(cache, dict):
+        return None
+    stats = {}
+    for name, sub in cache.items():
+        if (name == "result" or name.endswith("Result")) and isinstance(sub, dict):
+            stats[name] = {k: sub[k] for k in ("entriesFound", "entriesRequested", "bytesReceived") if k in sub}
+    return stats or None
+
+
+def refresh_problem(refresh_s, runs, steps):
+    """Why a refresh interval cannot be used, or None: it must divide every step, with two runs at least."""
+    if not refresh_s:
+        return None
+    bad = sorted({st for st in steps if st and refresh_s % st})
+    if runs < 2 or bad:
+        return (f"--refresh-s {refresh_s} needs --runs >= 2 and a multiple of every selected range's step "
+                f"(not a multiple of: {bad}); a step that does not divide it snaps consecutive refresh windows "
+                "onto the same one")
+    return None
+
+
+def query_key(shape):
+    """What Loki's results cache keys a shape on, or None for an instant query (no results cache)."""
+    if shape.get("instant"):
+        return None
+    return (shape.get("path") or "", shape.get("query"))
+
+
+def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refresh_runs=0, margin=60):
+    """Non-overlapping window blocks, one per set, so no request repeats across sets.
+
+    `sets` is [(set name, wanted shape names or empty for all)]. A set's block
+    holds, from its top downwards: the first pass (shift*runs), the confirm
+    pass (shift*confirm_runs) and, when refresh_s is set, the refresh pass,
+    where shift is the largest per-run shift of any selected shape and range.
+    The next set starts below the block (plus margin), rounded up to a minute.
+    Every end is floored to the minute, as perf_matrix floors --end.
+
+    Separate blocks keep a later set from meeting the proxy's exact-URL caches
+    or a window an earlier set sent. They do not keep Loki's results cache from
+    answering a query that two sets share, because it reuses overlapping time
+    extents of the same query string; pr_smoke.reuse_first_cold handles that
+    from Loki's own cache counters.
+
+    Returns one dict per set: end (first pass), confirm_end, refresh_end (or
+    None), span (the block's length) and offset from the first set.
+    """
+    plans, offset = [], 0
+    for name, wanted in sets:
+        shapes = [s for s in spec["sets"][name]["shapes"] if not wanted or s["name"] in wanted]
+        shift = max([shape_shift(s, r) for s in shapes for r in (["instant"] if s.get("instant") else ranges)]
+                    or [DEFAULT_SHIFT])
+        # perf_matrix floors --end to the minute, so the plan records ends that are really sent.
+        top = (end - offset) // 60 * 60
+        used = shift * (runs + confirm_runs)
+        refresh_end = None
+        if refresh_s:
+            refresh_end = (top - used - margin) // 60 * 60
+            used += margin + (refresh_runs - 1) * refresh_s
+        span = -(-(used + margin) // 60) * 60
+        plans.append({"set": name, "end": top, "confirm_end": (top - shift * runs) // 60 * 60, "refresh_end": refresh_end,
+                      "shift": shift, "span": span, "offset": offset})
+        offset += span
+    return plans
 
 
 def request(url, headers, tenant, timeout):
@@ -133,6 +262,9 @@ def main():
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--container", default="e2e-victorialogs")
     ap.add_argument("--vl-health", default="http://127.0.0.1:19428/health")
+    ap.add_argument("--refresh-s", type=int, default=0, metavar="N",
+                    help="refresh mode: run k ends at end + k*N seconds (the last run at --end) instead of moving "
+                         "backwards; a multiple of every selected range's step")
     ap.add_argument("--long-runs", default="", metavar="NAME=N",
                     help="cap runs of ranges >= 24h for a target, e.g. main=1 when an old build scans raw rows "
                          "(repeated long raw scans have killed the shared backend)")
@@ -167,6 +299,9 @@ def main():
         return restarts() == ref
 
     end = (args.end or int(time.time()) - 60) // 60 * 60  # step-aligned for every range's step
+    problem = refresh_problem(args.refresh_s, args.runs, [range_defs[r][1] for r in ranges if r in range_defs])
+    if problem:
+        raise SystemExit(problem)
     sampler = CPUSampler(args.container)
     sampler.start()
     restart0, rows, aborted = restarts(), [], False
@@ -180,16 +315,13 @@ def main():
             secs, step = range_defs.get(rname, (0, 0))
             query = shape.get("query", "").replace("$__auto", f"{step}s")
             for run in range(args.runs):
-                # A shape may move its window by more than a minute per run,
-                # per range ("shift": {"7d": 21617}) or for all ranges, e.g.
-                # far enough to miss the response cache's time bucket the way
-                # a Grafana refresh eventually does.
-                shift = shape.get("shift", 60)
-                if isinstance(shift, dict):
-                    shift = shift.get(rname, 60)
-                # "end_offset" (seconds) ends the whole window that long before the
-                # run's end, e.g. a historical control next to near-now shapes.
-                run_end = end - int(shape.get("end_offset", 0)) - int(shift) * run
+                # A shape may move its window by more than a minute per run, per range
+                # ("shift": {"7d": 21617}) or for all ranges, e.g. far enough to miss the
+                # response cache's time bucket the way a Grafana refresh eventually does;
+                # "end_offset" (seconds) ends the whole window that long before the run's
+                # end, e.g. a historical control next to near-now shapes. Refresh mode
+                # moves forward instead (run_end_for).
+                run_end = run_end_for(end, shape, rname, run, args.runs, args.refresh_s)
                 # "pause" (seconds) waits before every run after the first, e.g. to
                 # outlast a cache's max staleness so each run meets an aged entry.
                 if run and shape.get("pause"):
@@ -211,12 +343,16 @@ def main():
                         params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
                                   "limit": shape.get("limit", 1000), "direction": "backward"}
                         url = f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
-                    status, body, dt, t0 = request(url, shape.get("headers", {}), args.tenant, args.timeout)
+                    headers = request_headers(shape)
+                    status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
                     time.sleep(0.3)
                     cmax, cavg = sampler.between(t0, t0 + dt)
                     row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False)),
                            "vl_cpu_max": cmax, "vl_cpu_avg": cavg}
+                    cache = loki_cache_stats(body) if status == 200 else None
+                    if cache:
+                        row["cache"] = cache
                     rows.append(row)
                     print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {status} {dt:7.2f}s {row['signature'][:70]}", flush=True)
                     if status in (0, 502) and not healthy_and_unrestarted(restart0):
@@ -233,7 +369,9 @@ def main():
     restart1 = restarts()
     result = {"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
                "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
-              "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed, "rows": rows}
+              "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
+              "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
+              "rows": rows}
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)
     print(f"\nwrote {args.out}; VictoriaLogs RestartCount before={restart0} after={restart1}")

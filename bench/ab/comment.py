@@ -88,12 +88,23 @@ def table(rows, b, c, r):
 
 
 def cold_table(rows, b, c, r):
-    out = ["| shape | range | base cold | PR cold | Loki cold | PR ÷ Loki cold |", "|---|---|--:|--:|--:|--:|"]
+    """Cold timings; with a refresh run, also each target's refresh p50 and the PR's multiple of Loki's."""
+    refresh = any("refresh" in row for _, row in rows)
+    head = "| shape | range | base cold | PR cold | Loki cold | PR ÷ Loki cold |"
+    out = [head + (" base refresh | PR refresh | Loki refresh | PR ÷ Loki refresh |" if refresh else ""),
+           "|---|---|--:|--:|--:|--:|" + ("--:|--:|--:|--:|" if refresh else "")]
     for _, row in rows:
         cc, rc = row["cold"].get(c), row["cold"].get(r)
         ratio = f"{cc / rc:.2f}×" if cc and rc and row["status"].get(c) == row["status"].get(r) == "200" else "—"
-        out.append(f"| {cell(row['shape'])} | {row['range']} | {secs(row['cold'].get(b), row['status'].get(b))} | "
-                   f"{secs(cc, row['status'].get(c))} | {secs(rc, row['status'].get(r))} | {ratio} |")
+        served = " †" if r in row.get("cold_cache_served", []) else (" ↺" if row.get("loki_cold_reused_from") else "")
+        line = (f"| {cell(row['shape'])} | {row['range']} | {secs(row['cold'].get(b), row['status'].get(b))} | "
+                f"{secs(cc, row['status'].get(c))} | {secs(rc, row['status'].get(r))}{served} | {ratio} |")
+        if refresh:
+            rf, st = row.get("refresh", {}), row.get("refresh_status", {})
+            pr, lk = rf.get(c), rf.get(r)
+            multiple = f"{pr / lk:.2f}×" if pr and lk and st.get(c) == st.get(r) == "200" else "—"
+            line += "".join(f" {secs(rf.get(t), st.get(t))} |" for t in (b, c, r)) + f" {multiple} |"
+        out.append(line)
     return out
 
 
@@ -163,8 +174,15 @@ def render(summaries, selection, meta):
         lines += ["", f"<details><summary>{len(still)} unchanged shape×range (within noise)</summary>", ""]
         lines += table(still, b, c, r)
         lines += ["", "</details>"]
-    lines += ["", "<details><summary>Cold (first-run) timings — what a user opening a panel sees</summary>", ""]
+    refresh = any("refresh" in row for _, row in rows)
+    lines += ["", "<details><summary>Cold (first-run)" + (" and refresh" if refresh else "") +
+              " timings — what a user opening a panel" + (" and then refreshing it" if refresh else "") +
+              " sees</summary>", ""]
     lines += cold_table(rows, b, c, r)
+    if any(r in row.get("cold_cache_served", []) for _, row in rows):
+        lines += ["", "† Loki's own counters say its results cache answered this cold run: not a computed time."]
+    if any(row.get("loki_cold_reused_from") for _, row in rows):
+        lines += ["", "↺ Loki cold taken from the first set that ran the same query; Loki's cache answered this one."]
     lines += ["", "</details>"]
 
     why = selection.get("why", {})
@@ -186,6 +204,8 @@ def render(summaries, selection, meta):
              f"VictoriaLogs restarts {summaries[0].get('restart_before')}→{summaries[-1].get('restart_after')}"]
     if meta.get("elapsed_s"):
         stamp.append(f"{meta['elapsed_s'] / 60:.1f} min")
+    if meta.get("refresh_s"):
+        stamp.append(f"refresh p50: windows moving forward {meta['refresh_s']} s per run, informational")
     lines += ["", "<sub>" + " · ".join(stamp) + ". Same runner, one fresh stack, targets interleaved per request. "
               "How to read and reproduce: `bench/ab/README.md`.</sub>"]
     exit_code = 2 if not valid else (1 if failed else 0)

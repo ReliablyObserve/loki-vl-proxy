@@ -12,8 +12,21 @@ Every query shape in bench/ab/shapes.json names the registry items it measures
 
 Loki is compared on cold (first-run) timings: warm timings on both sides come
 largely from results caches and would hide the difference a user sees when a
-panel first loads. A row where Loki answered identical results for windows a
-minute apart is marked cache-served and is not counted as a gap.
+panel first loads. Warm (p50 of the runs after the first) and, when a run
+measured it, refresh (windows moving forward like a dashboard refresh) are
+compared with the same noise rules and recorded next to cold. A row where Loki
+answered identical results for windows a minute apart (the heuristic), or whose
+own cache counters (data.stats.cache; statsResult, the query-planning index-stats
+cache, is ignored) say its results cache answered the cold run, is marked
+cache-served and is not counted as a gap on any of the three.
+
+Fields a run did not record (Loki's cache counters, the refresh timings) are
+absent: unknown, never false. Older results have none of them: their warm and
+refresh flags are absent too (unknown), though the warm p50s they recorded are
+still shown. Only a run that gives each set its own windows (isolated_windows) is
+compared warm and on refresh. A query two sets share can be answered by Loki's
+cache from the earlier set's extents; its Loki cold is then the first set's computed
+run (loki_cold_reused_from), which keeps the row comparable.
 
 --check fails when a shape covers an id the registry does not have, a shape
 covers nothing, or a saved result names a set or shape shapes.json does not
@@ -73,23 +86,49 @@ def latest_runs(shape_sets, problems):
     return latest
 
 
+def beyond_noise(cand, ref):
+    """cand is slower than ref by both the relative and the absolute margin."""
+    return cand is not None and ref is not None and cand > ref * (1 + NOISE) and cand - ref > MIN_DELTA
+
+
 def measurement(summary, row):
     cand, ref, base = summary["candidate"], summary["reference"], summary["baseline"]
     stale = row.get("stale", [])
     cand_cold, ref_cold = row["cold"].get(cand), row["cold"].get(ref)
     cand_ok = row["status"].get(cand) == "200"
     ref_ok = row["status"].get(ref) == "200"
-    slower = (cand_ok and ref_ok and ref not in stale and cand_cold is not None and ref_cold is not None
-              and cand_cold > ref_cold * (1 + NOISE) and cand_cold - ref_cold > MIN_DELTA)
-    return {
+    # A cold run Loki's cache answered, by the heuristic or by Loki's own counters.
+    served = ref in stale or ref in row.get("cold_cache_served", [])
+    comparable = cand_ok and ref_ok and not served
+    # p50 of a --cold summary holds first runs: no warm timing was recorded there.
+    cold_only = summary.get("timing") == "cold"
+    cand_warm, ref_warm = (None, None) if cold_only else (row["p50"].get(cand), row["p50"].get(ref))
+    refresh, refresh_status = row.get("refresh"), row.get("refresh_status", {})
+    cand_refresh, ref_refresh = ((refresh.get(cand), refresh.get(ref)) if refresh else (None, None))
+    refresh_ok = bool(refresh) and refresh_status.get(cand) == "200" and refresh_status.get(ref) == "200"
+    cold_stats = (row.get("cache") or {}).get(ref)
+    # Only a run of the harness that gives each set its own windows (pr_smoke marks its summaries) has warm
+    # and refresh figures that are comparable; daily runs share windows across sets.
+    isolated = summary.get("isolated_windows") is True
+    measured = {
         "label": summary["label"], "date": summary["date"], "valid": summary.get("valid", True),
         "verdict_vs_baseline": row["verdict"], "baseline": base,
         "status": row["status"].get(cand), "baseline_status": row["status"].get(base),
         "cold": cand_cold, "warm_p50": row["p50"].get(cand),
-        "loki_cold": ref_cold, "loki_warm_p50": row["p50"].get(ref), "loki_cache_served": ref in stale,
+        "loki_cold": ref_cold, "loki_warm_p50": row["p50"].get(ref), "loki_cache_served": served,
         "parity_vs_loki": row.get("parity_vs_reference", "n/a"),
-        "slower_than_loki_cold": bool(slower),
+        "slower_than_loki_cold": bool(comparable and beyond_noise(cand_cold, ref_cold)),
     }
+    # Recorded only when the run measured them (older results did not): absent means unknown, never false.
+    known = {
+        "slower_than_loki_warm": bool(comparable and beyond_noise(cand_warm, ref_warm)) if isolated else None,
+        "loki_cold_cache": cold_stats["cold"] if cold_stats else None,
+        "loki_cold_reused_from": row.get("loki_cold_reused_from"),
+        "refresh_p50": cand_refresh, "loki_refresh_p50": ref_refresh,
+        "slower_than_loki_refresh": (bool(comparable and refresh_ok and beyond_noise(cand_refresh, ref_refresh))
+                                     if refresh and isolated else None),
+    }
+    return {**measured, **{k: v for k, v in known.items() if v is not None}}
 
 
 def fmt(value, status=None):
@@ -153,7 +192,13 @@ def render(evidence, latest, problems):
            "Do not edit by hand. Timings are the candidate build's; Loki is compared on cold",
            "(first-run) timings, since warm timings on both sides come largely from results caches.",
            "Loki's first run can still hit split-level caches warmed by earlier requests, so a Loki cold",
-           "time near zero understates what a truly cold Loki takes.", "",
+           "time near zero understates what a truly cold Loki takes. Loki 3.7.7 ignores",
+           "`Cache-Control: no-cache` on query_range and volume_range, so no header is sent. A cold run",
+           "Loki's results cache answered is detected from Loki's own cache counters (`data.stats.cache`;",
+           "statsResult, the query-planning cache, is ignored) and by the identical-answer heuristic; rows",
+           "without counters are older and their Loki cold time is unverified. A query two sets share takes",
+           "the first set's computed Loki cold (`loki_cold_reused_from`). Warm and refresh timings are",
+           "compared with the same noise rules; a row Loki's cache answered is excluded from all three.", "",
            f"Runs: {', '.join(f'{label} ({date})' for date, label in labels) or 'none yet'}.", ""]
     out += ["## Slower than Loki on first load", ""]
     if gaps:
@@ -165,6 +210,27 @@ def render(evidence, latest, problems):
                        f"{', '.join(f'`{i}`' for i in sorted(items) if not GENERIC.match(i)) or ', '.join(f'`{i}`' for i in items)} |")
         out += ["", f"{len(gaps)} shape×range slower than Loki beyond noise "
                 f"({int(NOISE * 100)}% and {int(MIN_DELTA * 1000)} ms)."]
+    else:
+        out.append("None measured.")
+    repeat = {}
+    for item, rows in evidence.items():
+        for r in rows:
+            if (r.get("slower_than_loki_warm") or r.get("slower_than_loki_refresh")) and not r["loki_cache_served"]:
+                repeat.setdefault((r["set"], r["shape"], r["range"]), (r, []))[1].append(item)
+    out += ["", "## Slower than Loki on repeat views", "",
+            "Warm p50 (runs after the first) and refresh p50 (windows moving forward), where the proxy is",
+            "slower beyond the same noise. Only runs of the harness that gives each set its own windows are",
+            "compared; older",
+            "results shared windows between sets, so their Loki warm figures may come from a cache an",
+            "earlier set primed, and they are unknown here.", ""]
+    if repeat:
+        out += ["| shape | range | proxy warm | Loki warm | proxy refresh | Loki refresh | registry items |",
+                "|---|---|---|---|---|---|---|"]
+        for (s_, n, rng), (r, items) in sorted(repeat.items()):
+            out.append(f"| {n.replace('|', chr(92) + '|')} | {rng} | {fmt(r['warm_p50'])} | {fmt(r['loki_warm_p50'])} | "
+                       f"{fmt(r.get('refresh_p50'))} | {fmt(r.get('loki_refresh_p50'))} | "
+                       f"{', '.join(f'`{i}`' for i in sorted(items) if not GENERIC.match(i)) or ', '.join(f'`{i}`' for i in items)} |")
+        out += ["", f"{len(repeat)} shape×range slower than Loki beyond noise on a repeat view."]
     else:
         out.append("None measured.")
     out += ["", "## By registry item", "",

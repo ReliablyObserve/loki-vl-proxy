@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The A/B performance harness no longer lets a cache answer the cold run, and
+  tracks warm and refresh latency next to it.** The per-pull-request A/B sent
+  every set over the same windows, so a later set re-sent requests an earlier
+  set had sent, and Loki's results cache answered the "cold" run. The control
+  set's "json volume no filters" is the json-filter-pushdown set's "D volume, no
+  filters" query: the old harness timed Loki's cold run of it from the cache the
+  earlier set filled (3 to 12 ms in two runs, against about 0.27 s computed).
+  Now
+  `bench/ab/pr_smoke.py` gives each selected set its own block of windows (the
+  confirm pass uses the set's real `shift`, the seeded window grows with the
+  number of sets, `--end` pins a run). A query an earlier set already ran is
+  answered by Loki's results cache from overlapping extents, so its Loki cold
+  reference is the first set's computed run (`loki_cold_reused_from`).
+  `perf_matrix.py` records Loki's own cache counters (`data.stats.cache`, where
+  `statsResult`, the query-planning index-stats cache, is ignored), which detect
+  that and mark any other cold run Loki's cache answered in `report.py`; such
+  rows are left out of the slower-than-Loki lists. No `Cache-Control` header is
+  sent to any target: Loki 3.7.7 ignores `no-cache` on `query_range` and
+  `volume_range`. An opt-in refresh mode (`--refresh-s`, windows moving forward
+  like a dashboard refresh) adds a refresh p50 next to cold and warm in
+  `report.py` and the PR comment, and `conformance/scripts/perf_evidence.py`
+  records `slower_than_loki_warm` and `slower_than_loki_refresh` only from runs
+  with per-set windows (`pr_smoke.py` marks its summaries `isolated_windows`;
+  the daily run's sets share windows), with the cold noise rules. `gaps.md`
+  shows warm next to cold and leaves cache-served rows out. Results saved before
+  this change lack the new fields and are treated as unknown, not as measured
+  clean.
+
 ## [2.20.1] - 2026-10-19
 
 ### Fixed
