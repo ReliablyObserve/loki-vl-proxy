@@ -302,8 +302,6 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 				return openShapeKeys(toSeries(openShapeStreams("max_over_time", 5*time.Minute, false)))
 			}},
 		// without over an inner aggregation: the proxy folds everything into one series.
-		{"without-over-inner-aggregation-collapses", `sum without (pod) (sum by (pod, ns) (` + unwrapRate + `))`, false, false,
-			`{-}=0.74,0.26`, func(i bool) map[string]string { return openShapeGroup(rate(i), "sum", nil, true) }},
 		{"without-over-inner-aggregation-collapses", `sum without (pod) (sum by (pod, ns) (` + unwrapRate + `))`, true, false,
 			`{-}=2.73333`, func(i bool) map[string]string { return openShapeGroup(rate(i), "sum", nil, true) }},
 		{"without-over-inner-aggregation-collapses", `sum without (pod) (sum by (pod, ns) (count_over_time({app="uw"}[1m])))`, false, false,
@@ -369,6 +367,24 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 				t.Fatalf("the proxy answered %s, the registry row %s states %s\nLoki: %s", gotCanon, tc.row, tc.got, wantCanon)
 			}
 		})
+	}
+}
+
+// TestWithoutOverInnerAggregationRateRangeMatchesLoki: on query_range the rate
+// of an unwrapped field under `sum without` over an inner `sum by` is Loki's
+// answer, one series per namespace (the nested aggregation is read down to the
+// rate: semantics/non-sum-vector-aggregation-unreduced). The instant query and the
+// count_over_time cases of the row still collapse (TestWithoutShapesStillDifferFromLoki).
+//
+// conformance: semantics/without-over-inner-aggregation-collapses, metric-series-identity
+func TestWithoutOverInnerAggregationRateRangeMatchesLoki(t *testing.T) {
+	got := openShapeRun(t, `sum without (pod) (sum by (pod, ns) (rate({app="uw"} | unwrap amount [5m])))`, false)
+	if got.code != http.StatusOK {
+		t.Fatalf("%d %s", got.code, got.raw)
+	}
+	want := openShapeGroup(openShapeStreams("rate", 5*time.Minute, false), "sum", nil, true)
+	if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(want); gotCanon != wantCanon {
+		t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
 	}
 }
 

@@ -44,6 +44,21 @@ func seriesAggregationChain(query string) ([]*logqlpkg.VectorAggregation, bool) 
 	return chain, ok && ra.Grouping == nil && seriesLevel
 }
 
+// vectorAggFoldKey marks a request whose vector aggregations
+// foldVectorAggregations folds: its series keep the labels a parser extracts and
+// the aggregation groups by (`count by (route)` over `| logfmt route`), which
+// the fold reads (withParsedGroupLabels).
+type vectorAggFoldKey struct{}
+
+// keepsParsedGroupLabels reports whether the series of the request carry the
+// labels a parser extracts that the stats group by: the proxy folds a `without`
+// (withoutFoldKey) or the vector aggregations (vectorAggFoldKey) afterwards.
+func keepsParsedGroupLabels(ctx context.Context) bool {
+	without, _ := ctx.Value(withoutFoldKey{}).(bool)
+	vector, _ := ctx.Value(vectorAggFoldKey{}).(bool)
+	return without || vector
+}
+
 // foldVectorAggregations runs a manual range metric evaluator and applies the
 // vector aggregations of the query to the series it returns, per step, the way
 // Loki's VectorAggEvaluator does (pkg/logql/evaluator.go VectorAggEvaluator.Next:
@@ -58,7 +73,8 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 		return foldUngroupedSum(w, r, query, serve)
 	}
 	buf := &bufferedResponseWriter{}
-	if !serve(buf, r.WithContext(context.WithValue(r.Context(), foldedSumKey{}, true))) {
+	ctx := context.WithValue(context.WithValue(r.Context(), foldedSumKey{}, true), vectorAggFoldKey{}, true)
+	if !serve(buf, r.WithContext(ctx)) {
 		return false
 	}
 	body, code := buf.body, buf.code

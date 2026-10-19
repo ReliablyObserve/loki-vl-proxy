@@ -50,6 +50,7 @@ type rangeMetricSample struct {
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
 	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	withoutClauseRE     = regexp.MustCompile(`\bwithout\s*\(`)
 	outerByAfterRE      = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
 	outerByBeforeRE     = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
@@ -176,6 +177,11 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	for depth := 0; ; depth++ {
 		loc := outerAggregationRE.FindStringIndex(logql)
 		if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
+			break
+		}
+		if depth > 0 && (withoutClauseRE.MatchString(logql[:loc[1]]) || translator.FoldingWithoutOp(logql) != "") {
+			// A nested `without` is not the aggregation the proxy folds
+			// (the outermost one): it is answered as it was before.
 			break
 		}
 		inner := strings.TrimSpace(logql[loc[1]:])
@@ -1415,7 +1421,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		var metric map[string]string
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
-			if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
+			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
 			}
 		} else {

@@ -477,3 +477,54 @@ func TestVectorAggregationUnderBinaryScalar(t *testing.T) {
 		}
 	}
 }
+
+// TestVectorAggregationGroupedByParsedLabelSlidingWindow: `count by (route)` and
+// `max by (route)` of count_over_time over `| logfmt route` on a sliding window
+// answer a series per route, as Loki's vector aggregation does over the series
+// of a stream and a route (reference written apart from the proxy, over the
+// fixture of the extraction-list tests): the route is a label the parser
+// extracts, so the folded series must carry it.
+//
+// conformance: semantics/non-sum-vector-aggregation-unreduced, metric-series-identity
+func TestVectorAggregationGroupedByParsedLabelSlidingWindow(t *testing.T) {
+	rows, end := extractionListFixture()
+	const window = 5 * time.Minute
+	for _, op := range []string{"count", "max"} {
+		t.Run(op, func(t *testing.T) {
+			query := op + ` by (route) (count_over_time({app="uw"} | logfmt route [5m]))`
+			byRoute := map[string][]string{}
+			for sec := end/1e9 - 900; sec <= end/1e9; sec += 60 {
+				at := sec * 1e9
+				perSeries := map[string]map[string]int{}
+				for _, row := range rows {
+					if row.ts > at-int64(window) && row.ts <= at {
+						route := row.labels["route"]
+						if perSeries[route] == nil {
+							perSeries[route] = map[string]int{}
+						}
+						perSeries[route][row.stream]++
+					}
+				}
+				for route, streams := range perSeries {
+					value := len(streams)
+					if op == "max" {
+						value = 0
+						for _, n := range streams {
+							value = max(value, n)
+						}
+					}
+					byRoute[route] = append(byRoute[route], fmt.Sprintf("%v=%d", float64(sec), value))
+				}
+			}
+			var want []string
+			for route, points := range byRoute {
+				want = append(want, "{route="+route+"} "+strings.Join(points, " "))
+			}
+			sort.Strings(want)
+			_, got := runExtractionListShape(t, query, extractionListModes[2])
+			if wantText := fmt.Sprintf("%d series: %s", len(want), strings.Join(want, "; ")); got != wantText {
+				t.Fatalf("%s\n got %s\nwant %s", query, got, wantText)
+			}
+		})
+	}
+}

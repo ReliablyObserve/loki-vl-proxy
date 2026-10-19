@@ -241,7 +241,6 @@ func TestParseOriginalRangeMetricSpecNestedAggregations(t *testing.T) {
 		{`max(rate({app="a"}[5m]))`, "rate"},
 		{`sum(max(rate({app="a"}[5m])))`, "rate"},
 		{`sum by (zone) (max by (pod, zone) (rate({app="a"}[5m])))`, "rate"},
-		{`count(avg without (pod) (bytes_rate({app="a"}[5m])))`, "bytes_rate"},
 		{`max(count_over_time({app="a"}[5m]))`, "count_over_time"},
 		{`sum(max(sum_over_time({app="a"} | logfmt | unwrap n [5m])))`, "sum_over_time"},
 	} {
