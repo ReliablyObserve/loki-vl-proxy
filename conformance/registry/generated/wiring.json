@@ -206,6 +206,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -239,6 +240,7 @@
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
@@ -262,6 +264,7 @@
       "internal/translator/unwrap_ungrouped_sum_test.go",
       "internal/translator/without_grouping_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
+      "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -564,6 +567,11 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/translator/unwrap_gate_property_test.go"
     ],
+    "semantics/unwrap-quantile-response-limit": [
+      "internal/proxy/quantile_histogram_test.go",
+      "internal/proxy/unwrap_quantile_response_limit_test.go",
+      "test/e2e-compat/unwrap_quantile_test.go"
+    ],
     "semantics/unwrap-range-last-point": [
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go"
     ],
@@ -650,6 +658,7 @@
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
@@ -920,6 +929,9 @@
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
     ],
+    "internal/proxy/quantile_histogram_test.go": [
+      "semantics/unwrap-quantile-response-limit"
+    ],
     "internal/proxy/recent_tail_bypass_clamp_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -1028,6 +1040,9 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/unwrap-duration-seconds"
+    ],
+    "internal/proxy/unwrap_quantile_response_limit_test.go": [
+      "semantics/unwrap-quantile-response-limit"
     ],
     "internal/proxy/unwrap_samples_test.go": [
       "loki_api_v1_query",
@@ -1297,6 +1312,13 @@
       "semantics/unwrap-duration-seconds",
       "status-400"
     ],
+    "test/e2e-compat/unwrap_quantile_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/unwrap-quantile-response-limit",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/unwrap_sample_validity_test.go": [
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
@@ -1322,7 +1344,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 130,
+  "tests_with_markers": 133,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1422,7 +1444,6 @@
     "semantics/unwrap-first-last-under-aggregation",
     "semantics/unwrap-over-time-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
-    "semantics/unwrap-quantile-response-limit",
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
@@ -1434,5 +1455,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 123
+  "wired_items": 124
 }
