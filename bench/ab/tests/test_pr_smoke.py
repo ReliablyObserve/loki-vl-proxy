@@ -6,13 +6,18 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import perf_matrix  # noqa: E402
 import pr_smoke  # noqa: E402
 
 END = 1_800_000_000
+
+
+def read_json(path):
+    with open(path) as f:
+        return json.load(f)
 
 
 def args(**over):
@@ -207,7 +212,7 @@ class MeasureTest(unittest.TestCase):
                                   side_effect=lambda name, *a, **kw: {"set": name, "valid": True, "rows": []}), \
                 tempfile.TemporaryDirectory() as tmp:
             out = pr_smoke.measure(a, selection("json-filter-pushdown", "control"), tmp, "base")
-            saved = [json.load(open(os.path.join(tmp, f"summary-{s['set']}.json"))) for s in out]
+            saved = [read_json(os.path.join(tmp, f"summary-{s['set']}.json")) for s in out]
         self.assertEqual([s["set"] for s in out], ["json-filter-pushdown", "control"])
         self.assertTrue(all(s["isolated_windows"] is True for s in out))
         self.assertEqual(saved, out)  # the saved summaries carry the marker too

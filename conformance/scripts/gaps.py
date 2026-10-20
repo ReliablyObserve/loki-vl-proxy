@@ -47,8 +47,9 @@ def perf_section(evidence):
              "slower warm too (— when no row comes from a run that can say). Rows Loki's results cache",
              "answered (by its own counters or the identical-answer heuristic) are excluded.", ""]
     if cold:
-        lines += ["| registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there "
-                  "| Loki warm there | also slower warm |", "|---|---|---|---|---|---|---|"]
+        header = ("| registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there "
+                  + "| Loki warm there | also slower warm |")
+        lines += [header, "|---|---|---|---|---|---|---|"]
         for item, slower in sorted(cold.items(), key=lambda kv: -max(r["cold"] - r["loki_cold"] for r in kv[1])):
             worst = max(slower, key=lambda r: r["cold"] - r["loki_cold"])
             known = [r for r in slower if "slower_than_loki_warm" in r]
