@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The A/B harness no longer fails to seed windows longer than about two
+  hours.** Since 2.21.0 the seeded window grows with the number of selected sets
+  (3.25 h for ten sets at 1h), and the seed's check that Loki and VictoriaLogs
+  hold the same lines polled one fixed Loki query. Loki's results cache keys on
+  the query string and ignores `Cache-Control: no-cache`, so when the first poll
+  came before Loki could see the oldest lines, every later poll got that partial
+  answer back until the check timed out (37,867 lines in VictoriaLogs, 18,834
+  from Loki, while Loki answered 37,867 to any other query). Each poll now adds
+  a line filter on a string no line contains, so Loki computes it every time.
+
 ## [2.21.0] - 2026-10-20
 
 ### Changed
