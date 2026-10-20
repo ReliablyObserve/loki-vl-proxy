@@ -15,6 +15,52 @@ def consumers(identifier):
     return re.findall(r'- (\w+)', block.group(1)) if block else []
 
 
+GENERIC = ("loki_api_v1_", "api_prom_")
+
+
+def fmt(value):
+    return "—" if value is None else f"{value:.2f}s"
+
+
+def slower_rows(evidence, flag):
+    """item -> the measured rows the proxy answers slower than Loki on `flag`.
+
+    Rows Loki's results cache answered are left out: their Loki time is not a computed one.
+    """
+    slow = {}
+    for item, measured in evidence.items():
+        if item.startswith(GENERIC):
+            continue
+        for r in measured:
+            if r.get(flag) and not r.get("loki_cache_served"):
+                slow.setdefault(item, []).append(r)
+    return slow
+
+
+def perf_section(evidence):
+    """The first-load gaps: cold, with warm next to it and whether Loki's cold run was a computed one."""
+    cold = slower_rows(evidence, "slower_than_loki_cold")
+    lines = ["", "## Slower than Loki on first load", "",
+             "Registry items whose measured shapes the proxy answers slower than Loki on a",
+             "cold request (bench/ab runs; details in [performance.md](performance.md)). Warm is the",
+             "p50 of the runs after the first, on the worst cold row; `also slower warm` counts the rows",
+             "slower warm too (— when no row comes from a run that can say). Rows Loki's results cache",
+             "answered (by its own counters or the identical-answer heuristic) are excluded.", ""]
+    if cold:
+        header = ("| registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there "
+                  + "| Loki warm there | also slower warm |")
+        lines += [header, "|---|---|---|---|---|---|---|"]
+        for item, slower in sorted(cold.items(), key=lambda kv: -max(r["cold"] - r["loki_cold"] for r in kv[1])):
+            worst = max(slower, key=lambda r: r["cold"] - r["loki_cold"])
+            known = [r for r in slower if "slower_than_loki_warm" in r]
+            lines.append(f"| `{item}` | {len(slower)} | {worst['cold']:.2f}s ({worst['shape']}, {worst['range']}) "
+                         f"| {worst['loki_cold']:.2f}s | {fmt(worst.get('warm_p50'))} | {fmt(worst.get('loki_warm_p50'))} "
+                         f"| {sum(1 for r in known if r['slower_than_loki_warm']) if known else '—'} |")
+    else:
+        lines.append("None measured.")
+    return lines
+
+
 def main():
     coverage = load_json(f"{ROOT}/generated/proxy/coverage.json")
     implementation = {e["id"]: e for e in load_json(f"{ROOT}/generated/proxy/implementation.json")["endpoints"]}
@@ -108,22 +154,7 @@ def main():
                   ", ".join(f"`{x}`" for x in links["no_victorialogs_equivalent"]), ""]
     perf_path = f"{ROOT}/generated/perf-evidence.json"
     if os.path.exists(perf_path):
-        slow = {}
-        for item, measured in load_json(perf_path).items():
-            for r in measured:
-                if r["slower_than_loki_cold"] and not item.startswith(("loki_api_v1_", "api_prom_")):
-                    slow.setdefault(item, []).append(r)
-        lines += ["", "## Slower than Loki on first load", "",
-                  "Registry items whose measured shapes the proxy answers slower than Loki on a",
-                  "cold request (bench/ab runs; details in [performance.md](performance.md)).", ""]
-        if slow:
-            lines += ["| registry item | slower shape×range | worst proxy cold | Loki cold there |", "|---|---|---|---|"]
-            for item, slower in sorted(slow.items(), key=lambda kv: -max(r["cold"] - r["loki_cold"] for r in kv[1])):
-                worst = max(slower, key=lambda r: r["cold"] - r["loki_cold"])
-                lines.append(f"| `{item}` | {len(slower)} | {worst['cold']:.2f}s ({worst['shape']}, {worst['range']}) "
-                             f"| {worst['loki_cold']:.2f}s |")
-        else:
-            lines.append("None measured.")
+        lines += perf_section(load_json(perf_path))
     lines.append("")
     os.makedirs("conformance/reports", exist_ok=True)
     write_text("conformance/reports/gaps.md", "\n".join(lines))
