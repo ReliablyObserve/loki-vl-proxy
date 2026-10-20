@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.1] - 2026-10-20
+
 ### Fixed
 
 - **The A/B harness no longer fails to seed windows longer than about two
