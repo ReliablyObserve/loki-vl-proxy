@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-10-20
+
 ### Changed
 
 - **The A/B performance harness no longer lets a cache answer the cold run, and
