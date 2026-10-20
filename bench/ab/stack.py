@@ -52,6 +52,18 @@ BACKFILL_INTERVAL = 10
 SELECTOR = '{env="production"}'
 
 
+def count_query(slice_s):
+    """The seed's Loki line count, unique per call.
+
+    Loki's results cache keys on the query string and ignores Cache-Control:
+    no-cache on query_range (Loki 3.7.7), so polling one fixed query keeps
+    returning the first, partial answer for slices Loki could not see yet. A line
+    filter on a string no line contains changes the cache key per poll and not
+    the count.
+    """
+    return f'sum(count_over_time({SELECTOR} != "seed-count-{time.time_ns()}" [{slice_s}s]))'
+
+
 def log(msg):
     print(f"[stack] {msg}", file=sys.stderr, flush=True)
 
@@ -146,10 +158,10 @@ class Stack:
         per-shape result parity check of the run itself.
         """
         first, last = (start // slice_s + 1) * slice_s, end // slice_s * slice_s
-        q = f"sum(count_over_time({SELECTOR}[{slice_s}s]))"
+        q = count_query(slice_s)
         params = urllib.parse.urlencode({"query": q, "start": first, "end": last, "step": slice_s})
         _, body = http_get(f"{self.loki}/loki/api/v1/query_range?{params}", timeout=120,
-                           headers={"X-Scope-OrgID": "0", "Cache-Control": "no-cache"})
+                           headers={"X-Scope-OrgID": "0"})
         loki = {}
         for series in json.loads(body)["data"]["result"]:
             for ts, v in series["values"]:
