@@ -6,7 +6,8 @@ BASE_URL="${PROXY_BASE_URL:-http://127.0.0.1:3100}"
 TARGETS_FILE="${ZAP_TARGETS_FILE:-security/zap/targets.txt}"
 REPORT_ROOT="${SECURITY_REPORT_ROOT:-security-reports}"
 REPORT_DIR="${REPORT_ROOT}/zap/${MODE}"
-IMAGE="${ZAP_IMAGE:-ghcr.io/zaproxy/zaproxy:stable}"
+# Pinned by digest (2.17.0, released 2025-12-15; the `stable` tag pointed at it when pinned).
+IMAGE="${ZAP_IMAGE:-ghcr.io/zaproxy/zaproxy:2.17.0@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6}"
 ZAP_PORT="${ZAP_PORT:-38080}"
 
 mkdir -p "${REPORT_DIR}"

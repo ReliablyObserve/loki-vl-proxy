@@ -39,7 +39,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
-            ghcr.io/gitleaks/gitleaks:v8.28.0 \
+            ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
             detect \
             --source . \
             --report-format sarif \
@@ -89,7 +89,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
-            aquasec/trivy:0.71.0 \
+            aquasec/trivy:0.71.0@sha256:016eae51fdcf989332a5404af7e8f625cd5d95d7c0907a221d080a996f556500 \
             fs . \
             --ignorefile .trivyignore.yaml \
             --scanners vuln,misconfig,secret \
@@ -146,7 +146,7 @@ jobs:
           docker run --rm \
             -i \
             -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
-            hadolint/hadolint:v2.12.0 < Dockerfile
+            hadolint/hadolint:v2.12.0@sha256:30a8fd2e785ab6176eed53f74769e04f125afb2f74a6c52aef7d463583b6d45e < Dockerfile
 
       - name: OpenSSF Scorecard
         continue-on-error: true

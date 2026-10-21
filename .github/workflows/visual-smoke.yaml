@@ -97,7 +97,7 @@ jobs:
         working-directory: bench/visual
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet -r requirements.txt
+          python3 -m pip install --quiet --require-hashes -r requirements.txt
           npm ci --no-audit --no-fund
           # The runner's Chrome, as the e2e-ui jobs use; Playwright's own build otherwise.
           CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
