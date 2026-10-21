@@ -30,7 +30,7 @@ import (
 // metric routes: VictoriaLogs stats buckets answered the pushdown, or the
 // raw-row evaluator answered because a probe found a line the two parsers
 // read differently, the pipeline is not one the pushdown covers, the step and
-// range give no bucket grid, or the query is an instant query.
+// range give no bucket grid.
 const (
 	rangeMetricEvaluatorStats   = "vl_stats_buckets"
 	rangeMetricEvaluatorRawRows = "raw_rows"
@@ -38,7 +38,6 @@ const (
 	rangeMetricReasonProbe      = "probe"
 	rangeMetricReasonIneligible = "ineligible"
 	rangeMetricReasonGrid       = "grid"
-	rangeMetricReasonInstant    = "instant"
 )
 
 // defaultOrderedJSONMetricMaxBytes admits about one million raw rows (the
@@ -138,10 +137,10 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	start, end, step, err := orderedJSONMetricTimes(r, isRange)
 	var body []byte
 	served := false
-	reason := rangeMetricReasonInstant
-	if err == nil && isRange {
+	var reason string
+	if err == nil {
 		var parseDisagreement bool
-		body, served, parseDisagreement, err = p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
+		body, served, parseDisagreement, err = p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step, !isRange)
 		switch {
 		case served:
 			p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
@@ -917,9 +916,10 @@ var errLevelNotStored = errors.New("rows without a stored level")
 
 // orderedJSONStatsBucketsWithReason serves an eligible plan (setStatsPushdown)
 // from stats_query_range buckets on the anchored sliding grid instead of raw
-// rows. served is false when the raw evaluator must answer: no bucket grid, a
-// possible series-limit overflow, or a line a probe found to be read
-// differently by the two parsers (parseDisagreement).
+// rows. An instant query (instant, start == end) asks for the one bucket
+// (t-window, t] and answers a vector. served is false when the raw evaluator
+// must answer: no bucket grid, a possible series-limit overflow, or a line a
+// probe found to be read differently by the two parsers (parseDisagreement).
 //
 // A plan reading detected_level first asks for the stored fields alone: the
 // buckets are grouped by the stored detected_level and level fields, and the
@@ -929,7 +929,7 @@ var errLevelNotStored = errors.New("rows without a stored level")
 // stored level, or with a stored detected_level (a stream label keeps its
 // spelling, translator.BuildDetectedLevelChain), is a row only the chain and
 // its guards read exactly: the query is asked again with them.
-func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration) (body []byte, served bool, parseDisagreement bool, err error) {
+func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, instant bool) (body []byte, served bool, parseDisagreement bool, err error) {
 	if !plan.pushdown || p.labelTranslator == nil {
 		return nil, false, false, nil
 	}
@@ -939,19 +939,19 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		return nil, false, false, nil
 	}
 	if plan.derivesLevel {
-		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true)
+		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true, instant)
 		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
 			return body, served, parseDisagreement, err
 		}
 	}
-	return p.orderedJSONStatsBuckets(ctx, plan, start, end, step, false)
+	return p.orderedJSONStatsBuckets(ctx, plan, start, end, step, false, instant)
 }
 
 // orderedJSONStatsBuckets is one attempt of orderedJSONStatsBucketsWithReason:
 // storedLevel reads detected_level from the stored fields (and returns
 // errLevelNotStored when they do not decide every row), otherwise the chain
 // computes it.
-func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, storedLevel bool) (body []byte, served bool, parseDisagreement bool, err error) {
+func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMetricPlan, start, end time.Time, step time.Duration, storedLevel, instant bool) (body []byte, served bool, parseDisagreement bool, err error) {
 	unpack := plan.unpackKeys()
 	// A name_extracted label is computed after the plain unpack from a scratch
 	// unpack of the key name (translator.ExtractedLabelPipes); the plain unpack
@@ -966,6 +966,10 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		if vl := p.labelTranslator.ToVL(field); vl != field {
 			stored[field] = vl
 		}
+	}
+	if instant {
+		// One evaluation time: the single bucket (start-window, start].
+		step = plan.window
 	}
 	bucket, ok := slidingStatsBucket(step, plan.window)
 	if !ok {
@@ -1073,8 +1077,59 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 			return nil, false, false, err
 		}
 	}
-	body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
+	if instant {
+		body, err = buildStatsInstantVector(plan, merged, start, p.limits().BufferedBackendBodyBytes)
+	} else {
+		body, err = buildHitsRangeMetricMatrix(plan.function, merged, start, end, step, plan.window, p.limits().BufferedBackendBodyBytes)
+	}
 	return body, err == nil, false, err
+}
+
+// buildStatsInstantVector answers an instant query from the series of the one
+// bucket (evalTime-window, evalTime], which the anchored grid labels with its
+// left edge evalTime-window. VictoriaLogs also returns the bucket that ends at
+// that edge when a line sits exactly on it (the query start is inclusive); that
+// line is outside Loki's window and its bucket label differs, so only the
+// window's own bucket counts. Like buildHitsRangeMetricMatrix, a series with
+// byte presence data keeps a window that holds only empty lines, a window
+// without lines is absent, and the encoded response is bounded by maxBytes with
+// the same error. The sample time is the evaluation time in seconds with
+// millisecond precision, as Loki's vector marshalling prints it.
+func buildStatsInstantVector(plan *orderedJSONMetricPlan, series map[string]manualSeriesSamples, evalTime time.Time, maxBytes int) ([]byte, error) {
+	edge := evalTime.Add(-plan.window).UnixNano()
+	stamp := float64(evalTime.UnixMilli()) / 1e3
+	keys := make([]string, 0, len(series))
+	for key := range series {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	results := make([]map[string]interface{}, 0, len(keys))
+	encodedBytes := 0
+	for _, key := range keys {
+		entry := series[key]
+		sum := 0.0
+		for _, sample := range entry.Samples {
+			if sample.ts == edge {
+				sum += sample.value
+			}
+		}
+		hasLines := sum != 0
+		if entry.PresentBuckets != nil {
+			hasLines = slices.Contains(entry.PresentBuckets, edge)
+		}
+		if !hasLines {
+			continue
+		}
+		formatted := formatMetricSampleValue(metricWindowValue(plan.function, sum, plan.window))
+		for k, v := range entry.Metric {
+			encodedBytes += len(k) + len(v) + 6
+		}
+		if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
+			return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
+		}
+		results = append(results, map[string]interface{}{"metric": entry.Metric, "value": []interface{}{stamp, formatted}})
+	}
+	return marshalManualMetricResponse("vector", results), nil
 }
 
 // mergeGroups folds the stats groups into the plan's series: groups that
@@ -1240,7 +1295,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return false
 	}
-	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step)
+	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step, false)
 	if served {
 		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
 	}

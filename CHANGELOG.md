@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **An instant `sum by (level, detected_level) (count_over_time({...} | json |
+  drop __error__ [5m]))` is answered from one VictoriaLogs stats bucket instead
+  of every raw row of its window, and `[24h]` and `[7d]` windows answer instead
+  of failing.** Only range queries used the stats pushdown; an instant query
+  (`/loki/api/v1/query`, the form dashboards, alert rules and Explore's table
+  view send) read all rows of its window and counted them in the proxy: 22.5k
+  rows cost 475 ms against Loki's 94 ms warm, about 100 ms of proxy CPU, 84 MB
+  and a million allocations, and at `[24h]` and `[7d]` the raw-row limits
+  (`-manual-range-metric-row-limit`, 1,000,000 rows, or
+  `-ordered-json-metric-max-bytes`, 1 GiB) were hit and the query failed with
+  HTTP 502 where Loki answers. The instant route now asks `stats_query_range`
+  for the single bucket that is Loki's window `(t-range, t]`, on the same
+  anchored grid as the range route: the bucket starts at `t-range`, ends at
+  `t+1ns` and is one range wide, so a line exactly at `t-range` is outside and a
+  line exactly at `t` is inside, as in Loki. The parse-risk probes, the series
+  limit (`-max-stats-query-series`), the response size limit and the fallbacks
+  are the range route's: a line Loki's parser and VictoriaLogs read differently,
+  or a pipeline the pushdown does not cover, still evaluates the rows. The
+  answer is a vector with the same series, labels and values as the row
+  evaluator, stamped with the evaluation time in seconds at Loki's millisecond
+  precision. Over a fixed corpus of 18,000 JSON lines in a 1 h window the
+  proxy's own cost per instant query, against a canned backend
+  (`BenchmarkOrderedJSONInstantVolume`, warm probe cache), is 58 µs, 157 KiB and
+  355 allocations against 30.8 ms, 31.1 MiB and about 415,000 allocations for
+  the row evaluator, and the backend returns a handful of buckets instead of
+  every row. `loki_vl_proxy_parser_metric_evaluations_total` now counts such
+  queries as `evaluator="vl_stats_buckets",reason="pushdown"`; an instant query
+  that still reads rows is labelled `probe`, `ineligible` or `grid` like a range
+  query, no longer `instant`.
+
 ## [2.22.1] - 2026-10-21
 
 ### Security

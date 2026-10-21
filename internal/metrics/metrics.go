@@ -1827,7 +1827,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
 	}
 
-	sb.WriteString("# HELP loki_vl_proxy_parser_metric_evaluations_total Metric queries over a | json or | logfmt pipeline by the evaluator that answered them (vl_stats_buckets: VictoriaLogs stats over unpacked fields; raw_rows: the exact row evaluator) and the reason (pushdown; probe: a line the two parsers read differently; ineligible: a pipeline the pushdown does not cover; grid: no bucket grid for the step and range; instant: an instant query).\n")
+	sb.WriteString("# HELP loki_vl_proxy_parser_metric_evaluations_total Metric queries over a | json or | logfmt pipeline by the evaluator that answered them (vl_stats_buckets: VictoriaLogs stats over unpacked fields; raw_rows: the exact row evaluator) and the reason (pushdown; probe: a line the two parsers read differently; ineligible: a pipeline the pushdown does not cover; grid: no bucket grid for the step and range).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_parser_metric_evaluations_total counter\n")
 	parserMetricEvaluators := make([]string, 0, len(sRangeMetricEvaluators))
 	for key := range sRangeMetricEvaluators {
