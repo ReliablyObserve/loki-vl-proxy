@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Code-scanning alert 607 resolved as a documented false positive.** Semgrep's
+  `trailofbits.go.iterate-over-empty-map` flagged the loop over `extracted` in
+  the unwrap conversion-error evaluator (`internal/proxy/unwrap_conversion_error.go`),
+  but the map is filled by `parseJSON` before that loop runs. The line now
+  carries an inline `nosemgrep` with that reason, like the repository's other
+  reviewed Semgrep exceptions; behaviour is unchanged.
+
 ## [2.23.1] - 2026-10-21
 
 ### Breaking Changes
