@@ -353,8 +353,9 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | path | content |
 |---|---|
 | `results/daily-<set>.json` | the day's summary per set (`report.py` format), overwritten daily; git history keeps every day, and `perf_evidence.py` reads it as the latest evidence |
-| `history/<set>.jsonl` | one line per set per day, append-only: date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release) |
+| `history/<set>.jsonl` | one line per set per day, append-only: date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
+| `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
@@ -376,6 +377,32 @@ files), `bench/ab/` without its results, history, tests and README, the
 stack's `test/e2e-compat/docker-compose.yml`, `loki-local-config.yaml` and
 `log-generator.py`, and the workflow itself. A manual dispatch always runs, and
 a history that cannot be read runs the measurement.
+
+Each run also compares every set's newest history line with the previous
+valid one (`history.py alerts`) and reports transitions, not the state many rows
+are already in (rows that differ from Loki today do not alert again). A
+regression is a result that went `same` → `differs`, a status that went 200 →
+an error Loki does not give, or a warm p50 slower beyond 25% and 50 ms that held
+for two runs (both worse than the run before them) or that the same run's
+verdict against the release also calls `slower`. An improvement is the reverse
+of the first two, or a warm p50 faster beyond the same margin (one run is
+enough). Each alert names the commit range to bisect, `<previous line's
+commit>..<newest commit>` (a slowdown that held for two runs starts at the line
+before it began). A row enters `history/ratchet.json` when its newest line has
+the same result as Loki, answers 200 and its cold run is no slower than Loki's
+cold run, and only when Loki computed that cold run (`loki_cold_computed`, from
+Loki's cache counters): never on warm p50, which for Loki is its results cache,
+and never on lines written before the column existed. A ratchet loss is a
+ratcheted row whose newest line differs from Loki or fails (at once), or whose
+cold run is slower than Loki's computed cold run beyond the margin in the newest
+line and the previous valid one (a cold run is one sample); it repeats every run
+until fixed.
+Rows leave the list only by hand. The run writes the alerts to
+`<out>/alerts.md` and `alerts.json` (not committed: they describe one run), puts
+them at the top of the daily pull request and in the job summary, and a final
+step fails the job when there is a regression or a ratchet loss, so the red run
+is the notification. A pull request that edits the pipeline shows them and never
+fails on them.
 
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits
