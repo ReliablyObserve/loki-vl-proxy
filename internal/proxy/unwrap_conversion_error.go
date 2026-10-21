@@ -967,7 +967,7 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 			return false
 		}
 		plan := &orderedJSONMetricPlan{preserveError: preserveError}
-		extracted := map[string]bool{}
+		extracted := map[string]bool{} // nosemgrep: trailofbits.go.iterate-over-empty-map.iterate-over-empty-map -- parseJSON fills it before the loop below
 		before := cloneStringMap(labels)
 		if err := plan.parseJSON(line, before, labels, extracted); err != nil {
 			return false
