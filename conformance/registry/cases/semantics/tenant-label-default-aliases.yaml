@@ -1,0 +1,36 @@
+id: semantics/tenant-label-default-aliases
+title: Tenant-label mode refuses the default aliases and an empty org like "*"
+proves:
+  - tenant-label-isolation
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  In -tenant-label mode every tenant shares one VictoriaLogs tenant and the proxy
+  confines a request to its org with a stream filter. The default aliases (0,
+  fake, default) and an absent org carry no tenant to filter on, so they are held
+  to the same gate as "*": 403 unless -tenant.allow-global is set or, for an
+  alias, the tenant map has an exact entry for it (no entry admits an absent
+  org). The gate sits in the request admission middleware, so every route is
+  covered, and scopedTenantParams never returns an unfiltered request for
+  anything else; a request it would otherwise leave unconfined gets a filter
+  no stream satisfies. The background label warm-up does not run in this mode
+  unless allow-global is set, since it carries no org.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"}'
+  headers:
+    X-Scope-OrgID: "fake"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    -tenant-label set: 403 for 0, fake, default, an absent org and "*" unless
+    -tenant.allow-global=true or, for an alias, an exact tenant-map entry (an
+    absent org is never admitted by a map entry); a real org is filtered.
+    Tenant-map, numeric passthrough and single-tenant modes still accept the
+    aliases.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"

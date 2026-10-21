@@ -1,0 +1,28 @@
+id: vl-extra-stream-filters-exact-and-empty
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  The extra_stream_filters query argument of /select/logsql/* adds a stream filter
+  to the query that the query text cannot override. A JSON object value
+  ({"org_id":"A"}) is an exact match on the stream field. Measured on
+  VictoriaLogs v1.49.0 and v1.52.0 with one stream tagged org_id=A and one without
+  the field: no filter returns both lines; {"org_id":""} returns the line WITHOUT
+  the field (an empty value matches a stream that lacks the field); {"org_id":"\n"}
+  returns nothing, HTTP 200, no error; {"org_id":"A"} returns only the tagged line.
+proxy_usage: |
+  Tenant-label mode (-tenant-label) confines every request to its org with
+  {"<label>":"<org>"}. Because an empty value matches label-less streams, the proxy
+  never confines with "": a request that carries no tenant (default aliases, absent
+  org, "*") is refused unless -tenant.allow-global is set, and the defensive fallback
+  in scopedTenantParams uses a newline value, which no org ID can carry (a newline is
+  refused in X-Scope-OrgID), so it matches nothing. The proxy depends on both
+  behaviours: exact match, and a newline value that matches nothing without error.
+fallback: |
+  None: the tenant-label feature requires extra_stream_filters. If a VictoriaLogs
+  version changed the empty-value semantics or rejected the newline value, the live
+  capability test fails before the version is supported.
+proves:
+  - tenant-label-isolation

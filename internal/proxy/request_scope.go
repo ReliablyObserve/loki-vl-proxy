@@ -97,13 +97,28 @@ func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// tenantFilterNeverMatches is a tenant-label value no request can carry (org IDs
+// with a newline are refused), used where a request must see no stream.
+const tenantFilterNeverMatches = "\n"
+
 func (p *Proxy) scopedTenantParams(ctx context.Context, params url.Values) url.Values {
 	routing := p.routingForContext(ctx)
 	orgID := getOrgID(ctx)
-	if _, mapped := routing.tenants[orgID]; !mapped && routing.label != "" && orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
-		return injectTenantLabelFilter(params, routing.label, orgID)
+	if _, mapped := routing.tenants[orgID]; (mapped && orgID != "") || routing.label == "" {
+		return params
 	}
-	return params
+	// Defensive twin of the admission rule: only the explicit global bypass may
+	// leave a label-mode request unfiltered; anything else is confined to its org.
+	if orgID == "" || isDefaultTenantAlias(orgID) || orgID == "*" {
+		if p.globalTenantAllowed() {
+			return params
+		}
+		// Not admitted, so it must read nothing: an empty value would match streams
+		// that lack the label. A newline is rejected in every org ID, so no tenant
+		// owns it.
+		orgID = tenantFilterNeverMatches
+	}
+	return injectTenantLabelFilter(params, routing.label, orgID)
 }
 
 func (p *Proxy) setResolvedTenantHeaders(req *http.Request, forwardOrg bool) {

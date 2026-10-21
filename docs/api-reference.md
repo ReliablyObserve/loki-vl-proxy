@@ -99,6 +99,8 @@ After ingestion, data is queryable through the proxy's Loki-compatible read API.
 
 ## Alerting and Config Compatibility
 
+With `-tenant-label`, the rules and alerts routes below answer an org only with the rules and alerts whose `labels` carry `<tenant-label>=<org>` (rule groups left without a rule are dropped; an org with none gets the usual empty answer, and a named group it has no rule in is `404`). A rule or alert without that label is shown to no org. Alerts nested in a kept rule are filtered the same way, and a tenant-label value holding a template (`{{`) matches no org, so use literal tenant-label values on rules: a templated one hides the rule on these routes. A kept rule group is reduced to its name, file, interval, limit, evaluation times and rules, and warnings, infos and the group paging token are dropped; use one tenant per rule group. A mapped org is sent to the backend with its mapping's tenant headers instead and gets no proxy filtering, so its view depends on the ruler/alerts backend scoping by the forwarded `AccountID`/`ProjectID`; vmalert and the Loki ruler do not, so a mapped org sees the backend's global view. `-tenant.allow-global=true` keeps the unfiltered view. A backend error is answered with its status and a generic body, and an answer the proxy cannot attribute is refused with `502`.
+
 | Endpoint | Response | Purpose |
 |---|---|---|
 | `GET /loki/api/v1/rules` | Legacy Loki YAML rules view when `-ruler-backend` is configured, otherwise empty YAML rules map | Loki/Grafana compatibility |
@@ -145,7 +147,7 @@ All error responses from the proxy use the standard Loki JSON error envelope:
 | HTTP Status | `errorType` | Typical causes |
 |---|---|---|
 | 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
-| 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant or unmapped wildcard `X-Scope-OrgID: *` without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
+| 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant, or unmapped wildcard `X-Scope-OrgID: *` (and, with `-tenant-label`, an unmapped default alias or empty org) without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
 | 404 | `not_found` | rules lookups with no matching rule group |
 | 406 / 422 | `not_acceptable` / `execution` | Loki status mapping (for example a backend returning that status) |
 | 499 | `canceled` | client canceled the request |

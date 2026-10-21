@@ -1643,7 +1643,9 @@ func (p *Proxy) Init() {
 	}
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
-	if p.labelsCacheWarm {
+	// Without an org the warm-up scans carry no tenant to filter on, so in label
+	// mode they would only run unfiltered under allow-global.
+	if p.labelsCacheWarm && (p.tenantLabel == "" || p.allowGlobalTenant) {
 		p.warmMetadataCacheOnStartup()
 		p.startLabelCacheKeepWarmLoop()
 	}
@@ -1796,7 +1798,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.requestLogger(endpoint, route, h)))
+		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, h))))
 	}
 	mux.Handle("/loki/api/v1/rules", alertRead("rules", "/loki/api/v1/rules", p.handleRules))
 	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))

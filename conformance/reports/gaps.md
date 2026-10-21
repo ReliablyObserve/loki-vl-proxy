@@ -14,25 +14,25 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 6 | `/loki/api/v1/index/volume` | drilldown, api | proxy_side | 26 | 7 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/format_query` | explore, api | proxy_side | 5 | 1 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/detected_labels` | drilldown, api | proxy_side | 16 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 4 | `/prometheus/api/v1/alerts` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/loki/api/v1/rules/{namespace}` | api | not_implemented | 2 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
+| 4 | `/prometheus/api/v1/alerts` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
+| 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki |
+| 4 | `/loki/api/v1/rules/{namespace}` | api | not_implemented | 2 | 0 | not implemented; no test compares it against Loki |
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 22 | 3 | no test wired to the registry |
 | 4 | `/loki/api/v1/index/shards` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/delete` | api | native_vl | 5 | 0 | no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/tail` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/series` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/rules/{namespace}/{groupName}` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/rules/{namespace}` | api | not_implemented | 2 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/rules` | api | not_implemented | 6 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
+| 4 | `/api/prom/rules/{namespace}/{groupName}` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki |
+| 4 | `/api/prom/rules/{namespace}` | api | not_implemented | 2 | 0 | not implemented; no test compares it against Loki |
+| 4 | `/api/prom/rules` | api | not_implemented | 6 | 0 | not implemented; no test compares it against Loki |
 | 4 | `/api/prom/query` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/push` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label/{name}/values` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 3 | `/loki/api/v1/status/buildinfo` | datasource, api | not_implemented | 10 | 4 | not implemented; no test wired to the registry |
-| 1 | `/prometheus/api/v1/rules` | api | not_implemented | 5 | 1 | not implemented; no test wired to the registry |
-| 1 | `/loki/api/v1/rules` | api | not_implemented | 10 | 2 | not implemented; no test wired to the registry |
+| 1 | `/prometheus/api/v1/rules` | api | not_implemented | 5 | 1 | not implemented |
+| 1 | `/loki/api/v1/rules` | api | not_implemented | 10 | 2 | not implemented |
 | 1 | `/loki/api/v1/push` | api | not_implemented | 33 | 29 | not implemented; no test wired to the registry |
 | 1 | `/loki/api/v1/label` | api | not_implemented | 62 | 11 | not implemented; no test wired to the registry |
 | 1 | `/loki/api/v1/drilldown-limits` | api | not_implemented | 9 | 1 | not implemented |
@@ -75,6 +75,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 6 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
+| semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
 | semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 6 | partial |
 

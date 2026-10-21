@@ -474,7 +474,7 @@ func run(
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
 	tenantMapReloadInterval := fs.Duration("tenant-map-reload-interval", 30*time.Second, "How often to poll -tenant-map-file for mtime changes. Set to 0 to disable polling.")
-	tenantLabel := fs.String("tenant-label", "", "VL field name for label-based tenant routing. When set, X-Scope-OrgID values are injected as {<tenant-label>=\"<orgID>\"} into VL queries instead of AccountID/ProjectID headers. Use when all data is under VL default tenant (0:0). Explicit -tenant-map entries take priority. Env: TENANT_LABEL")
+	tenantLabel := fs.String("tenant-label", "", "VL field name for label-based tenant routing. When set, X-Scope-OrgID values are injected as {<tenant-label>=\"<orgID>\"} into VL queries instead of AccountID/ProjectID headers. Use when all data is under VL default tenant (0:0). Explicit -tenant-map entries take priority. The default aliases 0, fake and default and an empty org carry no tenant to filter on, so in this mode they are refused with 403 like \"*\" unless -tenant.allow-global is set; a tenant-map entry for an alias admits it, but no entry admits an empty org. Env: TENANT_LABEL")
 	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of Loki limits for every tenant, enforced and published (for example {"query_timeout":"2m","max_query_series":1000}); max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range and query_timeout are enforced`)
@@ -659,7 +659,7 @@ func run(
 	patternsPersistInterval := fs.Duration("patterns-persist-interval", 30*time.Second, "How often to persist in-memory patterns snapshots to disk")
 	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
-	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
+	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label it also admits the default aliases 0, fake and default and an empty org without the tenant filter`)
 
 	// Cold storage backend (Victoria Lakehouse)
 	coldBackendURL := fs.String("cold-backend", "", "Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing.")

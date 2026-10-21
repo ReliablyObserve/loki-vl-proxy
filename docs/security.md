@@ -24,7 +24,7 @@ Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial,
 
 - `X-Scope-OrgID` is mapped to VictoriaLogs tenant IDs via `-tenant-map`
 - optional multi-tenant fanout is explicit (`tenant-a|tenant-b`)
-- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config: an unmapped `X-Scope-OrgID: *` returns `403` in native and label-routing (`-tenant-label`) modes unless `-tenant.allow-global=true`; an explicit tenant-map entry for `*` takes precedence
+- wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config: an unmapped `X-Scope-OrgID: *` returns `403` in native and label-routing (`-tenant-label`) modes unless `-tenant.allow-global=true`; an explicit tenant-map entry for `*` takes precedence; in label-routing mode the default aliases (`0`, `fake`, `default`) and an absent or empty `X-Scope-OrgID` follow the same rule, except that no map entry admits an empty org
 - label-routing mode enforces the tenant constraint through VictoriaLogs `extra_stream_filters`, so request parameters and query pipelines cannot override it; the configured tenant field must be a stream field
 - cache and coalescer keys (memory, disk, peer, window, metadata and label-value indexes) include the resolved tenant routing, backend identity and forwarded-identity fingerprint, so entries are never shared across tenants or authorization scopes
 

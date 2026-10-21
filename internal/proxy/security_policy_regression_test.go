@@ -33,8 +33,9 @@ func TestTenantScoping_WildcardPolicyInBothRoutingModes(t *testing.T) {
 					t.Fatalf("label=%q allow=%v mapped=%v: %v", label, allow, mapped, err)
 				}
 				for _, alias := range []string{"0", "fake", "default"} {
-					if err := p.validateSingleTenantOrgID(alias); err != nil {
-						t.Fatalf("alias %q: %v", alias, err)
+					// Tenant-label mode holds the default aliases to the "*" gate.
+					if err := p.validateSingleTenantOrgID(alias); (err == nil) != (label == "" || allow) {
+						t.Fatalf("label=%q allow=%v alias %q: %v", label, allow, alias, err)
 					}
 				}
 				r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)

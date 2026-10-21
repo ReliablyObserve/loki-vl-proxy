@@ -57,7 +57,7 @@ jobs:
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run VictoriaLogs compatibility score
-        run: go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
+        run: go test -v -tags=e2e -run '^(TestVLTrackScore|TestVLCapability_.*)$' ./test/e2e-compat/
       - name: Tear down pinned stack
         if: always()
         working-directory: test/e2e-compat
@@ -109,7 +109,7 @@ jobs:
         # VictoriaLogs version words or stores things: OTLP severity as
         # detected_level, the status of rejected queries (parse errors), and the
         # range-metric table compared with Loki (bucket edges, offsets, unwrap).
-        run: go test -v -tags=e2e -timeout=25m -run '^(TestSetup_IngestLogs|TestVLTrackScore|TestCompat_DetectedLevelQueryRange|TestCompat_RejectedQueryStatusParity|TestCompat_Unwrap.*|TestRangeMetric.*|TestGrafanaClickout_.*)$' ./test/e2e-compat/
+        run: go test -v -tags=e2e -timeout=25m -run '^(TestSetup_IngestLogs|TestVLTrackScore|TestVLCapability_.*|TestCompat_DetectedLevelQueryRange|TestCompat_RejectedQueryStatusParity|TestCompat_Unwrap.*|TestRangeMetric.*|TestGrafanaClickout_.*)$' ./test/e2e-compat/
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat

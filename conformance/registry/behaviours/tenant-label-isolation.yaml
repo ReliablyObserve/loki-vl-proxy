@@ -1,0 +1,27 @@
+id: tenant-label-isolation
+kind: semantics
+title: Tenant-label mode confines every request to its org
+
+loki: |
+  Loki scopes every request to the tenant in X-Scope-OrgID.
+
+victorialogs: |
+  VictoriaLogs scopes by AccountID/ProjectID headers and accepts a stream filter
+  (extra_stream_filters) that a query cannot override.
+
+proxy: |
+  With -tenant-label all orgs share one VictoriaLogs tenant, so the proxy adds
+  the stream filter per request. A request that carries no org to filter on (the
+  default aliases 0, fake, default, an absent org, or "*") is refused with 403
+  unless -tenant.allow-global is set or, for an alias or "*", the tenant map has
+  an exact entry for it; no map entry admits an absent org. The rules and
+  alerts read routes show an org only the rules and alerts whose labels carry
+  <tenant-label>=<org>.
+
+implementation:
+  - internal/proxy/middleware.go
+  - internal/proxy/request_scope.go
+  - internal/proxy/alerting.go
+
+cases:
+  - semantics/tenant-label-default-aliases

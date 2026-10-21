@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -144,9 +146,184 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	}
 	defer resp.Body.Close()
 
+	label, org, confined := p.alertingTenantScope(r.Context())
+	if confined {
+		if resp.StatusCode/100 != 2 {
+			// A backend error body is not attributable to the org; keep the
+			// status and say nothing else.
+			p.writeError(w, resp.StatusCode, "alerting backend error")
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
+		if err == nil && len(body) <= maxAlertingResponseBytes {
+			body, err = filterAlertingJSONForTenant(body, label, org)
+		}
+		if err != nil || len(body) > maxAlertingResponseBytes {
+			p.writeError(w, http.StatusBadGateway, "invalid alerting backend response")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+		return
+	}
+
 	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+const maxAlertingResponseBytes = 64 << 20
+
+// alertingTenantScope reports whether a rules/alerts read must be confined to the
+// rules and alerts of the request's org. The ruler and alerts backends know
+// nothing of the tenant label, so in tenant-label mode they answer for every
+// tenant. A mapped org gets its mapping's tenant headers instead, and allow-global
+// keeps the global view; every other org sees only the rules and alerts that carry
+// <tenant-label>=<org> in their labels. A rule without that label belongs to no
+// tenant and is shown to none (fail closed). The rule's query is not used for
+// attribution: a stream selector cannot be matched reliably.
+func (p *Proxy) alertingTenantScope(ctx context.Context) (label, org string, confined bool) {
+	routing := p.routingForContext(ctx)
+	org = getOrgID(ctx)
+	if routing.label == "" {
+		return "", "", false
+	}
+	if _, mapped := routing.tenants[org]; mapped && org != "" {
+		return "", "", false
+	}
+	if org == "" || isDefaultTenantAlias(org) || org == "*" {
+		if p.globalTenantAllowed() {
+			return "", "", false
+		}
+		org = tenantFilterNeverMatches
+	}
+	return routing.label, org, true
+}
+
+// alertingTenantMatches is the one attribution rule for rules and alerts: the
+// tenant-label value is the org. A value holding a template ("{{") is expanded
+// by the ruler per alert, so what the rule shows is not what its alerts carry:
+// it is attributable to no org, and never matches.
+func alertingTenantMatches(value, org string) bool {
+	return value == org && !strings.Contains(value, "{{")
+}
+
+func alertingLabelsMatch(labels any, label, org string) bool {
+	m, _ := labels.(map[string]any)
+	v, _ := m[label].(string)
+	return alertingTenantMatches(v, org)
+}
+
+// alertingGroupKeep is what a kept rule group retains: its identity, schedule
+// and evaluation times, and its rules. The ruler's other group fields (query
+// parameters, headers, group labels) can describe rules of other tenants in a
+// group that mixes them, so they are dropped. Use one tenant per rule group.
+var alertingGroupKeep = map[string]bool{
+	"name": true, "file": true, "interval": true, "limit": true, "rules": true,
+	"evaluationTime": true, "lastEvaluation": true,
+}
+
+// alertingList reads an array that the ruler may answer as null, which is empty.
+func alertingList(v any) ([]any, bool) {
+	if v == nil {
+		return nil, true
+	}
+	list, ok := v.([]any)
+	return list, ok
+}
+
+// filterAlertingJSONForTenant keeps, in a Prometheus-style rules or alerts answer,
+// the rules and alerts labelled for org (including the alerts nested in a kept
+// rule), and drops rule groups left without a rule. The answer keeps its shape
+// (an empty groups or alerts list), so Grafana reads it as it reads an org
+// without rules. Warnings, infos and the group paging token describe the whole
+// backend, so they are dropped. An answer of any other shape, or one holding both
+// groups and alerts, is an error rather than passed on unfiltered.
+func filterAlertingJSONForTenant(body []byte, label, org string) ([]byte, error) {
+	var doc map[string]any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&doc); err != nil {
+		return nil, err
+	}
+	data, ok := doc["data"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected alerting answer shape")
+	}
+	_, hasGroups := data["groups"]
+	_, hasAlerts := data["alerts"]
+	if hasGroups == hasAlerts {
+		return nil, fmt.Errorf("unexpected alerting answer shape")
+	}
+	delete(doc, "warnings")
+	delete(doc, "infos")
+	delete(data, "groupNextToken")
+	if hasGroups {
+		groups, ok := alertingList(data["groups"])
+		if !ok {
+			return nil, fmt.Errorf("unexpected alerting answer shape")
+		}
+		kept := []any{}
+		for _, g := range groups {
+			group, _ := g.(map[string]any)
+			rules, ok := alertingList(group["rules"])
+			if !ok {
+				return nil, fmt.Errorf("unexpected alerting answer shape")
+			}
+			keptRules := []any{}
+			for _, rule := range rules {
+				r, _ := rule.(map[string]any)
+				if !alertingLabelsMatch(r["labels"], label, org) {
+					continue
+				}
+				nested, ok := alertingList(r["alerts"])
+				if !ok {
+					return nil, fmt.Errorf("unexpected alerting answer shape")
+				}
+				if _, present := r["alerts"]; present {
+					keptAlerts := []any{}
+					for _, a := range nested {
+						if alert, _ := a.(map[string]any); alertingLabelsMatch(alert["labels"], label, org) {
+							keptAlerts = append(keptAlerts, a)
+						}
+					}
+					r["alerts"] = keptAlerts
+				}
+				keptRules = append(keptRules, rule)
+			}
+			if len(keptRules) == 0 {
+				continue
+			}
+			for k := range group {
+				if !alertingGroupKeep[k] {
+					delete(group, k)
+				}
+			}
+			group["rules"] = keptRules
+			kept = append(kept, group)
+		}
+		data["groups"] = kept
+	} else {
+		alerts, ok := alertingList(data["alerts"])
+		if !ok {
+			return nil, fmt.Errorf("unexpected alerting answer shape")
+		}
+		kept := []any{}
+		for _, a := range alerts {
+			if alert, _ := a.(map[string]any); alertingLabelsMatch(alert["labels"], label, org) {
+				kept = append(kept, a)
+			}
+		}
+		data["alerts"] = kept
+	}
+	// Rule text can hold "<", ">" and "&"; the default encoding would escape them.
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(doc); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func (p *Proxy) alertingBackendGet(r *http.Request, backend *url.URL, path string) (*http.Response, error) {
@@ -308,7 +485,12 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	label, org, confined := p.alertingTenantScope(r.Context())
+	if confined && resp.StatusCode/100 != 2 {
+		p.writeError(w, resp.StatusCode, "alerting backend error")
+		return
+	}
+	if !confined && resp.StatusCode != http.StatusOK {
 		copyHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
@@ -319,6 +501,25 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("invalid ruler backend response: %v", err))
 		return
+	}
+
+	// Tenant-label mode: the legacy YAML views are built from the same rules, so
+	// the same attribution applies; a group left empty is "not found".
+	if confined {
+		kept := decoded.Data.Groups[:0]
+		for _, g := range decoded.Data.Groups {
+			rules := g.Rules[:0]
+			for _, rule := range g.Rules {
+				if alertingTenantMatches(rule.Labels[label], org) {
+					rules = append(rules, rule)
+				}
+			}
+			g.Rules = rules
+			if len(rules) > 0 {
+				kept = append(kept, g)
+			}
+		}
+		decoded.Data.Groups = kept
 	}
 
 	if group != "" {

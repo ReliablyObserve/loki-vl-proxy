@@ -16,7 +16,11 @@ accepted unsafe behavior; assess the relevant configuration before rollout.
   entry still takes precedence. Deliberately shared/global access must be
   enabled explicitly; requiring a tenant header does not authenticate its value.
 - Default aliases (`0`, `fake`, `default`) retain their existing single-tenant
-  behavior. Wildcards in a multi-tenant header remain invalid.
+  behavior outside label-routing mode. With `-tenant-label` set, the aliases and
+  an absent or empty `X-Scope-OrgID` are refused with `403` like `*`, unless
+  `-tenant.allow-global=true`. A tenant-map entry for an alias still admits it;
+  no map entry admits an empty org.
+  Wildcards in a multi-tenant header remain invalid.
 - Tail accepts at most 4 KiB per client application message, including fragmented
   messages, and closes larger messages with WebSocket code 1009. This limit is
   **not** a limit on log frames sent to Grafana. Ping, pong, close, and small

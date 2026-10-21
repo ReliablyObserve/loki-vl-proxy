@@ -362,7 +362,7 @@ extraArgs:
   # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
   # tenant-default-limits: ""                  # JSON map of Loki limits for every tenant, enforced and published: max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range, query_timeout
   # tenant-limits: ""                          # JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above tenant-default-limits; enforced and published
-  # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403. An explicit "*" tenant-map entry always wins
+  # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403 (with tenant-label this includes the default aliases 0/fake/default and an empty org). An explicit tenant-map entry always wins
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"

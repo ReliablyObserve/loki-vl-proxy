@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`-tenant-label` mode refuses the default tenant aliases and an empty org
+  unless they are allowed.** A request with `X-Scope-OrgID` set to `0`, `fake`
+  or `default`, or with no `X-Scope-OrgID` (when `-auth.enabled` and
+  `-require-tenant-header` are off), now gets `403` instead of being served
+  without the tenant filter. Deployments that relied on this, such as a client or
+  health probe that sends no org or `fake`, should send a real tenant, map the
+  alias in the tenant map (an empty org cannot be mapped), or set
+  `-tenant.allow-global=true` to keep the old behavior deliberately. Also in
+  this mode, with `-ruler-backend` or `-alerts-backend`, an org now sees only
+  rules and alerts labeled `<tenant-label>=<org>`; label each tenant's rules
+  with a literal value (a templated tenant label hides the rule), or set
+  `-tenant.allow-global=true` for the previous global view. Other
+  routing modes are unchanged.
+
+### Security
+
+- **Tenant-label mode no longer serves the default tenant aliases (`0`,
+  `fake`, `default`) or an empty `X-Scope-OrgID` without the tenant filter;
+  such requests are refused unless `-tenant.allow-global` is set or, for an alias, the tenant
+  map has an exact entry for it (GHSA-rpvg-j2r9-4h4x).** The check runs where every request is
+  admitted, so it covers every route, and live tests against the supported
+  VictoriaLogs versions cover the behaviour it relies on. In the same mode the rules and alerts
+  read routes no longer show every tenant's rules and alerts: an org sees only
+  those whose `labels` carry `<tenant-label>=<org>` (a mapped org is sent its
+  mapping's tenant headers, and `-tenant.allow-global` keeps the global view),
+  and these routes are now behind the per-client rate limiter. A mapped org's
+  view relies on the ruler or alerts backend scoping by the forwarded
+  `AccountID`/`ProjectID`, which vmalert and the Loki ruler do not do, so a
+  mapped org sees the backend's global view.
+
 ## [2.23.0] - 2026-10-21
 
 ### Performance

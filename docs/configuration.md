@@ -30,7 +30,7 @@ The sections below stay hand-written: they explain how the pieces fit together.
 | `-backend-version-strict` | — | `false` | Promote the existing soft backend version check to a hard startup failure. When `true`, a `/health` failure, non-`2xx` response, or sub-minimum semver causes the proxy to exit during startup instead of logging a warning. Mirrors the upstream `vmselect` strict-version pattern. |
 | `-metadata-default-lookback` | — | `12h` | Default lookback bound applied to `/labels`, `/label/{name}/values`, and `/series` when the client omits both `start` and `end`. Bounds the backend time window so an unbounded Grafana label-discovery query cannot fan out across all retention. `0` disables (prior unbounded behavior). |
 | `-ruler-backend` | `RULER_BACKEND_URL` | — | Optional rules backend for legacy Loki YAML rules routes and Prometheus-style `/prometheus/api/v1/rules` passthrough |
-| `-alerts-backend` | `ALERTS_BACKEND_URL` | — | Optional alerts backend for Loki and Prometheus-style alerts endpoints (defaults to `-ruler-backend`) |
+| `-alerts-backend` | `ALERTS_BACKEND_URL` | — | Optional alerts backend for Loki and Prometheus-style alerts endpoints (defaults to `-ruler-backend`). With `-tenant-label`, rules and alerts are shown to an org only when their `labels` carry `<tenant-label>=<org>`; see [Label-based tenant routing](operations.md#3-label-based--tenant-label) |
 | `-log-level` | — | `info` | Log level: debug, info, warn, error |
 | `-tls-cert-file` | — | — | TLS certificate file for HTTPS |
 | `-tls-key-file` | — | — | TLS key file for HTTPS |
@@ -599,7 +599,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, an unmapped `X-Scope-OrgID` (other than the default-tenant aliases and `*`) is sent as a VictoriaLogs `extra_stream_filters` constraint `{"<tenant-label>":"<orgID>"}` instead of `AccountID`/`ProjectID` headers; request parameters cannot override it. The field must be a VictoriaLogs **stream field** (part of `_stream_fields`). Use when all data is under the VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
+| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, an unmapped `X-Scope-OrgID` (other than the default-tenant aliases, an empty org and `*`, which are rejected with `403` unless `-tenant.allow-global` is set) is sent as a VictoriaLogs `extra_stream_filters` constraint `{"<tenant-label>":"<orgID>"}` instead of `AccountID`/`ProjectID` headers; request parameters cannot override it. The field must be a VictoriaLogs **stream field** (part of `_stream_fields`). Use when all data is under the VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
 | `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
@@ -608,7 +608,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
 | `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
-| `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. Without it, unmapped `*` returns `403`; an explicit `"*"` tenant-map entry always takes precedence |
+| `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. In `-tenant-label` mode it also admits an unmapped default alias (`0`, `fake`, `default`) or an empty org without the tenant filter. Without it, those return `403`; an explicit `"*"` tenant-map entry always takes precedence |
 | `-forward-tenant-header` | `FORWARD_TENANT_HEADER` | `true` | When `false`, suppresses X-Scope-OrgID header forwarding to the backend |
 
 ### Tenant Resolution Order
@@ -616,9 +616,9 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 1. **No header** — when `-auth.enabled=false` and `-require-tenant-header=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`; otherwise they return `401`
 2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
 3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
-4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers
+4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers. With `-tenant-label` set they are treated like `*` (step 5): `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias (a map entry never admits an empty org)
 5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. Unless the tenant map has an explicit `"*"` entry, it uses the backend default tenant only when `-tenant.allow-global=true` and returns `403` otherwise (also in `-tenant-label` mode)
-6. **Label routing** — with `-tenant-label` set, any other org ID is accepted and scoped with a stream-field constraint instead of tenant headers
+6. **Label routing** — with `-tenant-label` set, any other non-empty org ID is accepted and scoped with a stream-field constraint instead of tenant headers
 7. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
 8. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
 
@@ -763,7 +763,7 @@ datasources:
       httpHeaderValue1: "0"
 ```
 
-`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and requires explicit `-tenant.allow-global=true` unless the tenant map contains an explicit `"*"` entry.
+`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. With `-tenant-label` they are refused with `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias; an absent or empty org is refused unless `-tenant.allow-global=true`, and no map entry admits it. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and requires explicit `-tenant.allow-global=true` unless the tenant map contains an explicit `"*"` entry.
 
 ### Hot Reload
 

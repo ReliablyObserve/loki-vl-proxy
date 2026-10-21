@@ -74,6 +74,11 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 				msg:    "missing X-Scope-OrgID header",
 			}
 		}
+		// An absent org is a default-alias request: tenant-label mode refuses it
+		// unless the global bypass is allowed or the tenant map maps it.
+		if routing := p.routingForContext(r.Context()); routing.label != "" {
+			return p.validateSingleTenantOrgIDWithRouting("", routing)
+		}
 		return nil
 	}
 	if strings.Contains(orgID, "|") {
@@ -113,7 +118,9 @@ func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 func (p *Proxy) validateSingleTenantOrgIDWithRouting(orgID string, routing requestRouting) error {
 	_, ok := routing.tenants[orgID]
 	tenantLabel := routing.label
-	if ok {
+	// An absent org never receives a mapping's tenant headers, so a label-mode
+	// request without one is not served by a mapping under the empty key.
+	if ok && (orgID != "" || tenantLabel == "") {
 		return nil
 	}
 	// Explicit mappings take precedence, but label routing must not turn an
@@ -128,6 +135,14 @@ func (p *Proxy) validateSingleTenantOrgIDWithRouting(orgID string, routing reque
 	// In label-based routing mode any org ID is accepted: isolation is enforced
 	// by injecting a LogsQL label filter into the query, not via AccountID headers.
 	if tenantLabel != "" {
+		// The default aliases and an absent org carry no tenant label to filter
+		// on, so they are held to the same gate as "*".
+		if (orgID == "" || isDefaultTenantAlias(orgID)) && !p.globalTenantAllowed() {
+			if orgID == "" {
+				return &requestPolicyError{status: http.StatusForbidden, msg: "missing X-Scope-OrgID is not allowed in tenant-label mode"}
+			}
+			return &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("global tenant bypass (%q) is disabled", orgID)}
+		}
 		// orgID is injected into LogsQL queries as a label value.
 		// Reject characters that cannot be safely embedded: newlines, carriage returns, null bytes.
 		for _, ch := range orgID {

@@ -1,0 +1,25 @@
+id: tenant-label-isolation
+state: proven
+reason: |
+  Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over
+  twelve routes (query, range, labels, label values, series, volume, detected
+  fields and labels, patterns, delete, rules, tail upgrade) x orgs (absent, the
+  three default aliases, "*", a real org, multi-tenant headers) x allow-global
+  x tenant map asserts the 403 or, for admitted requests, the exact
+  extra_stream_filters or mapped tenant the backend receives. The rules and
+  alerts routes (all ten, YAML and JSON) are covered in
+  alerting_tenant_label_test.go. The background label warm-up is covered in
+  labels_cache_warm_test.go.
+  Live stack (test/e2e-compat/tenant_label_isolation_test.go, run in the
+  tail-multitenancy group on every PR and in the VictoriaLogs version matrix):
+  TestVLCapability_ExtraStreamFiltersTenantSemantics asserts the VictoriaLogs
+  behaviour the isolation relies on (exact match, empty value matches label-less
+  streams, a newline value matches nothing); TestHardeningLive_TenantLabelDefaultAliases
+  drives an in-process label-mode proxy against live data (aliases and empty org
+  refused on every read route, a real org confined, allow-global and a mapped alias
+  as configured); TestHardeningLive_TenantLabelRulesAndAlertsConfinement checks the
+  rules and alerts routes against the stack's vmalert.
+owner_decision: |
+  Tenant-label mode treats the default aliases and an absent org like "*"
+  (GHSA-rpvg-j2r9-4h4x).
+waiver: null

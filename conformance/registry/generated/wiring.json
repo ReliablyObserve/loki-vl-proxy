@@ -1,6 +1,15 @@
 {
   "implementation_sites_missing": [],
   "item_to_tests": {
+    "api_prom_rules": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
+    "api_prom_rules_namespace": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
+    "api_prom_rules_namespace_groupname": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_inventory_test.go",
@@ -245,6 +254,15 @@
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
+    "loki_api_v1_rules": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
+    "loki_api_v1_rules_namespace": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
+    "loki_api_v1_rules_namespace_groupname": [
+      "internal/proxy/alerting_tenant_label_test.go"
+    ],
     "loki_api_v1_series": [
       "internal/proxy/label_metadata_freshness_test.go"
     ],
@@ -380,6 +398,14 @@
     ],
     "profiles/uncategorized-streams-carry-structured-metadata": [
       "test/e2e-compat/stage_field_exposure_test.go"
+    ],
+    "prometheus_api_v1_alerts": [
+      "internal/proxy/alerting_tenant_label_test.go",
+      "test/e2e-compat/tenant_label_isolation_test.go"
+    ],
+    "prometheus_api_v1_rules": [
+      "internal/proxy/alerting_tenant_label_test.go",
+      "test/e2e-compat/tenant_label_isolation_test.go"
     ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
@@ -538,6 +564,11 @@
       "internal/proxy/sliding_window_stats_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
+    "semantics/tenant-label-default-aliases": [
+      "internal/proxy/alerting_tenant_label_test.go",
+      "internal/proxy/multitenant_tenant_label_test.go",
+      "test/e2e-compat/tenant_label_isolation_test.go"
+    ],
     "semantics/topk-bottomk-without-strips-label": [
       "internal/proxy/without_open_shapes_test.go"
     ],
@@ -649,6 +680,12 @@
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go"
     ],
+    "tenant-label-isolation": [
+      "internal/proxy/alerting_tenant_label_test.go",
+      "internal/proxy/labels_cache_warm_test.go",
+      "internal/proxy/multitenant_tenant_label_test.go",
+      "test/e2e-compat/tenant_label_isolation_test.go"
+    ],
     "tenant-query-limits": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/tenant_query_limits_test.go",
@@ -656,6 +693,9 @@
     ],
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
+    ],
+    "vl-extra-stream-filters-exact-and-empty": [
+      "test/e2e-compat/tenant_label_isolation_test.go"
     ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
@@ -666,7 +706,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 318,
+  "registry_items": 321,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -689,6 +729,18 @@
     ],
     "internal/middleware/coalescer_body_limit_test.go": [
       "limits/label-values-response-cap"
+    ],
+    "internal/proxy/alerting_tenant_label_test.go": [
+      "api_prom_rules",
+      "api_prom_rules_namespace",
+      "api_prom_rules_namespace_groupname",
+      "loki_api_v1_rules",
+      "loki_api_v1_rules_namespace",
+      "loki_api_v1_rules_namespace_groupname",
+      "prometheus_api_v1_alerts",
+      "prometheus_api_v1_rules",
+      "semantics/tenant-label-default-aliases",
+      "tenant-label-isolation"
     ],
     "internal/proxy/backend_heavy_test.go": [
       "backend-admission-and-heavy-query-queueing",
@@ -815,7 +867,8 @@
       "semantics/label-inventory-exact-and-incremental"
     ],
     "internal/proxy/labels_cache_warm_test.go": [
-      "quality/label-cache-warm"
+      "quality/label-cache-warm",
+      "tenant-label-isolation"
     ],
     "internal/proxy/labels_inclusive_end_test.go": [
       "semantics/labels-end-inclusive-like-loki"
@@ -872,6 +925,10 @@
       "backend-admission-and-heavy-query-queueing",
       "limits/concurrent-full-retention-scans-exhaust-backend",
       "limits/metadata-scan-adaptive-limit"
+    ],
+    "internal/proxy/multitenant_tenant_label_test.go": [
+      "semantics/tenant-label-default-aliases",
+      "tenant-label-isolation"
     ],
     "internal/proxy/ordered_json_conditional_unpack_test.go": [
       "parsed-label-series-identity",
@@ -1302,6 +1359,13 @@
     "test/e2e-compat/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
+    "test/e2e-compat/tenant_label_isolation_test.go": [
+      "prometheus_api_v1_alerts",
+      "prometheus_api_v1_rules",
+      "semantics/tenant-label-default-aliases",
+      "tenant-label-isolation",
+      "vl-extra-stream-filters-exact-and-empty"
+    ],
     "test/e2e-compat/tenant_limits_published_test.go": [
       "limits/max-entries-limit-rejects",
       "limits/published-equals-enforced",
@@ -1354,16 +1418,13 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 135,
+  "tests_with_markers": 138,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
     "api_prom_label_name_values",
     "api_prom_push",
     "api_prom_query",
-    "api_prom_rules",
-    "api_prom_rules_namespace",
-    "api_prom_rules_namespace_groupname",
     "api_prom_series",
     "api_prom_tail",
     "data-density-and-chart-quality",
@@ -1386,9 +1447,6 @@
     "loki_api_v1_label",
     "loki_api_v1_patterns",
     "loki_api_v1_push",
-    "loki_api_v1_rules",
-    "loki_api_v1_rules_namespace",
-    "loki_api_v1_rules_namespace_groupname",
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
     "numeric-and-response-formatting",
@@ -1410,8 +1468,6 @@
     "profiles/multi-tenant-volume-merge",
     "profiles/volume-bytes-accounting",
     "profiles/volume-detected-level-extension",
-    "prometheus_api_v1_alerts",
-    "prometheus_api_v1_rules",
     "quality/detected-metadata-proxy-cache",
     "quality/index-stats-bytes-and-chunks",
     "quality/index-stats-loki-chunk-accounting",
@@ -1465,5 +1521,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 125
+  "wired_items": 136
 }
