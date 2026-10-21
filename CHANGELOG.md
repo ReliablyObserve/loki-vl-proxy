@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-10-21
+
 ### Security
 
 - **Go 1.27.3.** Go 1.27.3 fixes GO-2026-6809 (crypto/x509: distrust
