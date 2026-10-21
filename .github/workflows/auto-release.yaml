@@ -26,8 +26,8 @@ jobs:
   prepare-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
     if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
@@ -39,15 +39,22 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          persist-credentials: false
 
       - name: Re-read main and its tags
         id: reread
+        env:
+          READ_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # This run may have waited behind an earlier release. Take main and
           # the tags as they are now, so the version is computed after any
           # metadata pull request that landed while this run was queued.
-          git fetch --force --tags origin main
+          # The checkout keeps no credentials; send the read token as a request
+          # header for this one fetch.
+          HEADER="$(printf 'x-access-token:%s' "${READ_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${HEADER}"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" fetch --force --tags origin main
           git checkout --detach origin/main
           echo "releasing from $(git rev-parse --short HEAD)"
           # Validation, tagging and publishing all use this commit, so the
@@ -63,6 +70,14 @@ jobs:
         run: |
           set -euo pipefail
           LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "v0.0.0")
+          # Tag names reach later jobs as outputs and are used in git and shell
+          # commands there; refuse anything that is not plain vMAJOR.MINOR.PATCH.
+          SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
+          if ! [[ "${LATEST_TAG}" =~ ${SEMVER_TAG_RE} ]]; then
+            echo "::error::latest release tag '${LATEST_TAG}' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
           LATEST_VERSION="${LATEST_TAG#v}"
           CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
           echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
@@ -219,6 +234,10 @@ jobs:
             exit 0
           fi
 
+          if ! [[ "${MAJ}.${MIN}.${PAT}" =~ ${SEMVER_RE} ]]; then
+            echo "::error::computed version '${MAJ}.${MIN}.${PAT}' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
           echo "should_release=true" >> "$GITHUB_OUTPUT"
           echo "next_version=${MAJ}.${MIN}.${PAT}" >> "$GITHUB_OUTPUT"
           echo "Bump: $BUMP -> v${MAJ}.${MIN}.${PAT}"
@@ -238,6 +257,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare-release.outputs.release_sha }}
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
@@ -295,8 +315,7 @@ jobs:
       id-token: write
       attestations: write
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
       RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
@@ -312,12 +331,16 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare-release.outputs.release_sha }}
-          token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          # The checkout only reads. The bot token is handed to the one step that
+          # pushes, as a request header, and never lands in the git config.
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          # No restored cache in the job that publishes release artifacts: nothing
+          # a pull request or branch run saved can reach what ships.
+          cache: false
 
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
@@ -331,11 +354,26 @@ jobs:
 
       - name: Extract release metadata
         id: meta
+        env:
+          NEXT_VERSION: ${{ needs.prepare-release.outputs.next_version }}
+          LATEST_TAG: ${{ needs.prepare-release.outputs.latest_tag }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.prepare-release.outputs.next_version }}"
+          # Everything below, and every later step, takes the version and tags
+          # from here, so they are checked before they are used anywhere.
+          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
+          SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if ! [[ "${NEXT_VERSION}" =~ ${SEMVER_RE} ]]; then
+            echo "::error::release version '${NEXT_VERSION}' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          if ! [[ "${LATEST_TAG}" =~ ${SEMVER_TAG_RE} ]]; then
+            echo "::error::previous release tag '${LATEST_TAG}' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          VERSION="${NEXT_VERSION}"
           TAG="v${VERSION}"
-          PREV_TAG="${{ needs.prepare-release.outputs.latest_tag }}"
+          PREV_TAG="${LATEST_TAG}"
           chmod +x scripts/ci/extract_changelog_section.sh
           chmod +x scripts/ci/materialize_unreleased.sh
           NOTES_FILE="$(mktemp)"
@@ -355,15 +393,28 @@ jobs:
         env:
           RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           WORKFLOW_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.meta.outputs.tag }}"
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::refusing to tag '${TAG}': not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          # Run git against github.com with a token sent as a request header for
+          # this one command. The token is never put in a URL or in the git config.
+          git_as() {
+            local token="$1" header
+            shift
+            header="$(printf 'x-access-token:%s' "${token}" | base64 | tr -d '\n')"
+            echo "::add-mask::${header}"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${header}" "$@"
+          }
           PRIMARY_TOKEN="${RELEASE_PR_TOKEN:-$WORKFLOW_TOKEN}"
           PRIMARY_ACTOR="RELEASE_PR_TOKEN"
           if [ -z "${RELEASE_PR_TOKEN:-}" ]; then
             PRIMARY_ACTOR="GITHUB_TOKEN"
           fi
-          git fetch --tags origin
+          git_as "${PRIMARY_TOKEN}" fetch --tags origin
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists"
             if [ "$(git rev-list -n1 "${TAG}")" != "${RELEASE_SHA}" ]; then
@@ -372,28 +423,29 @@ jobs:
             fi
           else
             git tag "${TAG}" "${RELEASE_SHA}"
-            PRIMARY_URL="https://x-access-token:${PRIMARY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-            if ! git push "${PRIMARY_URL}" "${TAG}"; then
+            if ! git_as "${PRIMARY_TOKEN}" push origin "refs/tags/${TAG}"; then
               if [ "${PRIMARY_ACTOR}" = "RELEASE_PR_TOKEN" ]; then
                 echo "::warning::Tag push with RELEASE_PR_TOKEN failed; retrying with GITHUB_TOKEN"
-                git push "https://x-access-token:${WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${TAG}"
+                echo "::warning::The tag ruleset allows only the release bot to create v* tags, so this retry is expected to be rejected unless the ruleset changed"
+                git_as "${WORKFLOW_TOKEN}" push origin "refs/tags/${TAG}"
               else
-                echo "::error::Tag push failed with GITHUB_TOKEN and no RELEASE_PR_TOKEN fallback is available"
+                echo "::error::Tag push failed with GITHUB_TOKEN. Creating v* tags needs RELEASE_PR_TOKEN (the release bot); GITHUB_TOKEN is rejected by the tag ruleset."
                 exit 1
               fi
             fi
           fi
 
       - name: Build release binaries
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_TIME: ${{ steps.meta.outputs.build_time }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.meta.outputs.version }}"
           if [ -z "${VERSION}" ] || [ "${VERSION}" = "dev" ]; then
             echo "refusing to build release binaries with VERSION='${VERSION}'" >&2
             exit 1
           fi
           REVISION="${RELEASE_SHA}"
-          BUILD_TIME="${{ steps.meta.outputs.build_time }}"
           mkdir -p dist
           # -trimpath and a build time taken from the release commit make the
           # binaries reproducible from the tag (see SECURITY.md).
@@ -461,17 +513,23 @@ jobs:
           cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
 
       - name: Package Helm chart
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
+          set -euo pipefail
           helm package charts/loki-vl-proxy \
             --version "${VERSION}" \
             --app-version "${VERSION}" \
             --destination dist
 
       - name: Login Helm to GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
-            --username "${{ github.actor }}" \
+          set -euo pipefail
+          printf '%s' "${REGISTRY_PASSWORD}" | helm registry login ghcr.io \
+            --username "${REGISTRY_USER}" \
             --password-stdin
 
       - name: Set up Docker Buildx
@@ -485,12 +543,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
         with:
           registry: docker.io
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Resolve Docker image tags
         id: image-tags
@@ -500,7 +558,7 @@ jobs:
           set -euo pipefail
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           IMAGE_NAMES="ghcr.io/${OWNER_LC}/loki-vl-proxy"
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             IMAGE_NAMES="${IMAGE_NAMES},docker.io/reliablyobserve/loki-vl-proxy"
           fi
           {
@@ -509,7 +567,7 @@ jobs:
             echo "tags<<EOF"
             echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:${VERSION}"
             echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:latest"
-            if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            if [ "${HAS_DOCKERHUB}" = "true" ]; then
               echo "docker.io/reliablyobserve/loki-vl-proxy:${VERSION}"
               echo "docker.io/reliablyobserve/loki-vl-proxy:latest"
             fi
@@ -544,7 +602,7 @@ jobs:
           # Sign by digest, never by tag. The index digest is the same in every
           # registry the build pushed to.
           cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             cosign sign --yes "docker.io/reliablyobserve/loki-vl-proxy@${IMAGE_DIGEST}"
           fi
 
@@ -557,7 +615,7 @@ jobs:
           create-storage-record: false
 
       - name: Attest container image provenance (Docker Hub)
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/reliablyobserve/loki-vl-proxy
@@ -584,9 +642,10 @@ jobs:
 
       - name: Publish Helm chart to GHCR
         id: chart_ghcr
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.meta.outputs.version }}"
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if ! PUSH_OUT="$(helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts" 2>&1)"; then
             echo "${PUSH_OUT}"
@@ -648,7 +707,7 @@ jobs:
           F='```'
           ID_RE='^https://github\.com/'"${GITHUB_REPOSITORY}"'/\.github/workflows/(auto-release|release)\.yaml@refs/(heads/main|tags/v.+)$'
           DH_IMAGE=""
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             DH_IMAGE="docker.io/reliablyobserve/loki-vl-proxy"
           fi
           {
@@ -684,7 +743,7 @@ jobs:
           } >> "${NOTES_FILE}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3  # zizmor: ignore[superfluous-actions] softprops/action-gh-release attaches the signed assets; replacing it with gh release is a separate change
         # The SPDX SBOMs (dist/loki-vl-proxy-<os>-<arch>.spdx.json) are matched by
         # the binary globs below, so they are not listed a second time.
         with:
@@ -709,7 +768,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
-            echo "::warning::RELEASE_PR_TOKEN is not configured. Metadata PRs created by github-actions may not trigger pull_request checks automatically."
+            echo "::warning::RELEASE_PR_TOKEN is not configured. The metadata branch is pushed with the job token and no pull request is opened for it."
           fi
           chmod +x scripts/ci/sync_release_metadata.sh
           scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" . "${GITHUB_REPOSITORY}"
@@ -745,19 +804,57 @@ jobs:
           fi
           echo "release metadata commit ${METADATA_SHA} on ${BRANCH} (signed by GitHub)"
 
-      - name: Announce the release metadata branch
+      - name: Open the release metadata pull request and arm auto-merge
         if: steps.metadata.outputs.has_changes == 'true'
         env:
+          # The bot token is given to this step only. A pull request opened with
+          # the job's own token does not start the pull_request workflows, so it
+          # could never pass its required checks.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
-          BRANCH: ${{ steps.metadata.outputs.branch }}
         run: |
           set -euo pipefail
-          # The metadata pull request is opened by a maintainer from this branch, so
-          # the pull request and the commit that lands on main carry the maintainer's
-          # authorship, not the automation's.
-          echo "::notice::release metadata for v${VERSION} is on ${BRANCH}; open its pull request from a maintainer account"
-          {
-            echo "### Release metadata v${VERSION}"
-            echo
-            echo "Branch \`${BRANCH}\` holds the metadata commit. A maintainer opens the pull request to main."
-          } >> "$GITHUB_STEP_SUMMARY"
+          # The release itself is already published: a problem here warns and the
+          # run goes on, so the metadata pull request can be opened by hand.
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::warning::release version '${VERSION}' is not a plain semver; skipping the metadata pull request"
+            exit 0
+          fi
+          BRANCH="release/metadata-v${VERSION}"
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured; open the pull request from ${BRANCH} to main by hand and enable auto-merge"
+            echo "Release metadata v${VERSION}: branch \`${BRANCH}\` is pushed, no pull request was opened (RELEASE_PR_TOKEN is not configured)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          open_number() {
+            gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base main --state open \
+              --json number --jq '.[0].number // empty'
+          }
+          NUMBER="$(open_number)"
+          if [ -z "${NUMBER}" ]; then
+            BODY="$(printf '%s\n' \
+              "Sync release metadata files for v${VERSION} after the automated release:" \
+              "" \
+              "- CHANGELOG materialization" \
+              "- Helm chart version and appVersion" \
+              "- observability service.version example" \
+              "- README release badges")"
+            if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
+              --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then
+              echo "::warning::could not open the pull request from ${BRANCH}; open it by hand"
+              exit 0
+            fi
+            NUMBER="$(open_number)"
+          fi
+          if [ -z "${NUMBER}" ]; then
+            echo "::warning::no open pull request found for ${BRANCH}; open it by hand"
+            exit 0
+          fi
+          # Auto-merge merges the pull request by itself once the maintainer
+          # approves it and the required checks pass. Nothing merges before that.
+          if gh pr merge "${NUMBER}" --repo "${GITHUB_REPOSITORY}" --auto --squash; then
+            echo "Release metadata v${VERSION}: pull request #${NUMBER} is open with auto-merge armed; it merges after the maintainer's approval and the required checks." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::could not arm auto-merge on pull request #${NUMBER}; enable it by hand"
+            echo "Release metadata v${VERSION}: pull request #${NUMBER} is open, auto-merge could not be armed." >> "$GITHUB_STEP_SUMMARY"
+          fi

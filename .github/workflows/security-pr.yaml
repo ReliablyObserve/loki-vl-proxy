@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
@@ -110,8 +111,35 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
-            rhysd/actionlint:1.7.7 \
+            rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 \
             -color
+
+      - name: zizmor
+        run: |
+          # Offline: no GitHub token, no network audits. The reviewed exceptions are inline
+          # `# zizmor: ignore[rule] <reason>` comments; any other finding fails the step.
+          # The SARIF run exits 0 on findings, so the second run is the gate.
+          zizmor_image=ghcr.io/zizmorcore/zizmor:1.30.1@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            -w /repo \
+            "$zizmor_image" \
+            --offline --no-progress \
+            --format sarif \
+            .github/workflows > zizmor.sarif
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            -w /repo \
+            "$zizmor_image" \
+            --offline --no-progress \
+            --format plain \
+            .github/workflows
+
+      - name: Upload zizmor SARIF
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
+        if: ${{ always() && hashFiles('zizmor.sarif') != '' }}
+        with:
+          sarif_file: zizmor.sarif
 
       - name: hadolint
         run: |
@@ -156,6 +184,7 @@ jobs:
             gitleaks.sarif
             gosec.sarif
             trivy-fs.sarif
+            zizmor.sarif
             scorecard.json
 
   security-runtime:
@@ -167,11 +196,13 @@ jobs:
       PROXY_BASE_URL: http://127.0.0.1:13100
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
 

@@ -1,6 +1,6 @@
 name: Pull Count Badges
 
-on:
+on:  # zizmor: ignore[dangerous-triggers] runs after the Release workflow, which only a maintainer can dispatch; checks out the default branch, never pull request code
   push:
     branches: [main]
   schedule:
@@ -16,7 +16,7 @@ jobs:
   update-badges:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7  # zizmor: ignore[artipacked] the step that pushes the badges branch uses the checkout credential on purpose
 
       - name: Fetch GHCR pull counts
         id: pulls
@@ -25,6 +25,9 @@ jobs:
           scripts/ci/fetch_ghcr_pulls.sh ReliablyObserve loki-vl-proxy
 
       - name: Write badge JSON files
+        env:
+          IMAGE_FMT: ${{ steps.pulls.outputs.image_fmt }}
+          CHART_FMT: ${{ steps.pulls.outputs.chart_fmt }}
         run: |
           mkdir -p /tmp/badges
 
@@ -32,7 +35,7 @@ jobs:
           {
             "schemaVersion": 1,
             "label": "GHCR pulls",
-            "message": "${{ steps.pulls.outputs.image_fmt }}",
+            "message": "$IMAGE_FMT",
             "color": "blue",
             "namedLogo": "docker"
           }
@@ -42,7 +45,7 @@ jobs:
           {
             "schemaVersion": 1,
             "label": "Helm pulls",
-            "message": "${{ steps.pulls.outputs.chart_fmt }}",
+            "message": "$CHART_FMT",
             "color": "blue",
             "namedLogo": "helm"
           }
