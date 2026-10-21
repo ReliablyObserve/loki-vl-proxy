@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The release and daily-report workflows no longer leave the bot token in
+  the checked-out repository or in script text.** The release workflows
+  (`auto-release.yaml`, `release.yaml`) and the daily performance workflow
+  (`perf-daily.yaml`) used to check the repository out with the release bot's
+  token stored in the git configuration, so every action that ran later in the
+  same job (Helm, Cosign and Buildx installers, the image build, attestations,
+  the GitHub Release step) could read it, and they pushed by putting the token
+  into the push URL. Every checkout in these workflows now sets
+  `persist-credentials: false`, and the token is handed only to the step that
+  pushes (the release tag, the release metadata branch, the daily report
+  branch), as a one-command `Authorization` request header that is masked in
+  the log. It no longer appears in a URL or in `.git/config`. Where the
+  workflow only reads, it uses the job's own read-only token, never the bot
+  token.
+  Registry credentials follow the same rule: no `secrets.*` value is written
+  into a shell script any more. Helm registry logins read the password from the
+  step's environment and pass it with `--password-stdin`, and the Docker Hub
+  user name and token are given only to the login steps that need them, where a
+  job-wide `HAS_DOCKERHUB` flag (true when both secrets are set) decides which
+  steps run.
+  Version and tag strings are validated and passed by environment, not pasted
+  into scripts. A manual republish (`release.yaml`) accepts only a tag of the
+  form `vMAJOR.MINOR.PATCH`, checks it out as `refs/tags/<tag>` so a branch of
+  the same name is never released, and stops if the tag does not point at the
+  checked-out commit. The automatic release refuses a latest tag or a computed
+  version that is not plain semantic versioning. The version, tag, revision and
+  build time that later steps use are read from environment variables instead
+  of being substituted into the script text before the shell sees it, so a
+  crafted tag name cannot run as a command. The tag push also now states that
+  creating `v*` tags needs the release bot's token, because the repository's
+  tag ruleset rejects the workflow's own token.
+  Finally, the first job of the automatic release only reads the repository and
+  pull request labels, so its `contents` and `pull-requests` permissions are
+  now `read` instead of `write`.
+
 ## [2.23.2] - 2026-10-21
 
 ### Security

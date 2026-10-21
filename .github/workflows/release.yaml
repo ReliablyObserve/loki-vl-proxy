@@ -20,8 +20,7 @@ jobs:
       id-token: write
       attestations: write
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
     steps:
@@ -32,11 +31,28 @@ jobs:
             *) echo "::error::releases are published only from main or a v* tag"; exit 1 ;;
           esac
 
+      # The tag is typed by whoever dispatches the run. Accept only a plain
+      # release tag before it is used as a git ref or anywhere in a script.
+      - name: Validate the release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${INPUT_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must be vMAJOR.MINOR.PATCH, for example v0.26.0"
+            exit 1
+          fi
+          echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
+
+      # Only an existing tag is released: the ref is spelled as a tag so a branch
+      # of the same name can never be picked up. The checkout does not keep the
+      # token; the one step that pushes gets the bot token as a request header.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
-          token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -56,10 +72,14 @@ jobs:
       - name: Extract version
         id: version
         env:
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${INPUT_TAG}"
+          # The checkout is the tag itself; refuse a tag that moved or is missing.
+          if [ "$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::${TAG} is not a tag of the checked out commit"
+            exit 1
+          fi
           VERSION="${TAG#v}"
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | grep -vx "$TAG" | head -1 || true)
           {
@@ -72,10 +92,11 @@ jobs:
 
       - name: Render release notes
         id: release_notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           chmod +x scripts/ci/extract_changelog_section.sh
-          VERSION="${{ steps.version.outputs.version }}"
           NOTES_FILE="$(mktemp)"
           if ! scripts/ci/extract_changelog_section.sh "${VERSION}" CHANGELOG.md > "$NOTES_FILE"; then
             echo "::warning::No changelog section found for ${VERSION}; using fallback release notes"
@@ -88,15 +109,16 @@ jobs:
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Build release binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REVISION: ${{ steps.version.outputs.revision }}
+          BUILD_TIME: ${{ steps.version.outputs.build_time }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           if [ -z "${VERSION}" ] || [ "${VERSION}" = "dev" ]; then
             echo "refusing to build release binaries with VERSION='${VERSION}'" >&2
             exit 1
           fi
-          REVISION="${{ steps.version.outputs.revision }}"
-          BUILD_TIME="${{ steps.version.outputs.build_time }}"
           mkdir -p dist
           # -trimpath and a build time taken from the release commit make the
           # binaries reproducible from the tag (see SECURITY.md).
@@ -164,17 +186,23 @@ jobs:
           cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
 
       - name: Package Helm chart
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          set -euo pipefail
           helm package charts/loki-vl-proxy \
             --version "${VERSION}" \
             --app-version "${VERSION}" \
             --destination dist
 
       - name: Login Helm to GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
-            --username "${{ github.actor }}" \
+          set -euo pipefail
+          printf '%s' "${REGISTRY_PASSWORD}" | helm registry login ghcr.io \
+            --username "${REGISTRY_USER}" \
             --password-stdin
 
       - name: Set up Docker Buildx
@@ -188,12 +216,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: docker.io
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Resolve Docker image tags
         id: image-tags
@@ -203,7 +231,7 @@ jobs:
           set -euo pipefail
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           IMAGE_NAMES="ghcr.io/${OWNER_LC}/loki-vl-proxy"
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             IMAGE_NAMES="${IMAGE_NAMES},docker.io/reliablyobserve/loki-vl-proxy"
           fi
           {
@@ -211,7 +239,7 @@ jobs:
             echo "image_names=${IMAGE_NAMES}"
             echo "tags<<EOF"
             echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:${VERSION}"
-            if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            if [ "${HAS_DOCKERHUB}" = "true" ]; then
               echo "docker.io/reliablyobserve/loki-vl-proxy:${VERSION}"
             fi
             echo "EOF"
@@ -245,7 +273,7 @@ jobs:
           # Sign by digest, never by tag. The index digest is the same in every
           # registry the build pushed to.
           cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             cosign sign --yes "docker.io/reliablyobserve/loki-vl-proxy@${IMAGE_DIGEST}"
           fi
 
@@ -258,7 +286,7 @@ jobs:
           create-storage-record: false
 
       - name: Attest container image provenance (Docker Hub)
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/reliablyobserve/loki-vl-proxy
@@ -285,9 +313,10 @@ jobs:
 
       - name: Publish Helm chart to GHCR
         id: chart_ghcr
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if ! PUSH_OUT="$(helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts" 2>&1)"; then
             echo "${PUSH_OUT}"
@@ -316,18 +345,23 @@ jobs:
           cosign sign --yes "${CHART_REF}@${CHART_DIGEST}"
 
       - name: Login Helm to Docker Hub
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        env:
+          REGISTRY_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login registry-1.docker.io \
-            --username "${{ secrets.DOCKERHUB_USERNAME }}" \
+          set -euo pipefail
+          printf '%s' "${REGISTRY_PASSWORD}" | helm registry login registry-1.docker.io \
+            --username "${REGISTRY_USER}" \
             --password-stdin
 
       - name: Publish Helm chart to Docker Hub
         id: chart_dockerhub
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           if ! PUSH_OUT="$(helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://registry-1.docker.io/reliablyobserve/charts" 2>&1)"; then
             echo "${PUSH_OUT}"
             exit 1
@@ -348,7 +382,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Sign the Helm chart (Docker Hub)
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.HAS_DOCKERHUB == 'true' }}
         env:
           CHART_REF: ${{ steps.chart_dockerhub.outputs.ref }}
           CHART_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
@@ -392,7 +426,7 @@ jobs:
           F='```'
           ID_RE='^https://github\.com/'"${GITHUB_REPOSITORY}"'/\.github/workflows/(auto-release|release)\.yaml@refs/(heads/main|tags/v.+)$'
           DH_IMAGE=""
-          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+          if [ "${HAS_DOCKERHUB}" = "true" ]; then
             DH_IMAGE="docker.io/reliablyobserve/loki-vl-proxy"
           fi
           {
@@ -449,12 +483,22 @@ jobs:
         id: metadata
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
+          # Run git against github.com with the token sent as a request header
+          # for this one command. The token is never put in a URL or in the git
+          # config, and the checkout above did not keep one.
+          git_as() {
+            local header
+            header="$(printf 'x-access-token:%s' "${PUSH_TOKEN}" | base64 | tr -d '\n')"
+            echo "::add-mask::${header}"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${header}" "$@"
+          }
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
             echo "::warning::RELEASE_PR_TOKEN is not configured. Metadata PRs created by github-actions may not trigger pull_request checks automatically."
           fi
-          git fetch origin main
+          git_as fetch origin main
           git checkout -B main origin/main
 
           chmod +x scripts/ci/sync_release_metadata.sh
@@ -482,7 +526,7 @@ jobs:
           git checkout -B "${BRANCH}"
           git add -f -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
           git commit -m "docs: sync release metadata for v${VERSION}"
-          git push origin "${BRANCH}" --force
+          git_as push origin "${BRANCH}" --force
 
       - name: Announce the release metadata branch
         if: steps.metadata.outputs.has_changes == 'true'

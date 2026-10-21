@@ -107,6 +107,9 @@ jobs:
           ref: main
           # The baseline is the newest release tag; it builds from a worktree.
           fetch-depth: 0
+          # The checkout only reads. The step that pushes gets the bot token as
+          # a request header and nothing keeps a token in the git config.
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
@@ -114,10 +117,14 @@ jobs:
           cache: true
 
       - name: Carry history an unmerged daily PR already holds
+        env:
+          READ_TOKEN: ${{ github.token }}
         run: |
           # History is append-only and only these PRs write it, so the open
           # branch's copy is main's plus the days not merged yet.
-          if git fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+          HEADER="$(printf 'x-access-token:%s' "${READ_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${HEADER}"
+          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" fetch --no-tags origin "$BRANCH" 2>/dev/null; then
             git checkout FETCH_HEAD -- bench/ab/history/ || true
           fi
 
@@ -152,6 +159,11 @@ jobs:
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
+          # Run git against github.com with the token sent as a request header
+          # for this one command. The token is never put in a URL or in the git
+          # config, and the checkout above did not keep one.
+          HEADER="$(printf 'x-access-token:%s' "${PUSH_TOKEN}" | base64 | tr -d '\n')"
+          echo "::add-mask::${HEADER}"
           FILES=(bench/ab/results bench/ab/history conformance/registry/generated/perf-evidence.json
                  conformance/reports/performance.md conformance/reports/gaps.md)
           if [ -z "$(git status --porcelain -- "${FILES[@]}")" ]; then
@@ -164,7 +176,7 @@ jobs:
           git checkout -B "$BRANCH"
           git add -- "${FILES[@]}"
           git commit -m "bench: daily performance report ${DATE}"
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH" --force
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" push origin "$BRANCH" --force
           TITLE="bench: daily performance report ${DATE}"
           BODY="$(printf '%s\n\n%s\n\n%s\n' \
             "Daily A/B run from \`main\` ($(git rev-parse --short HEAD^1)): the last release vs \`main\` vs Loki direct on a fresh stack, every shape set over its ranges up to 24h." \
