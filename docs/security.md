@@ -99,6 +99,35 @@ Defined in `.github/workflows/security-pr.yaml`.
 
 This lane is supposed to fail quickly on issues that should never merge.
 
+### OpenSSF Scorecard
+
+`.github/workflows/scorecard.yaml` publishes the Scorecard result for `main` to the
+public Scorecard API on every push to `main` and weekly; the README badge and
+[the Scorecard viewer](https://scorecard.dev/viewer/?uri=github.com/ReliablyObserve/loki-vl-proxy)
+show it. Pull requests run the same scanner in the fast lane above, with
+`scripts/ci/check_scorecard.py` failing a pull request below an overall 5.0 or when
+`Dangerous-Workflow` or `Binary-Artifacts` drop below 10, `CI-Tests` below 8 or `SAST`
+below 7 (a pull request's commit is scored on fewer checks than `main`).
+
+The badge shows the published score once `scorecard.yaml` has run on `main`. A local
+run of Scorecard v5.3.0 against `main` on 2026-10-21 scored 6.9; the target is 8.0
+or higher.
+
+- `Token-Permissions`: this change moves the write permissions of the badge
+  workflows to the one job that needs them, which takes the check from 0 to 10
+  (Scorecard `--local` on the workflow tree with this change applied).
+- `Signed-Releases`: releases since v2.22.1 carry `checksums.txt.sigstore.json`,
+  so the check is already partly delivered; it is scored over the five most recent
+  releases and reaches 10 only when releases also carry `.intoto.jsonl` build
+  provenance assets, which is planned separately.
+- `Code-Review` and `Branch-Protection` count required approvals by a second
+  maintainer and `CII-Best-Practices` the OpenSSF Best Practices badge; those are
+  project-process changes rather than code changes.
+
+The pull-request scanner image (`ghcr.io/ossf/scorecard`) is pinned to the Scorecard
+version bundled by the `ossf/scorecard-action` pin (v2.5.0 bundles v5.6.0), so a pull
+request is scored by the same scanner version as the published result.
+
 ### Runtime PR Security
 
 Also defined in `.github/workflows/security-pr.yaml`.
@@ -231,7 +260,7 @@ docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
 # supply-chain posture gate
 docker run --rm \
   -e GITHUB_AUTH_TOKEN="${GITHUB_TOKEN}" \
-  gcr.io/openssf/scorecard:stable \
+  ghcr.io/ossf/scorecard:v5.6.0@sha256:c0a21a1c33a2d8819937d0a8a62e6f4189c800639abd9f0bfbe61c90c71fae90 \
   --repo="github.com/ReliablyObserve/Loki-VL-proxy" \
   --format json \
   --show-details > scorecard.json

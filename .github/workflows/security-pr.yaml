@@ -156,9 +156,12 @@ jobs:
           # Evaluate the PR/push commit, not the default branch HEAD.
           # For pull_request events GITHUB_SHA is the synthetic merge commit;
           # for push events it is the pushed commit — both reflect what will land.
+          # Keep this image on the Scorecard version bundled by the
+          # ossf/scorecard-action pin in scorecard.yaml (v2.5.0 bundles v5.6.0);
+          # Dependabot does not update images used by docker run.
           docker run --rm \
             -e GITHUB_AUTH_TOKEN="${GITHUB_AUTH_TOKEN}" \
-            gcr.io/openssf/scorecard:stable \
+            ghcr.io/ossf/scorecard:v5.6.0@sha256:c0a21a1c33a2d8819937d0a8a62e6f4189c800639abd9f0bfbe61c90c71fae90 \
             --repo="github.com/${GITHUB_REPOSITORY}" \
             --commit="${GITHUB_SHA}" \
             --format json \
