@@ -70,6 +70,48 @@ it in this order:
    limit is reached. Evaluating raw log rows is the last resort and must stream with
    bounded memory.
 
+## Performance Rules
+
+This is the bar a contribution is held to, not a claim that the proxy already meets it
+for every shape: for every query shape and time range, the proxy answers at least as
+fast as Loki, with Loki's result, on low and bounded resources. Where it does not yet,
+the reports below list the gap.
+
+1. **At least as fast as Loki.** The daily A/B (`bench/ab/daily.py`, run by
+   `perf-daily.yaml`) compares the last release, `main` and Loki on every shape set and
+   range up to 24h, and records for each shape and range the first-run (cold) and the
+   repeated (warm) p50 (`bench/ab/history/trend.md`). The goal is no slower than Loki on
+   both. Refresh latency, a dashboard that refreshes with the window moving forward, is
+   measured only when an A/B is run with `--refresh-s` (opt-in, `bench/ab/pr_smoke.py` or
+   `perf_matrix.py`); the goal is no slower than Loki there too, measured with that
+   option. A change that is faster but returns anything Loki would not (series, values,
+   errors, what a Grafana panel shows) is not an improvement.
+2. **Low, bounded CPU and memory.** Proxy CPU and memory stay low and bounded under
+   concurrent long-range load, and speed is never bought by pushing VictoriaLogs' CPU or
+   memory up. What the checks report today:
+   - VictoriaLogs CPU is sampled during the A/B (`docker stats`, peak per shape and
+     range, in the `summary-<set>.json` files of the `perf-ab-smoke` artifact).
+   - Proxy CPU and memory come from `pr-quality-report.yaml`: the Go benchmarks
+     (`ns/op`, bytes and allocations per operation for query_range and labels, with and
+     without the cache) and the high-concurrency load test (requests per second and
+     memory growth), each measured for the base and the branch on the same runner and
+     compared by `scripts/ci/check_quality_gate.py`.
+   - VictoriaLogs memory is not reported automatically. Where a change could affect it,
+     report it in the pull request.
+3. **No regressions.** The pull-request A/B (`perf-ab.yaml`, `bench/ab/pr_smoke.py`)
+   compares the base (`main`) with the branch and Loki on the shape sets the change
+   touches, chosen from the changed files by `bench/ab/selection.py`, plus the control
+   smoke set (the whole control set when `cmd/`, `go.mod` or `go.sum` change). It fails
+   on a broken shape, a slowdown confirmed by a re-run, or a new difference from Loki. A
+   shape that reached Loki's speed or Loki's result stays there.
+4. **Largest gaps first.** `conformance/reports/performance.md` lists the shapes slower
+   than Loki on first load and on repeat views, and by registry item. Errors where Loki
+   answers show as a status in the daily trend's timing columns and as a difference in
+   its `result vs Loki` column; `conformance/reports/gaps.md` (Error surface) lists the
+   error responses whose messages need a registry entry stating Loki's text. Work in this
+   order: errors, results that differ, a slower first answer, a slower repeated answer;
+   largest gap first within each.
+
 ## Code Style
 
 - Follow standard Go conventions (`gofmt -s`, `go vet`)
