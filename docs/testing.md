@@ -130,7 +130,7 @@ docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
 # supply-chain posture
 docker run --rm \
   -e GITHUB_AUTH_TOKEN="${GITHUB_TOKEN}" \
-  gcr.io/openssf/scorecard:stable \
+  ghcr.io/ossf/scorecard:v5.6.0@sha256:c0a21a1c33a2d8819937d0a8a62e6f4189c800639abd9f0bfbe61c90c71fae90 \
   --repo="github.com/ReliablyObserve/Loki-VL-proxy" \
   --format json \
   --show-details > scorecard.json
@@ -183,10 +183,11 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `compat-drilldown.yaml` | `drilldown-contract-matrix`, `drilldown-grafana-runtime-matrix` | weekly/manual: Drilldown app contract checks per version and every Grafana runtime profile |
 | `compat-vl.yaml` | `vl-pinned` | Loki 3.7.7, VictoriaLogs v1.52.0, Grafana 13.2.3: `TestVLTrackScore` |
 | `compat-vl.yaml` | `vl-matrix` | weekly/manual, for every `stack.victorialogs.matrix_versions` entry: `TestVLTrackScore`, the version-sensitive checks (`TestCompat_DetectedLevelQueryRange`, `TestCompat_RejectedQueryStatusParity`) and the range-metric table compared with Loki (`TestCompat_Unwrap*`, `TestRangeMetric*`, `TestGrafanaClickout_*`) |
-| `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard guardrails |
+| `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard v5.6.0 guardrails |
 | `security-pr.yaml` | `Security / runtime` | compose stack, `scripts/ci/run_security_regressions.sh`, ZAP baseline |
 | `security-heavy.yaml` | `Heavy / image and sbom`, `Heavy / semgrep`, `Heavy / fuzz`, `Heavy / dast` | scheduled/manual only: Trivy image scan and SBOM, Semgrep 1.161.0, 2-minute fuzzing, ZAP active scan and curated nuclei |
 | `codeql.yaml` | `analyze` | CodeQL Go analysis (also weekly) |
+| `scorecard.yaml` | `analysis` | pushes to `main`, weekly and manual: OpenSSF Scorecard through `ossf/scorecard-action`, published to the public Scorecard API for the README badge; the result is kept as an artifact |
 | `e2e-pipeline.yml` | `e2e-pipeline` | `test/e2e-pipeline` stack, `go test -tags=e2e ./test/e2e-pipeline/` |
 | `vl-ast-coverage.yml` | `check-coverage` | weekly, manual, and on PRs touching `internal/logsql/**` or its manifest: `scripts/check-vl-ast-coverage.py` |
 | `changelog-pr.yaml` | `changelog` | pull requests only: `scripts/ci/check_changelog_pr.py` changelog gate |

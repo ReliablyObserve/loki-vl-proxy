@@ -24,6 +24,7 @@
 [![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ReliablyObserve/loki-vl-proxy/badge)](https://scorecard.dev/viewer/?uri=github.com/ReliablyObserve/loki-vl-proxy)
 
 📖 **Project site:** [reliablyobserve.github.io/Loki-VL-proxy](https://reliablyobserve.github.io/Loki-VL-proxy/) — full docs, benchmarks, runbooks, comparison matrix.
 
