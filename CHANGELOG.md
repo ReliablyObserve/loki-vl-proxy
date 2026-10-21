@@ -44,6 +44,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a final `Fail on regressions` step fails the job on a regression or a ratchet
   loss, so GitHub notifies the owner; no issue is opened and no label added.
   The pull request validation shows the alerts and does not fail on them.
+- **The daily performance alerts no longer blame the proxy for a Loki failure,
+  compare cut-down runs, or break the pull request.** Loki times out on a few
+  query shapes at 6h and 24h, and `report.py` calls the result `differs` then,
+  so every such row would have been reported as a result regression: a result
+  is now compared only when Loki answered 200 in both lines, and the rows where
+  it did not are listed apart as "Loki failed", for information. Only full
+  measurements (7 runs, every range up to 24h) are compared or used as a
+  baseline, each row against the newest earlier full line that has it, and
+  only sets in `shapes.json`; the scheduled full run now replaces a cut-down
+  manual line of the same day instead of being skipped behind it. A ratchet
+  loss starts its commit range at the newest line the row was still as good as
+  Loki, a release-verdict slowdown is not reported again while the p50 jitters
+  on consecutive `slower` days, and an error Loki also gives, or a status that
+  now answers 200 while Loki still errors, is neither a regression nor an
+  improvement; a status that disappears is a regression. The pull request body
+  lists the first 50 alerts and counts the rest (a body is limited to 65,536
+  characters; the job summary and the artifact hold all of them), `Fail on
+  regressions` runs even when the pull request step failed, an unreadable
+  `ratchet.json` is reported and left untouched and an entry without its keys
+  is skipped, a failure of the alerts is logged and the day is still delivered,
+  and the daily run carries an open daily pull request's history lines but not
+  its `ratchet.json`, so a row removed by hand on `main` stays removed.
 
 ### Documentation
 

@@ -130,11 +130,13 @@ jobs:
           READ_TOKEN: ${{ github.token }}
         run: |
           # History is append-only and only these PRs write it, so the open
-          # branch's copy is main's plus the days not merged yet.
+          # branch's copy is main's plus the days not merged yet. Only the
+          # lines: ratchet.json comes from main (a row removed there by hand
+          # must not come back) plus what this run adds.
           HEADER="$(printf 'x-access-token:%s' "${READ_TOKEN}" | base64 | tr -d '\n')"
           echo "::add-mask::${HEADER}"
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" fetch --no-tags origin "$BRANCH" 2>/dev/null; then
-            git checkout FETCH_HEAD -- bench/ab/history/ || true
+            git checkout FETCH_HEAD -- ':(glob)bench/ab/history/*.jsonl' || true
           fi
 
       - name: Skip when nothing measured changed
@@ -209,10 +211,12 @@ jobs:
           # bench/ab/history includes trend.md and ratchet.json.
           FILES=(bench/ab/results bench/ab/history conformance/registry/generated/perf-evidence.json
                  conformance/reports/performance.md conformance/reports/gaps.md)
+          # The job summary gets every alert; the pull request body (65,536
+          # characters at most) the first of them.
           ALERTS=""
           if [ -f "$OUT/alerts.md" ]; then
-            ALERTS="$(cat "$OUT/alerts.md")"
-            echo "$ALERTS" >> "$GITHUB_STEP_SUMMARY"
+            cat "$OUT/alerts.md" >> "$GITHUB_STEP_SUMMARY"
+            ALERTS="$(cat "$OUT/alerts-body.md" 2>/dev/null || cat "$OUT/alerts.md")"
           fi
           if [ -z "$(git status --porcelain -- "${FILES[@]}")" ]; then
             echo "nothing changed"
@@ -260,7 +264,9 @@ jobs:
           fi
 
       - name: Fail on regressions
-        if: steps.measured.outputs.run != 'false'
+        # Also when the pull request step failed: the alerts are in $OUT, and
+        # without them the step has nothing to do.
+        if: ${{ !cancelled() && steps.measured.outputs.run != 'false' }}
         run: |
           # Red run = the notification. Regressions are transitions since the
           # previous run; a ratchet loss stays red until fixed or the row is
@@ -269,8 +275,14 @@ jobs:
           python3 - "$OUT/alerts.json" <<'PY'
           import json, sys
           a = json.load(open(sys.argv[1]))
+          # GitHub shows ten annotations per step; the job summary has them all.
+          shown = 0
           for key in ("regressions", "ratchet_lost"):
               for r in a[key]:
-                  print(f"::error title=perf {key}::{r['set']} / {r['shape']} / {r['range']}: {r['detail']} ({r['commits']})")
+                  if shown < 10:
+                      print(f"::error title=perf {key}::{r['set']} / {r['shape']} / {r['range']}: {r['detail']} ({r['commits']})")
+                  shown += 1
+          if shown > 10:
+              print(f"{shown - 10} more in the job summary")
           sys.exit(1 if a["regressions"] or a["ratchet_lost"] else 0)
           PY

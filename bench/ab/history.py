@@ -22,14 +22,15 @@ warm p50 and first-run seconds), loki_p50, loki_cold, loki_status, parity
 loki_cold_computed (true: Loki computed its cold run; false: its results cache
 answered it; null: not known, as on every line written before the column).
 
-alerts compares each set's newest line with the previous valid one and reports
+alerts compares each set's newest full line with the earlier full ones (a
+cut-down manual run is neither compared nor a baseline) and reports
 transitions, never the state many rows are already in: a regression (result
-same -> differs, 200 -> error, or a slowdown that held for two runs or that the
-same run's verdict against the release also shows), an improvement, and the
-ratchet. history/ratchet.json lists the rows that were as good as Loki (same
-result, 200, cold no slower than Loki's computed cold); the generator only adds
-to it, an owner removes a row by hand, and a row that stops being as good is a
-ratchet loss. Cold, never warm p50: Loki's warm is its results cache.
+same -> differs while Loki answers 200, 200 -> error, or a slowdown that held
+for two runs or that the same run's verdict against the release also shows),
+an improvement, and the ratchet. history/ratchet.json lists the rows that were
+as good as Loki (same result, 200, cold no slower than Loki's computed cold);
+the generator only adds to it, an owner removes a row by hand, and a row that
+stops being as good is a ratchet loss. Cold, never warm p50: Loki's warm is its results cache.
 """
 import argparse
 import datetime
@@ -73,14 +74,42 @@ def entry(summary, commit=""):
             "cols": COLS, "rows": rows}
 
 
-def append(summary, directory=HISTORY, commit=""):
+def load_spec():
+    with open(SHAPES) as f:
+        return json.load(f)
+
+
+def full_ranges(spec, name):
+    """The ranges one full measurement of a set covers (None for a set shapes.json does not define)."""
+    shape_set = spec["sets"].get(name)
+    if shape_set is None:
+        return None
+    defs = spec["ranges"]
+    return {r for r in shape_set["ranges"] if defs[r][0] <= defs[FULL_MAX_RANGE][0]}
+
+
+def is_full(e, want):
+    """A full measurement: FULL_RUNS runs and every range of the set up to FULL_MAX_RANGE."""
+    return bool(want) and e.get("runs") == FULL_RUNS and want <= {r[e["cols"].index("range")] for r in e["rows"]}
+
+
+def append(summary, directory=HISTORY, commit="", spec=None):
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f"{summary['set']}.jsonl")
     line = entry(summary, commit)
     existing = read(path)
-    if any(e["date"] == line["date"] and e.get("label") == line["label"] for e in existing):
-        # One line per set per day: a re-run replaces nothing, it is skipped.
-        return path, False
+    same_day = [i for i, e in enumerate(existing) if e["date"] == line["date"] and e.get("label") == line["label"]]
+    if same_day:
+        # One line per set per day: a re-run replaces nothing, it is skipped. Except that the full measurement
+        # replaces a cut-down manual run of the same day, which would otherwise keep the scheduled one out.
+        want = full_ranges(spec or load_spec(), summary["set"])
+        if not (is_full(line, want) and not is_full(existing[same_day[0]], want)):
+            return path, False
+        existing[same_day[0]] = line
+        with open(path, "w") as f:
+            for e in existing:
+                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n")
+        return path, True
     with open(path, "a") as f:
         f.write(json.dumps(line, separators=(",", ":"), ensure_ascii=False) + "\n")
     return path, True
@@ -101,17 +130,13 @@ def last_commit(directory=HISTORY, spec=None):
     to FULL_MAX_RANGE, so a cut-down manual run does not stand for the day.
     A current set without one, or lines without a recorded commit, give "".
     """
-    if spec is None:
-        with open(SHAPES) as f:
-            spec = json.load(f)
-    defs = spec["ranges"]
+    spec = spec or load_spec()
     commits = set()
-    for name, shape_set in spec["sets"].items():
-        want = {r for r in shape_set["ranges"] if defs[r][0] <= defs[FULL_MAX_RANGE][0]}
+    for name in spec["sets"]:
+        want = full_ranges(spec, name)
         if not want:
             continue  # the daily run skips a set with no range that short
-        full = [e for e in read(os.path.join(directory, f"{name}.jsonl"))
-                if e.get("runs") == FULL_RUNS and want <= {r[e["cols"].index("range")] for r in e["rows"]}]
+        full = [e for e in read(os.path.join(directory, f"{name}.jsonl")) if is_full(e, want)]
         if not full:
             return ""
         commits.add(full[-1].get("commit") or "")
@@ -232,11 +257,23 @@ def fails_like_loki(row):
 
 
 def read_ratchet(directory=HISTORY):
+    """(entries, problem): a file that cannot be read gives no entries and a problem; an entry without
+    its set, shape and range is skipped with a warning."""
     path = os.path.join(directory, RATCHET)
     if not os.path.exists(path):
-        return []
-    with open(path) as f:
-        return json.load(f)
+        return [], ""
+    try:
+        with open(path) as f:
+            rows = json.load(f)
+        if not isinstance(rows, list):
+            raise ValueError("not a list")
+    except ValueError as e:  # includes json.JSONDecodeError
+        return [], f"{RATCHET} cannot be read ({e}); the ratchet is left alone this run"
+    good = [r for r in rows if isinstance(r, dict) and all(isinstance(r.get(k), str) for k in ("set", "shape", "range"))]
+    if len(good) != len(rows):
+        print(f"warning: {len(rows) - len(good)} entries of {RATCHET} lack set, shape or range; skipped "
+              "(and dropped when the file is next written)", file=sys.stderr)
+    return good, ""
 
 
 def write_ratchet(rows, directory=HISTORY):
@@ -251,13 +288,21 @@ def cold_slower(row):
             and slower(row["loki_cold"], row["cold"]))
 
 
-def ratchet_loss(row, old):
-    """Why a ratcheted row is no longer as good as Loki, or "". A different result or an error counts at
-    once; a cold run slower than Loki's only when the previous valid line was too (one cold run is one sample)."""
-    if row["parity"] == "differs":
+def instant_loss(row):
+    """Why a ratcheted row is no longer as good as Loki on this line alone, or "". The results are compared
+    only when Loki answered 200: a Loki failure says nothing about the proxy."""
+    if row["parity"] == "differs" and row.get("loki_status") == "200":
         return "result differs from Loki"
-    if row["status"] not in (None, "200") and not fails_like_loki(row):
-        return f"status {row['status']}"
+    if row["status"] != "200" and not fails_like_loki(row):
+        return f"status {row['status'] or 'none'}"
+    return ""
+
+
+def ratchet_loss(row, old):
+    """Why a ratcheted row is lost, or "". A different result or an error counts at once; a cold run slower
+    than Loki's only when the previous line was too (one cold run is one sample)."""
+    if instant_loss(row):
+        return instant_loss(row)
     if cold_slower(row) and old and cold_slower(old):
         return (f"cold {secs(old['cold'])} → {secs(row['cold'])} against Loki's computed "
                 f"{secs(old['loki_cold'])} → {secs(row['loki_cold'])}, held for two runs")
@@ -272,49 +317,67 @@ def ratchets(row):
             and row["cold"] <= row["loki_cold"])
 
 
-def alerts(directory=HISTORY, sets=None):
-    """Transitions between each set's newest line and the previous valid one, plus the ratchet.
+def alerts(directory=HISTORY, sets=None, spec=None):
+    """Transitions between each set's newest line and the earlier full measurements, plus the ratchet.
 
-    sets limits it to the sets a run just wrote. Pure: ratchet.json is read, never written.
+    Only full measurements count (is_full), on either side: a cut-down manual run is neither compared nor a
+    baseline, and each row is compared with the newest earlier full line that has it. Only sets in shapes.json
+    are looked at; sets limits it to the sets a run just wrote. Pure: ratchet.json is read, never written.
     """
-    out = {"regressions": [], "improvements": [], "ratchet_lost": [], "ratchet_added": [], "range": {}}
-    held = {(r["set"], r["shape"], r["range"]): r for r in read_ratchet(directory)}
-    added = []
+    spec = spec or load_spec()
+    out = {"regressions": [], "improvements": [], "ratchet_lost": [], "ratchet_added": [], "loki_failed": [],
+           "ratchet_unmeasured": 0, "ratchet_problem": "", "range": {}}
+    entries_held, out["ratchet_problem"] = read_ratchet(directory)
+    held = {(r["set"], r["shape"], r["range"]): r for r in entries_held}
+    added, measured, looked = [], set(), set()
     for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
         entries = read(path)
-        if not entries or not entries[-1].get("valid", True) or (sets is not None and entries[-1]["set"] not in sets):
+        name = entries[-1]["set"] if entries else ""
+        want = full_ranges(spec, name)
+        if want is None or (sets is not None and name not in sets):
             continue
-        new, name = entries[-1], entries[-1]["set"]
-        valid = [e for e in entries[:-1] if e.get("valid", True)]
-        prev, prev2 = (valid[-1] if valid else None), (valid[-2] if len(valid) > 1 else None)
+        new = entries[-1]
+        if not new.get("valid", True) or not is_full(new, want):
+            continue
+        looked.add(name)
+        # Earlier full lines, newest first, each with its rows.
+        older = [(e, rows_of(e)) for e in reversed(entries[:-1]) if e.get("valid", True) and is_full(e, want)]
         cur = rows_of(new)
-        old_rows = rows_of(prev) if prev else {}
-        old2_rows = rows_of(prev2) if prev2 else {}
-        if prev:
-            out["range"][name] = f"{short(prev.get('commit'))}..{short(new.get('commit'))}"
+        if older:
+            out["range"][name] = f"{short(older[0][0].get('commit'))}..{short(new.get('commit'))}"
 
-        def alert(kind, key, detail, first=prev):
+        def alert(kind, key, detail, first):
             return {"set": name, "shape": key[0], "range": key[1], "kind": kind, "detail": detail,
                     "commits": f"{short(first.get('commit'))}..{short(new.get('commit'))}"}
 
         for key, row in cur.items():
-            old = old_rows.get(key)
+            measured.add((name, *key))
+            hist = [(e, rs[key]) for e, rs in older if key in rs]
+            (prev, old), (prev2, old2) = (hist[0] if hist else ({}, None)), (hist[1] if len(hist) > 1 else ({}, {}))
+            if row.get("loki_status") not in (None, "200") and not fails_like_loki(row):
+                out["loki_failed"].append({"set": name, "shape": key[0], "range": key[1], "kind": "loki",
+                                           "detail": f"Loki status {row['loki_status']}, proxy status "
+                                                     f"{row['status'] or 'none'}; the result is not compared"})
             if old:
-                if same(old["parity"]) and row["parity"] == "differs":
-                    out["regressions"].append(alert("result", key, "result vs Loki: same → differs"))
-                elif old["parity"] == "differs" and same(row["parity"]):
-                    out["improvements"].append(alert("result", key, "result vs Loki: differs → same"))
-                if old["status"] == "200" and row["status"] not in (None, "200") and not fails_like_loki(row):
-                    out["regressions"].append(alert("status", key, f"status 200 → {row['status']}"))
-                elif old["status"] not in (None, "200") and row["status"] == "200":
-                    out["improvements"].append(alert("status", key, f"status {old['status']} → 200"))
+                # A result is compared only when Loki answered 200 on both lines.
+                if old.get("loki_status") == "200" and row.get("loki_status") == "200":
+                    if same(old["parity"]) and row["parity"] == "differs":
+                        out["regressions"].append(alert("result", key, "result vs Loki: same → differs", prev))
+                    elif old["parity"] == "differs" and same(row["parity"]):
+                        out["improvements"].append(alert("result", key, "result vs Loki: differs → same", prev))
+                if old["status"] == "200" and row["status"] != "200" and not fails_like_loki(row):
+                    out["regressions"].append(alert("status", key, f"status 200 → {row['status'] or 'none'}", prev))
+                elif (old["status"] not in (None, "200") and row["status"] == "200"
+                      and row.get("loki_status") != old["status"]):
+                    # Not while Loki still gives that error: the proxy now answers where Loki does not.
+                    out["improvements"].append(alert("status", key, f"status {old['status']} → 200", prev))
                 if old["status"] == "200" and row["status"] == "200":
                     span = f"warm p50 {secs(old['p50'])} → {secs(row['p50'])}"
-                    old2 = old2_rows.get(key) or {}
                     if faster(old["p50"], row["p50"]):
-                        out["improvements"].append(alert("faster", key, span))
-                    elif slower(old["p50"], row["p50"]) and row["verdict"] == "slower":
-                        out["regressions"].append(alert("slower", key, f"{span}, and slower than the release in the same run"))
+                        out["improvements"].append(alert("faster", key, span, prev))
+                    elif slower(old["p50"], row["p50"]) and row["verdict"] == "slower" and old["verdict"] != "slower":
+                        out["regressions"].append(alert(
+                            "slower", key, f"{span}, and slower than the release in the same run", prev))
                     # Worse than the run before both of them, in both: one run of noise is not a regression.
                     # The change happened after prev2, so that is where the range starts (and it was
                     # already reported when the first slow run itself was slower than the release).
@@ -323,46 +386,78 @@ def alerts(directory=HISTORY, sets=None):
                         out["regressions"].append(alert(
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
                             "held for two runs", prev2))
-            where = (name, key[0], key[1])
-            if where in held:
+            where = (name, *key)
+            if where in held and not out["ratchet_problem"]:
                 reason = ratchet_loss(row, old)
                 if reason:
-                    # A cold loss that took two runs to show began after prev2.
-                    out["ratchet_lost"].append(alert("ratchet", key, reason, (prev2 if "held" in reason else prev) or {}))
-            elif ratchets(row):
+                    # The range starts at the newest line the row was still as good as Loki on (or when the
+                    # ratchet took it in), however many runs it has been lost.
+                    start = next((e for e, r in hist if not instant_loss(r) and not cold_slower(r)),
+                                 {"commit": held[where].get("commit")})
+                    out["ratchet_lost"].append(alert("ratchet", key, reason, start))
+            elif where not in held and ratchets(row) and not out["ratchet_problem"]:
                 added.append({"set": name, "shape": key[0], "range": key[1], "added": new["date"],
                               "commit": new.get("commit") or ""})
-    for k in ("regressions", "improvements", "ratchet_lost"):
+    for k in ("regressions", "improvements", "ratchet_lost", "loki_failed"):
         out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], a["kind"]))
+    # Ratchet rows whose set was measured (or no longer exists) but whose shape/range this run did not.
+    out["ratchet_unmeasured"] = sum(1 for k in held if k not in measured and (
+        k[0] in looked or (sets is None and full_ranges(spec, k[0]) is None)))
     out["ratchet_added"] = added
     out["ratchet"] = sorted(list(held.values()) + added, key=lambda r: (r["set"], r["shape"], r["range"]))
     return out
 
 
-def render_alerts(a):
-    def items(rows, none="none"):
-        return [f"- `{r['set']}` {r['shape']} · {r['range']}: {r['detail']} (`{r['commits']}`)" for r in rows] or [none]
+PR_LIMIT = 50
 
+
+def render_alerts(a, limit=None):
+    """The alerts as markdown. limit caps the entries listed in all sections together (regressions first,
+    then ratchet losses, improvements, Loki failures); the rest is counted."""
+    shown, left = {}, limit
+    for k in ("regressions", "ratchet_lost", "improvements", "loki_failed"):
+        shown[k] = len(a[k]) if left is None else min(len(a[k]), left)
+        left = left if left is None else left - shown[k]
+
+    def items(key):
+        rows = a[key][:shown[key]]
+        text = [f"- `{r['set']}` {r['shape']} · {r['range']}: {r['detail']}" + (f" (`{r['commits']}`)" if r.get("commits") else "")
+                for r in rows]
+        if limit is not None:
+            text = [t if len(t) <= 300 else t[:299] + "…" for t in text]
+        if len(a[key]) > len(rows):
+            text.append(f"… and {len(a[key]) - len(rows)} more, see the job summary")
+        return text or ["none"]
+
+    held = f"Held: {len(a['ratchet'])} rows ({len(a['ratchet_added'])} added by this run)"
+    if a.get("ratchet_unmeasured"):
+        held += f"; {a['ratchet_unmeasured']} not measured by this run (renamed or removed shapes or sets?)"
     return "\n".join(
-        ["## Regressions", "", *items(a["regressions"]), "",
-         "## Improvements", "", *items(a["improvements"]), "",
-         "## Ratchet", "", f"Lost ({len(a['ratchet_lost'])}):", "", *items(a["ratchet_lost"]), "",
-         f"Held: {len(a['ratchet'])} rows ({len(a['ratchet_added'])} added by this run); "
-         f"the list is `bench/ab/history/{RATCHET}`.", ""])
+        ["## Regressions", "", *items("regressions"), "",
+         "## Improvements", "", *items("improvements"), "",
+         "## Ratchet", "", f"Lost ({len(a['ratchet_lost'])}):", "", *items("ratchet_lost"), "",
+         f"{held}; the list is `bench/ab/history/{RATCHET}`.",
+         *(["", f"**{a['ratchet_problem']}**"] if a.get("ratchet_problem") else []), "",
+         "## Loki failed (informational)", "",
+         "Rows where Loki did not answer 200: their results are not compared and they do not fail the run.", "",
+         *items("loki_failed"), ""])
 
 
-def write_alerts(directory=HISTORY, sets=None, json_out="", markdown_out=""):
-    """alerts(), with ratchet.json updated (additions only) and the outputs written."""
-    a = alerts(directory, sets)
+def write_alerts(directory=HISTORY, sets=None, json_out="", markdown_out="", body_out="", spec=None):
+    """alerts(), with ratchet.json updated (additions only) and the outputs written; body_out gets the
+    markdown capped to PR_LIMIT entries for a pull request body."""
+    a = alerts(directory, sets, spec)
     os.makedirs(directory, exist_ok=True)
-    write_ratchet(a["ratchet"], directory)
+    if not a["ratchet_problem"]:
+        write_ratchet(a["ratchet"], directory)
     if json_out:
         with open(json_out, "w") as f:
             json.dump(a, f, indent=1, sort_keys=True, ensure_ascii=False)
             f.write("\n")
-    if markdown_out:
-        with open(markdown_out, "w") as f:
-            f.write(render_alerts(a))
+    for path, limit in ((markdown_out, None), (body_out, PR_LIMIT)):
+        if path:
+            with open(path, "w") as f:
+                f.write(render_alerts(a, limit))
     return a
 
 
@@ -383,6 +478,7 @@ def main():
     al.add_argument("--sets", default="", help="comma-separated sets (default: all)")
     al.add_argument("--json", default="")
     al.add_argument("--markdown", default="")
+    al.add_argument("--body", default="", help="markdown capped for a pull request body")
     args = ap.parse_args()
     if args.cmd == "append":
         for path in args.summaries:
@@ -392,7 +488,8 @@ def main():
     elif args.cmd == "last-commit":
         print(last_commit(args.dir))
     elif args.cmd == "alerts":
-        a = write_alerts(args.dir, [x for x in args.sets.split(",") if x] or None, args.json, args.markdown)
+        a = write_alerts(args.dir, [x for x in args.sets.split(",") if x] or None, args.json, args.markdown,
+                         args.body)
         if not args.markdown:
             print(render_alerts(a), end="")
     else:
