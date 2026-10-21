@@ -6,6 +6,11 @@ name: Perf daily
 # the rolling branch bench/daily-perf (never pushed to main). See
 # bench/ab/README.md.
 #
+# A scheduled run is skipped when nothing it measures changed on main since
+# the commit the history's newest full measurement was taken at (an open daily
+# PR's days included): no new run, no new or updated pull request. A manual
+# dispatch always runs.
+#
 # A pull request that edits this pipeline runs a short validation instead
 # (control set, 1h, 3 runs): it writes the files on the runner and shows the
 # trend report in the job summary, but opens no pull request.
@@ -111,13 +116,6 @@ jobs:
           # a request header and nothing keeps a token in the git config.
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        with:
-          go-version: "1.27.3"
-          # No restored cache in the job that holds the bot token: nothing a pull
-          # request or branch run saved can run inside it.
-          cache: false
-
       - name: Carry history an unmerged daily PR already holds
         env:
           READ_TOKEN: ${{ github.token }}
@@ -130,7 +128,37 @@ jobs:
             git checkout FETCH_HEAD -- bench/ab/history/ || true
           fi
 
+      - name: Skip when nothing measured changed
+        id: measured
+        if: github.event_name == 'schedule'
+        run: |
+          # What a day measures: the proxy's code, the harness and its shapes,
+          # the stack Loki and VictoriaLogs run in, the seed and this workflow.
+          # The daily reports, history, docs and Go test files are not part of it.
+          MEASURED=(cmd internal pkg go.mod go.sum ':(exclude,glob)**/*_test.go'
+                    bench/ab ':(exclude)bench/ab/results' ':(exclude)bench/ab/history'
+                    ':(exclude)bench/ab/tests' ':(exclude)bench/ab/README.md'
+                    test/e2e-compat/docker-compose.yml test/e2e-compat/loki-local-config.yaml
+                    test/e2e-compat/log-generator.py .github/workflows/perf-daily.yaml)
+          LAST="$(python3 bench/ab/history.py last-commit || true)"
+          if [ -n "$LAST" ] && git cat-file -e "${LAST}^{commit}" 2>/dev/null \
+             && git diff --quiet "$LAST" HEAD -- "${MEASURED[@]}"; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipped: nothing measured changed on main since ${LAST:0:10}, the commit the last daily run measured." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        if: steps.measured.outputs.run != 'false'
+        with:
+          go-version: "1.27.3"
+          # No restored cache in the job that holds the bot token: nothing a pull
+          # request or branch run saved can run inside it.
+          cache: false
+
       - name: Run the daily A/B
+        if: steps.measured.outputs.run != 'false'
         env:
           SETS: ${{ inputs.sets }}
           MAX_RANGE: ${{ inputs.max_range || '24h' }}
@@ -138,13 +166,13 @@ jobs:
         run: python3 bench/ab/daily.py --out "$OUT" --sets "$SETS" --max-range "$MAX_RANGE" --runs "$RUNS"
 
       - name: Publish trend
-        if: always()
+        if: always() && steps.measured.outputs.run != 'false'
         run: |
           if [ -f bench/ab/history/trend.md ]; then cat bench/ab/history/trend.md >> "$GITHUB_STEP_SUMMARY"; fi
           git status --short
 
       - name: Upload run artifacts
-        if: always()
+        if: always() && steps.measured.outputs.run != 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: perf-daily
@@ -157,6 +185,7 @@ jobs:
 
       - name: Open or update the daily report PR
         id: pr
+        if: steps.measured.outputs.run != 'false'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}

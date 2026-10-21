@@ -364,6 +364,19 @@ daily pull request without merging does not drop its days while the branch
 exists; delete `bench/daily-perf` to discard them. A run in which
 VictoriaLogs restarted writes nothing and fails.
 
+A scheduled run is skipped, with no new or updated pull request, when nothing
+it measures changed on `main` since the commit the history's newest full
+measurement was taken at (`history.py last-commit`; an open daily pull
+request's days count). A full measurement is a line with 7 runs and every
+range of its set up to 24h, so a cut-down manual run does not count; only the
+sets in `shapes.json` count, and a set without a full measurement, or sets
+measured at different commits, run the measurement. What it measures is the
+proxy's code (`cmd/`, `internal/`, `pkg/`, `go.mod`, `go.sum`, without Go test
+files), `bench/ab/` without its results, history, tests and README, the
+stack's `test/e2e-compat/docker-compose.yml`, `loki-local-config.yaml` and
+`log-generator.py`, and the workflow itself. A manual dispatch always runs, and
+a history that cannot be read runs the measurement.
+
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits
 the daily pipeline runs a short version of it (control set, 1h, 3 runs) that

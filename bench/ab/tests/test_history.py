@@ -9,14 +9,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import history  # noqa: E402
 
 
-def summary(date, main_p50, valid=True, status="200"):
+# The shapes.json fields last_commit reads: the 7d range is never part of a daily run.
+SPEC = {"ranges": {"1h": [3600, 5], "24h": [86400, 60], "7d": [604800, 600]},
+        "sets": {"control": {"ranges": ["1h", "24h", "7d"]}, "json-filter-pushdown": {"ranges": ["1h"]}}}
+
+
+def summary(date, main_p50, valid=True, status="200", ranges=("1h",), runs=history.FULL_RUNS):
     return {"set": "control", "label": "daily-control", "date": date, "baseline": "release", "candidate": "main",
-            "reference": "loki", "runs": 7, "valid": valid, "restart_before": "0", "restart_after": "0",
-            "rows": [{"shape": "logs | json", "range": "1h", "verdict": "same",
+            "reference": "loki", "runs": runs, "valid": valid, "restart_before": "0", "restart_after": "0",
+            "rows": [{"shape": "logs | json", "range": r, "verdict": "same",
                       "p50": {"release": 0.5, "main": main_p50, "loki": 0.4},
                       "cold": {"release": 1.0, "main": main_p50 * 2, "loki": 0.9},
                       "status": {"release": "200", "main": status, "loki": "200"},
-                      "parity_vs_reference": "same"}]}
+                      "parity_vs_reference": "same"} for r in ranges]}
 
 
 class HistoryTest(unittest.TestCase):
@@ -53,6 +58,49 @@ class HistoryTest(unittest.TestCase):
         text = history.trend(self.dir)
         self.assertIn("previous —", text)
         self.assertIn("**502**", text)
+
+    def test_last_commit_is_the_one_every_set_last_measured(self):
+        def day(date, commit, set_name="control", **kw):
+            history.append(dict(summary(date, 0.5, **kw), set=set_name), self.dir, commit)
+
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+        day("2026-09-20", "aaa", ranges=("1h", "24h"))
+        day("2026-09-20", "aaa", "json-filter-pushdown")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "aaa")
+        # A run of one set only (a manual dispatch) leaves the others measured on an older commit.
+        day("2026-09-21", "bbb", ranges=("1h", "24h"))
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+        day("2026-09-21", "bbb", "json-filter-pushdown")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "bbb")
+        # Lines written before commits were recorded say nothing about the code measured.
+        day("2026-09-22", "", ranges=("1h", "24h"))
+        day("2026-09-22", "", "json-filter-pushdown")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+
+    def test_last_commit_ignores_sets_that_no_longer_exist(self):
+        history.append(dict(summary("2026-09-20", 0.5, ranges=("1h", "24h")), set="control"), self.dir, "aaa")
+        history.append(dict(summary("2026-09-20", 0.5), set="json-filter-pushdown"), self.dir, "aaa")
+        # The file of a renamed set keeps its old commit forever.
+        history.append(dict(summary("2026-09-01", 0.5), set="old-name"), self.dir, "zzz")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "aaa")
+
+    def test_last_commit_needs_a_full_measurement(self):
+        def day(date, commit, set_name, **kw):
+            history.append(dict(summary(date, 0.5, **kw), set=set_name), self.dir, commit)
+
+        day("2026-09-20", "aaa", "control", ranges=("1h", "24h"))
+        day("2026-09-20", "aaa", "json-filter-pushdown")
+        # Fewer runs, or a shorter --max-range, is not a measurement of the day.
+        day("2026-09-21", "bbb", "control", ranges=("1h", "24h"), runs=3)
+        day("2026-09-21", "bbb", "json-filter-pushdown")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+        day("2026-09-22", "ccc", "control", ranges=("1h",))
+        day("2026-09-22", "ccc", "json-filter-pushdown")
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+        # A set that was never fully measured keeps the run on.
+        other = tempfile.mkdtemp()
+        history.append(dict(summary("2026-09-20", 0.5), set="json-filter-pushdown"), other, "aaa")
+        self.assertEqual(history.last_commit(other, SPEC), "")
 
     def test_spark(self):
         self.assertEqual(history.spark([1, 2, 3]), "▁▄█")

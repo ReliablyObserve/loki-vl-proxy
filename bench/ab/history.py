@@ -7,6 +7,7 @@ and plots read the JSONL; nothing edits past lines.
 
   history.py append SUMMARY.json [--commit SHA] [--dir bench/ab/history]
   history.py trend [--dir bench/ab/history] [--out bench/ab/history/trend.md]
+  history.py last-commit [--dir bench/ab/history]
 
 A line holds the run's metadata and one row per shape x range in the column
 order named by "cols" (so a line stays small and self-describing):
@@ -30,6 +31,10 @@ HISTORY = os.path.join(HERE, "history")
 COLS = ["shape", "range", "status", "p50", "cold", "loki_p50", "loki_cold", "loki_status", "parity", "base_p50",
         "verdict"]
 SPARK = "▁▂▃▄▅▆▇█"
+SHAPES = os.path.join(HERE, "shapes.json")
+# What one full daily measurement is: this many runs per shape x range and
+# every range of the set up to this one (daily.py defaults to both).
+FULL_RUNS, FULL_MAX_RANGE = 7, "24h"
 # A day-over-day or week-over-week move is reported only beyond both.
 NOISE, MIN_DELTA = 0.25, 0.05
 
@@ -65,6 +70,31 @@ def read(path):
         return []
     with open(path) as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def last_commit(directory=HISTORY, spec=None):
+    """The commit every current set's newest full measurement was taken at, or "" when they disagree.
+
+    Only sets in shapes.json count (a renamed or removed set's file is stale),
+    and only full measurements: FULL_RUNS runs and every range of the set up
+    to FULL_MAX_RANGE, so a cut-down manual run does not stand for the day.
+    A current set without one, or lines without a recorded commit, give "".
+    """
+    if spec is None:
+        with open(SHAPES) as f:
+            spec = json.load(f)
+    defs = spec["ranges"]
+    commits = set()
+    for name, shape_set in spec["sets"].items():
+        want = {r for r in shape_set["ranges"] if defs[r][0] <= defs[FULL_MAX_RANGE][0]}
+        if not want:
+            continue  # the daily run skips a set with no range that short
+        full = [e for e in read(os.path.join(directory, f"{name}.jsonl"))
+                if e.get("runs") == FULL_RUNS and want <= {r[e["cols"].index("range")] for r in e["rows"]}]
+        if not full:
+            return ""
+        commits.add(full[-1].get("commit") or "")
+    return commits.pop() if len(commits) == 1 else ""
 
 
 def rows_of(e):
@@ -168,12 +198,16 @@ def main():
     t = sub.add_parser("trend")
     t.add_argument("--dir", default=HISTORY)
     t.add_argument("--out", default=os.path.join(HISTORY, "trend.md"))
+    lc = sub.add_parser("last-commit")
+    lc.add_argument("--dir", default=HISTORY)
     args = ap.parse_args()
     if args.cmd == "append":
         for path in args.summaries:
             with open(path) as f:
                 target, added = append(json.load(f), args.dir, args.commit)
             print(f"{'appended to' if added else 'already recorded in'} {target}")
+    elif args.cmd == "last-commit":
+        print(last_commit(args.dir))
     else:
         text = trend(args.dir)
         with open(args.out, "w") as f:

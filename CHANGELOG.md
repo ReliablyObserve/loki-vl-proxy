@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example only when the file has one, and then it must match the release
   version.
 
+- **The daily performance run no longer opens a pull request when nothing it
+  measures changed.** Every day the scheduled run repeated the 4-hour
+  measurement and updated or opened a daily report pull request, even when the
+  only commit since the last run was the previous report. It now skips (no run,
+  no new or updated pull request) when the proxy's code (Go test files
+  excepted), the A/B harness and its shapes, the Loki and VictoriaLogs stack,
+  the seed and the workflow are unchanged since the commit the newest full
+  measurement of every current shape set was taken at (7 runs, every range up
+  to 24h; an open daily pull request's days included). A manual dispatch
+  always runs, and a history that cannot be read runs the measurement.
+
 ### Documentation
 
 - **Contributing guide: performance rules.** A new "Performance Rules" section
