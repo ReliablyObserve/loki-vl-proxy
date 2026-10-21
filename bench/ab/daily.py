@@ -11,9 +11,10 @@ fresh runner and opens a bot pull request with what it writes:
   bench/ab/history/trend.md           day-over-day and week-over-week report
   bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
   <out>/alerts.md, alerts.json        regressions, improvements and ratchet
-                                      losses of this run's lines (not committed:
+  alerts-body.md                      losses of this run's lines (not committed:
                                       they describe one run; the workflow puts
-                                      them in the pull request and fails on them)
+                                      them in the pull request, capped, and fails
+                                      on them)
   conformance/registry/generated/perf-evidence.json, conformance/reports/
   performance.md and gaps.md          regenerated from the new results
 
@@ -131,11 +132,16 @@ def main():
     with open(os.path.join(history.HISTORY, "trend.md"), "w") as f:
         f.write(history.trend())
     # Only the sets this run wrote: a manual run of one set must not report the others' old lines again.
-    found = history.write_alerts(history.HISTORY, written, os.path.join(out, "alerts.json"),
-                                 os.path.join(out, "alerts.md"))
-    stack.log(f"alerts: {len(found['regressions'])} regressions, {len(found['improvements'])} improvements, "
-              f"{len(found['ratchet_lost'])} ratchet losses, ratchet {len(found['ratchet'])} rows "
-              f"(+{len(found['ratchet_added'])})")
+    # Alerts are a report: a failure here is logged and the day is still delivered.
+    try:
+        found = history.write_alerts(history.HISTORY, written, os.path.join(out, "alerts.json"),
+                                     os.path.join(out, "alerts.md"), os.path.join(out, "alerts-body.md"))
+        stack.log(f"alerts: {len(found['regressions'])} regressions, {len(found['improvements'])} improvements, "
+                  f"{len(found['ratchet_lost'])} ratchet losses, {len(found['loki_failed'])} Loki failures, "
+                  f"ratchet {len(found['ratchet'])} rows (+{len(found['ratchet_added'])}, "
+                  f"{found['ratchet_unmeasured']} not measured)")
+    except Exception as e:  # noqa: BLE001
+        stack.log(f"alerts failed, the day is delivered without them: {e!r}")
     for script in ("perf_evidence.py", "gaps.py"):
         subprocess.run([PY, os.path.join(ROOT, "conformance/scripts", script)], cwd=ROOT, check=True)
     stack.log(f"daily run written in {(time.time() - t0) / 60:.1f} min")

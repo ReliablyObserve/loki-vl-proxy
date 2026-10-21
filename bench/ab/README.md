@@ -378,31 +378,51 @@ stack's `test/e2e-compat/docker-compose.yml`, `loki-local-config.yaml` and
 `log-generator.py`, and the workflow itself. A manual dispatch always runs, and
 a history that cannot be read runs the measurement.
 
-Each run also compares every set's newest history line with the previous
-valid one (`history.py alerts`) and reports transitions, not the state many rows
-are already in (rows that differ from Loki today do not alert again). A
-regression is a result that went `same` → `differs`, a status that went 200 →
-an error Loki does not give, or a warm p50 slower beyond 25% and 50 ms that held
-for two runs (both worse than the run before them) or that the same run's
-verdict against the release also calls `slower`. An improvement is the reverse
-of the first two, or a warm p50 faster beyond the same margin (one run is
-enough). Each alert names the commit range to bisect, `<previous line's
-commit>..<newest commit>` (a slowdown that held for two runs starts at the line
-before it began). A row enters `history/ratchet.json` when its newest line has
-the same result as Loki, answers 200 and its cold run is no slower than Loki's
-cold run, and only when Loki computed that cold run (`loki_cold_computed`, from
-Loki's cache counters): never on warm p50, which for Loki is its results cache,
-and never on lines written before the column existed. A ratchet loss is a
-ratcheted row whose newest line differs from Loki or fails (at once), or whose
-cold run is slower than Loki's computed cold run beyond the margin in the newest
-line and the previous valid one (a cold run is one sample); it repeats every run
-until fixed.
-Rows leave the list only by hand. The run writes the alerts to
-`<out>/alerts.md` and `alerts.json` (not committed: they describe one run), puts
-them at the top of the daily pull request and in the job summary, and a final
-step fails the job when there is a regression or a ratchet loss, so the red run
-is the notification. A pull request that edits the pipeline shows them and never
-fails on them.
+Each run also compares every set's newest history line with the earlier ones
+(`history.py alerts`) and reports transitions, not the state many rows are
+already in (rows that differ from Loki today do not alert again). Only full
+measurements (7 runs, every range of the set up to 24h) count, on either side:
+a cut-down manual run is recorded but neither compared nor a baseline, and the
+scheduled full run replaces a cut-down line of the same day. Each row is
+compared with the newest earlier full line that has it, and only sets in
+`shapes.json` are looked at. A regression is a result that went `same` →
+`differs` (only when Loki answered 200 in both lines: a Loki failure says
+nothing about the proxy), a status that went 200 → an error Loki does not give
+or to none, or a warm p50 slower beyond 25% and 50 ms that held for two runs
+(both worse than the run before them) or that the same run's verdict against
+the release newly calls `slower`. An improvement is the reverse of the first
+two (a status that now answers 200 while Loki still gives that error is not
+one), or a warm p50 faster beyond the same margin (one run is enough). Each
+alert names the commit range to bisect, `<previous line's commit>..<newest
+commit>` (a slowdown that held for two runs starts at the line before it
+began). Rows where Loki did not answer 200 are listed apart as "Loki failed",
+for information only.
+
+A row enters `history/ratchet.json` when its newest line has the same result as
+Loki, answers 200 and its cold run is no slower than Loki's cold run, and only
+when Loki computed that cold run (`loki_cold_computed`, from Loki's cache
+counters): never on warm p50, which for Loki is its results cache, and never on
+lines written before the column existed. A ratchet loss is a ratcheted row that
+differs from Loki (Loki answering 200) or fails (at once), or whose cold run is
+slower than Loki's computed cold run beyond the margin in the newest line and
+the previous full one (a cold run is one sample); it repeats every run until
+fixed, with the range starting at the newest line the row was still as good as
+Loki (or the commit it entered at). Rows leave the list only by hand; the run
+counts the rows it did not measure (renamed or removed shapes), and an
+unreadable `ratchet.json` is reported and left untouched. The daily run takes
+`ratchet.json` from `main` and adds to it: it carries an open daily pull
+request's history lines, not its ratchet file, so a row removed on `main`
+stays removed.
+
+The run writes the alerts to `<out>/alerts.md` and `alerts.json` (not
+committed: they describe one run) and the job summary and artifact hold all of
+them. The daily pull request body gets the first 50 entries (`alerts-body.md`,
+regressions first) and a count of the rest, since a body is limited to 65,536
+characters. A final step fails the job when there is a regression or a ratchet
+loss, even when the pull request step failed, so the red run is the
+notification. A failure of the alerts themselves is logged and the day is still
+delivered. A pull request that edits the pipeline runs a cut-down measurement,
+so it has nothing to compare; it never fails on alerts.
 
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits
