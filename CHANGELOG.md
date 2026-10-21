@@ -17,6 +17,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example only when the file has one, and then it must match the release
   version.
 
+- **The daily performance run no longer opens a pull request when nothing it
+  measures changed.** Every day the scheduled run repeated the 4-hour
+  measurement and updated or opened a daily report pull request, even when the
+  only commit since the last run was the previous report. It now skips (no run,
+  no new or updated pull request) when the proxy's code (Go test files
+  excepted), the A/B harness and its shapes, the Loki and VictoriaLogs stack,
+  the seed and the workflow are unchanged since the commit the newest full
+  measurement of every current shape set was taken at (7 runs, every range up
+  to 24h; an open daily pull request's days included). A manual dispatch
+  always runs, and a history that cannot be read runs the measurement.
+- **The daily performance run reports regressions, improvements and a ratchet
+  of the rows that are as good as Loki, and turns red on a regression.** The
+  daily run only recorded numbers, so a result that started differing from
+  Loki or a query that started failing was found by whoever read the trend
+  next. `bench/ab/history.py alerts` now compares each set's newest history
+  line with the previous valid one and reports transitions, not state (many
+  rows already differ from Loki and must not alert every day): a result that
+  went `same` to `differs`, a status that went 200 to an error Loki does not
+  give, and a warm p50 slower beyond the 25% and 50 ms noise rule that held for
+  two runs or that the same run's verdict against the release also calls
+  `slower`; and the improvements (the reverse of the first two, or faster beyond
+  the noise rule in one run). Each alert names its commit range to bisect. A new
+  history column, `loki_cold_computed`, records from Loki's cache counters
+  whether Loki computed its cold run or its results cache answered it (null on
+  older lines, which each carry their own `cols`). `bench/ab/history/ratchet.json`
+  lists the rows whose newest line has the same result as Loki, answers 200 and
+  has a cold run no slower than a Loki cold run that was computed (never warm
+  p50, which for Loki is its results cache); the run only adds to it, rows leave
+  it by hand, and a ratcheted row that differs or fails, or whose cold run is
+  slower than Loki's computed cold run in two runs in a row, is a ratchet
+  loss. The alerts go at the top of the daily pull request and into the job
+  summary (`alerts.md` is written next to the run's files, not committed), and
+  a final `Fail on regressions` step fails the job on a regression or a ratchet
+  loss, so GitHub notifies the owner; no issue is opened and no label added.
+  The pull request validation shows the alerts and does not fail on them.
+
 ### Documentation
 
 - **Contributing guide: performance rules.** A new "Performance Rules" section

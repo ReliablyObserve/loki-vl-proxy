@@ -9,6 +9,11 @@ fresh runner and opens a bot pull request with what it writes:
                                       history keeps every day)
   bench/ab/history/<set>.jsonl        one appended line per set per day
   bench/ab/history/trend.md           day-over-day and week-over-week report
+  bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
+  <out>/alerts.md, alerts.json        regressions, improvements and ratchet
+                                      losses of this run's lines (not committed:
+                                      they describe one run; the workflow puts
+                                      them in the pull request and fails on them)
   conformance/registry/generated/perf-evidence.json, conformance/reports/
   performance.md and gaps.md          regenerated from the new results
 
@@ -48,8 +53,8 @@ def main():
     ap.add_argument("--out", required=True, help="scratch directory for raw rows, logs and binaries")
     ap.add_argument("--baseline-ref", default="", help="default: newest v* tag reachable from HEAD")
     ap.add_argument("--sets", default="", help="comma-separated sets (default: all)")
-    ap.add_argument("--max-range", default="24h")
-    ap.add_argument("--runs", type=int, default=7)
+    ap.add_argument("--max-range", default=history.FULL_MAX_RANGE)
+    ap.add_argument("--runs", type=int, default=history.FULL_RUNS)
     ap.add_argument("--long-runs", type=int, default=3, help="runs of ranges >= 24h for the baseline build")
     ap.add_argument("--noise", type=float, default=0.25)
     ap.add_argument("--min-delta", type=float, default=0.05)
@@ -117,12 +122,20 @@ def main():
         # of results and history, fail the job so the next day retries.
         stack.log("run invalid (VictoriaLogs restarted); nothing written")
         return 2
+    written = []
     for summary in summaries:
         with open(os.path.join(RESULTS, f"daily-{summary['set']}.json"), "w") as f:
             json.dump(summary, f, indent=1)
-        history.append(summary, commit=head)
+        if history.append(summary, commit=head)[1]:
+            written.append(summary["set"])
     with open(os.path.join(history.HISTORY, "trend.md"), "w") as f:
         f.write(history.trend())
+    # Only the sets this run wrote: a manual run of one set must not report the others' old lines again.
+    found = history.write_alerts(history.HISTORY, written, os.path.join(out, "alerts.json"),
+                                 os.path.join(out, "alerts.md"))
+    stack.log(f"alerts: {len(found['regressions'])} regressions, {len(found['improvements'])} improvements, "
+              f"{len(found['ratchet_lost'])} ratchet losses, ratchet {len(found['ratchet'])} rows "
+              f"(+{len(found['ratchet_added'])})")
     for script in ("perf_evidence.py", "gaps.py"):
         subprocess.run([PY, os.path.join(ROOT, "conformance/scripts", script)], cwd=ROOT, check=True)
     stack.log(f"daily run written in {(time.time() - t0) / 60:.1f} min")
