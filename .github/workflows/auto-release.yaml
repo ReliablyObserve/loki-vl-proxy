@@ -338,7 +338,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          # No restored cache in the job that publishes release artifacts: nothing
+          # a pull request or branch run saved can reach what ships.
+          cache: false
 
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
@@ -741,7 +743,7 @@ jobs:
           } >> "${NOTES_FILE}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3  # zizmor: ignore[superfluous-actions] softprops/action-gh-release attaches the signed assets; replacing it with gh release is a separate change
         # The SPDX SBOMs (dist/loki-vl-proxy-<os>-<arch>.spdx.json) are matched by
         # the binary globs below, so they are not listed a second time.
         with:

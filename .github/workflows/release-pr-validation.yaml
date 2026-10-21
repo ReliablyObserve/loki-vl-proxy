@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Extract release version from branch
         id: version
@@ -49,23 +50,29 @@ jobs:
           done <<< "$CHANGED"
 
       - name: Verify changelog section exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           chmod +x scripts/ci/extract_changelog_section.sh
-          scripts/ci/extract_changelog_section.sh "${{ steps.version.outputs.version }}" CHANGELOG.md >/tmp/release-section.md
+          scripts/ci/extract_changelog_section.sh "$VERSION" CHANGELOG.md >/tmp/release-section.md
           test -s /tmp/release-section.md
 
       - name: Verify chart version matches release
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           grep -q "^version: ${VERSION}$" charts/loki-vl-proxy/Chart.yaml
           grep -q "^appVersion: \"${VERSION}\"$" charts/loki-vl-proxy/Chart.yaml
 
       - name: Verify observability doc example version matches release
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           grep -q "\"service.version\": \"${VERSION}\"" docs/observability.md
 
       - name: Helm lint

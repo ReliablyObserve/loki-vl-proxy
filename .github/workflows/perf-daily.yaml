@@ -114,7 +114,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          # No restored cache in the job that holds the bot token: nothing a pull
+          # request or branch run saved can run inside it.
+          cache: false
 
       - name: Carry history an unmerged daily PR already holds
         env:

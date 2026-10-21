@@ -33,6 +33,7 @@ jobs:
         with:
           # The base build comes from a worktree of the merge commit's first parent.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Select shapes for this change
         id: select

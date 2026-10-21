@@ -43,6 +43,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Finally, the first job of the automatic release only reads the repository and
   pull request labels, so its `contents` and `pull-requests` permissions are
   now `read` instead of `write`.
+- **Every workflow is now checked for injection and unsafe defaults, and every
+  action reference is checked for pinning.** The remaining `${{ }}` expressions
+  inside `run:` scripts (matrix values, job results, step outputs, pull request
+  fields) are passed through the step's environment, so no value can be
+  substituted into a script before the shell reads it. The security workflow
+  now runs zizmor, offline and pinned by version and image digest, next to
+  actionlint (also pinned by digest) and fails on any finding that is not an
+  exception with a reason, written as an inline `# zizmor: ignore[rule]`
+  comment; its SARIF report is uploaded with the other scanners'. Fixed along the way: checkouts that did not need
+  to keep the job token now drop it (`persist-credentials: false`), the Go
+  cache is no longer restored in the jobs that publish release artifacts or hold
+  the bot token, and
+  the scheduled security workflow grants `security-events: write` only to the
+  jobs that upload reports. CodeQL now scans the workflow files (the `actions`
+  language) in a separate job next to the unchanged Go analysis, and a unit test fails the build when a
+  `uses:` is not a local path, a digest-pinned `docker://` image or an
+  `owner/repo@<commit SHA>` with a `# v<version>` comment.
 
 ## [2.23.2] - 2026-10-21
 

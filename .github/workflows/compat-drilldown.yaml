@@ -26,6 +26,8 @@ jobs:
       grafana_pr_runtime_profiles: ${{ steps.matrix.outputs.grafana_pr_runtime_profiles }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - id: matrix
         run: |
           {
@@ -45,10 +47,12 @@ jobs:
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
         with:
@@ -85,10 +89,12 @@ jobs:
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
         with:
@@ -104,7 +110,9 @@ jobs:
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run Grafana ${{ matrix.profile }} profile
-        run: go test -v -tags=e2e -run '${{ matrix.test_regex }}' ./test/e2e-compat/
+        env:
+          TEST_REGEX: ${{ matrix.test_regex }}
+        run: go test -v -tags=e2e -run "$TEST_REGEX" ./test/e2e-compat/
       - name: Tear down Grafana ${{ matrix.profile }} stack
         if: always()
         working-directory: test/e2e-compat
@@ -120,8 +128,12 @@ jobs:
         drilldown_version: ${{ fromJson(needs.drilldown-matrix-source.outputs.drilldown_versions) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - name: Check Drilldown app contracts
-        run: bash scripts/compat/check-drilldown-contracts.sh "${{ matrix.drilldown_version }}"
+        env:
+          DRILLDOWN_VERSION: ${{ matrix.drilldown_version }}
+        run: bash scripts/compat/check-drilldown-contracts.sh "$DRILLDOWN_VERSION"
 
   drilldown-grafana-runtime-matrix:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -138,10 +150,12 @@ jobs:
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
       - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
         with:
@@ -157,7 +171,9 @@ jobs:
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run Grafana runtime compatibility profile
-        run: go test -v -tags=e2e -run '${{ matrix.test_regex }}' ./test/e2e-compat/
+        env:
+          TEST_REGEX: ${{ matrix.test_regex }}
+        run: go test -v -tags=e2e -run "$TEST_REGEX" ./test/e2e-compat/
       - name: Tear down Grafana runtime stack
         if: always()
         working-directory: test/e2e-compat

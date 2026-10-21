@@ -13,7 +13,7 @@ jobs:
   update-loc-badges:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7  # zizmor: ignore[artipacked] the step that pushes the badges branch uses the checkout credential on purpose
 
       - name: Count LOC
         id: loc
@@ -25,13 +25,16 @@ jobs:
           printf '%s\n' "$REAL" "$TEST"
 
       - name: Write badge JSON files
+        env:
+          LOC_REAL: ${{ steps.loc.outputs.real }}
+          LOC_TEST: ${{ steps.loc.outputs.test }}
         run: |
           mkdir -p /tmp/badges
           cat > /tmp/badges/loc-code.json <<EOF
           {
             "schemaVersion": 1,
             "label": "source code",
-            "message": "$(printf "%'.0f" ${{ steps.loc.outputs.real }}) LOC",
+            "message": "$(printf "%'.0f" "$LOC_REAL") LOC",
             "color": "blue"
           }
           EOF
@@ -39,7 +42,7 @@ jobs:
           {
             "schemaVersion": 1,
             "label": "test code",
-            "message": "$(printf "%'.0f" ${{ steps.loc.outputs.test }}) LOC",
+            "message": "$(printf "%'.0f" "$LOC_TEST") LOC",
             "color": "green"
           }
           EOF
