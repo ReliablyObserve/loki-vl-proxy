@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Releases are signed, ship SBOMs and build provenance, and the binaries are
+  reproducible.** Until now a release carried a checksums file and BuildKit's
+  minimal provenance, with nothing a user could check against the project's
+  identity. Both release workflows (`auto-release.yaml` and `release.yaml`) now
+  do the following, and a failure in any signing or attestation step stops the
+  release before the GitHub Release is created:
+  - the multi-arch container image is built with BuildKit provenance
+    (`mode=max`) and an SBOM, signed with keyless cosign by digest in GHCR (and
+    Docker Hub when its secrets are set), and attested with GitHub build
+    provenance pushed to the registry. The image is first pushed by digest
+    only; the version tags (and `latest`) are created after the image is
+    signed and attested, and each is checked to resolve to the signed digest;
+  - the Helm chart is signed by its OCI digest (read from `helm push`) in GHCR
+    (and in Docker Hub in `release.yaml`), and the chart archive gets GitHub
+    build provenance. A chart cannot be pushed without its version tag, so that
+    tag is visible for a short time before the chart is signed; a signing
+    failure still stops the GitHub Release from being created;
+  - `checksums.txt` is signed with `cosign sign-blob` and published as
+    `checksums.txt.sigstore.json`; every binary gets GitHub build provenance
+    from the checksums file and an SPDX JSON SBOM
+    (`loki-vl-proxy-<os>-<arch>.spdx.json`, generated with Syft 1.54.1) that is
+    attested to the binary and attached to the release;
+  - the release notes end with a "Verify this release" block listing the image
+    and chart digests and the verification commands.
+
+  Signatures use Sigstore short-lived certificates issued to the workflow run;
+  there is no signing key to protect, and each signature is recorded in
+  Sigstore's public transparency log. The workflows gain the `id-token: write`
+  and `attestations: write` permissions for this. cosign v3.1.3, Syft v1.54.1
+  and the new actions are pinned by version and commit SHA, and the Helm
+  version that prints the chart digest is pinned to v4.1.4.
+- **Release binaries are built reproducibly.** The binaries and the image's
+  binaries are built with `-trimpath`, and the embedded build time is the commit
+  time of the release commit instead of the time of the build. Building the same
+  commit with Go 1.27.3 from two different directories gives the same SHA-256;
+  without `-trimpath` the two builds differ. `SECURITY.md` lists the exact
+  command to rebuild a binary from a tag and compare it with `checksums.txt`.
+  `release.yaml` also embeds the commit the tag points to as the binary's
+  revision (and the image's `REVISION` build argument), where it used the head
+  of the ref the workflow was dispatched from, so a republished release can be
+  rebuilt from its tag as well.
+- **Container base images are pinned by digest.** Both `FROM` lines in the
+  `Dockerfile` now carry the multi-arch index digest next to the tag
+  (`golang:1.27.3-alpine3.24@sha256:...`,
+  `gcr.io/distroless/static-debian12:nonroot@sha256:...`), so a rebuild cannot
+  pick up a moved tag. Dependabot's `docker` ecosystem already covers `/` and
+  updates tag and digest together.
+- **`release.yaml` no longer holds write permissions at the workflow level.**
+  The top-level `permissions` block is now `contents: read` and the `release`
+  job declares the scopes it needs (`contents` and `packages` write, plus
+  `id-token` and `attestations` write; the job makes no pull request API
+  calls, so `pull-requests: write` is dropped), which is what OpenSSF
+  Scorecard's Token-Permissions check asks for.
+- **Publishing is limited to `main` and `v*` tags, and a tag on another commit
+  stops the release.** Both publishing jobs now fail before tagging or pushing
+  when they run from any other ref, and `auto-release.yaml` fails when the
+  release tag already exists on a commit other than the one being released,
+  instead of publishing artifacts built from one commit under another's tag.
+- **`SECURITY.md` documents how to verify a release and the patch policy.** A new
+  "Verifying Releases" section gives the cosign and `gh attestation` commands
+  for the image, the chart and the binaries, the certificate identity each
+  workflow produces, how to rebuild a binary from a tag, and how to pin by
+  digest. "Supported Versions" now lists 2.x as supported (latest release) and
+  1.x as unsupported, with a patch policy: fixes ship in a new release of the
+  latest 2.x line, there are no backports, and release notes name the advisory
+  IDs.
+
 ## [2.22.0] - 2026-10-21
 
 ### Security
