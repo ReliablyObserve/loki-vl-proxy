@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **The release pull request scope check accepts release metadata that has no
+  `service.version` example in `docs/observability.md`.** The check required that
+  example to carry the release version, but the file has had no such example for
+  a long time, so the release bot's metadata pull request (which changes only
+  `CHANGELOG.md` and the chart version) failed it. The check now compares the
+  example only when the file has one, and then it must match the release
+  version.
+
 ## [2.24.0] - 2026-10-21
 
 ### Security
@@ -72,16 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match its branch version, and carry only verified-signed commits, and a daily
   performance pull request may change only the benchmark results, history and
   performance report files. Any other pull request passes the check at once.
-
-### CI
-
-- **The release pull request scope check accepts release metadata that has no
-  `service.version` example in `docs/observability.md`.** The check required that
-  example to carry the release version, but the file has had no such example for
-  a long time, so the release bot's metadata pull request (which changes only
-  `CHANGELOG.md` and the chart version) failed it. The check now compares the
-  example only when the file has one, and then it must match the release
-  version.
 
 ## [2.23.2] - 2026-10-21
 
