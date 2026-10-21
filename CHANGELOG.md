@@ -9,14 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
-- **The release pull request scope check accepts release metadata that has no
-  `service.version` example in `docs/observability.md`.** The check required that
-  example to carry the release version, but the file has had no such example for
-  a long time, so the release bot's metadata pull request (which changes only
-  `CHANGELOG.md` and the chart version) failed it. The check now compares the
-  example only when the file has one, and then it must match the release
-  version.
-
 - **The daily performance run no longer opens a pull request when nothing it
   measures changed.** Every day the scheduled run repeated the 4-hour
   measurement and updated or opened a daily report pull request, even when the
@@ -135,6 +127,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example under `detected_level!="info"`) came back with no `detected_level`
   label, where Loki's series carries the level its body decides (`unknown` when
   nothing does).
+
+## [2.24.1] - 2026-10-21
+
+### CI
+
+- **The release pull request scope check accepts release metadata that has no
+  `service.version` example in `docs/observability.md`.** The check required that
+  example to carry the release version, but the file has had no such example for
+  a long time, so the release bot's metadata pull request (which changes only
+  `CHANGELOG.md` and the chart version) failed it. The check now compares the
+  example only when the file has one, and then it must match the release
+  version.
+
+### Security
+
+- **OpenSSF Scorecard runs again, is published, and has a target.** The
+  pull-request Scorecard step pulled `gcr.io/openssf/scorecard:stable`, which
+  that registry no longer serves without billing ("This API method requires
+  billing to be enabled"); the step is allowed to fail and the guardrail skips
+  an empty report, so no pull request has been scored since. It now pulls
+  `ghcr.io/ossf/scorecard:v5.6.0` pinned by digest, the version bundled by
+  `ossf/scorecard-action` v2.5.0, and a new `scorecard.yaml` workflow publishes
+  the result for `main` (on push and weekly) to the public Scorecard API through
+  that action, shown by a README badge once it has run on `main`; the result is
+  kept as an artifact and not uploaded to code scanning. A local Scorecard
+  v5.3.0 run against `main` on 2026-10-21 scored 6.9; `docs/security.md` sets a
+  target of 8.0 or higher. The badge workflows no longer grant
+  `contents: write` to every job: it moves to the one job that needs it, which
+  takes `Token-Permissions` from 0 to 10 (measured with Scorecard `--local` on
+  the workflow tree with this change). `Signed-Releases` is already partly
+  delivered (releases since v2.22.1 carry `checksums.txt.sigstore.json`) and
+  needs `.intoto.jsonl` provenance assets on releases to reach 10, planned
+  separately.
 
 ## [2.24.0] - 2026-10-21
 
