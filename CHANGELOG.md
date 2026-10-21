@@ -33,6 +33,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   results, then a slower first answer, then a slower repeated answer, largest gap
   first, using `conformance/reports/performance.md`, `gaps.md` and the daily trend.
 
+### Performance
+
+- **Grafana Explore's logs volume with a level selected
+  (`sum by (level, detected_level) (count_over_time({...} | detected_level="info"
+  | json | drop __error__ [1m]))`) reads the level from the stored fields
+  instead of parsing every line of the window as logfmt.** The filter before
+  `| json` was rendered as it is for a log query, `| unpack_logfmt | filter
+  level:="info"`, so VictoriaLogs parsed the whole body of every row of the
+  window as logfmt, in the stats query and in each parse-risk probe, where the
+  same volume without the filter only reads the stored level fields. In Loki,
+  `detected_level` is structured metadata set at ingest and present on every
+  line before any parser runs, and `| json` cannot change it (a body key of
+  that name becomes `detected_level_extracted`), so the filter keeps the same
+  lines before the parser as after it. The proxy now applies it the way it
+  applies the filter after the parser: the stats query copies the stored
+  `level` and `detected_level` fields and keeps the rows a stored spelling of
+  the filtered level can match (`info`, `INF`, `Information` and so on for
+  `detected_level="info"`; `=`, `!=`, `=~` and `!~` alike), the answer is
+  merged by the normalised level, and a window holding rows with no stored
+  level (whose body decides) asks again with the `detected_level` chain, whose
+  filter is on the computed level, as the volume with the filter after
+  `| json` already did. The stats query starts from the stream selector and the
+  line filters (and the other label filters before the parser), without the
+  logfmt unpack. The parse-risk probes read the same rows narrowed by the
+  stored-level filter, that is the selector plus that filter, so they read only
+  the rows the level filter can let through. When a probe finds a line the two
+  parsers read differently, the raw-row evaluator fetches the same narrowed
+  rows and applies the filter to the level it derives for each, so it answers
+  as the stats do (and so does the lookup of an unparsed line that fails a
+  metric without `drop __error__`). Range and instant queries both take the
+  stats path.
+  Measured against Loki 3.7.7 on the 1 hour Explore volume, 94 ms before and
+  25 ms now, where Loki answers in 37 ms. On VictoriaLogs alone with 7 days of
+  data seeded, the 6 hour window went from 1.72 s to 432 ms, the 24 hour window
+  from 6.72 s to 1.68 s, and the 7 day window from an HTTP 504 to 12.5 s. On
+  data with no stored level label, the 1 hour window went from 293 ms to 62 ms
+  and the 24 hour window from 6.86 s to 1.62 s.
+  Not covered yet, and unchanged: plans with `| logfmt`, the route that skips
+  `| json` when it cannot affect the aggregation (for example
+  `sum(count_over_time({...} | detected_level="info" | json | drop __error__
+  [1m]))`, or `sum by (app)` with `app` in the selector) and the Drilldown
+  field breakdown's native histogram still render the filter as the logfmt
+  unpack. With `-detected-level-body-scan=false` a plan that reads the level
+  only in this filter (a volume grouped by a parsed key, for example) keeps the
+  earlier rendering on the stats path; a plan that also groups by `level` or
+  `detected_level`, and any window the raw-row evaluator answers, now use the
+  stored-level filter and a level derived from the stored fields only, where
+  they used the logfmt rendering before.
+
+### Fixed
+
+- **A volume filtered on the level before `| json` counted lines under the
+  wrong level, in both directions.** The logfmt unpack that rendered the filter
+  lets a `level=` token in a message overwrite the stored level of its stream,
+  where Loki's `detected_level` is assigned at ingest and a message never
+  changes it. So a line in an `info` stream whose body said `level=error` or
+  `level=warn` was dropped from `detected_level="info"`, a line whose level
+  comes only from a JSON body key or from a stored spelling such as
+  `Information` was dropped as well, and a line in another stream (stored level
+  `debug`) whose body said `level=info` was counted as `info`. The answer now
+  matches Loki for these lines. A metric that keeps the stream's labels (no
+  vector aggregation, or `sum without`) also answers as the same filter after
+  `| json` does: a line with no stored level that the filter lets through (for
+  example under `detected_level!="info"`) came back with no `detected_level`
+  label, where Loki's series carries the level its body decides (`unknown` when
+  nothing does).
+
 ## [2.24.0] - 2026-10-21
 
 ### Security

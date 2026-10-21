@@ -1,0 +1,73 @@
+id: semantics/detected-level-filter-before-parser-pushdown
+title: A detected_level filter before `| json` reads the stored level fields, so the Explore volume stays on stats buckets without parsing every line
+proves:
+  - parser-error-and-label-collision
+consumer: explore
+why: |
+  Grafana Explore's logs volume with a level selected sends
+  `sum by (level, detected_level) (count_over_time({env="production"} |
+  detected_level="info" | json | drop __error__ [1m]))`. In Loki,
+  detected_level is structured metadata assigned at ingest (the stream's or
+  stored level, else the line's own level key or keyword), present on every
+  line before any parser runs, and `| json` cannot change it (a body key of
+  that name becomes detected_level_extracted). The filter therefore keeps the
+  same lines before and after the parser, and a `level=` token inside a
+  message never changes a line's detected_level.
+
+  The route rendered a filter before the parser the way a log query does: the
+  translator turns it into `| unpack_logfmt | filter level:="info"`, so
+  VictoriaLogs parsed every row of the window as logfmt in the stats query
+  and in each probe (15x slower than Loki warm, 562 ms against 37 ms, on the
+  benchmark's 3 h window), and the unpack overwrote a stored `level` with a
+  `level=` token of the line, counting a message holding `level=debug` in an
+  info stream as debug where Loki counts info; a line without a stored level
+  was dropped by the filter instead of being decided by its body.
+
+  Now the filter before the first parser is applied like the same filter after
+  it: the stats query copies the stored level fields and keeps the rows a
+  stored spelling of the level can match (translator.BuildStoredLevelCopyFilter),
+  the answer is merged by the normalised level, and a window with rows no
+  stored level decides asks again with the detected_level chain, whose filter
+  is on the computed level. The stats query starts from the selector and the
+  line filters, with no logfmt unpack, and each parse-risk probe runs on the
+  selector plus the stored-level filter (the rows the level filter can let
+  through). When a probe finds a line the parsers read differently, the
+  raw-row evaluator fetches the same narrowed rows and applies the filter to
+  the level it derives for each, so it answers as the stats do. Instant
+  queries take the stats path too.
+
+  Covered: the ordered-JSON metric route for a filter on detected_level before
+  `| json`, range and instant, one filter or several. Not covered, and
+  unchanged (follow-ups): plans with `| logfmt`, the route that skips `| json`
+  when it cannot affect the aggregation (`sum(count_over_time({..} |
+  detected_level="info" | json | drop __error__ [1m]))`, or `sum by (app)` with
+  app in the selector) and the native Drilldown histogram still render the
+  filter as the logfmt unpack. A server started with
+  -detected-level-body-scan=false keeps the translator's rendering on the
+  stats path for a plan that reads the level only in this filter; a plan that
+  also groups by level or detected_level, and any window the raw-row evaluator
+  answers, use the stored-level filter and a level derived from the stored
+  fields only. The log-query rendering of the translator is unchanged.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({env="production"} | detected_level="info" | json | drop __error__ [1m]))'
+    start: now-3h
+    end: now
+    step: "10"
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values: lines of a stream whose level is
+    info (or whose body decides info) count as info whatever `level=` token
+    their message holds. Answered from `stats_query_range` over
+    `... | copy detected_level as __dl_d, level as __dl_l | filter (...)
+    | unpack_json fields (level) keep_original_fields | stats by (level, __dl_d,
+    __dl_l) ...`, with the parse-risk probes on the selector plus the
+    stored-level filter (the rows the level filter can let through), with no
+    `unpack_logfmt` and no raw-row fetch.
