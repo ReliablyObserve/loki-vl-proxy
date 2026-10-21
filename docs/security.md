@@ -182,9 +182,10 @@ That removes the weaker edge-path behavior where scanners could still reach miss
 - the runtime image now runs as a non-root user
 - the runtime image keeps a read-only root filesystem
 - Helm drops all capabilities and blocks privilege escalation
-- with `systemMetrics.hostProc.enabled=true` (the default), the chart mounts five individual host files read-only as `hostPath` `type: File` volumes — `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` — under `/host/proc` and passes `-host-proc-root`; the host's `/proc` directory and other workloads' per-process data are not mounted
+- with default values the rendered pod spec has no `hostPath` volume and passes the Pod Security `baseline` and `restricted` profiles
+- `systemMetrics.hostProc.enabled` is `false` by default. Setting it to `true` makes the chart mount five individual host files read-only as `hostPath` `type: File` volumes — `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` — under `/host/proc` and pass `-host-proc-root`; the host's `/proc` directory and other workloads' per-process data are not mounted
 
-These `hostPath` mounts are intentional. Trivy would normally flag them (`KSV-0121`), so CI uses a narrow `.trivyignore.yaml` exception for the chart deployment template rather than disabling the broader class of checks. Disable `systemMetrics.hostProc` on clusters that forbid `hostPath`.
+The opt-in `hostPath` mounts are rejected by Pod Security `baseline` and `restricted`, so the namespace must be labeled `privileged` or the workload exempted in your admission policy. Trivy flags them as `KSV-0121`; the repository's `.trivyignore.yaml` carries no exception for them because the default render does not contain them. Leave `systemMetrics.hostProc` off on clusters that forbid `hostPath`.
 
 ## Release Verification
 

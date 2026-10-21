@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **The Helm chart no longer mounts the host `/proc` files by default.**
+  `systemMetrics.hostProc.enabled` now defaults to `false`; it was `true`, which
+  mounted five `hostPath` volumes (`/proc/stat`, `/proc/meminfo`,
+  `/proc/pressure/{cpu,memory,io}`) and passed `-host-proc-root=/host/proc`.
+  Anyone who relies on the node's own files for the host-level CPU, memory and
+  pressure metrics (`host_cpu_*`, `host_memory_*`, `process_pressure_*`) must set
+  `systemMetrics.hostProc.enabled=true` and run in a namespace that allows
+  `hostPath` volumes (Pod Security `privileged`, or an admission exemption).
+  Without it the proxy starts as before and reads those files from the
+  container's own `/proc`, so the host-scope families report whatever that view
+  exposes; `process_*`, `runtime_*` and network metrics are unchanged.
+
+### Security
+
+- **The Helm chart passes Pod Security `restricted` with default values.** The
+  default pod spec contained five `hostPath` volumes for the host `/proc` files,
+  which both the `baseline` and `restricted` profiles reject. They are now opt-in
+  (see Breaking Changes), so the default render has no `hostPath` volume. The
+  Trivy `KSV-0121` suppression in `.trivyignore.yaml` is removed because nothing
+  in the default render needs it any more.
+
 ## [2.24.2] - 2026-10-21
 
 ### CI

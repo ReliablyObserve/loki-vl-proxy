@@ -52,6 +52,8 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `workload.kind` | `Deployment` | Workload type: `Deployment` or `StatefulSet` |
 | `horizontalPodAutoscaling.enabled` | `false` | Enable HPA (omits `spec.replicas` from workload) |
 | `podDisruptionBudget.enabled` | `false` | Enable PodDisruptionBudget |
+| `systemMetrics.hostProc.enabled` | `false` | Mount five host `/proc` files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) read-only as `hostPath` volumes and pass `-host-proc-root`, for host-level CPU, memory and PSI metrics. Off by default so the pod passes Pod Security `restricted`; see [Host system metrics](#host-system-metrics-opt-in) |
+| `systemMetrics.hostProc.mountPath` | `/host/proc` | Where those files are mounted, and the value passed to `-host-proc-root` |
 
 ## Production Setup (StatefulSet + Peer Cache + Disk Cache)
 
@@ -130,6 +132,21 @@ prometheusRule:
 ```
 
 The ServiceMonitor scrapes the `metrics` port (`extraArgs.metrics-listen`, default `:9091`). To push metrics over OTLP without a scrape endpoint, set `extraArgs.server.register-instrumentation: "false"`, `extraArgs.metrics-listen: ""` and `service.metrics.enabled: false` together.
+
+## Host system metrics (opt-in)
+
+By default the chart mounts no `hostPath` volume, so the rendered pod passes the Pod Security `baseline` and `restricted` profiles. The proxy then reads `process_*`, `runtime_*` and network metrics from its own container, and reads the host-scope files (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) from the container's own `/proc`.
+
+To report host-level CPU, memory and PSI (pressure) metrics from the node's own files, opt in:
+
+```yaml
+systemMetrics:
+  hostProc:
+    enabled: true
+    mountPath: /host/proc
+```
+
+This mounts exactly five files read-only as `hostPath` volumes of type `File` (`/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`) and adds `-host-proc-root=/host/proc`. The host `/proc` directory and other workloads' per-process data are not mounted. Pod Security `baseline` and `restricted` reject `hostPath` volumes, so label the namespace `pod-security.kubernetes.io/enforce: privileged` or exempt the workload in your admission policy. Security scanners (Trivy `KSV-0121`) flag these volumes when it is enabled. See [`docs/security.md`](../../docs/security.md) and [`docs/observability.md`](../../docs/observability.md).
 
 ## Listeners and Secrets
 
