@@ -17,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example only when the file has one, and then it must match the release
   version.
 
+### Documentation
+
+- **Contributing guide: performance rules.** A new "Performance Rules" section
+  states the bar contributions are held to, not a claim that the proxy already
+  meets it everywhere: no query shape or time range slower than Loki, with Loki's
+  result, on bounded resources. It names how the repository measures that: the
+  daily A/B (last release vs `main` vs Loki) records the first-run and repeated
+  p50 per shape and range, and refresh latency only when an A/B runs with
+  `--refresh-s`; the pull-request A/B compares the base with the branch and Loki
+  on the shapes the change touches plus the control smoke set, with VictoriaLogs
+  CPU sampled during it, while proxy CPU and memory come from the Go benchmarks and
+  load test of the quality report (VictoriaLogs memory is reported by the author
+  where a change could affect it). Work is prioritised errors, then differing
+  results, then a slower first answer, then a slower repeated answer, largest gap
+  first, using `conformance/reports/performance.md`, `gaps.md` and the daily trend.
+
 ## [2.24.0] - 2026-10-21
 
 ### Security
