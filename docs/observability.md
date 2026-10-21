@@ -473,7 +473,7 @@ Kubernetes notes:
 - These runtime/system metrics are read from `/proc` and do not require Kubernetes RBAC permissions.
 - PSI metrics (`process_pressure_*`) depend on kernel support and may be absent on nodes without `/proc/pressure/*`.
 - On startup, the proxy logs a system-metrics readiness check with missing families and remediation hints instead of failing silently.
-- Host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) use `-host-proc-root`; self/container-scope reads (`self/*`, `net/dev`) use `-proc-root` (both default to `/proc`). With `systemMetrics.hostProc.enabled=true` (default) the chart mounts only those five host files read-only under `/host/proc` and sets `-host-proc-root=/host/proc`; it never mounts the whole host `/proc`.
+- Host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) use `-host-proc-root`; self/container-scope reads (`self/*`, `net/dev`) use `-proc-root` (both default to `/proc`). The chart leaves `systemMetrics.hostProc.enabled` off by default (no `hostPath` volume, so the pod passes Pod Security `restricted`), and the proxy then reads the host-scope files from the container's own `/proc`. Set `systemMetrics.hostProc.enabled=true` to mount only those five host files read-only under `/host/proc` and set `-host-proc-root=/host/proc`; this needs a namespace that allows `hostPath` volumes, and the chart never mounts the whole host `/proc`.
 - For per-pod attribution in OTLP backends, set `OTEL_SERVICE_INSTANCE_ID` from pod name and `OTEL_SERVICE_NAMESPACE` from pod namespace (the upstream chart now injects these by default).
 - CI includes a metric-name guard so new app metrics must stay under the `loki_vl_proxy_*` prefix unless explicitly allowlisted for compatibility.
 

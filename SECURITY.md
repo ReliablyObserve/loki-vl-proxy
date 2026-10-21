@@ -58,7 +58,7 @@ Do NOT open a public issue for security vulnerabilities.
 - **`text/template` in `| line_format`**: Go templates are executed on query results. The template FuncMap is restricted to safe string functions, but this is still a surface to treat carefully in shared environments.
 - **Disk cache**: No application-level encryption. Use cloud-provider or node-level disk encryption for data at rest.
 - **Backend TLS skip**: `-backend-tls-skip-verify` disables certificate validation for VictoriaLogs connections.
-- **Host `/proc` files for system metrics**: with `systemMetrics.hostProc.enabled=true` (the default), the Helm chart mounts five individual host files read-only (`/proc/stat`, `/proc/meminfo`, `/proc/pressure/{cpu,memory,io}`) and sets `-host-proc-root`. The whole host `/proc` directory is not mounted. The `hostPath` exception is narrowly allowlisted in CI; disable it on clusters that forbid `hostPath`.
+- **Host `/proc` files for system metrics**: off by default (`systemMetrics.hostProc.enabled=false`), so the Helm chart renders no `hostPath` volume and passes the Pod Security `baseline` and `restricted` profiles. When you set `systemMetrics.hostProc.enabled=true`, the chart mounts five individual host files read-only (`/proc/stat`, `/proc/meminfo`, `/proc/pressure/{cpu,memory,io}`) and sets `-host-proc-root`; the whole host `/proc` directory is not mounted, but the namespace must allow `hostPath` volumes (Pod Security `privileged`, or an admission exemption) and security scanners will flag them.
 
 ## Security Testing And CI
 

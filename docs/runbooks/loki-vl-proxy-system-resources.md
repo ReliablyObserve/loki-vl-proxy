@@ -27,8 +27,8 @@
 ## Kubernetes-Specific Checks
 
 1. Confirm which scope each family reports. Host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) use `-host-proc-root`; self/container-scope reads (`self/*`, `net/dev`) use `-proc-root` (default `/proc`):
-   - `systemMetrics.hostProc.enabled: true` (chart default)
-   - the chart mounts only the five host files `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` (read-only `hostPath` of type `File`) under `systemMetrics.hostProc.mountPath` (default `/host/proc`) and auto-sets `-host-proc-root=/host/proc`
+   - `systemMetrics.hostProc.enabled: false` (chart default): no host mounts, the proxy reads the container's own `/proc` (`-host-proc-root` defaults to `/proc`)
+   - `systemMetrics.hostProc.enabled: true` (opt-in; needs a namespace that allows `hostPath` volumes): the chart mounts only the five host files `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` (read-only `hostPath` of type `File`) under `systemMetrics.hostProc.mountPath` (default `/host/proc`) and auto-sets `-host-proc-root=/host/proc`
 2. Verify the container has read access to the mounted files; PSI files are absent on kernels without `/proc/pressure/*`.
 3. If scraping is disabled (`server.register-instrumentation=false`), ensure OTLP pipeline is healthy and metrics are queryable in your backend.
 

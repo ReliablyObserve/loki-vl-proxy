@@ -1,4 +1,5 @@
-misconfigurations:
-  - id: KSV-0121
-    paths:
-      - charts/loki-vl-proxy/templates/deployment.yaml
+# Trivy misconfiguration suppressions. Empty on purpose: the chart renders no
+# hostPath volume with default values (systemMetrics.hostProc.enabled=false),
+# so KSV-0121 no longer needs an exception. Add an entry here only with a
+# scoped path and a reason comment.
+misconfigurations: []

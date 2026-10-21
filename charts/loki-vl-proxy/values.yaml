@@ -314,8 +314,8 @@ extraArgs:
   # exact-parser-series-identity: "false"             # name | json / | logfmt metric series with the parsed labels (Loki parity, evaluated from rows)
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
   # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
-  # System metrics scope (the chart auto-injects host-proc-root=/host/proc when
-  # systemMetrics.hostProc.enabled=true; uncomment here only to override):
+  # System metrics scope (the chart auto-injects host-proc-root=/host/proc only when
+  # systemMetrics.hostProc.enabled=true, which is off by default; uncomment here only to override):
   # host-proc-root: "/host/proc"          # filesystem root for host-scope reads (stat, meminfo, pressure/*)
   # proc-root: "/proc"                    # filesystem root for self/container-scope reads (self/*, net/dev)
   #
@@ -860,9 +860,23 @@ extraVolumes: []
 extraVolumeMounts: []
 
 # --- System metrics (/proc) ---
-# When enabled, the chart mounts FIVE specific host /proc files (not the full
-# /proc directory) read-only and passes --host-proc-root=<mountPath> so the
-# proxy reads host CPU, memory, and PSI counters from them:
+# Off by default so the chart's pod spec passes the Kubernetes Pod Security
+# Standards "baseline" and "restricted" profiles (hostPath volumes are not
+# allowed by either).
+#
+# With hostProc.enabled=false the proxy still starts and serves its
+# process_*, runtime_*, and network metric families from the container's own
+# /proc (the chart passes no --host-proc-root, so host-scope reads default to
+# /proc inside the container). The host-scope families (host_cpu_*,
+# host_memory_*, process_pressure_*) then report whatever the container's /proc
+# exposes, which on most runtimes is the kernel-wide view but is not
+# guaranteed (for example under lxcfs or a sandboxed runtime) and is absent
+# where the kernel has no /proc/pressure.
+#
+# With hostProc.enabled=true the chart mounts FIVE specific host /proc files
+# (not the full /proc directory) read-only and passes
+# --host-proc-root=<mountPath>, so the proxy reads host CPU, memory, and PSI
+# counters from them:
 #   /proc/stat              -> {mountPath}/stat              (host CPU)
 #   /proc/meminfo           -> {mountPath}/meminfo           (host memory)
 #   /proc/pressure/cpu      -> {mountPath}/pressure/cpu      (PSI cpu)
@@ -873,13 +887,15 @@ extraVolumeMounts: []
 # Self/container-scope metrics (self/{status,io,stat,fd}, net/dev) come from
 # the container's own /proc and need no hostPath.
 #
-# Enabled by default so system-resource panels/alerts work out of the box.
-# Disable on restricted PSA clusters that forbid hostPath mounts; doing so
-# drops the host_cpu_*, host_memory_*, and process_pressure_* metric families
-# but leaves process_*, runtime_*, and network counters intact.
+# To opt in:   --set systemMetrics.hostProc.enabled=true
+# The namespace must then allow hostPath volumes, which Pod Security
+# "baseline" and "restricted" reject; label it for "privileged", or exempt the
+# workload in your admission policy (Kyverno, Gatekeeper, a PSA exemption).
+# Security scanners (Trivy KSV-0121, kube-linter, Checkov) will flag the
+# hostPath volumes in that configuration.
 systemMetrics:
   hostProc:
-    enabled: true
+    enabled: false
     mountPath: /host/proc
 
 # --- Gateway API HTTPRoute (traffic distribution) ---
