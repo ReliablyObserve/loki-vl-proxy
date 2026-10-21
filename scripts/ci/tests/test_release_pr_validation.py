@@ -174,6 +174,31 @@ class ScopeCheckTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("service.version", proc.stdout)
 
+    def test_observability_without_a_service_version_example_passes(self):
+        proc = self.metadata(contents=self.metadata_contents(**{
+            "docs/observability.md": "# Observability\n\nNo version example here.\n"}))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_observability_example_with_a_stale_version_fails(self):
+        proc = self.metadata(contents=self.metadata_contents(**{
+            "docs/observability.md": 'example: {"service.version":"1.2.2"}\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("'1.2.2', not 1.2.3", proc.stdout)
+
+    def test_observability_key_without_a_string_value_fails(self):
+        proc = self.metadata(contents=self.metadata_contents(**{
+            "docs/observability.md": 'the "service.version" attribute\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_metadata_pull_request_that_changes_only_changelog_and_chart_passes(self):
+        # The shape of the release bot's real pull request: no README or
+        # observability change, one verified commit, observability has no example.
+        proc = self.metadata(
+            names=["CHANGELOG.md", "charts/loki-vl-proxy/Chart.yaml"],
+            contents=self.metadata_contents(**{"docs/observability.md": "# Observability\n"}),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
     def test_other_author_fails(self):
         proc = self.metadata(author="someone-else")
         self.assertNotEqual(proc.returncode, 0)

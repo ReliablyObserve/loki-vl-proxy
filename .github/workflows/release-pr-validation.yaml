@@ -145,8 +145,15 @@ jobs:
           if ! awk -v h="## [${version}]" 'index($0, h) == 1 { found = 1 } END { exit !found }' "${dir}/changelog"; then
             fail "CHANGELOG.md has no ## [${version}] section"
           fi
-          if ! grep -Fq "\"service.version\": \"${version}\"" "${dir}/observability"; then
-            fail "docs/observability.md service.version example is not ${version}"
+          # The sync script rewrites the first "service.version" example in
+          # docs/observability.md when the file has one. A file without that key
+          # has nothing to check; one with the key must carry this version.
+          if grep -Fq '"service.version"' "${dir}/observability"; then
+            example="$(grep -oE '"service\.version":[[:space:]]*"[^"]*"' "${dir}/observability" | head -n 1 \
+              | sed -E 's/^.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
+            if [ "${example}" != "${version}" ]; then
+              fail "docs/observability.md service.version example is '${example}', not ${version}"
+            fi
           fi
 
           # Every commit on the PR must carry a verified signature.
