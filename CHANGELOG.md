@@ -60,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   language) in a separate job next to the unchanged Go analysis, and a unit test fails the build when a
   `uses:` is not a local path, a digest-pinned `docker://` image or an
   `owner/repo@<commit SHA>` with a `# v<version>` comment.
+- **Release metadata and daily performance pull requests are opened by the
+  release bot with auto-merge armed.** They merge by themselves only after the
+  maintainer approves them and the required checks pass; no workflow approves a
+  pull request or merges around the review rule. `release-pr-validation` checks
+  the scope of these pull requests on every pull request to `main`, from
+  `main`'s definition and without running any pull request code: a release
+  metadata pull request may change only the four release metadata files, must
+  match its branch version, and carry only verified-signed commits, and a daily
+  performance pull request may change only the benchmark results, history and
+  performance report files. Any other pull request passes the check at once.
 
 ## [2.23.2] - 2026-10-21
 

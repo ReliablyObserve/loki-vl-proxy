@@ -156,6 +156,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Open or update the daily report PR
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
@@ -189,4 +190,25 @@ jobs:
             gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
           else
             gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+            PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          fi
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Arm auto-merge on the daily report PR
+        if: steps.pr.outputs.number != ''
+        env:
+          # The bot token only: a pull request the job's own token opened does not
+          # start the pull_request workflows, so it could not pass its checks.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          # Auto-merge merges the pull request by itself once the maintainer
+          # approves it and the required checks pass. Nothing merges before that.
+          # The report is already published as a PR: a problem here only warns.
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured; enable auto-merge on pull request #${PR_NUMBER} by hand"
+            exit 0
+          fi
+          if ! gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash; then
+            echo "::warning::could not arm auto-merge on pull request #${PR_NUMBER}; enable it by hand"
           fi

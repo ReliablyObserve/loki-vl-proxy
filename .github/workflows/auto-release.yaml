@@ -768,7 +768,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
-            echo "::warning::RELEASE_PR_TOKEN is not configured. Metadata PRs created by github-actions may not trigger pull_request checks automatically."
+            echo "::warning::RELEASE_PR_TOKEN is not configured. The metadata branch is pushed with the job token and no pull request is opened for it."
           fi
           chmod +x scripts/ci/sync_release_metadata.sh
           scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" . "${GITHUB_REPOSITORY}"
@@ -804,19 +804,57 @@ jobs:
           fi
           echo "release metadata commit ${METADATA_SHA} on ${BRANCH} (signed by GitHub)"
 
-      - name: Announce the release metadata branch
+      - name: Open the release metadata pull request and arm auto-merge
         if: steps.metadata.outputs.has_changes == 'true'
         env:
+          # The bot token is given to this step only. A pull request opened with
+          # the job's own token does not start the pull_request workflows, so it
+          # could never pass its required checks.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
-          BRANCH: ${{ steps.metadata.outputs.branch }}
         run: |
           set -euo pipefail
-          # The metadata pull request is opened by a maintainer from this branch, so
-          # the pull request and the commit that lands on main carry the maintainer's
-          # authorship, not the automation's.
-          echo "::notice::release metadata for v${VERSION} is on ${BRANCH}; open its pull request from a maintainer account"
-          {
-            echo "### Release metadata v${VERSION}"
-            echo
-            echo "Branch \`${BRANCH}\` holds the metadata commit. A maintainer opens the pull request to main."
-          } >> "$GITHUB_STEP_SUMMARY"
+          # The release itself is already published: a problem here warns and the
+          # run goes on, so the metadata pull request can be opened by hand.
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::warning::release version '${VERSION}' is not a plain semver; skipping the metadata pull request"
+            exit 0
+          fi
+          BRANCH="release/metadata-v${VERSION}"
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured; open the pull request from ${BRANCH} to main by hand and enable auto-merge"
+            echo "Release metadata v${VERSION}: branch \`${BRANCH}\` is pushed, no pull request was opened (RELEASE_PR_TOKEN is not configured)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          open_number() {
+            gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base main --state open \
+              --json number --jq '.[0].number // empty'
+          }
+          NUMBER="$(open_number)"
+          if [ -z "${NUMBER}" ]; then
+            BODY="$(printf '%s\n' \
+              "Sync release metadata files for v${VERSION} after the automated release:" \
+              "" \
+              "- CHANGELOG materialization" \
+              "- Helm chart version and appVersion" \
+              "- observability service.version example" \
+              "- README release badges")"
+            if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
+              --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then
+              echo "::warning::could not open the pull request from ${BRANCH}; open it by hand"
+              exit 0
+            fi
+            NUMBER="$(open_number)"
+          fi
+          if [ -z "${NUMBER}" ]; then
+            echo "::warning::no open pull request found for ${BRANCH}; open it by hand"
+            exit 0
+          fi
+          # Auto-merge merges the pull request by itself once the maintainer
+          # approves it and the required checks pass. Nothing merges before that.
+          if gh pr merge "${NUMBER}" --repo "${GITHUB_REPOSITORY}" --auto --squash; then
+            echo "Release metadata v${VERSION}: pull request #${NUMBER} is open with auto-merge armed; it merges after the maintainer's approval and the required checks." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::could not arm auto-merge on pull request #${NUMBER}; enable it by hand"
+            echo "Release metadata v${VERSION}: pull request #${NUMBER} is open, auto-merge could not be armed." >> "$GITHUB_STEP_SUMMARY"
+          fi

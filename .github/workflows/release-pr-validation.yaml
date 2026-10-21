@@ -1,82 +1,164 @@
 name: Release PR Validation
 
-on:
-  workflow_dispatch:
+# Scope guard for the pull requests the release bot opens: the release metadata
+# PR (release/metadata-v<version>) and the daily performance PR
+# (bench/daily-perf). Both are opened with auto-merge armed, so a merge happens
+# right after the maintainer approves and the required checks pass. This check
+# makes sure those PRs carry only what the bot is supposed to write.
+#
+# It runs on every pull request to main and reports a result on all of them:
+# a PR that is not one of the two bot PRs, or that comes from a fork, passes
+# at once. That lets it become a required check without blocking other PRs.
+#
+# pull_request_target runs this definition from main, never the PR's copy. The
+# job checks nothing out, runs nothing from the PR and holds no secrets: it
+# reads the PR's file list, commits and file contents through the API as data.
 
-permissions:
-  contents: read
+on:  # zizmor: ignore[dangerous-triggers] read-only token, no secrets, no checkout, and no PR content is executed: the job only reads the PR through the API, and it runs from main's definition so a PR cannot rewrite its own guard
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to check
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-pr-validation-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
 
 jobs:
   validate:
+    name: release-pr-scope
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Extract release version from branch
-        id: version
+      - name: Check the pull request scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+          # Logins that may open these PRs: the release bot and the repository owner.
+          ALLOWED_AUTHORS: reliablyobserve-bot szibis
         run: |
-          set -euo pipefail
-          BRANCH="${GITHUB_REF_NAME}"
-          VERSION="$(printf '%s' "$BRANCH" | sed -n 's/^release\/v\([0-9][0-9.]*\)$/\1/p')"
-          if [ -z "$VERSION" ]; then
-            echo "expected release branch like release/v1.0.0, got: $BRANCH"
+          set -Eeuo pipefail
+          trap 'echo "::error::the pull request could not be read through the API"' ERR
+          failed=0
+          fail() { echo "::error::$*"; failed=1; }
+
+          if ! [[ "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+            echo "::error::a pull request number is required, got: ${PR_NUMBER}"
             exit 1
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          pr="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          head_ref="$(jq -r '.head.ref' <<<"${pr}")"
+          head_sha="$(jq -r '.head.sha' <<<"${pr}")"
+          # A fork whose repository was deleted has no head repo: treat it as a fork.
+          head_repo="$(jq -r '.head.repo.full_name // "fork"' <<<"${pr}")"
+          base_ref="$(jq -r '.base.ref' <<<"${pr}")"
+          author="$(jq -r '.user.login' <<<"${pr}")"
 
-      - name: Verify release diff is limited to release artifacts
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          CHANGED="$(git diff --name-only origin/main...HEAD)"
-          echo "$CHANGED"
-          if [ -z "$CHANGED" ]; then
-            echo "release branch must contain release metadata changes"
-            exit 1
+          # Every other pull request passes at once.
+          if [ "${head_repo,,}" != "${REPO,,}" ] || [ "${base_ref}" != "main" ]; then
+            echo "not a same-repository pull request to main: nothing to check"
+            exit 0
+          fi
+          case "${head_ref}" in
+            bench/daily-perf) kind=perf ;;
+            release/metadata-v*) kind=metadata ;;
+            *) echo "branch ${head_ref} is not a release bot branch: nothing to check"; exit 0 ;;
+          esac
+          echo "checking the ${kind} pull request #${PR_NUMBER} from ${head_ref} at ${head_sha}"
+
+          # Author: the release bot or the repository owner.
+          allowed=0
+          for login in ${ALLOWED_AUTHORS}; do
+            if [ "${author,,}" = "${login,,}" ]; then allowed=1; fi
+          done
+          if [ "${allowed}" != 1 ]; then
+            fail "pull request author ${author} is not one of: ${ALLOWED_AUTHORS}"
           fi
 
+          # Changed files, including the old name of a renamed file, so a rename
+          # out of an unrelated directory cannot hide.
+          files="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[] | .filename, (.previous_filename // empty)')"
+          if [ -z "${files}" ]; then
+            fail "the pull request changes no files"
+          fi
+
+          if [ "${kind}" = perf ]; then
+            # The daily commit is a plain git commit by the workflow, so it is not
+            # signed. The squash merge creates and signs the commit that lands on
+            # main, so commit signatures are enforced for the metadata PR only.
+            while IFS= read -r path; do
+              case "${path}" in
+                bench/ab/results/*|bench/ab/history/*) ;;
+                conformance/registry/generated/perf-evidence.json) ;;
+                conformance/reports/performance.md|conformance/reports/gaps.md) ;;
+                *) fail "file outside the daily performance report: ${path}" ;;
+              esac
+            done <<<"${files}"
+            if [ "${failed}" != 0 ]; then exit 1; fi
+            echo "daily performance pull request is in scope"
+            exit 0
+          fi
+
+          # Release metadata: the version comes from the branch name.
+          semver='^release/metadata-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          if ! [[ "${head_ref}" =~ ${semver} ]]; then
+            fail "branch ${head_ref} is not release/metadata-v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+
+          # Exactly the files scripts/ci/sync_release_metadata.sh rewrites.
           while IFS= read -r path; do
-            case "$path" in
-              CHANGELOG.md|README.md|docs/observability.md|charts/loki-vl-proxy/Chart.yaml)
-                ;;
-              *)
-                echo "unexpected file in release PR: $path"
-                exit 1
-                ;;
+            case "${path}" in
+              CHANGELOG.md|README.md|docs/observability.md|charts/loki-vl-proxy/Chart.yaml) ;;
+              *) fail "file outside the release metadata files: ${path}" ;;
             esac
-          done <<< "$CHANGED"
+          done <<<"${files}"
 
-      - name: Verify changelog section exists
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          chmod +x scripts/ci/extract_changelog_section.sh
-          scripts/ci/extract_changelog_section.sh "$VERSION" CHANGELOG.md >/tmp/release-section.md
-          test -s /tmp/release-section.md
+          # File contents at the PR head, read as data and never executed.
+          dir="$(mktemp -d)"
+          read_head() {
+            gh api -H "Accept: application/vnd.github.raw+json" \
+              "repos/${REPO}/contents/${1}?ref=${head_sha}" >"${dir}/${2}"
+          }
+          read_head charts/loki-vl-proxy/Chart.yaml chart
+          read_head CHANGELOG.md changelog
+          read_head docs/observability.md observability
+          if ! grep -Fxq "version: ${version}" "${dir}/chart"; then
+            fail "Chart.yaml version is not ${version}"
+          fi
+          if ! grep -Fxq "appVersion: \"${version}\"" "${dir}/chart"; then
+            fail "Chart.yaml appVersion is not \"${version}\""
+          fi
+          if ! awk -v h="## [${version}]" 'index($0, h) == 1 { found = 1 } END { exit !found }' "${dir}/changelog"; then
+            fail "CHANGELOG.md has no ## [${version}] section"
+          fi
+          if ! grep -Fq "\"service.version\": \"${version}\"" "${dir}/observability"; then
+            fail "docs/observability.md service.version example is not ${version}"
+          fi
 
-      - name: Verify chart version matches release
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION="$RELEASE_VERSION"
-          grep -q "^version: ${VERSION}$" charts/loki-vl-proxy/Chart.yaml
-          grep -q "^appVersion: \"${VERSION}\"$" charts/loki-vl-proxy/Chart.yaml
+          # Every commit on the PR must carry a verified signature.
+          shas="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/commits" --paginate --jq '.[].sha')"
+          unverified="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/commits" --paginate \
+            --jq '.[] | select(.commit.verification.verified != true) | .sha')"
+          if [ -z "${shas}" ]; then
+            fail "the pull request has no commits"
+          fi
+          if [ -n "${unverified}" ]; then
+            fail "commits without a verified signature: ${unverified//$'\n'/ }"
+          fi
 
-      - name: Verify observability doc example version matches release
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION="$RELEASE_VERSION"
-          grep -q "\"service.version\": \"${VERSION}\"" docs/observability.md
-
-      - name: Helm lint
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
-
-      - name: Run Helm lint
-        run: helm lint charts/loki-vl-proxy/
+          if [ "${failed}" != 0 ]; then exit 1; fi
+          echo "release metadata pull request for ${version} is in scope"
