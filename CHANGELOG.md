@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Go 1.27.3.** Go 1.27.3 fixes GO-2026-6809 (crypto/x509: distrust
+  compromised intermediate certificates), which `govulncheck` reports as
+  reachable from the proxy's upstream HTTP client: reading a response body
+  (`seriesCountingReader.Read` in `internal/proxy/range_metric_compat.go`) can
+  verify a TLS certificate chain. With 1.27.2 every pull request failed the
+  govulncheck step. The builder image (`golang:1.27.3-alpine3.24`), `go.mod`,
+  `bench/go.mod` and every workflow move to 1.27.3; golangci-lint v2.14.0 and
+  gosec v2.29.0 (built with `x/tools` v0.52.0) read Go 1.27.3 unchanged and
+  report no issues.
+
 ## [2.21.1] - 2026-10-20
 
 ### Fixed
