@@ -195,7 +195,7 @@ func (p *Proxy) fetchLabelValuesIndexSnapshotFromPeer(peerAddr string, timeout t
 		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		return nil, 0, err
 	}
 	body, err := readBodyLimited(resp.Body, maxLabelValuesPeerSnapshotBytes)

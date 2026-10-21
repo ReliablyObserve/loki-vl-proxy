@@ -288,7 +288,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	if err != nil {
 		return nil, false, err.Error()
 	}
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, 0); err != nil { // a tail stream has no end, so no decoded length cap
 		_ = resp.Body.Close()
 		return nil, false, fmt.Sprintf("backend tail decode error: %v", err)
 	}

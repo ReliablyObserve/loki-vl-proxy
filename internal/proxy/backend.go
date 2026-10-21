@@ -696,7 +696,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 		return nil, err
 	}
 	p.observeBackendVersionFromHeaders(resp.Header)
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		_ = resp.Body.Close()
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)
@@ -776,7 +776,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		return nil, err
 	}
 	p.observeBackendVersionFromHeaders(resp.Header)
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		_ = resp.Body.Close()
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)

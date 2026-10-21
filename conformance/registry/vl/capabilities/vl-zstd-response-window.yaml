@@ -1,0 +1,27 @@
+id: vl-zstd-response-window
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  A VictoriaLogs /select/logsql/* answer is compressed with zstd when the client
+  sends Accept-Encoding: zstd alone (zstd, gzip gets gzip). Measured on
+  VictoriaLogs v1.49.0 and v1.52.0 (the live test also passes on v1.50.0, v1.51.1
+  and v1.53.0): a large answer (156 MiB of log lines, 53 MiB of
+  stats_query_range, 33 MiB of field_values) is one streamed frame with a 128 KiB
+  window and no declared length; only an answer under one block (about 40 KiB) is
+  a single-segment frame, whose window is its own length. TestVLCapability_ZstdResponseWindow
+  checks it on a 40 MiB answer and runs in the vl-pinned check and the version matrix.
+proxy_usage: |
+  The proxy decodes every VictoriaLogs zstd response with a 16 MiB window and
+  16 MiB decoder memory limit (backendZstdMaxWindow), because the decoder
+  allocates the window a frame declares before it decodes a byte and a hostile
+  backend could declare 512 MiB in a few bytes. The limit is far above what
+  VictoriaLogs sends; it would refuse a release that sent a large answer as a
+  single-segment frame or with a larger window.
+fallback: |
+  None on a supported version. If a VictoriaLogs release changed the framing, the
+  live test fails before the version is supported, and the fix is to raise the
+  proxy limit to what that release sends, not to remove it.
+proves: []

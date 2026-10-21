@@ -115,7 +115,7 @@ func TestDecodeCompressedHTTPResponse_Variants(t *testing.T) {
 			Header: http.Header{"Content-Encoding": []string{"identity"}},
 			Body:   io.NopCloser(bytes.NewReader(original)),
 		}
-		if err := decodeCompressedHTTPResponse(resp); err != nil {
+		if err := decodeCompressedHTTPResponse(resp, 1<<20); err != nil {
 			t.Fatalf("identity decode failed: %v", err)
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -139,7 +139,7 @@ func TestDecodeCompressedHTTPResponse_Variants(t *testing.T) {
 			Body:          io.NopCloser(bytes.NewReader(buf.Bytes())),
 			ContentLength: 123,
 		}
-		if err := decodeCompressedHTTPResponse(resp); err != nil {
+		if err := decodeCompressedHTTPResponse(resp, 1<<20); err != nil {
 			t.Fatalf("gzip decode failed: %v", err)
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -166,7 +166,7 @@ func TestDecodeCompressedHTTPResponse_Variants(t *testing.T) {
 			Header: http.Header{"Content-Encoding": []string{"zstd"}},
 			Body:   io.NopCloser(bytes.NewReader(buf.Bytes())),
 		}
-		if err := decodeCompressedHTTPResponse(resp); err != nil {
+		if err := decodeCompressedHTTPResponse(resp, 1<<20); err != nil {
 			t.Fatalf("zstd decode failed: %v", err)
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -180,7 +180,7 @@ func TestDecodeCompressedHTTPResponse_Variants(t *testing.T) {
 			Header: http.Header{"Content-Encoding": []string{"gzip"}},
 			Body:   io.NopCloser(bytes.NewReader([]byte("not-gzip"))),
 		}
-		if err := decodeCompressedHTTPResponse(resp); err == nil {
+		if err := decodeCompressedHTTPResponse(resp, 1<<20); err == nil {
 			t.Fatalf("expected invalid gzip stream to fail")
 		}
 	})

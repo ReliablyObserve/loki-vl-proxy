@@ -374,7 +374,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		return nil, err
 	}
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		_ = resp.Body.Close()
 		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)

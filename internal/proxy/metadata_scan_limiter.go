@@ -1246,7 +1246,7 @@ func (p *Proxy) sampleBackendSignals(ctx context.Context) backendSignals {
 		return backendSignals{failed: true}
 	}
 	// The request asks for zstd or gzip unless VictoriaLogs is on loopback.
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		return backendSignals{failed: true}
 	}
 	return parseBackendSignals(io.LimitReader(resp.Body, 8<<20))

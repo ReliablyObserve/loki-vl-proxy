@@ -89,7 +89,7 @@ func (p *Proxy) refillLineFieldRows(ctx context.Context, first io.Reader, params
 			_ = resp.Body.Close()
 			return nil, fmt.Errorf("backend status %d: %s", resp.StatusCode, body)
 		}
-		body, err := io.ReadAll(resp.Body)
+		body, err := p.readBufferedBackendBody(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err

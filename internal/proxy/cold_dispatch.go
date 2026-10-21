@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -133,6 +134,9 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 	// O(N²) copy amplification from prepend-into-growing-buffer on each iteration.
 	var chunks [][]byte
 	accCount := 0
+	// All chunks together stay within one buffered response's budget.
+	budget := int64(p.limits().BufferedBackendBodyBytes)
+	accBytes := int64(0)
 	chunkEnd := endNs
 	chunkDurNs := coldBackwardChunkDuration.Nanoseconds()
 
@@ -165,11 +169,15 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 			resp.Body.Close()
 			return nil, p.redactedBackendStatusError("cold backend", resp.StatusCode, body)
 		}
-		chunkBody, readErr := io.ReadAll(resp.Body)
+		chunkBody, readErr := readBodyLimited(resp.Body, max(budget-accBytes, 1))
 		resp.Body.Close()
+		if errors.Is(readErr, errBodyTooLarge) {
+			return nil, &backendBodyTooLargeError{limit: budget}
+		}
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read cold chunk response: %w", readErr)
 		}
+		accBytes += int64(len(chunkBody))
 
 		chunkCount := countNDJSONLines(chunkBody)
 		chunks = append(chunks, chunkBody)

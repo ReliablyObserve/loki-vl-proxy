@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -374,7 +375,7 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	}
 	defer resp.Body.Close()
 
-	body, readErr := io.ReadAll(resp.Body)
+	body, readErr := p.readBufferedBackendBody(resp.Body)
 	if readErr != nil {
 		// The response cap or an aborted response: never decode a partial list.
 		return nil, readErr
@@ -1038,14 +1039,14 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		// Check status from headers before reading the body.
 		// Error bodies are small; success bodies are streamed without buffering.
 		if resp.StatusCode >= http.StatusInternalServerError {
-			errBody, _ := io.ReadAll(resp.Body)
+			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 			_ = resp.Body.Close()
 			lastErr = p.redactedBackendStatusError("", resp.StatusCode, errBody)
 			hadScanFailure = true
 			continue
 		}
 		if resp.StatusCode >= http.StatusBadRequest {
-			errBody, _ := io.ReadAll(resp.Body)
+			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 			_ = resp.Body.Close()
 			// Collect native result before returning so the goroutine doesn't leak.
 			<-nativeCh
@@ -1953,7 +1954,15 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			}
 			continue
 		}
-		body, _ := io.ReadAll(resp.Body)
+		var body []byte
+		if resp.StatusCode >= http.StatusBadRequest {
+			body, _ = readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		} else if body, err = p.readBufferedBackendBody(resp.Body); err != nil {
+			// Never decode a partial answer.
+			_ = resp.Body.Close()
+			lastErr = err
+			continue
+		}
 		_ = resp.Body.Close()
 		if resp.StatusCode >= http.StatusBadRequest {
 			lastErr = p.redactedBackendStatusError("", resp.StatusCode, body)
@@ -2004,8 +2013,15 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			params.Set("query", unpackQuery)
 			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
 			if err2 == nil {
-				body2, _ := io.ReadAll(resp2.Body)
+				var body2 []byte
+				var readErr2 error
+				if resp2.StatusCode < http.StatusBadRequest {
+					body2, readErr2 = p.readBufferedBackendBody(resp2.Body)
+				}
 				_ = resp2.Body.Close()
+				if errors.Is(readErr2, errBodyTooLarge) {
+					return nil, readErr2
+				}
 				if resp2.StatusCode < http.StatusBadRequest {
 					var parsed2 vlFieldValuesResponse
 					if stdjson.Unmarshal(body2, &parsed2) == nil {
@@ -2053,10 +2069,14 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if err != nil {
 		return nil, err
 	}
-	body, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
+		_ = resp.Body.Close()
 		return nil, nil
+	}
+	body, readErr := p.readBufferedBackendBody(resp.Body)
+	_ = resp.Body.Close()
+	if errors.Is(readErr, errBodyTooLarge) {
+		return nil, readErr
 	}
 	var parsed vlFieldValuesResponse
 	if stdjson.Unmarshal(body, &parsed) != nil {
@@ -2307,7 +2327,7 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		}
 
 		if resp.StatusCode >= http.StatusBadRequest {
-			errBody, _ := io.ReadAll(resp.Body)
+			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 			_ = resp.Body.Close()
 			lastErr = p.redactedBackendStatusError("", resp.StatusCode, errBody)
 			if i+1 < len(candidates) {

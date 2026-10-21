@@ -289,6 +289,7 @@
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
       "internal/config/registry_test.go",
+      "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/backend_response_guard_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
@@ -412,6 +413,7 @@
       "test/e2e-compat/stack_profiles_test.go"
     ],
     "semantics/backend-aborted-response": [
+      "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/backend_response_guard_review_test.go",
       "internal/proxy/backend_response_guard_test.go"
     ],
@@ -700,6 +702,9 @@
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
+    "vl-zstd-response-window": [
+      "test/e2e-compat/vl_zstd_response_window_test.go"
+    ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
@@ -709,7 +714,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 322,
+  "registry_items": 323,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -761,6 +766,10 @@
       "semantics/backend-timeout-argument",
       "semantics/client-cancellation-propagates",
       "series-limits-and-partial-results"
+    ],
+    "internal/proxy/backend_read_bounds_test.go": [
+      "operator-configurable-limits",
+      "semantics/backend-aborted-response"
     ],
     "internal/proxy/backend_response_guard_review_test.go": [
       "limits/label-values-response-cap",
@@ -1416,13 +1425,16 @@
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/vl_zstd_response_window_test.go": [
+      "vl-zstd-response-window"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 138,
+  "tests_with_markers": 140,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1525,5 +1537,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 137
+  "wired_items": 138
 }

@@ -951,7 +951,7 @@ func (p *Proxy) queryPeerHas(ctx context.Context, peerAddr string, keys []string
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		return nil
 	}
 	body, err := readBodyLimited(resp.Body, 64<<10) // presence index is tiny
@@ -1044,7 +1044,7 @@ func (p *Proxy) fetchCacheKeysFromPeers(ctx context.Context, cacheEndpoint strin
 		}
 		var body []byte
 		if resp.StatusCode == http.StatusOK {
-			if decodeCompressedHTTPResponse(resp) == nil {
+			if decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()) == nil {
 				body, _ = readBodyLimited(resp.Body, 4<<20)
 			}
 		}

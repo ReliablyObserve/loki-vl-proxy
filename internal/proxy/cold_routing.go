@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -143,6 +144,10 @@ func (cr *ColdRouter) refreshLoop(ctx context.Context) {
 	}
 }
 
+// maxColdManifestBytes bounds the cold backend's /manifest/range answer, a few
+// date fields and counters.
+const maxColdManifestBytes = 1 << 20
+
 func (cr *ColdRouter) refreshManifest(ctx context.Context) {
 	u := *cr.coldBackend
 	u.Path = "/manifest/range"
@@ -166,8 +171,16 @@ func (cr *ColdRouter) refreshManifest(ctx context.Context) {
 		return
 	}
 
+	data, err := readBodyLimited(resp.Body, maxColdManifestBytes)
+	if errors.Is(err, errBodyTooLarge) {
+		cr.logger.Warn("cold manifest exceeds its size limit; keeping the previous manifest", "limit_bytes", maxColdManifestBytes)
+		return
+	}
 	var mr ManifestRange
-	if err := json.NewDecoder(resp.Body).Decode(&mr); err != nil {
+	if err == nil {
+		err = json.Unmarshal(data, &mr)
+	}
+	if err != nil {
 		cr.logger.Warn("cold manifest decode failed", "error", err)
 		return
 	}
