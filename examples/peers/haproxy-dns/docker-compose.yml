@@ -9,8 +9,8 @@
 # single entry point on port 3100 for log ingestion and queries.
 #
 # Usage:
+#   export PEER_AUTH_TOKEN=$(openssl rand -hex 32)   # shared peer token, required
 #   docker compose up -d
-#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
 #   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers   (via HAProxy → any proxy)
 #   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3200/_cache/peers   (proxy-a direct)
 #   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3201/_cache/peers   (proxy-b direct)
@@ -22,12 +22,17 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/24
+#
+# Release images are signed with cosign (keyless) and carry build provenance; verify
+# the proxy image before use: see SECURITY.md#verifying-releases
+# (https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/SECURITY.md#verifying-releases).
+# Image tags are pinned to explicit versions; bump them deliberately.
 
 services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:latest
+    image: victoriametrics/victoria-logs:v1.52.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.5
@@ -49,7 +54,7 @@ services:
   # Resolves proxy-peers.local → all three proxy IPs (one A record per host).
   # This mirrors what a k8s headless Service provides automatically.
   coredns:
-    image: coredns/coredns:latest
+    image: coredns/coredns:1.14.7
     networks:
       proxy-net:
         ipv4_address: 172.28.0.2
@@ -60,7 +65,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.10
@@ -80,7 +85,7 @@ services:
       - -peer-self=proxy-a:3100
       - -peer-discovery=dns
       - -peer-dns=proxy-peers.local
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -96,7 +101,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.11
@@ -115,7 +120,7 @@ services:
       - -peer-self=proxy-b:3100
       - -peer-discovery=dns
       - -peer-dns=proxy-peers.local
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -131,7 +136,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.12
@@ -150,7 +155,7 @@ services:
       - -peer-self=proxy-c:3100
       - -peer-discovery=dns
       - -peer-dns=proxy-peers.local
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -166,7 +171,7 @@ services:
 
   # ── HAProxy — single entry point load balancer ─────────────────────────────
   haproxy:
-    image: haproxy:latest
+    image: haproxy:3.4.6
     networks:
       proxy-net:
         ipv4_address: 172.28.0.20

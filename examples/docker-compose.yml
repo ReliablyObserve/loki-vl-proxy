@@ -14,12 +14,17 @@
 #     -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello from loki-vl-proxy"]]}]}'
 #
 # Then open Grafana → Explore → select "Loki (via VL proxy)" → run {app="demo"}.
+#
+# Release images are signed with cosign (keyless) and carry build provenance; verify
+# the proxy image before use: see SECURITY.md#verifying-releases
+# (https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/SECURITY.md#verifying-releases).
+# Image tags are pinned to explicit versions; bump them deliberately.
 
 services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:latest
+    image: victoriametrics/victoria-logs:v1.52.0
     ports:
       - "9428:9428"
     command:
@@ -38,7 +43,7 @@ services:
 
   # ── loki-vl-proxy ──────────────────────────────────────────────────────────
   loki-vl-proxy:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3100:3100"
     command:
@@ -63,7 +68,7 @@ services:
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.3
     ports:
       - "3000:3000"
     environment:

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The examples pin every image to an explicit version tag.** `examples/` and the
+  README Docker quick start used `latest` (and `nginx:alpine`), so an example
+  could change under a reader without notice. The proxy is pinned to the current
+  release, VictoriaLogs to the version the repository tests against, and
+  Grafana, Consul, HAProxy, CoreDNS, nginx, curl and busybox to stable releases.
+  The examples note that release images are signed and link
+  `SECURITY.md#verifying-releases`.
+
+- **The peer examples require a peer token instead of shipping a fixed one.** The four
+  `examples/peers/*` stacks hardcoded `-peer-auth-token=fleet-secret`, a published
+  value that protects nothing if the stack is exposed. They now read
+  `PEER_AUTH_TOKEN` and `docker compose` refuses to start without it; the example
+  READMEs generate one with `openssl rand -hex 32`.
+
+### Security
+
+- **The container image has a `HEALTHCHECK`.** It runs the bundled
+  `/usr/local/bin/healthcheck` (a GET of `/ready` on `localhost:3100`, or on
+  `HEALTH_PORT`), every 30s with a 3s timeout, a 10s start period and 3 retries,
+  so `docker run` and plain Docker hosts report the container health without a
+  compose or orchestrator probe. The probe is plain HTTP: set `HEALTH_PORT` when
+  `-listen` is not `:3100`, and override the check when the server terminates TLS.
+
+### Fixed
+
+- **The Helm sizing examples used `20Gi` for `disk-cache-max-bytes`, which the
+  flag does not parse.** `-disk-cache-max-bytes` is an int64 byte count, so
+  `--set extraArgs.disk-cache-max-bytes=20Gi` fails the flag parse. The
+  getting-started recipe and the website Helm page now use `10737418240` (10 GiB)
+  for the 20Gi volume, within the rule to cap the cache at half the volume.
+
 ## [2.25.0] - 2026-10-22
 
 ### Security

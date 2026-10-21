@@ -14,4 +14,6 @@ COPY --from=builder /loki-vl-proxy /usr/local/bin/loki-vl-proxy
 COPY --from=builder /healthcheck /usr/local/bin/healthcheck
 USER nonroot
 EXPOSE 3100
+# /ready probe on localhost:${HEALTH_PORT:-3100}; set HEALTH_PORT when -listen is not :3100.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["/usr/local/bin/healthcheck"]
 ENTRYPOINT ["/usr/local/bin/loki-vl-proxy"]

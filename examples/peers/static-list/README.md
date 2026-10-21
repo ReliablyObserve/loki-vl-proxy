@@ -14,6 +14,9 @@ proxies is known in advance and changes infrequently.
 ## Quick start
 
 ```bash
+# The proxies authenticate each other with a shared peer token. Compose refuses to
+# start without one; generate a random value instead of reusing a published string.
+export PEER_AUTH_TOKEN=$(openssl rand -hex 32)
 docker compose up -d
 # Wait for proxies to become healthy
 docker compose ps
@@ -22,10 +25,10 @@ docker compose ps
 ## How to test
 
 Check that each proxy sees all its peers. The `/_cache/*` endpoints require the
-shared peer token (`-peer-auth-token=fleet-secret`) in the `X-Peer-Token` header:
+shared peer token (`-peer-auth-token`, set from `PEER_AUTH_TOKEN`) in the `X-Peer-Token` header:
 
 ```bash
-export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+# PEER_AUTH_TOKEN is the value exported in Quick start (same shell session)
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3101/_cache/peers | jq .
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3102/_cache/peers | jq .
@@ -39,7 +42,7 @@ published host port in this example, so push from a throwaway container on the
 compose network (`static-list_default` when started from this directory):
 
 ```bash
-docker run --rm --network static-list_default curlimages/curl:latest \
+docker run --rm --network static-list_default curlimages/curl:8.22.0 \
   -s -XPOST http://victorialogs:9428/insert/loki/api/v1/push \
   -H "Content-Type: application/json" \
   -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello"]]}]}'
