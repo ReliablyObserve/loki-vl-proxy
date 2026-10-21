@@ -9,19 +9,29 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
     steps:
+      - name: Refuse to publish from other refs
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/tags/v*) ;;
+            *) echo "::error::releases are published only from main or a v* tag"; exit 1 ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -35,6 +45,13 @@ jobs:
 
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.1.4
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
 
       - name: Extract version
         id: version
@@ -49,7 +66,8 @@ jobs:
             echo "tag=${TAG}"
             echo "version=${VERSION}"
             echo "prev_tag=${PREV_TAG}"
-            echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "revision=$(git rev-parse HEAD)"
+            echo "build_time=$(TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd HEAD)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Render release notes
@@ -77,18 +95,73 @@ jobs:
             echo "refusing to build release binaries with VERSION='${VERSION}'" >&2
             exit 1
           fi
-          REVISION="${GITHUB_SHA}"
-          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REVISION="${{ steps.version.outputs.revision }}"
+          BUILD_TIME="${{ steps.version.outputs.build_time }}"
           mkdir -p dist
+          # -trimpath and a build time taken from the release commit make the
+          # binaries reproducible from the tag (see SECURITY.md).
           for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             GOOS="${GOOS_GOARCH%/*}"
             GOARCH="${GOOS_GOARCH#*/}"
             OUT="dist/loki-vl-proxy-${GOOS}-${GOARCH}"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-              go build -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildTime=${BUILD_TIME}" \
+              go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildTime=${BUILD_TIME}" \
               -o "$OUT" ./cmd/proxy
           done
           cd dist && sha256sum loki-vl-proxy-* > checksums.txt
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.54.1
+
+      - name: Generate SBOMs for the release binaries
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          set -euo pipefail
+          # One SPDX JSON document per binary. checksums.txt was written before
+          # this step, so the SBOM files are never listed in it.
+          for BIN in dist/loki-vl-proxy-linux-amd64 dist/loki-vl-proxy-linux-arm64 \
+                     dist/loki-vl-proxy-darwin-amd64 dist/loki-vl-proxy-darwin-arm64; do
+            "${SYFT}" scan "file:${BIN}" -o "spdx-json=${BIN}.spdx.json" -q
+          done
+
+      - name: Attest binary build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Attest SBOM for linux/amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/loki-vl-proxy-linux-amd64
+          sbom-path: dist/loki-vl-proxy-linux-amd64.spdx.json
+
+      - name: Attest SBOM for linux/arm64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/loki-vl-proxy-linux-arm64
+          sbom-path: dist/loki-vl-proxy-linux-arm64.spdx.json
+
+      - name: Attest SBOM for darwin/amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/loki-vl-proxy-darwin-amd64
+          sbom-path: dist/loki-vl-proxy-darwin-amd64.spdx.json
+
+      - name: Attest SBOM for darwin/arm64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/loki-vl-proxy-darwin-arm64
+          sbom-path: dist/loki-vl-proxy-darwin-arm64.spdx.json
+
+      - name: Sign the release checksums
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
 
       - name: Package Helm chart
         run: |
@@ -129,7 +202,13 @@ jobs:
         run: |
           set -euo pipefail
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_NAMES="ghcr.io/${OWNER_LC}/loki-vl-proxy"
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            IMAGE_NAMES="${IMAGE_NAMES},docker.io/reliablyobserve/loki-vl-proxy"
+          fi
           {
+            echo "ghcr_image=ghcr.io/${OWNER_LC}/loki-vl-proxy"
+            echo "image_names=${IMAGE_NAMES}"
             echo "tags<<EOF"
             echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:${VERSION}"
             if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
@@ -138,26 +217,103 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # The image is pushed by digest only. The version tags are created after the
+      # image is signed and attested (see "Publish the image tags").
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,"name=${{ steps.image-tags.outputs.image_names }}",push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
-            REVISION=${{ github.sha }}
+            REVISION=${{ steps.version.outputs.revision }}
             BUILD_TIME=${{ steps.version.outputs.build_time }}
-          tags: ${{ steps.image-tags.outputs.tags }}
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
-      - name: Publish Helm chart to GHCR
+      - name: Sign the container image
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
         run: |
+          set -euo pipefail
+          # Sign by digest, never by tag. The index digest is the same in every
+          # registry the build pushed to.
+          cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            cosign sign --yes "docker.io/reliablyobserve/loki-vl-proxy@${IMAGE_DIGEST}"
+          fi
+
+      - name: Attest container image provenance (GHCR)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.image-tags.outputs.ghcr_image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest container image provenance (Docker Hub)
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: docker.io/reliablyobserve/loki-vl-proxy
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Publish the image tags
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.image-tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          # Tags point at the already signed and attested index digest.
+          while IFS= read -r TAG_REF; do
+            [ -n "${TAG_REF}" ] || continue
+            docker buildx imagetools create --tag "${TAG_REF}" "${TAG_REF%:*}@${IMAGE_DIGEST}"
+            PUBLISHED="$(docker buildx imagetools inspect "${TAG_REF}" --format '{{.Manifest.Digest}}')"
+            if [ "${PUBLISHED}" != "${IMAGE_DIGEST}" ]; then
+              echo "::error::${TAG_REF} resolves to ${PUBLISHED}, expected ${IMAGE_DIGEST}"
+              exit 1
+            fi
+          done <<< "${TAGS}"
+
+      - name: Publish Helm chart to GHCR
+        id: chart_ghcr
+        run: |
+          set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts"
+          if ! PUSH_OUT="$(helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts" 2>&1)"; then
+            echo "${PUSH_OUT}"
+            exit 1
+          fi
+          echo "${PUSH_OUT}"
+          # helm prints "Pushed: <ref>:<tag>" and "Digest: sha256:<hex>" (to stderr in Helm 4).
+          DIGEST="$(printf '%s\n' "${PUSH_OUT}" | sed -n 's/^Digest: \(sha256:[0-9a-f]\{64\}\)$/\1/p' | head -n1)"
+          PUSHED="$(printf '%s\n' "${PUSH_OUT}" | sed -n 's/^Pushed: //p' | head -n1)"
+          if [ -z "${DIGEST}" ] || [ -z "${PUSHED}" ]; then
+            echo "::error::could not read the pushed chart reference and digest from helm output"
+            exit 1
+          fi
+          REF="${PUSHED%:*}"
+          {
+            echo "digest=${DIGEST}"
+            echo "ref=${REF}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign the Helm chart (GHCR)
+        env:
+          CHART_REF: ${{ steps.chart_ghcr.outputs.ref }}
+          CHART_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${CHART_REF}@${CHART_DIGEST}"
 
       - name: Login Helm to Docker Hub
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
@@ -167,10 +323,43 @@ jobs:
             --password-stdin
 
       - name: Publish Helm chart to Docker Hub
+        id: chart_dockerhub
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         run: |
+          set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://registry-1.docker.io/reliablyobserve/charts"
+          if ! PUSH_OUT="$(helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://registry-1.docker.io/reliablyobserve/charts" 2>&1)"; then
+            echo "${PUSH_OUT}"
+            exit 1
+          fi
+          echo "${PUSH_OUT}"
+          # helm prints "Pushed: <ref>:<tag>" and "Digest: sha256:<hex>" (to stderr in Helm 4).
+          DIGEST="$(printf '%s\n' "${PUSH_OUT}" | sed -n 's/^Digest: \(sha256:[0-9a-f]\{64\}\)$/\1/p' | head -n1)"
+          PUSHED="$(printf '%s\n' "${PUSH_OUT}" | sed -n 's/^Pushed: //p' | head -n1)"
+          if [ -z "${DIGEST}" ] || [ -z "${PUSHED}" ]; then
+            echo "::error::could not read the pushed chart reference and digest from helm output"
+            exit 1
+          fi
+          REF="docker.io/${PUSHED#registry-1.docker.io/}"
+          REF="${REF%:*}"
+          {
+            echo "digest=${DIGEST}"
+            echo "ref=${REF}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign the Helm chart (Docker Hub)
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        env:
+          CHART_REF: ${{ steps.chart_dockerhub.outputs.ref }}
+          CHART_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${CHART_REF}@${CHART_DIGEST}"
+
+      - name: Attest Helm chart provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/loki-vl-proxy-*.tgz
 
       - name: Ensure GHCR Helm chart package is public
         env:
@@ -188,8 +377,63 @@ jobs:
           gh api -X PATCH "/orgs/${OWNER}/packages/container/${PKG}/visibility" -f visibility=public >/dev/null
           echo "Ensured public visibility for ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
 
+      - name: Append verification details to the release notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          NOTES_FILE: ${{ steps.release_notes.outputs.notes_file }}
+          GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref }}
+          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
+          CHART_DH_REF: ${{ steps.chart_dockerhub.outputs.ref }}
+          CHART_DH_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
+        run: |
+          set -euo pipefail
+          F='```'
+          ID_RE='^https://github\.com/'"${GITHUB_REPOSITORY}"'/\.github/workflows/(auto-release|release)\.yaml@refs/(heads/main|tags/v.+)$'
+          DH_IMAGE=""
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            DH_IMAGE="docker.io/reliablyobserve/loki-vl-proxy"
+          fi
+          {
+            echo
+            echo "## Verify this release"
+            echo
+            echo "Container image (multi-arch index digest):"
+            echo
+            echo "- \`${GHCR_IMAGE}@${IMAGE_DIGEST}\`"
+            if [ -n "${DH_IMAGE}" ]; then
+              echo "- \`${DH_IMAGE}@${IMAGE_DIGEST}\`"
+            fi
+            echo
+            echo "Helm chart (OCI digest):"
+            echo
+            echo "- \`${CHART_GHCR_REF}@${CHART_GHCR_DIGEST}\`"
+            if [ -n "${DH_IMAGE}" ]; then
+              echo "- \`${CHART_DH_REF}@${CHART_DH_DIGEST}\`"
+            fi
+            echo
+            echo "Verify the image signature and build provenance, then the release checksums:"
+            echo
+            echo "${F}sh"
+            echo "cosign verify ${GHCR_IMAGE}@${IMAGE_DIGEST} \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+            echo "  --certificate-identity-regexp '${ID_RE}'"
+            echo "gh attestation verify oci://${GHCR_IMAGE}@${IMAGE_DIGEST} --repo ${GITHUB_REPOSITORY}"
+            echo "cosign verify-blob --bundle checksums.txt.sigstore.json \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+            echo "  --certificate-identity-regexp '${ID_RE}' checksums.txt"
+            echo "sha256sum -c checksums.txt --ignore-missing"
+            echo "gh attestation verify loki-vl-proxy-linux-amd64 --repo ${GITHUB_REPOSITORY}"
+            echo "${F}"
+            echo
+            echo "Every signature and attestation is recorded in Sigstore's public transparency log. The full procedure, including reproducing a binary from the tag, is in [SECURITY.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/SECURITY.md#verifying-releases)."
+          } >> "${NOTES_FILE}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        # The SPDX SBOMs (dist/loki-vl-proxy-<os>-<arch>.spdx.json) are matched by
+        # the binary globs below, so they are not listed a second time.
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
@@ -198,6 +442,7 @@ jobs:
             dist/loki-vl-proxy-linux-*
             dist/loki-vl-proxy-darwin-*
             dist/checksums.txt
+            dist/checksums.txt.sigstore.json
             dist/loki-vl-proxy-*.tgz
 
       - name: Prepare release metadata branch

@@ -157,6 +157,10 @@ That removes the weaker edge-path behavior where scanners could still reach miss
 
 These `hostPath` mounts are intentional. Trivy would normally flag them (`KSV-0121`), so CI uses a narrow `.trivyignore.yaml` exception for the chart deployment template rather than disabling the broader class of checks. Disable `systemMetrics.hostProc` on clusters that forbid `hostPath`.
 
+## Release Verification
+
+Release images, Helm charts and binaries are signed with Sigstore, ship with SBOMs and GitHub build provenance, and the binaries are reproducible from the tag. The verification commands are in [SECURITY.md](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/SECURITY.md#verifying-releases).
+
 ## Admin and Debug Endpoints
 
 The following are disabled by default and should stay restricted:

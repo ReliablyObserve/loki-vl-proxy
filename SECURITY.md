@@ -2,10 +2,15 @@
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| 1.x     | Yes       |
-| < 1.0   | No        |
+| Version | Supported              |
+|---------|------------------------|
+| 2.x     | Yes (latest release)   |
+| 1.x     | No                     |
+| < 1.0   | No                     |
+
+### Patch policy
+
+Security fixes ship in a new release of the latest 2.x line. Releases are cut from `main` continuously, so the newest release is the patched one; fixes are not backported to older minor versions or to 1.x. A reachable vulnerability in the Go toolchain or in a dependency is fixed by moving to the fixed version as soon as one is published, and the release notes and `CHANGELOG.md` name the advisory IDs. Report vulnerabilities through the Security Advisories link below.
 
 ## Reporting a Vulnerability
 
@@ -84,6 +89,110 @@ The PR runtime lane targets a short allowlist of user-facing and admin/debug URL
 - validate representative wide queries against the execution limits before rollout
 - keep `-metrics.export-sensitive-labels=false` on shared scrape paths
 - enable TLS and validate upstream certificates in production
+
+## Verifying Releases
+
+Every release is built and published by GitHub Actions (`.github/workflows/auto-release.yaml`, or `.github/workflows/release.yaml` when a tag is republished by hand). The workflow signs and attests each artifact with short-lived Sigstore certificates issued to the workflow run through GitHub OIDC; no long-lived signing key exists. Each signature and attestation is recorded in Sigstore's public transparency log (Rekor). The release notes of each version list the image index digests and the chart digests, and repeat the commands below with the values filled in.
+
+What is published for a release:
+
+- container image `ghcr.io/reliablyobserve/loki-vl-proxy` (and `docker.io/reliablyobserve/loki-vl-proxy`): the multi-arch index is signed with cosign by digest and carries GitHub build provenance, plus BuildKit provenance (`mode=max`) and an SBOM as attestations inside the index
+- Helm chart `oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy` (the Docker Hub copy is pushed only when a release is republished with `release.yaml`): signed with cosign by digest; the chart `.tgz` has GitHub build provenance
+- release binaries: `checksums.txt` with a keyless signature bundle (`checksums.txt.sigstore.json`), GitHub build provenance for every binary, and one SPDX JSON SBOM per binary (`loki-vl-proxy-<os>-<arch>.spdx.json`) attested to it
+
+The commands need [cosign](https://docs.sigstore.dev/cosign/) 3.1.3 or newer (the version that signs the releases; cosign 3 stores signatures as OCI referrers, which older cosign releases do not look for by default) and the [GitHub CLI](https://cli.github.com/) for `gh attestation`.
+
+### Signing identity
+
+The certificate identity is the workflow file and the ref the run started from:
+
+| Workflow | When it runs | Certificate identity |
+|----------|--------------|----------------------|
+| `auto-release.yaml` | push to `main`, or `workflow_dispatch` from `main` | `https://github.com/ReliablyObserve/loki-vl-proxy/.github/workflows/auto-release.yaml@refs/heads/main` |
+| `release.yaml` | `workflow_dispatch` | `https://github.com/ReliablyObserve/loki-vl-proxy/.github/workflows/release.yaml@<ref the workflow was dispatched from>`, for example `@refs/heads/main` or `@refs/tags/vX.Y.Z` |
+
+All examples use one regular expression that accepts both workflows, from `main` or from a version tag, and nothing else:
+
+```sh
+ID_RE='^https://github\.com/ReliablyObserve/loki-vl-proxy/\.github/workflows/(auto-release|release)\.yaml@refs/(heads/main|tags/v.+)$'
+ISSUER=https://token.actions.githubusercontent.com
+```
+
+The certificate also records the commit the workflow run started from (GitHub Workflow SHA). To bind a verification to a tag, add `--certificate-github-workflow-sha "$(git rev-list -n1 vX.Y.Z)"` to any `cosign verify` or `cosign verify-blob` command below. The check holds in two cases: `release.yaml` dispatched from the tag ref itself, and an `auto-release.yaml` run that was started by the tagged commit. Runs of `auto-release.yaml` queue behind each other and release the head of `main` at the time they start, so a run queued behind a later push can be started by an earlier commit of `main` than the one it tags; the certificate then carries that earlier commit, and `release.yaml` dispatched from `main` carries the head of `main`. In those cases the identity check above is the one to rely on. Both workflows refuse to publish from any ref other than `main` or a `v*` tag.
+
+### Container image
+
+```sh
+DIGEST=sha256:<digest from the release notes>
+
+cosign verify ghcr.io/reliablyobserve/loki-vl-proxy@${DIGEST} \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+
+cosign verify docker.io/reliablyobserve/loki-vl-proxy@${DIGEST} \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+
+gh attestation verify oci://ghcr.io/reliablyobserve/loki-vl-proxy@${DIGEST} \
+  --repo ReliablyObserve/loki-vl-proxy
+```
+
+### Helm chart
+
+Use the chart digest from the release notes. The reference is the `oci://` URL without the `oci://` prefix. The Docker Hub command applies only to releases republished with `release.yaml`:
+
+```sh
+cosign verify ghcr.io/reliablyobserve/charts/loki-vl-proxy@sha256:<chart digest> \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+
+cosign verify docker.io/reliablyobserve/charts/loki-vl-proxy@sha256:<chart digest> \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE"
+```
+
+The chart `.tgz` attached to the release has GitHub build provenance: `gh attestation verify loki-vl-proxy-<version>.tgz --repo ReliablyObserve/loki-vl-proxy`.
+
+### Release binaries
+
+Download the binary, `checksums.txt` and `checksums.txt.sigstore.json` from the release page, then verify the signature on the checksums and the checksums on the files:
+
+```sh
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE" \
+  checksums.txt
+
+sha256sum -c checksums.txt --ignore-missing    # macOS: shasum -a 256 -c checksums.txt --ignore-missing
+gh attestation verify loki-vl-proxy-linux-amd64 --repo ReliablyObserve/loki-vl-proxy
+```
+
+The SPDX SBOM of a binary is attested to that binary and is also attached to the release as `loki-vl-proxy-<os>-<arch>.spdx.json`. To check the attestation: `gh attestation verify loki-vl-proxy-linux-amd64 --repo ReliablyObserve/loki-vl-proxy --predicate-type https://spdx.dev/Document/v2.3`.
+
+### Reproducing a binary from a tag
+
+The release binaries are built with `-trimpath`, and the build time embedded in them is the commit time of the release commit rather than the time of the build, so the same source and toolchain give the same bytes on any machine. From a clean checkout of the tag, with the Go toolchain named in `go.mod` (the `toolchain` line if there is one, otherwise the `go` line). CI installs the same version with `setup-go`; if the workflow and `go.mod` ever differ, use the one in `go.mod` at the tag.
+
+Keep downloaded release files (`checksums.txt` and the binaries) outside the clone: Go records whether the working tree has untracked or modified files, and that changes the binary.
+
+```sh
+git clone https://github.com/ReliablyObserve/loki-vl-proxy.git && cd loki-vl-proxy
+git checkout vX.Y.Z
+
+VERSION=X.Y.Z
+REVISION="$(git rev-parse HEAD)"
+BUILD_TIME="$(TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd HEAD)"
+TOOLCHAIN="$(awk '/^toolchain /{print $2}' go.mod)"
+export GOTOOLCHAIN="${TOOLCHAIN:-go$(awk '/^go /{print $2}' go.mod)}"
+
+mkdir -p dist    # dist/ is ignored by git, as in the release workflow
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+  -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildTime=${BUILD_TIME}" \
+  -o dist/loki-vl-proxy-linux-amd64 ./cmd/proxy
+
+sha256sum dist/loki-vl-proxy-linux-amd64    # compare with the line in the release's checksums.txt
+```
+
+`REVISION` is the commit the tag points to, for releases cut by `auto-release.yaml` and for releases republished with `release.yaml`. Container image digests are not reproducible byte for byte, because the image index also carries BuildKit attestations; the binaries inside the image are built with the same flags but carry no VCS stamp (`.dockerignore` excludes `.git`), so they do not match `checksums.txt` byte for byte.
+
+### Pinning by digest
+
+Tags can be moved; digests cannot. Reference the image by the digest listed in the release notes, for example `ghcr.io/reliablyobserve/loki-vl-proxy@sha256:<digest>`, and verify the digest with the commands above before rolling it out. The base images in the `Dockerfile` are pinned by digest as well and are updated by Dependabot.
 
 ## Related Docs
 
