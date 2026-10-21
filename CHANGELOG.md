@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gosec v2.29.0 (built with `x/tools` v0.52.0) read Go 1.27.3 unchanged and
   report no issues.
 
+- **Pillow 13.0.0 and two documentation-site dependencies.** Trivy's
+  filesystem scan, a required check, started failing every pull request on
+  vulnerabilities published for Pillow 12.3.0, which the visual-proof tooling
+  installs (`bench/visual/requirements.txt`; CVE-2026-112403, critical, and
+  CVE-2026-112397, CVE-2026-112400, CVE-2026-112404, CVE-2026-112895,
+  CVE-2026-112896, CVE-2026-112897), and for two packages in the documentation
+  site's lockfile: follow-redirects 1.16.0 (CVE-2026-111755, CVE-2026-111756)
+  and launch-editor 2.14.1 (CVE-2026-112942). Pillow moves to 13.0.0 (the image
+  functions the tooling uses are unchanged; the pixel-difference scores of a
+  278-capture comparison are identical to 12.3.0's), follow-redirects to 1.16.1
+  and launch-editor to 2.14.2 (lockfile only). Neither is part of the proxy
+  binary or image.
+
 ## [2.21.1] - 2026-10-20
 
 ### Fixed
