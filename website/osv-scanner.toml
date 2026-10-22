@@ -1,0 +1,12 @@
+# osv-scanner configuration for website/package-lock.json (also read by the
+# OpenSSF Scorecard Vulnerabilities check). Each entry needs a reason and an
+# expiry; remove it as soon as a fixed release exists.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-20T00:00:00Z
+reason = """braces: no fixed release exists (3.0.3 is the latest and is affected). \
+It is reached only through chokidar and micromatch in the documentation site's \
+build toolchain, which expands glob patterns from this repository, never \
+untrusted input. Nothing from website/ is part of the proxy binary, image or \
+Helm chart. Same disposition as Dependabot alert 87."""
