@@ -2743,3 +2743,5 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("query", code, elapsed)
 	p.queryTracker.Record("query", logqlQuery, elapsed, code >= 400)
 }
+
+// This line exists only to exercise the product CI path; it is never merged.
