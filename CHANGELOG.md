@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenSSF Scorecard's `Signed-Releases` check reads as release provenance (it
   scores the five most recent releases, so it reaches 10 once five releases carry
   the file).
+- **Releases are ready for GitHub immutable releases.** The release step
+  (`softprops/action-gh-release`, pinned to v3.0.3) creates the release as a
+  draft, uploads every file and only then publishes it, which is the order an
+  immutable release needs. Both workflows now also set `fail_on_unmatched_files`,
+  so a missing asset stops the run before the draft exists instead of being
+  skipped (an asset cannot be added after an immutable release is published).
+  `release.yaml`, which republishes an existing tag, refuses at the start when
+  that tag's release is already immutable: it replaces release assets, and by
+  that point it would already have re-pointed the image and chart tags. Releases
+  published before immutable releases are turned on, and tags with no release
+  yet, republish as before.
 
 ## [2.25.1] - 2026-10-22
 

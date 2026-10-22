@@ -822,7 +822,14 @@ jobs:
         # The SPDX SBOMs of the binaries (dist/loki-vl-proxy-<os>-<arch>.spdx.json)
         # are matched by the binary globs below, so they are not listed a second
         # time. None of the other globs overlaps another.
+        #
+        # The action creates the release as a draft, uploads every file, and only
+        # then publishes it, so assets are never added to a published release.
+        # That order is what GitHub's immutable releases need, and once a release
+        # is published a missing asset can no longer be added: a pattern that
+        # matches nothing therefore fails the step, before the draft is created.
         with:
+          fail_on_unmatched_files: true
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.tag }}
           body_path: ${{ steps.meta.outputs.notes_file }}

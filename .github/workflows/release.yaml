@@ -45,6 +45,31 @@ jobs:
           fi
           echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
 
+      # An immutable release locks its assets once it is published. Republishing a
+      # tag replaces the release assets, and by then the image and chart tags have
+      # already been pointed at the rebuilt artifacts, so on an immutable release
+      # the run would change those tags and then fail. Refuse before anything is
+      # built or pushed. A release cut before immutable releases were turned on,
+      # and a tag with no release yet, are unaffected.
+      - name: Refuse to republish an immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The REST field works with any gh version on the runner. A draft is not
+          # returned by this endpoint, so a re-run that finishes a draft goes on.
+          if ! IMMUTABLE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false' 2>&1)"; then
+            case "${IMMUTABLE}" in
+              *"HTTP 404"*) echo "No published release for ${TAG}; continuing."; exit 0 ;;
+              *) echo "::error::could not read the release for ${TAG}: ${IMMUTABLE}"; exit 1 ;;
+            esac
+          fi
+          if [ "${IMMUTABLE}" = "true" ]; then
+            echo "::error::${TAG} is an immutable release, so its assets cannot be replaced. Publish a new version instead."
+            exit 1
+          fi
+
       # Only an existing tag is released: the ref is spelled as a tag so a branch
       # of the same name can never be picked up. The checkout does not keep the
       # token; the one step that pushes gets the bot token through a credential helper.
@@ -537,7 +562,14 @@ jobs:
         # The SPDX SBOMs of the binaries (dist/loki-vl-proxy-<os>-<arch>.spdx.json)
         # are matched by the binary globs below, so they are not listed a second
         # time. None of the other globs overlaps another.
+        #
+        # The action creates the release as a draft, uploads every file, and only
+        # then publishes it, so assets are never added to a published release.
+        # That order is what GitHub's immutable releases need, and once a release
+        # is published a missing asset can no longer be added: a pattern that
+        # matches nothing therefore fails the step, before the draft is created.
         with:
+          fail_on_unmatched_files: true
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           body_path: ${{ steps.release_notes.outputs.notes_file }}
