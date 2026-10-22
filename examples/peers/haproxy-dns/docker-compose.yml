@@ -32,7 +32,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.52.0
+    image: victoriametrics/victoria-logs:v1.53.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.5
@@ -65,7 +65,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.1
     networks:
       proxy-net:
         ipv4_address: 172.28.0.10
@@ -101,7 +101,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.1
     networks:
       proxy-net:
         ipv4_address: 172.28.0.11
@@ -136,7 +136,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.1
     networks:
       proxy-net:
         ipv4_address: 172.28.0.12
