@@ -247,7 +247,10 @@ func (p *Proxy) adminMiddleware(next http.Handler) http.Handler {
 					got = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 				}
 			}
-			if got != p.adminAuthToken {
+			// Constant-time compare so response timing does not reveal how much
+			// of a guessed token matched. A missing or empty header never
+			// equals a configured (non-empty) token.
+			if subtle.ConstantTimeCompare([]byte(got), []byte(p.adminAuthToken)) != 1 {
 				p.writeError(w, http.StatusUnauthorized, "admin authentication required")
 				return
 			}

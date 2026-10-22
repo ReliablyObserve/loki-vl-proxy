@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The admin bearer token is compared in constant time.** The admin middleware
+  (`/admin/*`, `/debug/*`, pprof and the other endpoints guarded by
+  `-server.admin-auth-token`) checked the presented token with `!=` on strings,
+  which returns at the first differing byte, so the response time depended on how
+  many leading bytes of a guess were correct. It now uses
+  `crypto/subtle.ConstantTimeCompare`, the same primitive the peer-cache token
+  already used. Behaviour is otherwise identical: `X-Admin-Token` or
+  `Authorization: Bearer` are both read, a missing, empty or wrong credential gets
+  the same `401` `admin authentication required`, and with no token configured the
+  check stays off. Only the length of a guess can still be inferred from timing,
+  as with every `ConstantTimeCompare`. Scope: the admin token was the only secret
+  compared with `==`/`!=` in non-test code; the peer token already used
+  `subtle.ConstantTimeCompare`, and backend credentials are only ever sent upstream,
+  never compared. A static test now fails if `==`/`!=` is reintroduced against the
+  admin or peer token, and a new test pins the right, wrong-same-length,
+  wrong-different-length and empty-credential cases.
+
 ## [2.25.1] - 2026-10-22
 
 ### Changed
