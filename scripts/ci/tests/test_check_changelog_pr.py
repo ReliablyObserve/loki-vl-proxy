@@ -8,6 +8,7 @@ from scripts.ci.check_changelog_pr import (
     extract_released_sections,
     is_changelog_history_fix,
     is_dependency_only_pr,
+    is_non_release_path,
     released_history_changed,
     is_release_metadata_sync,
     should_require_changelog,
@@ -37,8 +38,11 @@ class CheckChangelogPRTests(unittest.TestCase):
         self.assertTrue(has_meaningful_changelog_content("### Features\n\n- add thing"))
 
     def test_should_require_changelog_for_release_commits(self):
-        self.assertTrue(should_require_changelog(["feat: add tail mode"], ["docs/readme.md"]))
-        self.assertTrue(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md"]))
+        self.assertTrue(should_require_changelog(["feat: add tail mode"], ["docs/readme.md", "charts/loki-vl-proxy/values.yaml"]))
+        self.assertTrue(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md", "bench/ab/daily.py"]))
+        # Nothing shipped changes, so the subject does not matter.
+        self.assertFalse(should_require_changelog(["feat: add tail mode"], ["docs/readme.md"]))
+        self.assertFalse(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md"]))
 
     def test_should_require_changelog_for_impactful_paths(self):
         self.assertTrue(should_require_changelog(["test: add coverage"], ["internal/proxy/proxy.go"]))
@@ -56,7 +60,15 @@ class CheckChangelogPRTests(unittest.TestCase):
         self.assertFalse(should_require_changelog(["docs: update guide"], ["docs/getting-started.md"]))
 
     def test_should_require_for_ci_and_tests_changes(self):
-        self.assertTrue(should_require_changelog(["ci: tune workflow"], [".github/workflows/ci.yaml"]))
+        # A workflow edit alone ships nothing, so it needs no entry. A change
+        # that also touches product code still does.
+        self.assertFalse(should_require_changelog(["ci: tune workflow"], [".github/workflows/ci.yaml"]))
+        self.assertTrue(
+            should_require_changelog(
+                ["ci: tune workflow"],
+                [".github/workflows/ci.yaml", "internal/proxy/proxy.go"],
+            )
+        )
         self.assertTrue(should_require_changelog(["test: add coverage"], ["test/e2e-compat/features_test.go"]))
 
     def test_should_skip_for_changelog_gate_policy_only_changes(self):
@@ -304,6 +316,141 @@ class CheckChangelogPRTests(unittest.TestCase):
         base = "## [Unreleased]\n\n- new thing\n\n## [1.33.0] - 2026-05-14\n"
         head = "## [Unreleased]\n\n- different thing\n\n## [1.33.0] - 2026-05-14\n"
         self.assertFalse(has_new_version_sections(head, base))
+
+
+class InfraScopeTests(unittest.TestCase):
+    # File lists are the real ones of the Dependabot pull requests named.
+    DEPENDABOT = {
+        "#814 semgrep": (
+            "build(deps): bump semgrep from 1.161.0 to 1.181.0 in /security in the semgrep-deps group across 1 directory",
+            ["security/requirements-semgrep.in", "security/requirements-semgrep.txt"],
+        ),
+        "#816 certifi": (
+            "build(deps): bump certifi from 2026.7.22 to 2026.10.19 in /security",
+            ["security/requirements-semgrep.txt"],
+        ),
+        "#813 bench/visual": (
+            "build(deps-dev): bump @playwright/test from 1.59.1 to 1.64.1 in /bench/visual in the visual-deps group",
+            ["bench/visual/package-lock.json", "bench/visual/package.json"],
+        ),
+        "#811 test/e2e-ui": (
+            "build(deps-dev): bump @playwright/test from 1.59.1 to 1.64.1 in /test/e2e-ui in the e2e-ui-deps group",
+            ["test/e2e-ui/package-lock.json", "test/e2e-ui/package.json"],
+        ),
+        "#810 test compose": (
+            "build(deps): bump nginx from 1.27-alpine to 1.29-alpine in /test/e2e-compat in the test-stack-images group across 1 directory",
+            ["test/e2e-compat/docker-compose.yml"],
+        ),
+        "#815 website": (
+            "build(deps): bump the website-deps group in /website with 2 updates",
+            ["website/package-lock.json", "website/package.json"],
+        ),
+    }
+
+    def test_dependabot_pull_requests_pass_without_an_entry(self):
+        for name, (subject, files) in self.DEPENDABOT.items():
+            with self.subTest(name):
+                self.assertTrue(is_dependency_only_pr([subject], files))
+
+    def test_bench_manifests_are_dependency_only(self):
+        # Product for CI, but a bump of them is not a release.
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump playwright from 1.59.1 to 1.64.1 in /bench/visual"],
+                ["bench/visual/requirements.txt", "bench/visual/requirements.in"],
+            )
+        )
+
+    def test_dependency_manifests_match_by_name(self):
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump the image"],
+                ["Dockerfile", "test/e2e-compat/Dockerfile", "docker-compose.yml", "test/x/docker-compose.override.yml"],
+            )
+        )
+        self.assertFalse(
+            is_dependency_only_pr(
+                ["build(deps): bump X"],
+                ["bench/visual/package.json", "bench/visual/run.py"],
+            )
+        )
+
+    def test_dependency_only_pr_still_rejects_a_release_commit(self):
+        self.assertFalse(
+            is_dependency_only_pr(
+                ["build(deps): bump X", "fix: handle the new API"],
+                ["bench/visual/package.json"],
+            )
+        )
+
+    def test_infra_only_fix_needs_no_entry(self):
+        self.assertFalse(
+            should_require_changelog(
+                ["fix(ci): pin the runner image", "feat(ci): add a lint step"],
+                [".github/workflows/ci.yaml", "scripts/ci/run_lint.sh", "security/semgrep.yml"],
+            )
+        )
+
+    def test_product_fix_still_needs_an_entry(self):
+        self.assertTrue(should_require_changelog(["fix: handle empty range"], ["internal/proxy/range.go"]))
+        self.assertTrue(
+            should_require_changelog(
+                ["fix(ci): pin the runner image"],
+                [".github/workflows/ci.yaml", "charts/loki-vl-proxy/values.yaml"],
+            )
+        )
+
+    def test_unit_test_only_fix_still_needs_an_entry(self):
+        self.assertTrue(should_require_changelog(["fix: cover the empty range"], ["internal/x/y_test.go"]))
+
+    def test_classifier_only_change_needs_no_entry(self):
+        for files in (
+            ["scripts/ci/change_scope.py"],
+            [".github/workflows/change-scope.yaml"],
+            ["scripts/ci/change_scope.py", "scripts/ci/tests/test_change_scope.py", "docs/ci.md"],
+        ):
+            with self.subTest(files):
+                self.assertFalse(should_require_changelog(["fix(ci): refine the classifier"], files))
+                self.assertTrue(all(is_non_release_path(f) for f in files))
+
+    def test_every_legacy_non_release_path_is_still_non_release(self):
+        legacy = [
+            "docs/getting-started.md",
+            "docs/observability.md",
+            "scripts/ci/tests/test_check_changelog_pr.py",
+            "website/package.json",
+            "website/src/pages/index.tsx",
+            "bench/ab/history/control.jsonl",
+            "bench/ab/results/daily-control.json",
+            "README.md",
+            "CHANGELOG.md",
+            "LICENSE",
+            "scripts/ci/check_changelog_pr.py",
+            "conformance/registry/generated/perf-evidence.json",
+            "conformance/reports/performance.md",
+            "conformance/reports/gaps.md",
+        ]
+        for path in legacy:
+            with self.subTest(path):
+                self.assertTrue(is_non_release_path(path))
+
+    def test_product_paths_are_not_non_release(self):
+        for path in (
+            "internal/proxy/proxy.go",
+            "cmd/proxy/main.go",
+            "charts/loki-vl-proxy/values.yaml",
+            "go.mod",
+            "Dockerfile",
+            "bench/ab/daily.py",
+            "bench/visual/package.json",
+            "conformance/registry/baseline.json",
+        ):
+            with self.subTest(path):
+                self.assertFalse(is_non_release_path(path))
+
+    def test_unit_test_files_stay_non_release_paths(self):
+        self.assertTrue(is_non_release_path("internal/x/y_test.go"))
+        self.assertTrue(is_non_release_path("pkg/cache/cache_test.go"))
 
 
 if __name__ == "__main__":

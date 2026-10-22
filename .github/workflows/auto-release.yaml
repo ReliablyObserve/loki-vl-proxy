@@ -91,20 +91,42 @@ jobs:
             exit 0
           fi
 
-          DOCS_OR_CI_ONLY="yes"
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            # The daily performance report's data counts as docs: merging that
-            # pull request never cuts a release.
-            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/|bench/ab/(history|results)/|conformance/(registry/generated/perf-evidence\.json|reports/(performance|gaps)\.md)$)'; then
-              DOCS_OR_CI_ONLY="no"
-              break
-            fi
-          done <<< "$FILES_CHANGED"
+          # Release only when something users receive changed since the last
+          # tag. The classifier decides; an empty list or any error counts as
+          # product, so the check below stays the deciding gate in that case.
+          # A change to the classifier or its workflow (rule P4) runs every
+          # check but never ships on its own.
+          #
+          # The metadata sync that follows every release rewrites the chart
+          # version only. While the chart still carries the released version,
+          # that edit says nothing about what changed since the tag. A chart
+          # ahead of the tag is a deliberate release request, handled below.
+          SCOPE_FILES="${FILES_CHANGED}"
+          CHART_EDITS=$(git diff -U0 "${LATEST_TAG}..HEAD" -- charts/loki-vl-proxy/Chart.yaml 2>/dev/null \
+            | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' | grep -vE '^[+-](version|appVersion):' || true)
+          if [ "${CHART_VERSION}" = "${LATEST_VERSION}" ] && [ -z "${CHART_EDITS}" ]; then
+            SCOPE_FILES=$(printf '%s\n' "${FILES_CHANGED}" | grep -vx 'charts/loki-vl-proxy/Chart.yaml' || true)
+          fi
+          if [ -n "${FILES_CHANGED}" ] && [ -z "${SCOPE_FILES}" ]; then
+            PRODUCT_CHANGED="false"
+          else
+            PRODUCT_CHANGED=$(printf '%s\n' "${SCOPE_FILES}" | python3 -c '
+          import sys
+          sys.path.insert(0, "scripts/ci")
+          try:
+              import change_scope
+              paths = [line.strip() for line in sys.stdin if line.strip()]
+              shipped = [p for p in paths
+                         if change_scope.classify(p)[0] and change_scope.classify(p)[1] != "P4"]
+              print("true" if not paths or shipped else "false")
+          except Exception:
+              print("true")
+          ' || echo true)
+          fi
 
-          if [ "$DOCS_OR_CI_ONLY" = "yes" ]; then
+          if [ "${PRODUCT_CHANGED}" = "false" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs/ci/metadata files changed; skipping release"
+            echo "Only infra/docs files changed since ${LATEST_TAG}; skipping release"
             exit 0
           fi
 
