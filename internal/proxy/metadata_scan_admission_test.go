@@ -200,6 +200,9 @@ func TestMetadataScanAdmission_BackgroundInventorySkipsInsteadOfWaiting(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	// The replica-spreading jitter (up to 250ms for an unmeasured listing) is
+	// not the wait under test.
+	p.metadataScanLimiter.jitter = nil
 
 	now := time.Now()
 	params := url.Values{

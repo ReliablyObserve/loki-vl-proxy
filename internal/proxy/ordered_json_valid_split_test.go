@@ -559,6 +559,12 @@ func TestJSONValidSplitMatchesRawEvaluator(t *testing.T) {
 				}
 				fake.mu.Lock()
 				stats, rawQueries := len(fake.stats), fake.rawQueries
+				hazardScans := 0
+				for _, q := range fake.stats {
+					if strings.Contains(q, jsonRawMarker(true)) {
+						hazardScans++
+					}
+				}
 				fake.mu.Unlock()
 				if !served {
 					// The stored fields do not decide every line: the row evaluator
@@ -572,12 +578,15 @@ func TestJSONValidSplitMatchesRawEvaluator(t *testing.T) {
 					}
 					continue
 				}
-				wantStats := 1
+				// With a hazard the first scan is cancelled when the probe finds
+				// one, and may be cancelled before it reaches VictoriaLogs; the
+				// second scan, moving those lines to the raw rows, always runs.
+				okStats := stats == 1 && hazardScans == 0
 				if hazards {
-					wantStats = 2
+					okStats = hazardScans == 1 && stats <= 2
 				}
-				if stats != wantStats || len(rawQueries) == 0 || len(rawQueries) > maxOrderedJSONRowSpans {
-					t.Fatalf("%s: stats=%d raw=%d, want %d stats scans and a bounded raw read", label, stats, len(rawQueries), wantStats)
+				if !okStats || len(rawQueries) == 0 || len(rawQueries) > maxOrderedJSONRowSpans {
+					t.Fatalf("%s: stats=%d (hazard form %d) raw=%d, want one stats scan (one hazard-form scan after at most one discarded scan) and a bounded raw read", label, stats, hazardScans, len(rawQueries))
 				}
 				for _, raw := range rawQueries {
 					if !strings.Contains(raw.query, " | filter "+jsonInvalidCondition(hazards)) {
