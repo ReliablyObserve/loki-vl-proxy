@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-10-22
+
+### Security
+
+- **Responses from VictoriaLogs, the cold backend and peers are read through
+  size and decompression limits.** Several reads buffered a backend body with no
+  cap, and decompression had none, so a compromised or intercepted backend could
+  send a small gzip or zstd body that expanded until the proxy ran out of memory.
+  The drilldown field, stream and unpacked-field listings and the label-filter
+  refill pages now stop at `-backend-max-buffered-response-bytes` (default 64
+  MiB), as do the cold-tier backward chunks (one budget for all chunks of a
+  query) and the cold manifest (1 MiB). A response above the limit fails with
+  HTTP 502 naming the flag instead of a truncated answer. Error bodies from the
+  backend are read up to 4 KiB. Gzip and zstd responses from VictoriaLogs fail
+  once they decode to more than the larger of 256 MiB and that flag (a tail
+  stream has no end and is not capped), and a zstd frame that declares a window
+  above 16 MiB is refused before the decoder allocates it; peer responses
+  refuse a window above 8 MiB the same way, where a 7 KB frame used to allocate
+  about 139 MiB before the 32 MiB response cap applied. VictoriaLogs v1.49.0
+  to v1.53.0 answer zstd only when the client asks for zstd alone, as one
+  streamed frame with a 128 KiB window; a live test
+  (`TestVLCapability_ZstdResponseWindow`, in the `vl-pinned` check and the
+  weekly version matrix) pins that, so a release that framed a large answer
+  differently fails CI instead of being refused in production.
+
 ## [2.26.1] - 2026-10-22
 
 ### Security
@@ -47,26 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SARIF is uploaded, since the code-scanning upload needs `security-events:
   write` on the job that holds the release credentials, and the image scan in
   `security-heavy.yaml` already reports Trivy results there.
-- **Responses from VictoriaLogs, the cold backend and peers are read through
-  size and decompression limits.** Several reads buffered a backend body with no
-  cap, and decompression had none, so a compromised or intercepted backend could
-  send a small gzip or zstd body that expanded until the proxy ran out of memory.
-  The drilldown field, stream and unpacked-field listings and the label-filter
-  refill pages now stop at `-backend-max-buffered-response-bytes` (default 64
-  MiB), as do the cold-tier backward chunks (one budget for all chunks of a
-  query) and the cold manifest (1 MiB). A response above the limit fails with
-  HTTP 502 naming the flag instead of a truncated answer. Error bodies from the
-  backend are read up to 4 KiB. Gzip and zstd responses from VictoriaLogs fail
-  once they decode to more than the larger of 256 MiB and that flag (a tail
-  stream has no end and is not capped), and a zstd frame that declares a window
-  above 16 MiB is refused before the decoder allocates it; peer responses
-  refuse a window above 8 MiB the same way, where a 7 KB frame used to allocate
-  about 139 MiB before the 32 MiB response cap applied. VictoriaLogs v1.49.0
-  to v1.53.0 answer zstd only when the client asks for zstd alone, as one
-  streamed frame with a 128 KiB window; a live test
-  (`TestVLCapability_ZstdResponseWindow`, in the `vl-pinned` check and the
-  weekly version matrix) pins that, so a release that framed a large answer
-  differently fails CI instead of being refused in production.
+
+## [2.26.0] - 2026-10-22
+
+### Security
+
+- **The Helm chart can read the admin token, the backend basic-auth credentials and the OTLP headers from an existing Secret.** Until now these could only be set as plain values (`extraArgs."server.admin-auth-token"`, `extraArgs.backend-basic-auth`, `observability.otlp.headers`), which end up in the pod spec and in `helm get values`. New values, following `peerCache.existingSecret`: `adminAuth.existingSecret` (key `token`), `backendAuth.existingSecret` (key `basic-auth`, the whole `user:password`) and `observability.otlp.existingSecret` (key `headers`), each with an `existingSecretKey` override. The chart adds a `secretKeyRef` env var (`ADMIN_AUTH_TOKEN`, `BACKEND_BASIC_AUTH`, `OTLP_HEADERS`) and renders the first two flags as `$(VAR)`, so the secret never appears in the pod spec or the Helm release values; the proxy reads `OTLP_HEADERS` itself. Setting a plain value and its `existingSecret` together fails rendering. No flag was added to the binary. Existing installs are unaffected: default values render byte-for-byte as before, and plain values keep working. TLS keys are file paths (mount a Secret with `extraVolumes`), and the proxy has no tenant-credential or OAuth/OIDC settings. `scripts/ci/validate_helm_secrets.sh` runs in the `helm` CI job.
 
 ## [2.25.1] - 2026-10-22
 
