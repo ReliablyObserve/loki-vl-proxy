@@ -18,6 +18,13 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: scope
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
+
   drilldown-matrix-source:
     runs-on: ubuntu-latest
     outputs:
@@ -37,8 +44,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   drilldown-pinned-runtime:
-    if: github.event_name != 'schedule'
-    needs: drilldown-matrix-source
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && needs.scope.outputs.product != 'false' }}
+    needs: [drilldown-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.7
@@ -75,8 +82,8 @@ jobs:
         run: docker compose down -v
 
   drilldown-grafana-pr-matrix:
-    if: github.event_name != 'schedule'
-    needs: drilldown-matrix-source
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && needs.scope.outputs.product != 'false' }}
+    needs: [drilldown-matrix-source, scope]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
