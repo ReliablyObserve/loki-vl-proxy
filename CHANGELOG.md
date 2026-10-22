@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.29.0] - 2026-10-22
+
 ### Fixed
 
 - **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
