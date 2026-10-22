@@ -64,7 +64,17 @@ func newJSONVolumeRouteProxy(t *testing.T) (string, *vlQueryRecorder) {
 // back to the raw-row evaluator over more rows fails with the limit error.
 func newJSONVolumeRouteProxyWithRowLimit(t *testing.T, rowLimit int) (string, *vlQueryRecorder) {
 	t.Helper()
-	return newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) { cfg.RangeMetricRowLimit = rowLimit })
+	return newJSONVolumeRouteProxyWithLimits(t, rowLimit, 0)
+}
+
+// newJSONVolumeRouteProxyWithLimits is newJSONVolumeRouteProxyWithRowLimit with
+// -max-stats-query-series set too (0: the default).
+func newJSONVolumeRouteProxyWithLimits(t *testing.T, rowLimit, seriesLimit int) (string, *vlQueryRecorder) {
+	t.Helper()
+	return newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) {
+		cfg.RangeMetricRowLimit = rowLimit
+		cfg.MaxStatsQuerySeries = seriesLimit
+	})
 }
 
 // newJSONVolumeRouteProxyWithConfig is newJSONVolumeRouteProxy with the proxy's

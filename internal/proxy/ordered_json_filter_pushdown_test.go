@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -42,8 +44,6 @@ type pushdownFakeVL struct {
 	stats  []string
 	guards []string
 	raw    int
-	// rawQueries are the queries of the raw-row fetches.
-	rawQueries []string
 	// presence answers the level presence probe from the rows; otherwise the
 	// probe gets no counts (the proxy then keeps the full chain). presenceFail
 	// makes it a backend error, presenceLine replaces the honest answer.
@@ -53,11 +53,29 @@ type pushdownFakeVL struct {
 	presenceCalls []string
 	// presenceGate, when set, holds every presence probe until it is closed.
 	presenceGate chan struct{}
+	// rawQueries holds the query and time range of every raw-row request.
+	rawQueries []fakeRawQuery
+	// jsonUnpack replaces vlUnpackJSONFields (vlFastjsonUnpackFields mirrors
+	// VictoriaLogs' parser exactly).
+	jsonUnpack func(string) map[string]string
+	// onStats, when set, runs at the start of every stats_query_range request.
+	onStats func(r *http.Request, query string)
+}
+
+type fakeRawQuery struct {
+	query      string
+	start, end int64
 }
 
 var pushdownLiteralFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"([^<\"]+)\" as (\\S+)$")
 
 var pushdownFormatRE = regexp.MustCompile("^format if \\((.+)\\) \"<([^>]+)>\" as (\\S+)$")
+
+// pushdownFormatBlankRE matches format if (<filter>) "" as dst.
+var pushdownFormatBlankRE = regexp.MustCompile("^format if \\((.+)\\) \"\" as (\\S+)$")
+
+// pushdownFormatMarkRE matches format if (<filter>) "1" as dst.
+var pushdownFormatMarkRE = regexp.MustCompile("^format if \\((.+)\\) \"1\" as (\\S+)$")
 
 // vlUnpackJSONFields mirrors unpack_json: a line that is one JSON object after
 // trimming whitespace yields its keys raw, nested objects flattened with a
@@ -244,6 +262,49 @@ func (f *fakeLogsQLFilter) quoted() string {
 }
 
 func (f *fakeLogsQLFilter) fieldFilter() bool {
+	f.skipSpace()
+	if strings.HasPrefix(f.src[f.pos:], "{") {
+		// A stream filter {label=~"re"}: the row's _stream holds the label
+		// with a value the regexp matches in full.
+		f.pos++
+		var name string
+		if strings.HasPrefix(f.src[f.pos:], `"`) {
+			name = f.quoted()
+		} else {
+			end := f.pos + strings.IndexAny(f.src[f.pos:], "=!")
+			name, f.pos = f.src[f.pos:end], end
+		}
+		op := ""
+		for _, candidate := range []string{"=~", "!=", "="} {
+			if strings.HasPrefix(f.src[f.pos:], candidate) {
+				op = candidate
+				break
+			}
+		}
+		if op == "" {
+			f.t.Errorf("fake VL: unsupported stream filter at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos += len(op)
+		pattern := f.quoted()
+		if !strings.HasPrefix(f.src[f.pos:], "}") {
+			f.t.Errorf("fake VL: expected } at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		// A label the stream lacks reads as the empty string.
+		value := ""
+		if m := fakeRegexp(`[{,]` + regexp.QuoteMeta(name) + `="((?:[^"\\]|\\.)*)"`).FindStringSubmatch(f.vals["_stream"]); m != nil {
+			value, _ = strconv.Unquote(`"` + m[1] + `"`)
+		}
+		switch op {
+		case "=":
+			return value == pattern
+		case "!=":
+			return value != pattern
+		}
+		return fakeRegexp("^(?:" + pattern + ")$").MatchString(value)
+	}
 	name := f.quoted()
 	if !strings.HasPrefix(f.src[f.pos:], ":") {
 		f.t.Errorf("fake VL: expected : after %q at %d in %q", name, f.pos, f.src)
@@ -283,7 +344,7 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return value == f.quoted()
 	case strings.HasPrefix(f.src[f.pos:], "~"):
 		f.pos++
-		return regexp.MustCompile(f.quoted()).MatchString(value)
+		return fakeRegexp(f.quoted()).MatchString(value)
 	case strings.HasPrefix(f.src[f.pos:], "!"):
 		f.pos++
 		return value != f.quoted()
@@ -310,13 +371,93 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		// A word or phrase, or with a trailing * a word prefix. VictoriaLogs'
 		// tokenizer takes every Unicode letter and digit and the underscore
 		// as word runes (isTokenRune).
+		// The boundary is checked only on a side where the phrase starts or
+		// ends with a word rune (getPhrasePos): a phrase of punctuation is a
+		// substring.
 		word := f.quoted()
+		isWordRune := func(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+		before := ""
+		if first, _ := utf8.DecodeRuneInString(word); isWordRune(first) {
+			before = `(^|[^\p{L}\p{Nd}_])`
+		}
 		if strings.HasPrefix(f.src[f.pos:], "*") {
 			f.pos++
-			return regexp.MustCompile(`(^|[^\p{L}\p{Nd}_])` + regexp.QuoteMeta(word)).MatchString(value)
+			return fakeRegexp(before + regexp.QuoteMeta(word)).MatchString(value)
 		}
 		return vlPhrasePos(value, word) >= 0
 	}
+}
+
+var fakeRegexps sync.Map
+
+// fakeRegexp compiles a pattern once for every evaluation of the fake.
+func fakeRegexp(pattern string) *regexp.Regexp {
+	if re, ok := fakeRegexps.Load(pattern); ok {
+		return re.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(pattern)
+	fakeRegexps.Store(pattern, re)
+	return re
+}
+
+// fakeStatsFunc is one `fn() [if (cond)] as name` of a stats pipe.
+type fakeStatsFunc struct {
+	name, cond string
+	sumLen     bool
+}
+
+// fakeStatsFuncs parses the functions of a stats pipe: count() and
+// sum_len(_msg), each with an optional if (...) filter.
+func fakeStatsFuncs(t testing.TB, statsPipe string) []fakeStatsFunc {
+	rest := strings.TrimPrefix(statsPipe, "| stats ")
+	if strings.HasPrefix(rest, "by (") {
+		rest = rest[strings.IndexByte(rest, ')')+2:]
+	}
+	var funcs []fakeStatsFunc
+	for rest != "" {
+		var fn fakeStatsFunc
+		switch {
+		case strings.HasPrefix(rest, "count() "):
+			rest = strings.TrimPrefix(rest, "count() ")
+		case strings.HasPrefix(rest, "sum_len(_msg) "):
+			fn.sumLen = true
+			rest = strings.TrimPrefix(rest, "sum_len(_msg) ")
+		default:
+			t.Errorf("fake VL: unsupported stats function in %q", statsPipe)
+			return nil
+		}
+		if strings.HasPrefix(rest, "if (") {
+			depth, end := 0, 3
+			var quote byte
+		scan:
+			for ; end < len(rest); end++ {
+				c := rest[end]
+				switch {
+				case quote != 0:
+					switch c {
+					case '\\':
+						end++
+					case quote:
+						quote = 0
+					}
+				case c == '"':
+					quote = c
+				case c == '(':
+					depth++
+				case c == ')':
+					if depth--; depth == 0 {
+						break scan
+					}
+				}
+			}
+			fn.cond = rest[4:end]
+			rest = rest[end+2:]
+		}
+		rest = strings.TrimPrefix(rest, "as ")
+		fn.name, rest, _ = strings.Cut(rest, ", ")
+		funcs = append(funcs, fn)
+	}
+	return funcs
 }
 
 func fakeLogsQLMatch(t testing.TB, expr string, values map[string]string) bool {
@@ -381,11 +522,20 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 		}
 		switch {
 		case strings.HasPrefix(pipe, "unpack_json") || strings.HasPrefix(pipe, "unpack_logfmt"):
+			source := "_msg"
+			if _, args, found := strings.Cut(pipe, " "); found {
+				if rest, ok := strings.CutPrefix(args, "from "); ok {
+					source, _, _ = strings.Cut(rest, " ")
+				}
+			}
 			var unpacked map[string]string
-			if strings.HasPrefix(pipe, "unpack_json") {
-				unpacked = vlUnpackJSONFields(values["_msg"])
-			} else {
-				unpacked = slidingLogfmtFields(values["_msg"])
+			switch {
+			case strings.HasPrefix(pipe, "unpack_json") && f.jsonUnpack != nil:
+				unpacked = f.jsonUnpack(values[source])
+			case strings.HasPrefix(pipe, "unpack_json"):
+				unpacked = vlUnpackJSONFields(values[source])
+			default:
+				unpacked = slidingLogfmtFields(values[source])
 			}
 			if i := strings.Index(pipe, " if ("); i >= 0 && i < strings.Index(pipe, "fields (") {
 				// unpack_json if (cond) ...: rows failing the condition are not parsed.
@@ -418,6 +568,41 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				} else if !keep {
 					values[prefix+field] = ""
 				}
+			}
+		case strings.HasPrefix(pipe, "format \"<") && strings.HasSuffix(pipe, " keep_original_fields"):
+			// format "<src>" as dst keep_original_fields: dst takes src where dst is empty.
+			src, dst, _ := strings.Cut(strings.TrimSuffix(strings.TrimPrefix(pipe, "format \"<"), " keep_original_fields"), ">\" as ")
+			if values[dst] == "" {
+				values[dst] = values[src]
+			}
+		case strings.HasPrefix(pipe, "format \"") && strings.HasSuffix(pipe, " keep_original_fields"):
+			value, dst, _ := strings.Cut(strings.TrimSuffix(strings.TrimPrefix(pipe, "format \""), " keep_original_fields"), "\" as ")
+			if values[dst] == "" {
+				values[dst] = value
+			}
+		case strings.HasPrefix(pipe, "coalesce("):
+			// coalesce(a, b) default "v" as dst: the first non-empty field, else v.
+			list, rest, _ := strings.Cut(strings.TrimPrefix(pipe, "coalesce("), ") default ")
+			fallback, dst, _ := strings.Cut(rest, " as ")
+			value, _ := strconv.Unquote(fallback)
+			for _, field := range strings.Split(list, ", ") {
+				if v := values[strings.Trim(field, "\"`")]; v != "" {
+					value = v
+					break
+				}
+			}
+			values[dst] = value
+		case strings.HasPrefix(pipe, "format if (") && pushdownFormatBlankRE.MatchString(pipe):
+			// format if (<filter>) "" as dst: dst is empty where the filter holds.
+			m := pushdownFormatBlankRE.FindStringSubmatch(pipe)
+			if fakeLogsQLMatch(t, m[1], values) {
+				values[m[2]] = ""
+			}
+		case strings.HasPrefix(pipe, "format if (") && pushdownFormatMarkRE.MatchString(pipe):
+			// format if (<filter>) "1" as dst: dst is 1 where the filter holds.
+			m := pushdownFormatMarkRE.FindStringSubmatch(pipe)
+			if fakeLogsQLMatch(t, m[1], values) {
+				values[m[2]] = "1"
 			}
 		case strings.HasPrefix(pipe, "format if ("):
 			if lit := pushdownLiteralFormatRE.FindStringSubmatch(pipe); lit != nil {
@@ -466,6 +651,17 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			if !fakeLogsQLMatch(t, strings.TrimPrefix(pipe, "filter "), values) {
 				return values, false
 			}
+		case strings.HasPrefix(pipe, "fields "):
+			kept := map[string]string{}
+			for _, field := range strings.Split(strings.TrimPrefix(pipe, "fields "), ", ") {
+				field = strings.Trim(field, "`")
+				for name, value := range values {
+					if prefix, ok := strings.CutSuffix(field, "*"); (ok && strings.HasPrefix(name, prefix)) || name == field {
+						kept[name] = value
+					}
+				}
+			}
+			values = kept
 		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "):
 		default:
 			t.Errorf("fake VL: unsupported pipe %q", pipe)
@@ -497,6 +693,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			fake.mu.Lock()
 			fake.stats = append(fake.stats, query)
 			fake.mu.Unlock()
+			if fake.onStats != nil {
+				fake.onStats(r, query)
+			}
 			start, end, step, offset, ok := slidingBucketParams(t, r)
 			if !ok {
 				return
@@ -506,7 +705,7 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			if !strings.Contains(statsPipe, "stats by (") {
 				groupBy = nil
 			}
-			bytesMetric := strings.Contains(statsPipe, "sum_len(_msg) as c")
+			funcs := fakeStatsFuncs(t, statsPipe)
 			type point struct {
 				name   string
 				labels string
@@ -535,11 +734,16 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				key := canonicalLabelsKey(labels)
 				labelSets[key] = labels
 				bucket := vlTruncate(ts, step, offset)
-				if bytesMetric {
-					add(point{"c", key}, bucket, float64(len(row.msg)))
-					add(point{"__sample_count", key}, bucket, 1)
-				} else {
-					add(point{"c", key}, bucket, 1)
+				for _, fn := range funcs {
+					if fn.cond != "" && !fakeLogsQLMatch(t, fn.cond, values) {
+						add(point{fn.name, key}, bucket, 0) // every stats column is emitted for every group row, as logsql.go writes them
+						continue
+					}
+					if fn.sumLen {
+						add(point{fn.name, key}, bucket, float64(len(values["_msg"])))
+					} else {
+						add(point{fn.name, key}, bucket, 1)
+					}
 				}
 			}
 			keys := make([]point, 0, len(points))
@@ -612,7 +816,7 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				fake.guards = append(fake.guards, query)
 			} else {
 				fake.raw++
-				fake.rawQueries = append(fake.rawQueries, query)
+				fake.rawQueries = append(fake.rawQueries, fakeRawQuery{query, start, end})
 			}
 			fake.mu.Unlock()
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -634,6 +838,20 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 				encoded["_stream"] = "{" + strings.Join(streamParts, ",") + "}"
 				for k, v := range row.vl {
 					encoded[k] = v
+				}
+				if !guard && strings.Contains(query, " | filter ") {
+					// The raw rows of a split plan: what the pipes leave of
+					// each selected row.
+					values, kept := fake.applyPipes(t, query, row)
+					if !kept {
+						continue
+					}
+					encoded = map[string]string{"_time": encoded["_time"]}
+					for k, v := range values {
+						if v != "" {
+							encoded[k] = v
+						}
+					}
 				}
 				line, _ := json.Marshal(encoded)
 				_, _ = w.Write(append(line, '\n'))
@@ -1112,7 +1330,8 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (k8s_pod_name) (count_over_time({env="production"} | json | drop __error__ | k8s_pod_name!="" [1m]))`, true, []string{"k8s_pod_name"}, nil},
 		{`sum(count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (__error__) (count_over_time({env="production"} | json | pipeline="x" [1m]))`, false, nil, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | __error__="" [1m]))`, false, nil, nil},
+		// `__error__=""` keeps the lines the parser accepts: the split pushdown (ordered_json_valid_split.go).
+		{`sum by (level) (count_over_time({env="production"} | json | __error__="" [1m]))`, true, []string{"level"}, nil},
 		// name_extracted: the key name where the stream has the label name, the key name_extracted otherwise.
 		{`sum by (level_extracted) (count_over_time({env="production"} | json | drop __error__ [1m]))`, true, []string{"level_extracted"}, nil},
 		{`sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
@@ -1476,7 +1695,7 @@ func TestOrderedJSONDetectedLevelFilterBeforeParserRawEvaluator(t *testing.T) {
 			if fake.raw != 1 || len(fake.rawQueries) != 1 {
 				t.Fatalf("expected the raw-row evaluator after the probe: raw=%d", fake.raw)
 			}
-			raw := fake.rawQueries[0]
+			raw := fake.rawQueries[0].query
 			if strings.Contains(raw, "unpack_logfmt") || !strings.HasPrefix(raw, `app:="api" | copy detected_level as __lr_d, level as __lr_l | filter (__lr_d:* OR -__lr_l:*`) || !strings.Contains(raw, "| delete __lr_d, __lr_l") {
 				t.Fatalf("the raw fetch is the selector narrowed by the stored-level filter: %s", raw)
 			}
@@ -1761,7 +1980,7 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 		t.Fatalf("got %d %q\nwant 400 %q", code, msg, want)
 	}
 	fake.mu.Lock()
-	if fake.raw != 0 || len(fake.guards) != 1 || !strings.HasSuffix(fake.guards[0], ` | filter -_msg:~"^\\s*\\{" | limit 1`) {
+	if fake.raw != 0 || len(fake.guards) != 1 || !strings.HasSuffix(fake.guards[0], ` | filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1`) {
 		t.Fatalf("expected the error from one lookup without a raw scan: raw=%d guards=%q", fake.raw, fake.guards)
 	}
 	fake.mu.Unlock()

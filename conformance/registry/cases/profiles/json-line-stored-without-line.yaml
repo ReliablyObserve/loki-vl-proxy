@@ -11,7 +11,9 @@ why: |
   dotted names, numbers as strings) and sets _msg to "missing _msg field;
   see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field".
   Key order, value types and nesting are lost, and the fields of the line
-  cannot be told from the push's structured metadata. The proxy rebuilds the
+  cannot be told from the push's structured metadata. Every `| json` metric
+  path (the stats pushdown, its parse-risk probes and the row evaluator)
+  reads the line from _msg, so such rows count as lines that are not JSON. The proxy rebuilds the
   line from every stored field (structured metadata included), reports them
   as structured metadata without a parser and as parsed labels after
   `| json` or `| logfmt`. Loki returns the original line and no labels from

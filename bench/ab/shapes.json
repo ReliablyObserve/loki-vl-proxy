@@ -1888,6 +1888,61 @@
      ]
     }
    ]
+  },
+  "json-error-split": {
+   "description": "`| json | __error__=\"\"` metrics: counted by one VictoriaLogs stats scan over the lines VictoriaLogs parses, with only the other brace-opened lines read as raw rows, instead of reading every selected line raw (502 at 24 h on the row and byte limits). Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "J1 json no-error count by service_name, one service",
+     "query": "sum by (service_name) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/json-error-filter-metric-split-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "J2 json no-error count by app, namespace",
+     "query": "sum by (app) (count_over_time({namespace=\"prod\"} | json | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/json-error-filter-metric-split-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "J3 json no-error count by parsed method",
+     "query": "sum by (method) (count_over_time({service_name=\"api-gateway\"} | json | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/json-error-filter-metric-split-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "J4 json no-error count by service_name, all services",
+     "query": "sum by (service_name) (count_over_time({env=\"production\"} | json | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/json-error-filter-metric-split-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "J5 json no-error bytes_rate by app",
+     "query": "sum by (app) (bytes_rate({namespace=\"prod\"} | json | __error__=\"\" [5m]))",
+     "covers": [
+      "semantics/json-error-filter-metric-split-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

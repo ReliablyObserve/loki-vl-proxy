@@ -1,0 +1,323 @@
+{
+ "label": "json-error-split-long",
+ "date": "2026-10-22",
+ "set": "json-error-split",
+ "description": "`| json | __error__=\"\"` metrics: counted by one VictoriaLogs stats scan over the lines VictoriaLogs parses, with only the other brace-opened lines read as raw rows, instead of reading every selected line raw (502 at 24 h on the row and byte limits). Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "refresh_s": null,
+ "refresh_runs": null,
+ "timing": "warm",
+ "verdicts": {
+  "faster": 2,
+  "fixed": 8
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "J1 json no-error count by service_name, one service",
+   "range": "6h",
+   "p50": {
+    "base": 4.648,
+    "pr": 0.142
+   },
+   "p95": {
+    "base": 4.793,
+    "pr": 0.155
+   },
+   "cold": {
+    "base": 4.698,
+    "pr": 0.259
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 209.94,
+    "pr": 45.77
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 32.73,
+   "confirmed": true
+  },
+  {
+   "shape": "J1 json no-error count by service_name, one service",
+   "range": "24h",
+   "p50": {
+    "base": 14.677,
+    "pr": 0.625
+   },
+   "p95": {
+    "base": 17.408,
+    "pr": 0.697
+   },
+   "cold": {
+    "base": 15.353,
+    "pr": 1.914
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 724.81,
+    "pr": 724.81
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J2 json no-error count by app, namespace",
+   "range": "6h",
+   "p50": {
+    "base": 13.463,
+    "pr": 0.476
+   },
+   "p95": {
+    "base": 13.857,
+    "pr": 0.504
+   },
+   "cold": {
+    "base": 12.969,
+    "pr": 0.62
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 351.88,
+    "pr": 221.37
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J2 json no-error count by app, namespace",
+   "range": "24h",
+   "p50": {
+    "base": 11.952,
+    "pr": 1.46
+   },
+   "p95": {
+    "base": 14.227,
+    "pr": 1.779
+   },
+   "cold": {
+    "base": 11.791,
+    "pr": 2.237
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 739.03,
+    "pr": 739.03
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J3 json no-error count by parsed method",
+   "range": "6h",
+   "p50": {
+    "base": 4.512,
+    "pr": 0.159
+   },
+   "p95": {
+    "base": 5.012,
+    "pr": 0.19
+   },
+   "cold": {
+    "base": 4.613,
+    "pr": 0.209
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 167.55,
+    "pr": 102.44
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 28.38,
+   "confirmed": true
+  },
+  {
+   "shape": "J3 json no-error count by parsed method",
+   "range": "24h",
+   "p50": {
+    "base": 12.18,
+    "pr": 0.611
+   },
+   "p95": {
+    "base": 14.019,
+    "pr": 0.753
+   },
+   "cold": {
+    "base": 12.457,
+    "pr": 0.584
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 562.38,
+    "pr": 562.38
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J4 json no-error count by service_name, all services",
+   "range": "6h",
+   "p50": {
+    "base": 13.093,
+    "pr": 0.502
+   },
+   "p95": {
+    "base": 14.871,
+    "pr": 0.749
+   },
+   "cold": {
+    "base": 14.255,
+    "pr": 0.991
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 277.61,
+    "pr": 277.61
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J4 json no-error count by service_name, all services",
+   "range": "24h",
+   "p50": {
+    "base": 12.016,
+    "pr": 2.01
+   },
+   "p95": {
+    "base": 12.453,
+    "pr": 2.262
+   },
+   "cold": {
+    "base": 14.243,
+    "pr": 3.142
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 764.3,
+    "pr": 768.51
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J5 json no-error bytes_rate by app",
+   "range": "6h",
+   "p50": {
+    "base": 11.027,
+    "pr": 0.346
+   },
+   "p95": {
+    "base": 11.833,
+    "pr": 0.396
+   },
+   "cold": {
+    "base": 11.657,
+    "pr": 0.503
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 768.51,
+    "pr": 231.97
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J5 json no-error bytes_rate by app",
+   "range": "24h",
+   "p50": {
+    "base": 12.305,
+    "pr": 1.518
+   },
+   "p95": {
+    "base": 14.803,
+    "pr": 2.04
+   },
+   "cold": {
+    "base": 12.587,
+    "pr": 3.001
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 694.84,
+    "pr": 759.84
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  }
+ ],
+ "isolated_windows": true
+}

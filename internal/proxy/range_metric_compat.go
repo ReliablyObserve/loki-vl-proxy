@@ -1062,7 +1062,7 @@ func (c *seriesCountingReader) Read(b []byte) (int, error) {
 			keep = len(c.window)
 		}
 		c.tail = append(c.tail[:0], c.window[len(c.window)-keep:]...)
-		if c.seen > c.limit {
+		if c.limit > 0 && c.seen > c.limit {
 			return n, errSeriesCountExceeded
 		}
 	}
@@ -1203,22 +1203,22 @@ func snapSlidingBucketNanos(ts int64, start time.Time, hitStep time.Duration) in
 // readStatsBucketBody reads a stats_query_range response, stopping with Loki's
 // series limit error once it holds more result entries than the limit allows
 // (two per series when byte presence counts ride along). A Drilldown request
-// reads it all and keeps the busiest series instead.
+// reads it all and keeps the busiest series instead. perSeries is the number
+// of results each series carries.
 //
-// With the groups of the response guarded (guardStatsGroups) a VictoriaLogs
-// group is no series of the answer: groups merge into fewer series after the
-// read (the spellings of one level), and Loki's limit applies to the merged
-// answer only. The read then stops at splitGroupSlack times the limit as a
-// memory guard, with errStatsGroupGuard instead of the series limit error, and
-// the caller asks again in a form whose groups are its series.
-func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit int, withPresence bool) ([]byte, error) {
+// With the groups of the response guarded (guardStatsGroups, and every read
+// with an aux result, see collectRangeMetricHitsAux) a VictoriaLogs group is
+// no series of the answer: groups merge into fewer series after the read (the
+// spellings of one level, the empty-valued groups) and Loki's limit applies to
+// the merged answer only. The read then stops at splitGroupSlack times the
+// limit as a memory guard, with errStatsGroupGuard instead of the series limit
+// error, and the caller asks again in a form whose groups are its series, or
+// leaves the query to the row evaluator.
+func (p *Proxy) readStatsBucketBody(ctx context.Context, body io.Reader, limit, perSeries int) ([]byte, error) {
 	counter := &seriesCountingReader{r: body}
 	guarded := statsGroupsGuarded(ctx)
 	if !requestKeepsPartialSeries(ctx) {
-		counter.limit = limit
-		if withPresence {
-			counter.limit = 2 * limit
-		}
+		counter.limit = perSeries * limit
 		if guarded {
 			counter.limit *= splitGroupSlack
 		}
@@ -1252,6 +1252,15 @@ func guardStatsGroups(ctx context.Context) context.Context {
 	return context.WithValue(ctx, statsGroupGuardKey{}, true)
 }
 
+// guardAuxStatsGroups guards the groups of a read with an aux result: they are
+// the groups of a split plan, no series of the answer.
+func guardAuxStatsGroups(ctx context.Context, aux string) context.Context {
+	if aux != "" {
+		return guardStatsGroups(ctx)
+	}
+	return ctx
+}
+
 func statsGroupsGuarded(ctx context.Context) bool {
 	guarded, _ := ctx.Value(statsGroupGuardKey{}).(bool)
 	return guarded
@@ -1276,9 +1285,32 @@ func (p *Proxy) collectRangeMetricHits(
 	start, end time.Time,
 	hitStep time.Duration,
 ) (map[string]manualSeriesSamples, error) {
+	series, _, err := p.collectRangeMetricHitsAux(ctx, baseQuery, groupBy, origGroupBy, byExplicit, statsAggFunc, start, end, hitStep, "")
+	return series, err
+}
+
+// collectRangeMetricHitsAux is collectRangeMetricHits where statsAggFunc also
+// computes the result aux: it is not a series, and the left edges of the
+// buckets where it is above zero are returned instead. With an aux result (a
+// split query) the groups whose values are all zero are dropped, and the read
+// never ends with the series limit error: a group is no series of the answer,
+// so the limit is applied by the caller to the merged answer
+// (capSeriesForRequest), and the read stops at splitGroupSlack times the limit
+// with errStatsGroupGuard (readStatsBucketBody).
+func (p *Proxy) collectRangeMetricHitsAux(
+	ctx context.Context,
+	baseQuery string,
+	groupBy, origGroupBy []string,
+	byExplicit bool,
+	statsAggFunc string,
+	start, end time.Time,
+	hitStep time.Duration,
+	aux string,
+) (map[string]manualSeriesSamples, []int64, error) {
 	if hitStep <= 0 {
 		hitStep = time.Minute
 	}
+	ctx = guardAuxStatsGroups(ctx, aux)
 
 	// Build LogsQL stats query so VL returns pre-aggregated bucket values.
 	// stats_query_range understands stream labels (stored in _stream), unlike /hits.
@@ -1305,26 +1337,26 @@ func (p *Proxy) collectRangeMetricHits(
 		case <-sem:
 			defer func() { sem <- struct{}{} }()
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
 	}
 
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
+		return nil, nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
 	limit := p.resolvedMaxStatsQuerySeries(ctx)
-	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
-	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, withPresence)
+	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
+	body, err := p.readStatsBucketBody(ctx, resp.Body, limit, statsResultsPerSeries(withPresence, aux != ""))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
@@ -1341,10 +1373,10 @@ func (p *Proxy) collectRangeMetricHits(
 	// {"status":"success","data":{"result":[{"metric":{...},"values":[[ts,"v"],...]}]}}
 	v, parseErr := fj.ParseBytes(body)
 	if parseErr != nil {
-		return nil, fmt.Errorf("parse stats_query_range response: %w", parseErr)
+		return nil, nil, fmt.Errorf("parse stats_query_range response: %w", parseErr)
 	}
 	if status := string(v.GetStringBytes("status")); status != "success" {
-		return nil, fmt.Errorf("stats_query_range non-success status: %s", status)
+		return nil, nil, fmt.Errorf("stats_query_range non-success status: %s", status)
 	}
 
 	results := v.GetArray("data", "result")
@@ -1355,7 +1387,14 @@ func (p *Proxy) collectRangeMetricHits(
 		streamGrouped = streamGrouped || g == "_stream"
 	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
+	var auxEdges []int64
 	for _, res := range results {
+		if aux != "" && string(res.GetStringBytes("metric", "__name__")) == aux {
+			var entry manualSeriesSamples
+			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
+			auxEdges = append(auxEdges, entry.PresentBuckets...)
+			continue
+		}
 		metricObj := res.GetObject("metric")
 		var metric map[string]string
 		if streamGrouped {
@@ -1402,14 +1441,51 @@ func (p *Proxy) collectRangeMetricHits(
 			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
 		}
 	}
-	if statsGroupsGuarded(ctx) {
-		// The groups are not the answer's series: the caller applies the limit
-		// to the merged answer.
-		return seriesMap, nil
+	series, err := capHitSeries(ctx, seriesMap, limit, aux)
+	return series, auxEdges, err
+}
+
+// capHitSeries applies the series limit to the series read from stats buckets:
+// more than -max-stats-query-series is Loki's error, or for Drilldown the
+// busiest series (complete, with byte values and presence) and a warning. With
+// an aux result the groups that counted nothing are dropped and the caller
+// applies the limit, because the aux lines add to the series; with the groups
+// guarded (guardStatsGroups) the groups are no series of the answer either, and
+// the caller applies the limit to the merged answer.
+func capHitSeries(ctx context.Context, series map[string]manualSeriesSamples, limit int, aux string) (map[string]manualSeriesSamples, error) {
+	if aux != "" {
+		dropZeroSeries(series)
 	}
-	// More series than -max-stats-query-series: Loki's error, or for Drilldown the
-	// busiest series (complete, with byte values and presence) and a warning.
-	return capSeriesForRequest(ctx, seriesMap, limit)
+	if aux != "" || statsGroupsGuarded(ctx) {
+		return series, nil
+	}
+	return capSeriesForRequest(ctx, series, limit)
+}
+
+// dropZeroSeries removes the groups that counted nothing.
+func dropZeroSeries(series map[string]manualSeriesSamples) {
+	for key, entry := range series {
+		zero := len(entry.PresentBuckets) == 0
+		for _, sample := range entry.Samples {
+			zero = zero && sample.value == 0
+		}
+		if zero {
+			delete(series, key)
+		}
+	}
+}
+
+// statsResultsPerSeries counts the stats results each series carries: the
+// value, byte presence, and an aux result.
+func statsResultsPerSeries(withPresence, withAux bool) int {
+	n := 1
+	if withPresence {
+		n++
+	}
+	if withAux {
+		n++
+	}
+	return n
 }
 
 // statsGroupMetric returns the Loki labels of a stats result's group: its

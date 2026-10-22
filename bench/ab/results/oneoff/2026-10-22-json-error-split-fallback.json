@@ -1,0 +1,138 @@
+{
+ "label": "json-error-split-fallback",
+ "date": "2026-10-22",
+ "description": "Shapes where the JSON error-filter split falls back to the row evaluator (more than twice -max-stats-query-series groups), and two within the guard: main vs branch warm p50 (3 runs at 24 h, 5 at 1 h, distinct windows), host proxies against one VictoriaLogs v1.52.0 stack seeded with VictoriaLogs only (8.5 days available, 25 h of window needed), restarts 0->0. Main is origin/main at run time (2410a427), branch is the PR head built before the rebase (7db060e8; the rebase changed no proxy code). Selector {env=\"production\"}, `| json | __error__=\"\"`, [5m], step 5 s at 1 h and 60 s at 24 h. The fallback costs one VictoriaLogs stats scan on top of main's row evaluator; where main's row evaluator fails fast with the series limit error (F1, F2) the branch is slower by that scan.",
+ "command": "python3 fallback.py <repo> <out> --existing-end <seed end> (host proxies with the shown -max-stats-query-series, a client timeout of 120 s)",
+ "rows": [
+  {
+   "shape": "F1 sum by (session_id), groups past twice the limit",
+   "max_stats_query_series": 500,
+   "range": "1h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.03
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 0.16
+   }
+  },
+  {
+   "shape": "F1 sum by (session_id), groups past twice the limit",
+   "max_stats_query_series": 500,
+   "range": "24h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.03
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 5.29
+   }
+  },
+  {
+   "shape": "F3 sum by (user_id), groups within twice the limit (no fallback)",
+   "max_stats_query_series": 500,
+   "range": "1h",
+   "main": {
+    "status": "200",
+    "p50_s": 2.29
+   },
+   "branch": {
+    "status": "200",
+    "p50_s": 0.07
+   }
+  },
+  {
+   "shape": "F3 sum by (user_id), groups within twice the limit (no fallback)",
+   "max_stats_query_series": 500,
+   "range": "24h",
+   "main": {
+    "status": "502",
+    "p50_s": 8.5
+   },
+   "branch": {
+    "status": "200",
+    "p50_s": 1.76
+   }
+  },
+  {
+   "shape": "F4 sum by (detected_level), 3 series within twice the limit (no fallback on this data)",
+   "max_stats_query_series": 5,
+   "range": "1h",
+   "main": {
+    "status": "200",
+    "p50_s": 2.46
+   },
+   "branch": {
+    "status": "200",
+    "p50_s": 0.06
+   }
+  },
+  {
+   "shape": "F4 sum by (detected_level), 3 series within twice the limit (no fallback on this data)",
+   "max_stats_query_series": 5,
+   "range": "24h",
+   "main": {
+    "status": "502",
+    "p50_s": 8.0
+   },
+   "branch": {
+    "status": "200",
+    "p50_s": 1.05
+   }
+  },
+  {
+   "shape": "F2 sum by (service_name), 7 groups past twice the limit",
+   "max_stats_query_series": 3,
+   "range": "1h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.0
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 0.07
+   }
+  },
+  {
+   "shape": "F2 sum by (service_name), 7 groups past twice the limit",
+   "max_stats_query_series": 3,
+   "range": "24h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.0
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 1.94
+   }
+  },
+  {
+   "shape": "F4b sum by (detected_level), 3 series past twice the limit, fallback",
+   "max_stats_query_series": 1,
+   "range": "1h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.0
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 0.0
+   }
+  },
+  {
+   "shape": "F4b sum by (detected_level), 3 series past twice the limit, fallback",
+   "max_stats_query_series": 1,
+   "range": "24h",
+   "main": {
+    "status": "400",
+    "p50_s": 0.0
+   },
+   "branch": {
+    "status": "400",
+    "p50_s": 0.0
+   }
+  }
+ ]
+}
