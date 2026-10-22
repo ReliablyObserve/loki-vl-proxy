@@ -22,7 +22,7 @@ go test ./...
 
 ## Static Checks
 
-CI (`.github/workflows/ci.yaml`) runs these on every pull request:
+CI (`.github/workflows/ci.yaml`) runs these on pull requests (`lint` always, `test` unless the pull request is infra-only, see CI Scope):
 
 ```bash
 # formatting (lint job): must print nothing
@@ -40,17 +40,25 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 ## Changelog Gate
 
-The `changelog` check (`scripts/ci/check_changelog_pr.py`) requires a new bullet under `## [Unreleased]` in `CHANGELOG.md` when a pull request:
+A changelog entry and a release are tied to one question: does the pull request change something users receive? The `changelog` check (`scripts/ci/check_changelog_pr.py`) requires a new bullet under `## [Unreleased]` in `CHANGELOG.md` only when a changed file ships. The commit type does not matter: a `fix:` that touches nothing that ships needs no entry. What ships is listed in `SHIPPED` in `scripts/ci/change_scope.py`:
 
-- has a `feat`, `fix`, `perf` or `revert` commit, or a commit subject containing "breaking change", or
-- changes files under `cmd/`, `internal/`, `pkg/` or `charts/`, or `go.mod`, `go.sum` or `Dockerfile` (`_test.go` files under `cmd/`, `internal/` and `pkg/` are exempt), or
-- changes any other file that is not on the non-release list (`docs/`, `website/`, `scripts/ci/tests/`, `README.md`, `CHANGELOG.md`, `LICENSE`, `scripts/ci/check_changelog_pr.py`).
+- `cmd/`, `internal/` and `pkg/` (`_test.go` files and `testdata/` excluded),
+- `go.mod`, `go.sum`, `Dockerfile` and `.dockerignore`,
+- `charts/`, `dashboard/` and `alerting/`.
 
-Dependency-only pull requests (all commits `build(deps):` / `build(deps-dev):`) are skipped. Check locally against your base branch:
+Everything else (tests, `bench/`, `conformance/`, `scripts/`, `.github/`, compose files, `examples/`, `docs/`, `website/`) never needs an entry and never cuts a release. The release bot (`auto-release.yaml`) applies the same rule to the files changed since the last tag, and releases only when `[Unreleased]` has content.
+
+Dependency-only pull requests (all commits `build(deps):` / `build(deps-dev):`) are exempt. Released version sections are never edited: put entries under `[Unreleased]`, and after a rebase across a release check that none slipped into the version that was cut (a deliberate history fix uses a `docs(changelog):` commit). Check locally against your base branch:
 
 ```bash
 python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 ```
+
+## CI Scope
+
+`change_scope.py` also classifies each changed path as product or infra (`classify()`). CI runs the product jobs (unit tests, e2e, compat, bench and the rest) when any changed path is product, and skips them for a pull request that changes only infra paths such as `.github/`, `scripts/`, compose files, `examples/`, `docs/` and `website/`. A path no rule recognises counts as product. Add the `ci-full` label to force a full run. Pushes to `main` always run everything.
+
+A Go toolchain bump changes the shipped binary, so bump it by hand and keep `go.mod`, the `Dockerfile` builder image and every `setup-go` `go-version` equal; `scripts/ci/tests/test_go_toolchain_pins.py` fails when they differ.
 
 ## Compatibility Rules
 
