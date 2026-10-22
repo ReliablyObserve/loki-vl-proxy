@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-10-22
+
 ### Security
 
 - **CI tool images and test images are pinned by digest, the Python tools are
