@@ -759,7 +759,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins
+        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_collect_release_assets
 
       - name: Verify generated configuration and limits reference
         run: go run ./cmd/configdoc -check
@@ -1125,3 +1125,6 @@ jobs:
 
       - name: Helm ↔ binary flag parity
         run: ./scripts/ci/validate_helm_flags.sh
+
+      - name: Helm existingSecret values
+        run: ./scripts/ci/validate_helm_secrets.sh

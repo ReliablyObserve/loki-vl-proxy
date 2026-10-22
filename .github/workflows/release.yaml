@@ -45,6 +45,31 @@ jobs:
           fi
           echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
 
+      # An immutable release locks its assets once it is published. Republishing a
+      # tag replaces the release assets, and by then the image and chart tags have
+      # already been pointed at the rebuilt artifacts, so on an immutable release
+      # the run would change those tags and then fail. Refuse before anything is
+      # built or pushed. A release cut before immutable releases were turned on,
+      # and a tag with no release yet, are unaffected.
+      - name: Refuse to republish an immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The REST field works with any gh version on the runner. A draft is not
+          # returned by this endpoint, so a re-run that finishes a draft goes on.
+          if ! IMMUTABLE="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false' 2>&1)"; then
+            case "${IMMUTABLE}" in
+              *"HTTP 404"*) echo "No published release for ${TAG}; continuing."; exit 0 ;;
+              *) echo "::error::could not read the release for ${TAG}: ${IMMUTABLE}"; exit 1 ;;
+            esac
+          fi
+          if [ "${IMMUTABLE}" = "true" ]; then
+            echo "::error::${TAG} is an immutable release, so its assets cannot be replaced. Publish a new version instead."
+            exit 1
+          fi
+
       # Only an existing tag is released: the ref is spelled as a tag so a branch
       # of the same name can never be picked up. The checkout does not keep the
       # token; the one step that pushes gets the bot token through a credential helper.
@@ -154,29 +179,34 @@ jobs:
           done
 
       - name: Attest binary build provenance
+        id: attest-binaries
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
 
       - name: Attest SBOM for linux/amd64
+        id: attest-sbom-linux-amd64
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-linux-amd64
           sbom-path: dist/loki-vl-proxy-linux-amd64.spdx.json
 
       - name: Attest SBOM for linux/arm64
+        id: attest-sbom-linux-arm64
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-linux-arm64
           sbom-path: dist/loki-vl-proxy-linux-arm64.spdx.json
 
       - name: Attest SBOM for darwin/amd64
+        id: attest-sbom-darwin-amd64
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-darwin-amd64
           sbom-path: dist/loki-vl-proxy-darwin-amd64.spdx.json
 
       - name: Attest SBOM for darwin/arm64
+        id: attest-sbom-darwin-arm64
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-darwin-arm64
@@ -280,6 +310,7 @@ jobs:
           fi
 
       - name: Attest container image provenance (GHCR)
+        id: attest-image-ghcr
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.image-tags.outputs.ghcr_image }}
@@ -288,6 +319,7 @@ jobs:
           create-storage-record: false
 
       - name: Attest container image provenance (Docker Hub)
+        id: attest-image-dockerhub
         if: ${{ env.HAS_DOCKERHUB == 'true' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -392,7 +424,17 @@ jobs:
           set -euo pipefail
           cosign sign --yes "${CHART_REF}@${CHART_DIGEST}"
 
+      - name: Sign the Helm chart archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The archive attached to the release gets its own keyless signature
+          # bundle, so it can be verified with cosign verify-blob and no registry.
+          cosign sign-blob --yes --bundle "dist/loki-vl-proxy-${VERSION}.tgz.sigstore.json" "dist/loki-vl-proxy-${VERSION}.tgz"
+
       - name: Attest Helm chart provenance
+        id: attest-chart
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/loki-vl-proxy-*.tgz
@@ -413,9 +455,49 @@ jobs:
           gh api -X PATCH "/orgs/${OWNER}/packages/container/${PKG}/visibility" -f visibility=public >/dev/null
           echo "Ensured public visibility for ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
 
+      - name: Collect provenance bundles, image SBOMs and digests
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          CHART_GHCR_REF: ${{ steps.chart_ghcr.outputs.ref }}
+          CHART_GHCR_DIGEST: ${{ steps.chart_ghcr.outputs.digest }}
+          CHART_DH_REF: ${{ steps.chart_dockerhub.outputs.ref }}
+          CHART_DH_DIGEST: ${{ steps.chart_dockerhub.outputs.digest }}
+          BUNDLE_BINARIES: ${{ steps.attest-binaries.outputs.bundle-path }}
+          BUNDLE_CHART: ${{ steps.attest-chart.outputs.bundle-path }}
+          BUNDLE_IMAGE_GHCR: ${{ steps.attest-image-ghcr.outputs.bundle-path }}
+          BUNDLE_IMAGE_DH: ${{ steps.attest-image-dockerhub.outputs.bundle-path }}
+          BUNDLE_SBOM_LINUX_AMD64: ${{ steps.attest-sbom-linux-amd64.outputs.bundle-path }}
+          BUNDLE_SBOM_LINUX_ARM64: ${{ steps.attest-sbom-linux-arm64.outputs.bundle-path }}
+          BUNDLE_SBOM_DARWIN_AMD64: ${{ steps.attest-sbom-darwin-amd64.outputs.bundle-path }}
+          BUNDLE_SBOM_DARWIN_ARM64: ${{ steps.attest-sbom-darwin-arm64.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          # The SBOM BuildKit attached to the pushed index, per platform. Read by
+          # digest, so it is the document of the image that was signed and attested.
+          IMAGE_SBOM_JSON="${RUNNER_TEMP}/image-sbom.json"
+          for ATTEMPT in 1 2 3; do
+            if docker buildx imagetools inspect "${GHCR_IMAGE}@${IMAGE_DIGEST}" --format '{{ json .SBOM }}' > "${IMAGE_SBOM_JSON}"; then
+              break
+            fi
+            if [ "${ATTEMPT}" = 3 ]; then
+              echo "::error::could not read the image SBOM from ${GHCR_IMAGE}@${IMAGE_DIGEST}"
+              exit 1
+            fi
+            sleep $((ATTEMPT * 5))
+          done
+          export IMAGE_SBOM_JSON
+          # A tag cut before the collector existed does not contain it, so it is
+          # taken from the commit the workflow itself runs from.
+          git show "${WORKFLOW_SHA}:scripts/ci/collect_release_assets.sh" > "${RUNNER_TEMP}/collect_release_assets.sh"
+          bash "${RUNNER_TEMP}/collect_release_assets.sh"
+
       - name: Append verification details to the release notes
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
           NOTES_FILE: ${{ steps.release_notes.outputs.notes_file }}
           GHCR_IMAGE: ${{ steps.image-tags.outputs.ghcr_image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -463,14 +545,31 @@ jobs:
             echo "gh attestation verify loki-vl-proxy-linux-amd64 --repo ${GITHUB_REPOSITORY}"
             echo "${F}"
             echo
+            echo "The release also attaches the evidence for checking it without the GitHub attestation API: \`loki-vl-proxy-${VERSION}.intoto.jsonl\` (build provenance of the binaries, the chart and the image, and the SBOM attestation of each binary, as one Sigstore bundle per line), \`loki-vl-proxy-${VERSION}.tgz.sigstore.json\` (cosign signature of the chart archive), \`loki-vl-proxy-image-${VERSION}-linux-<arch>.spdx.json\` (the SBOM of the image for each platform) and \`image-digests.txt\` (the image and chart references above). For example:"
+            echo
+            echo "${F}sh"
+            echo "gh attestation verify loki-vl-proxy-linux-amd64 --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ${GITHUB_REPOSITORY}"
+            echo "cosign verify-blob --bundle loki-vl-proxy-${VERSION}.tgz.sigstore.json \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+            echo "  --certificate-identity-regexp '${ID_RE}' loki-vl-proxy-${VERSION}.tgz"
+            echo "${F}"
+            echo
             echo "Every signature and attestation is recorded in Sigstore's public transparency log. The full procedure, including reproducing a binary from the tag, is in [SECURITY.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/SECURITY.md#verifying-releases)."
           } >> "${NOTES_FILE}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3  # zizmor: ignore[superfluous-actions] softprops/action-gh-release attaches the signed assets; replacing it with gh release is a separate change
-        # The SPDX SBOMs (dist/loki-vl-proxy-<os>-<arch>.spdx.json) are matched by
-        # the binary globs below, so they are not listed a second time.
+        # The SPDX SBOMs of the binaries (dist/loki-vl-proxy-<os>-<arch>.spdx.json)
+        # are matched by the binary globs below, so they are not listed a second
+        # time. None of the other globs overlaps another.
+        #
+        # The action creates the release as a draft, uploads every file, and only
+        # then publishes it, so assets are never added to a published release.
+        # That order is what GitHub's immutable releases need, and once a release
+        # is published a missing asset can no longer be added: a pattern that
+        # matches nothing therefore fails the step, before the draft is created.
         with:
+          fail_on_unmatched_files: true
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           body_path: ${{ steps.release_notes.outputs.notes_file }}
@@ -480,6 +579,10 @@ jobs:
             dist/checksums.txt
             dist/checksums.txt.sigstore.json
             dist/loki-vl-proxy-*.tgz
+            dist/loki-vl-proxy-*.tgz.sigstore.json
+            dist/loki-vl-proxy-*.intoto.jsonl
+            dist/loki-vl-proxy-image-*.spdx.json
+            dist/image-digests.txt
 
       - name: Prepare release metadata branch
         id: metadata
