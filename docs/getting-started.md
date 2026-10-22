@@ -174,13 +174,15 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
   --set extraArgs.backend=http://victorialogs:9428
 
 # 2) StatefulSet + persistent disk cache
+#    disk-cache-max-bytes is a byte count (an int64 flag, no Gi suffix); cap it at
+#    most half of persistence.size (10737418240 = 10 GiB of the 20Gi volume).
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
   --set workload.kind=StatefulSet \
   --set persistence.enabled=true \
   --set persistence.size=20Gi \
   --set extraArgs.backend=http://victorialogs:9428 \
-  --set extraArgs.disk-cache-max-bytes=20Gi
+  --set extraArgs.disk-cache-max-bytes=10737418240
 
 # 3) Multi-replica fleet with peer cache
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \

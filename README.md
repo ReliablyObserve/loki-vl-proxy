@@ -189,9 +189,11 @@ The proxy refuses to start against a VictoriaLogs older than the floor unless `-
 
 ```bash
 docker run -p 3100:3100 \
-  ghcr.io/reliablyobserve/loki-vl-proxy:latest \
+  ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0 \
   -backend=http://victorialogs:9428
 ```
+
+Release images are signed; see [Verifying releases](SECURITY.md#verifying-releases) to check the signature and provenance before running one. Pin an explicit version tag, as above, rather than `latest`.
 
 ### Helm
 

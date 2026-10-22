@@ -31,19 +31,22 @@ Grafana / curl
 ## Quick start
 
 ```bash
+# The proxies authenticate each other with a shared peer token. Compose refuses to
+# start without one; generate a random value instead of reusing a published string.
+export PEER_AUTH_TOKEN=$(openssl rand -hex 32)
 docker compose up -d
 docker compose ps
 ```
 
 ## How to test
 
-The `/_cache/*` endpoints require the shared peer token (`-peer-auth-token=fleet-secret`)
+The `/_cache/*` endpoints require the shared peer token (`-peer-auth-token`, set from `PEER_AUTH_TOKEN`)
 in the `X-Peer-Token` header.
 
 Check peer membership via HAProxy (routes to a random proxy):
 
 ```bash
-export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+# PEER_AUTH_TOKEN is the value exported in Quick start (same shell session)
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
 ```
 
@@ -60,7 +63,7 @@ Verify DNS resolution against CoreDNS. The proxy image is distroless (no shell o
 (`haproxy-dns_proxy-net` when started from this directory):
 
 ```bash
-docker run --rm --network haproxy-dns_proxy-net busybox:latest \
+docker run --rm --network haproxy-dns_proxy-net busybox:1.38.0 \
   nslookup proxy-peers.local 172.28.0.2
 # Should return A records for .10, .11, .12
 ```

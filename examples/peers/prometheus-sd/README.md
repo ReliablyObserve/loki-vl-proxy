@@ -16,7 +16,9 @@ proxy restart needed.
 ## Quick start
 
 ```bash
-export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+# The proxies authenticate each other with a shared peer token. Compose refuses to
+# start without one; generate a random value instead of reusing a published string.
+export PEER_AUTH_TOKEN=$(openssl rand -hex 32)
 docker compose up -d
 # Inspect the SD endpoint
 curl -s http://localhost:8080/peers | jq .
@@ -42,7 +44,7 @@ example, so push from a throwaway container on the compose network
 (`prometheus-sd_default` when started from this directory):
 
 ```bash
-docker run --rm --network prometheus-sd_default curlimages/curl:latest \
+docker run --rm --network prometheus-sd_default curlimages/curl:8.22.0 \
   -s -XPOST http://victorialogs:9428/insert/loki/api/v1/push \
   -H "Content-Type: application/json" \
   -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello"]]}]}'

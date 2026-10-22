@@ -28,6 +28,9 @@ Consul API: GET /v1/catalog/service/loki-vl-proxy
 ## Quick start
 
 ```bash
+# The proxies authenticate each other with a shared peer token. Compose refuses to
+# start without one; generate a random value instead of reusing a published string.
+export PEER_AUTH_TOKEN=$(openssl rand -hex 32)
 docker compose up -d
 # consul-setup registers all three proxies and exits — this is expected
 docker compose ps
@@ -47,7 +50,7 @@ Check peer membership from a proxy (the `/_cache/*` endpoints require the shared
 peer token in the `X-Peer-Token` header):
 
 ```bash
-export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+# PEER_AUTH_TOKEN is the value exported in Quick start (same shell session)
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3101/_cache/peers | jq .
 curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3102/_cache/peers | jq .

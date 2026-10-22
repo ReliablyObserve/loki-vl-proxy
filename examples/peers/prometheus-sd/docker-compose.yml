@@ -8,18 +8,23 @@
 # the change is picked up on the next proxy poll without any restart.
 #
 # Usage:
+#   export PEER_AUTH_TOKEN=$(openssl rand -hex 32)   # shared peer token, required
 #   docker compose up -d
 #   curl http://localhost:8080/peers          (inspect the SD endpoint)
-#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
 #   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers   (peer list seen by proxy-a)
 #
 # The proxy is read-only: write logs to VictoriaLogs (no host port here; see README.md).
+#
+# Release images are signed with cosign (keyless) and carry build provenance; verify
+# the proxy image before use: see SECURITY.md#verifying-releases
+# (https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/SECURITY.md#verifying-releases).
+# Image tags are pinned to explicit versions; bump them deliberately.
 
 services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:latest
+    image: victoriametrics/victoria-logs:v1.52.0
     command:
       - -retentionPeriod=7d
       - -storageDataPath=/vlogs
@@ -36,7 +41,7 @@ services:
 
   # ── sd-server — nginx serving the static peer list ─────────────────────────
   sd-server:
-    image: nginx:alpine
+    image: nginx:1.30.5-alpine
     ports:
       - "8080:8080"
     volumes:
@@ -51,7 +56,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3100:3100"
     command:
@@ -68,7 +73,7 @@ services:
       - -peer-self=proxy-a:3100
       - -peer-discovery=http
       - -peer-http-url=http://sd-server:8080/peers
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -84,7 +89,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3101:3100"
     command:
@@ -98,7 +103,7 @@ services:
       - -peer-self=proxy-b:3100
       - -peer-discovery=http
       - -peer-http-url=http://sd-server:8080/peers
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -114,7 +119,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3102:3100"
     command:
@@ -128,7 +133,7 @@ services:
       - -peer-self=proxy-c:3100
       - -peer-discovery=http
       - -peer-http-url=http://sd-server:8080/peers
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:

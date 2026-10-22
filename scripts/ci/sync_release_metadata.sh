@@ -20,9 +20,8 @@ cd "$REPO_ROOT"
 CHANGELOG_FILE="CHANGELOG.md"
 CHART_FILE="charts/loki-vl-proxy/Chart.yaml"
 README_FILE="README.md"
-OBSERVABILITY_FILE="docs/observability.md"
 
-for path in "$CHANGELOG_FILE" "$CHART_FILE" "$README_FILE" "$OBSERVABILITY_FILE"; do
+for path in "$CHANGELOG_FILE" "$CHART_FILE" "$README_FILE"; do
   if [ ! -f "$path" ]; then
     echo "required file not found: $path" >&2
     exit 1
@@ -44,8 +43,6 @@ if [ "$CHART_VERSION" != "$VERSION" ] || [ "$CHART_APP_VERSION" != "$VERSION" ];
   echo "chart metadata mismatch after sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}" >&2
   exit 1
 fi
-
-perl -0pi -e 's/"service\.version":\s*"[^"]+"/"service.version": "'"$VERSION"'"/' "$OBSERVABILITY_FILE"
 
 badge_message() {
   local value="$1"

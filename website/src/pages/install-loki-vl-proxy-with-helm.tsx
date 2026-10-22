@@ -15,7 +15,7 @@ const statefulInstall = `helm upgrade --install loki-vl-proxy oci://ghcr.io/reli
   --set persistence.enabled=true \\
   --set persistence.size=20Gi \\
   --set extraArgs.backend=http://victorialogs:9428 \\
-  --set extraArgs.disk-cache-max-bytes=20Gi`;
+  --set extraArgs.disk-cache-max-bytes=10737418240`;
 
 const peerInstall = `helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \\
   --version <release> \\

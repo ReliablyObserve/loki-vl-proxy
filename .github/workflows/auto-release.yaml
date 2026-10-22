@@ -838,7 +838,6 @@ jobs:
               "" \
               "- CHANGELOG materialization" \
               "- Helm chart version and appVersion" \
-              "- observability service.version example" \
               "- README release badges")"
             if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
               --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then

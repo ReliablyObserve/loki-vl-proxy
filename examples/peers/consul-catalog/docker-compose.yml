@@ -6,9 +6,9 @@
 # API with ?passing=true so only healthy instances appear in the peer list.
 #
 # Usage:
+#   export PEER_AUTH_TOKEN=$(openssl rand -hex 32)   # shared peer token, required
 #   docker compose up -d
 #   open http://localhost:8500   (Consul UI)
-#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
 #   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers
 #
 # The consul-setup service exits after registering services — this is expected.
@@ -17,12 +17,17 @@
 # top-level ServiceAddress/ServicePort, so the proxies poll
 # /v1/catalog/service/<name>. /v1/health/service/<name> nests them under
 # "Service" and is not parsed; see README.md ("Response shape note").
+#
+# Release images are signed with cosign (keyless) and carry build provenance; verify
+# the proxy image before use: see SECURITY.md#verifying-releases
+# (https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/SECURITY.md#verifying-releases).
+# Image tags are pinned to explicit versions; bump them deliberately.
 
 services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:latest
+    image: victoriametrics/victoria-logs:v1.52.0
     command:
       - -retentionPeriod=7d
       - -storageDataPath=/vlogs
@@ -39,7 +44,7 @@ services:
 
   # ── Consul server ──────────────────────────────────────────────────────────
   consul:
-    image: hashicorp/consul:latest
+    image: hashicorp/consul:2.0.4
     ports:
       - "8500:8500"
     command:
@@ -56,7 +61,7 @@ services:
 
   # ── consul-setup — registers proxy-a/b/c with health checks ───────────────
   consul-setup:
-    image: curlimages/curl:latest
+    image: curlimages/curl:8.22.0
     depends_on:
       consul:
         condition: service_healthy
@@ -67,7 +72,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3100:3100"
     command:
@@ -84,7 +89,7 @@ services:
       - -peer-self=proxy-a:3100
       - -peer-discovery=http
       - -peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -100,7 +105,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3101:3100"
     command:
@@ -114,7 +119,7 @@ services:
       - -peer-self=proxy-b:3100
       - -peer-discovery=http
       - -peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
@@ -130,7 +135,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
     ports:
       - "3102:3100"
     command:
@@ -144,7 +149,7 @@ services:
       - -peer-self=proxy-c:3100
       - -peer-discovery=http
       - -peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy
-      - -peer-auth-token=fleet-secret
+      - -peer-auth-token=${PEER_AUTH_TOKEN:?set PEER_AUTH_TOKEN}
       - -log-level=info
     depends_on:
       victorialogs:
