@@ -39,6 +39,12 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `persistence.enabled` | `false` | Enable bbolt disk cache via PVC |
 | `persistence.size` | `10Gi` | PVC size for disk cache |
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
+| `adminAuth.existingSecret` | `""` | Existing Secret holding the admin/debug bearer token. The chart renders `-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)` from a `secretKeyRef`, so the token is not in the pod spec or `helm get values`. Setting it together with `extraArgs."server.admin-auth-token"` fails rendering |
+| `adminAuth.existingSecretKey` | `token` | Key within `adminAuth.existingSecret` |
+| `backendAuth.existingSecret` | `""` | Existing Secret holding the VictoriaLogs basic-auth credentials as one `user:password` value. The chart renders `-backend-basic-auth=$(BACKEND_BASIC_AUTH)` from a `secretKeyRef`. Setting it together with `extraArgs.backend-basic-auth` fails rendering |
+| `backendAuth.existingSecretKey` | `basic-auth` | Key within `backendAuth.existingSecret` |
+| `observability.otlp.existingSecret` | `""` | Existing Secret holding the OTLP exporter headers (`key=value[,key=value]`, usually an `Authorization` value), exposed to the proxy as `OTLP_HEADERS` from a `secretKeyRef`. Setting it together with `observability.otlp.headers` or `extraArgs.otlp-headers` fails rendering |
+| `observability.otlp.existingSecretKey` | `headers` | Key within `observability.otlp.existingSecret` |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
 | `networkPolicy.enabled` | `true` | Restrict ingress to Grafana pods on port 3100 and egress to port 9428 (VictoriaLogs) and DNS |
 | `networkPolicy.monitoringNamespace` | `""` | Namespace allowed to scrape the metrics port when ServiceMonitor is enabled |
@@ -154,6 +160,28 @@ This mounts exactly five files read-only as `hostPath` volumes of type `File` (`
 - **Metrics listener** — `extraArgs.metrics-listen` (`:9091`) serves only `/metrics` and is exposed as the `metrics` Service port.
 - **Admin listener** — `extraArgs.admin-listen` (`127.0.0.1:3101`) serves `/admin/cache/flush` and, when enabled, `/debug/pprof/*` and `/debug/queries`. It is loopback-only and not exposed; reach it with `kubectl port-forward`. Setting `extraArgs.server.admin-auth-token` moves these routes onto the main listener behind that token.
 - **Peer auth token** — with `peerCache.enabled=true` the proxy requires a shared token. The chart creates a `<release>-peer-auth` Secret (key `token`, random 32 characters, reused on upgrade through Helm `lookup`) unless `peerCache.authToken` (rendered as `<release>-peer-auth-literal`) or `peerCache.existingSecret` is set. Pin the token with one of those two values for render-only GitOps flows or restricted RBAC, where `lookup` cannot read the existing Secret. Do not set `extraArgs.peer-auth-token` together with `peerCache.enabled=true`; the chart fails rendering.
+
+### Secrets from an existing Secret
+
+The plain values `extraArgs."server.admin-auth-token"`, `extraArgs.backend-basic-auth` and `observability.otlp.headers` still work, but they are written into the pod spec and are readable with `helm get values` and `kubectl get pod -o yaml`. To keep them out of both, create the Secret yourself (Vault, External Secrets Operator, sealed-secrets, SOPS) and reference it:
+
+```yaml
+adminAuth:
+  existingSecret: loki-vl-proxy-admin      # key "token" (override with existingSecretKey)
+backendAuth:
+  existingSecret: loki-vl-proxy-backend    # key "basic-auth", value "user:password"
+observability:
+  otlp:
+    existingSecret: loki-vl-proxy-otlp     # key "headers", value "Authorization=Bearer ..."
+```
+
+The chart adds a `secretKeyRef` environment variable (`ADMIN_AUTH_TOKEN`, `BACKEND_BASIC_AUTH`, `OTLP_HEADERS`) and, for the first two, passes the flag as `$(VAR)`, which the kubelet expands at container start. `OTLP_HEADERS` is read by the proxy itself when `-otlp-headers` is unset. Setting the plain value and `existingSecret` for the same item fails rendering. The peer-cache token has the same option as `peerCache.existingSecret`.
+
+Other sensitive inputs need no extra chart value:
+
+- **TLS** — `tls-cert-file`, `tls-key-file` and `tls-client-ca-file` are file paths, so no key material is in the pod spec. Mount a TLS Secret with `extraVolumes` and `extraVolumeMounts` and point the flags at it.
+- **Other flags** (for example a backend URL with credentials): put the value in a Secret, expose it with `extraEnv` (`valueFrom.secretKeyRef`) and reference it as `$(NAME)` in the `extraArgs` value.
+- The proxy has no tenant credentials, OAuth or OIDC settings: `tenant-map` holds account and project IDs, not secrets.
 
 ## Cold Storage (Victoria Lakehouse)
 

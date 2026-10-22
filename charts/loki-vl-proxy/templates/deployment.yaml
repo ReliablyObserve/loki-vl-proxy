@@ -10,6 +10,7 @@
 {{- fail "extraArgs.peer-auth-token cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
 {{- end }}
 {{- include "loki-vl-proxy.validateMetrics" . }}
+{{- include "loki-vl-proxy.validateSecrets" . }}
 apiVersion: apps/v1
 kind: {{ include "loki-vl-proxy.workloadKind" . }}
 metadata:
@@ -93,6 +94,11 @@ spec:
       {{- $observabilityOTLP := default (dict) (get $observability "otlp") }}
       {{- $observabilityMetrics := default (dict) (get $observability "metrics") }}
       {{- $observabilityServer := default (dict) (get $observability "server") }}
+      {{- $adminAuth := default (dict) .Values.adminAuth }}
+      {{- $adminAuthSecret := $adminAuth.existingSecret }}
+      {{- $backendAuth := default (dict) .Values.backendAuth }}
+      {{- $backendAuthSecret := $backendAuth.existingSecret }}
+      {{- $otlpSecret := $observabilityOTLP.existingSecret }}
       {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
       {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
       {{- if .Values.systemMetrics.hostProc.mountPath }}
@@ -200,9 +206,18 @@ spec:
                    (see templates/peer-secret.yaml). */}}
             - {{ "-peer-auth-token=$(PEER_AUTH_TOKEN)" | quote }}
             {{- end }}
+            {{- /* Secrets sourced from an existing Secret: the flag value is an
+                   $(ENV) reference resolved by the kubelet, so the secret itself
+                   never appears in the pod spec or in `helm get values`. */}}
+            {{- if $adminAuthSecret }}
+            - {{ "-server.admin-auth-token=$(ADMIN_AUTH_TOKEN)" | quote }}
+            {{- end }}
+            {{- if $backendAuthSecret }}
+            - {{ "-backend-basic-auth=$(BACKEND_BASIC_AUTH)" | quote }}
+            {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
-          {{- if or .Values.peerCache.enabled $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
+          {{- if or .Values.peerCache.enabled $adminAuthSecret $backendAuthSecret $otlpSecret $hasChartEnv $hasExtraEnv $goMemLimitValue $injectOTELFromPod }}
           env:
             {{- if $goMemLimitValue }}
             - name: GOMEMLIMIT
@@ -242,6 +257,28 @@ spec:
                   name: {{ printf "%s-peer-auth" .Release.Name | quote }}
                   key: token
                   {{- end }}
+            {{- end }}
+            {{- if $adminAuthSecret }}
+            - name: ADMIN_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $adminAuthSecret | quote }}
+                  key: {{ default "token" $adminAuth.existingSecretKey | quote }}
+            {{- end }}
+            {{- if $backendAuthSecret }}
+            - name: BACKEND_BASIC_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $backendAuthSecret | quote }}
+                  key: {{ default "basic-auth" $backendAuth.existingSecretKey | quote }}
+            {{- end }}
+            {{- if $otlpSecret }}
+            {{- /* The binary reads OTLP_HEADERS when -otlp-headers is unset. */}}
+            - name: OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $otlpSecret | quote }}
+                  key: {{ default "headers" $observabilityOTLP.existingSecretKey | quote }}
             {{- end }}
             {{- if $hasChartEnv }}
             {{- toYaml .Values.env | nindent 12 }}
