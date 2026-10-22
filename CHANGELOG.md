@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.26.1] - 2026-10-22
+
 ### Security
 
 - **The admin bearer token is compared in constant time.** The admin middleware
