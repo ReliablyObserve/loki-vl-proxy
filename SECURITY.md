@@ -55,6 +55,7 @@ Do NOT open a public issue for security vulnerabilities.
 
 ## Known Security Considerations
 
+- **Callers are not authenticated**: as with Loki, the proxy takes `X-Scope-OrgID` as sent and does not verify who is asking. Run it behind an authenticating gateway that sets the header from the caller's identity, or require client certificates; see [Caller authentication](docs/security.md#caller-authentication).
 - **`text/template` in `| line_format`**: Go templates are executed on query results. The template FuncMap is restricted to safe string functions, but this is still a surface to treat carefully in shared environments.
 - **Disk cache**: No application-level encryption. Use cloud-provider or node-level disk encryption for data at rest.
 - **Backend TLS skip**: `-backend-tls-skip-verify` disables certificate validation for VictoriaLogs connections.
@@ -80,6 +81,7 @@ The PR runtime lane targets a short allowlist of user-facing and admin/debug URL
 
 ## Recommended Production Baseline
 
+- put an authenticating gateway in front of the proxy that sets `X-Scope-OrgID`, or require client certificates (`-tls-client-ca-file` with `-tls-require-client-cert=true`)
 - define an explicit `-tenant-map` for multi-tenant production
 - keep `-tenant.allow-global=false` unless wildcard backend-default access is intentional
 - set a strict `-tail.allowed-origins` list for browser clients

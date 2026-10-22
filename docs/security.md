@@ -13,10 +13,23 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - write ingestion API (`/loki/api/v1/push`) blocked (`405`)
 - admin/debug APIs disabled unless explicitly enabled
 - `/metrics` not served unless `-server.register-instrumentation=true`
+- query callers are not authenticated (see [Caller authentication](#caller-authentication))
 
 `/loki/api/v1/delete` is registered with request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
 
 Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
+
+## Caller Authentication
+
+The proxy does not authenticate the clients that query it, and neither does Loki: Loki ships no authentication layer and expects an authenticating reverse proxy in front of it. `X-Scope-OrgID` is taken as sent and selects the VictoriaLogs tenant (see [Tenant Isolation](#1-tenant-isolation)); `-auth.enabled` and `-require-tenant-header` only require the header to be present. Anyone who can reach the listener can therefore query any tenant the tenant map routes to.
+
+In production, run the proxy behind an authenticating gateway (an ingress or reverse proxy with OIDC, OAuth2 or another identity check) that:
+
+- is the only network path to the proxy listener (a Kubernetes `NetworkPolicy`, a private Service, or a loopback or sidecar bind);
+- sets `X-Scope-OrgID` from the authenticated identity and drops any value the client sent;
+- covers every route Grafana uses, including the `/loki/api/v1/tail` WebSocket upgrade.
+
+Where a gateway is not available, require client certificates at the proxy: `-tls-cert-file`, `-tls-key-file`, `-tls-client-ca-file` and `-tls-require-client-cert=true`. A client certificate proves which client connected, not which tenant it may read, so combine it with a tenant map that only routes the tenants those clients are allowed to see.
 
 ## High-Impact Controls
 
@@ -214,6 +227,7 @@ Enable only for controlled troubleshooting windows. Without `-server.admin-auth-
 
 ## Recommended Production Baseline
 
+- an authenticating gateway in front of the proxy that sets `X-Scope-OrgID` (see [Caller authentication](#caller-authentication)), or client certificates required at the proxy
 - explicit `-tenant-map` (avoid implicit defaults for multi-tenant production)
 - keep `-tenant.allow-global=false` unless you intentionally need wildcard backend-default access
 - strict `/tail` origin allowlist
