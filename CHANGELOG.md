@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.1] - 2026-10-22
+
 ### Changed
 
 - **The examples pin every image to an explicit version tag.** `examples/` and the
