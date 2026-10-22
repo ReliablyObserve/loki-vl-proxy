@@ -153,6 +153,16 @@ func (g *backendBodyGuard) Read(b []byte) (int, error) {
 		// The client went away; keep the cancellation as it is.
 		return n, err
 	}
+	var tooLarge *backendBodyTooLargeError
+	if errors.As(err, &tooLarge) {
+		// The decoder stopped a response that grew past its decoded-size
+		// limit: the backend did not abort it, and the client is told the limit.
+		g.err = err
+		g.p.observeInternalOperation(g.ctx, "backend_response_decoded_cap", "rejected", time.Since(g.start))
+		g.p.log.Warn("backend response exceeds the decoded size limit",
+			"backend.route", g.path, "bytes_read", g.read, "limit", tooLarge.limit, "limit_flag", "-backend-max-buffered-response-bytes")
+		return n, err
+	}
 	elapsed := time.Since(g.start)
 	aborted := &vlResponseAbortedError{elapsed: elapsed, budget: g.budget, cause: err}
 	aborted.timedOut = g.ctx.Err() == context.DeadlineExceeded ||

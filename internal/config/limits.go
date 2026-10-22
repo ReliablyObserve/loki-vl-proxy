@@ -130,8 +130,8 @@ var Limits = []Limit{
 	{
 		Flag:       "backend-max-buffered-response-bytes",
 		Unit:       "bytes",
-		Bounds:     "bytes read from one VictoriaLogs response the proxy evaluates itself: buffered stats, volume and binary-operand responses, and the encoded metric result",
-		Error:      "502 `manual metric response exceeds N bytes; narrow the query or increase -backend-max-buffered-response-bytes`",
+		Bounds:     "bytes read from one VictoriaLogs response the proxy buffers: stats, volume and binary-operand responses, the encoded metric result, the Drilldown field, stream and label-filter listings, and the cold backend's backward chunks (one budget for all chunks of a query); a compressed response may also decode to the larger of 256 MiB and this value",
+		Error:      "502 `manual metric response exceeds N bytes; narrow the query or increase -backend-max-buffered-response-bytes`, or `backend response exceeds N bytes; narrow the query or increase -backend-max-buffered-response-bytes` for a listing, a cold chunk or a decoded body",
 		Metric:     "loki_vl_proxy_requests_total{status=\"502\"}",
 		Alert:      "none",
 		LokiParity: "",

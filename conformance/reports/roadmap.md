@@ -45,6 +45,6 @@ Held by at least one test that declares it.
 |---|---|---:|---|
 | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 7 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 2 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
-| `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 7 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
+| `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 8 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
 | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 3 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |

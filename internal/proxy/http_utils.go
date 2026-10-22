@@ -1058,7 +1058,30 @@ func normalizeBackendCompression(mode string) string {
 	}
 }
 
-func decodeCompressedHTTPResponse(resp *http.Response) error {
+// decodedBackendBodyFloor is the least a decoded backend response may hold: the
+// request coalescer's own ceiling for a shared body, so the transport never
+// rejects a body the consumers behind it accept. A variable so tests can use a
+// small one.
+var decodedBackendBodyFloor int64 = 256 << 20
+
+// backendZstdMaxWindow bounds the history a zstd response may declare in its
+// frame header; the decoder allocates it before decoding a byte. The encoders
+// VictoriaLogs and its proxies run (klauspost, 4-8 MiB) stay inside.
+const backendZstdMaxWindow = 16 << 20
+
+// decodedBodyLimit is the decoded size a backend response may reach: the larger
+// of decodedBackendBodyFloor and -backend-max-buffered-response-bytes.
+func (p *Proxy) decodedBodyLimit() int64 {
+	return max(decodedBackendBodyFloor, int64(p.limits().BufferedBackendBodyBytes))
+}
+
+// decodeCompressedHTTPResponse replaces a gzip or zstd body with its decoded
+// stream. A decoded stream longer than maxDecoded fails the read with a
+// backendBodyTooLargeError, so a small compressed body cannot expand without
+// bound; maxDecoded <= 0 leaves the length unbounded, for a stream that has
+// none (tail). zstd frames declaring a window above backendZstdMaxWindow are
+// rejected before the decoder allocates it.
+func decodeCompressedHTTPResponse(resp *http.Response, maxDecoded int64) error {
 	encoding := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
 	switch encoding {
 	case "", "identity":
@@ -1078,22 +1101,15 @@ func decodeCompressedHTTPResponse(resp *http.Response) error {
 				return err
 			}
 		}
-		resp.Body = &pooledGzipReadCloser{r: zr, upstream: resp.Body}
+		resp.Body = &pooledGzipReadCloser{r: zr, upstream: resp.Body, limit: newDecodedLimit(maxDecoded)}
 	case "zstd":
-		zr, err := zstd.NewReader(resp.Body)
+		zr, err := zstd.NewReader(resp.Body,
+			zstd.WithDecoderMaxWindow(backendZstdMaxWindow),
+			zstd.WithDecoderMaxMemory(backendZstdMaxWindow))
 		if err != nil {
 			return err
 		}
-		resp.Body = &readCloserChain{
-			Reader: zr,
-			closers: []io.Closer{
-				closerFunc(func() error {
-					zr.Close()
-					return nil
-				}),
-				resp.Body,
-			},
-		}
+		resp.Body = &zstdReadCloser{zr: zr, upstream: resp.Body, limit: newDecodedLimit(maxDecoded)}
 	default:
 		return nil
 	}
@@ -1106,40 +1122,66 @@ func decodeCompressedHTTPResponse(resp *http.Response) error {
 	return nil
 }
 
-type readCloserChain struct {
-	io.Reader
-	closers []io.Closer
+// decodedLimit fails a read once the decoded stream passes its limit. It hands
+// on at most one byte past the limit, so the consumer never holds more than the
+// limit of a body it rejects. A limit of 0 passes reads through. It lives in the
+// decoding wrappers, so a limited body costs no allocation of its own.
+type decodedLimit struct {
+	remaining int64
+	limit     int64
+	err       error
 }
 
-func (r *readCloserChain) Close() error {
-	var firstErr error
-	for _, closer := range r.closers {
-		if err := closer.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
+func newDecodedLimit(limit int64) decodedLimit {
+	return decodedLimit{remaining: limit, limit: limit}
+}
+
+func (d *decodedLimit) read(r io.Reader, b []byte) (int, error) {
+	if d.limit <= 0 {
+		return r.Read(b)
 	}
-	return firstErr
+	if d.err != nil {
+		return 0, d.err
+	}
+	if int64(len(b)) > d.remaining+1 {
+		b = b[:d.remaining+1]
+	}
+	n, err := r.Read(b)
+	if int64(n) > d.remaining {
+		d.err = &backendBodyTooLargeError{limit: d.limit}
+		return int(d.remaining), d.err
+	}
+	d.remaining -= int64(n)
+	return n, err
+}
+
+// zstdReadCloser reads a zstd body through its decoder and closes both on Close.
+type zstdReadCloser struct {
+	zr       *zstd.Decoder
+	upstream io.Closer
+	limit    decodedLimit
+}
+
+func (z *zstdReadCloser) Read(b []byte) (int, error) { return z.limit.read(z.zr, b) }
+func (z *zstdReadCloser) Close() error {
+	z.zr.Close()
+	return z.upstream.Close()
 }
 
 // pooledGzipReadCloser wraps a pooled gzip.Reader and returns it to gzipReaderPool on Close.
 type pooledGzipReadCloser struct {
 	r        *gzip.Reader
 	upstream io.Closer
+	limit    decodedLimit
 }
 
-func (p *pooledGzipReadCloser) Read(b []byte) (int, error) { return p.r.Read(b) }
+func (p *pooledGzipReadCloser) Read(b []byte) (int, error) { return p.limit.read(p.r, b) }
 func (p *pooledGzipReadCloser) Close() error {
 	err := p.upstream.Close()
 	// Reset to empty reader to clear the upstream reference before pooling.
 	_ = p.r.Reset(strings.NewReader(""))
 	gzipReaderPool.Put(p.r)
 	return err
-}
-
-type closerFunc func() error
-
-func (f closerFunc) Close() error {
-	return f()
 }
 
 // statusCapture wraps ResponseWriter to capture the status code and bytes written.

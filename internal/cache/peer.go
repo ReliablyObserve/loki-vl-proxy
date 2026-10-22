@@ -790,6 +790,12 @@ func acceptsPeerEncoding(header, encoding string) bool {
 	return false
 }
 
+// peerZstdMaxWindow is the largest history a peer's zstd frame may declare: the
+// 8 MiB window of the encoder peers run. The decoder allocates the declared
+// window before it decodes a byte, so an unbounded default (512 MiB) lets a few
+// KiB of input cost hundreds of MiB, whatever the response cap is.
+const peerZstdMaxWindow = 8 << 20
+
 func decodePeerResponseBody(contentEncoding string, body []byte, limit int64) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(contentEncoding)) {
 	case "", "identity":
@@ -802,7 +808,14 @@ func decodePeerResponseBody(contentEncoding string, body []byte, limit int64) ([
 		defer func() { _ = zr.Close() }()
 		return readPeerBodyLimited(zr, limit)
 	case "zstd":
-		zr, err := zstd.NewReader(bytes.NewReader(body))
+		maxMemory := uint64(peerZstdMaxWindow)
+		if limit > 0 {
+			maxMemory = max(maxMemory, uint64(limit))
+		}
+		zr, err := zstd.NewReader(bytes.NewReader(body),
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxWindow(peerZstdMaxWindow),
+			zstd.WithDecoderMaxMemory(maxMemory))
 		if err != nil {
 			return nil, err
 		}

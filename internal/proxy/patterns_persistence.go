@@ -652,7 +652,7 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	if err := decodeCompressedHTTPResponse(resp); err != nil {
+	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		return nil, 0, err
 	}
 	body, err := readBodyLimited(resp.Body, maxPatternsPeerSnapshotBytes)
