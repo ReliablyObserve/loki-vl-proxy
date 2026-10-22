@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.4] - 2026-10-22
+
 ### Security
 
 - **The release and daily performance workflows no longer derive a token value
