@@ -121,8 +121,8 @@ jobs:
           ref: main
           # The baseline is the newest release tag; it builds from a worktree.
           fetch-depth: 0
-          # The checkout only reads. The step that pushes gets the bot token as
-          # a request header and nothing keeps a token in the git config.
+          # The checkout only reads. The step that pushes gets the bot token through
+          # a credential helper and nothing keeps a token in the git config.
           persist-credentials: false
 
       - name: Carry history an unmerged daily PR already holds
@@ -133,9 +133,9 @@ jobs:
           # branch's copy is main's plus the days not merged yet. Only the
           # lines: ratchet.json comes from main (a row removed there by hand
           # must not come back) plus what this run adds.
-          HEADER="$(printf 'x-access-token:%s' "${READ_TOKEN}" | base64 | tr -d '\n')"
-          echo "::add-mask::${HEADER}"
-          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" fetch --no-tags origin "$BRANCH" 2>/dev/null; then
+          # A credential helper hands git the read token from the environment.
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          if GIT_AUTH_TOKEN="${READ_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' fetch --no-tags origin "$BRANCH" 2>/dev/null; then
             git checkout FETCH_HEAD -- ':(glob)bench/ab/history/*.jsonl' || true
           fi
 
@@ -203,11 +203,10 @@ jobs:
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
-          # Run git against github.com with the token sent as a request header
-          # for this one command. The token is never put in a URL or in the git
-          # config, and the checkout above did not keep one.
-          HEADER="$(printf 'x-access-token:%s' "${PUSH_TOKEN}" | base64 | tr -d '\n')"
-          echo "::add-mask::${HEADER}"
+          # The push runs git against github.com with the token that a credential
+          # helper reads from the environment for that one command. The token is
+          # never put in a URL or in the git config, and the checkout above did
+          # not keep one.
           # bench/ab/history includes trend.md and ratchet.json.
           FILES=(bench/ab/results bench/ab/history conformance/registry/generated/perf-evidence.json
                  conformance/reports/performance.md conformance/reports/gaps.md)
@@ -228,7 +227,8 @@ jobs:
           git checkout -B "$BRANCH"
           git add -- "${FILES[@]}"
           git commit -m "bench: daily performance report ${DATE}"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${HEADER}" push origin "$BRANCH" --force
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "$BRANCH" --force
           TITLE="bench: daily performance report ${DATE}"
           BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
             "$ALERTS" \

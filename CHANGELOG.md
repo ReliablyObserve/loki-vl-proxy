@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The release and daily performance workflows no longer derive a token value
+  that has to be masked.** The steps that fetch or push with a token built a
+  base64 `Authorization` header from it and hid that header with
+  `::add-mask::`, which a step that stops workflow command processing can
+  defeat (Semgrep `unsafe-add-mask-workflow-command`, code-scanning alerts
+  626–630). Git now gets the token from a credential helper that reads it from
+  the environment for that one command. The token is a repository secret or the
+  job token, which GitHub masks itself, and it is still never put in a URL or in
+  the git config.
+- **The Semgrep `iterate-over-empty-map` finding in the unwrap conversion check
+  is fixed in the code instead of suppressed.** GitHub code scanning reopened it
+  (alert 631) despite the in-source `nosemgrep` marker added for alert 607, so
+  the loop that copies the names `| json` extracted is now `maps.Copy`, which
+  behaves the same because the map only holds `true` values.
+
 ## [2.24.3] - 2026-10-21
 
 ### Breaking Changes

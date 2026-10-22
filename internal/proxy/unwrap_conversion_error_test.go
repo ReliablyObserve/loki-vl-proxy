@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -524,5 +525,27 @@ func TestUnwrapAcceptablePatternCoversConversions(t *testing.T) {
 				t.Errorf("conv %q: the detection skips %q, which Loki rejects", conv, v)
 			}
 		}
+	}
+}
+
+// A name `| json` extracted counts as parsed for the stages after it, so a
+// later parser neither replaces it nor adds it again with the _extracted
+// suffix, which is kept for stream labels.
+func TestUnwrapParseLineJSONNamesStayParsedForLaterStages(t *testing.T) {
+	line := `{"level":"info"}`
+	labels := map[string]string{"app": "x"}
+	parsed := map[string]bool{}
+	stages := []*logqlpkg.ParserStage{
+		{Type: logqlpkg.ParserJSON},
+		{Type: logqlpkg.ParserRegexp, Param: `"(?P<level>l[a-z]+)"`},
+	}
+	for _, stage := range stages {
+		if !unwrapParseLine(stage, line, labels, parsed, false) {
+			t.Fatalf("stage %v was not reproduced", stage.Type)
+		}
+	}
+	want := map[string]string{"app": "x", "level": "info"}
+	if !maps.Equal(labels, want) {
+		t.Fatalf("labels = %v, want %v", labels, want)
 	}
 }

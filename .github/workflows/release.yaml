@@ -47,7 +47,7 @@ jobs:
 
       # Only an existing tag is released: the ref is spelled as a tag so a branch
       # of the same name can never be picked up. The checkout does not keep the
-      # token; the one step that pushes gets the bot token as a request header.
+      # token; the one step that pushes gets the bot token through a credential helper.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -488,14 +488,13 @@ jobs:
           PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
-          # Run git against github.com with the token sent as a request header
-          # for this one command. The token is never put in a URL or in the git
-          # config, and the checkout above did not keep one.
+          # Run git against github.com with the token that a credential helper
+          # reads from the environment for this one command. The token is never
+          # put in a URL or in the git config, and the checkout above did not
+          # keep one.
           git_as() {
-            local header
-            header="$(printf 'x-access-token:%s' "${PUSH_TOKEN}" | base64 | tr -d '\n')"
-            echo "::add-mask::${header}"
-            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${header}" "$@"
+            # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+            GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' "$@"
           }
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
             echo "::warning::RELEASE_PR_TOKEN is not configured. The metadata branch is pushed with the job token and no pull request is opened for it."
