@@ -17,6 +17,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Placeholders for variables a stack requires (${VAR:?...}). `config` only
+# interpolates them; no container starts with these values.
+export PEER_AUTH_TOKEN="${PEER_AUTH_TOKEN:-compose-config-placeholder}"
+
 # One stack per line: the files passed to `docker compose -f`, in order,
 # separated by spaces. An overlay line lists its base and any overlay it is
 # applied after (see the header of each overlay file).
