@@ -1,0 +1,1234 @@
+[
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "by service_name"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "by service_name"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "bytes_over_time by app"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "bytes_over_time by app"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "detected_level volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "detected_level volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "drilldown detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "drilldown detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "drilldown level volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "drilldown level volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "drilldown service landing"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "drilldown service landing"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "control",
+  "shape": "instant json filtered"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "control",
+  "shape": "instant json volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "control",
+  "shape": "instant ungrouped rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "logfmt count by level, filter, drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "logfmt count by level, filter, drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "logfmt volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "logfmt volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "logs plain"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "logs | json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "logs | logfmt"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "plain volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "plain volume"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "stream-label count by app"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "stream-label count by app"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "control",
+  "shape": "ungrouped rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "control",
+  "shape": "ungrouped rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB1 label breakdown pod"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB1 label breakdown pod"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB1 label breakdown pod"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB2 label breakdown namespace"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB2 label breakdown namespace"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB2 label breakdown namespace"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB3 json field breakdown user_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB3 json field breakdown user_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB3 json field breakdown user_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB4 json field breakdown batch_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB4 json field breakdown batch_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "drilldown-breakdown-exact",
+  "shape": "DB4 json field breakdown batch_id"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "extracted-pushdown",
+  "shape": "X2 json group by level_extracted"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "extracted-pushdown",
+  "shape": "X2 json group by level_extracted"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "extracted-pushdown",
+  "shape": "X2 json group by level_extracted"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "extracted-pushdown",
+  "shape": "X3 json rate, level_extracted equality"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "extracted-pushdown",
+  "shape": "X3 json rate, level_extracted equality"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "extracted-pushdown",
+  "shape": "X3 json rate, level_extracted equality"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "extracted-pushdown",
+  "shape": "X4 json bytes, level_extracted regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "extracted-pushdown",
+  "shape": "X4 json bytes, level_extracted regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "extracted-pushdown",
+  "shape": "X4 json bytes, level_extracted regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "extracted-pushdown",
+  "shape": "X5 logfmt filter level_extracted, by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "extracted-pushdown",
+  "shape": "X5 logfmt filter level_extracted, by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "extracted-pushdown",
+  "shape": "X5 logfmt filter level_extracted, by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "extracted-suffix",
+  "shape": "E8 instant logfmt by level_extracted"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-detected-level",
+  "shape": "DLV4 explore json volume, level and detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-detected-level",
+  "shape": "DLV4 explore json volume, level and detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-detected-level",
+  "shape": "DLV4 explore json volume, level and detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-detected-level",
+  "shape": "DLV5 json error dropped, detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-detected-level",
+  "shape": "DLV5 json error dropped, detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-detected-level",
+  "shape": "DLV5 json error dropped, detected_level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-detected-level",
+  "shape": "DLV6 drilldown detected_level breakdown, json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-detected-level",
+  "shape": "DLV6 drilldown detected_level breakdown, json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-detected-level",
+  "shape": "DLV6 drilldown detected_level breakdown, json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "B grouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "B grouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "B grouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "C ungrouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "C ungrouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "C ungrouped sum, filter, no drop"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "D volume, no filters"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "D volume, no filters"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "D volume, no filters"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "E field breakdown pipeline (explore)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "E field breakdown pipeline (explore)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "E field breakdown pipeline (explore)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "G field breakdown pipeline (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "G field breakdown pipeline (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "G field breakdown pipeline (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "H field breakdown service_version (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "H field breakdown service_version (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "H field breakdown service_version (drilldown)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "I grafana volume of B"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "json-filter-pushdown",
+  "shape": "I grafana volume of B"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "I grafana volume of B"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "loki-profile-otel-metadata",
+  "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "loki-profile-otel-metadata",
+  "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "loki-profile-otel-metadata",
+  "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "metric-latency-gap",
+  "shape": "DL1 drilldown field breakdown json-expr, level filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "metric-latency-gap",
+  "shape": "DL1 drilldown field breakdown json-expr, level filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "metric-latency-gap",
+  "shape": "DL1 drilldown field breakdown json-expr, level filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "metric-latency-gap",
+  "shape": "DL2 drilldown field breakdown, level + stream-label filter before json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "metric-latency-gap",
+  "shape": "DL4 instant count, level filter, json+logfmt, 1h"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "metric-latency-gap",
+  "shape": "DL6 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "metric-latency-gap",
+  "shape": "DL6 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "metric-latency-gap",
+  "shape": "DL6 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR1 logs, or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR2 logs, negated or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR3 logs, regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR3 logs, regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "3h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR3 logs, regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR3 logs, regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR4 count by level, or alternatives with parser"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR4 count by level, or alternatives with parser"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR4 count by level, or alternatives with parser"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR5 rate, negated regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR5 rate, negated regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR5 rate, negated regexp or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR6 instant, or alternatives"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR1 count by level, parenthesised json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR1 count by level, parenthesised json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR1 count by level, parenthesised json"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR2 rate, parenthesised line filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR2 rate, parenthesised line filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR2 rate, parenthesised line filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR3 bytes by app, parenthesised regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR3 bytes by app, parenthesised regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR3 bytes by app, parenthesised regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR4 count by level, parenthesised parser, offset"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR4 count by level, parenthesised parser, offset"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR4 count by level, parenthesised parser, offset"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR5 rate by app, pipeline after the range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR5 rate by app, pipeline after the range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR5 rate by app, pipeline after the range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR6 doubly parenthesised range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR6 doubly parenthesised range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR6 doubly parenthesised range"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "parenthesized-range-or-filters",
+  "shape": "PR7 instant, parenthesised line filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "pattern-line-filter",
+  "shape": "P4 nginx count_over_time, GET request pattern"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A2 nginx exclude GET, log query"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A3 nginx include GET, count_over_time"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A4 nginx exclude GET, count_over_time"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A4 nginx exclude GET, count_over_time"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A8 nginx include two literals, count_over_time"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "plain-name-after-parser",
+  "shape": "P4 logfmt count by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "plain-name-after-parser",
+  "shape": "P5 json count by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "plain-name-after-parser",
+  "shape": "P6 json count, level filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "plain-name-after-parser",
+  "shape": "P7 json rate by level, level regexp"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "plain-name-after-parser",
+  "shape": "P9 instant logfmt by level"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF1 logs, json extraction list"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF10 volume, structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF10 volume, structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "stage-field-exposure",
+  "shape": "SF10 volume, structured-metadata filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF2 logs, logfmt extraction list"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF3 logs, json then line_format"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF4 logs, line_format without a parser"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF5 logs, regexp capture"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF8 volume, json extraction list"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF8 volume, json extraction list"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "stage-field-exposure",
+  "shape": "SF8 volume, json extraction list"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF9 volume, logfmt label_format rename"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF9 volume, logfmt label_format rename"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "stage-field-exposure",
+  "shape": "SF9 volume, logfmt label_format rename"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E1 json duration_ms sum by service"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E4 logfmt size_bytes max by service"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-duration-seconds",
+  "shape": "D1 logfmt ttl duration_seconds rate by service"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-duration-seconds",
+  "shape": "D2 logfmt ttl duration rate by service"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-duration-seconds",
+  "shape": "D3 logfmt ttl duration_seconds rate, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-duration-seconds",
+  "shape": "D4 logfmt ttl duration rate, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-sum-without",
+  "shape": "W5 sum without pod, max_over_time, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-sum-without",
+  "shape": "W6 sum without pod, rate, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-sum-without",
+  "shape": "W9 label_replace control, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U1 logfmt amount rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U1 logfmt amount rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U1 logfmt amount rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U2 json duration_ms rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U2 json duration_ms rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U2 json duration_ms rate"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U3 json duration_ms rate, error filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U3 json duration_ms rate, error filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U3 json duration_ms rate, error filter"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U5 logfmt amount rate, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U6 json duration_ms rate, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "instant",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U7 json duration_ms sum_over_time, instant"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U8 logfmt amount rate by service (grouped)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U8 logfmt amount rate by service (grouped)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "6h",
+  "set": "unwrap-ungrouped-sum",
+  "shape": "U8 logfmt amount rate by service (grouped)"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U8 rate of an unwrapped label"
+ }
+]
