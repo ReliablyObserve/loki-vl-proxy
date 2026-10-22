@@ -99,6 +99,7 @@ What is published for a release:
 - container image `ghcr.io/reliablyobserve/loki-vl-proxy` (and `docker.io/reliablyobserve/loki-vl-proxy`): the multi-arch index is signed with cosign by digest and carries GitHub build provenance, plus BuildKit provenance (`mode=max`) and an SBOM as attestations inside the index
 - Helm chart `oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy` (the Docker Hub copy is pushed only when a release is republished with `release.yaml`): signed with cosign by digest; the chart `.tgz` has GitHub build provenance
 - release binaries: `checksums.txt` with a keyless signature bundle (`checksums.txt.sigstore.json`), GitHub build provenance for every binary, and one SPDX JSON SBOM per binary (`loki-vl-proxy-<os>-<arch>.spdx.json`) attested to it
+- evidence attached to the GitHub Release so it can be checked from files, without the GitHub attestation API (see [Verifying from the files attached to the release](#verifying-from-the-files-attached-to-the-release)): `loki-vl-proxy-<version>.intoto.jsonl` (every attestation above, one Sigstore bundle per line), `loki-vl-proxy-<version>.tgz.sigstore.json` (cosign signature of the chart archive), `loki-vl-proxy-image-<version>-linux-<arch>.spdx.json` (the SBOM of the image for each platform) and `image-digests.txt` (the image and chart references with their digests)
 
 The commands need [cosign](https://docs.sigstore.dev/cosign/) 3.1.3 or newer (the version that signs the releases; cosign 3 stores signatures as OCI referrers, which older cosign releases do not look for by default) and the [GitHub CLI](https://cli.github.com/) for `gh attestation`.
 
@@ -163,6 +164,48 @@ gh attestation verify loki-vl-proxy-linux-amd64 --repo ReliablyObserve/loki-vl-p
 ```
 
 The SPDX SBOM of a binary is attested to that binary and is also attached to the release as `loki-vl-proxy-<os>-<arch>.spdx.json`. To check the attestation: `gh attestation verify loki-vl-proxy-linux-amd64 --repo ReliablyObserve/loki-vl-proxy --predicate-type https://spdx.dev/Document/v2.3`.
+
+### Verifying from the files attached to the release
+
+Download `loki-vl-proxy-<version>.intoto.jsonl` and the artifact to check from the release page. The `.intoto.jsonl` file holds one Sigstore bundle per line: the build provenance of the four binaries, of the chart archive and of the image index (GHCR, and Docker Hub when it was pushed), and the SPDX SBOM attestation of each binary. `gh attestation verify --bundle` reads it instead of asking the GitHub attestation API, picks the bundles whose subject is the artifact, and verifies their signature, certificate and transparency-log entry against the repository and workflow:
+
+```sh
+VERSION=X.Y.Z    # without the leading v
+
+gh attestation verify loki-vl-proxy-linux-amd64 \
+  --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy
+
+gh attestation verify loki-vl-proxy-linux-amd64 \
+  --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy \
+  --predicate-type https://spdx.dev/Document/v2.3          # the SBOM attestation
+
+gh attestation verify loki-vl-proxy-${VERSION}.tgz \
+  --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy
+
+gh attestation verify oci://ghcr.io/reliablyobserve/loki-vl-proxy@${DIGEST} \
+  --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy
+```
+
+An artifact that is not a subject of any bundle in the file fails verification. The `oci://` form still contacts the registry to read the image digest; use `${DIGEST}` from `image-digests.txt`, which lists `<repository>@<digest>` for the image and the chart.
+
+The commands above still download the Sigstore trusted root (through TUF) the first time they run. To verify with no network access at all, save the trusted root once on a connected machine and pass it with every later run (checked with the network blocked: it verifies with the saved root and fails without it):
+
+```sh
+gh attestation trusted-root > trusted_root.jsonl
+gh attestation verify loki-vl-proxy-linux-amd64 \
+  --bundle loki-vl-proxy-${VERSION}.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy \
+  --custom-trusted-root trusted_root.jsonl
+```
+
+The chart archive also has its own cosign signature bundle, which `cosign verify-blob` checks against the same identity as the release checksums:
+
+```sh
+cosign verify-blob --bundle loki-vl-proxy-${VERSION}.tgz.sigstore.json \
+  --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$ID_RE" \
+  loki-vl-proxy-${VERSION}.tgz
+```
+
+The SBOM of the image is attached per platform as `loki-vl-proxy-image-<version>-linux-amd64.spdx.json` and `loki-vl-proxy-image-<version>-linux-arm64.spdx.json`. They are the SBOM documents BuildKit stored in the signed image index, read back by digest and written out as compact JSON; to compare one with the registry, read it again with `docker buildx imagetools inspect ghcr.io/reliablyobserve/loki-vl-proxy@${DIGEST} --format '{{ json .SBOM }}'`. The `.intoto.jsonl` suffix is also what OpenSSF Scorecard's `Signed-Releases` check looks for as release provenance.
 
 ### Reproducing a binary from a tag
 

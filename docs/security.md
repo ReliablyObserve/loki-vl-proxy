@@ -116,10 +116,12 @@ or higher.
 - `Token-Permissions`: this change moves the write permissions of the badge
   workflows to the one job that needs them, which takes the check from 0 to 10
   (Scorecard `--local` on the workflow tree with this change applied).
-- `Signed-Releases`: releases since v2.22.1 carry `checksums.txt.sigstore.json`,
-  so the check is already partly delivered; it is scored over the five most recent
-  releases and reaches 10 only when releases also carry `.intoto.jsonl` build
-  provenance assets, which is planned separately.
+- `Signed-Releases`: releases since v2.22.1 carry `checksums.txt.sigstore.json`;
+  releases cut after the change that attaches `loki-vl-proxy-<version>.intoto.jsonl`
+  (the build provenance and SBOM attestation bundles) also carry provenance. The check
+  scores the five most recent releases (8 for a signed release, 10 for one with an
+  `.intoto.jsonl` asset; the probe matches the asset name suffix only), so it
+  reaches 10 once five releases carry the file.
 - `Code-Review` and `Branch-Protection` count required approvals by a second
   maintainer and `CII-Best-Practices` the OpenSSF Best Practices badge; those are
   project-process changes rather than code changes.

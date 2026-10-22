@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Releases attach their provenance, image SBOMs, digests and the chart
+  signature.** A GitHub Release carried the binaries, their SBOMs, the signed
+  checksums and the chart archive, while the attestations lived only in GitHub's
+  attestation store and the registries. Both release workflows
+  (`auto-release.yaml`, `release.yaml`) now also attach
+  `loki-vl-proxy-<version>.intoto.jsonl` (the build provenance of the binaries, the
+  chart archive and the image index, and the SPDX SBOM attestation of each binary,
+  one Sigstore bundle per line, collected from the attest steps by
+  `scripts/ci/collect_release_assets.sh`),
+  `loki-vl-proxy-<version>.tgz.sigstore.json` (a cosign signature of the chart
+  archive), `loki-vl-proxy-image-<version>-linux-amd64.spdx.json` and
+  `-linux-arm64.spdx.json` (the SBOM BuildKit attached to the pushed image index,
+  read back by digest) and `image-digests.txt` (image and chart references with
+  their digests). `gh attestation verify <file> --bundle
+  loki-vl-proxy-<version>.intoto.jsonl --repo ReliablyObserve/loki-vl-proxy` then
+  verifies a binary, the chart archive or the image from the downloaded files, and
+  with `--custom-trusted-root` with no network access; SECURITY.md describes the
+  procedure and the release notes repeat it. The bundle file was checked
+  with real v2.24.0 attestations: a binary, an SBOM predicate, the chart archive
+  and the image verified from a mixed `.intoto.jsonl` (with the network blocked
+  when a saved trusted root was given), and a file outside it was rejected. A
+  missing or malformed bundle, or an image index without an SBOM for a platform,
+  fails the release before it is created. The `.intoto.jsonl` suffix is what
+  OpenSSF Scorecard's `Signed-Releases` check reads as release provenance (it
+  scores the five most recent releases, so it reaches 10 once five releases carry
+  the file).
+- **Releases are ready for GitHub immutable releases.** The release step
+  (`softprops/action-gh-release`, pinned to v3.0.3) creates the release as a
+  draft, uploads every file and only then publishes it, which is the order an
+  immutable release needs. Both workflows now also set `fail_on_unmatched_files`,
+  so a missing asset stops the run before the draft exists instead of being
+  skipped (an asset cannot be added after an immutable release is published).
+  `release.yaml`, which republishes an existing tag, refuses at the start when
+  that tag's release is already immutable: it replaces release assets, and by
+  that point it would already have re-pointed the image and chart tags. Releases
+  published before immutable releases are turned on, and tags with no release
+  yet, republish as before.
+
 ## [2.25.1] - 2026-10-22
 
 ### Changed
