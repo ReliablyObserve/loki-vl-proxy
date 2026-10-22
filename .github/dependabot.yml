@@ -63,3 +63,105 @@ updates:
     labels:
       - dependencies
       - website
+
+  # Keep the e2e-ui screenshot tooling (Playwright) up to date.
+  - package-ecosystem: npm
+    directory: /test/e2e-ui
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      e2e-ui-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels:
+      - dependencies
+      - testing
+
+  # Keep the visual-smoke capture tooling (Playwright) up to date.
+  - package-ecosystem: npm
+    directory: /bench/visual
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      visual-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels:
+      - dependencies
+      - testing
+
+  # Keep the hash-pinned Pillow install for visual-smoke up to date.
+  - package-ecosystem: pip
+    directory: /bench/visual
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      visual-python-deps:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - testing
+
+  # Keep the hash-pinned Semgrep install for the security scan up to date.
+  - package-ecosystem: pip
+    directory: /security
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      semgrep-deps:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - security
+
+  # Keep the digest-pinned helper images in the test stacks up to date. The Loki,
+  # VictoriaLogs and Grafana pins are owned by the compatibility matrix
+  # (test/e2e-compat/compatibility-matrix.json) and must not be bumped on their own.
+  - package-ecosystem: docker-compose
+    directories:
+      - /test/e2e-compat
+      - /test/e2e-fleet
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "grafana/*"
+      - dependency-name: "victoriametrics/*"
+    groups:
+      test-stack-images:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - docker
+      - testing
+
+  # Keep the example stacks' images up to date.
+  - package-ecosystem: docker-compose
+    directories:
+      - /examples
+      - /examples/peers/*
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      example-images:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - docker

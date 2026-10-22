@@ -83,7 +83,7 @@ jobs:
 
       - name: Semgrep scan
         run: |
-          pip install semgrep==1.161.0
+          pip install --require-hashes -r security/requirements-semgrep.txt
           semgrep scan \
             --config p/default \
             --config p/dockerfile \

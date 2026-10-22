@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **CI tool images and test images are pinned by digest, the Python tools are
+  installed by hash, and Dependabot covers more of them.** The Gitleaks, Trivy
+  and hadolint images in the security workflow, the Nuclei and ZAP scan scripts
+  (which ran `projectdiscovery/nuclei:latest` and `zaproxy:stable`), the
+  Helm test image, and the nginx and Python images in the test stacks now name
+  an image index digest next to the version tag. The Nuclei scan mounts only its
+  curated templates (read-only) and the report directory, not the whole
+  workspace. Semgrep and the Pillow package of the visual smoke job install from
+  hash-locked requirement files with `--require-hashes`, dependencies included.
+  Dependabot now also watches the end-to-end UI and visual smoke npm packages,
+  both Python requirement files, and the test-stack and example Compose files;
+  the Loki, VictoriaLogs and Grafana pins stay owned by the compatibility
+  matrix.
+
 ## [2.24.5] - 2026-10-22
 
 ### CI
