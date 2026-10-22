@@ -16,12 +16,23 @@ number of characters including "/". "dir/**" therefore matches everything
 below dir/ at any depth, while "test/*/docker-compose*.yml" matches only a
 compose file one directory below test/.
 
+A second, narrower question is whether a change SHIPS: whether it alters
+something users receive (the proxy binary, the container image, the Helm
+chart, the dashboards and alert rules). Only a change that ships cuts a
+release or needs a changelog entry. Its table is SHIPPED below and it fails
+the other way round from the classifier: a path it cannot place does not
+ship, because releasing on a guess is the mistake it exists to prevent.
+
 Usage:
     git diff --name-only HEAD^1 HEAD | change_scope.py --files-from - \
         --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+    git diff --name-only TAG..HEAD | change_scope.py --files-from - --ships
 
 The CLI always exits 0 once it can report a result. On an empty list or any
-internal error it reports product=true.
+internal error it reports product=true. With --ships it reports
+ships=true|false instead: an empty list or an internal error reports
+ships=true, as the release bot always has, and the bot's own checks (the
+changelog and the release labels) stay the deciding gate in that case.
 """
 
 import argparse
@@ -98,6 +109,37 @@ NON_PRODUCT = [
     )),
 ]
 
+# Globs of the paths that ship. Everything the binary, image, chart and
+# release assets are built from, and nothing else: bench, test suites, the
+# conformance registry, scripts, workflows, compose files, examples, docs and
+# the website never ship, whatever the classifier says about them.
+SHIPPED = (
+    "cmd/**",
+    "internal/**",
+    "pkg/**",
+    # Module files and the image build.
+    "go.mod",
+    "go.sum",
+    "Dockerfile",
+    ".dockerignore",
+    # The chart is packaged whole, its test templates (templates/tests/**)
+    # included. dashboard/ and alerting/ are the sources that
+    # scripts/ci/sync_observability_assets.sh copies into the chart, and the
+    # operations guide points users at them directly.
+    "charts/**",
+    "dashboard/**",
+    "alerting/**",
+)
+
+# Go files under the Go roots that are compiled into no binary: unit tests and
+# testdata (fuzz corpora, golden files). Nothing is embedded with go:embed,
+# so every other file below cmd/, internal/ and pkg/ ships.
+NOT_SHIPPED_GO = (
+    "**_test.go",
+    "**/testdata/**",
+)
+GO_ROOTS = ("cmd/**", "internal/**", "pkg/**")
+
 MAX_SUMMARY_ROWS = 500
 
 
@@ -168,6 +210,34 @@ def scope(paths):
     return any(classify(p)[0] for p in paths)
 
 
+def ships(path):
+    """True when the path is part of something users receive.
+
+    Unlike classify(), a path that cannot be trusted (empty, absolute, or
+    leaving the repository) does not ship.
+    """
+    clean = normalize(path)
+    if clean is None:
+        return False
+    if not any(glob_match(g, clean) for g in SHIPPED):
+        return False
+    if any(glob_match(g, clean) for g in GO_ROOTS):
+        return not any(glob_match(g, clean) for g in NOT_SHIPPED_GO)
+    return True
+
+
+def any_ships(paths):
+    """True when any path ships, or when there are no paths at all.
+
+    The empty list keeps the release bot's long-standing meaning: with
+    nothing to judge it does not skip the release on its own.
+    """
+    paths = [p for p in paths if p and p.strip()]
+    if not paths:
+        return True
+    return any(ships(p) for p in paths)
+
+
 def read_paths(source):
     if source == "-":
         text = sys.stdin.read()
@@ -215,13 +285,16 @@ def build_parser():
                         help="report product=true whatever the paths are")
     parser.add_argument("--github-output", metavar="FILE",
                         help="append product=true|false to this file")
+    parser.add_argument("--ships", action="store_true",
+                        help="report ships=true|false (does anything users receive change) "
+                             "instead of product=true|false")
     parser.add_argument("--summary", metavar="FILE",
                         help="append a markdown table of path, class and rule")
     return parser
 
 
-def emit(product, github_output):
-    line = "product=%s" % str(product).lower()
+def emit(product, github_output, name="product"):
+    line = "%s=%s" % (name, str(product).lower())
     if github_output:
         with open(github_output, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
@@ -247,11 +320,15 @@ def main(argv=None):
         raise
     except Exception as exc:  # unknown arguments: still report a result
         print("change_scope: %s; treating the change as product" % exc, file=sys.stderr)
+        name = "ships" if "--ships" in argv else "product"
         try:
-            emit(True, _fallback_output(argv))
+            emit(True, _fallback_output(argv), name)
         except Exception:
-            print("product=true")
+            print("%s=true" % name)
         return 0
+
+    if args.ships:
+        return main_ships(args)
 
     paths = []
     note = ""
@@ -283,6 +360,22 @@ def main(argv=None):
                 handle.write(render_summary(paths, product, args.force_product, note))
         except Exception as exc:
             print("change_scope: cannot write summary: %s" % exc, file=sys.stderr)
+    return 0
+
+
+def main_ships(args):
+    """Report whether the change ships. Any failure reports ships=true."""
+    result = True
+    try:
+        if args.files_from:
+            result = any_ships(read_paths(args.files_from))
+    except Exception as exc:
+        print("change_scope: %s; treating the change as shipping" % exc, file=sys.stderr)
+    try:
+        emit(result, args.github_output, "ships")
+    except Exception as exc:
+        print("change_scope: cannot write output: %s" % exc, file=sys.stderr)
+        print("ships=true")
     return 0
 
 

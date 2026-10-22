@@ -83,7 +83,7 @@ jobs:
           echo "Latest tag: $LATEST_TAG"
 
           COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-          FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
+          FILES_CHANGED=$(git -c core.quotepath=false diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git -c core.quotepath=false diff --name-only HEAD~1)
 
           if echo "${HEAD_COMMIT_MSG:-}" | grep -qE '^docs: sync release metadata for v[0-9]'; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -91,11 +91,12 @@ jobs:
             exit 0
           fi
 
-          # Release only when something users receive changed since the last
-          # tag. The classifier decides; an empty list or any error counts as
-          # product, so the check below stays the deciding gate in that case.
-          # A change to the classifier or its workflow (rule P4) runs every
-          # check but never ships on its own.
+          # Release only when something that ships changed since the last tag:
+          # the binary, image, chart, dashboards or alert rules. Bench, tests,
+          # the conformance registry, scripts, workflows, compose files,
+          # examples, docs and the website never cut a release. An empty list
+          # or any error counts as shipping, so the checks below stay the
+          # deciding gate in that case.
           #
           # The metadata sync that follows every release rewrites the chart
           # version only. While the chart still carries the released version,
@@ -108,25 +109,16 @@ jobs:
             SCOPE_FILES=$(printf '%s\n' "${FILES_CHANGED}" | grep -vx 'charts/loki-vl-proxy/Chart.yaml' || true)
           fi
           if [ -n "${FILES_CHANGED}" ] && [ -z "${SCOPE_FILES}" ]; then
-            PRODUCT_CHANGED="false"
+            SHIPS="false"
           else
-            PRODUCT_CHANGED=$(printf '%s\n' "${SCOPE_FILES}" | python3 -c '
-          import sys
-          sys.path.insert(0, "scripts/ci")
-          try:
-              import change_scope
-              paths = [line.strip() for line in sys.stdin if line.strip()]
-              shipped = [p for p in paths
-                         if change_scope.classify(p)[0] and change_scope.classify(p)[1] != "P4"]
-              print("true" if not paths or shipped else "false")
-          except Exception:
-              print("true")
-          ' || echo true)
+            SHIPS=$(printf '%s\n' "${SCOPE_FILES}" | python3 scripts/ci/change_scope.py --files-from - --ships \
+              | sed -n 's/^ships=//p' || true)
+            SHIPS="${SHIPS:-true}"
           fi
 
-          if [ "${PRODUCT_CHANGED}" = "false" ]; then
+          if [ "${SHIPS}" = "false" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Only infra/docs files changed since ${LATEST_TAG}; skipping release"
+            echo "Nothing that ships changed since ${LATEST_TAG}; skipping release"
             exit 0
           fi
 
