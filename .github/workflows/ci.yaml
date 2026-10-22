@@ -162,6 +162,9 @@ jobs:
       - name: Fuzz smoke (extract log patterns from window entries)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=12s
 
+      - name: Fuzz smoke (json error filter split predicate)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzJSONValidSplitPredicate$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

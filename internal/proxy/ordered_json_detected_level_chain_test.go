@@ -217,6 +217,9 @@ func chainStart(pipe string) bool {
 	if strings.HasPrefix(pipe, "copy ") || strings.HasPrefix(pipe, "filter (__dl_d:*") {
 		return false // the stored-level copies of the cheap plan and its filters
 	}
+	if strings.HasPrefix(pipe, "format if (") && (strings.HasSuffix(pipe, `" as __dl_d`) || strings.HasSuffix(pipe, `" as __dl_l`)) {
+		return false // a split plan blanks the stored-level copies of the lines it reads as raw rows
+	}
 	return strings.Contains(pipe, "__dl") || strings.Contains(pipe, `result_prefix "__j_"`)
 }
 

@@ -1,0 +1,322 @@
+{
+ "label": "json-error-split-long",
+ "date": "2026-10-13",
+ "set": "json-error-split",
+ "description": "`| json | __error__=\"\"` metrics: counted by one VictoriaLogs stats scan over the lines VictoriaLogs parses, with only the other brace-opened lines read as raw rows, instead of reading every selected line raw (502 at 24 h on the row and byte limits). Run with the control set.",
+ "baseline": "base",
+ "candidate": "pr",
+ "reference": "loki",
+ "runs": 5,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.3,
+ "timing": "warm",
+ "verdicts": {
+  "faster": 2,
+  "fixed": 8
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "base": 0,
+  "pr": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "J1 json no-error count by service_name, one service",
+   "range": "6h",
+   "p50": {
+    "base": 3.333,
+    "pr": 0.098
+   },
+   "p95": {
+    "base": 3.435,
+    "pr": 0.101
+   },
+   "cold": {
+    "base": 3.428,
+    "pr": 0.098
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 40.43,
+    "pr": 36.76
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 34.01,
+   "confirmed": true
+  },
+  {
+   "shape": "J1 json no-error count by service_name, one service",
+   "range": "24h",
+   "p50": {
+    "base": 9.777,
+    "pr": 0.391
+   },
+   "p95": {
+    "base": 9.781,
+    "pr": 0.4
+   },
+   "cold": {
+    "base": 9.995,
+    "pr": 0.391
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 318.79,
+    "pr": 344.78
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null,
+   "confirmed": true
+  },
+  {
+   "shape": "J2 json no-error count by app, namespace",
+   "range": "6h",
+   "p50": {
+    "base": 8.47,
+    "pr": 0.314
+   },
+   "p95": {
+    "base": 8.484,
+    "pr": 0.326
+   },
+   "cold": {
+    "base": 8.681,
+    "pr": 0.462
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 517.69,
+    "pr": 338.66
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J2 json no-error count by app, namespace",
+   "range": "24h",
+   "p50": {
+    "base": 8.416,
+    "pr": 1.167
+   },
+   "p95": {
+    "base": 8.424,
+    "pr": 1.182
+   },
+   "cold": {
+    "base": 8.416,
+    "pr": 1.62
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 779.09,
+    "pr": 779.09
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J3 json no-error count by parsed method",
+   "range": "6h",
+   "p50": {
+    "base": 3.287,
+    "pr": 0.123
+   },
+   "p95": {
+    "base": 3.323,
+    "pr": 0.128
+   },
+   "cold": {
+    "base": 3.309,
+    "pr": 0.127
+   },
+   "status": {
+    "base": "200",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 344.78,
+    "pr": 33.32
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "same",
+   "verdict": "faster",
+   "speedup": 26.72,
+   "confirmed": true
+  },
+  {
+   "shape": "J3 json no-error count by parsed method",
+   "range": "24h",
+   "p50": {
+    "base": 9.704,
+    "pr": 0.461
+   },
+   "p95": {
+    "base": 9.712,
+    "pr": 0.486
+   },
+   "cold": {
+    "base": 9.64,
+    "pr": 0.463
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 345.93,
+    "pr": 388.34
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null,
+   "confirmed": true
+  },
+  {
+   "shape": "J4 json no-error count by service_name, all services",
+   "range": "6h",
+   "p50": {
+    "base": 7.906,
+    "pr": 0.453
+   },
+   "p95": {
+    "base": 7.917,
+    "pr": 0.494
+   },
+   "cold": {
+    "base": 7.99,
+    "pr": 0.651
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 475.02,
+    "pr": 231.05
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J4 json no-error count by service_name, all services",
+   "range": "24h",
+   "p50": {
+    "base": 7.942,
+    "pr": 1.439
+   },
+   "p95": {
+    "base": 7.984,
+    "pr": 1.454
+   },
+   "cold": {
+    "base": 8.052,
+    "pr": 1.934
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 513.71,
+    "pr": 524.28
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J5 json no-error bytes_rate by app",
+   "range": "6h",
+   "p50": {
+    "base": 8.496,
+    "pr": 0.281
+   },
+   "p95": {
+    "base": 8.578,
+    "pr": 0.285
+   },
+   "cold": {
+    "base": 8.579,
+    "pr": 0.27
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 510.44,
+    "pr": 161.18
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  },
+  {
+   "shape": "J5 json no-error bytes_rate by app",
+   "range": "24h",
+   "p50": {
+    "base": 8.455,
+    "pr": 1.038
+   },
+   "p95": {
+    "base": 8.457,
+    "pr": 1.07
+   },
+   "cold": {
+    "base": 8.415,
+    "pr": 1.042
+   },
+   "status": {
+    "base": "502",
+    "pr": "200"
+   },
+   "vl_cpu_max": {
+    "base": 592.77,
+    "pr": 608.79
+   },
+   "parity_vs_reference": "n/a",
+   "baseline_parity_vs_reference": "n/a",
+   "parity_vs_baseline": "n/a",
+   "verdict": "fixed",
+   "speedup": null
+  }
+ ]
+}
