@@ -1963,14 +1963,25 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		{"sum_bytes_over_time", `sum(bytes_over_time({app="x"}[1m]))`, true},
 		{"sum_by_count_over_time", `sum by (pod) (count_over_time({app="x"}[1m]))`, true},
 		{"sum_by_bytes_over_time", `sum by (pod) (bytes_over_time({app="x"}[1m]))`, true},
-		{"max_over_time", `max_over_time({app="x"} | unwrap v [1m])`, false},
-		// Function names inside string literals are not range aggregations.
-		{"name_in_line_filter", `max_over_time({app="x"} |= "count_over_time(" | unwrap v [1m])`, false},
-		{"name_in_label_value", `sum_over_time({app="rate("} | unwrap v [1m])`, false},
+		// Over time with unwrap is answered from step buckets whatever the range.
+		{"max_over_time", `max_over_time({app="x"} | unwrap v [1m])`, true},
+		{"sliding_max_over_time", `max_over_time({app="x"} | unwrap v [5m])`, true},
+		{"sliding_sum_by_avg_over_time", `sum by (l) (avg_over_time({app="x"} | json | unwrap v [5m]))`, true},
+		{"quantile_over_time", `quantile_over_time(0.5, {app="x"} | unwrap v [1m])`, false},
+		{"first_over_time", `first_over_time({app="x"} | unwrap v [1m])`, false},
+		// Function names inside string literals are not range aggregations: a
+		// log range function over a 5m range at step 1m is not shifted, and an
+		// unwrap one is whatever literal it filters on.
+		{"name_in_line_filter", `count_over_time({app="x"} |= "sum_over_time(" [5m])`, false},
+		{"name_in_line_filter_tumbling", `count_over_time({app="x"} |= "sum_over_time(" [1m])`, true},
+		{"name_in_label_value", `count_over_time({app="max_over_time("}[5m])`, false},
+		{"name_in_unwrap_line_filter", `max_over_time({app="x"} |= "count_over_time(" | unwrap v [5m])`, true},
+		{"name_in_unwrap_label_value", `sum_over_time({app="rate("} | unwrap v [5m])`, true},
 		{"label_replace_count", `label_replace(sum by (pod) (count_over_time({app="x"}[1m])), "p", "$1", "pod", "(.*)")`, true},
 		{"binary_counts", `sum(count_over_time({app="x"}[1m])) / sum(count_over_time({app="y"}[1m]))`, true},
-		{"binary_mixed_unwrap", `sum(count_over_time({app="x"}[1m])) / sum(sum_over_time({app="y"} | unwrap v [1m]))`, false},
-		{"sum_count_unwrap", `sum(sum_over_time({app="x"} | unwrap v [1m]))`, false},
+		{"binary_mixed_unwrap", `sum(count_over_time({app="x"}[1m])) / sum(sum_over_time({app="y"} | unwrap v [1m]))`, true},
+		{"binary_sliding_mixed_unwrap", `sum(count_over_time({app="x"}[5m])) / sum(sum_over_time({app="y"} | unwrap v [5m]))`, false},
+		{"sum_count_unwrap", `sum(sum_over_time({app="x"} | unwrap v [1m]))`, true},
 		{"rate_counter", `rate_counter({app="x"} | unwrap f [1m])`, false},
 		{"rate_sum", `rate_sum({app="x"} | count() by (l) [1m])`, false},
 		{"wrong_step", `rate({app="x"}[5m])`, false}, // window(5m) != step(1m)

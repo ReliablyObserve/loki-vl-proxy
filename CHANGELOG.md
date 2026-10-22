@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` with
+  `unwrap` answer the sample at `end` on query_range, as Loki does.**
+  `sum by (level) (max_over_time({service_name="api-gateway"} | json | unwrap
+  status | __error__="" [5m]))` over an hour at step 60 s has 61 samples on Loki
+  3.7.7 (`start` to `end` inclusive) and the proxy returned 60, so a graph ending
+  at now stopped one step short; the same for `sum_over_time` and `avg_over_time`
+  over `| json | unwrap duration_ms`. VictoriaLogs labels a step bucket by its
+  start, so the point at `end` was the bucket after the last line. The request is
+  now fetched one step earlier and every bucket relabelled onto the evaluation
+  time it closes, as `rate` and `count_over_time` already are. For a range equal
+  to the step the samples and values are Loki's; for another range the point is
+  still the step-sized bucket, not the window, which stays registered as
+  `semantics/unwrap-over-time-range-windows`. Registry:
+  `semantics/unwrap-range-last-point` fixed (#727).
+
 ## [2.28.0] - 2026-10-22
 
 ### Performance

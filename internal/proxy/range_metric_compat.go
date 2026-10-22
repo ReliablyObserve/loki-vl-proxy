@@ -846,6 +846,16 @@ func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
 	return ra, ok && ra.Grouping == nil
 }
 
+// hasUnwrapStage reports whether the log query unwraps a label.
+func hasUnwrapStage(lq *logqlpkg.LogQuery) bool {
+	for _, stage := range lq.Pipeline {
+		if _, ok := stage.(*logqlpkg.UnwrapStage); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // isSumAllLogRange reports whether the query is an ungrouped sum of a range
 // aggregation whose per-series values add up to the same number whatever the
 // series identity is, so the evaluator may sum the lines (or the unwrapped
@@ -864,12 +874,7 @@ func isSumAllLogRange(query string) bool {
 	if !ok {
 		return false
 	}
-	unwrapped := false
-	for _, stage := range lq.Pipeline {
-		if _, ok := stage.(*logqlpkg.UnwrapStage); ok {
-			unwrapped = true
-		}
-	}
+	unwrapped := hasUnwrapStage(lq)
 	switch ra.Op {
 	case logqlpkg.RangeRate:
 		return true

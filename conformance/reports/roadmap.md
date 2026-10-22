@@ -35,7 +35,7 @@ Proven in part; the rest is named in the item's cases.
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 6 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |
 | `severity-exposure-surfaces` — Where detected_level and level must appear | — | 3 | Log responses, /tail, /patterns and /detected_fields carry the derived detected_level; categorize-labels puts it and a s |
-| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 6 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
+| `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | — | 8 | semantics/offset-sample-timestamps is written and wired: an offset modifier moves the window and leaves the sample times |
 
 ## Proven
 

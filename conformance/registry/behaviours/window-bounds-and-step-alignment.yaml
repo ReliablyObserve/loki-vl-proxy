@@ -18,6 +18,10 @@ proxy: |
   tumbling (range == step), sliding (range > step), range < step, offset
   modifiers and the Grafana 24h split chunks.
 
+implementation:
+  - "internal/proxy/metric_binary.go statsRateRangeEqualsStepShift, logRangeFunctions, relabelSnappedTumblingStatsQueryRange"
+  - "internal/proxy/range_metric_compat.go isLogRangeWindowFunc"
+
 cases:
   - semantics/lower-bound-exclusive
   - semantics/step-alignment

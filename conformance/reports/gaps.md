@@ -77,7 +77,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 6 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 8 | partial |
 
 ## LogQL surface (v3.7.7)
 
