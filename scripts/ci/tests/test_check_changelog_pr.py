@@ -218,6 +218,45 @@ class CheckChangelogPRTests(unittest.TestCase):
             )
         )
 
+    def test_daily_performance_report_does_not_require_changelog(self):
+        self.assertFalse(
+            should_require_changelog(
+                [
+                    "bench: daily performance report 2026-10-22",
+                    "Merge branch 'main' into bench/daily-perf",
+                ],
+                [
+                    "bench/ab/history/control.jsonl",
+                    "bench/ab/history/ratchet.json",
+                    "bench/ab/history/trend.md",
+                    "bench/ab/results/daily-control.json",
+                    "conformance/registry/generated/perf-evidence.json",
+                    "conformance/reports/gaps.md",
+                    "conformance/reports/performance.md",
+                ],
+            )
+        )
+
+    def test_benchmark_harness_changes_still_require_changelog(self):
+        self.assertTrue(
+            should_require_changelog(
+                ["bench: the daily run measures one more shape"],
+                ["bench/ab/daily.py", "bench/ab/history/control.jsonl"],
+            )
+        )
+        self.assertTrue(
+            should_require_changelog(
+                ["bench: add a registry row"],
+                ["conformance/registry/baseline.json", "conformance/reports/gaps.md"],
+            )
+        )
+        self.assertTrue(
+            should_require_changelog(
+                ["bench: regenerate the limits export"],
+                ["conformance/registry/generated/proxy/limits.json"],
+            )
+        )
+
     def test_dependency_only_pr_rejects_mixed_commits(self):
         self.assertFalse(
             is_dependency_only_pr(
