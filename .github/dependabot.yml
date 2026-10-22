@@ -39,6 +39,14 @@ updates:
       day: monday
     cooldown:
       default-days: 7
+    ignore:
+      # Go toolchain bumps are done by hand across go.mod, the Dockerfile and the
+      # workflows together; Dependabot still refreshes the digest of the same tag.
+      - dependency-name: "golang"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     labels:
       - dependencies
       - docker
@@ -129,6 +137,8 @@ updates:
   # Keep the digest-pinned helper images in the test stacks up to date. The Loki,
   # VictoriaLogs and Grafana pins are owned by the compatibility matrix
   # (test/e2e-compat/compatibility-matrix.json) and must not be bumped on their own.
+  # The other VictoriaMetrics images (vmauth, vmalert, victoria-metrics) are not
+  # matrix-owned and are proposed like any other helper image.
   - package-ecosystem: docker-compose
     directories:
       - /test/e2e-compat
@@ -139,8 +149,9 @@ updates:
     cooldown:
       default-days: 7
     ignore:
+      # Owned by the compatibility matrix; see the note above.
       - dependency-name: "grafana/*"
-      - dependency-name: "victoriametrics/*"
+      - dependency-name: "victoriametrics/victoria-logs"
     groups:
       test-stack-images:
         patterns: ["*"]
