@@ -30624,131 +30624,50 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-13",
+      "cold": 0.032,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.015,
-      "loki_warm_p50": 0.015,
+      "loki_cache_served": true,
+      "loki_cold": 0.029,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 14752,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.024,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J1 json no-error count by service_name, one service",
       "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.026
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.391,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.391
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.098,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.098
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.038,
-      "loki_warm_p50": 0.04,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.06
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 1.62,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.167
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.462,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.314
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.03,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J3 json no-error count by parsed method",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -30757,8 +30676,192 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.463,
-      "date": "2026-10-13",
+      "cold": 1.914,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.625
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.259,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.142
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.064,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.043,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98051,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.042,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.067
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 2.237,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 1.46
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.62,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.476
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.029,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.016,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 70221,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.016,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J3 json no-error count by parsed method",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.032
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.584,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30768,16 +30871,17 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.461
+      "warm_p50": 0.611
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.127,
-      "date": "2026-10-13",
+      "cold": 0.209,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30787,25 +30891,59 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-      "warm_p50": 0.123
+      "warm_p50": 0.159
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.071,
-      "date": "2026-10-13",
+      "cold": 0.075,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.043,
-      "loki_warm_p50": 0.05,
+      "loki_cache_served": true,
+      "loki_cold": 0.059,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 139905,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.053,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -30814,8 +30952,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.934,
-      "date": "2026-10-13",
+      "cold": 3.142,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30825,16 +30963,17 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.439
+      "warm_p50": 2.01
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.651,
-      "date": "2026-10-13",
+      "cold": 0.991,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30844,25 +30983,59 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.453
+      "warm_p50": 0.502
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.059,
-      "date": "2026-10-13",
+      "cold": 0.091,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.033,
-      "loki_warm_p50": 0.04,
+      "loki_cache_served": true,
+      "loki_cold": 0.078,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98033,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -30871,8 +31044,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.042,
-      "date": "2026-10-13",
+      "cold": 3.001,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30882,16 +31055,17 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.038
+      "warm_p50": 1.518
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.27,
-      "date": "2026-10-13",
+      "cold": 0.503,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -30901,10 +31075,11 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.281
+      "warm_p50": 0.346
     }
   ],
   "metric-series-identity": [
@@ -39391,131 +39566,50 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-13",
+      "cold": 0.032,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.015,
-      "loki_warm_p50": 0.015,
+      "loki_cache_served": true,
+      "loki_cold": 0.029,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 14752,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.024,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J1 json no-error count by service_name, one service",
       "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.026
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.391,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.391
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.098,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.098
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.038,
-      "loki_warm_p50": 0.04,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.06
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 1.62,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.167
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.462,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.314
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.03,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J3 json no-error count by parsed method",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -39524,8 +39618,192 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.463,
-      "date": "2026-10-13",
+      "cold": 1.914,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.625
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.259,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.142
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.064,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.043,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98051,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.042,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.067
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 2.237,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 1.46
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.62,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.476
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.029,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.016,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 70221,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.016,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J3 json no-error count by parsed method",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.032
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.584,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39535,16 +39813,17 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.461
+      "warm_p50": 0.611
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.127,
-      "date": "2026-10-13",
+      "cold": 0.209,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39554,25 +39833,59 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-      "warm_p50": 0.123
+      "warm_p50": 0.159
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.071,
-      "date": "2026-10-13",
+      "cold": 0.075,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.043,
-      "loki_warm_p50": 0.05,
+      "loki_cache_served": true,
+      "loki_cold": 0.059,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 139905,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.053,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -39581,8 +39894,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.934,
-      "date": "2026-10-13",
+      "cold": 3.142,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39592,16 +39905,17 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.439
+      "warm_p50": 2.01
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.651,
-      "date": "2026-10-13",
+      "cold": 0.991,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39611,25 +39925,59 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.453
+      "warm_p50": 0.502
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.059,
-      "date": "2026-10-13",
+      "cold": 0.091,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.033,
-      "loki_warm_p50": 0.04,
+      "loki_cache_served": true,
+      "loki_cold": 0.078,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98033,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -39638,8 +39986,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.042,
-      "date": "2026-10-13",
+      "cold": 3.001,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39649,16 +39997,17 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.038
+      "warm_p50": 1.518
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.27,
-      "date": "2026-10-13",
+      "cold": 0.503,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -39668,10 +40017,11 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.281
+      "warm_p50": 0.346
     }
   ],
   "parser-json": [
@@ -47142,131 +47492,50 @@
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.023,
-      "date": "2026-10-13",
+      "cold": 0.032,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.015,
-      "loki_warm_p50": 0.015,
+      "loki_cache_served": true,
+      "loki_cold": 0.029,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 14752,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.024,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J1 json no-error count by service_name, one service",
       "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.026
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.391,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.391
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.098,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J1 json no-error count by service_name, one service",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.098
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.06,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.038,
-      "loki_warm_p50": 0.04,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "faster",
-      "warm_p50": 0.06
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 1.62,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "24h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.167
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "502",
-      "cold": 0.462,
-      "date": "2026-10-13",
-      "label": "json-error-split-long",
-      "loki_cache_served": false,
-      "loki_cold": null,
-      "loki_warm_p50": null,
-      "parity_vs_loki": "n/a",
-      "range": "6h",
-      "set": "json-error-split",
-      "shape": "J2 json no-error count by app, namespace",
-      "slower_than_loki_cold": false,
-      "status": "200",
-      "valid": true,
-      "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.314
-    },
-    {
-      "baseline": "base",
-      "baseline_status": "200",
-      "cold": 0.03,
-      "date": "2026-10-13",
-      "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.017,
-      "loki_warm_p50": 0.016,
-      "parity_vs_loki": "same",
-      "range": "1h",
-      "set": "json-error-split",
-      "shape": "J3 json no-error count by parsed method",
-      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -47275,8 +47544,192 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.463,
-      "date": "2026-10-13",
+      "cold": 1.914,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.625
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.259,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J1 json no-error count by service_name, one service",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.142
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.064,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.043,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98051,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.042,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.067
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 2.237,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "24h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 1.46
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.62,
+      "date": "2026-10-22",
+      "label": "json-error-split-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "range": "6h",
+      "set": "json-error-split",
+      "shape": "J2 json no-error count by app, namespace",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "fixed",
+      "warm_p50": 0.476
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "cold": 0.029,
+      "date": "2026-10-22",
+      "label": "json-error-split-1h",
+      "loki_cache_served": true,
+      "loki_cold": 0.016,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 70221,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 186,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.016,
+      "parity_vs_loki": "same",
+      "range": "1h",
+      "set": "json-error-split",
+      "shape": "J3 json no-error count by parsed method",
+      "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "faster",
+      "warm_p50": 0.032
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "502",
+      "cold": 0.584,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47286,16 +47739,17 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.461
+      "warm_p50": 0.611
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.127,
-      "date": "2026-10-13",
+      "cold": 0.209,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47305,25 +47759,59 @@
       "set": "json-error-split",
       "shape": "J3 json no-error count by parsed method",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
-      "warm_p50": 0.123
+      "warm_p50": 0.159
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.071,
-      "date": "2026-10-13",
+      "cold": 0.075,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.043,
-      "loki_warm_p50": 0.05,
+      "loki_cache_served": true,
+      "loki_cold": 0.059,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 139905,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.053,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -47332,8 +47820,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.934,
-      "date": "2026-10-13",
+      "cold": 3.142,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47343,16 +47831,17 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.439
+      "warm_p50": 2.01
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.651,
-      "date": "2026-10-13",
+      "cold": 0.991,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47362,25 +47851,59 @@
       "set": "json-error-split",
       "shape": "J4 json no-error count by service_name, all services",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.453
+      "warm_p50": 0.502
     },
     {
       "baseline": "base",
       "baseline_status": "200",
-      "cold": 0.059,
-      "date": "2026-10-13",
+      "cold": 0.091,
+      "date": "2026-10-22",
       "label": "json-error-split-1h",
-      "loki_cache_served": false,
-      "loki_cold": 0.033,
-      "loki_warm_p50": 0.04,
+      "loki_cache_served": true,
+      "loki_cold": 0.078,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 98033,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 177,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.044,
       "parity_vs_loki": "same",
       "range": "1h",
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "faster",
@@ -47389,8 +47912,8 @@
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 1.042,
-      "date": "2026-10-13",
+      "cold": 3.001,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47400,16 +47923,17 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 1.038
+      "warm_p50": 1.518
     },
     {
       "baseline": "base",
       "baseline_status": "502",
-      "cold": 0.27,
-      "date": "2026-10-13",
+      "cold": 0.503,
+      "date": "2026-10-22",
       "label": "json-error-split-long",
       "loki_cache_served": false,
       "loki_cold": null,
@@ -47419,10 +47943,11 @@
       "set": "json-error-split",
       "shape": "J5 json no-error bytes_rate by app",
       "slower_than_loki_cold": false,
+      "slower_than_loki_warm": false,
       "status": "200",
       "valid": true,
       "verdict_vs_baseline": "fixed",
-      "warm_p50": 0.281
+      "warm_p50": 0.346
     }
   ],
   "semantics/json-extracted-metric-pushdown": [
