@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The high CodeQL alert `go/allocation-size-overflow` on the stored-level
+  relabel is fixed in the code.** `storedLevelSeries` adds `detected_level` to
+  each series of a JSON-pipeline metric that reads `detected_level` (grouped
+  by, kept under `without` or filtered on) when the stored level fields answer
+  it. It sized the copy of a series' labels with
+  `make(map[string]string, len(entry.Metric)+1)`, which CodeQL reports as a
+  possible integer overflow in an allocation size. It now copies the labels
+  with `maps.Clone` and then adds `detected_level`. The overflow could not
+  happen in practice (no label map can hold that many entries) and the answers
+  are unchanged; a new test pins that the series passed in keep their own
+  labels.
+
 ## [2.30.0] - 2026-10-22
 
 ### Fixed

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -511,10 +512,7 @@ func storedLevelSeries(series map[string]manualSeriesSamples, filters []translat
 		if !keep {
 			continue
 		}
-		metric := make(map[string]string, len(entry.Metric)+1)
-		for k, v := range entry.Metric {
-			metric[k] = v
-		}
+		metric := maps.Clone(entry.Metric)
 		metric["detected_level"] = level
 		entry.Metric = metric
 		out[key] = entry
