@@ -18,6 +18,13 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: scope
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
+
   loki-matrix-source:
     runs-on: ubuntu-latest
     outputs:
@@ -30,8 +37,8 @@ jobs:
         run: echo "loki_versions=$(jq -c '.stack.loki.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
   loki-pinned:
-    if: github.event_name != 'schedule'
-    needs: loki-matrix-source
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.loki-matrix-source.result == 'success' && needs.scope.outputs.product != 'false' }}
+    needs: [loki-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.7

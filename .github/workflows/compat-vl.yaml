@@ -18,6 +18,13 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: scope
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
+
   vl-matrix-source:
     runs-on: ubuntu-latest
     outputs:
@@ -30,8 +37,8 @@ jobs:
         run: echo "vl_versions=$(jq -c '.stack.victorialogs.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
   vl-pinned:
-    if: github.event_name != 'schedule'
-    needs: vl-matrix-source
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.vl-matrix-source.result == 'success' && needs.scope.outputs.product != 'false' }}
+    needs: [vl-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.7
