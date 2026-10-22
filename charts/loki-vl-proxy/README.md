@@ -114,6 +114,8 @@ extraArgs:
 
 `require-tenant-header` only checks that `X-Scope-OrgID` is present (`401` otherwise); it does not authenticate the value. With `extraArgs.tenant-label`, the named field must be a VictoriaLogs stream field. An unmapped `X-Scope-OrgID: *` is rejected unless `extraArgs.tenant.allow-global` is `"true"`; with `extraArgs.tenant-label`, an unmapped default alias (`0`, `fake`, `default`) or empty org is rejected the same way.
 
+A numeric `X-Scope-OrgID` routes to the VictoriaLogs account of the same number only in its canonical spelling (`7`, not `007`, `00`, `+7` or `-1`; at most `4294967295`), because Loki keeps `007` and `7` as different tenants. Any other numeric spelling is refused with `403` unless it is listed in `extraArgs.tenant-map`, and the proxy logs a warning naming the org and the fix. Set `extraArgs.tenant.numeric-passthrough: "false"` for strict routing, where only orgs listed in `tenant-map` are served (the aliases `0`, `fake`, `default` and a missing org then need `tenant.allow-global: "true"` or a map entry); it has no effect with `tenant-label`.
+
 For secret tenant maps, use `envFrom` to mount from a ConfigMap or Secret instead of embedding credentials in `extraArgs`.
 
 ## Observability

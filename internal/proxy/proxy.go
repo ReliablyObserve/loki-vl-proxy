@@ -124,6 +124,9 @@ type Config struct {
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
+	// StrictTenantRouting serves only tenants listed in TenantMap in native mode
+	// (-tenant.numeric-passthrough=false). The zero value keeps Loki-style routing.
+	StrictTenantRouting bool
 	ForwardTenantHeader bool // forward per-tenant X-Scope-OrgID to upstream (safe for VL, needed for Victoria Lakehouse)
 
 	// Grafana datasource compatibility
@@ -543,6 +546,8 @@ type Proxy struct {
 	authEnabled                           bool
 	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
+	strictTenantRouting                   bool
+	tenantRefusals                        tenantRefusalLog
 	forwardTenantHeader                   bool
 	maxLines                              int
 	forwardHeaders                        []string          // headers to copy from client request to VL
@@ -1191,6 +1196,7 @@ func New(cfg Config) (*Proxy, error) {
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
 		allowGlobalTenant:                     cfg.AllowGlobalTenant,
+		strictTenantRouting:                   cfg.StrictTenantRouting,
 		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
@@ -1355,6 +1361,7 @@ func New(cfg Config) (*Proxy, error) {
 			authEnabled:                           p.authEnabled,
 			requireTenantHeader:                   p.requireTenantHeader,
 			allowGlobalTenant:                     p.allowGlobalTenant,
+			strictTenantRouting:                   p.strictTenantRouting,
 			forwardTenantHeader:                   p.forwardTenantHeader,
 			maxLines:                              p.maxLines,
 			forwardHeaders:                        p.forwardHeaders,
@@ -1644,8 +1651,9 @@ func (p *Proxy) Init() {
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
 	// Without an org the warm-up scans carry no tenant to filter on, so in label
-	// mode they would only run unfiltered under allow-global.
-	if p.labelsCacheWarm && (p.tenantLabel == "" || p.allowGlobalTenant) {
+	// mode and in strict tenant routing (which refuses an absent org) they would
+	// only run unfiltered under allow-global.
+	if p.labelsCacheWarm && ((p.tenantLabel == "" && !p.strictTenantRouting) || p.allowGlobalTenant) {
 		p.warmMetadataCacheOnStartup()
 		p.startLabelCacheKeepWarmLoop()
 	}

@@ -362,7 +362,8 @@ extraArgs:
   # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
   # tenant-default-limits: ""                  # JSON map of Loki limits for every tenant, enforced and published: max_query_series, max_entries_limit_per_query, max_query_length, max_query_lookback, max_query_range, query_timeout
   # tenant-limits: ""                          # JSON map of per-tenant Loki limits keyed by X-Scope-OrgID, above tenant-default-limits; enforced and published
-  # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403 (with tenant-label this includes the default aliases 0/fake/default and an empty org). An explicit tenant-map entry always wins
+  # tenant.allow-global: "false"                # allow an unmapped X-Scope-OrgID "*" to bypass tenant scoping (backend default tenant); otherwise 403 (with tenant-label or tenant.numeric-passthrough=false this includes the default aliases 0/fake/default and a missing org). An explicit tenant-map entry always wins
+  # tenant.numeric-passthrough: "true"          # route a canonical numeric X-Scope-OrgID (7, not 007) to the VictoriaLogs account of that number; "false" = strict: only orgs in the tenant map are routed, other numeric orgs get 403, and the aliases 0/fake/default plus a missing org are refused unless tenant.allow-global or a tenant-map entry. A non-canonical number (007, 00, +7, -1, above 4294967295) is refused with 403 in both modes unless listed in the tenant map. No effect with tenant-label
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"

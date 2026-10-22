@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (222), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (223), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -263,7 +263,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-tenant-map` | string | (empty) | `extraArgs.tenant-map` | org-name |
 | `-tenant-map-file` | string | (empty) | `extraArgs.tenant-map-file` | Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes. |
 | `-tenant-map-reload-interval` | duration | `30s` | `extraArgs.tenant-map-reload-interval` | How often to poll -tenant-map-file for mtime changes. Set to 0 to disable polling. |
-| `-tenant.allow-global` | bool | `false` | `extraArgs.tenant.allow-global` | * |
+| `-tenant.allow-global` | bool | `false` | `extraArgs.tenant.allow-global` | Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label or with -tenant.numeric-passthrough=false it also admits the default aliases 0, fake and default and a missing org without a tenant filter or tenant map entry |
+| `-tenant.numeric-passthrough` | bool | `true` | `extraArgs.tenant.numeric-passthrough` | Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Set to false for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label |
 
 ## timeouts
 

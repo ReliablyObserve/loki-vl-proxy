@@ -608,7 +608,8 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant Loki limits keyed by `X-Scope-OrgID`, above `-tenant-default-limits`; enforced and published |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests; a missing header returns `401`. The header value is not authenticated |
 | `-require-tenant-header` | — | `false` | Reject requests missing `X-Scope-OrgID` with `401`, independent of `-auth.enabled` |
-| `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. In `-tenant-label` mode it also admits an unmapped default alias (`0`, `fake`, `default`) or an empty org without the tenant filter. Without it, those return `403`; an explicit `"*"` tenant-map entry always takes precedence |
+| `-tenant.allow-global` | — | `false` | Allow an unmapped `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant. In `-tenant-label` mode, or with `-tenant.numeric-passthrough=false`, it also admits an unmapped default alias (`0`, `fake`, `default`) or a missing org without the tenant filter or a tenant-map entry. Without it, those return `403`; an explicit `"*"` tenant-map entry always takes precedence |
+| `-tenant.numeric-passthrough` | — | `true` | Route an `X-Scope-OrgID` that is a canonical decimal number (`7`, not `007`) to the VictoriaLogs account of that number. `false` is strict routing: only orgs in the tenant map are routed, every other numeric org gets `403`, and the aliases `0`, `fake`, `default` and a missing org are refused like `*` unless `-tenant.allow-global=true` or the tenant map lists them. Has no effect with `-tenant-label`; see [Numeric tenants](#numeric-tenants-and-strict-routing) |
 | `-forward-tenant-header` | `FORWARD_TENANT_HEADER` | `true` | When `false`, suppresses X-Scope-OrgID header forwarding to the backend |
 
 ### Tenant Resolution Order
@@ -619,8 +620,26 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers. With `-tenant-label` set they are treated like `*` (step 5): `403` unless `-tenant.allow-global=true` or the tenant map has an exact entry for the alias (a map entry never admits an empty org)
 5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. Unless the tenant map has an explicit `"*"` entry, it uses the backend default tenant only when `-tenant.allow-global=true` and returns `403` otherwise (also in `-tenant-label` mode)
 6. **Label routing** — with `-tenant-label` set, any other non-empty org ID is accepted and scoped with a stream-field constraint instead of tenant headers
-7. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
-8. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
+7. **Numeric passthrough** — if the org ID is a canonical decimal number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`. A number in any other spelling (`007`, `00`, `+7`, `-1`, above `4294967295`) is not canonical and is refused (step 8). With `-tenant.numeric-passthrough=false` this step does not exist: only mapped orgs are routed
+8. **Fail closed** — every other org ID is rejected with `403 Forbidden` (`unknown tenant`)
+
+The same resolver decides admission and the `AccountID`/`ProjectID` headers of every backend request the proxy sets on every backend request (queries, tail, rules and alerts, the cold tier, each part of a multi-tenant `a|b` request), so an admitted org is always routed to a tenant or deliberately served from the default tenant, never silently from `0:0`. The cold tier also receives `X-Scope-OrgID` and resolves it itself, so with the cold tier's own tenant alias table enabled, mirror tenant-map entries there.
+
+#### Numeric tenants and strict routing
+
+Loki treats `7` and `007` as two different tenants. VictoriaLogs has one account per number, so the proxy routes a numeric `X-Scope-OrgID` to account N only for the one canonical spelling of N: decimal digits only, no sign, no leading zeros (except `0` itself) and at most `4294967295`, the largest VictoriaLogs `AccountID`.
+
+| `X-Scope-OrgID` | default | `-tenant.numeric-passthrough=false` |
+|---|---|---|
+| `7` | routed to account `7` | `403` unless the tenant map lists `7` |
+| `007`, `00`, `+7`, `-1`, `4294967296` | `403 unknown tenant` unless the tenant map lists that exact string | `403` unless the tenant map lists that exact string |
+| `teamA` listed in the tenant map | its mapped account and project | its mapped account and project |
+| `0`, `fake`, `default`, no header | VictoriaLogs default tenant `0:0` | `403` unless `-tenant.allow-global=true` or the tenant map lists the alias (no entry admits a missing header) |
+| `*` | `403` unless `-tenant.allow-global=true` or mapped | same |
+
+A refusal for a non-canonical number is logged once per org and ten minutes as a `tenant refused` warning that names the org, the reason and the fix. At startup the proxy logs one `tenant routing` line stating the active mode. Tenant-map `account_id` and `project_id` values are not affected: `"007"` there still means account 7. Only plain unknown names, `*`, alias refusals and orgs past the table cap are refused without a log line.
+
+**Migrating.** Clients that send `007` today were reading account `7`: for each such client either send `7`, or add `"007": {"account_id": "7", "project_id": "0"}` to the tenant map to keep the old routing explicitly (the two spellings then share account 7 data, unlike Loki). To require that every tenant is explicitly mapped, set `-tenant.numeric-passthrough=false`, list every tenant in the tenant map, and add `-tenant.allow-global=true` only if clients that send `0`, `fake`, `default` or no header must keep reading the default tenant. Label routing (`-tenant-label`) never used account numbers and is unchanged by the flag.
 
 ### Multi-Tenant Query Headers
 

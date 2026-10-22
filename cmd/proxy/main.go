@@ -142,6 +142,7 @@ type proxyRuntimeConfig struct {
 	authEnabled                         bool
 	requireTenantHeader                 bool
 	allowGlobalTenant                   bool
+	strictTenantRouting                 bool
 	registerInstrumentation             *bool
 	enablePprof                         bool
 	enableQueryAnalytics                bool
@@ -659,7 +660,8 @@ func run(
 	patternsPersistInterval := fs.Duration("patterns-persist-interval", 30*time.Second, "How often to persist in-memory patterns snapshots to disk")
 	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
-	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label it also admits the default aliases 0, fake and default and an empty org without the tenant filter`)
+	allowGlobalTenant := fs.Bool("tenant.allow-global", false, "Allow X-Scope-OrgID \"*\" to bypass AccountID/ProjectID scoping and use the backend default tenant. With -tenant-label or with -tenant.numeric-passthrough=false it also admits the default aliases 0, fake and default and a missing org without a tenant filter or tenant map entry")
+	tenantNumericPassthrough := fs.Bool("tenant.numeric-passthrough", true, "Route an X-Scope-OrgID that is a canonical decimal number (digits only, no sign, no leading zeros, at most 4294967295) to the VictoriaLogs account of that number. A number spelled any other way (007, 00, +7, -1) or above 4294967295 is refused with 403 unknown tenant unless -tenant-map lists it exactly, because Loki keeps 007 and 7 as different tenants. Set to false for strict routing: only orgs listed in -tenant-map are routed and every other numeric org gets 403; the default aliases 0, fake and default and a missing X-Scope-OrgID are then refused like the wildcard unless -tenant.allow-global is set or the tenant map lists them (no entry admits a missing org). Has no effect with -tenant-label")
 
 	// Cold storage backend (Victoria Lakehouse)
 	coldBackendURL := fs.String("cold-backend", "", "Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing.")
@@ -888,6 +890,7 @@ func run(
 			authEnabled:                         *authEnabled,
 			requireTenantHeader:                 *requireTenantHeader,
 			allowGlobalTenant:                   *allowGlobalTenant,
+			strictTenantRouting:                 !*tenantNumericPassthrough,
 			registerInstrumentation:             registerInstrumentation,
 			enablePprof:                         *enablePprof,
 			enableQueryAnalytics:                *enableQueryAnalytics,
@@ -2099,6 +2102,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		AuthEnabled:                        cfg.authEnabled,
 		RequireTenantHeader:                cfg.requireTenantHeader,
 		AllowGlobalTenant:                  cfg.allowGlobalTenant,
+		StrictTenantRouting:                cfg.strictTenantRouting,
 		ForwardTenantHeader:                cfg.forwardTenantHeader,
 		RegisterInstrumentation:            cfg.registerInstrumentation,
 		EnablePprof:                        cfg.enablePprof,
@@ -2373,8 +2377,8 @@ func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, tenantMa
 			logger.Info("SIGHUP: reloaded tenant mappings from file", "path", tenantMapFile, "count", len(m))
 		}
 	} else if v := getenv("TENANT_MAP"); v != "" {
-		var newTenantMap map[string]proxy.TenantMapping
-		if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
+		newTenantMap, err := parseTenantMapJSON(v)
+		if err != nil {
 			logger.Error("failed to reload tenant map", "error", err)
 		} else {
 			p.ReloadTenantMap(newTenantMap)
@@ -2400,6 +2404,7 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 		"build_time", buildTime,
 		"go_version", runtime.Version(),
 	)
+	logTenantRouting(logger, proxyCfg)
 	if proxyCfg.TenantMap != nil {
 		logger.Info("loaded tenant mappings", "count", len(proxyCfg.TenantMap))
 	}
@@ -2542,5 +2547,20 @@ func logSystemMetricsStartup(logger *slog.Logger) {
 	}
 	for _, rec := range check.Recommendations {
 		logger.Info("system metrics startup recommendation", "message", rec)
+	}
+}
+
+// logTenantRouting states, once at startup, how X-Scope-OrgID reaches VictoriaLogs.
+func logTenantRouting(logger *slog.Logger, cfg proxy.Config) {
+	switch {
+	case cfg.TenantLabel != "":
+		logger.Info("tenant routing", "mode", "tenant-label", "tenant_label", cfg.TenantLabel, "numeric_passthrough", "not used",
+			"detail", "every org is confined to its tenant-label value; numeric orgs are not mapped to accounts")
+	case cfg.StrictTenantRouting:
+		logger.Info("tenant routing", "mode", "strict", "numeric_passthrough", false,
+			"detail", "only orgs listed in the tenant map are routed; any other org is refused with 403 unknown tenant")
+	default:
+		logger.Info("tenant routing", "mode", "default", "numeric_passthrough", true,
+			"detail", "a canonical decimal org (7, not 007) routes to the VictoriaLogs account of that number; non-canonical numbers are refused with 403 unless listed in the tenant map")
 	}
 }
