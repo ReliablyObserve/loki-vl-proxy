@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.5] - 2026-10-22
+
 ### CI
 
 - **The daily performance report pull request passes the changelog and label
