@@ -16,6 +16,13 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: scope
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
+
   security-static:
     name: Security / static
     runs-on: ubuntu-latest
@@ -193,7 +200,8 @@ jobs:
   security-runtime:
     name: Security / runtime
     runs-on: ubuntu-latest
-    needs: [security-static]
+    needs: [security-static, scope]
+    if: ${{ !cancelled() && needs.security-static.result == 'success' && needs.scope.outputs.product != 'false' }}
     env:
       PROXY_IMAGE: loki-vl-proxy:security-ci
       PROXY_BASE_URL: http://127.0.0.1:13100
