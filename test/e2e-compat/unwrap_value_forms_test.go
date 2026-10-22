@@ -159,10 +159,12 @@ func TestCompat_UnwrapValueFormsParity(t *testing.T) {
 			}
 			for _, function := range functions {
 				for _, outer := range outers {
-					if nan && (outer == "max by (service_name)" || (f.name == "nan only" && (function == "max_over_time" || function == "min_over_time"))) {
+					if nan && (outer == "max by (service_name)" || (outer == "sum" && (function == "sum_over_time" || function == "avg_over_time")) || (f.name == "nan only" && (function == "max_over_time" || function == "min_over_time"))) {
 						// Registered residuals (semantics/unwrap-gate-parsefloat-divergences): a
-						// window whose every sample is nan under max or min over time, and a
-						// max over series that sum, avg, stddev or rate made NaN.
+						// window whose every sample is nan under max or min over time, a
+						// max over series that sum, avg, stddev or rate made NaN, and an
+						// ungrouped instant sum over sum_over_time or avg_over_time of a
+						// series that holds a nan (Loki answers NaN, the proxy drops it).
 						continue
 					}
 					query := function + "(" + pipeline + " [" + shape.window + "])"
