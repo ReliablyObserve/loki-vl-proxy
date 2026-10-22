@@ -41,7 +41,9 @@ jobs:
           gh pr edit "$PR_NUMBER" --add-label "$SIZE" 2>/dev/null || true
 
           # --- Scope labels ---
-          FILES=$(gh pr diff "$PR_NUMBER" --name-only)
+          # The files API pages through any number of files; `gh pr diff` fails
+          # once a diff passes GitHub's 20,000-line limit.
+          FILES=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
 
           SCOPES=""
           echo "$FILES" | grep -q "internal/translator" && SCOPES="$SCOPES,scope/translator"

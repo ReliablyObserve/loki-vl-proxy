@@ -59,6 +59,10 @@ NON_RELEASE_PATH_PREFIXES = (
     # The documentation website is published independently of the proxy
     # binary/chart; its source and lockfile changes are not release-impacting.
     "website/",
+    # The daily performance report's measurements and their history. The
+    # harness itself (bench/ab/*.py) still counts.
+    "bench/ab/history/",
+    "bench/ab/results/",
 )
 
 NON_RELEASE_FILES = {
@@ -66,6 +70,10 @@ NON_RELEASE_FILES = {
     "CHANGELOG.md",
     "LICENSE",
     "scripts/ci/check_changelog_pr.py",
+    # The reports the daily performance run regenerates.
+    "conformance/registry/generated/perf-evidence.json",
+    "conformance/reports/performance.md",
+    "conformance/reports/gaps.md",
 }
 
 RELEASE_METADATA_FILES = {

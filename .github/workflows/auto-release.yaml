@@ -94,7 +94,9 @@ jobs:
           DOCS_OR_CI_ONLY="yes"
           while IFS= read -r file; do
             [ -z "$file" ] && continue
-            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/)'; then
+            # The daily performance report's data counts as docs: merging that
+            # pull request never cuts a release.
+            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/|bench/ab/(history|results)/|conformance/(registry/generated/perf-evidence\.json|reports/(performance|gaps)\.md)$)'; then
               DOCS_OR_CI_ONLY="no"
               break
             fi

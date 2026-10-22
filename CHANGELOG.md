@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **The daily performance report pull request passes the changelog and label
+  checks, and merging it never cuts a release.** The report changes only
+  measurement data, but three checks treated it like a code change:
+  - The changelog gate asked for a CHANGELOG entry. `bench/ab/history/`,
+    `bench/ab/results/` and the three reports the run regenerates
+    (`conformance/registry/generated/perf-evidence.json`,
+    `conformance/reports/performance.md` and `conformance/reports/gaps.md`) now
+    count as non-release files, like `docs/`. The harness (`bench/ab/*.py`),
+    the registry sources and its other generated files still require an entry.
+  - The release bot would cut a release if a report merged while
+    `[Unreleased]` held entries from an earlier pull request, and because a
+    report diff counts as a large change, that release would be a minor one.
+    The same files now count as docs and CI changes, which never cut a release.
+  - The labeler read the file list with `gh pr diff`, which fails once a diff
+    passes GitHub's 20,000-line limit, as every daily report does. It now reads
+    the paginated pull request files API.
+
 ## [2.24.4] - 2026-10-22
 
 ### Security
