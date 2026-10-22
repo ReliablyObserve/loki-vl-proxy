@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
 from typing import Iterable
 
+# The classifier lives next to this script. Inserting the directory keeps the
+# import working when this file runs as a script and when the tests import it
+# as scripts.ci.check_changelog_pr.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import change_scope  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CHANGELOG = ROOT / "CHANGELOG.md"
@@ -53,28 +60,23 @@ IMPACTFUL_FILES = {
     "go.sum",
 }
 
-NON_RELEASE_PATH_PREFIXES = (
-    "docs/",
-    "scripts/ci/tests/",
-    # The documentation website is published independently of the proxy
-    # binary/chart; its source and lockfile changes are not release-impacting.
-    "website/",
-    # The daily performance report's measurements and their history. The
-    # harness itself (bench/ab/*.py) still counts.
-    "bench/ab/history/",
-    "bench/ab/results/",
+# Manifests a dependency bump rewrites, matched by file name in any directory.
+# Some of them (bench/visual/requirements.txt) are product for CI but a bump of
+# them is still not a release.
+DEPENDENCY_MANIFEST_PATTERNS = (
+    "go.mod",
+    "go.sum",
+    "Dockerfile",
+    "requirements*.txt",
+    "requirements*.in",
+    "package.json",
+    "package-lock.json",
+    "docker-compose*.yml",
 )
 
-NON_RELEASE_FILES = {
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-    "scripts/ci/check_changelog_pr.py",
-    # The reports the daily performance run regenerates.
-    "conformance/registry/generated/perf-evidence.json",
-    "conformance/reports/performance.md",
-    "conformance/reports/gaps.md",
-}
+# Classifier rule that marks the gating machinery itself. Such a change runs
+# every check, but it is not something users receive.
+GATING_RULE = "P4"
 
 RELEASE_METADATA_FILES = {
     "CHANGELOG.md",
@@ -172,12 +174,19 @@ def is_release_path(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in IMPACTFUL_PATHS)
 
 
+def is_product_path(path: str) -> bool:
+    """True when the classifier says the path can change what users receive."""
+    is_product, rule_id = change_scope.classify(path)
+    return is_product and rule_id != GATING_RULE
+
+
 def is_non_release_path(path: str) -> bool:
-    if is_unit_test_only_path(path):
-        return True
-    if path in NON_RELEASE_FILES:
-        return True
-    return any(path.startswith(prefix) for prefix in NON_RELEASE_PATH_PREFIXES)
+    return is_unit_test_only_path(path) or not is_product_path(path)
+
+
+def is_dependency_manifest(path: str) -> bool:
+    name = posixpath.basename(path)
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in DEPENDENCY_MANIFEST_PATTERNS)
 
 
 def is_unit_test_only_path(path: str) -> bool:
@@ -189,6 +198,13 @@ def is_unit_test_only_path(path: str) -> bool:
 def should_require_changelog(commits: Iterable[str], files: Iterable[str]) -> bool:
     commit_list = [c for c in commits if c.strip()]
     file_list = [f for f in files if f.strip()]
+
+    # Nothing users receive changes, whatever the subject says: an infra-only
+    # "fix(ci): ..." needs no entry. This deliberately uses the classifier and
+    # not is_non_release_path, so a "fix:" that only edits unit tests under
+    # internal/ keeps requiring one.
+    if file_list and not any(is_product_path(f) for f in file_list):
+        return False
 
     if any(is_release_commit(subject) for subject in commit_list):
         return True
@@ -221,12 +237,7 @@ def is_dependency_only_pr(commits: Iterable[str], files: Iterable[str]) -> bool:
     )
     if not all_dep_commits:
         return False
-    return all(
-        f in IMPACTFUL_FILES
-        or is_non_release_path(f)
-        or f.startswith(".github/")
-        for f in file_list
-    )
+    return all(is_non_release_path(f) or is_dependency_manifest(f) for f in file_list)
 
 
 def extract_released_sections(text: str) -> str:
