@@ -25,6 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never compared. A static test now fails if `==`/`!=` is reintroduced against the
   admin or peer token, and a new test pins the right, wrong-same-length,
   wrong-different-length and empty-credential cases.
+- **Release images are scanned with Trivy before they are signed, tagged or
+  published.** Both release workflows (`auto-release.yaml`, `release.yaml`) now
+  run `scripts/ci/scan_release_image.sh` on the image right after it is pushed by
+  digest. It scans the linux/amd64 and linux/arm64 images with the same pinned
+  Trivy image, scanners and severities as the pull request scan in
+  `security-pr.yaml` (HIGH and CRITICAL findings that have a fix available fail;
+  `.trivyignore.yaml` is honoured) and reads the image anonymously, as users do.
+  A finding stops the run before the image is signed or attested, before the
+  version and `latest` image tags and the Helm chart are pushed, and before the
+  GitHub Release is drafted; the pushed digest stays untagged. A Trivy run that
+  fails for another reason, such as an unreachable vulnerability database, is
+  retried up to three times; a finding is never retried. In `auto-release.yaml`
+  the `vX.Y.Z` git tag is now created right after this gate instead of at the
+  start of the job, so a release that fails the scan leaves no tag behind (release
+  tags cannot be moved or deleted, so such a tag would burn its version).
+  `release.yaml` takes the script and the ignore file from the commit it runs
+  from, because an older tag may not contain them. The scan is a gate only: no
+  SARIF is uploaded, since the code-scanning upload needs `security-events:
+  write` on the job that holds the release credentials, and the image scan in
+  `security-heavy.yaml` already reports Trivy results there.
 
 ## [2.25.1] - 2026-10-22
 

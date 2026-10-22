@@ -404,51 +404,6 @@ jobs:
             echo "build_time=$(TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd "${RELEASE_SHA}")"
             echo "notes_file=${NOTES_FILE}"
           } >> "$GITHUB_OUTPUT"
-      - name: Create release tag
-        env:
-          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
-          WORKFLOW_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::refusing to tag '${TAG}': not vMAJOR.MINOR.PATCH"
-            exit 1
-          fi
-          # Run git against github.com with a token that a credential helper reads
-          # from the environment for this one command. The token is never put in
-          # a URL, in the git config or in a derived value that needs masking.
-          git_as() {
-            local token="$1"
-            shift
-            # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
-            GIT_AUTH_TOKEN="${token}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' "$@"
-          }
-          PRIMARY_TOKEN="${RELEASE_PR_TOKEN:-$WORKFLOW_TOKEN}"
-          PRIMARY_ACTOR="RELEASE_PR_TOKEN"
-          if [ -z "${RELEASE_PR_TOKEN:-}" ]; then
-            PRIMARY_ACTOR="GITHUB_TOKEN"
-          fi
-          git_as "${PRIMARY_TOKEN}" fetch --tags origin
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists"
-            if [ "$(git rev-list -n1 "${TAG}")" != "${RELEASE_SHA}" ]; then
-              echo "::error::tag ${TAG} exists on another commit"
-              exit 1
-            fi
-          else
-            git tag "${TAG}" "${RELEASE_SHA}"
-            if ! git_as "${PRIMARY_TOKEN}" push origin "refs/tags/${TAG}"; then
-              if [ "${PRIMARY_ACTOR}" = "RELEASE_PR_TOKEN" ]; then
-                echo "::warning::Tag push with RELEASE_PR_TOKEN failed; retrying with GITHUB_TOKEN"
-                echo "::warning::The tag ruleset allows only the release bot to create v* tags, so this retry is expected to be rejected unless the ruleset changed"
-                git_as "${WORKFLOW_TOKEN}" push origin "refs/tags/${TAG}"
-              else
-                echo "::error::Tag push failed with GITHUB_TOKEN. Creating v* tags needs RELEASE_PR_TOKEN (the release bot); GITHUB_TOKEN is rejected by the tag ruleset."
-                exit 1
-              fi
-            fi
-          fi
 
       - name: Build release binaries
         env:
@@ -612,6 +567,65 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      # Release gate. The image exists only as an untagged digest here. It is
+      # scanned (both platforms) before it is signed or attested, before the
+      # release git tag, the image tags (version and latest) and the chart are
+      # created, and before the release is drafted. HIGH or CRITICAL findings with a
+      # fix available fail the run, and nothing after this step has happened yet.
+      - name: Scan the pushed image with Trivy
+        env:
+          IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}
+        run: bash scripts/ci/scan_release_image.sh
+
+      # The tag is created here, after the gate, and not at the start of the job:
+      # a release that fails the scan then leaves no v* tag behind. Release tags
+      # cannot be moved or deleted, so a tag with no release would burn its version.
+      - name: Create release tag
+        env:
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          WORKFLOW_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::refusing to tag '${TAG}': not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          # Run git against github.com with a token that a credential helper reads
+          # from the environment for this one command. The token is never put in
+          # a URL, in the git config or in a derived value that needs masking.
+          git_as() {
+            local token="$1"
+            shift
+            # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+            GIT_AUTH_TOKEN="${token}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' "$@"
+          }
+          PRIMARY_TOKEN="${RELEASE_PR_TOKEN:-$WORKFLOW_TOKEN}"
+          PRIMARY_ACTOR="RELEASE_PR_TOKEN"
+          if [ -z "${RELEASE_PR_TOKEN:-}" ]; then
+            PRIMARY_ACTOR="GITHUB_TOKEN"
+          fi
+          git_as "${PRIMARY_TOKEN}" fetch --tags origin
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+            if [ "$(git rev-list -n1 "${TAG}")" != "${RELEASE_SHA}" ]; then
+              echo "::error::tag ${TAG} exists on another commit"
+              exit 1
+            fi
+          else
+            git tag "${TAG}" "${RELEASE_SHA}"
+            if ! git_as "${PRIMARY_TOKEN}" push origin "refs/tags/${TAG}"; then
+              if [ "${PRIMARY_ACTOR}" = "RELEASE_PR_TOKEN" ]; then
+                echo "::warning::Tag push with RELEASE_PR_TOKEN failed; retrying with GITHUB_TOKEN"
+                echo "::warning::The tag ruleset allows only the release bot to create v* tags, so this retry is expected to be rejected unless the ruleset changed"
+                git_as "${WORKFLOW_TOKEN}" push origin "refs/tags/${TAG}"
+              else
+                echo "::error::Tag push failed with GITHUB_TOKEN. Creating v* tags needs RELEASE_PR_TOKEN (the release bot); GITHUB_TOKEN is rejected by the tag ruleset."
+                exit 1
+              fi
+            fi
+          fi
 
       - name: Sign the container image
         env:

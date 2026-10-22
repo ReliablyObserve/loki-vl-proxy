@@ -296,6 +296,23 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
+      # Release gate. The rebuilt image exists only as an untagged digest here. It
+      # is scanned (both platforms) before it is signed or attested and before the
+      # image tags and the chart are pushed, so a finding leaves the tags that
+      # users pull pointing at the previous artifacts. The scanner and its ignore
+      # file come from the commit this workflow runs from, as an older tag may not
+      # contain them.
+      - name: Scan the pushed image with Trivy
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          IMAGE_REF: ${{ steps.image-tags.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/trivy-config"
+          git show "${WORKFLOW_SHA}:scripts/ci/scan_release_image.sh" > "${RUNNER_TEMP}/scan_release_image.sh"
+          git show "${WORKFLOW_SHA}:.trivyignore.yaml" > "${RUNNER_TEMP}/trivy-config/.trivyignore.yaml"
+          IGNORE_FILE="${RUNNER_TEMP}/trivy-config/.trivyignore.yaml" bash "${RUNNER_TEMP}/scan_release_image.sh"
+
       - name: Sign the container image
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
