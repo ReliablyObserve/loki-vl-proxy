@@ -39,7 +39,9 @@ class CheckChangelogPRTests(unittest.TestCase):
 
     def test_should_require_changelog_for_release_commits(self):
         self.assertTrue(should_require_changelog(["feat: add tail mode"], ["docs/readme.md", "charts/loki-vl-proxy/values.yaml"]))
-        self.assertTrue(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md", "bench/ab/daily.py"]))
+        self.assertTrue(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md", "internal/proxy/tail.go"]))
+        # A bench-only fix ships nothing.
+        self.assertFalse(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md", "bench/ab/daily.py"]))
         # Nothing shipped changes, so the subject does not matter.
         self.assertFalse(should_require_changelog(["feat: add tail mode"], ["docs/readme.md"]))
         self.assertFalse(should_require_changelog(["fix(proxy): handle tail fallback"], ["README.md"]))
@@ -69,7 +71,8 @@ class CheckChangelogPRTests(unittest.TestCase):
                 [".github/workflows/ci.yaml", "internal/proxy/proxy.go"],
             )
         )
-        self.assertTrue(should_require_changelog(["test: add coverage"], ["test/e2e-compat/features_test.go"]))
+        # An e2e suite is not shipped.
+        self.assertFalse(should_require_changelog(["test: add coverage"], ["test/e2e-compat/features_test.go"]))
 
     def test_should_skip_for_changelog_gate_policy_only_changes(self):
         self.assertFalse(
@@ -249,22 +252,23 @@ class CheckChangelogPRTests(unittest.TestCase):
             )
         )
 
-    def test_benchmark_harness_changes_still_require_changelog(self):
-        self.assertTrue(
+    def test_benchmark_harness_and_registry_changes_need_no_changelog(self):
+        # Neither the bench harness nor the conformance registry is shipped.
+        self.assertFalse(
             should_require_changelog(
                 ["bench: the daily run measures one more shape"],
                 ["bench/ab/daily.py", "bench/ab/history/control.jsonl"],
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             should_require_changelog(
                 ["bench: add a registry row"],
                 ["conformance/registry/baseline.json", "conformance/reports/gaps.md"],
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             should_require_changelog(
-                ["bench: regenerate the limits export"],
+                ["feat: regenerate the limits export"],
                 ["conformance/registry/generated/proxy/limits.json"],
             )
         )
@@ -371,6 +375,14 @@ class InfraScopeTests(unittest.TestCase):
         self.assertFalse(
             is_dependency_only_pr(
                 ["build(deps): bump X"],
+                ["bench/visual/package.json", "internal/proxy/proxy.go"],
+            )
+        )
+        # A bench script next to its manifest ships nothing, so it is still a
+        # dependency-only change.
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump X"],
                 ["bench/visual/package.json", "bench/visual/run.py"],
             )
         )
@@ -400,8 +412,50 @@ class InfraScopeTests(unittest.TestCase):
             )
         )
 
-    def test_unit_test_only_fix_still_needs_an_entry(self):
-        self.assertTrue(should_require_changelog(["fix: cover the empty range"], ["internal/x/y_test.go"]))
+    def test_unit_test_only_fix_needs_no_entry(self):
+        # No product code changes, so nothing is released.
+        self.assertFalse(should_require_changelog(["fix: cover the empty range"], ["internal/x/y_test.go"]))
+        self.assertFalse(
+            should_require_changelog(
+                ["fix: pin the golden output"],
+                ["internal/proxy/testdata/detected_level_golden.json", "internal/proxy/proxy_test.go"],
+            )
+        )
+        # The same fix next to product code does.
+        self.assertTrue(
+            should_require_changelog(["fix: cover the empty range"], ["internal/x/y_test.go", "internal/x/y.go"])
+        )
+
+    def test_release_commit_subjects_do_not_decide_when_files_are_known(self):
+        for subject in ("feat: x", "fix: x", "perf: x", "revert: x", "chore: breaking change"):
+            with self.subTest(subject):
+                self.assertFalse(should_require_changelog([subject], ["docs/a.md", "test/e2e-compat/x_test.go"]))
+
+    def test_chart_dashboard_and_alert_changes_need_an_entry(self):
+        for path in (
+            "charts/loki-vl-proxy/templates/tests/test-connection.yaml",
+            "dashboard/loki-vl-proxy.json",
+            "alerting/loki-vl-proxy-prometheusrule.yaml",
+            "Dockerfile",
+            ".dockerignore",
+        ):
+            with self.subTest(path):
+                self.assertTrue(should_require_changelog(["chore: tweak"], [path]))
+
+    def test_without_files_a_release_subject_is_the_only_evidence(self):
+        self.assertTrue(should_require_changelog(["fix: x"], []))
+        self.assertFalse(should_require_changelog(["docs: x"], []))
+        self.assertFalse(should_require_changelog([], []))
+
+    def test_real_pull_requests(self):
+        from scripts.ci.tests import test_change_scope as fixtures
+
+        for number, files in fixtures.NO_SHIP_PRS.items():
+            with self.subTest(pr=number):
+                self.assertFalse(should_require_changelog(["fix: whatever the subject says"], files))
+        for number, files in fixtures.SHIP_PRS.items():
+            with self.subTest(pr=number):
+                self.assertTrue(should_require_changelog(["chore: whatever the subject says"], files))
 
     def test_classifier_only_change_needs_no_entry(self):
         for files in (
@@ -441,12 +495,25 @@ class InfraScopeTests(unittest.TestCase):
             "charts/loki-vl-proxy/values.yaml",
             "go.mod",
             "Dockerfile",
-            "bench/ab/daily.py",
-            "bench/visual/package.json",
-            "conformance/registry/baseline.json",
+            "dashboard/loki-vl-proxy.json",
+            "alerting/loki-vl-proxy-prometheusrule.yaml",
+            "charts/loki-vl-proxy/templates/tests/test-connection.yaml",
         ):
             with self.subTest(path):
                 self.assertFalse(is_non_release_path(path))
+
+    def test_bench_test_and_registry_paths_are_non_release(self):
+        for path in (
+            "bench/ab/daily.py",
+            "bench/visual/package.json",
+            "conformance/registry/baseline.json",
+            "test/e2e-compat/features_test.go",
+            "test/e2e-ui/tests/drilldown.spec.ts",
+            "scripts/ci/run_zap_scan.sh",
+            "scripts/ci/change_scope.py",
+        ):
+            with self.subTest(path):
+                self.assertTrue(is_non_release_path(path))
 
     def test_unit_test_files_stay_non_release_paths(self):
         self.assertTrue(is_non_release_path("internal/x/y_test.go"))

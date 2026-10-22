@@ -41,25 +41,6 @@ MERGE_COMMIT_PREFIXES = (
     "merge pull request ",
 )
 
-IMPACTFUL_PATHS = (
-    "cmd/",
-    "internal/",
-    "pkg/",
-    "charts/",
-)
-
-UNIT_TEST_PATH_PREFIXES = (
-    "cmd/",
-    "internal/",
-    "pkg/",
-)
-
-IMPACTFUL_FILES = {
-    "Dockerfile",
-    "go.mod",
-    "go.sum",
-}
-
 # Manifests a dependency bump rewrites, matched by file name in any directory.
 # Some of them (bench/visual/requirements.txt) are product for CI but a bump of
 # them is still not a release.
@@ -73,10 +54,6 @@ DEPENDENCY_MANIFEST_PATTERNS = (
     "package-lock.json",
     "docker-compose*.yml",
 )
-
-# Classifier rule that marks the gating machinery itself. Such a change runs
-# every check, but it is not something users receive.
-GATING_RULE = "P4"
 
 RELEASE_METADATA_FILES = {
     "CHANGELOG.md",
@@ -166,22 +143,9 @@ def is_release_commit(subject: str) -> bool:
     )
 
 
-def is_release_path(path: str) -> bool:
-    if is_unit_test_only_path(path):
-        return False
-    if path in IMPACTFUL_FILES:
-        return True
-    return any(path.startswith(prefix) for prefix in IMPACTFUL_PATHS)
-
-
-def is_product_path(path: str) -> bool:
-    """True when the classifier says the path can change what users receive."""
-    is_product, rule_id = change_scope.classify(path)
-    return is_product and rule_id != GATING_RULE
-
-
 def is_non_release_path(path: str) -> bool:
-    return is_unit_test_only_path(path) or not is_product_path(path)
+    """True when the path is not part of anything users receive."""
+    return not change_scope.ships(path)
 
 
 def is_dependency_manifest(path: str) -> bool:
@@ -189,32 +153,18 @@ def is_dependency_manifest(path: str) -> bool:
     return any(fnmatch.fnmatchcase(name, pattern) for pattern in DEPENDENCY_MANIFEST_PATTERNS)
 
 
-def is_unit_test_only_path(path: str) -> bool:
-    return path.endswith("_test.go") and any(
-        path.startswith(prefix) for prefix in UNIT_TEST_PATH_PREFIXES
-    )
-
-
 def should_require_changelog(commits: Iterable[str], files: Iterable[str]) -> bool:
-    commit_list = [c for c in commits if c.strip()]
+    """An entry is required only when something that ships changes.
+
+    The files decide, whatever the subjects say: a "fix:" that only edits unit
+    tests, the bench harness, the conformance registry or CI changes nothing
+    users receive and needs no entry. Without any file to judge, a release
+    commit subject is the only evidence left.
+    """
     file_list = [f for f in files if f.strip()]
-
-    # Nothing users receive changes, whatever the subject says: an infra-only
-    # "fix(ci): ..." needs no entry. This deliberately uses the classifier and
-    # not is_non_release_path, so a "fix:" that only edits unit tests under
-    # internal/ keeps requiring one.
-    if file_list and not any(is_product_path(f) for f in file_list):
-        return False
-
-    if any(is_release_commit(subject) for subject in commit_list):
-        return True
-
-    impactful = [f for f in file_list if is_release_path(f)]
-    if impactful:
-        return True
-
-    non_release = [f for f in file_list if is_non_release_path(f)]
-    return len(file_list) > 0 and len(non_release) != len(file_list)
+    if file_list:
+        return any(change_scope.ships(f) for f in file_list)
+    return any(is_release_commit(c) for c in commits if c.strip())
 
 
 def is_merge_commit(subject: str) -> bool:

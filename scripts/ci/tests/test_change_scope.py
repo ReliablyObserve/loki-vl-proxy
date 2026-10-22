@@ -5,7 +5,17 @@ import unittest
 from pathlib import Path
 
 from scripts.ci import change_scope
-from scripts.ci.change_scope import NON_PRODUCT, PRODUCT_OVERRIDES, classify, glob_match, scope
+from scripts.ci.change_scope import (
+    NON_PRODUCT,
+    NOT_SHIPPED_GO,
+    PRODUCT_OVERRIDES,
+    SHIPPED,
+    any_ships,
+    classify,
+    glob_match,
+    scope,
+    ships,
+)
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "scripts" / "ci" / "change_scope.py"
@@ -177,6 +187,67 @@ PR_582 = [
     "test/e2e-compat/series_count_aggregation_test.go",
 ]
 
+# PR #819: Dockerfile with workflows, examples, docs and the website
+PR_819 = [
+    ".github/workflows/auto-release.yaml",
+    ".github/workflows/release-pr-validation.yaml",
+    ".github/workflows/release.yaml",
+    "CHANGELOG.md",
+    "Dockerfile",
+    "README.md",
+    "docs/getting-started.md",
+    "examples/docker-compose.yml",
+    "examples/peers/consul-catalog/README.md",
+    "examples/peers/consul-catalog/docker-compose.yml",
+    "examples/peers/haproxy-dns/README.md",
+    "examples/peers/haproxy-dns/docker-compose.yml",
+    "examples/peers/prometheus-sd/README.md",
+    "examples/peers/prometheus-sd/docker-compose.yml",
+    "examples/peers/static-list/README.md",
+    "examples/peers/static-list/docker-compose.yml",
+    "scripts/ci/sync_release_metadata.sh",
+    "website/src/pages/install-loki-vl-proxy-with-helm.tsx",
+]
+
+# PR #820: classifier and its workflows (rule P4)
+PR_820 = [
+    ".github/workflows/change-scope.yaml",
+    ".github/workflows/changelog-pr.yaml",
+    "scripts/ci/change_scope.py",
+    "scripts/ci/tests/test_change_scope.py",
+]
+
+# PR #821: release workflow and changelog gate
+PR_821 = [
+    ".github/workflows/auto-release.yaml",
+    "scripts/ci/check_changelog_pr.py",
+    "scripts/ci/tests/test_check_changelog_pr.py",
+]
+
+# PR #822: CI workflow and compose validation
+PR_822 = [
+    ".github/workflows/ci.yaml",
+    "scripts/ci/tests/test_scope_wiring.py",
+    "scripts/ci/validate_compose.sh",
+]
+
+# PR #823: Go version in seven workflows
+PR_823 = [
+    ".github/workflows/compat-drilldown.yaml",
+    ".github/workflows/compat-loki.yaml",
+    ".github/workflows/compat-vl.yaml",
+    ".github/workflows/e2e-pipeline.yml",
+    ".github/workflows/perf-ab.yaml",
+    ".github/workflows/pr-quality-report.yaml",
+    ".github/workflows/security-pr.yaml",
+    ".github/workflows/visual-smoke.yaml",
+]
+
+# PR #826: compose validation script
+PR_826 = [
+    "scripts/ci/validate_compose.sh",
+]
+
 INFRA_PRS = {
     807: PR_807,
     810: PR_810,
@@ -193,6 +264,31 @@ PRODUCT_PRS = {
     813: PR_813,
     804: PR_804,
     582: PR_582,
+}
+
+# Pull requests that change nothing users receive, and ones that do.
+NO_SHIP_PRS = {
+    807: PR_807,
+    810: PR_810,
+    811: PR_811,
+    813: PR_813,
+    814: PR_814,
+    815: PR_815,
+    816: PR_816,
+    817: PR_817,
+    820: PR_820,
+    821: PR_821,
+    822: PR_822,
+    823: PR_823,
+    826: PR_826,
+    805: PR_805,
+}
+SHIP_PRS = {
+    808: PR_808,  # chart test template
+    812: PR_812,  # go.mod
+    819: PR_819,  # Dockerfile
+    804: PR_804,  # internal/
+    582: PR_582,  # internal/ and cmd/
 }
 
 # (path, expected is_product, expected rule id). At least one case per rule.
@@ -369,6 +465,204 @@ class RealPullRequestTests(unittest.TestCase):
             self.assertGreater(len(files), 0)
 
 
+class ShipsTests(unittest.TestCase):
+    def test_shipped_paths(self):
+        for path in (
+            "cmd/proxy/main.go",
+            "cmd/healthcheck/main.go",
+            "internal/proxy/proxy.go",
+            "internal/translator/testutil.go",
+            "internal/proxy/testdata_helpers.go",
+            "pkg/cache/cache.go",
+            "go.mod",
+            "go.sum",
+            "Dockerfile",
+            ".dockerignore",
+            "charts/loki-vl-proxy/Chart.yaml",
+            "charts/loki-vl-proxy/values.yaml",
+            "charts/loki-vl-proxy/README.md",
+            "charts/loki-vl-proxy/templates/deployment.yaml",
+            "charts/loki-vl-proxy/templates/tests/test-connection.yaml",
+            "charts/loki-vl-proxy/dashboards/loki-vl-proxy.json",
+            "charts/loki-vl-proxy/alerting/loki-vl-proxy-prometheusrule.yaml",
+            "dashboard/loki-vl-proxy.json",
+            "alerting/loki-vl-proxy-alerting-rules.yaml",
+        ):
+            with self.subTest(path):
+                self.assertTrue(ships(path))
+
+    def test_go_tests_and_testdata_do_not_ship(self):
+        for path in (
+            "internal/proxy/proxy_test.go",
+            "internal/x/y_test.go",
+            "cmd/proxy/main_test.go",
+            "pkg/cache/cache_test.go",
+            "internal/proxy/testdata/detected_level_golden.json",
+            "internal/translator/testdata/fuzz/FuzzParseDropConditions/ba3bf070c9affc13",
+            "internal/testdata/a.json",
+            "pkg/a/b/testdata/c/d.txt",
+        ):
+            with self.subTest(path):
+                self.assertFalse(ships(path))
+
+    def test_lookalikes_still_ship(self):
+        # Only a file name ending in _test.go and a testdata directory are
+        # excluded; neighbours with similar names are compiled into the binary.
+        for path in (
+            "internal/proxy/test_helpers.go",
+            "internal/proxy/testdata.go",
+            "internal/proxy/mytestdata/a.go",
+            "internal/proxy/proxy_test.go.bak",
+        ):
+            with self.subTest(path):
+                self.assertTrue(ships(path))
+
+    def test_nothing_else_ships(self):
+        for path in (
+            "bench/ab/daily.py",
+            "bench/cmd/main.go",
+            "bench/go.mod",
+            "bench/visual/package.json",
+            "test/e2e-compat/series_count_aggregation_test.go",
+            "test/e2e-compat/compatibility-matrix.json",
+            "test/e2e-compat/docker-compose.yml",
+            "test/e2e-ui/tests/drilldown.spec.ts",
+            "conformance/registry/behaviours/x.yaml",
+            "conformance/registry/generated/wiring.json",
+            "conformance/reports/roadmap.md",
+            "scripts/ci/check_changelog_pr.py",
+            "scripts/ci/change_scope.py",
+            "scripts/ci/tests/test_change_scope.py",
+            "scripts/smoke-test.sh",
+            ".github/workflows/auto-release.yaml",
+            ".github/dependabot.yml",
+            "docs/getting-started.md",
+            "website/src/pages/index.tsx",
+            "examples/docker-compose.yml",
+            "docker-compose.yml",
+            "security/zap/zap-baseline.conf",
+            "results/bench.json",
+            "README.md",
+            "CHANGELOG.md",
+            "LICENSE",
+            ".gitignore",
+            ".golangci.yml",
+            "Dockerfile.test",
+        ):
+            with self.subTest(path):
+                self.assertFalse(ships(path))
+
+    def test_root_only_files_do_not_match_nested_copies(self):
+        for path in ("test/e2e-compat/Dockerfile", "bench/go.mod", "bench/go.sum", "test/x/go.mod"):
+            with self.subTest(path):
+                self.assertFalse(ships(path))
+
+    def test_untrusted_paths_do_not_ship(self):
+        # The opposite of classify(), which treats them as product.
+        for path in ("", "  ", "/internal/proxy/proxy.go", "../internal/proxy/proxy.go",
+                     "..", ".", '"internal/caf\\303\\251.go"'):
+            with self.subTest(path):
+                self.assertFalse(ships(path))
+
+    def test_leading_dot_slash_and_whitespace_are_ignored(self):
+        self.assertTrue(ships("./internal/proxy/proxy.go"))
+        self.assertTrue(ships("  go.mod \n"))
+        self.assertFalse(ships("./docs/a.md"))
+
+    def test_matching_is_case_sensitive(self):
+        self.assertFalse(ships("Internal/proxy/proxy.go"))
+        self.assertFalse(ships("dockerfile"))
+
+    def test_any_ships(self):
+        self.assertTrue(any_ships(["docs/a.md", "internal/proxy/proxy.go"]))
+        self.assertFalse(any_ships(["docs/a.md", "internal/proxy/proxy_test.go"]))
+        self.assertFalse(any_ships(p for p in ["docs/a.md"]))
+
+    def test_any_ships_empty_list_keeps_the_release_bot_meaning(self):
+        self.assertTrue(any_ships([]))
+        self.assertTrue(any_ships(["", "  "]))
+
+    def test_a_classifier_change_does_not_ship(self):
+        # P4 runs every check but is no release.
+        self.assertTrue(classify("scripts/ci/change_scope.py")[0])
+        self.assertFalse(ships("scripts/ci/change_scope.py"))
+        self.assertFalse(ships(".github/workflows/change-scope.yaml"))
+
+    def test_shipped_is_a_subset_of_product(self):
+        for path in (
+            "cmd/proxy/main.go", "internal/proxy/proxy.go", "pkg/a/b.go", "go.mod", "go.sum",
+            "Dockerfile", ".dockerignore", "charts/loki-vl-proxy/values.yaml",
+            "dashboard/loki-vl-proxy.json", "alerting/loki-vl-proxy-prometheusrule.yaml",
+        ):
+            with self.subTest(path):
+                self.assertTrue(classify(path)[0])
+
+    def test_pull_requests_that_ship_nothing(self):
+        for number, files in NO_SHIP_PRS.items():
+            with self.subTest(pr=number):
+                self.assertFalse(any_ships(files), [f for f in files if ships(f)])
+
+    def test_pull_requests_that_ship(self):
+        for number, files in SHIP_PRS.items():
+            with self.subTest(pr=number):
+                self.assertTrue(any_ships(files))
+
+    def test_ship_fixtures_are_not_empty(self):
+        for files in list(NO_SHIP_PRS.values()) + list(SHIP_PRS.values()):
+            self.assertGreater(len(files), 0)
+
+    def test_the_shipping_file_of_each_pull_request(self):
+        expected = {
+            808: ["charts/loki-vl-proxy/templates/tests/test-connection.yaml"],
+            812: ["go.mod", "go.sum"],
+            819: ["Dockerfile"],
+            804: ["internal/proxy/unwrap_conversion_error.go"],
+        }
+        for number, paths in expected.items():
+            with self.subTest(pr=number):
+                self.assertEqual([f for f in SHIP_PRS[number] if ships(f)], paths)
+
+
+@unittest.skipUnless(TRACKED, "git ls-files is not available")
+class ShippedRepositoryTests(unittest.TestCase):
+    # Globs kept for a Go root that has no files yet: a package added there
+    # later must ship without anyone remembering to edit the table. Remove the
+    # entry here once the directory exists.
+    RESERVED = {"pkg/**"}
+
+    def test_no_shipped_glob_is_dead(self):
+        dead = [g for g in SHIPPED
+                if g not in self.RESERVED and not any(glob_match(g, path) for path in TRACKED)]
+        self.assertEqual(dead, [], "shipped globs that match no tracked file")
+
+    def test_reserved_globs_are_still_unused(self):
+        used = [g for g in self.RESERVED if any(glob_match(g, path) for path in TRACKED)]
+        self.assertEqual(used, [], "drop these from RESERVED, they match files now")
+
+    def test_no_exclusion_is_dead(self):
+        dead = [
+            g for g in NOT_SHIPPED_GO
+            if not any(glob_match(g, path) and ships(path) is False
+                       and any(glob_match(r, path) for r in change_scope.GO_ROOTS)
+                       for path in TRACKED)
+        ]
+        self.assertEqual(dead, [], "exclusions that match no tracked Go-root file")
+
+    def test_every_tracked_file_has_an_answer(self):
+        for path in TRACKED:
+            self.assertIsInstance(ships(path), bool, path)
+
+    def test_nothing_is_embedded_into_the_binary(self):
+        # The exclusion of testdata is only safe while no package embeds it.
+        offenders = []
+        for path in TRACKED:
+            if (path.endswith(".go") and not path.endswith("_test.go")
+                    and any(glob_match(r, path) for r in change_scope.GO_ROOTS)):
+                if "//go:embed" in (REPO / path).read_text(encoding="utf-8", errors="replace"):
+                    offenders.append(path)
+        self.assertEqual(offenders, [], "go:embed found: review SHIPPED / NOT_SHIPPED_GO")
+
+
 @unittest.skipUnless(TRACKED, "git ls-files is not available")
 class RepositoryTests(unittest.TestCase):
     def test_every_tracked_file_classifies(self):
@@ -469,6 +763,50 @@ class CLITests(unittest.TestCase):
                                   stdin="docs/a.md\n")
             self.assertEqual(result.returncode, 0)
             self.assertEqual(out.read_text(), "product=false\n")
+
+    def test_ships_true(self):
+        result = self.run_cli("--files-from", "-", "--ships", stdin="docs/a.md\ninternal/x.go\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "ships=true\n")
+
+    def test_ships_false(self):
+        result = self.run_cli("--files-from", "-", "--ships",
+                              stdin="docs/a.md\ninternal/x_test.go\nscripts/ci/change_scope.py\n")
+        self.assertEqual(result.stdout, "ships=false\n")
+
+    def test_ships_writes_github_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            out.write_text("other=1\n")
+            self.run_cli("--files-from", "-", "--ships", "--github-output", str(out),
+                         stdin="bench/ab/daily.py\n")
+            self.assertEqual(out.read_text(), "other=1\nships=false\n")
+
+    def test_ships_empty_input_keeps_the_release_bot_meaning(self):
+        for stdin in ["", "\n\n  \n"]:
+            with self.subTest(stdin=stdin):
+                result = self.run_cli("--files-from", "-", "--ships", stdin=stdin)
+                self.assertEqual(result.stdout, "ships=true\n")
+        self.assertEqual(self.run_cli("--ships").stdout, "ships=true\n")
+
+    def test_ships_missing_file_reports_shipping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_cli("--files-from", str(Path(tmp) / "absent"), "--ships")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "ships=true\n")
+
+    def test_ships_unknown_argument_reports_shipping(self):
+        result = self.run_cli("--ships", "--bogus")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "ships=true\n")
+
+    def test_ships_untrusted_paths_do_not_ship(self):
+        result = self.run_cli("--files-from", "-", "--ships", stdin="/etc/passwd\n../x.go\n")
+        self.assertEqual(result.stdout, "ships=false\n")
+
+    def test_product_output_is_unchanged_by_the_ships_flag_existing(self):
+        result = self.run_cli("--files-from", "-", stdin="internal/x_test.go\n")
+        self.assertEqual(result.stdout, "product=true\n")
 
     def test_summary_table(self):
         with tempfile.TemporaryDirectory() as tmp:
