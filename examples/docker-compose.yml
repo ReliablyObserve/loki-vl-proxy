@@ -24,7 +24,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.52.0
+    image: victoriametrics/victoria-logs:v1.53.0
     ports:
       - "9428:9428"
     command:
@@ -43,7 +43,7 @@ services:
 
   # ── loki-vl-proxy ──────────────────────────────────────────────────────────
   loki-vl-proxy:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.0
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.25.1
     ports:
       - "3100:3100"
     command:
@@ -68,7 +68,7 @@ services:
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.4
     ports:
       - "3000:3000"
     environment:
