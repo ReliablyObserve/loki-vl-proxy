@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Unit test changelog gate
-        run: python -m unittest scripts.ci.tests.test_check_changelog_pr
+        run: python -m unittest scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_change_scope
 
       - name: Enforce changelog updates for releasable PRs
         env:

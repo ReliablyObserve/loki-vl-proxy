@@ -1,0 +1,103 @@
+name: Change scope
+
+# Reusable workflow. Reports whether a pull request changes product paths
+# (output `product` is "true" or "false"). Everything except an unlabelled
+# pull request whose changed paths are all infra reports "true", and so does
+# any error, so a caller that skips on "false" can only skip on purpose.
+#
+# Callers need `contents: read` and `pull-requests: read`.
+
+on:
+  workflow_call:
+    outputs:
+      product:
+        description: >-
+          "false" only when every changed path is infra; "true" otherwise,
+          including on any event that is not a pull request, on the ci-full
+          label and on any error.
+        value: ${{ jobs.scope.outputs.product }}
+
+permissions: {}
+
+jobs:
+  scope:
+    name: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      product: ${{ steps.result.outputs.product }}
+    steps:
+      - name: Decide whether the classifier applies
+        id: gate
+        continue-on-error: true
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          reason=""
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            reason="event is $EVENT_NAME, not pull_request"
+          elif [ -z "$PR_NUMBER" ]; then
+            reason="no pull request number"
+          elif labels=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.labels[].name'); then
+            # Read at run time so a re-run after adding the label sees it.
+            if printf '%s\n' "$labels" | grep -qx 'ci-full'; then
+              reason="the ci-full label is set"
+            fi
+          else
+            reason="could not read the pull request labels"
+          fi
+          if [ -n "$reason" ]; then
+            echo "force=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Change scope"
+              echo
+              echo "Result: \`product=true\` ($reason)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "force=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the merge ref
+        if: ${{ !cancelled() && steps.gate.outputs.force != 'true' }}
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Classify the changed paths
+        id: classify
+        if: ${{ !cancelled() && steps.gate.outputs.force != 'true' }}
+        continue-on-error: true
+        run: |
+          # The merge ref's first parent is the base tip, so this is the net
+          # change of the pull request. --no-renames lists both the old and
+          # the new path of a rename. A failed diff leaves the list empty,
+          # which the classifier reports as product.
+          git -c core.quotepath=false diff --name-only --no-renames HEAD^1 HEAD \
+            | python3 scripts/ci/change_scope.py --files-from - \
+                --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the result
+        id: result
+        if: ${{ !cancelled() }}
+        env:
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          FORCE: ${{ steps.gate.outputs.force }}
+          CLASSIFY_OUTCOME: ${{ steps.classify.outcome }}
+          CLASSIFIED: ${{ steps.classify.outputs.product }}
+        run: |
+          product=true
+          if [ "$GATE_OUTCOME" = "success" ] && [ "$FORCE" = "false" ] \
+             && [ "$CLASSIFY_OUTCOME" = "success" ] && [ "$CLASSIFIED" = "false" ]; then
+            product=false
+          fi
+          echo "product=$product" >> "$GITHUB_OUTPUT"
+          echo "Change scope: product=$product"
