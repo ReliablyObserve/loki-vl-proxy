@@ -1125,3 +1125,6 @@ jobs:
 
       - name: Helm ↔ binary flag parity
         run: ./scripts/ci/validate_helm_flags.sh
+
+      - name: Helm existingSecret values
+        run: ./scripts/ci/validate_helm_secrets.sh

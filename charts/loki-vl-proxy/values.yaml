@@ -255,7 +255,7 @@ extraArgs:
   # otlp-timeout: "10s"
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
-  # backend-basic-auth: "user:password"
+  # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
@@ -380,7 +380,7 @@ extraArgs:
   admin-listen: "127.0.0.1:3101"               # loopback-only admin/debug listener; never published via Service. Set --server.admin-auth-token to move admin onto the main port.
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"
-  # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints
+  # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints; prefer adminAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
   # tail.mode: "auto"                           # auto | native | synthetic
   # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
   # ruler-backend: ""                           # optional /rules passthrough backend
@@ -446,6 +446,13 @@ observability:
     compression: ""
     timeout: ""
     headers: ""
+    # Read the OTLP headers (which usually carry an Authorization value) from an
+    # existing Secret instead of the plain `headers` value above. The Secret key
+    # holds the whole `key=value[,key=value]` string; it is exposed to the proxy
+    # as the OTLP_HEADERS environment variable. Cannot be combined with `headers`
+    # or extraArgs.otlp-headers (rendering fails).
+    # existingSecret: ""
+    # existingSecretKey: "headers"   # key within existingSecret (defaults to "headers")
     tlsSkipVerify: false
   metrics:
     maxTenants: 256
@@ -455,6 +462,23 @@ observability:
   server:
     registerInstrumentation: true
     metricsMaxConcurrency: 1
+
+# Admin/debug endpoint bearer token (-server.admin-auth-token) from an existing
+# Secret. The chart renders -server.admin-auth-token=$(ADMIN_AUTH_TOKEN) with the
+# variable sourced from a secretKeyRef, so the token never appears in the pod
+# spec or in `helm get values`. The plain value (extraArgs."server.admin-auth-token")
+# keeps working; setting both fails rendering.
+adminAuth:
+  existingSecret: ""
+  existingSecretKey: "token"       # key within existingSecret
+
+# VictoriaLogs backend basic auth (-backend-basic-auth) from an existing Secret.
+# The Secret key holds the whole "user:password" string. The chart renders
+# -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
+# (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
+backendAuth:
+  existingSecret: ""
+  existingSecretKey: "basic-auth"  # key within existingSecret
 
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:

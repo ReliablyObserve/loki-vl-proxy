@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The Helm chart can read the admin token, the backend basic-auth credentials and the OTLP headers from an existing Secret.** Until now these could only be set as plain values (`extraArgs."server.admin-auth-token"`, `extraArgs.backend-basic-auth`, `observability.otlp.headers`), which end up in the pod spec and in `helm get values`. New values, following `peerCache.existingSecret`: `adminAuth.existingSecret` (key `token`), `backendAuth.existingSecret` (key `basic-auth`, the whole `user:password`) and `observability.otlp.existingSecret` (key `headers`), each with an `existingSecretKey` override. The chart adds a `secretKeyRef` env var (`ADMIN_AUTH_TOKEN`, `BACKEND_BASIC_AUTH`, `OTLP_HEADERS`) and renders the first two flags as `$(VAR)`, so the secret never appears in the pod spec or the Helm release values; the proxy reads `OTLP_HEADERS` itself. Setting a plain value and its `existingSecret` together fails rendering. No flag was added to the binary. Existing installs are unaffected: default values render byte-for-byte as before, and plain values keep working. TLS keys are file paths (mount a Secret with `extraVolumes`), and the proxy has no tenant-credential or OAuth/OIDC settings. `scripts/ci/validate_helm_secrets.sh` runs in the `helm` CI job.
+
 ## [2.25.1] - 2026-10-22
 
 ### Changed

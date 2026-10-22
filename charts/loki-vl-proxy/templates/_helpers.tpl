@@ -258,3 +258,27 @@ a metrics port the binary never serves, or the binary would refuse to start
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+loki-vl-proxy.validateSecrets — fail-fast when a secret is configured twice:
+once as a plain value (extraArgs / observability.otlp.headers) and once from an
+existing Secret. The Go flag package fatals on a duplicate flag, and for OTLP
+headers the plain flag would silently win over the Secret-backed env var.
+Invoked from the deployment.
+*/}}
+{{- define "loki-vl-proxy.validateSecrets" -}}
+{{- $extraArgs := default (dict) .Values.extraArgs -}}
+{{- $adminAuth := default (dict) .Values.adminAuth -}}
+{{- if and $adminAuth.existingSecret (hasKey $extraArgs "server.admin-auth-token") -}}
+{{- fail "adminAuth.existingSecret cannot be combined with extraArgs.\"server.admin-auth-token\"; the chart renders -server.admin-auth-token from the Secret. Remove the extraArgs entry." -}}
+{{- end -}}
+{{- $backendAuth := default (dict) .Values.backendAuth -}}
+{{- if and $backendAuth.existingSecret (hasKey $extraArgs "backend-basic-auth") -}}
+{{- fail "backendAuth.existingSecret cannot be combined with extraArgs.backend-basic-auth; the chart renders -backend-basic-auth from the Secret. Remove the extraArgs entry." -}}
+{{- end -}}
+{{- $observability := default (dict) .Values.observability -}}
+{{- $otlp := default (dict) (get $observability "otlp") -}}
+{{- if and $otlp.existingSecret (or (hasKey $extraArgs "otlp-headers") (ne (default "" $otlp.headers | toString) "")) -}}
+{{- fail "observability.otlp.existingSecret cannot be combined with observability.otlp.headers or extraArgs.otlp-headers; the OTLP headers are read from the Secret. Remove the plain value." -}}
+{{- end -}}
+{{- end -}}
