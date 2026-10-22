@@ -47,7 +47,7 @@ jobs:
             --exit-code 1
 
       - name: Upload Gitleaks SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4
         if: ${{ always() && hashFiles('gitleaks.sarif') != '' }}
         with:
           sarif_file: gitleaks.sarif
@@ -79,7 +79,7 @@ jobs:
             ./...
 
       - name: Upload gosec SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4
         if: ${{ always() && hashFiles('gosec.sarif') != '' }}
         with:
           sarif_file: gosec.sarif
@@ -101,7 +101,7 @@ jobs:
             --skip-version-check
 
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4
         if: ${{ always() && hashFiles('trivy-fs.sarif') != '' }}
         with:
           sarif_file: trivy-fs.sarif
@@ -136,7 +136,7 @@ jobs:
             .github/workflows
 
       - name: Upload zizmor SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4
         if: ${{ always() && hashFiles('zizmor.sarif') != '' }}
         with:
           sarif_file: zizmor.sarif
