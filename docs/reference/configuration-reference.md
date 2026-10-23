@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (223), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (224), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -214,6 +214,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cb-window-duration` | duration | `30s` | `extraArgs.cb-window-duration` | Circuit breaker: sliding window for failure counting; failures older than this are discarded |
 | `-coalescer-disabled` | bool | `false` | `extraArgs.coalescer-disabled` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead |
 | `-debug-log-raw-queries` | bool | `false` | `extraArgs.debug-log-raw-queries` | When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len). |
+| `-delete-api-enabled` | bool | `false` | `extraArgs.delete-api-enabled` | Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off) |
 | `-forward-authorization` | bool | `false` | `extraArgs.forward-authorization` | Forward Authorization header to VL backend (equivalent to including Authorization in -forward-headers) |
 | `-forward-cookies` | string | (empty) | `extraArgs.forward-cookies` | Comma-separated list of cookie names to forward to VL backend |
 | `-forward-headers` | string | (empty) | `extraArgs.forward-headers` | Comma-separated list of HTTP headers to forward to VL backend |

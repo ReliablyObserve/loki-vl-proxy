@@ -1162,6 +1162,7 @@ func TestDelete_VLReturns500_PropagatesError(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -1423,6 +1424,7 @@ func TestParseDeleteTimestamp_RFC3339BeyondCapRejected(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -1456,6 +1458,7 @@ func TestParseDeleteTimestamp_RFC3339WithinCapAllowed(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 

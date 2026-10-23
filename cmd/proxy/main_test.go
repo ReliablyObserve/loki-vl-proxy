@@ -359,6 +359,9 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 	if !captured.proxyCfg.patternsEnabled {
 		t.Fatal("expected -patterns-enabled to default to true")
 	}
+	if captured.proxyCfg.deleteAPIEnabled {
+		t.Fatal("expected -delete-api-enabled to default to false")
+	}
 	if captured.proxyCfg.patternsAutodetectFromQueries {
 		t.Fatal("expected -patterns-autodetect-from-queries to default to false")
 	}
@@ -1195,6 +1198,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		streamResponse:                  true,
 		emitStructuredMetadata:          true,
 		patternsEnabled:                 false,
+		deleteAPIEnabled:                true,
 		patternsAutodetectFromQueries:   true,
 		patternsCustomRaw:               `["msg=error code=<_>", "grpc.code=<_>"]`,
 		queryRangeWindowing:             true,
@@ -1288,6 +1292,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if got.PatternsEnabled == nil || *got.PatternsEnabled {
 		t.Fatalf("expected patterns endpoint to be disabled in built config")
+	}
+	if !got.DeleteAPIEnabled {
+		t.Fatalf("expected -delete-api-enabled to reach the built config")
 	}
 	if !got.PatternsAutodetectFromQueries {
 		t.Fatalf("expected patterns autodetect from queries to be enabled")

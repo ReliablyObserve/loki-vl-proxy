@@ -243,6 +243,7 @@ func TestTenantLabelRouting_DefaultAliasesNeedAllowGlobalOrMapping(t *testing.T)
 						defer vl.Close()
 						p := newTestProxyWithOptions(t, withBackendURL(vl.URL), withTenantLabel("org_id"), func(c *Config) {
 							c.AllowGlobalTenant = allowGlobal
+							c.DeleteAPIEnabled = true
 							if mapped {
 								c.TenantMap = map[string]TenantMapping{"0": mappedTenant, "fake": mappedTenant, "default": mappedTenant, "*": mappedTenant, "": mappedTenant}
 							}

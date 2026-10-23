@@ -137,7 +137,9 @@ Count/rate ranking continues to use pre-aggregated buckets as well.
 
 ## Remaining delete API gap
 
-The Loki delete handler (`/loki/api/v1/delete`) is always registered. It checks
+The Loki delete handler (`/loki/api/v1/delete`) is registered only with
+`-delete-api-enabled=true`; by default the path answers `404` like Loki with
+deletion disabled. When registered, it checks
 the confirmation header, selector, time bounds and tenant scope, then forwards to
 `/select/logsql/delete`, which VictoriaLogs v1.52.0 rejects as an unsupported
 path. Its documented API is the asynchronous `/delete/run_task?filter=...` API.

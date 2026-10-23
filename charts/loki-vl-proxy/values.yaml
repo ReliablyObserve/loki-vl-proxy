@@ -259,6 +259,7 @@ extraArgs:
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
+  # delete-api-enabled: "false"   # register /loki/api/v1/delete and forward it to VictoriaLogs (opt-in); off answers 404 like Loki with deletion disabled
   # Compatibility profile knobs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)

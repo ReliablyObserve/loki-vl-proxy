@@ -195,6 +195,7 @@ func TestCritical_BinaryMetricQuery_Modulo(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresConfirmationHeader(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -210,6 +211,7 @@ func TestCritical_DeleteEndpoint_RequiresConfirmationHeader(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresQuery(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -225,6 +227,7 @@ func TestCritical_DeleteEndpoint_RequiresQuery(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RequiresTimeRange(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -240,6 +243,7 @@ func TestCritical_DeleteEndpoint_RequiresTimeRange(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RejectsWildcardQuery(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -255,6 +259,7 @@ func TestCritical_DeleteEndpoint_RejectsWildcardQuery(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_RejectsTooWideTimeRange(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -282,9 +287,10 @@ func TestCritical_DeleteEndpoint_ScopesToTenant(t *testing.T) {
 
 	c := cache.New(60*time.Second, 1000)
 	p, err := New(Config{
-		BackendURL: vlBackend.URL,
-		Cache:      c,
-		LogLevel:   "error",
+		BackendURL:       vlBackend.URL,
+		Cache:            c,
+		LogLevel:         "error",
+		DeleteAPIEnabled: true,
 		TenantMap: map[string]TenantMapping{
 			"team-a": {AccountID: "100", ProjectID: "1"},
 		},
@@ -320,6 +326,7 @@ func TestCritical_DeleteEndpoint_SuccessfulDelete(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
@@ -496,6 +503,7 @@ func TestStatusCapture_WriteHeader(t *testing.T) {
 
 func TestCritical_DeleteEndpoint_OnlyPOST(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
+	p.deleteAPIEnabled = true // -delete-api-enabled
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 

@@ -195,6 +195,10 @@ type Config struct {
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
+	// DeleteAPIEnabled registers /loki/api/v1/delete, which forwards to
+	// VictoriaLogs. False (the zero value) leaves the path unregistered, so it
+	// answers 404 like Loki with deletion disabled.
+	DeleteAPIEnabled bool
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
@@ -567,6 +571,7 @@ type Proxy struct {
 	backendDefaultMsgValue                string
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
+	deleteAPIEnabled                      bool
 	patternsAutodetectFromQueries         bool
 	exactParserSeriesIdentity             bool
 	patternsCustom                        []string
@@ -1227,6 +1232,7 @@ func New(cfg Config) (*Proxy, error) {
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		patternsEnabled:                       patternsEnabled,
+		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		patternsCustom:                        patternsCustom,
@@ -1801,8 +1807,13 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	// Write endpoints — blocked (this is a read-only proxy)
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
 
-	// Delete endpoint — exception to read-only with strict safeguards
-	mux.Handle("/loki/api/v1/delete", p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))
+	// Delete endpoint — opt-in exception to read-only with strict safeguards.
+	// Unregistered by default: Loki registers it only with compactor retention
+	// enabled and otherwise answers 404 before any auth, which the mux's
+	// not-found answer matches.
+	if p.deleteAPIEnabled {
+		mux.Handle("/loki/api/v1/delete", p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))
+	}
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
