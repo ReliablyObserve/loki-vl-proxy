@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`count_values` is rejected with Loki's own parse error, with the position of
+  the name.** Loki v3.7.7 has no `count_values` aggregation: its lexer maps no
+  token to it (`pkg/logql/syntax/lex.go:114-125`) and the grammar's vectorOp
+  production has no entry for it (`syntax.y:477-490`, `ast.go:1243-1254`), so `ParseExpr` answers
+  HTTP 400 `parse error at line 1, col 1: syntax error: unexpected IDENTIFIER`
+  for `count_values("v", sum by (level) (count_over_time({env="production"}[5m])))`
+  on `/loki/api/v1/query` and `/loki/api/v1/query_range`, and the same message
+  with the column of the name wherever it appears (`sum(count_values(...))`
+  col 5, `topk(1, count_values(...))` col 9, a name on the second line `line 2,
+  col 3`, columns counted in characters). The proxy answered 400 with its own
+  text `count_values is not translatable to LogsQL` for the common forms, and a
+  position-less `parse error : syntax error: unexpected IDENT` for
+  `count_values by (level) ("v", ...)`, `count_values without (...)` and
+  `count_values(...) by (...)`. The LogQL parser now refuses the name where an
+  expression starts, through the same position helper as every other syntax
+  error, so every form gets Loki's exact message before any translation or
+  VictoriaLogs call. `count_values` stays a valid label name
+  (`| count_values="x"`, `sum by (count_values) (...)`), as in Loki. Registry
+  `semantics/count-values-unsupported` (the case had assumed Loki implements
+  the function). Not covered: other unknown function names still pass through
+  as opaque calls, `-count_values(...)` keeps the proxy's position-less
+  message where Loki adds `, expecting NUMBER`, and a name inside the arguments
+  of a `label_replace(...)` that does not start the query is reported at the
+  column counted from the start of that call (`sum(label_replace(count_values(...), ...))`
+  col 15, Loki col 19), as every other error there already is.
+
 ## [2.34.0] - 2026-10-23
 
 ### Fixed

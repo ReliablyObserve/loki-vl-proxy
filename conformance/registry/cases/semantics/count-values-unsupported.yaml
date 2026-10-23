@@ -1,12 +1,26 @@
 id: semantics/count-values-unsupported
-title: count_values() is rejected with 400 where Loki answers (documented)
+title: count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki supports `count_values("label", <vector>)`; VictoriaLogs has no stats
-  function that groups by metric value, so the proxy returns HTTP 400 bad_data
-  (KNOWN_ISSUES).
+  Loki v3.7.7 has no `count_values`: pkg/logql/syntax/lex.go:114-125 maps no
+  token to it and the vectorOp production (syntax.y:477-490, ast.go:1243-1254)
+  has no entry for it, so ParseExpr
+  answers HTTP 400 `parse error at line 1, col 1: syntax error: unexpected
+  IDENTIFIER` for `count_values("v", sum by (level)
+  (count_over_time({env="production"}[5m])))` on query and query_range, with
+  the line and column of the name wherever it appears (`sum(count_values(...))`
+  col 5, `topk(1, count_values(...))` col 9, a second line, ...). The proxy
+  answered 400 with its own text "count_values is not translatable to
+  LogsQL", and a bare "parse error : syntax error: unexpected IDENT" without
+  a position for `count_values by (level) ("v", ...)`; it now answers Loki's
+  message for every form, at the position of the name, without a backend
+  call. Known difference outside this fix: inside the arguments of
+  `label_replace(...)` that does not start the query the proxy counts the
+  column from the start of the call (`sum(label_replace(count_values(...), ...))`
+  col 15, Loki col 19), as it does for every other error there. `count_values` stays a valid label name (`| count_values="x"`,
+  `sum by (count_values) (...)`), as in Loki.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -20,15 +34,19 @@ request:
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
-  fields: [status]
+  fields: [status, error_text]
   expect: |
-    Loki's series per distinct value.
+    Loki's 400 `parse error at line 1, col 1: syntax error: unexpected
+    IDENTIFIER`, byte for byte, in the bad_data envelope.
 gap:
-  status: documented
+  status: fixed
+  fixed_by: "#860"
   impact: api-only
-  effort: M
-  area: 'internal/translator + proxy-side post-aggregation of a stats matrix'
-  loki: 'pkg/logql/syntax OpTypeCountValues; vector evaluator'
-  proxy: '400 bad_data'
-  planned_test: 'TestCompat_CountValues (test/e2e-compat, group semantics)'
+  visual: none
+  visual_reason: 'an error response for a query Loki also rejects; no Grafana panel renders a different result'
+  effort: S
+  area: 'internal/logql parser (parsePrimary rejects the count_values name with the position helper)'
+  loki: 'pkg/logql/syntax/lex.go:114-125, syntax.y:477-490, ast.go:1243-1254 (no count_values token, production or op type; v3.7.7)'
+  proxy: 'Loki parse error at the position of the name, 400 bad_data, before any backend call'
+  planned_test: 'TestCompat_CountValues (test/e2e-compat, core group via TestCompat_.*)'
   clusters: []

@@ -54,7 +54,7 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] `group()` outer aggregation — inner metric translated normally, proxy normalises all values to `1` (v1.21.x)
 - [x] `label_replace()` — proxy post-processing via marker suffix; Prometheus no-match semantics (v1.21.x)
 - [x] `label_join()` — proxy post-processing via marker suffix; missing src labels skipped (v1.21.x)
-- [x] `count_values()` — returns descriptive error (not translatable to VL; VL has no group-by-value primitive) (v1.21.x)
+- [x] `count_values()` — not LogQL (Loki v3.7.7 has no such aggregation); rejected with Loki's parse error, including its position
 - [x] Circuit breaker sliding-window failure counting — 30s window replaces consecutive-failure model; sporadic slow-query resets no longer open the breaker (v1.18.0)
 - [x] Bare label matcher error — `app="value"` (missing braces) returns HTTP 400 with descriptive Loki-style parse error instead of silently emitting malformed VL syntax (v1.20.0)
 - [x] `detected_level` inference from `_msg` content — proxy infers level from JSON/logfmt log body when not present in stream labels; Drilldown volume API gains automatic parser unpacking (v1.20.0)

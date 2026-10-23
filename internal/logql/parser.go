@@ -207,6 +207,13 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return ra, nil
 		}
+		// Loki v3.7.7 has no count_values (vector ops: syntax/ast.go:1243-1254,
+		// token map syntax/lex.go:114-125, vectorOp production
+		// syntax/syntax.y:477-490): its parser rejects the name as an IDENTIFIER
+		// wherever an expression starts, whatever follows.
+		if p.cur.Val == "count_values" {
+			return nil, p.syntaxErrorAt("")
+		}
 		// Unknown metric-level function (e.g. label_replace, label_join):
 		// capture the full raw text and return it as-is so VictoriaLogs
 		// receives the original expression unchanged.

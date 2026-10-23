@@ -82,11 +82,11 @@ Nested JSON objects (for example a field whose value is itself a JSON object suc
 
 `detected_level` is now synthesised from JSON/logfmt `level`, `severity`, and `lvl` field variants, matching Loki's level inference rules. Bare label matchers (e.g. `{app="api"}` without a filter pipeline) now preserve the stream label set exactly as Loki does.
 
-### v1.21.x — label_replace, label_join, group, count_values, Stream Ordering
+### v1.21.x — label_replace, label_join, group, Stream Ordering
 
-`label_replace()` and `label_join()` metric transformations, the `group()` aggregation, and `count_values()` now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
+`label_replace()` and `label_join()` metric transformations and the `group()` aggregation now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
 
-`count_values()` returns HTTP 400 with message: *"count_values is not translatable to LogsQL"*
+`count_values()` is not LogQL (Loki v3.7.7 has no such aggregation); it returns Loki's parse error, HTTP 400 *"parse error at line 1, col 1: syntax error: unexpected IDENTIFIER"* at the position of the name.
 
 ### v1.29.x — __error__ Opt-In and Cold Storage Routing
 
@@ -136,7 +136,7 @@ The exhaustive parity helper previously sent millisecond integers that Loki inte
 - bare `| unwrap` intermediate-state handling (v1.17.0)
 - metric label pollution when synthesizing `detected_level` (v1.17.1)
 - nested JSON object exclusion from detected_fields body scan (v1.17.1)
-- `label_replace`/`label_join`/`group`/`count_values` metric transformation parity (v1.21.x)
+- `label_replace`/`label_join`/`group` metric transformation parity (v1.21.x)
 - `service_name` alias in detected_fields for hybrid OTel/non-OTel datasets (v1.30.0)
 - bare parser-stage metric label scoping (v1.31.0)
 - parser-stage tumbling-window fast path via VL native stats (v1.31.2)
