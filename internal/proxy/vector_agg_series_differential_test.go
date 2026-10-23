@@ -268,7 +268,8 @@ func streamLabel(stream, label string) string {
 func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
 	t.Helper()
 	backend := httptest.NewServer(emu.handler())
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +278,16 @@ func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
 			t.Fatal(err)
 		}
 	}
-	return p, backend.Close
+	// Each scenario builds its own proxy: shut it down and close its caches
+	// (Shutdown leaves them running), or their goroutines and entries stay alive
+	// for the rest of the package's tests.
+	return p, func() {
+		_ = p.Shutdown(context.Background())
+		p.translationCache.Close()
+		p.streamFieldNamesCache.Close()
+		c.Close()
+		backend.Close()
+	}
 }
 
 // runVectorAggScenario sends the scenario through the real handler against the
