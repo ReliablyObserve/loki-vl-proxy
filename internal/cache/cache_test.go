@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -318,6 +319,46 @@ func TestCache_Close(t *testing.T) {
 	}
 	// Double close should not panic
 	c.Close()
+}
+
+// New starts a cleanup goroutine and a promoter goroutine; Close must stop both,
+// and a second Close must be harmless. Many caches built and closed in a row
+// must not accumulate goroutines.
+// conformance: shutdown-releases-background-work
+func TestCache_CloseStopsBackgroundGoroutines(t *testing.T) {
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+
+	const caches = 20
+	built := make([]*Cache, 0, caches)
+	for i := 0; i < caches; i++ {
+		if i%2 == 0 {
+			built = append(built, New(time.Hour, 100))
+		} else {
+			built = append(built, NewWithMaxBytes(time.Hour, 100, 1<<20))
+		}
+	}
+	if running := runtime.NumGoroutine(); running < baseline+2*caches {
+		t.Fatalf("expected at least %d goroutines from %d caches, have %d over a baseline of %d",
+			2*caches, caches, running-baseline, baseline)
+	}
+
+	for _, c := range built {
+		c.Close()
+		c.Close() // a second Close must not panic
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		runtime.GC()
+		if runtime.NumGoroutine() <= baseline {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Close left %d goroutines running (baseline %d)", runtime.NumGoroutine(), baseline)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // A key as long as a query is memory the entry holds: it counts toward the

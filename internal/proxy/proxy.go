@@ -1696,6 +1696,14 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	}
 	p.stopPatternsPersistenceLoop(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
+	// The proxy creates these two caches itself, so it stops their background
+	// goroutines. The caches handed in through Config belong to the caller.
+	if p.translationCache != nil {
+		p.translationCache.Close()
+	}
+	if p.streamFieldNamesCache != nil {
+		p.streamFieldNamesCache.Close()
+	}
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}

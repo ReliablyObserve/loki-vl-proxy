@@ -76,6 +76,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 6 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
+| resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 2 | unknown |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 4 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
