@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -754,6 +755,9 @@ func renderStatsExtentPieces(pieces []*statsExtentFragment) ([]byte, bool) {
 	merged := map[string]*statsExtentSeries{}
 	var order []*statsExtentSeries
 	size := len(statsExtentBodyHead) + len(statsExtentBodyTail)
+	// Pieces in time order put every series' points in order as they come.
+	pieces = slices.Clone(pieces)
+	slices.SortFunc(pieces, func(a, b *statsExtentFragment) int { return cmp.Compare(a.from, b.from) })
 	for _, piece := range pieces {
 		if len(piece.series) == 0 {
 			continue
@@ -799,10 +803,9 @@ func renderStatsExtentPieces(pieces []*statsExtentFragment) ([]byte, bool) {
 		if i > 0 {
 			out = append(out, ',')
 		}
-		sort.Slice(series.points, func(a, b int) bool { return series.points[a].k < series.points[b].k })
 		for k := 1; k < len(series.points); k++ {
-			if series.points[k-1].k == series.points[k].k {
-				return nil, false
+			if series.points[k-1].k >= series.points[k].k {
+				return nil, false // pieces that overlap
 			}
 		}
 		out = append(out, `{"metric":`...)
