@@ -1917,35 +1917,26 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 		keyed[i] = "(" + absent[i] + " " + logsqlWordPrefilter([]string{field}) + ")"
 		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(jsonKeyPattern(names[i])) + ")"
 	}
-	// Each regexp of the gated form holds the key as a word (twice for a
-	// repeated key): a word filter, a substring search, leaves the regexp to
-	// the lines that hold it.
-	gated := make([]string, len(fields), 3*len(fields)+1)
-	for i, field := range fields {
-		gated[i] = "(" + field + `:="" ` + logsqlWordPrefilter([]string{field}) + " _msg:~" + strconv.Quote(jsonKeyPattern(names[i])) + ")"
-	}
 	// Loki trims spaces around a key before sanitizing it.
 	key := jsonKeyPattern(strings.Join(names, "|"))
 	pattern := `^\s*\{(?s:.*)` + key
-	for i, name := range names {
-		field, word := jsonKeyPattern(name), strconv.Quote(fields[i])
+	for _, name := range names {
+		field := jsonKeyPattern(name)
 		// A repeated key: Loki keeps one value, unpack_json adds a column per
 		// copy. An array: Loki skips it, unpack_json stores it as a string.
-		repeated, array := "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`)
-		empty = append(empty, repeated, array)
-		gated = append(gated, "(_msg:seq("+word+","+word+") "+repeated+")", "(_msg:"+word+" "+array+")")
+		empty = append(empty, "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`))
 	}
 	// The escape patterns apply to a line lacking any of the fields; the two
 	// spelled with a backslash escape run behind one literal substring
 	// filter, which VictoriaLogs answers without a regexp.
 	escapes := `(_msg:~"\\\\u" (_msg:~` + strconv.Quote(escapedKey) + " or _msg:~" + strconv.Quote(replacedEscape) + ")) or _msg:~" + strconv.Quote(replaced)
-	empty, gated = append(empty, escapes), append(gated, escapes)
+	empty = append(empty, escapes)
 	candidate := "((" + strings.Join(keyed, " or ") + ") _msg:~" + strconv.Quote(pattern) + " or (" + strings.Join(absent, " or ") + ") (" + escapes + "))"
 	unpack := " | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter "
 	query := base + " | filter " + candidate + unpack + strings.Join(empty, " or ") + " | limit 1"
 	// The same lines read through _msg alone, ahead of a delete of the labels.
 	ahead := filterAheadOfDelete(base, "("+logsqlWordPrefilter(fields)+" _msg:~"+strconv.Quote(pattern)+" or "+escapes+")")
-	query = fasterRiskQuery(ctx, query, ahead+" | filter "+candidate+unpack+strings.Join(gated, " or ")+" | limit 1")
+	query = fasterRiskQuery(ctx, query, ahead+query[len(base):])
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
@@ -2042,11 +2033,13 @@ func fasterRiskQuery(ctx context.Context, query, faster string) string {
 // (optimizeNoSubqueries in lib/logstorage/parser.go); behind the delete it
 // runs row by row over every selected line. The delete does not touch _msg,
 // so the filter keeps the lines it kept there, and the probe's own filter,
-// which implies it, still runs after the delete. Any other base is returned
+// which implies it, still runs after the delete. Only a delete that is the
+// first pipe of base is passed (the filter must become the first pipe:
+// anywhere else it is only evaluated twice); any other base is returned
 // unchanged.
 func filterAheadOfDelete(base, filter string) string {
 	at := strings.LastIndex(base, " | delete ")
-	if at < 0 || filter == "" {
+	if at < 0 || filter == "" || strings.Contains(base[:at], "|") {
 		return base
 	}
 	for _, name := range strings.Split(base[at+len(" | delete "):], ",") {

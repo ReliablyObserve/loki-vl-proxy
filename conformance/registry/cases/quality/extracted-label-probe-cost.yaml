@@ -19,11 +19,10 @@ why: |
   | json | level_extracted!="" [1m]))` over 6h where Loki took 0.65 s and the
   shapes after it, which reuse its probe verdicts, 0.35-0.8 s.
 
-  The probes' filters on _msg now come first (the delete does not touch
-  _msg, and the probe's own filter still runs after it), the both-keys probe
-  requires both keys as words, and the partial-parse probe runs each regexp
-  only on lines holding its key as a word (twice for a repeated key). The
-  lines found are the same.
+  When the delete is the probe's first pipe, its filters on _msg now come
+  first (the delete does not touch _msg, and the probe's own filter still
+  runs after it) and the both-keys probe requires both keys as words; every
+  other probe is sent as before. The lines found are the same.
 request:
   method: GET
   path: /loki/api/v1/query_range
