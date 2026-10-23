@@ -17,6 +17,7 @@ import {
   waitForGrafanaReady,
   installGrafanaGuards,
   drilldownLabelFilter,
+  waitForDrilldownApp,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -38,6 +39,7 @@ async function drilldownLimits(page: Page, datasource: string) {
 }
 
 async function openServicePage(page: Page, uid: string) {
+  await waitForDrilldownApp(page);
   // The plugin decides on the Patterns tab from this response; wait for it so
   // "tab absent" means "gated", not "not fetched yet".
   const limitsFetched = page.waitForResponse(

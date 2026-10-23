@@ -16,6 +16,7 @@ import {
   resolveDatasourceUid,
   waitForGrafanaReady,
   drilldownLabelFilter, drilldownFieldFilter,
+  waitForDrilldownApp,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -44,6 +45,7 @@ async function openFieldsView(
   from: string,
   to: string
 ): Promise<void> {
+  await waitForDrilldownApp(page);
   const uid = await resolveDatasourceUid(page, datasource);
   const url = buildServiceDrilldownUrl(uid, serviceName, "fields", { from, to });
   await page.goto(url);

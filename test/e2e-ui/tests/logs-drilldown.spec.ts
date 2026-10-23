@@ -9,6 +9,7 @@ import {
   waitForGrafanaReady,
   drilldownLabelFilter,
   drilldownFieldFilter,
+  waitForDrilldownApp,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -70,6 +71,7 @@ async function openServiceDrilldown(
   view: "logs" | "fields" = "logs",
   overrides: Record<string, string> = {}
 ) {
+  await waitForDrilldownApp(page);
   const uid = await resolveDatasourceUid(page, datasource);
   await page.goto(buildServiceDrilldownUrl(uid, serviceName, view, overrides));
   await waitForDrilldownDetails(page);
@@ -179,6 +181,45 @@ async function discoverLabelValueQueries(
   return discovered;
 }
 
+/**
+ * Patterns are autodetected from queries, per selector. The drilldown service
+ * page asks for `{service_name="<service>"}` and reads the Patterns tab count
+ * once from that answer, so a service is only usable when that exact selector
+ * has patterns. An answer for another selector ({app=...}, {app=~".+"}) says
+ * nothing about it. Run the selector's query so it is detected, then require
+ * the patterns request the plugin sends (24h window, step 2m) to be non-empty.
+ */
+async function patternsReadyForService(
+  page: Page,
+  uid: string,
+  service: string,
+  start: number,
+  end: number
+): Promise<boolean> {
+  const selector = `{service_name="${service.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"}`;
+  const queryParams = new URLSearchParams({
+    query: selector,
+    start: String(start),
+    end: String(end),
+    limit: "200",
+    direction: "backward",
+  });
+  await page.request.get(
+    `/api/datasources/proxy/uid/${uid}/loki/api/v1/query_range?${queryParams.toString()}`
+  );
+  const patternsParams = new URLSearchParams({
+    query: selector,
+    start: String(start),
+    end: String(end),
+    step: "2m",
+  });
+  const response = await page.request.get(
+    `/api/datasources/uid/${uid}/resources/patterns?${patternsParams.toString()}`
+  );
+  const payload = (await response.json().catch(() => null)) as { data?: unknown[] } | null;
+  return Array.isArray(payload?.data) && payload.data.length > 0;
+}
+
 async function waitForAutodetectedPatterns(
   page: Page,
   datasource: string,
@@ -249,7 +290,10 @@ async function waitForAutodetectedPatterns(
 
       const exactServiceHint = extractExactServiceHint(query);
       if (exactServiceHint) {
-        return exactServiceHint;
+        if (await patternsReadyForService(page, uid, exactServiceHint, start, end)) {
+          return exactServiceHint;
+        }
+        continue;
       }
 
       if (
@@ -265,7 +309,11 @@ async function waitForAutodetectedPatterns(
         const stream = entry?.stream ?? {};
         for (const key of serviceKeys) {
           const value = stream[key];
-          if (typeof value === "string" && value.trim().length > 0) {
+          if (
+            typeof value === "string" &&
+            value.trim().length > 0 &&
+            (await patternsReadyForService(page, uid, value, start, end))
+          ) {
             return value;
           }
         }
@@ -344,6 +392,7 @@ test.describe("Grafana Logs Drilldown", () => {
     const guards = installGrafanaGuards(page, {
       allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
     });
+    await waitForDrilldownApp(page);
     const uid = await resolveDatasourceUid(page, PROXY_DS);
 
     await page.goto(
@@ -447,6 +496,7 @@ test.describe("Grafana Logs Drilldown", () => {
       allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
     });
 
+    await waitForDrilldownApp(page);
     const uid = await resolveDatasourceUid(page, PROXY_MULTI_DS);
     const url = buildServiceDrilldownUrl(uid, "api-gateway", "logs") +
       '&var-filters=__tenant_id__%7C%3D%7Cfake';
@@ -469,6 +519,7 @@ test.describe("Grafana Logs Drilldown", () => {
       allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
     });
 
+    await waitForDrilldownApp(page);
     const uid = await resolveDatasourceUid(page, PROXY_MULTI_DS);
     const url =
       buildServiceDrilldownUrl(uid, "api-gateway", "logs") +

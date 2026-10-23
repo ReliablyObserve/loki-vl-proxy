@@ -71,10 +71,67 @@ export async function resolveDatasourceUid(page: Page, datasource: string): Prom
  * Navigate to Grafana Logs Drilldown with a specific datasource selected.
  */
 export async function openLogsDrilldown(page: Page, datasource: string) {
+  await waitForDrilldownApp(page);
   const uid = await resolveDatasourceUid(page, datasource);
   await page.goto(buildLogsDrilldownUrl(uid));
   await waitForGrafanaReady(page);
   await expect(drilldownLabelFilter(page)).toBeVisible({ timeout: 30_000 });
+}
+
+let drilldownAppReady = false;
+
+/**
+ * Wait until Grafana serves the Logs Drilldown app plugin.
+ *
+ * The compose stack installs the pinned grafana-lokiexplore-app with
+ * GF_PLUGINS_PREINSTALL, which downloads it in the background after Grafana
+ * starts. /api/health (the stack's readiness probe) answers long before that
+ * finishes, and until then /a/grafana-lokiexplore-app/... renders "App not
+ * found" and /api/plugins/grafana-lokiexplore-app/settings answers 404. The
+ * first drilldown tests of a fresh stack therefore never find the plugin's
+ * controls, however long they wait for them.
+ *
+ * In the CI run that exposed this the plugin appeared 3.3 to 4.1 minutes
+ * after /api/health, hence the 7 minute budget.
+ *
+ * Polls the plugin settings endpoint (the one the Grafana frontend itself
+ * loads the app from) with a bounded budget. The test timeout is extended by
+ * that budget only when the first probe fails, so the first drilldown test in a
+ * worker absorbs the wait and later ones pay nothing.
+ */
+export async function waitForDrilldownApp(page: Page, timeoutMs = 420_000): Promise<void> {
+  if (drilldownAppReady) return;
+  const path = "/api/plugins/grafana-lokiexplore-app/settings";
+  let last = "";
+  const probe = async (): Promise<boolean> => {
+    try {
+      const resp = await page.request.get(path);
+      last = `HTTP ${resp.status()}`;
+      if (!resp.ok()) return false;
+      const body = (await resp.json()) as { id?: string };
+      return body.id === "grafana-lokiexplore-app";
+    } catch (err) {
+      last = String(err);
+      return false;
+    }
+  };
+  if (await probe()) {
+    drilldownAppReady = true;
+    return;
+  }
+  test.info().setTimeout(test.info().timeout + timeoutMs);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(2_000);
+    if (await probe()) {
+      drilldownAppReady = true;
+      return;
+    }
+  }
+  throw new Error(
+    `Grafana did not serve the grafana-lokiexplore-app plugin within ${timeoutMs} ms ` +
+      `(${path}: ${last}); the background plugin install did not finish`
+  );
 }
 
 /**
