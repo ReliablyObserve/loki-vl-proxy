@@ -99,6 +99,15 @@ answered from a cache the harness itself filled.
 | warm | runs 1.. , each window shifted back by the shape's `shift` (a minute by default) | no header; its cache serves the overlapping splits, as for a user | no header |
 | refresh (opt-in) | run k ends at `end + k*refresh_s`, the last run at `end` (nothing in the future); the p50 of runs 1.. | no header, so run 0 fills its cache the way a first dashboard load does | no header |
 
+A strictly cold comparison, where neither side answers run 0 from an extent
+another set or range filled: start the stack with `--loki-uncached` (`stack.py`
+and `pr_smoke.py`; it adds `docker-compose.ab-loki-uncached.yml`, the stack's
+Loki with every query results cache off through Loki's
+`-querier.cache-*-results=false` flags) and pass each proxy's
+`/admin/cache/flush` to `perf_matrix.py --flush-before-run0`. Loki then computes
+every request, so in such a run its warm and refresh numbers are cold numbers
+too: use it for the cold column and a normal run for warm and refresh.
+
 - No target gets a `Cache-Control` header. Loki 3.7.7 does not honour
   `Cache-Control: no-cache` on `query_range` or index `volume_range`: it still
   looks up and stores results-cache entries with it (the query frontend decodes the

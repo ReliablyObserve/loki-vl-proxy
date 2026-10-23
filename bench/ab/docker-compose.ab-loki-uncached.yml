@@ -1,0 +1,29 @@
+# A/B overlay for a cold Loki reference: the stack's Loki with every query
+# results cache off, so Loki's first request of a window is computed like the
+# proxy's first request after --flush-before-run0, instead of being answered
+# from extents an earlier set or range filled. Selected with --loki-uncached
+# (stack.py, pr_smoke.py); applied after docker-compose.ab.yml.
+#
+# Loki applies command-line flags after the config file
+# (pkg/util/cfg/cfg.go DefaultUnmarshal), so these switch the caches off over
+# loki-local-config.yaml's `cache_results: true`; flag names from Loki 3.7.7
+# pkg/querier/queryrange/queryrangebase/roundtrip.go:50 and
+# pkg/querier/queryrange/roundtrip.go:66-75. The rest of the command is the
+# base stack's (tests/test_stack.py fails when it drifts).
+services:
+  loki:
+    command: !override
+      - -config.file=/etc/loki/local-config.yaml
+      - -compactor.retention-enabled=true
+      - -compactor.working-directory=/tmp/loki/compactor
+      - -compactor.delete-request-store=filesystem
+      - -compactor.compaction-interval=10m
+      - -compactor.retention-delete-delay=1h
+      - -store.retention=72h
+      - -validation.reject-old-samples.max-age=72h
+      - -querier.cache-results=false
+      - -querier.cache-index-stats-results=false
+      - -querier.cache-volume-results=false
+      - -querier.cache-instant-metric-results=false
+      - -querier.cache-series-results=false
+      - -querier.cache-label-results=false
