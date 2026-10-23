@@ -72,6 +72,7 @@ type HandlerConfig struct {
 	queryRangeExpensiveWindowHitThreshold int64
 	queryRangeExpensiveWindowMaxParallel  int
 	queryRangeAlignWindows                bool
+	queryRangeExtentCache                 bool
 	queryRangeWindowTimeout               time.Duration
 	queryRangePartialResponses            bool
 	queryRangeBackgroundWarm              bool

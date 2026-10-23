@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (224), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (225), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -41,6 +41,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-query-range-error-backoff-threshold` | float64 | `0.02` | `extraArgs.query-range-error-backoff-threshold` | Adaptive backoff threshold for backend fetch errors (0-1 ratio) |
 | `-query-range-expensive-hit-threshold` | int64 | `2000` | `extraArgs.query-range-expensive-hit-threshold` | Prefilter hit threshold above which a query_range window is treated as expensive |
 | `-query-range-expensive-max-parallel` | int | `1` | `extraArgs.query-range-expensive-max-parallel` | Maximum window parallelism for expensive query_range windows |
+| `-query-range-extent-cache` | bool | `true` | `extraArgs.query-range-extent-cache` | Answer the VictoriaLogs stats_query_range calls of metric query_range requests from buckets already read, asking VictoriaLogs only for missing and recent buckets (like Loki's results cache extents); buckets newer than -query-range-freshness are always read, stored ones live in the response cache tiers for -query-range-history-cache-ttl |
 | `-query-range-freshness` | duration | `10m0s` | `extraArgs.query-range-freshness` | Near-now freshness boundary; windows newer than now-freshness use recent cache TTL |
 | `-query-range-history-cache-ttl` | duration | `24h0m0s` | `extraArgs.query-range-history-cache-ttl` | Cache TTL for historical query_range windows older than -query-range-freshness |
 | `-query-range-latency-backoff` | duration | `3s` | `extraArgs.query-range-latency-backoff` | Adaptive backoff threshold: reduce parallelism when backend fetch latency exceeds this value |

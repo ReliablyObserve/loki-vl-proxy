@@ -508,6 +508,7 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-query-range-freshness` | — | `10m` | Near-now freshness boundary |
 | `-query-range-recent-cache-ttl` | — | `0s` | Cache TTL for windows newer than `now-freshness` (`0s` disables near-now cache) |
 | `-query-range-history-cache-ttl` | — | `24h` | Cache TTL for historical windows older than `now-freshness` |
+| `-query-range-extent-cache` | — | `true` | Answer the VictoriaLogs `stats_query_range` calls of metric `query_range` requests from buckets read before and ask VictoriaLogs only for the missing ones, like Loki's results-cache extents: a refreshed or moved dashboard window recomputes only its new edge. Buckets newer than `now - -query-range-freshness` are always read; older ones are kept per tenant, query, step and offset in the response cache tiers (memory under `-cache-max-bytes`, the disk tier and the peer fleet when configured) for `-query-range-history-cache-ttl` from their oldest read (`0s` stores nothing). Answers are byte for byte those of the uncached path. Outcomes: `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}` |
 | `-query-range-prefilter-index-stats` | — | `true` | Use `/select/logsql/hits` preflight to skip empty split windows before expensive log fanout |
 | `-query-range-prefilter-min-windows` | — | `8` | Minimum split-window count required before prefilter is enabled |
 | `-query-range-stream-aware-batching` | — | `true` | Reduce parallelism for windows estimated as expensive from prefilter hits |

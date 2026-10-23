@@ -214,25 +214,28 @@ type Config struct {
 	// Query range windowing/cache options.
 	// When enabled, eligible log query_range requests are split into time windows,
 	// fetched with bounded parallelism, and merged in Loki-compatible direction order.
-	QueryRangeWindowingEnabled         bool
-	QueryRangeSplitInterval            time.Duration
-	QueryRangeMaxParallel              int
-	QueryRangeAdaptiveParallel         bool
-	QueryRangeParallelMin              int
-	QueryRangeParallelMax              int
-	QueryRangeLatencyTarget            time.Duration
-	QueryRangeLatencyBackoff           time.Duration
-	QueryRangeAdaptiveCooldown         time.Duration
-	QueryRangeErrorBackoffThreshold    float64
-	QueryRangeFreshness                time.Duration
-	QueryRangeRecentCacheTTL           time.Duration
-	QueryRangeHistoryCacheTTL          time.Duration
-	QueryRangePrefilterIndexStats      bool
-	QueryRangePrefilterMinWindows      int
-	QueryRangeStreamAwareBatching      bool
-	QueryRangeExpensiveHitThreshold    int64
-	QueryRangeExpensiveMaxParallel     int
-	QueryRangeAlignWindows             bool
+	QueryRangeWindowingEnabled      bool
+	QueryRangeSplitInterval         time.Duration
+	QueryRangeMaxParallel           int
+	QueryRangeAdaptiveParallel      bool
+	QueryRangeParallelMin           int
+	QueryRangeParallelMax           int
+	QueryRangeLatencyTarget         time.Duration
+	QueryRangeLatencyBackoff        time.Duration
+	QueryRangeAdaptiveCooldown      time.Duration
+	QueryRangeErrorBackoffThreshold float64
+	QueryRangeFreshness             time.Duration
+	QueryRangeRecentCacheTTL        time.Duration
+	QueryRangeHistoryCacheTTL       time.Duration
+	QueryRangePrefilterIndexStats   bool
+	QueryRangePrefilterMinWindows   int
+	QueryRangeStreamAwareBatching   bool
+	QueryRangeExpensiveHitThreshold int64
+	QueryRangeExpensiveMaxParallel  int
+	QueryRangeAlignWindows          bool
+	// QueryRangeExtentCache answers the stats_query_range calls of metric
+	// query_range requests from buckets read before (stats_extent_cache.go).
+	QueryRangeExtentCache              bool
 	QueryRangeWindowTimeout            time.Duration
 	QueryRangePartialResponses         bool
 	QueryRangeBackgroundWarm           bool
@@ -641,6 +644,7 @@ type Proxy struct {
 	queryRangeExpensiveWindowHitThreshold int64
 	queryRangeExpensiveWindowMaxParallel  int
 	queryRangeAlignWindows                bool
+	queryRangeExtentCache                 bool
 	queryRangeWindowTimeout               time.Duration
 	queryRangePartialResponses            bool
 	queryRangeBackgroundWarm              bool
@@ -1281,6 +1285,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangeExpensiveWindowHitThreshold: queryRangeExpensiveHitThreshold,
 		queryRangeExpensiveWindowMaxParallel:  queryRangeExpensiveMaxParallel,
 		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
+		queryRangeExtentCache:                 cfg.QueryRangeExtentCache,
 		queryRangeWindowTimeout:               queryRangeWindowTimeout,
 		queryRangePartialResponses:            cfg.QueryRangePartialResponses,
 		queryRangeBackgroundWarm:              cfg.QueryRangeBackgroundWarm,
@@ -1425,6 +1430,7 @@ func New(cfg Config) (*Proxy, error) {
 			queryRangeExpensiveWindowHitThreshold: p.queryRangeExpensiveWindowHitThreshold,
 			queryRangeExpensiveWindowMaxParallel:  p.queryRangeExpensiveWindowMaxParallel,
 			queryRangeAlignWindows:                p.queryRangeAlignWindows,
+			queryRangeExtentCache:                 p.queryRangeExtentCache,
 			queryRangeWindowTimeout:               p.queryRangeWindowTimeout,
 			queryRangePartialResponses:            p.queryRangePartialResponses,
 			queryRangeBackgroundWarm:              p.queryRangeBackgroundWarm,
@@ -2270,6 +2276,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// are available for all upstream requests made on this request's behalf.
 	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
+	r = p.withStatsExtentCache(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
