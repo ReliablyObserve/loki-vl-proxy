@@ -155,6 +155,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`hit`, `partial`, `miss`, `unreadable`, `too_large`, `error`). The figures
   above are the motivation and will be re-measured. Registry:
   `quality/query-range-extent-cache`.
+- **The first `| json` metric filtered or grouped on a `name_extracted` label
+  no longer waits for three full-range scans.** `sum by (level)
+  (count_over_time({env="production"} | json | level_extracted!="" [1m]))`
+  took 3.04 s cold over 6h where Loki took 0.65 s and the shapes run after it
+  0.35-0.8 s: they reuse the parse-risk verdicts it paid for. The probes of the
+  extracted label delete the stored label and then filtered `_msg`, and
+  VictoriaLogs merges only a filter that directly follows the query into the
+  query's filters (`optimizeNoSubqueries`, `lib/logstorage/parser.go`, v1.49.0
+  :1005), so each probe ran its regexps row by row over every line of the
+  range. Their filters on `_msg` now come first (the delete does not touch
+  `_msg`, and each probe's own filter still runs after it), the both-keys probe
+  requires both keys as words, which VictoriaLogs finds in its token index, and
+  the partial-parse probe runs each regexp only on lines holding its key as a
+  word (twice for a repeated key); a probe that would pass VictoriaLogs'
+  default `-search.maxQueryLen` keeps its previous form. The lines found are
+  the same (`TestOrderedJSONExtractedMetricDifferential` against the Loki
+  reference over every risky line kind). The partial-parse probe still parses
+  every line that holds the key, so the first request remains slower than one
+  that reuses the verdicts; to be re-measured. Registry:
+  `quality/extracted-label-probe-cost`.
 
 ## [2.33.0] - 2026-10-23
 

@@ -1917,23 +1917,35 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 		keyed[i] = "(" + absent[i] + " " + logsqlWordPrefilter([]string{field}) + ")"
 		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(jsonKeyPattern(names[i])) + ")"
 	}
+	// Each regexp of the gated form holds the key as a word (twice for a
+	// repeated key): a word filter, a substring search, leaves the regexp to
+	// the lines that hold it.
+	gated := make([]string, len(fields), 3*len(fields)+1)
+	for i, field := range fields {
+		gated[i] = "(" + field + `:="" ` + logsqlWordPrefilter([]string{field}) + " _msg:~" + strconv.Quote(jsonKeyPattern(names[i])) + ")"
+	}
 	// Loki trims spaces around a key before sanitizing it.
 	key := jsonKeyPattern(strings.Join(names, "|"))
 	pattern := `^\s*\{(?s:.*)` + key
-	for _, name := range names {
-		field := jsonKeyPattern(name)
+	for i, name := range names {
+		field, word := jsonKeyPattern(name), strconv.Quote(fields[i])
 		// A repeated key: Loki keeps one value, unpack_json adds a column per
 		// copy. An array: Loki skips it, unpack_json stores it as a string.
-		empty = append(empty, "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`))
+		repeated, array := "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`)
+		empty = append(empty, repeated, array)
+		gated = append(gated, "(_msg:seq("+word+","+word+") "+repeated+")", "(_msg:"+word+" "+array+")")
 	}
 	// The escape patterns apply to a line lacking any of the fields; the two
 	// spelled with a backslash escape run behind one literal substring
 	// filter, which VictoriaLogs answers without a regexp.
 	escapes := `(_msg:~"\\\\u" (_msg:~` + strconv.Quote(escapedKey) + " or _msg:~" + strconv.Quote(replacedEscape) + ")) or _msg:~" + strconv.Quote(replaced)
-	empty = append(empty, escapes)
+	empty, gated = append(empty, escapes), append(gated, escapes)
 	candidate := "((" + strings.Join(keyed, " or ") + ") _msg:~" + strconv.Quote(pattern) + " or (" + strings.Join(absent, " or ") + ") (" + escapes + "))"
-	query := base + " | filter " + candidate +
-		" | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter " + strings.Join(empty, " or ") + " | limit 1"
+	unpack := " | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter "
+	query := base + " | filter " + candidate + unpack + strings.Join(empty, " or ") + " | limit 1"
+	// The same lines read through _msg alone, ahead of a delete of the labels.
+	ahead := filterAheadOfDelete(base, "("+logsqlWordPrefilter(fields)+" _msg:~"+strconv.Quote(pattern)+" or "+escapes+")")
+	query = fasterRiskQuery(ctx, query, ahead+" | filter "+candidate+unpack+strings.Join(gated, " or ")+" | limit 1")
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
@@ -1964,7 +1976,8 @@ func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fie
 	for _, pattern := range loose {
 		candidates = append(candidates, "_msg:~"+strconv.Quote(pattern))
 	}
-	query := base + " | filter (" + strings.Join(absent, " or ") + ") " + orderedJSONSpellingPrefilter(fields) + " (" + strings.Join(candidates, " or ") + ")"
+	lines := strings.TrimSpace(orderedJSONSpellingPrefilter(fields) + " (" + strings.Join(candidates, " or ") + ")")
+	query := base + " | filter (" + strings.Join(absent, " or ") + ") " + lines
 	if len(dotted) > 0 {
 		risky := []string{"_msg:~" + strconv.Quote(alias), "-__vlp:*"}
 		quoted := make([]string, len(dotted))
@@ -1975,7 +1988,10 @@ func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fie
 		query += " | replace_regexp (" + strconv.Quote(`^(\s*)\{`) + ", " + strconv.Quote(`${1}{"__vlp":1,`) + ") at _msg" +
 			" | unpack_json from _msg fields (__vlp, " + strings.Join(quoted, ", ") + ") | filter " + strings.Join(risky, " or ")
 	}
-	return p.statsPushdownRiskExists(ctx, query+" | limit 1", start, end)
+	query += " | limit 1"
+	// The same lines read through _msg alone, ahead of a delete of the labels.
+	query = fasterRiskQuery(ctx, query, filterAheadOfDelete(base, lines)+query[len(base):])
+	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
 // extractedBothKeysRisk reports whether a selected line holds both the key name
@@ -1984,7 +2000,7 @@ func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fie
 // the scratch unpack reads name whatever the order, so one such line keeps the
 // exact raw evaluator.
 func (p *Proxy) extractedBothKeysRisk(ctx context.Context, parser, base string, fields []string, start, end time.Time) (bool, error) {
-	var pairs []string
+	var pairs, words []string
 	for _, field := range fields {
 		if name, ok := orderedJSONExtractedBase(field); ok && containsString(fields, name) {
 			a, b := regexp.QuoteMeta(name), regexp.QuoteMeta(field)
@@ -1993,13 +2009,52 @@ func (p *Proxy) extractedBothKeysRisk(ctx context.Context, parser, base string, 
 			} else {
 				pairs = append(pairs, `(?:^|\s)`+a+`=(?s:.*)\s`+b+`=`, `(?:^|\s)`+b+`=(?s:.*)\s`+a+`=`)
 			}
+			// Both keys are words of such a line, which VictoriaLogs finds in its token index.
+			words = append(words, "(_msg:"+strconv.Quote(name)+" _msg:"+strconv.Quote(field)+")")
 		}
 	}
 	if len(pairs) == 0 {
 		return false, nil
 	}
-	query := base + " | filter _msg:~" + strconv.Quote(strings.Join(pairs, "|")) + " | limit 1"
+	both := "_msg:~" + strconv.Quote(strings.Join(pairs, "|"))
+	query := base + " | filter " + both + " | limit 1"
+	if ahead := filterAheadOfDelete(base, "("+strings.Join(words, " or ")+") "+both); ahead != base {
+		// The filter reads _msg alone: all of it runs ahead of the delete.
+		query = fasterRiskQuery(ctx, query, ahead+" | limit 1")
+	}
 	return p.statsPushdownRiskExists(ctx, query, start, end)
+}
+
+// fasterRiskQuery returns faster, a probe query that finds the same lines as
+// query, unless only query fits VictoriaLogs' default -search.maxQueryLen.
+func fasterRiskQuery(ctx context.Context, query, faster string) string {
+	if extra := len(riskRestriction(ctx)); len(faster)+extra > vlDefaultMaxQueryLen && len(query)+extra <= vlDefaultMaxQueryLen {
+		return query
+	}
+	return faster
+}
+
+// filterAheadOfDelete puts filter, which reads _msg alone, in front of the
+// delete pipe that ends base (the delete of the stored labels
+// pushdownParseRisk adds for the name_extracted probes). VictoriaLogs merges
+// a filter pipe that directly follows the query into the query's filters,
+// which skip blocks through the token index and read the column whole
+// (optimizeNoSubqueries in lib/logstorage/parser.go); behind the delete it
+// runs row by row over every selected line. The delete does not touch _msg,
+// so the filter keeps the lines it kept there, and the probe's own filter,
+// which implies it, still runs after the delete. Any other base is returned
+// unchanged.
+func filterAheadOfDelete(base, filter string) string {
+	at := strings.LastIndex(base, " | delete ")
+	if at < 0 || filter == "" {
+		return base
+	}
+	for _, name := range strings.Split(base[at+len(" | delete "):], ",") {
+		if name = strings.TrimSpace(name); name == "" || name == "_msg" || strings.ContainsAny(name, "|*()") {
+			return base
+		}
+	}
+	return base[:at] + " | filter " + filter + base[at:]
 }
 
 // detectedLevelStreamRisk reports whether a selected line belongs to a stream
