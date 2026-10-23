@@ -272,7 +272,7 @@ func extentQueryRange(t testing.TB, p *Proxy, query string, start, end time.Time
 	p.handleQueryRange(rec, req)
 	// The buckets of a miss are stored off the request path: the next
 	// request of a run meets them stored, as it would a moment later.
-	p.statsExtentStores.Wait()
+	p.statsExtentStores.wait()
 	return rec.Code, rec.Body.Bytes()
 }
 
@@ -956,4 +956,51 @@ func heavySlotsInUse(p *Proxy) int {
 	p.heavyQueryLimiter.mu.Lock()
 	defer p.heavyQueryLimiter.mu.Unlock()
 	return p.heavyQueryLimiter.inUse
+}
+
+// Stores start while another goroutine waits for the running ones (requests
+// go on while Shutdown or a test waits), at most limit at once; after close
+// no store starts.
+// conformance: quality/query-range-extent-cache
+func TestStatsExtentStoreGroupStartsWhileWaiting(t *testing.T) {
+	g := newStatsExtentStoreGroup(3)
+	var running, peak int
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if !g.start() {
+				return
+			}
+			mu.Lock()
+			running++
+			peak = max(peak, running)
+			mu.Unlock()
+			time.Sleep(time.Millisecond)
+			mu.Lock()
+			running--
+			mu.Unlock()
+			g.done()
+		}()
+		go func() {
+			defer wg.Done()
+			g.wait()
+		}()
+	}
+	wg.Wait()
+	g.close()
+	if peak > 3 {
+		t.Fatalf("%d stores ran at once, limit 3", peak)
+	}
+	if g.start() {
+		t.Fatal("a store started after close")
+	}
+	var nilGroup *statsExtentStoreGroup
+	if nilGroup.start() {
+		t.Fatal("a nil group starts no store")
+	}
+	nilGroup.wait()
+	nilGroup.close()
 }

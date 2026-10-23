@@ -743,7 +743,7 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // decodes compression. It does NOT interact with the circuit breaker — callers are
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	if resp, err, ok := p.statsExtentPost(ctx, path, params); ok {
+	if resp, ok, err := p.statsExtentPost(ctx, path, params); ok {
 		return resp, err
 	}
 	// A metric checked for unwrap conversion errors counts them in its own stats.

@@ -658,10 +658,9 @@ type Proxy struct {
 	queryRangeAlignWindows                bool
 	queryRangeExtentCache                 bool
 	queryRangeExtentCacheTTL              time.Duration
-	// statsExtentStoreSlots and statsExtentStores bound and track the extent
+	// statsExtentStores bounds and tracks the extent
 	// cache stores running off the request path (stats_extent_cache.go).
-	statsExtentStoreSlots                chan struct{}
-	statsExtentStores                    sync.WaitGroup
+	statsExtentStores                    *statsExtentStoreGroup
 	parseRiskProbeCacheTTL               time.Duration
 	parseRiskProbeSettle                 time.Duration
 	queryRangeWindowTimeout              time.Duration
@@ -1306,7 +1305,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
 		queryRangeExtentCache:                 cfg.QueryRangeExtentCache,
 		queryRangeExtentCacheTTL:              max(cfg.QueryRangeExtentCacheTTL, 0),
-		statsExtentStoreSlots:                 make(chan struct{}, statsExtentStoreSlots),
+		statsExtentStores:                     newStatsExtentStoreGroup(statsExtentStoreSlots),
 		parseRiskProbeCacheTTL:                parseRiskProbeDuration(cfg.ParseRiskProbeCacheTTL, defaultParseRiskProbeCacheTTL),
 		parseRiskProbeSettle:                  parseRiskProbeDuration(cfg.ParseRiskProbeSettle, defaultParseRiskProbeSettle),
 		queryRangeWindowTimeout:               queryRangeWindowTimeout,
@@ -1709,7 +1708,7 @@ func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
-	p.statsExtentStores.Wait()
+	p.statsExtentStores.close()
 	if p.keepWarmStop != nil {
 		select {
 		case <-p.keepWarmStop:

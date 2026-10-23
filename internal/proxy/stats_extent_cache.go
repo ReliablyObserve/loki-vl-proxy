@@ -103,38 +103,38 @@ func (r *statsExtentRequest) chunkKey(j int64) string {
 
 // statsExtentPost answers a stats_query_range call through the extent cache,
 // or reports false when the call goes to VictoriaLogs unchanged.
-func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Values) (*http.Response, error, bool) {
+func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Values) (*http.Response, bool, error) {
 	if path != statsQueryRangePath || p.cache == nil {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	if on, _ := ctx.Value(statsExtentRequestKey{}).(bool); !on {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); fetch {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	if unwrapCheckFrom(ctx) != nil {
 		// The unwrap check counts the conversion errors of every bucket it reads.
-		return nil, nil, false
+		return nil, false, nil
 	}
 	req, ok := p.statsExtentRequestFor(ctx, params)
 	if !ok {
-		return nil, nil, false
+		return nil, false, nil
 	}
 	horizon := cache.Now().Add(-p.queryRangeFreshness).UnixNano()
 	lastStored := statsExtentFloorDiv(horizon+req.offset, req.step) - 1
 	if lastStored < req.first || p.queryRangeExtentCacheTTL <= 0 || p.cache.MaxEntrySizeBytes() <= 0 {
-		return nil, nil, false // nothing old enough to keep, or nowhere to keep it
+		return nil, false, nil // nothing old enough to keep, or nowhere to keep it
 	}
 	started := time.Now()
-	resp, err, outcome := p.statsExtentAnswer(ctx, req, lastStored)
+	resp, outcome, err := p.statsExtentAnswer(ctx, req, lastStored)
 	p.observeInternalOperation(ctx, "stats_extent_cache", outcome, time.Since(started))
-	return resp, err, true
+	return resp, true, err
 }
 
 // statsExtentAnswer assembles the answer of req from stored buckets and
 // VictoriaLogs calls for the missing ones, and stores what it read.
-func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, lastStored int64) (*http.Response, error, string) {
+func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, lastStored int64) (*http.Response, string, error) {
 	fetchCtx := context.WithValue(ctx, statsExtentFetchKey{}, true)
 	limit := int64(p.cache.MaxEntrySizeBytes())
 	chunks := p.loadStatsExtentChunks(req, lastStored)
@@ -183,7 +183,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	}
 	for i := range gaps {
 		if errs[i] != nil {
-			return nil, errs[i], "error"
+			return nil, "error", errs[i]
 		}
 		if resps[i] != nil {
 			// VictoriaLogs refused the range: its answer stands for the call.
@@ -192,7 +192,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 					_ = other.Body.Close()
 				}
 			}
-			return resps[i], nil, "error"
+			return resps[i], "error", nil
 		}
 	}
 	for _, f := range fragments {
@@ -219,19 +219,19 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	if len(fragments) == 0 {
 		outcome = "hit"
 	}
-	return statsExtentResponse(body), nil, outcome
+	return statsExtentResponse(body), outcome, nil
 }
 
 // statsExtentMiss sends the call unchanged and hands its answer on as it
 // streams, keeping a copy of what the caller reads: once the caller has read
 // it whole, the buckets are taken apart and stored off the request path.
-func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, lastStored int64, chunks map[int64]*statsExtentChunk, limit int64) (*http.Response, error, string) {
+func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, lastStored int64, chunks map[int64]*statsExtentChunk, limit int64) (*http.Response, string, error) {
 	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.params)
 	if err != nil {
-		return nil, err, "error"
+		return nil, "error", err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return resp, nil, "error"
+		return resp, "error", nil
 	}
 	resp.Body = &statsExtentTee{ReadCloser: resp.Body, limit: limit, done: func(body []byte) {
 		p.storeStatsExtentAsync(func() {
@@ -243,7 +243,7 @@ func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, la
 			p.observeInternalOperation(context.Background(), "stats_extent_cache", outcome, 0)
 		})
 	}}
-	return resp, nil, "miss"
+	return resp, "miss", nil
 }
 
 // statsExtentTee copies what the caller reads of a VictoriaLogs answer, up to
@@ -293,29 +293,87 @@ const statsExtentStoreSlots = 4
 // storeStatsExtentAsync runs store in the background when a slot is free.
 // Shutdown waits for the running stores.
 func (p *Proxy) storeStatsExtentAsync(store func()) {
-	select {
-	case p.statsExtentStoreSlots <- struct{}{}:
-	default:
+	if !p.statsExtentStores.start() {
 		p.observeInternalOperation(context.Background(), "stats_extent_cache", "store_skipped", 0)
 		return
 	}
-	p.statsExtentStores.Add(1)
 	go func() {
-		defer func() {
-			<-p.statsExtentStoreSlots
-			p.statsExtentStores.Done()
-		}()
+		defer p.statsExtentStores.done()
 		store()
 	}()
 }
 
+// statsExtentStoreGroup bounds and tracks the stores running off the request
+// path. Unlike a sync.WaitGroup, starting a store while another goroutine
+// waits is allowed: requests keep starting stores while Shutdown (or a test)
+// waits for the running ones.
+type statsExtentStoreGroup struct {
+	mu      sync.Mutex
+	idle    *sync.Cond
+	running int
+	limit   int
+	closed  bool
+}
+
+func newStatsExtentStoreGroup(limit int) *statsExtentStoreGroup {
+	g := &statsExtentStoreGroup{limit: limit}
+	g.idle = sync.NewCond(&g.mu)
+	return g
+}
+
+// start takes a slot, or reports false when every slot is busy or the proxy
+// is shutting down.
+func (g *statsExtentStoreGroup) start() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed || g.running >= g.limit {
+		return false
+	}
+	g.running++
+	return true
+}
+
+func (g *statsExtentStoreGroup) done() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.running--; g.running == 0 {
+		g.idle.Broadcast()
+	}
+}
+
+// wait returns once no store is running.
+func (g *statsExtentStoreGroup) wait() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for g.running > 0 {
+		g.idle.Wait()
+	}
+}
+
+// close refuses new stores and waits for the running ones.
+func (g *statsExtentStoreGroup) close() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+	g.wait()
+}
+
 // statsExtentPassThrough sends the call unchanged and hands its answer on.
-func (p *Proxy) statsExtentPassThrough(ctx context.Context, req *statsExtentRequest) (*http.Response, error, string) {
+func (p *Proxy) statsExtentPassThrough(ctx context.Context, req *statsExtentRequest) (*http.Response, string, error) {
 	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.params)
 	if err != nil {
-		return nil, err, "error"
+		return nil, "error", err
 	}
-	return resp, nil, "unreadable"
+	return resp, "unreadable", nil
 }
 
 // statsExtentHeavyKey marks the reads of the missing ranges of a heavy call:
