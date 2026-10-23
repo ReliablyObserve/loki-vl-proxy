@@ -7,109 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.34.1] - 2026-10-23
-
-### Fixed
-
-- **`count_values` is rejected with Loki's own parse error, with the position of
-  the name.** Loki v3.7.7 has no `count_values` aggregation: its lexer maps no
-  token to it (`pkg/logql/syntax/lex.go:114-125`) and the grammar's vectorOp
-  production has no entry for it (`syntax.y:477-490`, `ast.go:1243-1254`), so `ParseExpr` answers
-  HTTP 400 `parse error at line 1, col 1: syntax error: unexpected IDENTIFIER`
-  for `count_values("v", sum by (level) (count_over_time({env="production"}[5m])))`
-  on `/loki/api/v1/query` and `/loki/api/v1/query_range`, and the same message
-  with the column of the name wherever it appears (`sum(count_values(...))`
-  col 5, `topk(1, count_values(...))` col 9, a name on the second line `line 2,
-  col 3`, columns counted in characters). The proxy answered 400 with its own
-  text `count_values is not translatable to LogsQL` for the common forms, and a
-  position-less `parse error : syntax error: unexpected IDENT` for
-  `count_values by (level) ("v", ...)`, `count_values without (...)` and
-  `count_values(...) by (...)`. The LogQL parser now refuses the name where an
-  expression starts, through the same position helper as every other syntax
-  error, so every form gets Loki's exact message before any translation or
-  VictoriaLogs call. `count_values` stays a valid label name
-  (`| count_values="x"`, `sum by (count_values) (...)`), as in Loki. Registry
-  `semantics/count-values-unsupported` (the case had assumed Loki implements
-  the function). Not covered: other unknown function names still pass through
-  as opaque calls, `-count_values(...)` keeps the proxy's position-less
-  message where Loki adds `, expecting NUMBER`, and a name inside the arguments
-  of a `label_replace(...)` that does not start the query is reported at the
-  column counted from the start of that call (`sum(label_replace(count_values(...), ...))`
-  col 15, Loki col 19), as every other error there already is.
-
-## [2.34.0] - 2026-10-23
-
-### Fixed
-
-- **`Proxy.Shutdown` stops the two caches the proxy creates for itself.** Every
-  proxy builds a translation cache and a stream-field-names cache, and each cache
-  starts a cleanup goroutine and a promoter goroutine that run until the cache is
-  closed. `Shutdown` stopped the rate limiter, the peer cache, the cold router and
-  the persistence loops but never closed these two, so every proxy that was built
-  and shut down left four goroutines (and the cache entries they keep reachable)
-  behind. A process or a test that builds and shuts down proxies repeatedly
-  accumulated them without bound: one test that built 6,336 proxies (and also
-  left the cache it passed in open) ended with 38,016 extra goroutines, every one
-  created by `cache.NewWithMaxBytes`. A single
-  long-running proxy process is not affected in steady state, because it builds
-  one proxy and exits with it. `Shutdown` now closes both caches, and closes them
-  before it persists the patterns and label-values snapshots so a snapshot error
-  cannot skip it. `Shutdown` also stops the startup label warm-up: it waited for
-  VictoriaLogs' `/health` with backoffs of up to 10 s under its own 60 s deadline,
-  so a proxy shut down before VictoriaLogs was ready kept that goroutine (and its
-  requests) running for up to a minute; it now ends when `Shutdown` runs, the way
-  the backend version probe already did. `Shutdown` also closes the idle
-  keep-alive connections of the HTTP clients the proxy creates (backend, tail,
-  and the cold router's manifest client when a cold backend is set): each kept
-  two goroutines until the backend closed it, so against a backend that stays up
-  they outlived the proxy; requests in flight are not affected. The caches handed in through the configuration (the main cache,
-  the compat cache, the disk cache) belong to the caller and are still not closed
-  by `Shutdown`. New guards keep it that way: a cache test that `Close` stops both
-  goroutines of every cache and tolerates a second `Close`; a lifecycle test that
-  builds a proxy, starts it, serves a real `/labels` request and shuts it down
-  for the minimal configuration and for each background loop (patterns
-  persistence, label-values index persistence, cold backend, labels cache
-  keep-warm, rate limiter) alone and all together, plus 50 builds in a row and a
-  proxy shut down while VictoriaLogs is not ready yet, a proxy shut down while
-  its backend stays up (idle connections), and
-  requires the goroutine count to come back to where it started, naming the
-  constructor of any goroutine that remains; and a fuzz target over the same
-  feature selection (`FuzzProxyLifecycleNoGoroutineLeak`, its seeds run in
-  `go test -short`).
-
-## [2.33.1] - 2026-10-23
-
-### Fixed
-
-- **`max`, `min`, `count` and `avg` over a range function answer one series per
-  group on query_range, as Loki does, instead of one series per stream.**
-  `max(count_over_time({service_name="api-gateway"}[5m]))` returned 2,160 series
-  over an hour at step 60 s on the proxy and 1 on Loki 3.7.7; `max by (baz)`, a
-  label no stream has, 10,656 against 1; the same for `min`, `count` and `avg`
-  with or without `by`, and for these nested in another aggregation
-  (`sum(max(rate(...)))`), so Grafana drew a line per stream and the response
-  grew with the stream count (#734). Loki folds the series of the inner
-  vector per step: each falls into the group its labels name (`by` keeps the
-  listed labels, no grouping keeps none), and the group takes the number of
-  series (`count`), their mean (`avg`), or the extreme of their values
-  (`pkg/logql/evaluator.go:400-433` `newVectorAggEvaluator`, `:435-529`
-  `VectorAggEvaluator.Next`). Since #582 the translation keeps the series
-  identity in a first stats pipe and aggregates it in a second one, which
-  VictoriaLogs runs for an instant query and for a tumbling window, so those were
-  right; a window that is not the step is evaluated by the proxy from the first
-  pipe alone, which dropped the outer operator. The proxy now applies the query's
-  aggregations, innermost first, to the series that evaluator returns, per step,
-  and checks `max_query_series` on that answer, as Loki does; the first pipe
-  stays a VictoriaLogs stats query, so no raw log lines are read for it. A nested
-  aggregation also read a count of lines where the query asked for a rate
-  (`sum(max(rate(...)))`): only the outermost operator was stripped to find the
-  range function; that covers chains of `sum`, `count`, `min`, `max` and `avg`
-  without a `without`, and a grouping on a label a parser extracts
-  (`count by (route)` over `| logfmt route`) now names it. A `without` nested
-  under another aggregation, `stddev`, `stdvar` and `quantile_over_time` under
-  these operators are separate gaps and unchanged. Registry:
-  `semantics/non-sum-vector-aggregation-unreduced`.
-
 ### Performance
 
 - **A metric range whose window moved reads only the VictoriaLogs buckets it
@@ -213,6 +110,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`BenchmarkManualMetricResponse`,
   `BenchmarkStatsExtentWarmDrilldownBreakdown`); to be re-measured against
   Loki. Registry: `quality/query-range-extent-cache`.
+
+## [2.34.1] - 2026-10-23
+
+### Fixed
+
+- **`count_values` is rejected with Loki's own parse error, with the position of
+  the name.** Loki v3.7.7 has no `count_values` aggregation: its lexer maps no
+  token to it (`pkg/logql/syntax/lex.go:114-125`) and the grammar's vectorOp
+  production has no entry for it (`syntax.y:477-490`, `ast.go:1243-1254`), so `ParseExpr` answers
+  HTTP 400 `parse error at line 1, col 1: syntax error: unexpected IDENTIFIER`
+  for `count_values("v", sum by (level) (count_over_time({env="production"}[5m])))`
+  on `/loki/api/v1/query` and `/loki/api/v1/query_range`, and the same message
+  with the column of the name wherever it appears (`sum(count_values(...))`
+  col 5, `topk(1, count_values(...))` col 9, a name on the second line `line 2,
+  col 3`, columns counted in characters). The proxy answered 400 with its own
+  text `count_values is not translatable to LogsQL` for the common forms, and a
+  position-less `parse error : syntax error: unexpected IDENT` for
+  `count_values by (level) ("v", ...)`, `count_values without (...)` and
+  `count_values(...) by (...)`. The LogQL parser now refuses the name where an
+  expression starts, through the same position helper as every other syntax
+  error, so every form gets Loki's exact message before any translation or
+  VictoriaLogs call. `count_values` stays a valid label name
+  (`| count_values="x"`, `sum by (count_values) (...)`), as in Loki. Registry
+  `semantics/count-values-unsupported` (the case had assumed Loki implements
+  the function). Not covered: other unknown function names still pass through
+  as opaque calls, `-count_values(...)` keeps the proxy's position-less
+  message where Loki adds `, expecting NUMBER`, and a name inside the arguments
+  of a `label_replace(...)` that does not start the query is reported at the
+  column counted from the start of that call (`sum(label_replace(count_values(...), ...))`
+  col 15, Loki col 19), as every other error there already is.
+
+## [2.34.0] - 2026-10-23
+
+### Fixed
+
+- **`Proxy.Shutdown` stops the two caches the proxy creates for itself.** Every
+  proxy builds a translation cache and a stream-field-names cache, and each cache
+  starts a cleanup goroutine and a promoter goroutine that run until the cache is
+  closed. `Shutdown` stopped the rate limiter, the peer cache, the cold router and
+  the persistence loops but never closed these two, so every proxy that was built
+  and shut down left four goroutines (and the cache entries they keep reachable)
+  behind. A process or a test that builds and shuts down proxies repeatedly
+  accumulated them without bound: one test that built 6,336 proxies (and also
+  left the cache it passed in open) ended with 38,016 extra goroutines, every one
+  created by `cache.NewWithMaxBytes`. A single
+  long-running proxy process is not affected in steady state, because it builds
+  one proxy and exits with it. `Shutdown` now closes both caches, and closes them
+  before it persists the patterns and label-values snapshots so a snapshot error
+  cannot skip it. `Shutdown` also stops the startup label warm-up: it waited for
+  VictoriaLogs' `/health` with backoffs of up to 10 s under its own 60 s deadline,
+  so a proxy shut down before VictoriaLogs was ready kept that goroutine (and its
+  requests) running for up to a minute; it now ends when `Shutdown` runs, the way
+  the backend version probe already did. `Shutdown` also closes the idle
+  keep-alive connections of the HTTP clients the proxy creates (backend, tail,
+  and the cold router's manifest client when a cold backend is set): each kept
+  two goroutines until the backend closed it, so against a backend that stays up
+  they outlived the proxy; requests in flight are not affected. The caches handed in through the configuration (the main cache,
+  the compat cache, the disk cache) belong to the caller and are still not closed
+  by `Shutdown`. New guards keep it that way: a cache test that `Close` stops both
+  goroutines of every cache and tolerates a second `Close`; a lifecycle test that
+  builds a proxy, starts it, serves a real `/labels` request and shuts it down
+  for the minimal configuration and for each background loop (patterns
+  persistence, label-values index persistence, cold backend, labels cache
+  keep-warm, rate limiter) alone and all together, plus 50 builds in a row and a
+  proxy shut down while VictoriaLogs is not ready yet, a proxy shut down while
+  its backend stays up (idle connections), and
+  requires the goroutine count to come back to where it started, naming the
+  constructor of any goroutine that remains; and a fuzz target over the same
+  feature selection (`FuzzProxyLifecycleNoGoroutineLeak`, its seeds run in
+  `go test -short`).
+
+## [2.33.1] - 2026-10-23
+
+### Fixed
+
+- **`max`, `min`, `count` and `avg` over a range function answer one series per
+  group on query_range, as Loki does, instead of one series per stream.**
+  `max(count_over_time({service_name="api-gateway"}[5m]))` returned 2,160 series
+  over an hour at step 60 s on the proxy and 1 on Loki 3.7.7; `max by (baz)`, a
+  label no stream has, 10,656 against 1; the same for `min`, `count` and `avg`
+  with or without `by`, and for these nested in another aggregation
+  (`sum(max(rate(...)))`), so Grafana drew a line per stream and the response
+  grew with the stream count (#734). Loki folds the series of the inner
+  vector per step: each falls into the group its labels name (`by` keeps the
+  listed labels, no grouping keeps none), and the group takes the number of
+  series (`count`), their mean (`avg`), or the extreme of their values
+  (`pkg/logql/evaluator.go:400-433` `newVectorAggEvaluator`, `:435-529`
+  `VectorAggEvaluator.Next`). Since #582 the translation keeps the series
+  identity in a first stats pipe and aggregates it in a second one, which
+  VictoriaLogs runs for an instant query and for a tumbling window, so those were
+  right; a window that is not the step is evaluated by the proxy from the first
+  pipe alone, which dropped the outer operator. The proxy now applies the query's
+  aggregations, innermost first, to the series that evaluator returns, per step,
+  and checks `max_query_series` on that answer, as Loki does; the first pipe
+  stays a VictoriaLogs stats query, so no raw log lines are read for it. A nested
+  aggregation also read a count of lines where the query asked for a rate
+  (`sum(max(rate(...)))`): only the outermost operator was stripped to find the
+  range function; that covers chains of `sum`, `count`, `min`, `max` and `avg`
+  without a `without`, and a grouping on a label a parser extracts
+  (`count by (route)` over `| logfmt route`) now names it. A `without` nested
+  under another aggregation, `stddev`, `stdvar` and `quantile_over_time` under
+  these operators are separate gaps and unchanged. Registry:
+  `semantics/non-sum-vector-aggregation-unreduced`.
 
 ## [2.33.0] - 2026-10-23
 
