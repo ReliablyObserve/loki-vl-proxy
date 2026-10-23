@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.34.1] - 2026-10-23
+
 ### Fixed
 
 - **`count_values` is rejected with Loki's own parse error, with the position of
