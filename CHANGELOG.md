@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.33.1] - 2026-10-23
+
 ### Fixed
 
 - **`max`, `min`, `count` and `avg` over a range function answer one series per
