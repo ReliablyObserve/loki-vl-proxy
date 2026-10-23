@@ -40,18 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mirror these entries there: the cold tier resolves `X-Scope-OrgID` itself, so
   an entry in the proxy's tenant map does not change what it does with `007`.
 
-- **Client-certificate settings no longer start a plain HTTP listener.** The
-  listener serves HTTPS only when both `-tls-cert-file` and `-tls-key-file` are
-  set. Until now `-tls-client-ca-file` or `-tls-require-client-cert=true`
-  without them, or one of the two files without the other, started a plain
-  HTTP listener that checked no client certificate, and only the startup log
-  line (`"tls": false`) showed it. The proxy now refuses to start with those
-  combinations and names the missing flag. **Upgrade note:** a deployment that
-  sets a client CA or one of the certificate files without the other stops at
-  startup until both `-tls-cert-file` and `-tls-key-file` are set or the client
-  certificate flags are removed; configurations with both files, or with no
-  TLS flags at all, are unaffected.
-
 ### Added
 
 - **`-tenant.numeric-passthrough` (default `true`) opts into strict tenant routing when set to `false`.**
@@ -64,6 +52,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   effect with `-tenant-label`. Helm: `extraArgs.tenant.numeric-passthrough`.
   See `docs/security.md` (Tenant Isolation) and `docs/configuration.md` (Numeric
   tenants and strict routing).
+
+## [2.31.1] - 2026-10-23
+
+### Security
+
+- **Client-certificate settings no longer start a plain HTTP listener.** The
+  listener serves HTTPS only when both `-tls-cert-file` and `-tls-key-file` are
+  set. Until now `-tls-client-ca-file` or `-tls-require-client-cert=true`
+  without them, or one of the two files without the other, started a plain
+  HTTP listener that checked no client certificate, and only the startup log
+  line (`"tls": false`) showed it. The proxy now refuses to start with those
+  combinations and names the missing flag. **Upgrade note:** a deployment that
+  sets a client CA or one of the certificate files without the other stops at
+  startup until both `-tls-cert-file` and `-tls-key-file` are set or the client
+  certificate flags are removed; configurations with both files, or with no
+  TLS flags at all, are unaffected.
 
 ## [2.31.0] - 2026-10-23
 
