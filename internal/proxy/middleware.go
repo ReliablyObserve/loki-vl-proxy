@@ -4,11 +4,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -66,20 +65,19 @@ func (e *requestPolicyError) Error() string { return e.msg }
 // validateTenantHeader applies Loki-style tenant presence checks and proxy-specific
 // mapping validation before any backend call is made.
 func (p *Proxy) validateTenantHeader(r *http.Request) error {
-	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
-	if orgID == "" {
+	rawOrgID := r.Header.Get("X-Scope-OrgID")
+	orgID := strings.TrimSpace(rawOrgID)
+	if rawOrgID == "" {
 		if p.authEnabled || p.requireTenantHeader {
 			return &requestPolicyError{
 				status: http.StatusUnauthorized,
 				msg:    "missing X-Scope-OrgID header",
 			}
 		}
-		// An absent org is a default-alias request: tenant-label mode refuses it
-		// unless the global bypass is allowed or the tenant map maps it.
-		if routing := p.routingForContext(r.Context()); routing.label != "" {
-			return p.validateSingleTenantOrgIDWithRouting("", routing)
-		}
-		return nil
+		// An absent org is a default-alias request: tenant-label mode and strict
+		// tenant routing refuse it unless the global bypass is allowed or the
+		// tenant map maps it.
+		return p.validateSingleTenantOrgIDWithRouting("", p.routingForContext(r.Context()))
 	}
 	if strings.Contains(orgID, "|") {
 		if !isMultiTenantQueryPath(r.URL.Path) {
@@ -108,7 +106,9 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 		}
 		return nil
 	}
-	return p.validateSingleTenantOrgIDWithRouting(orgID, p.routingForContext(r.Context()))
+	// The org is judged exactly as the request context carries it into the
+	// backend headers, so what is admitted is what gets routed.
+	return p.validateSingleTenantOrgIDWithRouting(rawOrgID, p.routingForContext(r.Context()))
 }
 
 func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
@@ -116,54 +116,73 @@ func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 }
 
 func (p *Proxy) validateSingleTenantOrgIDWithRouting(orgID string, routing requestRouting) error {
-	_, ok := routing.tenants[orgID]
-	tenantLabel := routing.label
-	// An absent org never receives a mapping's tenant headers, so a label-mode
-	// request without one is not served by a mapping under the empty key.
-	if ok && (orgID != "" || tenantLabel == "") {
+	route := p.resolveTenant(orgID, routing)
+	if route.err == nil {
 		return nil
 	}
-	// Explicit mappings take precedence, but label routing must not turn an
-	// unmapped wildcard into an implicit authorization to query every tenant.
-	if orgID == "*" {
-		if p.globalTenantAllowed() {
-			return nil
-		}
-		return &requestPolicyError{status: http.StatusForbidden, msg: `global tenant bypass ("*") is disabled`}
+	if route.warn != refusalQuiet {
+		reason, fix := route.warn.reasonAndFix()
+		p.tenantRefusals.warn(p.log, orgID, reason, fix)
 	}
+	return route.err
+}
 
-	// In label-based routing mode any org ID is accepted: isolation is enforced
-	// by injecting a LogsQL label filter into the query, not via AccountID headers.
-	if tenantLabel != "" {
-		// The default aliases and an absent org carry no tenant label to filter
-		// on, so they are held to the same gate as "*".
-		if (orgID == "" || isDefaultTenantAlias(orgID)) && !p.globalTenantAllowed() {
-			if orgID == "" {
-				return &requestPolicyError{status: http.StatusForbidden, msg: "missing X-Scope-OrgID is not allowed in tenant-label mode"}
+// tenantRefusalLog says once per org and window why an org was refused, so an
+// operator can act on it and a client cycling through orgs cannot flood the log
+// or grow memory: the table is capped, and past the cap new orgs are not logged
+// until entries age out.
+type tenantRefusalLog struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+	// fullUntil is the earliest time an entry can age out while the table is
+	// full: until then a new org is skipped without scanning the table.
+	fullUntil time.Time
+}
+
+const (
+	tenantRefusalLogWindow = 10 * time.Minute
+	tenantRefusalLogMax    = 1024
+	tenantRefusalLogOrgMax = 150 // Loki's longest tenant ID
+)
+
+func (l *tenantRefusalLog) warn(log *slog.Logger, orgID, reason, fix string) {
+	if log == nil {
+		return
+	}
+	if len(orgID) > tenantRefusalLogOrgMax {
+		orgID = orgID[:tenantRefusalLogOrgMax]
+	}
+	now := time.Now()
+	l.mu.Lock()
+	if last, ok := l.seen[orgID]; ok && now.Sub(last) < tenantRefusalLogWindow {
+		l.mu.Unlock()
+		return
+	}
+	if l.seen == nil {
+		l.seen = make(map[string]time.Time)
+	}
+	if len(l.seen) >= tenantRefusalLogMax {
+		if now.Before(l.fullUntil) {
+			l.mu.Unlock()
+			return
+		}
+		earliest := time.Time{}
+		for k, t := range l.seen {
+			if now.Sub(t) >= tenantRefusalLogWindow {
+				delete(l.seen, k)
+			} else if earliest.IsZero() || t.Before(earliest) {
+				earliest = t
 			}
-			return &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("global tenant bypass (%q) is disabled", orgID)}
 		}
-		// orgID is injected into LogsQL queries as a label value.
-		// Reject characters that cannot be safely embedded: newlines, carriage returns, null bytes.
-		for _, ch := range orgID {
-			if ch == '\n' || ch == '\r' || ch == 0 {
-				return &requestPolicyError{msg: "invalid character in X-Scope-OrgID for tenant-label mode", status: http.StatusBadRequest}
-			}
+		if len(l.seen) >= tenantRefusalLogMax {
+			l.fullUntil = earliest.Add(tenantRefusalLogWindow)
+			l.mu.Unlock()
+			return
 		}
-		return nil
 	}
-
-	if isDefaultTenantAlias(orgID) {
-		return nil
-	}
-	if _, err := strconv.Atoi(orgID); err == nil {
-		return nil
-	}
-
-	return &requestPolicyError{
-		status: http.StatusForbidden,
-		msg:    fmt.Sprintf("unknown tenant %q", orgID),
-	}
+	l.seen[orgID] = now
+	l.mu.Unlock()
+	log.Warn("tenant refused", "org_id", orgID, "reason", reason, "fix", fix)
 }
 
 func splitMultiTenantOrgIDs(orgID string) []string {

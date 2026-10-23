@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Breaking: a numeric `X-Scope-OrgID` reaches VictoriaLogs only in its canonical spelling; `007`, `00`, `+7`, `-1` and values above `4294967295` are now refused with `403 unknown tenant` unless the tenant map lists that exact string.**
+  Loki keeps `7` and `007` as two tenants with separate data (checked against
+  `grafana/loki:3.7.7`: two pushes under `7` and `007` read back 28 and 20 lines,
+  and `+7` is a `400` there). The proxy accepted anything `strconv.Atoi` parsed,
+  so `007` read VictoriaLogs account `7` (the same rows as `7`; `7|007` returned
+  the account twice), `00` read account `0` (the default tenant, with `0`, `fake`,
+  `default` and no header), and `+7`, `-1` and `4294967296` were sent as an
+  `AccountID` VictoriaLogs rejects (`502`/`422 cannot obtain tenantID`). One
+  resolver now decides admission and the `AccountID`/`ProjectID` headers the
+  proxy sets on every backend request (queries, tail, rules and alerts, the cold
+  tier and each part of a multi-tenant `a|b` request), so an admitted org is
+  always routed to a tenant or deliberately served from the default tenant. The
+  cold tier also receives `X-Scope-OrgID` and resolves it itself (see the upgrade
+  note). Canonical numbers (`0`, `7`, `4294967295`) are unchanged, mapped orgs
+  are unchanged, and tenant-label routing is unchanged. A refusal for a
+  non-canonical number, and a refusal of an unmapped org in strict mode, logs one
+  `tenant refused` warning per org and ten minutes naming the org, the reason and
+  the fix; plain unknown names, `*`, alias refusals and orgs past the 1024-org
+  table cap are refused silently. The proxy logs a `tenant routing` line at
+  startup stating the active mode. The `TENANT_MAP` environment reload on SIGHUP,
+  which skipped validation, now runs the same check as the startup and file
+  loads. Tenant-map `account_id` and `project_id` values are unchanged: `"007"`
+  there still means account 7.
+  **Upgrade note:** for every client that sends a non-canonical number, either
+  send the canonical number (`7`), or keep the old routing explicitly with a
+  tenant-map entry such as `"007": {"account_id": "7", "project_id": "0"}`
+  (an exact entry always wins). Look for `tenant refused` warnings after
+  upgrading to find them. With the cold tier's own tenant alias table enabled,
+  mirror these entries there: the cold tier resolves `X-Scope-OrgID` itself, so
+  an entry in the proxy's tenant map does not change what it does with `007`.
+
 - **Client-certificate settings no longer start a plain HTTP listener.** The
   listener serves HTTPS only when both `-tls-cert-file` and `-tls-key-file` are
   set. Until now `-tls-client-ca-file` or `-tls-require-client-cert=true`
@@ -20,6 +51,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   startup until both `-tls-cert-file` and `-tls-key-file` are set or the client
   certificate flags are removed; configurations with both files, or with no
   TLS flags at all, are unaffected.
+
+### Added
+
+- **`-tenant.numeric-passthrough` (default `true`) opts into strict tenant routing when set to `false`.**
+  Strict routing serves only orgs listed in the tenant map: an unmapped numeric
+  org is refused with `403 unknown tenant`, so no tenant is reachable by merely
+  sending its number. The default aliases `0`, `fake`, `default` and a missing
+  `X-Scope-OrgID` are refused like `*`, unless `-tenant.allow-global=true` or the
+  tenant map lists the alias (no entry admits a missing org, as in label mode).
+  The default keeps today's routing for canonical numbers, and the flag has no
+  effect with `-tenant-label`. Helm: `extraArgs.tenant.numeric-passthrough`.
+  See `docs/security.md` (Tenant Isolation) and `docs/configuration.md` (Numeric
+  tenants and strict routing).
 
 ## [2.31.0] - 2026-10-23
 

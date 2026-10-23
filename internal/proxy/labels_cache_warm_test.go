@@ -15,21 +15,26 @@ import (
 // no label-name scan reaches VictoriaLogs until a client asks for labels.
 // With the default (true) the startup warm-up scans the preset windows.
 //
-// conformance: quality/label-cache-warm, tenant-label-isolation
+// conformance: quality/label-cache-warm, tenant-label-isolation, tenant-numeric-routing
 func TestLabelsCacheWarm_FlagControlsBackgroundScans(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		disable     bool
 		label       string
 		allowGlobal bool
+		strict      bool
 		wantScans   bool
 	}{
-		{"default warms", false, "", false, true},
-		{"disabled stays idle", true, "", false, false},
+		{"default warms", false, "", false, false, true},
+		{"disabled stays idle", true, "", false, false, false},
 		// A tenant-label scan without an org has no tenant to filter on, so it
 		// only runs where allow-global admits it.
-		{"tenant-label mode stays idle", false, "org_id", false, false},
-		{"tenant-label mode with allow-global warms", false, "org_id", true, true},
+		{"tenant-label mode stays idle", false, "org_id", false, false, false},
+		{"tenant-label mode with allow-global warms", false, "org_id", true, false, true},
+		// Strict tenant routing refuses an absent org, so the warm-up has no
+		// tenant to scan as unless allow-global admits it.
+		{"strict routing stays idle", false, "", false, true, false},
+		{"strict routing with allow-global warms", false, "", true, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var scans atomic.Int64
@@ -50,6 +55,7 @@ func TestLabelsCacheWarm_FlagControlsBackgroundScans(t *testing.T) {
 				DisableLabelsCacheWarm: tc.disable,
 				TenantLabel:            tc.label,
 				AllowGlobalTenant:      tc.allowGlobal,
+				StrictTenantRouting:    tc.strict,
 			})
 			if err != nil {
 				t.Fatal(err)

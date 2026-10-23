@@ -1,0 +1,23 @@
+id: tenant-numeric-routing
+state: proven
+pending: true
+reason: |
+  Unit tested in internal/proxy/tenant_routing_test.go: a table over five
+  routing configurations (default, strict, strict with allow-global, label,
+  label with the strict flag) x orgs (canonical, non-canonical and out-of-range
+  numbers, mapped, unmapped, aliases, "*", a missing header, multi-tenant a|b
+  with mixed parts) asserts the admission status and the exact
+  AccountID/ProjectID a backend request carries; an invariant test asserts that
+  every admitted org is either routed or deliberately the default tenant and
+  never falls through to 0:0; the refusal log fires once per org and stays
+  bounded. cmd/proxy/tenant_routing_test.go covers the flag, that tenant-map
+  values keep their validation (file, JSON and SIGHUP reload) and the startup line.
+  Live stack (test/e2e-compat/tenant_numeric_routing_test.go, run in the
+  tail-multitenancy group on every PR): numeric tenants seeded in VictoriaLogs
+  are read back through a default-routing proxy and a strict proxy, and 007 is
+  refused instead of reading account 7.
+owner_decision: |
+  Default routing keeps full Loki compatibility for canonical numbers; a
+  non-canonical number is refused unless the tenant map lists it. Strict routing
+  is an opt-in extension.
+waiver: null

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -121,6 +122,153 @@ func (p *Proxy) scopedTenantParams(ctx context.Context, params url.Values) url.V
 	return injectTenantLabelFilter(params, routing.label, orgID)
 }
 
+// tenantRouteKind is how an org ID reaches VictoriaLogs.
+type tenantRouteKind uint8
+
+const (
+	tenantRefused tenantRouteKind = iota // not served: admission answers 403
+	tenantMapped                         // AccountID/ProjectID of its tenant-map entry
+	tenantNumeric                        // AccountID is the org itself, ProjectID 0
+	tenantDefault                        // VictoriaLogs default tenant 0:0, on purpose
+)
+
+// tenantRoute is the outcome of resolveTenant. warn is set only on a refusal an
+// operator can act on, for the one log line it earns.
+type tenantRoute struct {
+	kind    tenantRouteKind
+	warn    tenantRefusalKind
+	mapping TenantMapping
+	err     *requestPolicyError
+}
+
+type tenantRefusalKind uint8
+
+const (
+	refusalQuiet        tenantRefusalKind = iota
+	refusalNonCanonical                   // a number spelled other than canonically
+	refusalStrict                         // strict routing: not in the tenant map
+)
+
+// reasonAndFix is the operator-facing text of a refusal log line.
+func (k tenantRefusalKind) reasonAndFix() (reason, fix string) {
+	if k == refusalNonCanonical {
+		return "non-canonical numeric tenant; Loki treats 007 and 7 as different tenants, so it is not mapped to VictoriaLogs account 7",
+			"add it to -tenant-map, or send the canonical number"
+	}
+	return "strict tenant routing (-tenant.numeric-passthrough=false) routes only the tenants listed in the tenant map",
+		"add it to -tenant-map, or set -tenant.numeric-passthrough=true"
+}
+
+// IsCanonicalTenantNumber reports whether s is a plain decimal uint32: digits
+// only, no sign, no leading zero except "0" itself, at most 4294967295. Loki
+// keeps "007" and "7" as two tenants, so only this one spelling of a number may
+// name the VictoriaLogs AccountID of that number.
+func IsCanonicalTenantNumber(s string) bool {
+	if _, err := strconv.ParseUint(s, 10, 32); err != nil {
+		return false
+	}
+	return s == "0" || s[0] != '0'
+}
+
+// isNumericTenantLike reports the shapes strconv.Atoi used to accept: an
+// optional sign followed by decimal digits only. They are refused unless
+// canonical; a name such as 2024-01-01 is an ordinary unknown tenant.
+func isNumericTenantLike(s string) bool {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// resolveTenant is the one place an org ID becomes a VictoriaLogs tenant. Both
+// admission and the AccountID/ProjectID headers of every backend request
+// (queries, tail, ruler/alerts passthrough, cold tier) read its answer, so an
+// admitted org is always either routed to a tenant or deliberately the default
+// tenant, and never falls through to 0:0 by accident.
+func (p *Proxy) resolveTenant(orgID string, routing requestRouting) tenantRoute {
+	tenantLabel := routing.label
+	strict := p.strictTenantRouting && tenantLabel == ""
+	// An absent org never receives a mapping's tenant headers, so a mapping under
+	// the empty key never serves it: it is the default tenant where that is
+	// allowed, and refused where only an explicit tenant may be served.
+	if orgID == "" {
+		switch {
+		case tenantLabel != "" && !p.globalTenantAllowed():
+			return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: "missing X-Scope-OrgID is not allowed in tenant-label mode"}}
+		case strict && !p.globalTenantAllowed():
+			return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: "missing X-Scope-OrgID is not allowed when -tenant.numeric-passthrough=false"}}
+		}
+		return tenantRoute{kind: tenantDefault}
+	}
+	if mapping, ok := routing.tenants[orgID]; ok {
+		return tenantRoute{kind: tenantMapped, mapping: mapping}
+	}
+	// Explicit mappings take precedence, but label routing must not turn an
+	// unmapped wildcard into an implicit authorization to query every tenant.
+	if orgID == "*" {
+		if p.globalTenantAllowed() {
+			return tenantRoute{kind: tenantDefault}
+		}
+		return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: `global tenant bypass ("*") is disabled`}}
+	}
+
+	// In label-based routing mode any org ID is accepted: isolation is enforced
+	// by injecting a LogsQL label filter into the query, not via AccountID headers.
+	if tenantLabel != "" {
+		// The default aliases carry no tenant label to filter on, so they are
+		// held to the same gate as "*".
+		if isDefaultTenantAlias(orgID) && !p.globalTenantAllowed() {
+			return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("global tenant bypass (%q) is disabled", orgID)}}
+		}
+		// orgID is injected into LogsQL queries as a label value.
+		// Reject characters that cannot be safely embedded: newlines, carriage returns, null bytes.
+		for _, ch := range orgID {
+			if ch == '\n' || ch == '\r' || ch == 0 {
+				return tenantRoute{err: &requestPolicyError{msg: "invalid character in X-Scope-OrgID for tenant-label mode", status: http.StatusBadRequest}}
+			}
+		}
+		return tenantRoute{kind: tenantDefault}
+	}
+
+	if isDefaultTenantAlias(orgID) {
+		// Strict routing sends only mapped tenants to a VictoriaLogs account, so
+		// the default tenant is reached only on purpose, like "*".
+		if strict && !p.globalTenantAllowed() {
+			return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("global tenant bypass (%q) is disabled", orgID)}}
+		}
+		return tenantRoute{kind: tenantDefault}
+	}
+	switch {
+	case strict:
+		return tenantRoute{
+			err:  &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("unknown tenant %q: -tenant.numeric-passthrough=false routes only the tenants listed in the tenant map", orgID)},
+			warn: refusalStrict,
+		}
+	case IsCanonicalTenantNumber(orgID):
+		return tenantRoute{kind: tenantNumeric}
+	case isNumericTenantLike(orgID):
+		return tenantRoute{
+			err:  &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("unknown tenant %q: numeric tenant IDs must be canonical decimal numbers up to 4294967295 (no sign, no leading zeros) unless listed in the tenant map", orgID)},
+			warn: refusalNonCanonical,
+		}
+	}
+	return tenantRoute{err: &requestPolicyError{status: http.StatusForbidden, msg: fmt.Sprintf("unknown tenant %q", orgID)}}
+}
+
+// tenantRefusedHeader is an AccountID VictoriaLogs rejects. It is set when a
+// request reaches the backend with an org that admission would have refused
+// (not possible through a routed handler), so the backend fails the request
+// instead of reading the default tenant.
+const tenantRefusedHeader = "refused"
+
 func (p *Proxy) setResolvedTenantHeaders(req *http.Request, forwardOrg bool) {
 	orgID := getOrgID(req.Context())
 	if orgID == "" {
@@ -129,18 +277,16 @@ func (p *Proxy) setResolvedTenantHeaders(req *http.Request, forwardOrg bool) {
 	if forwardOrg {
 		req.Header.Set("X-Scope-OrgID", orgID)
 	}
-	routing := p.routingForContext(req.Context())
-	if mapping, ok := routing.tenants[orgID]; ok {
-		req.Header.Set("AccountID", mapping.AccountID)
-		req.Header.Set("ProjectID", mapping.ProjectID)
-		return
-	}
-	if routing.label != "" || isDefaultTenantAlias(orgID) || orgID == "*" {
-		return
-	}
-	if _, err := strconv.Atoi(orgID); err == nil {
+	route := p.resolveTenant(orgID, p.routingForContext(req.Context()))
+	switch route.kind {
+	case tenantMapped:
+		req.Header.Set("AccountID", route.mapping.AccountID)
+		req.Header.Set("ProjectID", route.mapping.ProjectID)
+	case tenantNumeric:
 		req.Header.Set("AccountID", orgID)
 		req.Header.Set("ProjectID", "0")
+	case tenantRefused:
+		req.Header.Set("AccountID", tenantRefusedHeader)
 	}
 }
 

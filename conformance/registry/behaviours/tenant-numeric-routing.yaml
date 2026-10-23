@@ -1,0 +1,36 @@
+id: tenant-numeric-routing
+kind: semantics
+title: A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs
+
+loki: |
+  Loki treats every X-Scope-OrgID as an opaque tenant name: 7 and 007 are two
+  tenants with separate data (verified against grafana/loki 3.7.7: 28 vs 20
+  lines for the same two pushes). It rejects +7 with 400 (unsupported
+  character) and serves -1 and 4294967296 as ordinary tenants.
+
+victorialogs: |
+  VictoriaLogs scopes by an AccountID/ProjectID header pair, each a uint32 in
+  plain decimal. 007 and 00 parse to accounts 7 and 0; +7, -1 and 4294967296
+  are rejected with 422 (cannot obtain tenantID).
+
+proxy: |
+  One resolver (resolveTenant) decides admission and the AccountID/ProjectID
+  headers the proxy sets on every backend request (queries, tail, rules and
+  alerts, the cold tier, each part of a multi-tenant a|b request); the cold tier
+  also receives X-Scope-OrgID and resolves it itself. A numeric org is routed to the
+  account of the same number only as a canonical decimal uint32: digits only, no
+  sign, no leading zero except 0 itself, at most 4294967295. Any other numeric
+  spelling is refused with 403 unknown tenant unless the tenant map lists that
+  exact string, and the refusal is logged once per org. Tenant-map account_id
+  and project_id values are unchanged. With -tenant.numeric-passthrough=false
+  only orgs listed in the tenant map are routed; the default aliases and a
+  missing org are refused like "*" unless -tenant.allow-global or a map entry
+  admits them (no entry admits a missing org). Label routing is unchanged.
+
+implementation:
+  - internal/proxy/request_scope.go
+  - internal/proxy/middleware.go
+  - cmd/proxy/main.go
+
+cases:
+  - semantics/tenant-numeric-canonical

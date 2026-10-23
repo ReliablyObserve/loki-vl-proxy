@@ -14,6 +14,7 @@ type HandlerConfig struct {
 	authEnabled                           bool
 	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
+	strictTenantRouting                   bool
 	forwardTenantHeader                   bool
 	maxLines                              int
 	forwardHeaders                        []string

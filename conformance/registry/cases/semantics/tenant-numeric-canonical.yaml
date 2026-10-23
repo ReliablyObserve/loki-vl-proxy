@@ -1,0 +1,30 @@
+id: semantics/tenant-numeric-canonical
+title: A non-canonical numeric org (007) is refused instead of reading account 7
+proves:
+  - tenant-numeric-routing
+  - loki_api_v1_labels
+consumer: api
+why: |
+  Loki keeps 007 and 7 as two tenants. VictoriaLogs has one account per number,
+  so mapping 007 to account 7 would hand one tenant the other's data, and a sign
+  or a value above 4294967295 is not a valid AccountID at all. The proxy routes
+  a numeric org to the account of that number only in its canonical spelling and
+  refuses any other with 403 unknown tenant unless the tenant map lists that
+  exact string. -tenant.numeric-passthrough=false additionally refuses every
+  numeric org the tenant map does not list.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  headers:
+    X-Scope-OrgID: "007"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    Default routing: 7 is served from account 7; 007, 00, +7, -1 and 4294967296
+    return 403 unknown tenant unless the tenant map lists them; the aliases and
+    a missing org are served from the default tenant. Strict routing
+    (-tenant.numeric-passthrough=false): only tenant-map orgs are served.
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.44.0"
