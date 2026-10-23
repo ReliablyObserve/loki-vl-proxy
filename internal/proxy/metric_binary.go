@@ -1103,7 +1103,13 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 					continue
 				}
 				buf.WriteByte('[')
-				buf.WriteString(strconv.FormatFloat(float64(relabel(tsNs))/float64(time.Second), 'f', -1, 64))
+				if ns := relabel(tsNs); ns%int64(time.Second) == 0 && ns >= 0 {
+					// A whole second: the digits FormatFloat(x, 'f', -1, 64) writes.
+					*scratch = strconv.AppendInt((*scratch)[:0], ns/int64(time.Second), 10)
+				} else {
+					*scratch = strconv.AppendFloat((*scratch)[:0], float64(ns)/float64(time.Second), 'f', -1, 64)
+				}
+				buf.Write(*scratch)
 				buf.WriteByte(',')
 				marshalFJ(buf, pts[1], scratch)
 				buf.WriteByte(']')

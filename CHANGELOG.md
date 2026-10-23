@@ -188,6 +188,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every line that holds the key, so the first request remains slower than one
   that reuses the verdicts; to be re-measured. Registry:
   `quality/extracted-label-probe-cost`.
+- **A metric answer served from kept buckets spends less of its time
+  re-encoding.** With the VictoriaLogs calls answered from kept buckets, a 6h
+  answer still took the proxy 12-16 ms for `sum by (service_name)
+  (count_over_time({env="production"} | json | __error__="" [5m]))` and 11-31 ms
+  for a Logs Drilldown field breakdown, where Loki answered in 6-11 ms from its
+  results cache. Most of it was the response encoding: the metric builders'
+  matrices went through `encoding/json` reflection (one allocation per point),
+  the tumbling relabel formatted every timestamp through a float string, and
+  the rebuilt VictoriaLogs answer sorted the points of every series. The
+  builders' responses are now written directly, byte for byte as
+  `encoding/json` writes them (any value it would write otherwise is left to
+  it), a relabelled timestamp on a whole second is written as its integer
+  digits, and the kept pieces are joined in time order: a 30-series, 2160-point
+  matrix encodes in about 1.3 ms instead of 11.8 ms, and a 40-series Drilldown
+  breakdown from kept buckets in about 7 ms instead of 21 ms
+  (`BenchmarkManualMetricResponse`,
+  `BenchmarkStatsExtentWarmDrilldownBreakdown`); to be re-measured against
+  Loki. Registry: `quality/query-range-extent-cache`.
 
 ## [2.33.0] - 2026-10-23
 
