@@ -27,3 +27,4 @@ cases:
   - quality/stats-volume-freshness
   - quality/label-cache-aged-labels-kept
   - quality/query-range-extent-cache
+  - quality/extracted-label-probe-cost
