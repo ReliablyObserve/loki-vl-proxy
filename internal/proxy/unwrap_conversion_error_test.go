@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,7 +293,9 @@ type conversionFakeVL struct {
 
 func newConversionFakeVL(t *testing.T, fake *conversionFakeVL) *httptest.Server {
 	t.Helper()
-	lookupRE := regexp.MustCompile(`\| filter "([^"]+)":\* -"[^"]+":~("(?:[^"\\]|\\.)*")(?: \| math .*)? \| limit 3$`)
+	// The lookup is the counting gate with the flagged rows kept: the first format
+	// names the field and the syntax the gate keeps, which tells the conversion.
+	lookupRE := regexp.MustCompile(`\| format if \("([^"]+)":~("(?:[^"\\]|\\.)*")\) "0" as __lvp_bad.* \| filter __lvp_bad:="1"(?: .*)? \| limit 3$`)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		query := r.Form.Get("query")
@@ -322,9 +327,18 @@ func newConversionFakeVL(t *testing.T, fake *conversionFakeVL) *httptest.Server 
 			if m := lookupRE.FindStringSubmatch(query); m != nil {
 				fake.lookups = append(fake.lookups, r.Form)
 				pattern, _ := strconv.Unquote(m[2])
-				re := regexp.MustCompile(pattern)
+				conv := ""
+				for _, c := range []string{"duration", "bytes"} {
+					if pattern == translator.UnwrapPattern(c) {
+						conv = c
+					}
+				}
 				for _, row := range fake.rows {
-					if v := row[m[1]]; v != "" && !re.MatchString(v) {
+					// the conversion's own verdict: a value outside the syntax, or one that overflows
+					if v := row[m[1]]; v != "" {
+						if _, err := convertUnwrap(v, conv); err == nil {
+							continue
+						}
 						b, _ := json.Marshal(row)
 						_, _ = w.Write(append(b, '\n'))
 					}
@@ -372,6 +386,15 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 	badTS := at.Add(3*time.Minute + 7*time.Second)
 	logfmtBad := row(badTS, "n=1 v=x7 t=abc", map[string]string{"n": "1", "v": "x7", "t": "abc"})
 	storedLogfmt := row(badTS, "n=1 v=x7 t=abc", nil)
+	// A value that is a number by syntax and overflows is no sample for Loki either
+	// (ParseFloat's range error, ParseDuration's overflow, ParseBytes's "too large").
+	overflow := func(label, value string) (rows, stored []map[string]string) {
+		msg := "n=1 " + label + "=" + value + " t=abc"
+		return []map[string]string{row(badTS, msg, map[string]string{"n": "1", label: value, "t": "abc"})}, []map[string]string{row(badTS, msg, nil)}
+	}
+	ovRows, ovStored := overflow("v", "1e309")
+	ovDurRows, ovDurStored := overflow("d", "2562048h")
+	ovBytesRows, ovBytesStored := overflow("b", "19EB")
 	for _, tc := range []struct {
 		name, path   string
 		params       url.Values
@@ -404,6 +427,15 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 		{"instant", "/loki/api/v1/query", url.Values{"query": {`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap v [5m]))`}, "time": {strconv.FormatInt(badTS.Add(time.Minute).UnixNano(), 10)}},
 			[]map[string]string{logfmtBad}, []map[string]string{storedLogfmt},
 			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"x7\": invalid syntax", detected_level="unknown", service_name="pay", v="x7"}`},
+		{"a float that overflows", "/loki/api/v1/query_range", rangeParams(`sum_over_time({service_name="pay"} | logfmt | unwrap v [5m])`),
+			ovRows, ovStored,
+			`{__error__="SampleExtractionErr", __error_details__="strconv.ParseFloat: parsing \"1e309\": value out of range", detected_level="unknown", n="1", service_name="pay", t="abc", v="1e309"}`},
+		{"a duration beyond int64 nanoseconds", "/loki/api/v1/query_range", rangeParams(`max_over_time({service_name="pay"} | logfmt | unwrap duration(d) [5m])`),
+			ovDurRows, ovDurStored,
+			`{__error__="SampleExtractionErr", __error_details__="time: invalid duration \"2562048h\"", d="2562048h", detected_level="unknown", n="1", service_name="pay", t="abc"}`},
+		{"a byte size of 2^64 or more", "/loki/api/v1/query_range", rangeParams(`max_over_time({service_name="pay"} | logfmt | unwrap bytes(b) [5m])`),
+			ovBytesRows, ovBytesStored,
+			`{__error__="SampleExtractionErr", __error_details__="too large: 19EB", b="19EB", detected_level="unknown", n="1", service_name="pay", t="abc"}`},
 		{"a JSON array VictoriaLogs renders as a string", "/loki/api/v1/query_range", rangeParams(`sum by (service_name) (sum_over_time({service_name="pay"} | json | unwrap v [5m]))`),
 			[]map[string]string{row(badTS, `{"v":[1,2]}`, map[string]string{"v": "[1,2]"})}, []map[string]string{row(badTS, `{"v":[1,2]}`, nil)}, ""},
 		{"a parsed key named like stored metadata", "/loki/api/v1/query_range", rangeParams(`sum by (service_name) (sum_over_time({service_name="pay"} | logfmt | unwrap x [5m]))`),
@@ -463,7 +495,8 @@ func TestUnwrapConversionErrorAnswersLokiText(t *testing.T) {
 			t.Fatalf("%s: %d %s", q, rec.Code, rec.Body)
 		}
 		fake.mu.Lock()
-		if len(fake.lookups) != 0 || fake.reads != 0 || len(fake.stats) == 0 || strings.Contains(fake.stats[0], unwrapBadField) == strings.Contains(q, "__error__") {
+		// Without a filter the gate counts the rejected values and the nan values; with one, only the nan values.
+		if len(fake.lookups) != 0 || fake.reads != 0 || len(fake.stats) == 0 || !strings.Contains(fake.stats[0], unwrapCountedGateMode("v", "", !strings.Contains(q, "__error__"))) {
 			t.Fatalf("%s: stats=%q lookups=%d reads=%d", q, fake.stats, len(fake.lookups), fake.reads)
 		}
 		fake.mu.Unlock()
@@ -511,7 +544,7 @@ func TestUnwrapAcceptablePatternCoversConversions(t *testing.T) {
 		}
 	}
 	for conv, values := range map[string][]string{
-		"":         {"1e308", "0x1p4", "infinity", "NaN", "1e1_0", "1_000", "+Inf", "1.", ".5"},
+		"":         {"1e308", "0x1p4", "infinity", "NaN", "nan", "1e1_0", "1_000", "+Inf", "1.", ".5", "0x1p-2", "1.7976931348623157e308"},
 		"duration": {"1.5s", "250ms", "-.5ms", "5.s", "100µs", "100μs", "1h2m3s", "+0"},
 		"bytes":    {"2KiB", "1kb", "5 kB", ",5", "1.5,0", "1 KB", "1EiB", "42"},
 	} {
@@ -526,7 +559,7 @@ func TestUnwrapAcceptablePatternCoversConversions(t *testing.T) {
 		}
 	}
 	for conv, values := range map[string][]string{
-		"":         {"abc", "x7", "1.2.3", "1.2.3e4", "250ms", "86282s", "1d", " 1", "1 ", "true", "0x1", ""},
+		"":         {"abc", "x7", "1.2.3", "1.2.3e4", "250ms", "86282s", "1d", " 1", "1 ", "true", "0x1", "+nan", "-nan", ""},
 		"duration": {"1d", "42", "abc", "1.5", "s"},
 		"bytes":    {"lots", "1.5x", " 5", "-1", "1KBs", "1.2.3", "1.2KB.", "ib"},
 	} {
@@ -558,5 +591,322 @@ func TestUnwrapParseLineJSONNamesStayParsedForLaterStages(t *testing.T) {
 	want := map[string]string{"app": "x", "level": "info"}
 	if !maps.Equal(labels, want) {
 		t.Fatalf("labels = %v, want %v", labels, want)
+	}
+}
+
+// A value that is a number by syntax and overflows (ParseFloat's range error,
+// ParseDuration's overflow, ParseBytes's "too large") passes the gate's syntax
+// test, so the counting gate flags it by the range filter after the math pipe
+// (VictoriaLogs answers NaN for an overflowing float, saturates a duration and
+// computes a size in float64: checked against VictoriaLogs v1.43.1 and v1.50.0,
+// every value of these lists in both block layouts). Loki fails the query on each.
+// conformance: semantics/unwrap-conversion-error, semantics/unwrap-gate-parsefloat-divergences
+func TestUnwrapCountedGateFlagsOverflow(t *testing.T) {
+	for conv, values := range map[string][]string{
+		"":         {"1e309", "1.8e308", "1000e307", "1e400", "1e1_000", "0x1p2000", "0x1p1024", "-0x1p1024", "1" + strings.Repeat("0", 309)},
+		"duration": {"2562048h", "-2562048h", "9223372036854775808ns", "2562047h2562047h", "9223372036.854775808s", "99999999999999999999s"},
+		"bytes":    {"19EB", "16EiB", "18446744073709551616", "1,000,000,000,000 EB", "18.446744073709552EB"},
+	} {
+		match := regexp.MustCompile(translator.UnwrapPattern(conv))
+		gate := unwrapCountedGate("v", conv)
+		flag := ` | format if (` + unwrapBadField + `:="0" -(` + translator.UnwrapInRange(conv) + `)) "1" as ` + unwrapBadField
+		if !strings.Contains(gate, flag) || !strings.HasSuffix(gate, ` | math __lvp_v default 0 as __lvp_v`) {
+			t.Errorf("conv %q: the counting gate must flag a value out of range and read its NaN as 0: %s", conv, gate)
+		}
+		_, convert := translator.UnwrapGateParts("v", conv)
+		if conv == "" {
+			// The plain conversion shortens infinity for the rows classified as it.
+			convert = translator.UnwrapPlainConvert("v", unwrapBadField+`:="`+unwrapInfinityFlag+`"`)
+		}
+		if !strings.Contains(gate, convert) {
+			t.Errorf("conv %q: the counting gate must convert as the gate does", conv)
+		}
+		for _, v := range values {
+			if _, err := convertUnwrap(v, conv); err == nil {
+				t.Errorf("conv %q: fixture %q converts in Go", conv, v)
+			}
+			if !match.MatchString(v) {
+				t.Errorf("conv %q: %q is a number by syntax and must reach the range filter", conv, v)
+			}
+		}
+	}
+	// The lookup finds the flagged rows, the out-of-syntax ones and the overflowing ones.
+	if q := unwrapLookupQuery("base", "v", ""); !strings.HasSuffix(q, ` | filter `+unwrapBadField+`:="1"`) || !strings.Contains(q, unwrapCountedGate("v", "")) {
+		t.Errorf("lookup query: %s", q)
+	}
+}
+
+// A nan value is a sample for Loki (strconv.ParseFloat reads it): sum_over_time,
+// avg_over_time, stddev_over_time and rate over a window that holds one are NaN,
+// and so is the sum of such series; max_over_time and min_over_time ignore it
+// (pkg/logql/range_vector.go). VictoriaLogs' sum restarts at a NaN, so the gate
+// counts the nan rows apart (flag 2) and the proxy applies them to the answer:
+// when every function of the query poisons its result, the value is NaN where a
+// nan group sits (a series made only of nan rows included) and a count series
+// (the presence of the sample) adds the group's rows; otherwise the group is
+// dropped, as the max and min ignore it.
+// conformance: semantics/unwrap-gate-parsefloat-divergences
+func TestUnwrapNaNGroupsReachTheAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name, query, answer, want string
+	}{
+		{"sum, matrix",
+			`app:="a" | stats by (app, __lvp_bad) sum(__lvp_v) as c`,
+			`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"values":[[60,"5"],[120,"7"]]},` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"2"},"values":[[120,"0"]]},` +
+				`{"metric":{"__name__":"c","app":"b","__lvp_bad":"2"},"values":[[60,"0"]]}]}}`,
+			`a|c=60:5,120:NaN;b|c=60:NaN`},
+		{"sum with its sample count",
+			`app:="a" | stats by (app, __lvp_bad) sum(__lvp_v) as c, count() as __sample_count`,
+			`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"values":[[60,"5"]]},` +
+				`{"metric":{"__name__":"__sample_count","app":"a","__lvp_bad":"0"},"values":[[60,"2"]]},` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"2"},"values":[[60,"0"]]},` +
+				`{"metric":{"__name__":"__sample_count","app":"a","__lvp_bad":"2"},"values":[[60,"3"]]}]}}`,
+			`a|__sample_count=60:5;a|c=60:NaN`},
+		{"two stages of sum, vector",
+			`app:="a" | stats by (_stream, __lvp_bad) sum(__lvp_v) as __lvp_inner | math __lvp_inner/60 as __lvp_rate | stats by (app, __lvp_bad) sum(__lvp_rate)`,
+			`{"status":"success","data":{"resultType":"vector","result":[` +
+				`{"metric":{"__name__":"sum(__lvp_rate)","app":"a","__lvp_bad":"0"},"value":[120,"1"]},` +
+				`{"metric":{"__name__":"sum(__lvp_rate)","app":"a","__lvp_bad":"2"},"value":[120,"0"]}]}}`,
+			`a|sum(__lvp_rate)=120:NaN`},
+		{"avg and stddev poison too", `app:="a" | stats by (app, __lvp_bad) avg(__lvp_v) as c`,
+			`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","app":"a","__lvp_bad":"2"},"values":[[60,"0"]]}]}}`,
+			`a|c=60:NaN`},
+		{"max ignores the nan values", `app:="a" | stats by (app, __lvp_bad) max(__lvp_v) as c`,
+			`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"values":[[60,"5"]]},` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"2"},"values":[[60,"0"]]}]}}`,
+			`a|c=60:5`},
+		{"a count of series is not changed", `app:="a" | stats by (_stream, __lvp_bad) sum(__lvp_v) as __lvp_inner | stats by (app, __lvp_bad) count() as c`,
+			`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"values":[[60,"2"]]},` +
+				`{"metric":{"__name__":"c","app":"a","__lvp_bad":"2"},"values":[[60,"1"]]}]}}`,
+			`a|c=60:2`},
+		{"a sum of series under a max does not poison", `app:="a" | stats by (_stream, __lvp_bad) sum(__lvp_v) as __lvp_inner | stats by (app, __lvp_bad) max(__lvp_inner)`,
+			`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"max(__lvp_inner)","app":"a","__lvp_bad":"2"},"values":[[60,"0"]]}]}}`,
+			``},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, times, err := stripUnwrapFlags([]byte(tc.answer), unwrapNaNFor(tc.query))
+			if err != nil || len(times) != 0 {
+				t.Fatalf("err=%v times=%v", err, times)
+			}
+			var got struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string `json:"metric"`
+						Values [][]any           `json:"values"`
+						Value  []any             `json:"value"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(out, &got); err != nil {
+				t.Fatal(err)
+			}
+			var parts []string
+			for _, s := range got.Data.Result {
+				if _, left := s.Metric[unwrapBadField]; left {
+					t.Fatalf("the flag stays on a series: %s", out)
+				}
+				points := s.Values
+				if s.Value != nil {
+					points = [][]any{s.Value}
+				}
+				var pts []string
+				for _, p := range points {
+					pts = append(pts, fmt.Sprintf("%v:%v", p[0], p[1]))
+				}
+				parts = append(parts, s.Metric["app"]+"|"+s.Metric["__name__"]+"="+strings.Join(pts, ","))
+			}
+			sort.Strings(parts)
+			if g := strings.Join(parts, ";"); g != tc.want {
+				t.Fatalf("got %s\nwant %s\nbody %s", g, tc.want, out)
+			}
+		})
+	}
+}
+
+// Through the handlers: a nan group in the stats answer makes the windows that
+// hold it NaN, in the native tumbling window and in the sliding window the proxy
+// folds from buckets; a max_over_time ignores it. The fake plays VictoriaLogs'
+// answer of the counting gate: every bucket holds a clean row of value 1 and the
+// bucket at nanAt a nan row too.
+// conformance: semantics/unwrap-gate-parsefloat-divergences, loki_api_v1_query_range
+func TestUnwrapNaNReachesTheLokiAnswer(t *testing.T) {
+	at := time.Unix(1700000040, 0)
+	nanAt := at.Add(5 * time.Minute)
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			sent = append(sent, query)
+			start, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
+			end, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
+			step := parseVLStepParam(r.Form.Get("step"))
+			var clean, nan []string
+			for ts := start - start%int64(step); ts < end; ts += int64(step) {
+				sec := ts / int64(time.Second)
+				if sec < start/int64(time.Second) {
+					continue
+				}
+				clean = append(clean, fmt.Sprintf(`[%d,"1"]`, sec))
+				if ts == nanAt.UnixNano() {
+					nan = append(nan, fmt.Sprintf(`[%d,"0"]`, sec))
+				}
+			}
+			name := "c"
+			if !strings.Contains(query, "as c") {
+				name = "sum(__lvp_v)"
+			}
+			result := `{"metric":{"__name__":"` + name + `","app":"x","__lvp_bad":"0"},"values":[` + strings.Join(clean, ",") + `]}`
+			if len(nan) > 0 && strings.Contains(query, `:="2"`) {
+				result += `,{"metric":{"__name__":"` + name + `","app":"x","__lvp_bad":"2"},"values":[` + strings.Join(nan, ",") + `]}`
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` + result + `]}}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		name, query string
+		nan         bool
+	}{
+		{"sum_over_time, no error filter", `sum_over_time({app="x"} | logfmt | unwrap b [5m])`, true},
+		{"sum_over_time, errors dropped", `sum_over_time({app="x"} | logfmt | unwrap b | __error__="" [5m])`, true},
+		{"sum by over sum_over_time tumbling", `sum by (app) (sum_over_time({app="x"} | unwrap b | __error__="" [1m]))`, true},
+		{"max_over_time ignores nan", `max_over_time({app="x"} | logfmt | unwrap b | __error__="" [5m])`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newSlidingTestProxy(t, srv.URL)
+			params := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(12*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+			rec := httptest.NewRecorder()
+			p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%d %s", rec.Code, rec.Body)
+			}
+			if got := strings.Contains(rec.Body.String(), `"NaN"`); got != tc.nan {
+				t.Fatalf("NaN in the answer = %v, want %v: %s", got, tc.nan, rec.Body)
+			}
+			if tc.nan && !strings.Contains(strings.Join(sent, "\n"), `:="2"`) {
+				t.Fatalf("the nan group was not asked for: %q", sent)
+			}
+		})
+	}
+}
+
+// An infinite sum reaches a sliding window (the bucket reader used to skip it)
+// and a nan group reaches an instant answer. The fake answers the stats queries
+// of the counting gate.
+// conformance: semantics/unwrap-gate-parsefloat-divergences, loki_api_v1_query_range, loki_api_v1_query
+func TestUnwrapInfinityAndInstantNaNReachTheAnswer(t *testing.T) {
+	at := time.Unix(1700000040, 0)
+	infAt := at.Add(5 * time.Minute)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			start, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
+			end, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
+			step := parseVLStepParam(r.Form.Get("step"))
+			var clean []string
+			for ts := start - start%int64(step); ts < end; ts += int64(step) {
+				if ts < start {
+					continue
+				}
+				value := "1"
+				if ts == infAt.UnixNano() {
+					value = "+Inf"
+				}
+				clean = append(clean, fmt.Sprintf(`[%d,"%s"]`, ts/int64(time.Second), value))
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"c","app":"x","__lvp_bad":"0"},"values":[` + strings.Join(clean, ",") + `]}]}}`))
+		case "/select/logsql/stats_query":
+			result := `{"metric":{"__name__":"sum(__lvp_v)","app":"x","__lvp_bad":"0"},"value":[1700000100,"4"]}`
+			if strings.Contains(query, `:="2"`) {
+				result += `,{"metric":{"__name__":"sum(__lvp_v)","app":"x","__lvp_bad":"2"},"value":[1700000100,"0"]}`
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[` + result + `]}}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	p := newSlidingTestProxy(t, srv.URL)
+	params := url.Values{"query": {`sum_over_time({app="x"} | logfmt | unwrap b [5m])`}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(12*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"+Inf"`) {
+		t.Fatalf("a window holding an infinite sum must be +Inf: %d %s", rec.Code, rec.Body)
+	}
+
+	for _, q := range []string{
+		`sum by (app) (sum_over_time({app="x"} | unwrap b | __error__="" [1m]))`,
+		`sum by (app) (sum_over_time({app="x"} | unwrap b [1m]))`,
+	} {
+		rec = httptest.NewRecorder()
+		p.handleQuery(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {q}, "time": {"1700000100"}}.Encode(), nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"NaN"`) {
+			t.Fatalf("%s: an instant window holding a nan must be NaN: %d %s", q, rec.Code, rec.Body)
+		}
+	}
+}
+
+// A check that only counts the nan values records nothing, so identical concurrent
+// stats calls of two requests share one backend call and both read the stripped
+// answer; a check with a probe reports hits to its own request and keeps its own.
+// conformance: semantics/unwrap-gate-parsefloat-divergences
+func TestUnwrapNaNOnlyChecksShareTheBackendCall(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		check     func() *unwrapCheck
+		wantCalls int32
+	}{
+		{"no probe", func() *unwrapCheck { return &unwrapCheck{} }, 1},
+		{"a probe", func() *unwrapCheck { return &unwrapCheck{probes: []unwrapErrorProbe{{label: "v"}}} }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			release := make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				<-release
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"c","app":"a","__lvp_bad":"0"},"value":[100,"5"]}]}}`))
+			}))
+			t.Cleanup(srv.Close)
+			p := newTestProxy(t, srv.URL)
+			query := `app:="a"` + translator.UnwrapGate("v") + " | stats by (app) sum(__lvp_v) as c"
+			bodies := make([]string, 2)
+			var wg sync.WaitGroup
+			for i := range bodies {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					ctx := context.WithValue(context.Background(), unwrapCheckKey{}, tc.check())
+					_, body, err := p.vlPostCoalesced(ctx, "k", "/select/logsql/stats_query", url.Values{"query": {query}})
+					if err != nil {
+						t.Error(err)
+					}
+					bodies[i] = string(body)
+				}()
+			}
+			time.Sleep(300 * time.Millisecond)
+			close(release)
+			wg.Wait()
+			if got := calls.Load(); got != tc.wantCalls {
+				t.Fatalf("backend calls = %d, want %d", got, tc.wantCalls)
+			}
+			for i, body := range bodies {
+				if strings.Contains(body, unwrapBadField) || !strings.Contains(body, `"app":"a"`) {
+					t.Fatalf("request %d did not read the stripped answer: %s", i, body)
+				}
+			}
+		})
 	}
 }
