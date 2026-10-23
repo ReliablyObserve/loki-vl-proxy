@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`max`, `min`, `count` and `avg` over a range function answer one series per
+  group on query_range, as Loki does, instead of one series per stream.**
+  `max(count_over_time({service_name="api-gateway"}[5m]))` returned 2,160 series
+  over an hour at step 60 s on the proxy and 1 on Loki 3.7.7; `max by (baz)`, a
+  label no stream has, 10,656 against 1; the same for `min`, `count` and `avg`
+  with or without `by`, and for these nested in another aggregation
+  (`sum(max(rate(...)))`), so Grafana drew a line per stream and the response
+  grew with the stream count (#734). Loki folds the series of the inner
+  vector per step: each falls into the group its labels name (`by` keeps the
+  listed labels, no grouping keeps none), and the group takes the number of
+  series (`count`), their mean (`avg`), or the extreme of their values
+  (`pkg/logql/evaluator.go:400-433` `newVectorAggEvaluator`, `:435-529`
+  `VectorAggEvaluator.Next`). Since #582 the translation keeps the series
+  identity in a first stats pipe and aggregates it in a second one, which
+  VictoriaLogs runs for an instant query and for a tumbling window, so those were
+  right; a window that is not the step is evaluated by the proxy from the first
+  pipe alone, which dropped the outer operator. The proxy now applies the query's
+  aggregations, innermost first, to the series that evaluator returns, per step,
+  and checks `max_query_series` on that answer, as Loki does; the first pipe
+  stays a VictoriaLogs stats query, so no raw log lines are read for it. A nested
+  aggregation also read a count of lines where the query asked for a rate
+  (`sum(max(rate(...)))`): only the outermost operator was stripped to find the
+  range function; that covers chains of `sum`, `count`, `min`, `max` and `avg`
+  without a `without`, and a grouping on a label a parser extracts
+  (`count by (route)` over `| logfmt route`) now names it. A `without` nested
+  under another aggregation, `stddev`, `stdvar` and `quantile_over_time` under
+  these operators are separate gaps and unchanged. Registry:
+  `semantics/non-sum-vector-aggregation-unreduced`.
+
 ## [2.33.0] - 2026-10-23
 
 ### Security
