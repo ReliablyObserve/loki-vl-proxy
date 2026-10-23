@@ -199,6 +199,25 @@ def request(url, headers, tenant, timeout):
     return status, body, time.time() - t0, t0
 
 
+def flush_cache(url, token=""):
+    """POST a proxy's /admin/cache/flush, so its next request meets empty cache tiers.
+
+    It clears the response caches, the kept stats buckets and the parse-risk
+    verdicts in memory and on disk. Fails the run when the proxy refuses.
+    """
+    headers = {"X-Admin-Token": token} if token else {}
+    req = urllib.request.Request(url, data=b"", method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            status = r.status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    except (urllib.error.URLError, OSError) as e:
+        raise SystemExit(f"cache flush {url}: {e}")
+    if status != 200:
+        raise SystemExit(f"cache flush {url}: HTTP {status}")
+
+
 def name_set_signature(kind, names):
     names = sorted(names)
     return f"{kind}={len(names)} set={hashlib.sha256(chr(10).join(names).encode()).hexdigest()[:12]}"
@@ -268,6 +287,11 @@ def main():
     ap.add_argument("--long-runs", default="", metavar="NAME=N",
                     help="cap runs of ranges >= 24h for a target, e.g. main=1 when an old build scans raw rows "
                          "(repeated long raw scans have killed the shared backend)")
+    ap.add_argument("--flush-before-run0", action="append", default=[], metavar="URL",
+                    help="POST this proxy admin URL (http://HOST:ADMIN_PORT/admin/cache/flush) before run 0 of every "
+                         "shape and range, so run 0 is a cold first request for that proxy; repeatable; the admin "
+                         "token, if any, is read from $AB_ADMIN_TOKEN. Loki's results cache is not flushed: read its "
+                         "run-0 cache counters")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -315,6 +339,9 @@ def main():
             secs, step = range_defs.get(rname, (0, 0))
             query = shape.get("query", "").replace("$__auto", f"{step}s")
             for run in range(args.runs):
+                if run == 0:
+                    for flush_url in args.flush_before_run0:
+                        flush_cache(flush_url, os.environ.get("AB_ADMIN_TOKEN", ""))
                 # A shape may move its window by more than a minute per run, per range
                 # ("shift": {"7d": 21617}) or for all ranges, e.g. far enough to miss the
                 # response cache's time bucket the way a Grafana refresh eventually does;
