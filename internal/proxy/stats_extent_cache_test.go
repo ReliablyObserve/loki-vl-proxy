@@ -349,7 +349,7 @@ func newExtentTestProxy(t testing.TB, backendURL string, on bool, maxBytes int) 
 	t.Helper()
 	c := cache.NewWithMaxBytes(time.Minute, 100000, maxBytes)
 	t.Cleanup(c.Close)
-	p, err := New(Config{BackendURL: backendURL, Cache: c, LogLevel: "error", QueryRangeExtentCache: on, QueryRangeHistoryCacheTTL: time.Hour})
+	p, err := New(Config{BackendURL: backendURL, Cache: c, LogLevel: "error", QueryRangeExtentCache: on, QueryRangeExtentCacheTTL: time.Hour})
 	if err != nil {
 		t.Fatalf("proxy: %v", err)
 	}
@@ -804,5 +804,45 @@ func TestStatsExtentFragmentRoundTrip(t *testing.T) {
 	}
 	if _, err := decodeStatsExtentChunk(raw[:len(raw)/2]); err == nil {
 		t.Error("a truncated entry must not decode")
+	}
+}
+
+// Kept buckets are reused for -query-range-extent-cache-ttl from their oldest
+// read, then read again: a row written late into a kept range shows once its
+// entry expired.
+// conformance: quality/query-range-extent-cache
+func TestStatsExtentCacheEntriesExpire(t *testing.T) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	var lines []slidingFixtureLine
+	for i := 0; i < 1500; i++ {
+		lines = append(lines, slidingFixtureLine{ts: s0.Add(time.Duration(i) * 12 * time.Second).UnixNano(), app: "a", msg: "n=1"})
+	}
+	srv, fake := newSlidingFakeVL(t, lines)
+	onSrv, shim := newExtentShim(t, srv.Config.Handler)
+	on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
+	query := `sum(count_over_time({app="a"}[1m]))`
+	end := s0.Add(4 * time.Hour)
+	if code, body := extentQueryRange(t, on, query, end.Add(-3*time.Hour), end, time.Minute, nil); code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	// A late row inside the kept range.
+	late := s0.Add(2 * time.Hour).Add(30 * time.Second).UnixNano()
+	fake.mu.Lock()
+	fake.lines = append(fake.lines, slidingFixtureLine{ts: late, app: "a", msg: "n=1"})
+	fake.mu.Unlock()
+	count := func(body []byte) int {
+		return strings.Count(string(body), `"6"`) // five lines a minute, six with the late row
+	}
+	shim.reset()
+	_, kept := extentQueryRange(t, on, query, end.Add(-3*time.Hour+time.Minute), end.Add(time.Minute), time.Minute, nil)
+	if _, buckets := shim.bucketsRead(); buckets > 2 || count(kept) != 0 {
+		t.Fatalf("within the TTL the kept buckets answer: %d buckets read, late row seen %d times", buckets, count(kept))
+	}
+	restore := cache.AdvanceClockForTesting(time.Hour + time.Minute)
+	defer restore()
+	shim.reset()
+	_, fresh := extentQueryRange(t, on, query, end.Add(-3*time.Hour+2*time.Minute), end.Add(2*time.Minute), time.Minute, nil)
+	if _, buckets := shim.bucketsRead(); buckets < 170 || count(fresh) == 0 {
+		t.Fatalf("after the TTL the range is read again: %d buckets read, late row seen %d times", buckets, count(fresh))
 	}
 }

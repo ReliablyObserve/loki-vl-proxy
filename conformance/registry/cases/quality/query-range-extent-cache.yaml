@@ -19,8 +19,10 @@ why: |
 
   The proxy now keeps the VictoriaLogs stats_query_range buckets of metric
   query_range requests that ended before now - -query-range-freshness, per
-  tenant, query, step and offset, in its response cache tiers, and asks
-  VictoriaLogs only for the buckets it does not hold. VictoriaLogs widens a
+  tenant, query, step and offset, in its response cache tiers for
+  -query-range-extent-cache-ttl (1h, Loki's default results cache validity,
+  pkg/storage/chunk/cache/cache.go:50), and asks VictoriaLogs only for the
+  buckets it does not hold. VictoriaLogs widens a
   stats_query_range to whole buckets and computes each bucket from its own
   rows (app/vlselect/logsql/logsql.go alignStartEndToStep and
   ProcessStatsQueryRangeRequest, v1.49.0-v1.53.0), so the answer rebuilt

@@ -235,7 +235,10 @@ type Config struct {
 	QueryRangeAlignWindows          bool
 	// QueryRangeExtentCache answers the stats_query_range calls of metric
 	// query_range requests from buckets read before (stats_extent_cache.go).
-	QueryRangeExtentCache              bool
+	QueryRangeExtentCache bool
+	// QueryRangeExtentCacheTTL is how long kept buckets are reused, from
+	// their oldest read; 0 keeps none.
+	QueryRangeExtentCacheTTL           time.Duration
 	QueryRangeWindowTimeout            time.Duration
 	QueryRangePartialResponses         bool
 	QueryRangeBackgroundWarm           bool
@@ -645,6 +648,7 @@ type Proxy struct {
 	queryRangeExpensiveWindowMaxParallel  int
 	queryRangeAlignWindows                bool
 	queryRangeExtentCache                 bool
+	queryRangeExtentCacheTTL              time.Duration
 	queryRangeWindowTimeout               time.Duration
 	queryRangePartialResponses            bool
 	queryRangeBackgroundWarm              bool
@@ -1286,6 +1290,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangeExpensiveWindowMaxParallel:  queryRangeExpensiveMaxParallel,
 		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
 		queryRangeExtentCache:                 cfg.QueryRangeExtentCache,
+		queryRangeExtentCacheTTL:              max(cfg.QueryRangeExtentCacheTTL, 0),
 		queryRangeWindowTimeout:               queryRangeWindowTimeout,
 		queryRangePartialResponses:            cfg.QueryRangePartialResponses,
 		queryRangeBackgroundWarm:              cfg.QueryRangeBackgroundWarm,
@@ -1431,6 +1436,7 @@ func New(cfg Config) (*Proxy, error) {
 			queryRangeExpensiveWindowMaxParallel:  p.queryRangeExpensiveWindowMaxParallel,
 			queryRangeAlignWindows:                p.queryRangeAlignWindows,
 			queryRangeExtentCache:                 p.queryRangeExtentCache,
+			queryRangeExtentCacheTTL:              p.queryRangeExtentCacheTTL,
 			queryRangeWindowTimeout:               p.queryRangeWindowTimeout,
 			queryRangePartialResponses:            p.queryRangePartialResponses,
 			queryRangeBackgroundWarm:              p.queryRangeBackgroundWarm,

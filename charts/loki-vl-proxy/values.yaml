@@ -106,6 +106,7 @@ extraArgs:
   # query-range-expensive-max-parallel: "1"            # max parallelism for expensive windows
   # query-range-align-windows: "true"                  # align split boundaries for overlap cache reuse
   # query-range-extent-cache: "true"                   # reuse metric stats buckets read before; only new buckets hit VictoriaLogs
+  # query-range-extent-cache-ttl: "1h"                 # how long kept buckets are reused (0 keeps none)
   # query-range-window-timeout: "20s"                  # per-window timeout budget (0 disables)
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
