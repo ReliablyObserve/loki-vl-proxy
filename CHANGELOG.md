@@ -68,6 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Client-certificate settings no longer start a plain HTTP listener.** The
+  listener serves HTTPS only when both `-tls-cert-file` and `-tls-key-file` are
+  set. Until now `-tls-client-ca-file` or `-tls-require-client-cert=true`
+  without them, or one of the two files without the other, started a plain
+  HTTP listener that checked no client certificate, and only the startup log
+  line (`"tls": false`) showed it. The proxy now refuses to start with those
+  combinations and names the missing flag. **Upgrade note:** a deployment that
+  sets a client CA or one of the certificate files without the other stops at
+  startup until both `-tls-cert-file` and `-tls-key-file` are set or the client
+  certificate flags are removed; configurations with both files, or with no
+  TLS flags at all, are unaffected.
+
 - **The high CodeQL alert `go/allocation-size-overflow` on the stored-level
   relabel is fixed in the code.** `storedLevelSeries` adds `detected_level` to
   each series of a JSON-pipeline metric that reads `detected_level` (grouped

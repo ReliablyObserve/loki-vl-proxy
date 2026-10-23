@@ -763,6 +763,9 @@ func run(
 	if err := validateMetricsListen(*metricsListen, *registerInstrumentation); err != nil {
 		return err
 	}
+	if err := validateServerTLS(*tlsCertFile, *tlsKeyFile, *tlsClientCAFile, *tlsRequireClientCert); err != nil {
+		return err
+	}
 
 	logResult := buildLogger(logWriter, loggerConfig{
 		level:                 *logLevel,
@@ -2256,6 +2259,22 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	}
 	if (cfg.backendMaxConcurrentHeavyQueries > 0 || cfg.backendMaxConcurrentMetadataScans > 0) && cfg.backendHeavyQueryMinRange <= 0 {
 		return fmt.Errorf("invalid -backend-heavy-query-min-range: %s (must be > 0)", cfg.backendHeavyQueryMinRange)
+	}
+	return nil
+}
+
+// validateServerTLS refuses listener settings that would quietly leave the
+// listener on plain HTTP. The server serves HTTPS only when both
+// -tls-cert-file and -tls-key-file are set, so one without the other, or a
+// client CA or required client certificates without them, would start a
+// plain HTTP listener that checks no client certificate.
+func validateServerTLS(certFile, keyFile, clientCAFile string, requireClientCert bool) error {
+	hasCert, hasKey := strings.TrimSpace(certFile) != "", strings.TrimSpace(keyFile) != ""
+	if hasCert != hasKey {
+		return errors.New("-tls-cert-file and -tls-key-file must be set together; with only one of them the listener would serve plain HTTP")
+	}
+	if !hasCert && (strings.TrimSpace(clientCAFile) != "" || requireClientCert) {
+		return errors.New("-tls-client-ca-file and -tls-require-client-cert need -tls-cert-file and -tls-key-file; without them the listener would serve plain HTTP and check no client certificate")
 	}
 	return nil
 }
