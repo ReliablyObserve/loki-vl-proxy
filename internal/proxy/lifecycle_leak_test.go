@@ -212,6 +212,42 @@ func TestProxyLifecycle_ReturnsEveryGoroutine(t *testing.T) {
 	}
 }
 
+// The startup label warm-up waits for VictoriaLogs' /health with backoffs of up
+// to 10 s and a 60 s deadline. A proxy shut down while VictoriaLogs is not ready
+// yet must stop that wait instead of leaving it running for up to a minute.
+// conformance: shutdown-releases-background-work
+func TestProxyLifecycle_ShutdownStopsStartupWarmWaitingForBackend(t *testing.T) {
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+	before := goroutineCreators()
+
+	notReady := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	callerCache := cache.New(time.Minute, 100)
+	p, err := New(leakConfig(leakFlagLabelsWarm, notReady.URL, t.TempDir(), callerCache))
+	if err != nil {
+		notReady.Close()
+		callerCache.Close()
+		t.Fatalf("New: %v", err)
+	}
+	p.Init()
+	// Let the warm-up fail its first /health probe and enter its backoff.
+	time.Sleep(200 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown: %v", err)
+	}
+	callerCache.Close()
+	notReady.Close()
+
+	if report := settleGoroutines(baseline, before); report != "" {
+		t.Fatalf("startup warm-up outlived Shutdown: %s", report)
+	}
+}
+
 // conformance: shutdown-releases-background-work
 func TestProxyLifecycle_RepeatedNewShutdownDoesNotAccumulate(t *testing.T) {
 	const proxies = 50
