@@ -725,6 +725,10 @@
     "severity/normalisation-table": [
       "test/e2e-compat/detected_level_corpus_test.go"
     ],
+    "shutdown-releases-background-work": [
+      "internal/cache/cache_test.go",
+      "internal/proxy/lifecycle_leak_test.go"
+    ],
     "status-400": [
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -771,7 +775,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 324,
+  "registry_items": 325,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -780,6 +784,9 @@
     ],
     "cmd/proxy/tenant_routing_test.go": [
       "tenant-numeric-routing"
+    ],
+    "internal/cache/cache_test.go": [
+      "shutdown-releases-background-work"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
@@ -954,6 +961,9 @@
     ],
     "internal/proxy/labels_inclusive_end_test.go": [
       "semantics/labels-end-inclusive-like-loki"
+    ],
+    "internal/proxy/lifecycle_leak_test.go": [
+      "shutdown-releases-background-work"
     ],
     "internal/proxy/line_fields_without_parser_test.go": [
       "loki-compatible-profile",
@@ -1562,7 +1572,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 155,
+  "tests_with_markers": 157,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1662,5 +1672,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 146
+  "wired_items": 147
 }

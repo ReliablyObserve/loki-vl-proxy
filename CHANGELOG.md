@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Proxy.Shutdown` stops the two caches the proxy creates for itself.** Every
+  proxy builds a translation cache and a stream-field-names cache, and each cache
+  starts a cleanup goroutine and a promoter goroutine that run until the cache is
+  closed. `Shutdown` stopped the rate limiter, the peer cache, the cold router and
+  the persistence loops but never closed these two, so every proxy that was built
+  and shut down left four goroutines (and the cache entries they keep reachable)
+  behind. A process or a test that builds and shuts down proxies repeatedly
+  accumulated them without bound: one test that built 6,336 proxies (and also
+  left the cache it passed in open) ended with 38,016 extra goroutines, every one
+  created by `cache.NewWithMaxBytes`. A single
+  long-running proxy process is not affected in steady state, because it builds
+  one proxy and exits with it. `Shutdown` now closes both caches, and closes them
+  before it persists the patterns and label-values snapshots so a snapshot error
+  cannot skip it. `Shutdown` also stops the startup label warm-up: it waited for
+  VictoriaLogs' `/health` with backoffs of up to 10 s under its own 60 s deadline,
+  so a proxy shut down before VictoriaLogs was ready kept that goroutine (and its
+  requests) running for up to a minute; it now ends when `Shutdown` runs, the way
+  the backend version probe already did. The caches handed in through the configuration (the main cache,
+  the compat cache, the disk cache) belong to the caller and are still not closed
+  by `Shutdown`. New guards keep it that way: a cache test that `Close` stops both
+  goroutines of every cache and tolerates a second `Close`; a lifecycle test that
+  builds a proxy, starts it, serves a real `/labels` request and shuts it down
+  for the minimal configuration and for each background loop (patterns
+  persistence, label-values index persistence, cold backend, labels cache
+  keep-warm, rate limiter) alone and all together, plus 50 builds in a row and a
+  proxy shut down while VictoriaLogs is not ready yet, and
+  requires the goroutine count to come back to where it started, naming the
+  constructor of any goroutine that remains; and a fuzz target over the same
+  feature selection (`FuzzProxyLifecycleNoGoroutineLeak`, its seeds run in
+  `go test -short`).
+
 ## [2.33.1] - 2026-10-23
 
 ### Fixed
