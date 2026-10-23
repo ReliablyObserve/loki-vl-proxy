@@ -140,6 +140,13 @@
   "shape": "logs plain"
  },
  {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "1h",
+  "set": "control",
+  "shape": "logs | json"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
@@ -432,6 +439,83 @@
   "range": "6h",
   "set": "json-detected-level",
   "shape": "DLV6 drilldown detected_level breakdown, json"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "24h",
+  "set": "json-error-split",
+  "shape": "J1 json no-error count by service_name, one service"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "1h",
+  "set": "json-error-split",
+  "shape": "J2 json no-error count by app, namespace"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "24h",
+  "set": "json-error-split",
+  "shape": "J2 json no-error count by app, namespace"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "6h",
+  "set": "json-error-split",
+  "shape": "J2 json no-error count by app, namespace"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "24h",
+  "set": "json-error-split",
+  "shape": "J3 json no-error count by parsed method"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "1h",
+  "set": "json-error-split",
+  "shape": "J4 json no-error count by service_name, all services"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "24h",
+  "set": "json-error-split",
+  "shape": "J4 json no-error count by service_name, all services"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "6h",
+  "set": "json-error-split",
+  "shape": "J4 json no-error count by service_name, all services"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "1h",
+  "set": "json-error-split",
+  "shape": "J5 json no-error bytes_rate by app"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "24h",
+  "set": "json-error-split",
+  "shape": "J5 json no-error bytes_rate by app"
+ },
+ {
+  "added": "2026-10-23",
+  "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
+  "range": "6h",
+  "set": "json-error-split",
+  "shape": "J5 json no-error bytes_rate by app"
  },
  {
   "added": "2026-10-22",
