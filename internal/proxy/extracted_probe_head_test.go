@@ -11,8 +11,7 @@ import (
 // range with the stored label deleted. Their filters on _msg come first, where
 // VictoriaLogs merges them into the query and skips blocks through its token
 // index, instead of behind the delete, where they ran row by row over every
-// line; the regexps of the partial-parse probe run only on lines holding the
-// key as a word. The lines they find are the same: the probe answers of every
+// line. The lines they find are the same: the probe answers of every
 // risky line kind are pinned against the Loki reference by
 // TestOrderedJSONExtractedMetricDifferential.
 // conformance: quality/extracted-label-probe-cost, semantics/json-extracted-metric-pushdown
@@ -25,6 +24,8 @@ func TestExtractedLabelProbesFilterAheadOfDelete(t *testing.T) {
 		{`app:="api" | delete lev*`, `_msg:"x"`, `app:="api" | delete lev*`},
 		{`app:="api" | delete level | unpack_json`, `_msg:"x"`, `app:="api" | delete level | unpack_json`},
 		{`app:="api" | delete level`, ``, `app:="api" | delete level`},
+		// Behind another pipe the filter would only run twice.
+		{`app:="api" | copy level as __lr_l | filter __lr_l:* | delete __lr_l`, `_msg:"x"`, `app:="api" | copy level as __lr_l | filter __lr_l:* | delete __lr_l`},
 	} {
 		if got := filterAheadOfDelete(tc.base, tc.filter); got != tc.want {
 			t.Errorf("filterAheadOfDelete(%q, %q) = %q, want %q", tc.base, tc.filter, got, tc.want)

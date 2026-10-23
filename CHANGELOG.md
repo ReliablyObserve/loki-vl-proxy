@@ -134,7 +134,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so its answer for a range is the answer for each bucket, in its own series
   order. A call is answered from the buckets kept for the same tenant, query,
   step and offset, and VictoriaLogs is asked only for the missing ones (at most
-  three ranges, read side by side); the answer is rebuilt in VictoriaLogs' form
+  three ranges, read side by side). A call with nothing kept goes to
+  VictoriaLogs as it came and its answer streams to the caller as before; the
+  copy the caller read is taken apart and stored off the request path (at most
+  four stores at once; an answer that finds them busy is not kept). Otherwise
+  the answer is rebuilt in VictoriaLogs' form
   and order, byte for byte the one VictoriaLogs gives for the whole range, so
   the proxy's evaluation and its answer are unchanged. Buckets that ended
   before `now - -query-range-freshness` (10m, Loki's default) are kept, one
@@ -145,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the oldest read an entry holds; newer buckets are read on every request. Not
   kept: answers VictoriaLogs refused, answers that do not read back exactly
   (the call then goes to VictoriaLogs unchanged), answers larger than one cache
-  entry may be, queries with a subquery (the Drilldown breakdown ranked over the
+  entry may be or that the caller stopped reading early, queries with a subquery (the Drilldown breakdown ranked over the
   series limit), a time filter, `time_add`, `running_stats` or `total_stats`,
   and metrics whose `unwrap` the conversion check reads. Paths that read
   VictoriaLogs otherwise are unchanged: the sliding-window grids of `topk` and
@@ -177,12 +181,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs merges only a filter that directly follows the query into the
   query's filters (`optimizeNoSubqueries`, `lib/logstorage/parser.go`, v1.49.0
   :1005), so each probe ran its regexps row by row over every line of the
-  range. Their filters on `_msg` now come first (the delete does not touch
-  `_msg`, and each probe's own filter still runs after it), the both-keys probe
-  requires both keys as words, which VictoriaLogs finds in its token index, and
-  the partial-parse probe runs each regexp only on lines holding its key as a
-  word (twice for a repeated key); a probe that would pass VictoriaLogs'
-  default `-search.maxQueryLen` keeps its previous form. The lines found are
+  range. When the delete is the probe's first pipe, its filters on `_msg` now
+  come first (the delete does not touch `_msg`, and each probe's own filter
+  still runs after it), and the both-keys probe requires both keys as words,
+  which VictoriaLogs finds in its token index; a probe that would pass
+  VictoriaLogs' default `-search.maxQueryLen` keeps its previous form, and
+  every other probe is sent as before. The lines found are
   the same (`TestOrderedJSONExtractedMetricDifferential` against the Loki
   reference over every risky line kind). The partial-parse probe still parses
   every line that holds the key, so the first request remains slower than one
