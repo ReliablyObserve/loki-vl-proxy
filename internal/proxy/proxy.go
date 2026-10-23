@@ -658,73 +658,77 @@ type Proxy struct {
 	queryRangeAlignWindows                bool
 	queryRangeExtentCache                 bool
 	queryRangeExtentCacheTTL              time.Duration
-	parseRiskProbeCacheTTL                time.Duration
-	parseRiskProbeSettle                  time.Duration
-	queryRangeWindowTimeout               time.Duration
-	queryRangePartialResponses            bool
-	queryRangeBackgroundWarm              bool
-	queryRangeBackgroundWarmMaxWindows    int
-	recentTailRefreshEnabled              bool
-	recentTailRefreshWindow               time.Duration
-	recentTailRefreshMaxStaleness         time.Duration
-	warmupMaxJitter                       time.Duration
-	labelsCacheWarm                       bool
-	labelRefreshGroup                     singleflight.Group
-	parserProbeGroup                      singleflight.Group
-	translationGroup                      singleflight.Group
-	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
-	labelValuesIndexedCache               bool
-	labelValuesHotLimit                   int
-	labelValuesIndexMaxEntries            int
-	labelValuesIndexPersistPath           string
-	labelValuesIndexPersistInterval       time.Duration
-	labelValuesIndexStartupStale          time.Duration
-	labelValuesIndexPeerWarmTimeout       time.Duration
-	patternsPersistPath                   string
-	patternsPersistInterval               time.Duration
-	patternsStartupStale                  time.Duration
-	patternsPeerWarmTimeout               time.Duration
-	patternsWarmReady                     atomic.Bool
-	patternsPersistStarted                atomic.Bool
-	patternsPersistDirty                  atomic.Bool
-	patternsPersistStop                   chan struct{}
-	patternsPersistDone                   chan struct{}
-	patternsSnapshotMu                    sync.RWMutex
-	patternsSnapshotEntries               map[string]patternSnapshotEntry
-	patternsSnapshotPatternCount          int64
-	patternsSnapshotPayloadBytes          int64
-	patternsPersistDigest                 [sha256.Size]byte
-	patternsPersistDigestReady            bool
-	backendVersionMu                      sync.RWMutex
-	backendVersionRaw                     string
-	backendVersionSemver                  string
-	backendCapabilityProfile              string
-	backendSupportsStreamMetadata         bool
-	backendSupportsDensePatternWindowing  bool
-	backendSupportsColumnFieldValues      bool
-	backendVersionProbedAt                atomic.Int64 // Unix ns of the last metrics version probe
-	backendVersionLogged                  bool
-	labelValuesIndexWarmReady             atomic.Bool
-	labelValuesIndexPersistStarted        atomic.Bool
-	labelValuesIndexPersistDirty          atomic.Bool
-	labelValuesIndexPersistStop           chan struct{}
-	labelValuesIndexPersistDone           chan struct{}
-	keepWarmStop                          chan struct{}
-	labelValuesIndexMu                    sync.RWMutex
-	labelValuesIndex                      map[string]*labelValuesIndexState
-	labelValuesIndexPersistDigest         [sha256.Size]byte
-	labelValuesIndexPersistDigestReady    bool
-	readCacheKeyMemoMu                    sync.RWMutex
-	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
-	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
-	logSampleCount                        atomic.Uint64
-	requestSampler                        *observability.RequestSampler
-	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
-	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
-	metadataNegativeCacheTTL              time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
-	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
-	metadataCacheFreshness                time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
-	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
+	// statsExtentStoreSlots and statsExtentStores bound and track the extent
+	// cache stores running off the request path (stats_extent_cache.go).
+	statsExtentStoreSlots                chan struct{}
+	statsExtentStores                    sync.WaitGroup
+	parseRiskProbeCacheTTL               time.Duration
+	parseRiskProbeSettle                 time.Duration
+	queryRangeWindowTimeout              time.Duration
+	queryRangePartialResponses           bool
+	queryRangeBackgroundWarm             bool
+	queryRangeBackgroundWarmMaxWindows   int
+	recentTailRefreshEnabled             bool
+	recentTailRefreshWindow              time.Duration
+	recentTailRefreshMaxStaleness        time.Duration
+	warmupMaxJitter                      time.Duration
+	labelsCacheWarm                      bool
+	labelRefreshGroup                    singleflight.Group
+	parserProbeGroup                     singleflight.Group
+	translationGroup                     singleflight.Group
+	streamFieldNamesCache                *cache.Cache // short-lived internal cache for stream_field_names routing decisions
+	labelValuesIndexedCache              bool
+	labelValuesHotLimit                  int
+	labelValuesIndexMaxEntries           int
+	labelValuesIndexPersistPath          string
+	labelValuesIndexPersistInterval      time.Duration
+	labelValuesIndexStartupStale         time.Duration
+	labelValuesIndexPeerWarmTimeout      time.Duration
+	patternsPersistPath                  string
+	patternsPersistInterval              time.Duration
+	patternsStartupStale                 time.Duration
+	patternsPeerWarmTimeout              time.Duration
+	patternsWarmReady                    atomic.Bool
+	patternsPersistStarted               atomic.Bool
+	patternsPersistDirty                 atomic.Bool
+	patternsPersistStop                  chan struct{}
+	patternsPersistDone                  chan struct{}
+	patternsSnapshotMu                   sync.RWMutex
+	patternsSnapshotEntries              map[string]patternSnapshotEntry
+	patternsSnapshotPatternCount         int64
+	patternsSnapshotPayloadBytes         int64
+	patternsPersistDigest                [sha256.Size]byte
+	patternsPersistDigestReady           bool
+	backendVersionMu                     sync.RWMutex
+	backendVersionRaw                    string
+	backendVersionSemver                 string
+	backendCapabilityProfile             string
+	backendSupportsStreamMetadata        bool
+	backendSupportsDensePatternWindowing bool
+	backendSupportsColumnFieldValues     bool
+	backendVersionProbedAt               atomic.Int64 // Unix ns of the last metrics version probe
+	backendVersionLogged                 bool
+	labelValuesIndexWarmReady            atomic.Bool
+	labelValuesIndexPersistStarted       atomic.Bool
+	labelValuesIndexPersistDirty         atomic.Bool
+	labelValuesIndexPersistStop          chan struct{}
+	labelValuesIndexPersistDone          chan struct{}
+	keepWarmStop                         chan struct{}
+	labelValuesIndexMu                   sync.RWMutex
+	labelValuesIndex                     map[string]*labelValuesIndexState
+	labelValuesIndexPersistDigest        [sha256.Size]byte
+	labelValuesIndexPersistDigestReady   bool
+	readCacheKeyMemoMu                   sync.RWMutex
+	readCacheKeyMemo                     map[canonicalReadCacheMemoKey]string
+	logSampleN                           uint64 // 0 = log all; N>1 = log 1 in N successful requests
+	logSampleCount                       atomic.Uint64
+	requestSampler                       *observability.RequestSampler
+	cacheTTLLabels                       time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
+	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
+	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
+	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
+	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
 	// detected_field_values request will spend scanning logs with a parser
 	// filter. VL has no internal timeout, so without this cap a Drilldown
@@ -1302,6 +1306,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
 		queryRangeExtentCache:                 cfg.QueryRangeExtentCache,
 		queryRangeExtentCacheTTL:              max(cfg.QueryRangeExtentCacheTTL, 0),
+		statsExtentStoreSlots:                 make(chan struct{}, statsExtentStoreSlots),
 		parseRiskProbeCacheTTL:                parseRiskProbeDuration(cfg.ParseRiskProbeCacheTTL, defaultParseRiskProbeCacheTTL),
 		parseRiskProbeSettle:                  parseRiskProbeDuration(cfg.ParseRiskProbeSettle, defaultParseRiskProbeSettle),
 		queryRangeWindowTimeout:               queryRangeWindowTimeout,
@@ -1704,6 +1709,7 @@ func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	p.statsExtentStores.Wait()
 	if p.keepWarmStop != nil {
 		select {
 		case <-p.keepWarmStop:

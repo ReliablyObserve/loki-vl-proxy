@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -269,6 +270,9 @@ func extentQueryRange(t testing.TB, p *Proxy, query string, start, end time.Time
 	}
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
+	// The buckets of a miss are stored off the request path: the next
+	// request of a run meets them stored, as it would a moment later.
+	p.statsExtentStores.Wait()
 	return rec.Code, rec.Body.Bytes()
 }
 
@@ -844,5 +848,29 @@ func TestStatsExtentCacheEntriesExpire(t *testing.T) {
 	_, fresh := extentQueryRange(t, on, query, end.Add(-3*time.Hour+2*time.Minute), end.Add(2*time.Minute), time.Minute, nil)
 	if _, buckets := shim.bucketsRead(); buckets < 170 || count(fresh) == 0 {
 		t.Fatalf("after the TTL the range is read again: %d buckets read, late row seen %d times", buckets, count(fresh))
+	}
+}
+
+// A miss hands VictoriaLogs' answer to the caller as it streams; the copy is
+// stored only when the caller read it to the end and it fits the limit.
+// conformance: quality/query-range-extent-cache
+func TestStatsExtentTeeHandsOnOnlyWholeAnswers(t *testing.T) {
+	body := strings.Repeat("x", 100)
+	run := func(limit int64, read func(io.Reader)) (got []byte, called bool) {
+		tee := &statsExtentTee{ReadCloser: io.NopCloser(strings.NewReader(body)), limit: limit, done: func(b []byte) { got, called = b, true }}
+		read(tee)
+		_ = tee.Close()
+		_ = tee.Close() // a second close hands nothing on again
+		return got, called
+	}
+	whole := func(r io.Reader) { _, _ = io.ReadAll(r) }
+	if got, called := run(1000, whole); !called || string(got) != body {
+		t.Fatalf("a whole answer must be handed on: called=%v len=%d", called, len(got))
+	}
+	if _, called := run(1000, func(r io.Reader) { _, _ = io.ReadFull(r, make([]byte, 10)) }); called {
+		t.Fatal("an answer read in part must not be handed on")
+	}
+	if _, called := run(50, whole); called {
+		t.Fatal("an answer over the limit must not be handed on")
 	}
 }
