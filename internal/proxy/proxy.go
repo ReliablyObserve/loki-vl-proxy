@@ -1704,6 +1704,14 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	if p.streamFieldNamesCache != nil {
 		p.streamFieldNamesCache.Close()
 	}
+	// Each idle keep-alive connection of the proxy's own backend clients keeps
+	// two goroutines; in-flight requests are not affected.
+	if p.client != nil {
+		p.client.CloseIdleConnections()
+	}
+	if p.tailClient != nil {
+		p.tailClient.CloseIdleConnections()
+	}
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}

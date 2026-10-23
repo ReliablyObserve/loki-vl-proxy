@@ -26,7 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs' `/health` with backoffs of up to 10 s under its own 60 s deadline,
   so a proxy shut down before VictoriaLogs was ready kept that goroutine (and its
   requests) running for up to a minute; it now ends when `Shutdown` runs, the way
-  the backend version probe already did. The caches handed in through the configuration (the main cache,
+  the backend version probe already did. `Shutdown` also closes the idle
+  keep-alive connections of the HTTP clients the proxy creates (backend, tail,
+  and the cold router's manifest client when a cold backend is set): each kept
+  two goroutines until the backend closed it, so against a backend that stays up
+  they outlived the proxy; requests in flight are not affected. The caches handed in through the configuration (the main cache,
   the compat cache, the disk cache) belong to the caller and are still not closed
   by `Shutdown`. New guards keep it that way: a cache test that `Close` stops both
   goroutines of every cache and tolerates a second `Close`; a lifecycle test that
@@ -34,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the minimal configuration and for each background loop (patterns
   persistence, label-values index persistence, cold backend, labels cache
   keep-warm, rate limiter) alone and all together, plus 50 builds in a row and a
-  proxy shut down while VictoriaLogs is not ready yet, and
+  proxy shut down while VictoriaLogs is not ready yet, a proxy shut down while
+  its backend stays up (idle connections), and
   requires the goroutine count to come back to where it started, naming the
   constructor of any goroutine that remains; and a fuzz target over the same
   feature selection (`FuzzProxyLifecycleNoGoroutineLeak`, its seeds run in

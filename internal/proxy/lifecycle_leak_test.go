@@ -172,7 +172,11 @@ func runProxyLifecycle(t testing.TB, flags uint8) string {
 		now.Add(-time.Hour).UnixNano(), now.UnixNano()), nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
+	// A host that runs out of ephemeral ports (a fuzz run builds proxies far
+	// faster than closed connections leave TIME_WAIT) cannot reach the stub;
+	// that iteration proves nothing and is skipped after the shutdown below.
+	portsExhausted := strings.Contains(rec.Body.String(), "can't assign requested address")
+	if rec.Code != http.StatusOK && !portsExhausted {
 		t.Errorf("flags=%#x: /labels returned %d: %s", flags, rec.Code, rec.Body.String())
 	}
 
@@ -186,7 +190,11 @@ func runProxyLifecycle(t testing.TB, flags uint8) string {
 	callerCache.Close()
 	stub.Close()
 
-	return settleGoroutines(baseline, before)
+	report := settleGoroutines(baseline, before)
+	if portsExhausted && report == "" {
+		t.Skip("the host ran out of ephemeral ports; the request did not reach the stub")
+	}
+	return report
 }
 
 // conformance: shutdown-releases-background-work
@@ -245,6 +253,61 @@ func TestProxyLifecycle_ShutdownStopsStartupWarmWaitingForBackend(t *testing.T) 
 
 	if report := settleGoroutines(baseline, before); report != "" {
 		t.Fatalf("startup warm-up outlived Shutdown: %s", report)
+	}
+}
+
+// A backend that stays up keeps the proxy's keep-alive connections open, two
+// goroutines each, until the proxy closes them: Shutdown must release the idle
+// connections of the clients the proxy created (backend, tail, cold manifest).
+// The backend is closed only after the check.
+// conformance: shutdown-releases-background-work
+func TestProxyLifecycle_ShutdownClosesIdleBackendConnections(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags uint8
+	}{
+		{"backend", 0},
+		{"cold_backend", leakFlagColdBackend},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := leakStubBackend()
+			defer stub.Close()
+			runtime.GC()
+			baseline := runtime.NumGoroutine()
+			before := goroutineCreators()
+
+			callerCache := cache.New(time.Minute, 100)
+			p, err := New(leakConfig(tc.flags, stub.URL, t.TempDir(), callerCache))
+			if err != nil {
+				callerCache.Close()
+				t.Fatalf("New: %v", err)
+			}
+			p.Init()
+			mux := http.NewServeMux()
+			p.RegisterRoutes(mux)
+			now := time.Now()
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/labels?start=%d&end=%d",
+				now.Add(-time.Hour).UnixNano(), now.UnixNano()), nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("/labels returned %d: %s", rec.Code, rec.Body.String())
+			}
+			if tc.flags&leakFlagColdBackend != 0 {
+				// Let the cold router fetch its manifest at least once.
+				time.Sleep(150 * time.Millisecond)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := p.Shutdown(ctx); err != nil {
+				t.Errorf("Shutdown: %v", err)
+			}
+			callerCache.Close()
+
+			if report := settleGoroutines(baseline, before); report != "" {
+				t.Fatalf("idle backend connections outlived Shutdown: %s", report)
+			}
+		})
 	}
 }
 
