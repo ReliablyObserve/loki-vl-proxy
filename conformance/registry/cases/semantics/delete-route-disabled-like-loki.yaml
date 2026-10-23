@@ -1,0 +1,40 @@
+id: semantics/delete-route-disabled-like-loki
+title: /loki/api/v1/delete answers 404 like Loki with deletion disabled unless -delete-api-enabled is set
+proves:
+  - loki_api_v1_delete
+consumer: api
+why: |
+  Loki registers /loki/api/v1/delete (PUT/POST, GET, DELETE) only when
+  -compactor.retention-enabled is true (pkg/loki/modules.go:1935-1939 at
+  v3.7.7), and that flag defaults to false (pkg/compactor/config.go:55). With
+  the route unregistered, Loki's gorilla/mux router answers every method with
+  http.NotFoundHandler: 404, body "404 page not found\n", Content-Type
+  "text/plain; charset=utf-8", before any auth middleware runs. The proxy
+  matches that by default by not registering the path, so Go's ServeMux gives
+  the same 404 and no tenant, rate-limit or parameter check answers first.
+  Forwarding to VictoriaLogs is a proxy extension enabled with
+  -delete-api-enabled=true; with it on, the existing handler and its
+  safeguards are unchanged. The forwarded /select/logsql/delete path is not a
+  VictoriaLogs route on v1.49.0 through v1.53.0 (VictoriaLogs answers 400
+  "unsupported path requested"), so the extension does not delete anything.
+  The e2e Loki runs with retention enabled, so a live comparison there sees
+  Loki's registered delete API, not this default; the request below is a GET,
+  which only lists delete requests on such a Loki.
+request:
+  method: GET
+  path: /loki/api/v1/delete
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, error_text]
+  expect: |
+    -delete-api-enabled unset (default): GET, POST, PUT and DELETE all answer
+    404 with "404 page not found\n" and "text/plain; charset=utf-8", with or
+    without X-Scope-OrgID and X-Delete-Confirmation, including in tenant-label
+    and require-tenant-header modes; nothing reaches VictoriaLogs.
+    -delete-api-enabled=true: the route is registered and the existing
+    handler answers (POST only, confirmation header, selector, 30-day range).
+applies_to:
+  loki: ">=3.0.0"
+  victorialogs: ">=v1.49.0"

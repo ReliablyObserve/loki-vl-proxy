@@ -21,7 +21,7 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 20 | 3 | no test wired to the registry |
 | 4 | `/loki/api/v1/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/index/shards` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/loki/api/v1/delete` | api | native_vl | 3 | 0 | no test compares it against Loki; no test wired to the registry |
+| 4 | `/loki/api/v1/delete` | api | native_vl | 3 | 0 | no test compares it against Loki |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/tail` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/series` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |

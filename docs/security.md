@@ -15,7 +15,7 @@ description: Security model, network exposure, tenant isolation, header forwardi
 - `/metrics` not served unless `-server.register-instrumentation=true`
 - query callers are not authenticated (see [Caller authentication](#caller-authentication))
 
-`/loki/api/v1/delete` is registered with request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
+`/loki/api/v1/delete` is not registered by default and answers `404`, as Loki does with deletion disabled; `-delete-api-enabled=true` registers it with request safeguards, but deletion is not supported against VictoriaLogs (see [Delete API](#3-delete-api-unsupported)).
 
 Behavior changes from the 1.67.0 and 1.68.0 hardening releases (wildcard denial, tenant-scoped cache keys, execution limits) are described in the [security hardening migration guide](security-hardening-migration.md).
 
@@ -55,7 +55,7 @@ Where a gateway is not available, require client certificates at the proxy: `-tl
 
 ### 3) Delete API (unsupported)
 
-`/loki/api/v1/delete` is always registered and validates each request before contacting the backend:
+By default `/loki/api/v1/delete` is not registered: every method answers `404` with the body `404 page not found`, which is what Loki returns when deletion is disabled (Loki registers the route only with `-compactor.retention-enabled=true`, off by default). No tenant header or other check runs first, as in Loki. With `-delete-api-enabled=true` the route is registered and validates each request before contacting the backend:
 
 - `POST` only and `X-Delete-Confirmation: true`
 - explicit query selector (`{}` and `*` are rejected)

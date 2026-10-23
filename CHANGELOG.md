@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`/loki/api/v1/delete` answers like Loki with deletion disabled unless
+  `-delete-api-enabled=true` is set.** The route was always registered and
+  forwarded a translated query to VictoriaLogs `POST /select/logsql/delete`
+  behind proxy-only safeguards (an `X-Delete-Confirmation` header, a selector,
+  a 30-day range cap and an audit log line). The proxy authenticates no caller,
+  so any client that could reach it could send that request. Loki registers its
+  delete API only when compactor retention is enabled
+  (`-compactor.retention-enabled`, off by default); otherwise its router answers
+  every method on the path with `404` and the body `404 page not found`
+  (`text/plain; charset=utf-8`) before any auth runs. The proxy now gives that
+  same answer by default: the path is not registered, so GET, POST, PUT and
+  DELETE return Loki's `404` with no tenant, rate-limit or parameter check
+  answering first, and nothing is sent to VictoriaLogs. The new
+  `-delete-api-enabled` flag (default `false`, Helm
+  `extraArgs.delete-api-enabled`) registers the route with the existing
+  handler and safeguards unchanged. Deletion still does not work with it on:
+  `/select/logsql/delete` is not a VictoriaLogs route on v1.49.0 through
+  v1.53.0, which answer `400 unsupported path requested`; VictoriaLogs deletes
+  through its asynchronous `/delete/run_task` API behind its own
+  `-delete.enable` flag, which the proxy does not call. **Breaking:** a client
+  that called `/loki/api/v1/delete` now gets `404` instead of the handler's
+  `405`/`400` answers or the backend's error. **Upgrade note:** set
+  `-delete-api-enabled=true` to keep the previous behaviour.
+
 ## [2.32.0] - 2026-10-23
 
 ### Security

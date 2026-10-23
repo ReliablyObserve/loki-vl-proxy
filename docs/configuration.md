@@ -874,6 +874,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | `-http-conn-max-age-jitter` | — | `2m` | Jitter applied to downstream connection age rotation |
 | `-http-conn-max-requests` | — | `256` | Maximum requests per keepalive connection |
 | `-http-conn-overload-max-age` | — | `90s` | Shorter connection lifetime during backpressure |
+| `-delete-api-enabled` | — | `false` | Register `/loki/api/v1/delete` and forward its requests to VictoriaLogs (a proxy extension, see [Security](security.md#3-delete-api-unsupported)). When `false`, every method on the path answers `404` with `404 page not found`, as Loki does when deletion is disabled (its default: compactor retention off). Current VictoriaLogs releases reject the forwarded request, so enabling it does not make deletion work |
 
 ## Grafana Compatibility
 

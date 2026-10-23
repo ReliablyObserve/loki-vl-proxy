@@ -281,7 +281,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - **Operator dashboard** — packaged Grafana dashboard covering Client → Proxy → VictoriaLogs, cache behavior, fanout, and resource utilization
 - **Runbook-backed alerts** — 15 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
-- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` is guarded but not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
+- **Read-only by default** — `/push` returns `405`; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs either way ([details](docs/security-hardening-migration.md#remaining-delete-api-gap)); debug/admin disabled unless explicitly enabled
 - **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
 - **Query-length enforcement** — `query_range` time-range limit: global default via `-default-max-query-length`, per-tenant override via `max_query_length` in `-tenant-limits` / `-tenant-default-limits`
 
@@ -364,7 +364,7 @@ See [Observability](docs/observability.md) and [Alert Runbooks Index](docs/runbo
 
 ## Security
 
-- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` is guarded but not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
+- Read-only API surface by default: `/push` blocked, debug/admin disabled; `/loki/api/v1/delete` answers `404` like Loki unless `-delete-api-enabled` is set, and is not functional against current VictoriaLogs ([details](docs/security-hardening-migration.md#remaining-delete-api-gap))
 - Non-root runtime image, read-only root filesystem, restricted Helm security contexts
 - Hardening headers on all HTTP responses including 404s and disabled routes
 - CI security gates: `gitleaks`, `gosec`, Trivy, `actionlint`, `hadolint`, OpenSSF Scorecard, OWASP ZAP, curated Nuclei
