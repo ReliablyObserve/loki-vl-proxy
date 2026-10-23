@@ -134,7 +134,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so its answer for a range is the answer for each bucket, in its own series
   order. A call is answered from the buckets kept for the same tenant, query,
   step and offset, and VictoriaLogs is asked only for the missing ones (at most
-  three ranges, read side by side). A call with nothing kept goes to
+  three ranges, read side by side; when the uncached call would be a heavy
+  call, each missing range is read as one, one after another, so a request
+  never holds more than the one `-backend-max-concurrent-heavy-queries` slot
+  its uncached call would). A call with nothing kept goes to
   VictoriaLogs as it came and its answer streams to the caller as before; the
   copy the caller read is taken apart and stored off the request path (at most
   four stores at once; an answer that finds them busy is not kept). Otherwise

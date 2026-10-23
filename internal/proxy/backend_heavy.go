@@ -431,7 +431,7 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 		// A bucket row count reads less than the listing it stands in for
 		// (metadata_inventory.go).
 		return noAdmission, nil
-	case p.heavyQueryLimiter != nil && isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange):
+	case p.heavyQueryLimiter != nil && (isHeavyBackendRequest(path, params, p.backendHeavyQueryMinRange) || statsExtentReadIsHeavy(ctx)):
 		limiter, operation, queueWait = p.heavyQueryLimiter, "backend_heavy_query_admission", p.heavyQueryLimiter.queueWait
 	case p.metadataScanLimiter != nil && (inventoryScan || isMetadataScanRequest(path, params, p.backendHeavyQueryMinRange)):
 		operation, queueWait = "backend_metadata_scan_admission", p.metadataScanLimiter.queueWait
