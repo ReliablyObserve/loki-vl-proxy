@@ -1,7 +1,7 @@
 id: stats-field-min
 kind: vl_stats
 name: field_min
-since: v1.49.0
+since: v1.47.0
 generated:
   used_by_proxy: false
   used_in:

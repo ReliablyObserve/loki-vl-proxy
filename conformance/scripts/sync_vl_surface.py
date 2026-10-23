@@ -16,7 +16,9 @@ Usage: sync_vl_surface.py [--tags v1.44.0,v1.45.0,...]
 import argparse, json, os, re, subprocess, sys
 from registry_io import read_text, write_text
 
-DEFAULT_TAGS = ["v1.40.0", "v1.44.0", "v1.45.0", "v1.49.0", "v1.50.0", "v1.51.0", "v1.52.0"]
+# Every minor release from v1.40.0 to the latest, so `since` is the release a
+# construct first appeared in, not the next sampled one.
+DEFAULT_TAGS = [f"v1.{minor}.0" for minor in range(40, 54)]
 TREE = ("gh api 'repos/VictoriaMetrics/VictoriaLogs/git/trees/{tag}?recursive=1' "
         "-q '.tree[].path'")
 FILE_RE = re.compile(r'^lib/logstorage/(pipe|stats)_([a-z_0-9]+)\.go$')

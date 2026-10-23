@@ -782,7 +782,7 @@ func dlRawSelector(f dlFixture) string {
 	return fmt.Sprintf(`{app=%q, route="raw", case!="label-level"}`, f.app)
 }
 
-// conformance: severity-exposure-surfaces
+// conformance: severity-exposure-surfaces, loki_api_v1_detected_field_name_values
 func TestCompat_DetectedLevelDetectedFields(t *testing.T) {
 	f := ensureDetectedLevelFixture(t)
 	params := dlRangeParams(f, dlRawSelector(f))

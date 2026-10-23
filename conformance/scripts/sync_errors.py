@@ -21,12 +21,61 @@ STATUS_NAMES = {
     "http.StatusRequestEntityTooLarge": 413, "http.StatusUnprocessableEntity": 422,
     "http.StatusTooManyRequests": 429, "http.StatusInternalServerError": 500,
     "http.StatusBadGateway": 502, "http.StatusServiceUnavailable": 503,
-    "http.StatusGatewayTimeout": 504,
+    "http.StatusGatewayTimeout": 504, "http.StatusRequestTimeout": 408,
 }
+# A status computed at run time (from the backend's answer or the error) is
+# grouped under one key instead of one key per variable name.
+DERIVED = "derived"
+# The errorType the proxy derives from a status (lokiErrorType in
+# internal/proxy/http_utils.go): the listed codes, else bad_data for 4xx.
 ERROR_TYPE = {400: "bad_data", 404: "not_found", 406: "not_acceptable", 422: "execution",
               499: "canceled", 500: "internal", 502: "unavailable", 503: "timeout", 504: "timeout"}
-CALL_RE = re.compile(r'p\.writeError\(\s*w,\s*([A-Za-z0-9_.]+)\s*,\s*(.+?)\)\s*$')
+
+
+def error_type(status):
+    if status is None:
+        return None
+    return ERROR_TYPE.get(status, "bad_data" if 400 <= status < 500 else "internal")
+# Call sites whose status is an argument: p.writeError(<writer>, <status>, <message>).
+WRITE_ERROR_RE = re.compile(r'\bp\.writeError\(')
+# Helpers that write the backend's own status and redacted message.
+BACKEND_WRITERS_RE = re.compile(r'\bp\.(writeBackendError|writeGrafanaStatsFailure|writeDrilldownPartialFromUpstream)\(')
 MESSAGE_RE = re.compile(r'"([^"]{4,})"')
+ONLY_LITERAL_RE = re.compile(r'^"(?:[^"\\]|\\.)*"$')
+
+
+def call_arguments(text, start):
+    """The top-level arguments of the call whose opening parenthesis is at
+    text[start - 1], and the offset just past its closing parenthesis. A call
+    may span several lines."""
+    depth, quote, current, args, i = 1, None, [], [], start
+    while i < len(text) and depth:
+        c = text[i]
+        if quote:
+            current.append(c)
+            if c == "\\" and quote != "`":
+                current.append(text[i + 1])
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'`":
+            quote = c
+            current.append(c)
+        elif c in "([{":
+            depth += 1
+            current.append(c)
+        elif c in ")]}":
+            depth -= 1
+            if depth:
+                current.append(c)
+        elif c == "," and depth == 1:
+            args.append("".join(current).strip())
+            current = []
+        else:
+            current.append(c)
+        i += 1
+    args.append("".join(current).strip())
+    return [" ".join(a.split()) for a in args], i
 
 
 def sources():
@@ -39,25 +88,37 @@ def sources():
 def main():
     entries = []
     for path, text in sources():
-        for number, line in enumerate(text.splitlines(), 1):
-            match = CALL_RE.search(line.strip())
-            if not match:
+        for match in WRITE_ERROR_RE.finditer(text):
+            args, _ = call_arguments(text, match.end())
+            if len(args) < 3:
                 continue
-            status_token, argument = match.group(1), match.group(2)
+            status_token, argument = args[1], ", ".join(args[2:])
             status = STATUS_NAMES.get(status_token)
             literal = MESSAGE_RE.findall(argument)
             entries.append({
-                "where": f"{path}:{number}",
+                "where": f"{path}:{text.count(chr(10), 0, match.start()) + 1}",
                 "status_token": status_token,
                 "status": status,
-                "error_type": ERROR_TYPE.get(status) if status else None,
+                "error_type": error_type(status),
                 "message": literal[0] if literal else None,
-                "dynamic": not literal,
-                "expression": argument.strip()[:160],
+                # Anything but one string literal can carry text the proxy did not write.
+                "dynamic": not ONLY_LITERAL_RE.match(argument),
+                "expression": argument[:160],
+            })
+        for match in BACKEND_WRITERS_RE.finditer(text):
+            args, _ = call_arguments(text, match.end())
+            entries.append({
+                "where": f"{path}:{text.count(chr(10), 0, match.start()) + 1}",
+                "status_token": match.group(1),
+                "status": None,
+                "error_type": None,
+                "message": None,
+                "dynamic": True,
+                "expression": ", ".join(args[1:])[:160],
             })
     by_status = {}
     for entry in entries:
-        key = str(entry["status"] or entry["status_token"])
+        key = str(entry["status"] or DERIVED)
         by_status.setdefault(key, []).append(entry)
     payload = {"call_sites": len(entries), "by_status": {
         key: {"count": len(value), "error_type": value[0]["error_type"],

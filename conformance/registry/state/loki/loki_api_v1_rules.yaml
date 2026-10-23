@@ -1,6 +1,6 @@
 id: loki_api_v1_rules
-state: gap
+state: partial
 reason: |
-  Seeded from the repository: no proxy route, 2 test files compare it against Loki.
+  The proxy routes it (handleRules); 2 test files compare it against Loki.
 owner_decision: null
 waiver: null

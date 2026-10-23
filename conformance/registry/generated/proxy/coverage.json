@@ -86,18 +86,18 @@
         "GET"
       ],
       "path": "/api/prom/rules",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleRules",
+        "pattern": "/api/prom/rules",
+        "route": "rules_prom"
+      },
       "tests": {
         "e2e": [
-          "test/e2e-compat/alerting_compat_test.go"
+          "test/e2e-compat/tenant_label_isolation_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/alerting.go",
-          "internal/proxy/proxy.go",
-          "internal/proxy/ruler_fuzz_test.go",
-          "internal/proxy/ruler_proxy_test.go"
+          "internal/proxy/alerting_tenant_label_test.go"
         ]
       }
     },
@@ -114,13 +114,16 @@
         "POST"
       ],
       "path": "/api/prom/rules/{namespace}",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleRules",
+        "pattern": "/api/prom/rules/",
+        "route": "rules_prom_nested"
+      },
       "tests": {
         "e2e": [],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/proxy.go"
+          "internal/proxy/alerting_tenant_label_test.go"
         ]
       }
     },
@@ -138,9 +141,15 @@
       "path": "/api/prom/rules/{namespace}/{groupName}",
       "proxy_route": null,
       "tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go"
+        ],
         "ui": [],
-        "unit": []
+        "unit": [
+          "internal/proxy/alerting_tenant_label_test.go",
+          "internal/proxy/ruler_fuzz_test.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
       }
     },
     {
@@ -222,17 +231,20 @@
         "e2e": [],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/coverage_gaps_test.go",
           "internal/proxy/critical_fixes_test.go",
-          "internal/proxy/patterns.go",
-          "internal/proxy/proxy.go"
+          "internal/proxy/multitenant_tenant_label_test.go"
         ]
       }
     },
     {
       "differential_tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/detected_level_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
+        ],
         "ui": [],
         "unit": []
       },
@@ -248,9 +260,29 @@
         "route": "detected_field_values"
       },
       "tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/detected_level_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-fleet/fleet_test.go"
+        ],
         "ui": [],
-        "unit": []
+        "unit": [
+          "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/detected_level_response_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_cache_upgrade_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/perf_test.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_routing_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
       }
     },
     {
@@ -258,12 +290,16 @@
         "e2e": [
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
-          "test/e2e-compat/otel_compat_test.go"
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/sanitized_json_key_grouping_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
@@ -286,33 +322,41 @@
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/chaining_test.go",
           "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/sanitized_json_key_grouping_test.go",
           "test/e2e-pipeline/pipeline_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
         ],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/coverage_gaps_test.go",
+          "internal/proxy/detected_level_response_test.go",
           "internal/proxy/drilldown_compat_test.go",
           "internal/proxy/gaps_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
           "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
+          "internal/proxy/pattern_line_filter_test.go",
           "internal/proxy/perf_hardening_test.go",
           "internal/proxy/perf_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_helpers_test.go",
           "internal/proxy/proxy_test.go",
           "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/sanitized_json_key_filter_test.go",
+          "internal/proxy/stage_field_exposure_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/tenant_test.go",
           "internal/proxy/upstream_bad_request_test.go"
@@ -323,8 +367,10 @@
       "differential_tests": {
         "e2e": [
           "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/loki_functions_test.go",
-          "test/e2e-compat/loki_validation_parity_test.go"
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
@@ -346,22 +392,23 @@
         "e2e": [
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/loki_functions_test.go",
-          "test/e2e-compat/loki_validation_parity_test.go"
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
         ],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/drilldown_compat_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
           "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/perf_hardening_test.go",
-          "internal/proxy/proxy.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_test.go",
           "internal/proxy/upstream_bad_request_test.go"
         ]
@@ -370,7 +417,8 @@
     {
       "differential_tests": {
         "e2e": [
-          "test/e2e-compat/grafana_surface_test.go"
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/tenant_limits_published_test.go"
         ],
         "ui": [],
         "unit": []
@@ -380,21 +428,24 @@
         "GET"
       ],
       "path": "/loki/api/v1/drilldown-limits",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleDrilldownLimits",
+        "pattern": "/loki/api/v1/drilldown-limits",
+        "route": "drilldown_limits"
+      },
       "tests": {
         "e2e": [
-          "test/e2e-compat/grafana_surface_test.go"
+          "test/e2e-compat/grafana_surface_test.go",
+          "test/e2e-compat/tenant_limits_published_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-limits-gate.spec.ts"
         ],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/coverage_gaps_test.go",
           "internal/proxy/gaps_test.go",
-          "internal/proxy/patterns.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_query_limits_test.go",
           "internal/proxy/tenant_test.go"
         ]
       }
@@ -425,9 +476,7 @@
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/coverage_gaps_test.go",
-          "internal/proxy/proxy.go"
+          "internal/proxy/coverage_gaps_test.go"
         ]
       }
     },
@@ -456,8 +505,10 @@
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
-          "test/e2e-compat/otel_compat_test.go"
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go"
         ],
         "ui": [],
         "unit": []
@@ -480,21 +531,20 @@
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/drilldown_longrange_regression_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go",
           "test/e2e-compat/track_scores_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/gaps_test.go",
-          "internal/proxy/label_handlers.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/upstream_bad_request_test.go"
         ]
@@ -508,8 +558,10 @@
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/drilldown_volume_bytes_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
-          "test/e2e-compat/otel_compat_test.go"
+          "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
         ],
         "ui": [],
         "unit": []
@@ -532,27 +584,27 @@
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/drilldown_volume_bytes_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/track_scores_test.go"
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/critical_fixes_test.go",
           "internal/proxy/drilldown_compat_test.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/label_surface_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
           "internal/proxy/multitenant_tenant_failure_test.go",
-          "internal/proxy/proxy.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/upstream_bad_request_test.go",
-          "internal/proxy/volume.go",
           "internal/proxy/volume_bench_test.go",
           "internal/proxy/volume_cache_test.go",
           "internal/proxy/volume_test.go"
@@ -591,20 +643,17 @@
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/critical_fixes_test.go",
           "internal/proxy/drilldown_compat_test.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/label_surface_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/upstream_bad_request_test.go",
-          "internal/proxy/volume.go",
           "internal/proxy/volume_bench_test.go",
           "internal/proxy/volume_cache_test.go",
           "internal/proxy/volume_test.go"
@@ -613,19 +662,7 @@
     },
     {
       "differential_tests": {
-        "e2e": [
-          "test/e2e-compat/bad_request_status_parity_test.go",
-          "test/e2e-compat/compat_extended_test.go",
-          "test/e2e-compat/compat_test.go",
-          "test/e2e-compat/complex_test.go",
-          "test/e2e-compat/drilldown_compat_test.go",
-          "test/e2e-compat/edgecase_test.go",
-          "test/e2e-compat/features_test.go",
-          "test/e2e-compat/labels_full_range_test.go",
-          "test/e2e-compat/loki_validation_parity_test.go",
-          "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/perf_test.go"
-        ],
+        "e2e": [],
         "ui": [],
         "unit": []
       },
@@ -637,79 +674,29 @@
       "path": "/loki/api/v1/label",
       "proxy_route": null,
       "tests": {
-        "e2e": [
-          "test/e2e-compat/bad_request_status_parity_test.go",
-          "test/e2e-compat/chaining_test.go",
-          "test/e2e-compat/compat_extended_test.go",
-          "test/e2e-compat/compat_test.go",
-          "test/e2e-compat/complex_test.go",
-          "test/e2e-compat/drilldown_compat_test.go",
-          "test/e2e-compat/edgecase_test.go",
-          "test/e2e-compat/features_test.go",
-          "test/e2e-compat/label_cache_e2e_test.go",
-          "test/e2e-compat/labels_full_range_test.go",
-          "test/e2e-compat/loki_validation_parity_test.go",
-          "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/perf_test.go",
-          "test/e2e-compat/track_scores_test.go",
-          "test/e2e-fleet/fleet_test.go",
-          "test/integration/boot_test.go",
-          "test/integration/harness_test.go"
-        ],
-        "ui": [
-          "test/e2e-ui/tests/logs-drilldown.spec.ts"
-        ],
-        "unit": [
-          "internal/metrics/metrics.go",
-          "internal/metrics/metrics_test.go",
-          "internal/metrics/otlp_test.go",
-          "internal/middleware/compress.go",
-          "internal/middleware/compress_coverage_test.go",
-          "internal/middleware/compress_test.go",
-          "internal/middleware/middleware_test.go",
-          "internal/proxy/cache_locality_test.go",
-          "internal/proxy/circuit_breaker_internal_cancel_test.go",
-          "internal/proxy/coverage_gaps_test.go",
-          "internal/proxy/critical_fixes_test.go",
-          "internal/proxy/datasource_compat_test.go",
-          "internal/proxy/drilldown_compat_test.go",
-          "internal/proxy/execution_budget_test.go",
-          "internal/proxy/gaps_test.go",
-          "internal/proxy/hardening_test.go",
-          "internal/proxy/label_cache_behavior_test.go",
-          "internal/proxy/label_cache_upgrade_test.go",
-          "internal/proxy/label_full_range_test.go",
-          "internal/proxy/label_handlers.go",
-          "internal/proxy/label_metadata.go",
-          "internal/proxy/label_negative_cache_test.go",
-          "internal/proxy/label_surface_test.go",
-          "internal/proxy/labels_fields_scale_bench_test.go",
-          "internal/proxy/labels_perf_test.go",
-          "internal/proxy/memleak_test.go",
-          "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
-          "internal/proxy/multitenant_merge_test.go",
-          "internal/proxy/multitenant_tenant_failure_test.go",
-          "internal/proxy/perf_hardening_test.go",
-          "internal/proxy/perf_test.go",
-          "internal/proxy/policy_helpers_test.go",
-          "internal/proxy/proxy.go",
-          "internal/proxy/proxy_helpers_test.go",
-          "internal/proxy/proxy_test.go",
-          "internal/proxy/reliability_e2e_test.go",
-          "internal/proxy/request_logger_semconv_test.go",
-          "internal/proxy/security_policy_regression_test.go",
-          "internal/proxy/tenant_scope_regression_test.go",
-          "internal/proxy/tenant_scoping_test.go",
-          "internal/proxy/tenant_test.go",
-          "internal/proxy/upstream_bad_request_test.go",
-          "internal/proxy/upstream_error_mapping_test.go"
-        ]
+        "e2e": [],
+        "ui": [],
+        "unit": []
       }
     },
     {
       "differential_tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metadata_scan_admission_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
+        ],
         "ui": [],
         "unit": []
       },
@@ -725,9 +712,57 @@
         "route": "label_values"
       },
       "tests": {
-        "e2e": [],
-        "ui": [],
-        "unit": []
+        "e2e": [
+          "test/e2e-compat/bad_request_status_parity_test.go",
+          "test/e2e-compat/chaining_test.go",
+          "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
+          "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
+          "test/e2e-compat/edgecase_test.go",
+          "test/e2e-compat/features_test.go",
+          "test/e2e-compat/label_cache_e2e_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
+          "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metadata_scan_admission_test.go",
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go",
+          "test/e2e-compat/track_scores_test.go"
+        ],
+        "ui": [
+          "test/e2e-ui/tests/logs-drilldown.spec.ts"
+        ],
+        "unit": [
+          "internal/proxy/backend_response_guard_test.go",
+          "internal/proxy/detected_level_response_test.go",
+          "internal/proxy/drilldown_compat_test.go",
+          "internal/proxy/gaps_test.go",
+          "internal/proxy/label_cache_upgrade_test.go",
+          "internal/proxy/label_empty_run_test.go",
+          "internal/proxy/label_full_range_test.go",
+          "internal/proxy/label_metadata_freshness_test.go",
+          "internal/proxy/label_negative_cache_test.go",
+          "internal/proxy/label_surface_test.go",
+          "internal/proxy/labels_fields_scale_bench_test.go",
+          "internal/proxy/labels_inclusive_end_test.go",
+          "internal/proxy/loki_profile_test.go",
+          "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_inventory_test.go",
+          "internal/proxy/metadata_query_validation_test.go",
+          "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
+          "internal/proxy/perf_hardening_test.go",
+          "internal/proxy/proxy_test.go",
+          "internal/proxy/request_logger_semconv_test.go",
+          "internal/proxy/sanitized_json_key_filter_test.go",
+          "internal/proxy/tenant_routing_test.go",
+          "internal/proxy/tenant_scoping_test.go",
+          "internal/proxy/upstream_bad_request_test.go"
+        ]
       }
     },
     {
@@ -736,10 +771,17 @@
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metadata_scan_admission_test.go",
           "test/e2e-compat/otel_compat_test.go",
           "test/e2e-compat/perf_test.go"
         ],
@@ -763,13 +805,21 @@
           "test/e2e-compat/chaining_test.go",
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/label_cache_e2e_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
+          "test/e2e-compat/metadata_scan_admission_test.go",
           "test/e2e-compat/otel_compat_test.go",
           "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go",
           "test/e2e-compat/track_scores_test.go",
           "test/e2e-fleet/fleet_test.go",
           "test/integration/boot_test.go",
@@ -777,15 +827,15 @@
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/metrics/metrics_test.go",
           "internal/metrics/otlp_test.go",
-          "internal/middleware/compress.go",
           "internal/middleware/compress_coverage_test.go",
           "internal/middleware/compress_test.go",
           "internal/middleware/middleware_test.go",
+          "internal/proxy/backend_heavy_test.go",
           "internal/proxy/cache_locality_test.go",
           "internal/proxy/circuit_breaker_internal_cancel_test.go",
+          "internal/proxy/compat_cache_freshness_test.go",
           "internal/proxy/coverage_gaps_test.go",
           "internal/proxy/critical_fixes_test.go",
           "internal/proxy/datasource_compat_test.go",
@@ -794,26 +844,33 @@
           "internal/proxy/hardening_test.go",
           "internal/proxy/label_cache_behavior_test.go",
           "internal/proxy/label_cache_upgrade_test.go",
+          "internal/proxy/label_empty_run_test.go",
           "internal/proxy/label_full_range_test.go",
-          "internal/proxy/label_handlers.go",
-          "internal/proxy/label_metadata.go",
+          "internal/proxy/label_metadata_freshness_test.go",
           "internal/proxy/label_negative_cache_test.go",
           "internal/proxy/label_surface_test.go",
           "internal/proxy/labels_fields_scale_bench_test.go",
+          "internal/proxy/labels_inclusive_end_test.go",
           "internal/proxy/labels_perf_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
+          "internal/proxy/metadata_inventory_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
+          "internal/proxy/metadata_scan_admission_test.go",
           "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/perf_hardening_test.go",
           "internal/proxy/perf_test.go",
           "internal/proxy/policy_helpers_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_helpers_test.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/recent_tail_bypass_clamp_test.go",
           "internal/proxy/reliability_e2e_test.go",
           "internal/proxy/request_logger_semconv_test.go",
           "internal/proxy/security_policy_regression_test.go",
+          "internal/proxy/tenant_query_limits_test.go",
+          "internal/proxy/tenant_routing_bench_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scope_regression_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/tenant_test.go",
@@ -853,21 +910,19 @@
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/middleware/compress.go",
           "internal/proxy/compat_cache_test.go",
           "internal/proxy/coverage_gaps_test.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
           "internal/proxy/multitenant_tenant_failure_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/patterns_persistence_test.go",
           "internal/proxy/patterns_scale_bench_test.go",
           "internal/proxy/perf_hardening_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/upstream_bad_request_test.go"
         ]
@@ -880,30 +935,43 @@
           "test/e2e-compat/binary_literal_roundtrip_test.go",
           "test/e2e-compat/binary_matching_values_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_loki_compare_test.go",
           "test/e2e-compat/drilldown_volume_bytes_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/ip_binary_contract_test.go",
           "test/e2e-compat/json_logs_volume_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/line_format_error_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/loki_functions_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_capture_identity_test.go",
           "test/e2e-compat/parser_error_parity_test.go",
           "test/e2e-compat/patterns_native_ab_test.go",
           "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
           "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_offset_series_limit_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/raw_metric_limits_test.go",
           "test/e2e-compat/regexp_capture_alias_test.go",
           "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/series_count_aggregation_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go",
           "test/e2e-compat/structured_metadata_compat_test.go",
           "test/e2e-compat/sum_range_grouping_test.go",
-          "test/e2e-compat/testdata.go"
+          "test/e2e-compat/tail_pipeline_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/security-hardening-visibility.spec.ts"
@@ -923,81 +991,85 @@
           "test/e2e-compat/binary_matching_values_test.go",
           "test/e2e-compat/chaining_test.go",
           "test/e2e-compat/compat_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_loki_compare_test.go",
           "test/e2e-compat/drilldown_volume_bytes_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/empty_window_aggregation_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/ip_binary_contract_test.go",
           "test/e2e-compat/json_logs_volume_test.go",
+          "test/e2e-compat/label_freshness_e2e_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/line_format_error_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/loki_functions_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parser_capture_identity_test.go",
           "test/e2e-compat/parser_error_parity_test.go",
           "test/e2e-compat/patterns_native_ab_test.go",
           "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
           "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_offset_series_limit_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/raw_metric_limits_test.go",
           "test/e2e-compat/regexp_capture_alias_test.go",
           "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/series_count_aggregation_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go",
           "test/e2e-compat/structured_metadata_compat_test.go",
           "test/e2e-compat/sum_range_grouping_test.go",
-          "test/e2e-compat/testdata.go",
+          "test/e2e-compat/tail_pipeline_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go",
           "test/e2e-pipeline/testdata_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/security-hardening-visibility.spec.ts"
         ],
         "unit": [
-          "internal/proxy/critical_fixes_test.go",
-          "internal/proxy/proxy.go"
+          "internal/proxy/critical_fixes_test.go"
         ]
       }
     },
     {
       "differential_tests": {
         "e2e": [
-          "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/compat_extended_test.go",
-          "test/e2e-compat/compat_test.go",
-          "test/e2e-compat/complex_test.go",
-          "test/e2e-compat/drilldown_compat_test.go",
-          "test/e2e-compat/drilldown_loki_compare_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/empty_window_aggregation_test.go",
-          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
           "test/e2e-compat/grouped_tumbling_rate_test.go",
-          "test/e2e-compat/ip_binary_contract_test.go",
-          "test/e2e-compat/labels_full_range_test.go",
-          "test/e2e-compat/log_line_body_test.go",
-          "test/e2e-compat/logql_exhaustive_test.go",
-          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
+          "test/e2e-compat/instant_result_type_test.go",
+          "test/e2e-compat/json_instant_volume_stats_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/operations_matrix_compat_test.go",
-          "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/parser_error_parity_test.go",
-          "test/e2e-compat/perf_test.go",
-          "test/e2e-compat/pipeline_parity_test.go",
-          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
+          "test/e2e-compat/parenthesized_range_or_filters_test.go",
+          "test/e2e-compat/parser_capture_identity_test.go",
           "test/e2e-compat/query_semantics_matrix_test.go",
-          "test/e2e-compat/range_metric_compat_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/raw_metric_limits_test.go",
-          "test/e2e-compat/regexp_capture_alias_test.go",
-          "test/e2e-compat/security_hardening_test.go",
-          "test/e2e-compat/structured_metadata_compat_test.go"
+          "test/e2e-compat/sanitized_json_key_grouping_test.go",
+          "test/e2e-compat/series_count_aggregation_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go",
+          "test/e2e-compat/unwrap_duration_seconds_test.go",
+          "test/e2e-compat/unwrap_sample_validity_test.go",
+          "test/e2e-compat/unwrap_value_forms_test.go"
         ],
-        "ui": [
-          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
-        ],
+        "ui": [],
         "unit": []
       },
       "id": "loki_api_v1_query",
@@ -1013,140 +1085,81 @@
       },
       "tests": {
         "e2e": [
-          "test/e2e-compat/bad_request_status_parity_test.go",
-          "test/e2e-compat/chaining_test.go",
-          "test/e2e-compat/cold_budget_live_test.go",
           "test/e2e-compat/compat_extended_test.go",
-          "test/e2e-compat/compat_test.go",
-          "test/e2e-compat/complex_test.go",
-          "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
-          "test/e2e-compat/drilldown_compat_test.go",
-          "test/e2e-compat/drilldown_loki_compare_test.go",
-          "test/e2e-compat/drilldown_longrange_regression_test.go",
-          "test/e2e-compat/drilldown_quality_report_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/empty_window_aggregation_test.go",
-          "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
           "test/e2e-compat/grouped_tumbling_rate_test.go",
-          "test/e2e-compat/ip_binary_contract_test.go",
-          "test/e2e-compat/labels_full_range_test.go",
-          "test/e2e-compat/log_line_body_test.go",
-          "test/e2e-compat/logql_exhaustive_test.go",
-          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
+          "test/e2e-compat/instant_result_type_test.go",
+          "test/e2e-compat/json_instant_volume_stats_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/operations_matrix_compat_test.go",
-          "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/parser_error_parity_test.go",
-          "test/e2e-compat/perf_test.go",
-          "test/e2e-compat/pipeline_parity_test.go",
-          "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
-          "test/e2e-compat/proxy_heap_bounded_test.go",
+          "test/e2e-compat/parenthesized_range_or_filters_test.go",
+          "test/e2e-compat/parser_capture_identity_test.go",
           "test/e2e-compat/query_semantics_matrix_test.go",
-          "test/e2e-compat/range_metric_compat_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/raw_metric_limits_test.go",
-          "test/e2e-compat/regexp_capture_alias_test.go",
-          "test/e2e-compat/security_hardening_test.go",
-          "test/e2e-compat/structured_metadata_compat_test.go",
-          "test/e2e-compat/track_scores_test.go",
-          "test/e2e-fleet/fleet_test.go",
-          "test/e2e-pipeline/pipeline_test.go",
-          "test/integration/boot_test.go",
-          "test/integration/harness_test.go"
+          "test/e2e-compat/sanitized_json_key_grouping_test.go",
+          "test/e2e-compat/series_count_aggregation_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go",
+          "test/e2e-compat/unwrap_duration_seconds_test.go",
+          "test/e2e-compat/unwrap_sample_validity_test.go",
+          "test/e2e-compat/unwrap_value_forms_test.go",
+          "test/integration/boot_test.go"
         ],
         "ui": [
-          "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts",
-          "test/e2e-ui/tests/explore-parity.spec.ts",
-          "test/e2e-ui/tests/explore-regression.spec.ts",
-          "test/e2e-ui/tests/logs-drilldown.spec.ts"
+          "test/e2e-ui/tests/explore-regression.spec.ts"
         ],
         "unit": [
-          "internal/metrics/bench_test.go",
-          "internal/metrics/metric_name_guard_test.go",
-          "internal/metrics/metrics.go",
-          "internal/metrics/metrics_test.go",
-          "internal/metrics/otlp_test.go",
-          "internal/middleware/compress.go",
-          "internal/middleware/compress_coverage_test.go",
-          "internal/middleware/compress_pool_stress_test.go",
-          "internal/middleware/compress_test.go",
-          "internal/middleware/middleware_test.go",
           "internal/proxy/binary_matching_test.go",
-          "internal/proxy/binary_step_alignment_test.go",
-          "internal/proxy/cache_locality_test.go",
-          "internal/proxy/circuit_breaker_internal_cancel_test.go",
-          "internal/proxy/cold_dispatch_test.go",
-          "internal/proxy/collect_range_metric_bench_test.go",
-          "internal/proxy/compat_cache_freshness_test.go",
           "internal/proxy/compat_cache_test.go",
-          "internal/proxy/coverage_gaps_test.go",
-          "internal/proxy/critical_fixes_test.go",
-          "internal/proxy/derived_test.go",
           "internal/proxy/drilldown_compat_test.go",
-          "internal/proxy/drilldown_regression_lock_test.go",
-          "internal/proxy/drilldown_strip_test.go",
           "internal/proxy/drop_keep_validation_test.go",
           "internal/proxy/empty_window_aggregation_test.go",
           "internal/proxy/empty_without_metric_test.go",
-          "internal/proxy/format_tuple_regression_test.go",
+          "internal/proxy/extraction_list_outside_without_test.go",
+          "internal/proxy/first_last_unwrap_differential_test.go",
           "internal/proxy/gaps_test.go",
-          "internal/proxy/grouped_rate_count_paths_test.go",
-          "internal/proxy/hardening_test.go",
-          "internal/proxy/limits_enforcement_test.go",
-          "internal/proxy/log_line_body_test.go",
-          "internal/proxy/loki_errors_test.go",
+          "internal/proxy/instant_result_type_test.go",
+          "internal/proxy/instant_unwrap_sum_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/metric_binary.go",
           "internal/proxy/metric_binary_test.go",
           "internal/proxy/metric_eval_limits_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
-          "internal/proxy/multitenant_tenant_failure_test.go",
           "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/offset_integration_test.go",
-          "internal/proxy/opt6_hits_sliding_window_test.go",
-          "internal/proxy/optimization_test.go",
-          "internal/proxy/ordered_json_drilldown_test.go",
-          "internal/proxy/ordered_json_logs_volume_bench_test.go",
-          "internal/proxy/ordered_json_metric_test.go",
-          "internal/proxy/ordered_json_stats_pushdown_test.go",
+          "internal/proxy/ordered_json_instant_stats_test.go",
+          "internal/proxy/pattern_line_filter_test.go",
           "internal/proxy/perf_hardening_test.go",
-          "internal/proxy/perf_regression_test.go",
-          "internal/proxy/perf_test.go",
           "internal/proxy/policy_helpers_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
           "internal/proxy/quantile_grouping_test.go",
-          "internal/proxy/query_range_windowing_coverage_test.go",
-          "internal/proxy/query_range_windowing_parsed_streams_test.go",
-          "internal/proxy/query_range_windowing_prefilter_bench_test.go",
-          "internal/proxy/query_range_windowing_test.go",
+          "internal/proxy/quantile_histogram_test.go",
           "internal/proxy/query_semantics_compat_handlers_test.go",
           "internal/proxy/range_metric_compat_test.go",
-          "internal/proxy/recent_tail_bypass_clamp_test.go",
-          "internal/proxy/regexp_capture_fields_test.go",
           "internal/proxy/reliability_e2e_test.go",
-          "internal/proxy/request_helpers_coverage_test.go",
-          "internal/proxy/request_logger_semconv_test.go",
-          "internal/proxy/response_cache_contract_test.go",
-          "internal/proxy/review_findings_test.go",
-          "internal/proxy/sliding_window_parity_test.go",
-          "internal/proxy/stream_metadata_test.go",
-          "internal/proxy/stream_opt_test.go",
-          "internal/proxy/sum_range_grouping_test.go",
-          "internal/proxy/tenant_scope_regression_test.go",
-          "internal/proxy/tenant_test.go",
-          "internal/proxy/topk_step_regression_test.go",
+          "internal/proxy/series_limit_routes_test.go",
+          "internal/proxy/sum_without_bench_test.go",
+          "internal/proxy/sum_without_differential_test.go",
+          "internal/proxy/tenant_query_limits_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tumbling_axis_parity_test.go",
-          "internal/proxy/tuple_contract_test.go",
-          "internal/proxy/unwrap_labels_test.go",
+          "internal/proxy/unwrap_conversion_error_test.go",
+          "internal/proxy/unwrap_samples_test.go",
+          "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
           "internal/proxy/upstream_bad_request_test.go",
           "internal/proxy/utility_coverage_test.go",
+          "internal/proxy/without_fold_scope_test.go",
+          "internal/proxy/without_open_shapes_test.go",
           "internal/proxy/without_test.go"
         ]
       }
@@ -1156,33 +1169,53 @@
         "e2e": [
           "test/e2e-compat/bad_request_status_parity_test.go",
           "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
           "test/e2e-compat/compat_test.go",
           "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/drilldown_loki_compare_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/json_error_filter_split_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/line_format_error_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/logql_exhaustive_test.go",
           "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parenthesized_range_or_filters_test.go",
           "test/e2e-compat/parser_error_parity_test.go",
           "test/e2e-compat/perf_test.go",
           "test/e2e-compat/pipeline_parity_test.go",
           "test/e2e-compat/pipeline_parsed_streams_windowing_test.go",
           "test/e2e-compat/query_semantics_matrix_test.go",
           "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_offset_series_limit_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/sanitized_json_key_filter_test.go",
+          "test/e2e-compat/sanitized_json_key_grouping_test.go",
           "test/e2e-compat/security_hardening_test.go",
-          "test/e2e-compat/structured_metadata_compat_test.go"
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go",
+          "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/tail_pipeline_test.go",
+          "test/e2e-compat/tenant_limits_published_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go",
+          "test/e2e-compat/unwrap_duration_seconds_test.go",
+          "test/e2e-compat/unwrap_value_forms_test.go"
         ],
         "ui": [
           "test/e2e-ui/tests/drilldown-loki-vs-proxy-compare.spec.ts"
@@ -1206,8 +1239,10 @@
           "test/e2e-compat/chaining_test.go",
           "test/e2e-compat/cold_budget_live_test.go",
           "test/e2e-compat/compat_extended_test.go",
+          "test/e2e-compat/compat_option_matrix_test.go",
           "test/e2e-compat/compat_test.go",
           "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/drilldown_chunked_merge_lock_test.go",
           "test/e2e-compat/drilldown_compat_test.go",
           "test/e2e-compat/drilldown_loki_compare_test.go",
@@ -1215,16 +1250,24 @@
           "test/e2e-compat/drilldown_quality_report_test.go",
           "test/e2e-compat/edgecase_test.go",
           "test/e2e-compat/explore_contract_test.go",
+          "test/e2e-compat/extracted_suffix_collision_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/grouped_quantile_test.go",
+          "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/ip_binary_contract_test.go",
+          "test/e2e-compat/json_error_filter_split_test.go",
           "test/e2e-compat/labels_full_range_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/line_fields_parity_test.go",
+          "test/e2e-compat/line_format_error_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/logql_exhaustive_test.go",
           "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/metric_query_perf_test.go",
           "test/e2e-compat/otel_compat_test.go",
+          "test/e2e-compat/parenthesized_range_or_filters_test.go",
           "test/e2e-compat/parser_error_parity_test.go",
           "test/e2e-compat/perf_test.go",
           "test/e2e-compat/pipeline_parity_test.go",
@@ -1232,12 +1275,24 @@
           "test/e2e-compat/proxy_heap_bounded_test.go",
           "test/e2e-compat/query_semantics_matrix_test.go",
           "test/e2e-compat/range_metric_compat_test.go",
+          "test/e2e-compat/range_metric_offset_series_limit_test.go",
           "test/e2e-compat/range_metric_sliding_parity_test.go",
           "test/e2e-compat/range_metric_tumbling_short_window_test.go",
           "test/e2e-compat/regexp_capture_alias_test.go",
+          "test/e2e-compat/sanitized_json_key_filter_test.go",
+          "test/e2e-compat/sanitized_json_key_grouping_test.go",
           "test/e2e-compat/security_hardening_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/stage_field_exposure_test.go",
           "test/e2e-compat/structured_metadata_compat_test.go",
+          "test/e2e-compat/tail_pipeline_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go",
+          "test/e2e-compat/tenant_limits_published_test.go",
+          "test/e2e-compat/tenant_numeric_routing_test.go",
           "test/e2e-compat/track_scores_test.go",
+          "test/e2e-compat/unwrap_conversion_error_test.go",
+          "test/e2e-compat/unwrap_duration_seconds_test.go",
+          "test/e2e-compat/unwrap_value_forms_test.go",
           "test/e2e-fleet/fleet_test.go",
           "test/e2e-pipeline/pipeline_test.go"
         ],
@@ -1250,14 +1305,13 @@
         "unit": [
           "internal/metrics/bench_test.go",
           "internal/metrics/metric_name_guard_test.go",
-          "internal/metrics/metrics.go",
           "internal/metrics/metrics_test.go",
           "internal/metrics/otlp_test.go",
-          "internal/middleware/compress.go",
           "internal/middleware/compress_coverage_test.go",
           "internal/middleware/compress_pool_stress_test.go",
           "internal/middleware/compress_test.go",
           "internal/middleware/middleware_test.go",
+          "internal/proxy/backend_heavy_test.go",
           "internal/proxy/binary_matching_test.go",
           "internal/proxy/binary_step_alignment_test.go",
           "internal/proxy/cache_locality_test.go",
@@ -1268,39 +1322,53 @@
           "internal/proxy/coverage_gaps_test.go",
           "internal/proxy/critical_fixes_test.go",
           "internal/proxy/derived_test.go",
+          "internal/proxy/drilldown_breakdown_exact_test.go",
           "internal/proxy/drilldown_compat_test.go",
           "internal/proxy/drilldown_regression_lock_test.go",
           "internal/proxy/drilldown_strip_test.go",
           "internal/proxy/drop_keep_validation_test.go",
+          "internal/proxy/extracted_suffix_collision_test.go",
+          "internal/proxy/extraction_list_outside_without_test.go",
+          "internal/proxy/first_last_unwrap_differential_test.go",
           "internal/proxy/format_tuple_regression_test.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/grouped_rate_count_paths_test.go",
           "internal/proxy/hardening_test.go",
           "internal/proxy/limits_enforcement_test.go",
+          "internal/proxy/line_fields_without_parser_test.go",
+          "internal/proxy/line_format_error_test.go",
           "internal/proxy/log_line_body_test.go",
           "internal/proxy/loki_errors_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/metric_binary.go",
+          "internal/proxy/metadata_scan_admission_test.go",
           "internal/proxy/metric_binary_test.go",
           "internal/proxy/metric_eval_limits_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
           "internal/proxy/multitenant_tenant_failure_test.go",
           "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/offset_integration_test.go",
           "internal/proxy/opt6_hits_sliding_window_test.go",
           "internal/proxy/optimization_test.go",
+          "internal/proxy/ordered_json_detected_level_test.go",
           "internal/proxy/ordered_json_drilldown_test.go",
+          "internal/proxy/ordered_json_extracted_differential_test.go",
+          "internal/proxy/ordered_json_filter_pushdown_test.go",
+          "internal/proxy/ordered_json_instant_stats_test.go",
           "internal/proxy/ordered_json_logs_volume_bench_test.go",
           "internal/proxy/ordered_json_metric_test.go",
           "internal/proxy/ordered_json_stats_pushdown_test.go",
+          "internal/proxy/ordered_json_valid_split_test.go",
+          "internal/proxy/parser_capture_identity_test.go",
+          "internal/proxy/pattern_line_filter_test.go",
           "internal/proxy/perf_regression_test.go",
           "internal/proxy/perf_test.go",
+          "internal/proxy/plain_stream_labels_test.go",
           "internal/proxy/policy_helpers_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
           "internal/proxy/quantile_grouping_test.go",
+          "internal/proxy/quantile_histogram_test.go",
           "internal/proxy/query_range_windowing_coverage_test.go",
           "internal/proxy/query_range_windowing_parsed_streams_test.go",
           "internal/proxy/query_range_windowing_prefilter_bench_test.go",
@@ -1313,19 +1381,33 @@
           "internal/proxy/request_helpers_coverage_test.go",
           "internal/proxy/request_logger_semconv_test.go",
           "internal/proxy/response_cache_contract_test.go",
-          "internal/proxy/review_findings_test.go",
+          "internal/proxy/sanitized_json_key_filter_test.go",
+          "internal/proxy/series_limit_routes_test.go",
           "internal/proxy/sliding_window_parity_test.go",
+          "internal/proxy/sliding_window_stats_test.go",
+          "internal/proxy/stage_field_exposure_test.go",
           "internal/proxy/stream_metadata_test.go",
           "internal/proxy/stream_opt_test.go",
           "internal/proxy/sum_range_grouping_test.go",
+          "internal/proxy/sum_without_bench_test.go",
+          "internal/proxy/sum_without_differential_test.go",
+          "internal/proxy/tenant_query_limits_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scope_regression_test.go",
           "internal/proxy/tenant_test.go",
           "internal/proxy/topk_step_regression_test.go",
           "internal/proxy/tumbling_axis_parity_test.go",
           "internal/proxy/tuple_contract_test.go",
+          "internal/proxy/unwrap_conversion_error_test.go",
           "internal/proxy/unwrap_labels_test.go",
+          "internal/proxy/unwrap_quantile_response_limit_test.go",
+          "internal/proxy/unwrap_range_last_point_test.go",
+          "internal/proxy/unwrap_samples_test.go",
+          "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
           "internal/proxy/upstream_bad_request_test.go",
-          "internal/proxy/utility_coverage_test.go"
+          "internal/proxy/utility_coverage_test.go",
+          "internal/proxy/without_fold_scope_test.go",
+          "internal/proxy/without_open_shapes_test.go"
         ]
       }
     },
@@ -1343,20 +1425,23 @@
         "GET"
       ],
       "path": "/loki/api/v1/rules",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleRules",
+        "pattern": "/loki/api/v1/rules",
+        "route": "rules"
+      },
       "tests": {
         "e2e": [
-          "test/e2e-compat/alerting_compat_test.go",
           "test/e2e-compat/grafana_surface_test.go",
-          "test/e2e-compat/loki_functions_test.go"
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/alerting.go",
+          "internal/proxy/alerting_tenant_label_test.go",
           "internal/proxy/backend_compression_test.go",
           "internal/proxy/coverage_gaps_test.go",
-          "internal/proxy/proxy.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/ruler_fuzz_test.go",
           "internal/proxy/ruler_proxy_test.go"
         ]
@@ -1375,13 +1460,20 @@
         "POST"
       ],
       "path": "/loki/api/v1/rules/{namespace}",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleRules",
+        "pattern": "/loki/api/v1/rules/",
+        "route": "rules_nested"
+      },
       "tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go"
+        ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/proxy.go"
+          "internal/proxy/alerting_tenant_label_test.go",
+          "internal/proxy/ruler_fuzz_test.go",
+          "internal/proxy/ruler_proxy_test.go"
         ]
       }
     },
@@ -1399,9 +1491,15 @@
       "path": "/loki/api/v1/rules/{namespace}/{groupName}",
       "proxy_route": null,
       "tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/alerting_compat_test.go"
+        ],
         "ui": [],
-        "unit": []
+        "unit": [
+          "internal/proxy/alerting_tenant_label_test.go",
+          "internal/proxy/ruler_fuzz_test.go",
+          "internal/proxy/ruler_proxy_test.go"
+        ]
       }
     },
     {
@@ -1411,10 +1509,14 @@
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/compat_test.go",
           "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/otel_compat_test.go",
-          "test/e2e-compat/perf_test.go"
+          "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/service_name_selector_test.go"
         ],
         "ui": [],
         "unit": []
@@ -1437,31 +1539,36 @@
           "test/e2e-compat/compat_extended_test.go",
           "test/e2e-compat/compat_test.go",
           "test/e2e-compat/complex_test.go",
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/features_test.go",
+          "test/e2e-compat/labels_zero_width_test.go",
+          "test/e2e-compat/loki_profile_parity_test.go",
           "test/e2e-compat/loki_validation_parity_test.go",
           "test/e2e-compat/otel_compat_test.go",
           "test/e2e-compat/perf_test.go",
+          "test/e2e-compat/service_name_selector_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go",
           "test/e2e-compat/track_scores_test.go",
           "test/e2e-pipeline/pipeline_test.go",
           "test/integration/boot_test.go"
         ],
-        "ui": [
-          "test/e2e-ui/tests/helpers.ts"
-        ],
+        "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/middleware/compress.go",
           "internal/proxy/compat_cache_test.go",
+          "internal/proxy/detected_level_response_test.go",
           "internal/proxy/gaps_test.go",
-          "internal/proxy/label_handlers.go",
+          "internal/proxy/label_metadata_freshness_test.go",
+          "internal/proxy/labels_inclusive_end_test.go",
+          "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",
           "internal/proxy/metadata_query_validation_test.go",
-          "internal/proxy/middleware.go",
           "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/perf_test.go",
           "internal/proxy/pooled_parser_race_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
+          "internal/proxy/tenant_query_limits_test.go",
+          "internal/proxy/tenant_routing_test.go",
           "internal/proxy/tenant_scope_regression_test.go",
           "internal/proxy/tenant_scoping_test.go",
           "internal/proxy/upstream_bad_request_test.go"
@@ -1484,7 +1591,11 @@
         "GET"
       ],
       "path": "/loki/api/v1/status/buildinfo",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleBuildInfo",
+        "pattern": "/loki/api/v1/status/buildinfo",
+        "route": "handleBuildInfo"
+      },
       "tests": {
         "e2e": [
           "test/e2e-compat/chaining_test.go",
@@ -1495,10 +1606,8 @@
         ],
         "ui": [],
         "unit": [
-          "internal/middleware/compress.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/memleak_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go"
         ]
       }
@@ -1506,6 +1615,7 @@
     {
       "differential_tests": {
         "e2e": [
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/loki_validation_parity_test.go"
@@ -1526,21 +1636,20 @@
       },
       "tests": {
         "e2e": [
+          "test/e2e-compat/detected_level_test.go",
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/log_line_body_test.go",
           "test/e2e-compat/loki_validation_parity_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
           "internal/proxy/compat_cache_test.go",
           "internal/proxy/gaps_test.go",
           "internal/proxy/metadata_query_validation_test.go",
           "internal/proxy/multitenant_merge_test.go",
+          "internal/proxy/multitenant_tenant_label_test.go",
           "internal/proxy/policy_helpers_test.go",
-          "internal/proxy/proxy.go",
           "internal/proxy/proxy_test.go",
-          "internal/proxy/tail.go",
           "internal/proxy/tenant_test.go",
           "internal/proxy/upstream_bad_request_test.go"
         ]
@@ -1557,15 +1666,19 @@
         "GET"
       ],
       "path": "/prometheus/api/v1/alerts",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleAlerts",
+        "pattern": "/prometheus/api/v1/alerts",
+        "route": "alerts_prometheus"
+      },
       "tests": {
         "e2e": [
-          "test/e2e-compat/alerting_compat_test.go"
+          "test/e2e-compat/alerting_compat_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/proxy.go",
+          "internal/proxy/alerting_tenant_label_test.go",
           "internal/proxy/ruler_proxy_test.go"
         ]
       }
@@ -1583,16 +1696,20 @@
         "GET"
       ],
       "path": "/prometheus/api/v1/rules",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleRules",
+        "pattern": "/prometheus/api/v1/rules",
+        "route": "rules_prometheus"
+      },
       "tests": {
         "e2e": [
           "test/e2e-compat/alerting_compat_test.go",
-          "test/e2e-compat/loki_functions_test.go"
+          "test/e2e-compat/loki_functions_test.go",
+          "test/e2e-compat/tenant_label_isolation_test.go"
         ],
         "ui": [],
         "unit": [
-          "internal/metrics/metrics.go",
-          "internal/proxy/proxy.go",
+          "internal/proxy/alerting_tenant_label_test.go",
           "internal/proxy/ruler_proxy_test.go"
         ]
       }
