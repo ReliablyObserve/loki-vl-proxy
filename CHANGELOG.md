@@ -110,6 +110,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   these operators are separate gaps and unchanged. Registry:
   `semantics/non-sum-vector-aggregation-unreduced`.
 
+### Performance
+
+- **A metric range whose window moved reads only the VictoriaLogs buckets it
+  has not read before (`-query-range-extent-cache`, default on).** The proxy
+  cached only exact windows, so a Grafana refresh (the window moves forward a
+  minute) or a re-run (it moves back) recomputed the whole range in
+  VictoriaLogs, while Loki's query frontend answers both from the extents of its
+  results cache and computes only the uncovered part plus the last
+  `max_cache_freshness_per_query` (10m)
+  (`pkg/storage/chunk/cache/resultscache/cache.go` `Do`, `handleHit`,
+  `filterRecentExtents`; `pkg/validation/limits.go:407,432`). On a 6h range
+  (Loki 3.7.7, VictoriaLogs v1.52.0, generator data, p50 per run) Loki answered
+  re-runs in 0.03-0.07 s and refreshes in 0.003-0.004 s; the proxy took
+  0.32-0.98 s for both, for every metric shape measured (the `json`
+  `level_extracted` shapes of `bench/ab` set `extracted-pushdown` and the
+  control `logfmt` count by level), 10 to 100 times slower. The proxy now keeps
+  the buckets of the `stats_query_range` calls of a metric `query_range`
+  request: VictoriaLogs widens such a call to whole buckets and computes each
+  bucket from its own rows (`app/vlselect/logsql/logsql.go`
+  `alignStartEndToStep`, `ProcessStatsQueryRangeRequest`, v1.49.0-v1.53.0),
+  so its answer for a range is the answer for each bucket, in its own series
+  order. A call is answered from the buckets kept for the same tenant, query,
+  step and offset, and VictoriaLogs is asked only for the missing ones (at most
+  three ranges, read side by side); the answer is rebuilt in VictoriaLogs' form
+  and order, byte for byte the one VictoriaLogs gives for the whole range, so
+  the proxy's evaluation and its answer are unchanged. Buckets that ended
+  before `now - -query-range-freshness` (10m, Loki's default) are kept, one
+  entry per split of an hour or 128 steps, in the response cache tiers: memory
+  under `-cache-max-bytes` with its LRU eviction, the disk tier and the peer
+  fleet when configured, for `-query-range-history-cache-ttl` (24h) from the
+  oldest read an entry holds; newer buckets are read on every request. Not
+  kept: answers VictoriaLogs refused, answers that do not read back exactly
+  (the call then goes to VictoriaLogs unchanged), answers larger than one cache
+  entry may be, queries with a subquery (the Drilldown breakdown ranked over the
+  series limit), a time filter, `time_add`, `running_stats` or `total_stats`,
+  and metrics whose `unwrap` the conversion check reads. Paths that read
+  VictoriaLogs otherwise are unchanged: the sliding-window grids of `topk` and
+  `bottomk` inputs and of ranges finer than 11,000 buckets, `/hits`, raw-row
+  evaluation, instant queries and log queries. A row written more than
+  `-query-range-freshness` after its timestamp into a kept range appears when
+  the entry expires, as with Loki's results cache. Outcomes are counted in
+  `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}`
+  (`hit`, `partial`, `miss`, `unreadable`, `too_large`, `error`). The figures
+  above are the motivation and will be re-measured. Registry:
+  `quality/query-range-extent-cache`.
+
 ## [2.33.0] - 2026-10-23
 
 ### Security

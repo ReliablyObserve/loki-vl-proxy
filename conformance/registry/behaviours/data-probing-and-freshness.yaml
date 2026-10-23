@@ -26,3 +26,4 @@ cases:
   - quality/detected-metadata-proxy-cache
   - quality/stats-volume-freshness
   - quality/label-cache-aged-labels-kept
+  - quality/query-range-extent-cache
