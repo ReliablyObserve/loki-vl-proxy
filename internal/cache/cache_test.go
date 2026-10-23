@@ -1,8 +1,11 @@
 package cache
 
 import (
+	"bytes"
+	"context"
 	"fmt"
-	"runtime"
+	"runtime/pprof"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -326,21 +329,23 @@ func TestCache_Close(t *testing.T) {
 // must not accumulate goroutines.
 // conformance: shutdown-releases-background-work
 func TestCache_CloseStopsBackgroundGoroutines(t *testing.T) {
-	runtime.GC()
-	baseline := runtime.NumGoroutine()
-
+	// The caches are built under a pprof label, which their goroutines inherit,
+	// so the test counts exactly its own goroutines: the process total also
+	// moves with caches other tests open and close.
+	const label = "TestCache_CloseStopsBackgroundGoroutines"
 	const caches = 20
 	built := make([]*Cache, 0, caches)
-	for i := 0; i < caches; i++ {
-		if i%2 == 0 {
-			built = append(built, New(time.Hour, 100))
-		} else {
-			built = append(built, NewWithMaxBytes(time.Hour, 100, 1<<20))
+	pprof.Do(context.Background(), pprof.Labels("cache-test", label), func(context.Context) {
+		for i := 0; i < caches; i++ {
+			if i%2 == 0 {
+				built = append(built, New(time.Hour, 100))
+			} else {
+				built = append(built, NewWithMaxBytes(time.Hour, 100, 1<<20))
+			}
 		}
-	}
-	if running := runtime.NumGoroutine(); running < baseline+2*caches {
-		t.Fatalf("expected at least %d goroutines from %d caches, have %d over a baseline of %d",
-			2*caches, caches, running-baseline, baseline)
+	})
+	if running := labelledGoroutines(label); running != 2*caches {
+		t.Fatalf("expected %d goroutines from %d caches, have %d", 2*caches, caches, running)
 	}
 
 	for _, c := range built {
@@ -350,15 +355,38 @@ func TestCache_CloseStopsBackgroundGoroutines(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		runtime.GC()
-		if runtime.NumGoroutine() <= baseline {
+		left := labelledGoroutines(label)
+		if left == 0 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("Close left %d goroutines running (baseline %d)", runtime.NumGoroutine(), baseline)
+			t.Fatalf("Close left %d cache goroutines running", left)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// labelledGoroutines counts the live goroutines carrying the cache-test pprof
+// label with the given value (the goroutine profile groups identical stacks
+// under a count line followed by their labels).
+func labelledGoroutines(value string) int {
+	var buf bytes.Buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&buf, 1); err != nil {
+		return -1
+	}
+	want := fmt.Sprintf("%q:%q", "cache-test", value)
+	total, count := 0, 0
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if n, _, ok := strings.Cut(line, " @ "); ok {
+			count, _ = strconv.Atoi(n)
+			continue
+		}
+		if strings.HasPrefix(line, "# labels: ") && strings.Contains(line, want) {
+			total += count
+			count = 0
+		}
+	}
+	return total
 }
 
 // A key as long as a query is memory the entry holds: it counts toward the
