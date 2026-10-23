@@ -874,3 +874,86 @@ func TestStatsExtentTeeHandsOnOnlyWholeAnswers(t *testing.T) {
 		t.Fatal("an answer over the limit must not be handed on")
 	}
 }
+
+// A heavy query_range call whose window is partly kept reads its missing
+// ranges as heavy calls, one after another: it never holds more
+// -backend-max-concurrent-heavy-queries slots, nor runs more VictoriaLogs
+// stats calls at once, than its uncached call; the answer is the uncached one,
+// and a miss's background store holds no slot.
+// conformance: quality/query-range-extent-cache, backend-admission-and-heavy-query-queueing
+func TestStatsExtentCacheHeavyReadsHoldOneSlot(t *testing.T) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	var lines []slidingFixtureLine
+	for i := 0; i < 3000; i++ {
+		lines = append(lines, slidingFixtureLine{ts: s0.Add(time.Duration(i) * 10 * time.Second).UnixNano(), app: []string{"a", "b"}[i%2], msg: "n=1"})
+	}
+	srv, _ := newSlidingFakeVL(t, lines)
+	var mu sync.Mutex
+	inFlight, maxInFlight := 0, 0
+	counting := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			mu.Lock()
+			inFlight++
+			maxInFlight = max(maxInFlight, inFlight)
+			mu.Unlock()
+			time.Sleep(20 * time.Millisecond) // reads that overlap are seen overlapping
+			defer func() { mu.Lock(); inFlight--; mu.Unlock() }()
+		}
+		srv.Config.Handler.ServeHTTP(w, r)
+	})
+	onSrv, shim := newExtentShim(t, counting)
+	offSrv, _ := newExtentShim(t, srv.Config.Handler)
+	newHeavyProxy := func(url string, on bool) *Proxy {
+		c := cache.NewWithMaxBytes(time.Minute, 100000, 256<<20)
+		t.Cleanup(c.Close)
+		p, err := New(Config{BackendURL: url, Cache: c, LogLevel: "error", QueryRangeExtentCache: on, QueryRangeExtentCacheTTL: time.Hour,
+			BackendMaxConcurrentHeavyQueries: 2, BackendHeavyQueryMinRange: time.Hour, BackendHeavyQueryQueueWait: 5 * time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+		p.storeBackendVersion("v1.50.0", "v1.50.0")
+		return p
+	}
+	on, off := newHeavyProxy(onSrv.URL, true), newHeavyProxy(offSrv.URL, false)
+	query := `sum by (app) (count_over_time({app=~".+"}[1m]))`
+	step := time.Minute
+	// Keep two separate pieces, then ask for a window around both: three
+	// missing ranges, the middle and outer ones longer than the 1h heavy range.
+	for _, w := range []extentWindow{{s0.Add(3 * time.Hour), s0.Add(4 * time.Hour), step}, {s0.Add(6 * time.Hour), s0.Add(7 * time.Hour), step}} {
+		if code, body := extentQueryRange(t, on, query, w.start, w.end, w.step, nil); code != http.StatusOK {
+			t.Fatalf("%d %s", code, body)
+		}
+		if n := heavySlotsInUse(on); n != 0 {
+			t.Fatalf("a slot is held after the request: %d", n)
+		}
+	}
+	shim.reset()
+	mu.Lock()
+	maxInFlight = 0
+	mu.Unlock()
+	start, end := s0.Add(30*time.Minute), s0.Add(8*time.Hour)
+	_, want := extentQueryRange(t, off, query, start, end, step, nil)
+	code, got := extentQueryRange(t, on, query, start, end, step, nil)
+	if code != http.StatusOK || !bytes.Equal(got, want) {
+		t.Fatalf("answer differs\n with: %d %s\nwithout: %s", code, got, want)
+	}
+	calls, _ := shim.bucketsRead()
+	mu.Lock()
+	defer mu.Unlock()
+	if calls < 2 {
+		t.Fatalf("expected the missing ranges to be read apart, got %d calls", calls)
+	}
+	if maxInFlight != 1 {
+		t.Fatalf("%d VictoriaLogs stats calls ran at once for one request; its uncached call is one", maxInFlight)
+	}
+	if n := heavySlotsInUse(on); n != 0 {
+		t.Fatalf("a slot is held after the request: %d", n)
+	}
+}
+
+func heavySlotsInUse(p *Proxy) int {
+	p.heavyQueryLimiter.mu.Lock()
+	defer p.heavyQueryLimiter.mu.Unlock()
+	return p.heavyQueryLimiter.inUse
+}

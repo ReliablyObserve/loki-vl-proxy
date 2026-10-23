@@ -155,15 +155,32 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	fragments := make([]*statsExtentFragment, len(gaps))
 	errs := make([]error, len(gaps))
 	resps := make([]*http.Response, len(gaps))
-	var wg sync.WaitGroup
-	for i, gap := range gaps {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, limit)
-		}()
+	if p.statsExtentGapsHeavy(req, gaps) {
+		// The uncached call is heavy: it holds one of
+		// -backend-max-concurrent-heavy-queries slots until its answer is
+		// read. Each read of a missing range takes such a slot too, even one
+		// shorter than -backend-heavy-query-min-range (together they read
+		// what the uncached call reads), and they go one after another, so
+		// the request never holds more than the one slot its uncached call
+		// would.
+		fetchCtx = context.WithValue(fetchCtx, statsExtentHeavyKey{}, true)
+		for i, gap := range gaps {
+			// The first read that fails or cannot be used decides the answer.
+			if fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, limit); fragments[i] == nil {
+				break
+			}
+		}
+	} else {
+		var wg sync.WaitGroup
+		for i, gap := range gaps {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, limit)
+			}()
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 	for i := range gaps {
 		if errs[i] != nil {
 			return nil, errs[i], "error"
@@ -301,19 +318,51 @@ func (p *Proxy) statsExtentPassThrough(ctx context.Context, req *statsExtentRequ
 	return resp, nil, "unreadable"
 }
 
+// statsExtentHeavyKey marks the reads of the missing ranges of a heavy call:
+// each is admitted as a heavy call (admitBackendRequest).
+type statsExtentHeavyKey struct{}
+
+func statsExtentReadIsHeavy(ctx context.Context) bool {
+	heavy, _ := ctx.Value(statsExtentHeavyKey{}).(bool)
+	return heavy
+}
+
+// statsExtentGapsHeavy reports whether the request or one of its missing
+// ranges is a heavy VictoriaLogs call (isHeavyBackendRequest), which takes a
+// heavy-query slot.
+func (p *Proxy) statsExtentGapsHeavy(req *statsExtentRequest, gaps [][2]int64) bool {
+	if p.heavyQueryLimiter == nil {
+		return false
+	}
+	if isHeavyBackendRequest(statsQueryRangePath, req.params, p.backendHeavyQueryMinRange) {
+		return true
+	}
+	for _, gap := range gaps {
+		if isHeavyBackendRequest(statsQueryRangePath, req.gapParams(gap), p.backendHeavyQueryMinRange) {
+			return true
+		}
+	}
+	return false
+}
+
+// gapParams are the arguments of the call reading the buckets of gap.
+func (r *statsExtentRequest) gapParams(gap [2]int64) url.Values {
+	params := cloneURLValues(r.params)
+	if gap[0] != r.first {
+		params.Set("start", time.Unix(0, r.edge(gap[0])).UTC().Format(time.RFC3339Nano))
+	}
+	if gap[1] != r.last {
+		// The end is exclusive: the last bucket asked for ends there.
+		params.Set("end", time.Unix(0, r.edge(gap[1]+1)).UTC().Format(time.RFC3339Nano))
+	}
+	return params
+}
+
 // statsExtentFetch reads the buckets of gap from VictoriaLogs: a non-nil
 // response is VictoriaLogs' refusal, a nil fragment without one an answer the
 // cache cannot use.
 func (p *Proxy) statsExtentFetch(ctx context.Context, req *statsExtentRequest, gap [2]int64, limit int64) (*statsExtentFragment, *http.Response, error) {
-	params := cloneURLValues(req.params)
-	if gap[0] != req.first {
-		params.Set("start", time.Unix(0, req.edge(gap[0])).UTC().Format(time.RFC3339Nano))
-	}
-	if gap[1] != req.last {
-		// The end is exclusive: the last bucket asked for ends there.
-		params.Set("end", time.Unix(0, req.edge(gap[1]+1)).UTC().Format(time.RFC3339Nano))
-	}
-	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, params)
+	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.gapParams(gap))
 	if err != nil {
 		return nil, nil, err
 	}
