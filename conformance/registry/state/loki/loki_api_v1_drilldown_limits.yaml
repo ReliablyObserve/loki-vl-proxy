@@ -1,6 +1,6 @@
 id: loki_api_v1_drilldown_limits
-state: gap
+state: partial
 reason: |
-  Seeded from the repository: no proxy route, 1 test files compare it against Loki.
+  The proxy routes it (handleDrilldownLimits); 2 test files compare it against Loki.
 owner_decision: null
 waiver: null

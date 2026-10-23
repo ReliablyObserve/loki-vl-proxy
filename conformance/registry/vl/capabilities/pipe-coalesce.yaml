@@ -1,0 +1,20 @@
+id: pipe-coalesce
+kind: version_gated_capability
+since: v1.51
+generated:
+  used_in: 2
+
+description: |
+  The `coalesce(field1, field2, ...) default "x" as result` pipe (VictoriaLogs
+  v1.51.0) writes the first non-empty field of the list, or the default, into
+  one result field.
+proxy_usage: |
+  The translator derives service_name for streams that carry none with one
+  `coalesce` over Loki's discover_service_name field order, defaulting to
+  `unknown_service` (serviceNameGroupingPipes in internal/translator/translator.go).
+fallback: |
+  On v1.49 and v1.50 (`logsql.Capabilities.PipeCoalesce` false) the same answer
+  comes from a chain of `format "<field>" as service_name keep_original_fields`
+  pipes, one per field after the first, then a final `format` with the default.
+  The capability table is unit-tested in internal/logsql/capabilities_test.go.
+proves: []  # case ids that exercise it

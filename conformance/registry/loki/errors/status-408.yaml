@@ -1,9 +1,9 @@
-id: status-resp.StatusCode
-status: resp.StatusCode
-error_type: None
+id: status-408
+status: 408
+error_type: bad_data
 generated:
-  proxy_call_sites: 1
-  dynamic_sites: 1
+  proxy_call_sites: 2
+  dynamic_sites: 2
   literal_messages:
 
 

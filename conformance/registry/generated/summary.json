@@ -3,30 +3,30 @@
   "execution": {
     "hybrid": 4,
     "native_vl": 6,
-    "not_implemented": 20,
-    "proxy_side": 5
+    "not_implemented": 12,
+    "proxy_side": 13
   },
-  "implemented": 15,
+  "implemented": 23,
   "loki_version": "v3.7.7",
   "proven": 12,
   "scores": {
-    "coverage": 0.5143,
-    "implementation": 0.4286,
-    "native_share_of_implemented": 0.4
+    "coverage": 0.5429,
+    "implementation": 0.6571,
+    "native_share_of_implemented": 0.2609
   },
   "state": {
-    "gap": 20,
+    "gap": 12,
     "not-applicable": 0,
-    "partial": 3,
+    "partial": 11,
     "proven": 12,
     "unknown": 0,
     "waived": 0
   },
   "vl_surface": {
     "endpoints": 11,
-    "pipes": 22,
+    "pipes": 23,
     "stats_functions": 14,
-    "version_gated": 4
+    "version_gated": 2
   },
-  "with_differential_tests": 18
+  "with_differential_tests": 19
 }

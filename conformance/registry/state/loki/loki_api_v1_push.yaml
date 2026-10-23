@@ -1,6 +1,6 @@
 id: loki_api_v1_push
 state: gap
 reason: |
-  Seeded from the repository: no proxy route, 29 test files compare it against Loki.
+  Seeded from the repository: the proxy answers it only to refuse it (read-only proxy, handleWriteBlocked). internal/proxy/critical_fixes_test.go asserts the 405 refusal.
 owner_decision: null
 waiver: null

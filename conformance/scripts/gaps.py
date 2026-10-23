@@ -103,8 +103,9 @@ def main():
               "would never emit. Each needs a registry entry stating Loki's own text.", "",
               "| Status | errorType | proxy call sites | literal messages | dynamic |", "|---|---|---:|---:|---:|"]
     for key, value in errors.items():
-        if key.isdigit():
-            lines.append(f"| {key} | {value['error_type'] or '—'} | {value['count']} | "
+        if key.isdigit() or key == "derived":
+            label = key if key.isdigit() else "set at run time"
+            lines.append(f"| {label} | {value['error_type'] or '—'} | {value['count']} | "
                          f"{len(value['messages'])} | {value['dynamic_sites']} |")
     behaviours = []
     base = f"{ROOT}/behaviours"

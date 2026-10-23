@@ -163,6 +163,9 @@
       "test/e2e-compat/compat_option_matrix_test.go",
       "test/e2e-compat/stack_profiles_test.go"
     ],
+    "loki_api_v1_detected_field_name_values": [
+      "test/e2e-compat/detected_level_test.go"
+    ],
     "loki_api_v1_detected_fields": [
       "internal/proxy/drilldown_compat_test.go",
       "internal/proxy/stage_field_exposure_test.go",
@@ -750,7 +753,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 327,
+  "registry_items": 323,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1284,6 +1287,7 @@
       "semantics/json-metric-detected-level-derivation"
     ],
     "test/e2e-compat/detected_level_test.go": [
+      "loki_api_v1_detected_field_name_values",
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
@@ -1541,7 +1545,6 @@
     "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_delete",
-    "loki_api_v1_detected_field_name_values",
     "loki_api_v1_detected_labels",
     "loki_api_v1_format_query",
     "loki_api_v1_index_shards",
@@ -1623,5 +1626,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 142
+  "wired_items": 143
 }

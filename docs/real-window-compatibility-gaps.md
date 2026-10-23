@@ -5,6 +5,15 @@ description: Measured compatibility findings using isolated populated fixtures.
 
 # Real-window compatibility findings
 
+**Current state lives in the conformance registry, not on this page.** The reports below are generated from it on every change and checked in CI:
+
+- [Coverage map](compatibility-coverage.md): every Loki endpoint, how it is served and what evidence proves it.
+- [Ranked differences from Loki](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md): every known difference, open or fixed, ranked by user impact.
+- [Open gaps](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/gaps.md): endpoints, the error surface, behaviour tracks, the LogQL surface and VictoriaLogs reuse opportunities.
+- [Performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md): every measured shape the proxy answers slower than Loki.
+
+This page records the populated-window measurement that corrected the exhaustive helper's timestamps, the fixes that followed it, and the limits found then. Versions named below are the ones measured at the time.
+
 These findings cover populated-query regressions and resource guards following the v1.67.0 security integration. They do not establish full LogQL parity. Each correction has a focused regression; the remaining limits below define the scope of the compatibility claim.
 
 ## Timestamp defect

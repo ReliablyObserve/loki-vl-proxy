@@ -1,11 +1,14 @@
-id: status-rpe.status
-status: rpe.status
+id: status-derived
+status: derived
 error_type: None
 generated:
-  proxy_call_sites: 1
-  dynamic_sites: 1
+  proxy_call_sites: 68
+  dynamic_sites: 66
   literal_messages:
-
+    - "alerting backend error"
+    - "cold backend error: "
+    - "left query: "
+    - "right query: "
 
 loki_behaviour: |
   TODO: when Loki returns this status, with its own message text

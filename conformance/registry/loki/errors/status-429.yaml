@@ -1,6 +1,6 @@
-id: status-httpStatus
-status: httpStatus
-error_type: None
+id: status-429
+status: 429
+error_type: bad_data
 generated:
   proxy_call_sites: 1
   dynamic_sites: 1

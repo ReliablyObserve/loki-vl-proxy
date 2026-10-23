@@ -15,13 +15,23 @@ Usage: sync_proxy.py [--endpoints conformance/registry/generated/loki/<ver>/endp
 import argparse, json, os, re, subprocess, sys
 from registry_io import load_json, read_text
 
-ROUTE_RE = re.compile(r'mux\.Handle\(\s*"([^"]+)"\s*,\s*p\.routeHandler\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*p\.(\w+)')
+# Every wrapper RegisterProxyRoutes registers Loki routes with: the full chain
+# (p.routeHandler), the tenant-free chain (rlNoTenant) and the ruler chain
+# (alertRead). A bare mux.HandleFunc is a route too.
+ROUTE_RE = re.compile(r'mux\.Handle\(\s*"([^"]+)"\s*,\s*(?:p\.routeHandler|rlNoTenant|alertRead)\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*p\.(\w+)')
+HANDLEFUNC_RE = re.compile(r'mux\.HandleFunc\(\s*"([^"]+)"\s*,\s*p\.(\w+)\s*\)')
+# Handlers that answer a route only to refuse it: the route exists, the endpoint
+# is not implemented.
+REFUSING_HANDLERS = {"handleWriteBlocked"}
+# Path parameters in a Loki route template, e.g. {name} or {namespace}.
+PARAM_RE = re.compile(r"\{[A-Za-z]+\}")
 # A test that names both the proxy and Loki base URL compares the two.
 DIFFERENTIAL_MARKERS = ("lokiURL", "lokiBase", "LOKI_URL", "lokiDatasource", "P158F1C6922A12716")
+# Only test files count: a production file that names a route is not a test.
 KINDS = (
-    ("unit", ["internal"], (".go",)),
-    ("e2e", ["test/e2e-compat", "test/e2e-fleet", "test/e2e-pipeline", "test/integration"], (".go",)),
-    ("ui", ["test/e2e-ui"], (".ts",)),
+    ("unit", ["internal"], ("_test.go",)),
+    ("e2e", ["test/e2e-compat", "test/e2e-fleet", "test/e2e-pipeline", "test/integration"], ("_test.go",)),
+    ("ui", ["test/e2e-ui"], (".spec.ts",)),
 )
 
 
@@ -30,7 +40,20 @@ def proxy_routes(root):
     source = read_text(os.path.join(root, "internal/proxy/proxy.go"))
     for pattern, metric, template, handler in ROUTE_RE.findall(source):
         routes[template] = {"pattern": pattern, "route": metric, "handler": handler}
+    for pattern, handler in HANDLEFUNC_RE.findall(source):
+        if handler in REFUSING_HANDLERS:
+            continue
+        routes.setdefault(pattern, {"pattern": pattern, "route": handler, "handler": handler})
     return routes
+
+
+def path_regex(path):
+    """An extended regexp matching the path in a test, with each {param}
+    standing for one path segment. The path must end there: /loki/api/v1/label
+    does not match /loki/api/v1/labels or /loki/api/v1/label/app/values."""
+    parts = PARAM_RE.split(path)
+    body = "[^/\"'?` ]+".join(re.sub(r"([.^$*+?()\[\]{}|\\])", r"\\\1", part) for part in parts)
+    return body + "([\"'?` )]|$)"
 
 
 def grep(root, needle, directories, suffixes):
@@ -40,7 +63,7 @@ def grep(root, needle, directories, suffixes):
         if not os.path.isdir(base):
             continue
         try:
-            output = subprocess.run(["grep", "-rn", "--include=*" + suffixes[0], needle, base],
+            output = subprocess.run(["grep", "-rnE", "--include=*" + suffixes[0], needle, base],
                                     capture_output=True, text=True).stdout
         except OSError:
             continue
@@ -63,7 +86,7 @@ def main():
     for endpoint in endpoints["endpoints"]:
         path = endpoint["path"]
         route = routes.get(path)
-        needle = path.replace("{name}", "").replace("//", "/").rstrip("/")
+        needle = path_regex(path)
         entry = {
             "id": endpoint["id"],
             "path": path,
