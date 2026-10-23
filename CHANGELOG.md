@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.32.0] - 2026-10-23
+
 ### Security
 
 - **Breaking: a numeric `X-Scope-OrgID` reaches VictoriaLogs only in its canonical spelling; `007`, `00`, `+7`, `-1` and values above `4294967295` are now refused with `403 unknown tenant` unless the tenant map lists that exact string.**
