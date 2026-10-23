@@ -278,7 +278,7 @@ The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `log
 | `quantile_over_time` φ < 0 | Rejected at semantic pass: 400 |
 | Unknown function (`label_replace`, custom) | `OpaqueMetricExpr`: raw text forwarded to VL unchanged |
 | VL version < required capability | `Capabilities` gating downgrades construct (e.g. `BestIPv4Range` → regexp fallback) |
-| No LogsQL equivalent for valid LogQL | `UnsupportedError` — the query handler returns HTTP 400 with `errorType: bad_data` and the translator message (for example `count_values is not translatable to LogsQL`) |
+| No LogsQL equivalent for valid LogQL | `UnsupportedError` — the query handler returns HTTP 400 with `errorType: bad_data` and the translator message (for example ``avg_over_time requires `| unwrap <field>` for range aggregation``) |
 | `| line_format` unclosed template | Rejected at semantic pass: 400 with template parse error |
 | `| pattern` parser stage | Mapped to VL `seq()` word-match filter if caps allow, else regexp |
 

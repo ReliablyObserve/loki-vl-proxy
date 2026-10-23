@@ -154,7 +154,7 @@ Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `st
 
 `label_replace(v, dst, repl, src, regex)` and `label_join(v, dst, sep, src1, ...)` are handled via a marker-suffix pattern: the inner expression is translated to VL, the spec is base64-encoded and embedded as a query suffix, the proxy strips the marker before sending to VL and applies the label operation to the matrix response.
 
-`count_values(label, v)` is not translatable — VictoriaLogs has no primitive that groups by metric values. Queries using `count_values` return a descriptive error.
+`count_values(label, v)` is not LogQL — Loki v3.7.7 has no such aggregation. Queries using `count_values` get Loki's parse error (`parse error at line 1, col 1: syntax error: unexpected IDENTIFIER`, at the position of the name).
 
 ### Binary Expressions
 
