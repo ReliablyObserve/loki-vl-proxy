@@ -872,11 +872,21 @@ var labelWarmupWindows = []time.Duration{
 // request. Runs in a background goroutine; does not block startup.
 func (p *Proxy) warmMetadataCacheOnStartup() {
 	const warmupStaleThreshold = 30 * time.Second
+	stop := p.keepWarmStop // closed by Shutdown
 	go func() {
 		// Wait until VL is reachable before warming. Exponential backoff up to 10s
 		// per retry; total deadline 60s aligns with Kubernetes readiness probe timeout.
 		warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer warmCancel()
+		if stop != nil {
+			go func() {
+				select {
+				case <-stop:
+					warmCancel()
+				case <-warmCtx.Done():
+				}
+			}()
+		}
 
 		backoff := 2 * time.Second
 		for {

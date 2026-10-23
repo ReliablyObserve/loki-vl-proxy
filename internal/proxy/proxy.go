@@ -1696,6 +1696,22 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	}
 	p.stopPatternsPersistenceLoop(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
+	// The proxy creates these two caches itself, so it stops their background
+	// goroutines. The caches handed in through Config belong to the caller.
+	if p.translationCache != nil {
+		p.translationCache.Close()
+	}
+	if p.streamFieldNamesCache != nil {
+		p.streamFieldNamesCache.Close()
+	}
+	// Each idle keep-alive connection of the proxy's own backend clients keeps
+	// two goroutines; in-flight requests are not affected.
+	if p.client != nil {
+		p.client.CloseIdleConnections()
+	}
+	if p.tailClient != nil {
+		p.tailClient.CloseIdleConnections()
+	}
 	if err := p.persistPatternsNow("shutdown"); err != nil {
 		return err
 	}

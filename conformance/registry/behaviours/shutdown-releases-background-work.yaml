@@ -1,0 +1,24 @@
+id: shutdown-releases-background-work
+kind: resource_control
+title: Shutting a proxy down stops every goroutine it started
+
+loki: |
+  Loki components own their background loops and stop them on shutdown; a
+  process that restarts a module does not carry the old module's goroutines.
+
+victorialogs: |
+  VictoriaLogs is a separate process; nothing it runs lives in the proxy.
+
+proxy: |
+  Every goroutine the proxy starts for itself (its two internal caches, the rate
+  limiter, the cold router, the persistence loops, the keep-warm loop and the
+  startup label warm-up, also while it waits for VictoriaLogs to be ready, and
+  the idle keep-alive connections of the HTTP clients it creates) ends by
+  Shutdown. Caches handed in through the configuration belong to the caller
+  and are not closed by Shutdown. A process or a test that builds and shuts
+  down proxies repeatedly returns to its starting goroutine count, whichever
+  features are switched on.
+
+implementation:
+  - internal/proxy/proxy.go
+  - internal/cache/cache.go

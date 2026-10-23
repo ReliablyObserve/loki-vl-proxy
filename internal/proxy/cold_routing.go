@@ -107,6 +107,11 @@ func (cr *ColdRouter) Start(ctx context.Context) {
 // called. Wired into Proxy.Shutdown so the goroutine + manifest HTTP client do
 // not leak across proxy lifecycles (tests, embedding, rolling restarts).
 func (cr *ColdRouter) Stop(ctx context.Context) {
+	// After the loop has drained, release the manifest client's idle
+	// keep-alive connections (two goroutines each).
+	if cr.client != nil {
+		defer cr.client.CloseIdleConnections()
+	}
 	select {
 	case <-cr.stopCh:
 	default:
