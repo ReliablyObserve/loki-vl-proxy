@@ -238,7 +238,16 @@ type Config struct {
 	QueryRangeExtentCache bool
 	// QueryRangeExtentCacheTTL is how long kept buckets are reused, from
 	// their oldest read; 0 keeps none.
-	QueryRangeExtentCacheTTL           time.Duration
+	QueryRangeExtentCacheTTL time.Duration
+	// ParseRiskProbeCacheTTL is how long a window found free of parse-risk
+	// lines (and a window's level-presence mask) is remembered, from the
+	// check of its oldest part; 0 selects the default (1h), a negative value
+	// remembers nothing.
+	ParseRiskProbeCacheTTL time.Duration
+	// ParseRiskProbeSettle is the age under which a part of a window is
+	// never remembered and is probed on every request; 0 selects the default
+	// (5m), a negative value remembers every part.
+	ParseRiskProbeSettle               time.Duration
 	QueryRangeWindowTimeout            time.Duration
 	QueryRangePartialResponses         bool
 	QueryRangeBackgroundWarm           bool
@@ -649,6 +658,8 @@ type Proxy struct {
 	queryRangeAlignWindows                bool
 	queryRangeExtentCache                 bool
 	queryRangeExtentCacheTTL              time.Duration
+	parseRiskProbeCacheTTL                time.Duration
+	parseRiskProbeSettle                  time.Duration
 	queryRangeWindowTimeout               time.Duration
 	queryRangePartialResponses            bool
 	queryRangeBackgroundWarm              bool
@@ -1291,6 +1302,8 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
 		queryRangeExtentCache:                 cfg.QueryRangeExtentCache,
 		queryRangeExtentCacheTTL:              max(cfg.QueryRangeExtentCacheTTL, 0),
+		parseRiskProbeCacheTTL:                parseRiskProbeDuration(cfg.ParseRiskProbeCacheTTL, defaultParseRiskProbeCacheTTL),
+		parseRiskProbeSettle:                  parseRiskProbeDuration(cfg.ParseRiskProbeSettle, defaultParseRiskProbeSettle),
 		queryRangeWindowTimeout:               queryRangeWindowTimeout,
 		queryRangePartialResponses:            cfg.QueryRangePartialResponses,
 		queryRangeBackgroundWarm:              cfg.QueryRangeBackgroundWarm,
@@ -1437,6 +1450,8 @@ func New(cfg Config) (*Proxy, error) {
 			queryRangeAlignWindows:                p.queryRangeAlignWindows,
 			queryRangeExtentCache:                 p.queryRangeExtentCache,
 			queryRangeExtentCacheTTL:              p.queryRangeExtentCacheTTL,
+			parseRiskProbeCacheTTL:                p.parseRiskProbeCacheTTL,
+			parseRiskProbeSettle:                  p.parseRiskProbeSettle,
 			queryRangeWindowTimeout:               p.queryRangeWindowTimeout,
 			queryRangePartialResponses:            p.queryRangePartialResponses,
 			queryRangeBackgroundWarm:              p.queryRangeBackgroundWarm,
