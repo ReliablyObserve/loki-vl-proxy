@@ -149,7 +149,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 		gaps = [][2]int64{{gaps[0][0], gaps[len(gaps)-1][1]}}
 	}
 	if len(gaps) == 1 && gaps[0] == [2]int64{req.first, req.last} {
-		// Nothing stored: the call as it came, read once and kept.
+		// Nothing stored: the call as it came, kept off the request path.
 		return p.statsExtentMiss(fetchCtx, req, lastStored, chunks, limit)
 	}
 	fragments := make([]*statsExtentFragment, len(gaps))
@@ -205,7 +205,9 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	return statsExtentResponse(body), nil, outcome
 }
 
-// statsExtentMiss sends the call unchanged and keeps its buckets.
+// statsExtentMiss sends the call unchanged and hands its answer on as it
+// streams, keeping a copy of what the caller reads: once the caller has read
+// it whole, the buckets are taken apart and stored off the request path.
 func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, lastStored int64, chunks map[int64]*statsExtentChunk, limit int64) (*http.Response, error, string) {
 	resp, err := p.vlPostHTTP(ctx, statsQueryRangePath, req.params)
 	if err != nil {
@@ -214,25 +216,80 @@ func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, la
 	if resp.StatusCode != http.StatusOK {
 		return resp, nil, "error"
 	}
-	head, whole, err := readStatsExtentBody(resp.Body, limit)
-	if err != nil {
-		_ = resp.Body.Close()
-		return nil, err, "error"
+	resp.Body = &statsExtentTee{ReadCloser: resp.Body, limit: limit, done: func(body []byte) {
+		p.storeStatsExtentAsync(func() {
+			outcome := "unreadable"
+			if f, ok := parseStatsExtentFragment(body, req, req.first, req.last); ok {
+				p.storeStatsExtentChunks(req, lastStored, chunks, []*statsExtentFragment{f})
+				outcome = "stored"
+			}
+			p.observeInternalOperation(context.Background(), "stats_extent_cache", outcome, 0)
+		})
+	}}
+	return resp, nil, "miss"
+}
+
+// statsExtentTee copies what the caller reads of a VictoriaLogs answer, up to
+// limit bytes, and hands the copy to done when the caller closes the body
+// after reading it to the end. An answer read in part (a caller that stopped
+// at a limit) or larger than limit is not handed on.
+type statsExtentTee struct {
+	io.ReadCloser
+	limit     int64
+	buf       bytes.Buffer
+	over, eof bool
+	closed    bool
+	done      func([]byte)
+}
+
+func (t *statsExtentTee) Read(b []byte) (int, error) {
+	n, err := t.ReadCloser.Read(b)
+	if n > 0 && !t.over {
+		if int64(t.buf.Len()+n) > t.limit {
+			t.over = true
+			t.buf = bytes.Buffer{}
+		} else {
+			t.buf.Write(b[:n])
+		}
 	}
-	if !whole {
-		// Larger than one cache entry may be: handed on as it streams.
-		resp.Body = &statsExtentPrefixedBody{Reader: io.MultiReader(bytes.NewReader(head), resp.Body), Closer: resp.Body}
-		resp.ContentLength = -1
-		return resp, nil, "too_large"
+	if err == io.EOF {
+		t.eof = true
 	}
-	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(head))
-	resp.ContentLength = int64(len(head))
-	if f, ok := parseStatsExtentFragment(head, req, req.first, req.last); ok {
-		p.storeStatsExtentChunks(req, lastStored, chunks, []*statsExtentFragment{f})
-		return resp, nil, "miss"
+	return n, err
+}
+
+func (t *statsExtentTee) Close() error {
+	err := t.ReadCloser.Close()
+	if !t.closed {
+		t.closed = true
+		if t.eof && !t.over {
+			t.done(t.buf.Bytes())
+		}
 	}
-	return resp, nil, "unreadable"
+	return err
+}
+
+// statsExtentStoreSlots bounds the stores running off the request path; an
+// answer that finds every slot busy is not kept.
+const statsExtentStoreSlots = 4
+
+// storeStatsExtentAsync runs store in the background when a slot is free.
+// Shutdown waits for the running stores.
+func (p *Proxy) storeStatsExtentAsync(store func()) {
+	select {
+	case p.statsExtentStoreSlots <- struct{}{}:
+	default:
+		p.observeInternalOperation(context.Background(), "stats_extent_cache", "store_skipped", 0)
+		return
+	}
+	p.statsExtentStores.Add(1)
+	go func() {
+		defer func() {
+			<-p.statsExtentStoreSlots
+			p.statsExtentStores.Done()
+		}()
+		store()
+	}()
 }
 
 // statsExtentPassThrough sends the call unchanged and hands its answer on.
@@ -322,11 +379,6 @@ func (p *Proxy) loadStatsExtentChunks(req *statsExtentRequest, lastStored int64)
 		}
 	}
 	return chunks
-}
-
-type statsExtentPrefixedBody struct {
-	io.Reader
-	io.Closer
 }
 
 func statsExtentResponse(body []byte) *http.Response {
