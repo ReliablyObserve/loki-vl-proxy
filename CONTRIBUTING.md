@@ -58,6 +58,8 @@ python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 
 `change_scope.py` also classifies each changed path as product or infra (`classify()`). CI runs the product jobs (unit tests, e2e, compat, bench and the rest) when any changed path is product, and skips them for a pull request that changes only infra paths such as `.github/`, `scripts/`, compose files, `examples/`, `docs/` and `website/`. A path no rule recognises counts as product. Add the `ci-full` label to force a full run. Pushes to `main` always run everything.
 
+CI spends no runs on a pull request that conflicts with `main`. GitHub does not start pull request runs while a conflict exists, and after every push to `main` the `cancel-conflicted-pr-runs` workflow (`scripts/ci/cancel_conflicted_pr_runs.py`) cancels the queued and running pull request runs of every open pull request that now conflicts. Rebase, then push once.
+
 A Go toolchain bump changes the shipped binary, so bump it by hand and keep `go.mod`, the `Dockerfile` builder image and every `setup-go` `go-version` equal; `scripts/ci/tests/test_go_toolchain_pins.py` fails when they differ.
 
 ## Compatibility Rules
