@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.30.1] - 2026-10-22
+
 ### Security
 
 - **The high CodeQL alert `go/allocation-size-overflow` on the stored-level
