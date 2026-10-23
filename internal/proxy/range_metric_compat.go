@@ -50,6 +50,7 @@ type rangeMetricSample struct {
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
 	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	withoutClauseRE     = regexp.MustCompile(`\bwithout\s*\(`)
 	outerByAfterRE      = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
 	outerByBeforeRE     = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
@@ -170,11 +171,27 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	logql = strings.TrimSpace(logql)
 	// Strip label_replace wrappers so the inner metric function is visible.
 	logql = stripOuterLabelReplace(logql)
-	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
-	// so we parse the inner range function, not the aggregation operator.
-	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {
+	// Strip outer aggregations like "sum by (method) (rate(...))" → "rate(...)"
+	// so we parse the inner range function, not the aggregation operators; a
+	// nested one (sum(max(rate(...)))) goes down to the range function too.
+	for depth := 0; ; depth++ {
+		loc := outerAggregationRE.FindStringIndex(logql)
+		if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
+			break
+		}
+		if depth > 0 && (withoutClauseRE.MatchString(logql[:loc[1]]) || translator.FoldingWithoutOp(logql) != "") {
+			// A nested `without` is not the aggregation the proxy folds
+			// (the outermost one): it is answered as it was before.
+			break
+		}
 		inner := strings.TrimSpace(logql[loc[1]:])
-		if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") {
+		wrapped := strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")")
+		if !wrapped && depth > 0 {
+			// A range function whose name starts like an aggregation's
+			// (count_over_time): the operators are already stripped.
+			break
+		}
+		if wrapped {
 			inner = strings.TrimSpace(inner[1 : len(inner)-1])
 		}
 		logql = inner
@@ -450,7 +467,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	}
 	// The evaluator decides on the request's query text (isSumAllLogRange): the
 	// fold must read the same text.
-	return foldUngroupedSum(w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
+	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
 }
@@ -524,7 +541,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 			return p.proxyManualRangeMetricInstant(w, shaped, shapedSpec, origSpec, manualFunc)
 		}
 	}
-	return foldUngroupedSum(w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
+	return foldVectorAggregations(p, w, r, originalLogql, func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 	})
 }
@@ -1404,7 +1421,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		var metric map[string]string
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
-			if folding, _ := ctx.Value(withoutFoldKey{}).(bool); folding {
+			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
 			}
 		} else {

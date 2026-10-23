@@ -52,7 +52,7 @@ would never emit. Each needs a registry entry stating Loki's own text.
 | 500 | internal | 6 | 2 | 6 |
 | 502 | unavailable | 13 | 8 | 10 |
 | 503 | timeout | 1 | 1 | 0 |
-| set at run time | — | 68 | 4 | 66 |
+| set at run time | — | 69 | 4 | 67 |
 
 ## Behaviour tracks
 
@@ -67,7 +67,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 9 | 0 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 3 | partial |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
-| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 15 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 18 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 0 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 8 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
@@ -79,7 +79,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 4 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 8 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 8 | 9 | partial |
 
 ## LogQL surface (v3.7.7)
 

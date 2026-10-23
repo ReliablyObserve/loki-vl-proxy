@@ -607,6 +607,10 @@ func foldingWithoutOp(logql string) string {
 	return ""
 }
 
+// FoldingWithoutOp returns the operator of the `<op> without (...)` the proxy
+// folds when logql is that expression, or "" (see foldingWithoutOp).
+func FoldingWithoutOp(logql string) string { return foldingWithoutOp(logql) }
+
 // peelWithoutWrapper returns the expression a ranking, sorting or label
 // transform wraps, when s is exactly that call.
 func peelWithoutWrapper(s string) (string, bool) {
