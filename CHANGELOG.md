@@ -113,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - **A metric range whose window moved reads only the VictoriaLogs buckets it
-  has not read before (`-query-range-extent-cache`, default on).** The proxy
+  has not read before (`-query-range-extent-cache`, default on;
+  `-query-range-extent-cache-ttl`, default 1h).** The proxy
   cached only exact windows, so a Grafana refresh (the window moves forward a
   minute) or a re-run (it moves back) recomputed the whole range in
   VictoriaLogs, while Loki's query frontend answers both from the extents of its
@@ -139,8 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before `now - -query-range-freshness` (10m, Loki's default) are kept, one
   entry per split of an hour or 128 steps, in the response cache tiers: memory
   under `-cache-max-bytes` with its LRU eviction, the disk tier and the peer
-  fleet when configured, for `-query-range-history-cache-ttl` (24h) from the
-  oldest read an entry holds; newer buckets are read on every request. Not
+  fleet when configured, for `-query-range-extent-cache-ttl` (1h, Loki's
+  results cache default validity, `pkg/storage/chunk/cache/cache.go:50`) from
+  the oldest read an entry holds; newer buckets are read on every request. Not
   kept: answers VictoriaLogs refused, answers that do not read back exactly
   (the call then goes to VictoriaLogs unchanged), answers larger than one cache
   entry may be, queries with a subquery (the Drilldown breakdown ranked over the
@@ -150,7 +152,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bottomk` inputs and of ranges finer than 11,000 buckets, `/hits`, raw-row
   evaluation, instant queries and log queries. A row written more than
   `-query-range-freshness` after its timestamp into a kept range appears when
-  the entry expires, as with Loki's results cache. Outcomes are counted in
+  its entry expires (within the TTL, as with Loki's results cache). The
+  parse-risk verdicts of the `| json` stats pushdown are still kept 5 minutes
+  from their first check, so a dashboard refreshing those shapes re-runs the
+  probes over its whole window about every fifth minute. Outcomes are counted in
   `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}`
   (`hit`, `partial`, `miss`, `unreadable`, `too_large`, `error`). The figures
   above are the motivation and will be re-measured. Registry:

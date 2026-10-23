@@ -4,9 +4,22 @@ package e2e_compat
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"testing"
 	"time"
 )
+
+// extentCacheOutcomes reads the extent cache's answers by outcome from a
+// proxy's /metrics.
+func extentCacheOutcomes(t *testing.T, baseURL string) map[string]int {
+	t.Helper()
+	out := map[string]int{}
+	for _, m := range regexp.MustCompile(`(?m)^loki_vl_proxy_internal_operation_total\{operation="stats_extent_cache",outcome="([^"]+)"\} (\d+)$`).FindAllStringSubmatch(scrapeProxyMetrics(t, baseURL), -1) {
+		out[m[1]], _ = strconv.Atoi(m[2])
+	}
+	return out
+}
 
 // TestCompat_MetricRangeExtentCacheMatchesLoki: a metric range re-run with its
 // window moved back (a user re-running a query) or forward (a dashboard
@@ -15,6 +28,8 @@ import (
 // windows from the VictoriaLogs buckets its earlier requests read (the
 // extent cache, on by default) and asks VictoriaLogs only for the rest; the
 // fixture is hours old, past -query-range-freshness, so its buckets are kept.
+// The proxy's own counters show the moved windows were answered from kept
+// buckets and every VictoriaLogs answer was read back exactly.
 // conformance: quality/query-range-extent-cache, loki_api_v1_query_range
 func TestCompat_MetricRangeExtentCacheMatchesLoki(t *testing.T) {
 	fx := ensureNonSumFixtures(t)
@@ -42,6 +57,7 @@ func TestCompat_MetricRangeExtentCacheMatchesLoki(t *testing.T) {
 		{8 * time.Minute, 23 * time.Minute},
 		{2 * time.Minute, 29 * time.Minute},
 	}
+	before := extentCacheOutcomes(t, proxyURL)
 	for _, shape := range shapes {
 		t.Run(shape.query, func(t *testing.T) {
 			for _, w := range windows {
@@ -56,5 +72,13 @@ func TestCompat_MetricRangeExtentCacheMatchesLoki(t *testing.T) {
 			proxy := nonSumRange(t, proxyURL, shape.query, start, end, shape.step)
 			compareNonSum(t, shape.query+" (repeated)", loki, proxy)
 		})
+	}
+	after := extentCacheOutcomes(t, proxyURL)
+	delta := map[string]int{}
+	for outcome, n := range after {
+		delta[outcome] = n - before[outcome]
+	}
+	if delta["hit"]+delta["partial"] == 0 || delta["unreadable"] != 0 || delta["too_large"] != 0 {
+		t.Fatalf("the moved windows must be answered from kept buckets, each VictoriaLogs answer read back exactly: outcomes %v", delta)
 	}
 }

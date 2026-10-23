@@ -134,6 +134,7 @@ type proxyRuntimeConfig struct {
 	queryRangeExpensiveMaxParallel      int
 	queryRangeAlignWindows              bool
 	queryRangeExtentCache               bool
+	queryRangeExtentCacheTTL            time.Duration
 	queryRangeWindowTimeout             time.Duration
 	queryRangePartialResponses          bool
 	queryRangeBackgroundWarm            bool
@@ -595,7 +596,8 @@ func run(
 	queryRangeExpensiveHitThreshold := fs.Int64("query-range-expensive-hit-threshold", 2000, "Prefilter hit threshold above which a query_range window is treated as expensive")
 	queryRangeExpensiveMaxParallel := fs.Int("query-range-expensive-max-parallel", 1, "Maximum window parallelism for expensive query_range windows")
 	queryRangeAlignWindows := fs.Bool("query-range-align-windows", true, "Align query_range split windows to fixed interval boundaries for overlap cache reuse")
-	queryRangeExtentCache := fs.Bool("query-range-extent-cache", true, "Answer the VictoriaLogs stats_query_range calls of metric query_range requests from buckets already read, asking VictoriaLogs only for missing and recent buckets (like Loki's results cache extents); buckets newer than -query-range-freshness are always read, stored ones live in the response cache tiers for -query-range-history-cache-ttl")
+	queryRangeExtentCache := fs.Bool("query-range-extent-cache", true, "Answer the VictoriaLogs stats_query_range calls of metric query_range requests from buckets already read, asking VictoriaLogs only for missing and recent buckets (like Loki's results cache extents); buckets newer than -query-range-freshness are always read, older ones are kept in the response cache tiers for -query-range-extent-cache-ttl")
+	queryRangeExtentCacheTTL := fs.Duration("query-range-extent-cache-ttl", time.Hour, "How long buckets kept by -query-range-extent-cache are reused, counted from their oldest read (Loki's results cache default validity, 1h); a row written later than -query-range-freshness after its timestamp shows once they expire. 0 keeps none")
 	queryRangeWindowTimeout := fs.Duration("query-range-window-timeout", 20*time.Second, "Per-window backend timeout budget for query_range window fetches (0 disables)")
 	queryRangePartialResponses := fs.Bool("query-range-partial-responses", false, "Allow partial query_range responses on retryable backend failures")
 	queryRangeBackgroundWarm := fs.Bool("query-range-background-warm", true, "Warm failed query_range windows in background after partial response")
@@ -886,6 +888,7 @@ func run(
 			queryRangeExpensiveMaxParallel:      *queryRangeExpensiveMaxParallel,
 			queryRangeAlignWindows:              *queryRangeAlignWindows,
 			queryRangeExtentCache:               *queryRangeExtentCache,
+			queryRangeExtentCacheTTL:            *queryRangeExtentCacheTTL,
 			queryRangeWindowTimeout:             *queryRangeWindowTimeout,
 			queryRangePartialResponses:          *queryRangePartialResponses,
 			queryRangeBackgroundWarm:            *queryRangeBackgroundWarm,
@@ -2100,6 +2103,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		QueryRangeExpensiveMaxParallel:     cfg.queryRangeExpensiveMaxParallel,
 		QueryRangeAlignWindows:             cfg.queryRangeAlignWindows,
 		QueryRangeExtentCache:              cfg.queryRangeExtentCache,
+		QueryRangeExtentCacheTTL:           cfg.queryRangeExtentCacheTTL,
 		QueryRangeWindowTimeout:            cfg.queryRangeWindowTimeout,
 		QueryRangePartialResponses:         cfg.queryRangePartialResponses,
 		QueryRangeBackgroundWarm:           cfg.queryRangeBackgroundWarm,

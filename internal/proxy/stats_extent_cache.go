@@ -45,8 +45,9 @@ import (
 //
 // Only buckets that ended before now - -query-range-freshness are stored, in
 // the proxy's response cache (memory, the disk tier and the peer fleet when
-// configured) under the tenant's scope, for -query-range-history-cache-ttl
-// counted from the oldest read the entry holds. A query whose buckets depend on
+// configured) under the tenant's scope, for -query-range-extent-cache-ttl
+// counted from the oldest read the entry holds (Loki keeps results cache
+// entries for its default validity, 1h: pkg/storage/chunk/cache/cache.go:50). A query whose buckets depend on
 // more than their own rows (a subquery, a relative time filter, time_add,
 // running or total stats), an unwrap checked for conversion errors, and an
 // answer the cache cannot read back exactly go to VictoriaLogs as before.
@@ -121,7 +122,7 @@ func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Val
 	}
 	horizon := cache.Now().Add(-p.queryRangeFreshness).UnixNano()
 	lastStored := statsExtentFloorDiv(horizon+req.offset, req.step) - 1
-	if lastStored < req.first || p.queryRangeHistoryCacheTTL <= 0 || p.cache.MaxEntrySizeBytes() <= 0 {
+	if lastStored < req.first || p.queryRangeExtentCacheTTL <= 0 || p.cache.MaxEntrySizeBytes() <= 0 {
 		return nil, nil, false // nothing old enough to keep, or nowhere to keep it
 	}
 	started := time.Now()
@@ -845,7 +846,7 @@ func (c *statsExtentChunk) slice(from, to int64) *statsExtentFragment {
 // by the buckets read next to it; a range read apart from it replaces it when
 // longer.
 func (p *Proxy) storeStatsExtentChunks(req *statsExtentRequest, lastStored int64, chunks map[int64]*statsExtentChunk, fragments []*statsExtentFragment) {
-	ttl := p.queryRangeHistoryCacheTTL
+	ttl := p.queryRangeExtentCacheTTL
 	now := cache.Now().UnixNano()
 	for _, f := range fragments {
 		for j := statsExtentFloorDiv(f.from, req.chunk); j <= statsExtentFloorDiv(statsExtentMin(f.to, lastStored), req.chunk); j++ {
