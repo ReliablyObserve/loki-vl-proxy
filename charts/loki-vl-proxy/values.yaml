@@ -107,6 +107,8 @@ extraArgs:
   # query-range-align-windows: "true"                  # align split boundaries for overlap cache reuse
   # query-range-extent-cache: "true"                   # reuse metric stats buckets read before; only new buckets hit VictoriaLogs
   # query-range-extent-cache-ttl: "1h"                 # how long kept buckets are reused (0 keeps none)
+  # parse-risk-probe-cache-ttl: "1h"                   # how long a window found free of parse-risk lines is remembered (0 probes every request); a line turning risky later than the settle horizon after its timestamp is seen when the entry expires
+  # parse-risk-probe-settle: "5m"                      # the part of a window newer than now minus this is probed on every request
   # query-range-window-timeout: "20s"                  # per-window timeout budget (0 disables)
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background

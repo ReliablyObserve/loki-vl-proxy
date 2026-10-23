@@ -135,6 +135,8 @@ type proxyRuntimeConfig struct {
 	queryRangeAlignWindows              bool
 	queryRangeExtentCache               bool
 	queryRangeExtentCacheTTL            time.Duration
+	parseRiskProbeCacheTTL              time.Duration
+	parseRiskProbeSettle                time.Duration
 	queryRangeWindowTimeout             time.Duration
 	queryRangePartialResponses          bool
 	queryRangeBackgroundWarm            bool
@@ -597,6 +599,8 @@ func run(
 	queryRangeExpensiveMaxParallel := fs.Int("query-range-expensive-max-parallel", 1, "Maximum window parallelism for expensive query_range windows")
 	queryRangeAlignWindows := fs.Bool("query-range-align-windows", true, "Align query_range split windows to fixed interval boundaries for overlap cache reuse")
 	queryRangeExtentCache := fs.Bool("query-range-extent-cache", true, "Answer the VictoriaLogs stats_query_range calls of metric query_range requests from buckets already read, asking VictoriaLogs only for missing and recent buckets (like Loki's results cache extents); buckets newer than -query-range-freshness are always read, older ones are kept in the response cache tiers for -query-range-extent-cache-ttl")
+	parseRiskProbeCacheTTL := fs.Duration("parse-risk-probe-cache-ttl", time.Hour, "How long a window found free of parse-risk lines (and the level-presence mask of a window) is remembered, counted from the check of its oldest part, so a long-running dashboard probes only what is new (default matches -query-range-extent-cache-ttl); a line that turns risky (a JSON line with a colliding key, a partial parse) written later than -parse-risk-probe-settle after its timestamp into a remembered window is seen once the entry expires. Kept in memory only. 0 remembers nothing (every request probes its whole window)")
+	parseRiskProbeSettle := fs.Duration("parse-risk-probe-settle", 5*time.Minute, "The part of a window newer than now minus this is never remembered by -parse-risk-probe-cache-ttl and is probed on every request, so lines that arrive late for recent timestamps are still seen")
 	queryRangeExtentCacheTTL := fs.Duration("query-range-extent-cache-ttl", time.Hour, "How long buckets kept by -query-range-extent-cache are reused, counted from their oldest read (Loki's results cache default validity, 1h); a row written later than -query-range-freshness after its timestamp shows once they expire. 0 keeps none")
 	queryRangeWindowTimeout := fs.Duration("query-range-window-timeout", 20*time.Second, "Per-window backend timeout budget for query_range window fetches (0 disables)")
 	queryRangePartialResponses := fs.Bool("query-range-partial-responses", false, "Allow partial query_range responses on retryable backend failures")
@@ -889,6 +893,8 @@ func run(
 			queryRangeAlignWindows:              *queryRangeAlignWindows,
 			queryRangeExtentCache:               *queryRangeExtentCache,
 			queryRangeExtentCacheTTL:            *queryRangeExtentCacheTTL,
+			parseRiskProbeCacheTTL:              *parseRiskProbeCacheTTL,
+			parseRiskProbeSettle:                *parseRiskProbeSettle,
 			queryRangeWindowTimeout:             *queryRangeWindowTimeout,
 			queryRangePartialResponses:          *queryRangePartialResponses,
 			queryRangeBackgroundWarm:            *queryRangeBackgroundWarm,
@@ -1914,6 +1920,16 @@ func parseHeaderMapCSV(s string) map[string]string {
 	return headers
 }
 
+// explicitDuration hands a flag's duration to proxy.Config, where the zero
+// value selects the default: a flag's 0 (or a negative value) becomes the
+// negative value that means an explicit zero.
+func explicitDuration(v time.Duration) time.Duration {
+	if v <= 0 {
+		return -1
+	}
+	return v
+}
+
 func boolPointer(v bool) *bool {
 	return &v
 }
@@ -2104,6 +2120,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		QueryRangeAlignWindows:             cfg.queryRangeAlignWindows,
 		QueryRangeExtentCache:              cfg.queryRangeExtentCache,
 		QueryRangeExtentCacheTTL:           cfg.queryRangeExtentCacheTTL,
+		ParseRiskProbeCacheTTL:             explicitDuration(cfg.parseRiskProbeCacheTTL),
+		ParseRiskProbeSettle:               explicitDuration(cfg.parseRiskProbeSettle),
 		QueryRangeWindowTimeout:            cfg.queryRangeWindowTimeout,
 		QueryRangePartialResponses:         cfg.queryRangePartialResponses,
 		QueryRangeBackgroundWarm:           cfg.queryRangeBackgroundWarm,

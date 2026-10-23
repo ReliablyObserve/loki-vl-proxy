@@ -153,10 +153,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evaluation, instant queries and log queries. A row written more than
   `-query-range-freshness` after its timestamp into a kept range appears when
   its entry expires (within the TTL, as with Loki's results cache). The
-  parse-risk verdicts of the `| json` stats pushdown are still kept 5 minutes
-  from their first check, so a dashboard refreshing those shapes re-runs the
-  probes over its whole window about every fifth minute. Outcomes are counted in
-  `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}`
+  parse-risk verdicts of the `| json` stats pushdown and the level-presence
+  mask of a window are now kept for `-parse-risk-probe-cache-ttl` (default 1h,
+  the extent cache's validity; it was a fixed 5 minutes) from the check of the
+  oldest part of the window, so a long-running dashboard probes only what is
+  new instead of its whole window every fifth minute; the part newer than
+  `-parse-risk-probe-settle` (default 5m, unchanged) is never remembered and is
+  probed on every request. Both are configurable (0 for the TTL remembers
+  nothing), and the verdicts stay in the memory tier only. As with the extent
+  cache, a line that turns risky (a JSON line with a colliding key, a partial
+  parse) written later than the settle horizon after its timestamp into a
+  window already remembered is seen once its entry expires. Outcomes are
+  counted in `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}`
   (`hit`, `partial`, `miss`, `unreadable`, `too_large`, `error`). The figures
   above are the motivation and will be re-measured. Registry:
   `quality/query-range-extent-cache`.

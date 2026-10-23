@@ -2187,13 +2187,28 @@ func (p *Proxy) detectedLevelUnpackRisk(ctx context.Context, base string, start,
 	return p.statsPushdownRiskExists(ctx, query, start, end)
 }
 
-// statsPushdownRiskCacheTTL bounds how long a risk-free window is remembered,
-// counted from the check of its oldest part (coveredWindowProbe). Coverage
-// never extends past statsPushdownRiskSettle before now, so lines that arrive
-// late for recent timestamps are still checked on the next request.
-var statsPushdownRiskCacheTTL = 5 * time.Minute
+// The probe verdicts (coveredWindowProbe) are remembered for
+// -parse-risk-probe-cache-ttl, counted from the check of the oldest part of a
+// window; coverage never extends past -parse-risk-probe-settle before now, so
+// lines that arrive late for recent timestamps are still checked on the next
+// request. A line that turns risky later than the settle horizon after its
+// timestamp, into a window already remembered, is seen when the entry expires.
+const (
+	defaultParseRiskProbeCacheTTL = time.Hour
+	defaultParseRiskProbeSettle   = 5 * time.Minute
+)
 
-const statsPushdownRiskSettle = 5 * time.Minute
+// parseRiskProbeDuration resolves a Config value: 0 is the default, a
+// negative value is an explicit zero (the flags' 0).
+func parseRiskProbeDuration(v, def time.Duration) time.Duration {
+	switch {
+	case v == 0:
+		return def
+	case v < 0:
+		return 0
+	}
+	return v
+}
 
 // cachedStatsPushdownRisk answers the parse-risk check for [start, end],
 // remembering the window already found free of risky lines per tenant, query

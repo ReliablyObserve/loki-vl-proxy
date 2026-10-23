@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (226), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (228), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -31,6 +31,8 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-label-values-indexed-cache` | bool | `false` | `extraArgs.label-values-indexed-cache` | Enable indexed browse cache for /loki/api/v1/label/&#123;name&#125;/values (hot subset first for empty-query requests) |
 | `-labels-cache-ttl` | duration | `0` | `extraArgs.labels-cache-ttl` | Cache TTL for /labels and /label/&#123;name&#125;/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default. |
 | `-labels-cache-warm` | bool | `true` | `extraArgs.labels-cache-warm` | Warm the labels cache for the 1h/6h/24h/7d time-picker presets at startup and keep them warm in the background (every 75% of -labels-cache-ttl). Each refresh is a label-name scan of up to 7 days in VictoriaLogs; disable it on replicas that serve no interactive label pickers. |
+| `-parse-risk-probe-cache-ttl` | duration | `1h0m0s` | `extraArgs.parse-risk-probe-cache-ttl` | How long a window found free of parse-risk lines (and the level-presence mask of a window) is remembered, counted from the check of its oldest part, so a long-running dashboard probes only what is new (default matches -query-range-extent-cache-ttl); a line that turns risky (a JSON line with a colliding key, a partial parse) written later than -parse-risk-probe-settle after its timestamp into a remembered window is seen once the entry expires. Kept in memory only. 0 remembers nothing (every request probes its whole window) |
+| `-parse-risk-probe-settle` | duration | `5m0s` | `extraArgs.parse-risk-probe-settle` | The part of a window newer than now minus this is never remembered by -parse-risk-probe-cache-ttl and is probed on every request, so lines that arrive late for recent timestamps are still seen |
 | `-query-range-adaptive-cooldown` | duration | `30s` | `extraArgs.query-range-adaptive-cooldown` | Minimum time between adaptive query_range parallelism adjustments |
 | `-query-range-adaptive-max-parallel` | int | `8` | `extraArgs.query-range-adaptive-max-parallel` | Maximum adaptive query_range window parallelism |
 | `-query-range-adaptive-min-parallel` | int | `2` | `extraArgs.query-range-adaptive-min-parallel` | Minimum adaptive query_range window parallelism |
