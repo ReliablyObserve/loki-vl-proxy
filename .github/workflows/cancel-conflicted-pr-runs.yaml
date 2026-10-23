@@ -1,0 +1,37 @@
+name: Cancel conflicted PR runs
+
+# GitHub does not start pull_request runs while a pull request conflicts with
+# its base, but runs already queued or running when main moves keep going and
+# their results are thrown away once the branch is rebased. After every push
+# to main this cancels the pull_request runs of each open pull request that now
+# conflicts. See scripts/ci/cancel_conflicted_pr_runs.py.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cancel-conflicted-pr-runs
+  cancel-in-progress: true
+
+jobs:
+  cancel:
+    name: cancel
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - name: Cancel runs of pull requests that conflict with main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/cancel_conflicted_pr_runs.py
