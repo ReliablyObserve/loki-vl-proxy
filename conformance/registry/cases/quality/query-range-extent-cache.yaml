@@ -1,0 +1,47 @@
+id: quality/query-range-extent-cache
+title: A metric range moved by a refresh or a re-run reads only the VictoriaLogs buckets not read before, with the same answer
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's query frontend splits a metric range by
+  -querier.split-queries-by-interval (1h) and keeps each split's answer as
+  extents in its results cache; a request whose window moved (a dashboard
+  refresh, a user re-running a query) is answered from the extents and only
+  the uncovered part is computed, except the last
+  max_cache_freshness_per_query (10m), which is always computed
+  (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit,
+  filterRecentExtents; pkg/validation/limits.go:407,432). Loki 3.7.7 does
+  this whatever Cache-Control says. The proxy cached only exact windows, so
+  every moved window recomputed the whole range in VictoriaLogs: 6h metric
+  ranges answered refreshes in 0.3-0.98 s where Loki took 0.003-0.07 s.
+
+  The proxy now keeps the VictoriaLogs stats_query_range buckets of metric
+  query_range requests that ended before now - -query-range-freshness, per
+  tenant, query, step and offset, in its response cache tiers for
+  -query-range-extent-cache-ttl (1h, Loki's default results cache validity,
+  pkg/storage/chunk/cache/cache.go:50), and asks VictoriaLogs only for the
+  buckets it does not hold. VictoriaLogs widens a
+  stats_query_range to whole buckets and computes each bucket from its own
+  rows (app/vlselect/logsql/logsql.go alignStartEndToStep and
+  ProcessStatsQueryRangeRequest, v1.49.0-v1.53.0), so the answer rebuilt
+  from stored and new buckets is byte for byte the one VictoriaLogs gives for
+  the whole range, and the proxy's evaluation is unchanged.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki for every window of a refresh
+    sequence (end moving forward a minute at a time) and of a re-run
+    sequence (moving back), as for the first request.

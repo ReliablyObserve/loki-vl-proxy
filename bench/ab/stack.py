@@ -43,6 +43,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 BASE_COMPOSE = "test/e2e-compat/docker-compose.yml"
 OVERLAY = "bench/ab/docker-compose.ab.yml"
+# --loki-uncached: Loki with every query results cache off, a cold reference.
+LOKI_UNCACHED_OVERLAY = "bench/ab/docker-compose.ab-loki-uncached.yml"
 GENERATOR = "test/e2e-compat/log-generator.py"
 # Data profile of the backfill. Fixed so every run measures the same density:
 # about 75 lines/s across the generator's services (the live generator's rate
@@ -350,12 +352,16 @@ def stack_args(ap):
     ap.add_argument("--vl-port", type=int, default=29428)
     ap.add_argument("--loki-mem", default="", help="Loki memory limit, e.g. 4g (default: the base stack's)")
     ap.add_argument("--vl-mem", default="", help="VictoriaLogs memory limit (default: the base stack's)")
+    ap.add_argument("--loki-uncached", action="store_true",
+                    help="start Loki with every query results cache off (docker-compose.ab-loki-uncached.yml), so its "
+                         "first request of a window is computed, as a cold reference for the proxies' run 0")
     ap.add_argument("--no-level-label", action="store_true",
                     help="seed rows with no stored level (the level only in the line), for the detected_level routes")
 
 
 def stack_from(args):
     return Stack(args.project, args.loki_port, args.vl_port, args.loki_mem or None, args.vl_mem or None,
+                 overlays=[LOKI_UNCACHED_OVERLAY] if getattr(args, "loki_uncached", False) else [],
                  no_level_label=args.no_level_label)
 
 

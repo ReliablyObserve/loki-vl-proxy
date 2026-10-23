@@ -183,7 +183,7 @@ func TestDetectedLevelPresenceProbeFailureKeepsFullChain(t *testing.T) {
 
 // A mask that says a key is absent is only as good as the part of the window
 // it was measured over: lines for recent timestamps may still arrive, so the
-// part of a window younger than statsPushdownRiskSettle is probed on every
+// part of a window younger than -parse-risk-probe-settle is probed on every
 // request and never remembered. A line that appears there after an earlier
 // request is seen by the next.
 // conformance: semantics/json-metric-detected-level-derivation
@@ -236,6 +236,7 @@ func TestCoveredWindowProbeKeepsTheAgeOfTheCheck(t *testing.T) {
 		}
 	}
 	age := func(d time.Duration) { t.Cleanup(cache.AdvanceClockForTesting(d)) }
+	p.parseRiskProbeCacheTTL = 5 * time.Minute
 	probe(30 * time.Minute)
 	age(2 * time.Minute)
 	probe(40 * time.Minute) // extends: only the new ten minutes are checked
@@ -303,7 +304,7 @@ func TestCoveredWindowProbeRefreshChecksOnlyTheRecentTail(t *testing.T) {
 	}
 	for i, got := range checked[1:] {
 		// the settle horizon, the seconds the window moved, and the step's slack
-		if limit := statsPushdownRiskSettle + time.Duration(i+1)*5*time.Second + time.Second; got > limit {
+		if limit := p.parseRiskProbeSettle + time.Duration(i+1)*5*time.Second + time.Second; got > limit {
 			t.Errorf("refresh %d checked %v, more than the %v the horizon allows", i+1, got, limit)
 		}
 	}
@@ -657,5 +658,123 @@ func TestPrunedChainWithWitnessFitsTheQueryLimit(t *testing.T) {
 	got := out.Get("query")
 	if len(base) < 6000 || len(got) > 16*1024 || len(got) >= len(query) {
 		t.Fatalf("base %d bytes; unpruned request %d, pruned with the witness %d (limit 16384)", len(base), len(query), len(got))
+	}
+}
+
+// -parse-risk-probe-cache-ttl and -parse-risk-probe-settle default to 1h and
+// 5m (the flags' defaults reach New through the zero value), a negative Config
+// value is an explicit zero, and any other value is taken as given.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestParseRiskProbeConfig(t *testing.T) {
+	srv, _ := newJSONVolumeFakeVL(t, nil)
+	for _, tc := range []struct {
+		name        string
+		ttl, settle time.Duration
+		wantTTL     time.Duration
+		wantSettle  time.Duration
+	}{
+		{"defaults", 0, 0, time.Hour, 5 * time.Minute},
+		{"explicit zero", -1, -1, 0, 0},
+		{"given", 2 * time.Hour, time.Minute, 2 * time.Hour, time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := New(Config{BackendURL: srv.URL, LogLevel: "error", ParseRiskProbeCacheTTL: tc.ttl, ParseRiskProbeSettle: tc.settle})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+			if p.parseRiskProbeCacheTTL != tc.wantTTL || p.parseRiskProbeSettle != tc.wantSettle {
+				t.Fatalf("ttl %v settle %v, want %v / %v", p.parseRiskProbeCacheTTL, p.parseRiskProbeSettle, tc.wantTTL, tc.wantSettle)
+			}
+		})
+	}
+}
+
+// A remembered window is reused for -parse-risk-probe-cache-ttl: with 1h a
+// request 30 minutes later checks only the part newer than the settle horizon,
+// one after the hour checks the whole window again; with 0 every request
+// checks the whole window; the part newer than the settle horizon is checked on
+// every request whatever the TTL, and the settle value moves that horizon.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestCoveredWindowProbeHonoursTTLAndSettle(t *testing.T) {
+	srv, _ := newJSONVolumeFakeVL(t, nil)
+	run := func(t *testing.T, ttl, settle time.Duration, ask func(probe func())) []time.Duration {
+		t.Helper()
+		p := newSlidingTestProxy(t, srv.URL)
+		p.parseRiskProbeCacheTTL, p.parseRiskProbeSettle = ttl, settle
+		now := cache.Now()
+		var checked []time.Duration
+		ask(func() {
+			t.Helper()
+			if _, _, err := p.coveredWindowProbe(context.Background(), "ttl-test", now.Add(-2*time.Hour), now, func(from, end time.Time, acc string) (string, bool, error) {
+				checked = append(checked, end.Sub(from))
+				return acc, false, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		return checked
+	}
+	age := func(t *testing.T, d time.Duration) { t.Helper(); t.Cleanup(cache.AdvanceClockForTesting(d)) }
+	near := func(got, want time.Duration) bool { return got >= want-time.Second && got <= want+time.Second }
+
+	t.Run("1h keeps the settled part", func(t *testing.T) {
+		got := run(t, time.Hour, 5*time.Minute, func(probe func()) {
+			probe()
+			age(t, 30*time.Minute)
+			probe() // 30m later: only the part inside the settle horizon
+			age(t, 31*time.Minute)
+			probe() // 61m after the first check: expired, the whole window again
+		})
+		if len(got) != 3 || !near(got[0], 2*time.Hour) || !near(got[1], 5*time.Minute) || !near(got[2], 2*time.Hour) {
+			t.Fatalf("checked windows %v, want 2h, 5m, 2h", got)
+		}
+	})
+	t.Run("0 remembers nothing", func(t *testing.T) {
+		got := run(t, 0, 5*time.Minute, func(probe func()) { probe(); probe(); probe() })
+		if len(got) != 3 {
+			t.Fatalf("checked windows %v, want 3 full checks", got)
+		}
+		for _, w := range got {
+			if !near(w, 2*time.Hour) {
+				t.Fatalf("checked windows %v, want 2h each", got)
+			}
+		}
+	})
+	t.Run("the settle horizon moves with the flag", func(t *testing.T) {
+		got := run(t, time.Hour, 20*time.Minute, func(probe func()) { probe(); probe() })
+		if len(got) != 2 || !near(got[1], 20*time.Minute) {
+			t.Fatalf("checked windows %v, want 2h then 20m", got)
+		}
+		got = run(t, time.Hour, 0, func(probe func()) { probe(); probe() })
+		if len(got) != 1 {
+			t.Fatalf("checked windows %v, want only the first request to check with no settle horizon", got)
+		}
+	})
+}
+
+// The level-needs-chain marker follows the same TTL: kept for it, and not
+// stored at all when the TTL is 0.
+// conformance: semantics/json-metric-detected-level-derivation
+func TestLevelNeedsChainMarkerHonoursTTL(t *testing.T) {
+	srv, _ := newJSONVolumeFakeVL(t, nil)
+	ctx := context.Background()
+	p := newSlidingTestProxy(t, srv.URL)
+	p.markLevelNeedsChain(ctx, `app:="api"`)
+	if !p.levelNeedsChain(ctx, `app:="api"`) {
+		t.Fatal("marker not kept")
+	}
+	t.Cleanup(cache.AdvanceClockForTesting(30 * time.Minute))
+	if !p.levelNeedsChain(ctx, `app:="api"`) {
+		t.Fatal("marker gone before the 1h TTL")
+	}
+	t.Cleanup(cache.AdvanceClockForTesting(31 * time.Minute))
+	if p.levelNeedsChain(ctx, `app:="api"`) {
+		t.Fatal("marker kept past the 1h TTL")
+	}
+	p.parseRiskProbeCacheTTL = 0
+	p.markLevelNeedsChain(ctx, `app:="other"`)
+	if p.levelNeedsChain(ctx, `app:="other"`) {
+		t.Fatal("marker stored with a 0 TTL")
 	}
 }

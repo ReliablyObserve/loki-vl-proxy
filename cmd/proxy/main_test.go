@@ -2529,3 +2529,12 @@ func TestValidateLabelFilterRefillMaxPages(t *testing.T) {
 		}
 	}
 }
+
+// A flag's 0 reaches proxy.Config as the explicit zero, not as "use the default".
+func TestExplicitDuration(t *testing.T) {
+	for in, want := range map[time.Duration]time.Duration{0: -1, -time.Second: -1, time.Minute: time.Minute} {
+		if got := explicitDuration(in); got != want {
+			t.Errorf("explicitDuration(%v) = %v, want %v", in, got, want)
+		}
+	}
+}

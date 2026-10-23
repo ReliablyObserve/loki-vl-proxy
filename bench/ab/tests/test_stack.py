@@ -23,3 +23,42 @@ class CountQueryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _loki_command(path):
+    """The `command:` list of the loki service in a compose file, as written."""
+    lines, out, in_loki, in_cmd = open(path).read().splitlines(), [], False, False
+    for line in lines:
+        if re.match(r"^  \S", line):
+            in_loki = line.strip() == "loki:"
+            in_cmd = False
+            continue
+        if in_loki and re.match(r"^    command:", line):
+            in_cmd = True
+            continue
+        if in_cmd:
+            m = re.match(r"^      - (\S.*)$", line)
+            if m:
+                out.append(m.group(1))
+            elif re.match(r"^    \S", line):
+                in_cmd = False
+    return out
+
+
+class LokiUncachedOverlayTest(unittest.TestCase):
+    CACHES = ["-querier.cache-results=false", "-querier.cache-index-stats-results=false",
+              "-querier.cache-volume-results=false", "-querier.cache-instant-metric-results=false",
+              "-querier.cache-series-results=false", "-querier.cache-label-results=false"]
+
+    def test_overlay_is_the_base_command_with_every_results_cache_off(self):
+        base = _loki_command(os.path.join(stack.ROOT, stack.BASE_COMPOSE))
+        uncached = _loki_command(os.path.join(stack.ROOT, stack.LOKI_UNCACHED_OVERLAY))
+        self.assertTrue(base, "the base stack's loki command was not found")
+        self.assertEqual(uncached, base + self.CACHES)
+
+    def test_flag_selects_the_overlay(self):
+        import argparse
+        ap = argparse.ArgumentParser()
+        stack.stack_args(ap)
+        self.assertEqual(stack.stack_from(ap.parse_args(["--loki-uncached"])).overlays, [stack.LOKI_UNCACHED_OVERLAY])
+        self.assertEqual(stack.stack_from(ap.parse_args([])).overlays, [])

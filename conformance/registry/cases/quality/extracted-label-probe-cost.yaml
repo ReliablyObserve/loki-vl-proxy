@@ -1,0 +1,41 @@
+id: quality/extracted-label-probe-cost
+title: The parse-risk probes of a name_extracted metric read through VictoriaLogs' token index first
+proves:
+  - data-probing-and-freshness
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A metric filtered or grouped on a name_extracted label after | json
+  (semantics/json-extracted-metric-pushdown) is answered from VictoriaLogs
+  stats buckets once probes found no line the two parsers read differently.
+  The probes of the extracted label run with the stored label deleted, and
+  their filters on _msg followed that delete: VictoriaLogs merges only a
+  filter that directly follows the query into the query's filters
+  (optimizeNoSubqueries, lib/logstorage/parser.go, v1.49.0:1005), so behind
+  the delete each probe ran its regexps row by row over every line of the
+  range. The first such metric over a base paid three full scans next to its
+  stats query: 3.04 s for `sum by (level) (count_over_time({env="production"}
+  | json | level_extracted!="" [1m]))` over 6h where Loki took 0.65 s and the
+  shapes after it, which reuse its probe verdicts, 0.35-0.8 s.
+
+  When the delete is the probe's first pipe, its filters on _msg now come
+  first (the delete does not touch _msg, and the probe's own filter still
+  runs after it) and the both-keys probe requires both keys as words; every
+  other probe is sent as before. The lines found are the same.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    Loki's series and values; the first request over a base no slower than
+    Loki's first request.

@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **A metric range whose window moved reads only the VictoriaLogs buckets it
+  has not read before (`-query-range-extent-cache`, default on;
+  `-query-range-extent-cache-ttl`, default 1h).** The proxy
+  cached only exact windows, so a Grafana refresh (the window moves forward a
+  minute) or a re-run (it moves back) recomputed the whole range in
+  VictoriaLogs, while Loki's query frontend answers both from the extents of its
+  results cache and computes only the uncovered part plus the last
+  `max_cache_freshness_per_query` (10m)
+  (`pkg/storage/chunk/cache/resultscache/cache.go` `Do`, `handleHit`,
+  `filterRecentExtents`; `pkg/validation/limits.go:407,432`). On a 6h range
+  (Loki 3.7.7, VictoriaLogs v1.52.0, generator data, p50 per run) Loki answered
+  re-runs in 0.03-0.07 s and refreshes in 0.003-0.004 s; the proxy took
+  0.32-0.98 s for both, for every metric shape measured (the `json`
+  `level_extracted` shapes of `bench/ab` set `extracted-pushdown` and the
+  control `logfmt` count by level), 10 to 100 times slower. The proxy now keeps
+  the buckets of the `stats_query_range` calls of a metric `query_range`
+  request: VictoriaLogs widens such a call to whole buckets and computes each
+  bucket from its own rows (`app/vlselect/logsql/logsql.go`
+  `alignStartEndToStep`, `ProcessStatsQueryRangeRequest`, v1.49.0-v1.53.0),
+  so its answer for a range is the answer for each bucket, in its own series
+  order. A call is answered from the buckets kept for the same tenant, query,
+  step and offset, and VictoriaLogs is asked only for the missing ones (at most
+  three ranges, read side by side; when the uncached call would be a heavy
+  call, each missing range is read as one, one after another, so a request
+  never holds more than the one `-backend-max-concurrent-heavy-queries` slot
+  its uncached call would). A call with nothing kept goes to
+  VictoriaLogs as it came and its answer streams to the caller as before; the
+  copy the caller read is taken apart and stored off the request path (at most
+  four stores at once; an answer that finds them busy is not kept). Otherwise
+  the answer is rebuilt in VictoriaLogs' form
+  and order, byte for byte the one VictoriaLogs gives for the whole range, so
+  the proxy's evaluation and its answer are unchanged. Buckets that ended
+  before `now - -query-range-freshness` (10m, Loki's default) are kept, one
+  entry per split of an hour or 128 steps, in the response cache tiers: memory
+  under `-cache-max-bytes` with its LRU eviction, the disk tier and the peer
+  fleet when configured, for `-query-range-extent-cache-ttl` (1h, Loki's
+  results cache default validity, `pkg/storage/chunk/cache/cache.go:50`) from
+  the oldest read an entry holds; newer buckets are read on every request. Not
+  kept: answers VictoriaLogs refused, answers that do not read back exactly
+  (the call then goes to VictoriaLogs unchanged), answers larger than one cache
+  entry may be or that the caller stopped reading early, queries with a subquery (the Drilldown breakdown ranked over the
+  series limit), a time filter, `time_add`, `running_stats` or `total_stats`,
+  and metrics whose `unwrap` the conversion check reads. Paths that read
+  VictoriaLogs otherwise are unchanged: the sliding-window grids of `topk` and
+  `bottomk` inputs and of ranges finer than 11,000 buckets, `/hits`, raw-row
+  evaluation, instant queries and log queries. A row written more than
+  `-query-range-freshness` after its timestamp into a kept range appears when
+  its entry expires (within the TTL, as with Loki's results cache). The
+  parse-risk verdicts of the `| json` stats pushdown and the level-presence
+  mask of a window are now kept for `-parse-risk-probe-cache-ttl` (default 1h,
+  the extent cache's validity; it was a fixed 5 minutes) from the check of the
+  oldest part of the window, so a long-running dashboard probes only what is
+  new instead of its whole window every fifth minute; the part newer than
+  `-parse-risk-probe-settle` (default 5m, unchanged) is never remembered and is
+  probed on every request. Both are configurable (0 for the TTL remembers
+  nothing), and the verdicts stay in the memory tier only. As with the extent
+  cache, a line that turns risky (a JSON line with a colliding key, a partial
+  parse) written later than the settle horizon after its timestamp into a
+  window already remembered is seen once its entry expires. Outcomes are
+  counted in `loki_vl_proxy_internal_operation_total{operation="stats_extent_cache"}`
+  (`hit`, `partial`, `miss`, `unreadable`, `too_large`, `error`). The figures
+  above are the motivation and will be re-measured. Registry:
+  `quality/query-range-extent-cache`.
+- **The first `| json` metric filtered or grouped on a `name_extracted` label
+  no longer waits for three full-range scans.** `sum by (level)
+  (count_over_time({env="production"} | json | level_extracted!="" [1m]))`
+  took 3.04 s cold over 6h where Loki took 0.65 s and the shapes run after it
+  0.35-0.8 s: they reuse the parse-risk verdicts it paid for. The probes of the
+  extracted label delete the stored label and then filtered `_msg`, and
+  VictoriaLogs merges only a filter that directly follows the query into the
+  query's filters (`optimizeNoSubqueries`, `lib/logstorage/parser.go`, v1.49.0
+  :1005), so each probe ran its regexps row by row over every line of the
+  range. When the delete is the probe's first pipe, its filters on `_msg` now
+  come first (the delete does not touch `_msg`, and each probe's own filter
+  still runs after it), and the both-keys probe requires both keys as words,
+  which VictoriaLogs finds in its token index; a probe that would pass
+  VictoriaLogs' default `-search.maxQueryLen` keeps its previous form, and
+  every other probe is sent as before. The lines found are
+  the same (`TestOrderedJSONExtractedMetricDifferential` against the Loki
+  reference over every risky line kind). The partial-parse probe still parses
+  every line that holds the key, so the first request remains slower than one
+  that reuses the verdicts; to be re-measured. Registry:
+  `quality/extracted-label-probe-cost`.
+- **A metric answer served from kept buckets spends less of its time
+  re-encoding.** With the VictoriaLogs calls answered from kept buckets, a 6h
+  answer still took the proxy 12-16 ms for `sum by (service_name)
+  (count_over_time({env="production"} | json | __error__="" [5m]))` and 11-31 ms
+  for a Logs Drilldown field breakdown, where Loki answered in 6-11 ms from its
+  results cache. Most of it was the response encoding: the metric builders'
+  matrices went through `encoding/json` reflection (one allocation per point),
+  the tumbling relabel formatted every timestamp through a float string, and
+  the rebuilt VictoriaLogs answer sorted the points of every series. The
+  builders' responses are now written directly, byte for byte as
+  `encoding/json` writes them (any value it would write otherwise is left to
+  it), a relabelled timestamp on a whole second is written as its integer
+  digits, and the kept pieces are joined in time order: a 30-series, 2160-point
+  matrix encodes in about 1.3 ms instead of 11.8 ms, and a 40-series Drilldown
+  breakdown from kept buckets in about 7 ms instead of 21 ms
+  (`BenchmarkManualMetricResponse`,
+  `BenchmarkStatsExtentWarmDrilldownBreakdown`); to be re-measured against
+  Loki. Registry: `quality/query-range-extent-cache`.
+
 ## [2.34.1] - 2026-10-23
 
 ### Fixed
