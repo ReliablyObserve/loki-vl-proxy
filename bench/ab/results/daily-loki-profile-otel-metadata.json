@@ -1,6 +1,6 @@
 {
  "label": "daily-loki-profile-otel-metadata",
- "date": "2026-10-23",
+ "date": "2026-10-24",
  "set": "loki-profile-otel-metadata",
  "description": "OTel structured-metadata filters in the Loki-compatible profile: the underscore spelling Loki accepts (log query and the Explore log volume, pushed down to VictoriaLogs stats) and the dotted spelling Loki rejects with a parse error (the proxy used to run it on the raw-row path). Run with the control set.",
  "baseline": "release",
@@ -29,19 +29,19 @@
    "shape": "O1 explore logs, underscore structured-metadata filter",
    "range": "1h",
    "p50": {
-    "release": 0.137,
-    "main": 0.135,
-    "loki": 0.261
+    "release": 0.135,
+    "main": 0.139,
+    "loki": 0.255
    },
    "p95": {
-    "release": 0.145,
-    "main": 0.139,
-    "loki": 0.344
+    "release": 0.139,
+    "main": 0.15,
+    "loki": 0.339
    },
    "cold": {
-    "release": 0.16,
-    "main": 0.167,
-    "loki": 0.299
+    "release": 0.153,
+    "main": 0.129,
+    "loki": 0.255
    },
    "status": {
     "release": "200",
@@ -49,9 +49,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 63.6,
-    "main": 63.6,
-    "loki": 63.6
+    "release": 78.07,
+    "main": 78.07,
+    "loki": 78.07
    },
    "stale": [
     "release",
@@ -130,25 +130,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.01
+   "speedup": 0.97
   },
   {
    "shape": "O1 explore logs, underscore structured-metadata filter",
    "range": "3h",
    "p50": {
-    "release": 0.097,
-    "main": 0.097,
-    "loki": 0.542
+    "release": 0.102,
+    "main": 0.104,
+    "loki": 0.566
    },
    "p95": {
-    "release": 0.114,
-    "main": 0.101,
-    "loki": 0.78
+    "release": 0.11,
+    "main": 0.121,
+    "loki": 0.713
    },
    "cold": {
-    "release": 0.311,
-    "main": 0.311,
-    "loki": 0.729
+    "release": 0.308,
+    "main": 0.333,
+    "loki": 0.718
    },
    "status": {
     "release": "200",
@@ -156,9 +156,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 42.23,
-    "main": 141.65,
-    "loki": 141.65
+    "release": 147.3,
+    "main": 147.3,
+    "loki": 147.3
    },
    "stale": [
     "release",
@@ -237,25 +237,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.98
   },
   {
    "shape": "O1 explore logs, underscore structured-metadata filter",
    "range": "6h",
    "p50": {
-    "release": 0.034,
-    "main": 0.033,
-    "loki": 1.177
+    "release": 0.032,
+    "main": 0.032,
+    "loki": 1.113
    },
    "p95": {
-    "release": 0.041,
-    "main": 0.037,
-    "loki": 1.223
+    "release": 0.04,
+    "main": 0.035,
+    "loki": 1.201
    },
    "cold": {
-    "release": 0.304,
-    "main": 0.276,
-    "loki": 1.14
+    "release": 0.287,
+    "main": 0.269,
+    "loki": 1.186
    },
    "status": {
     "release": "200",
@@ -263,9 +263,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 20.19,
-    "main": 20.19,
-    "loki": 20.19
+    "release": 86.81,
+    "main": 86.81,
+    "loki": 86.81
    },
    "stale": [
     "release",
@@ -344,25 +344,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.03
+   "speedup": 1.0
   },
   {
    "shape": "O1 explore logs, underscore structured-metadata filter",
    "range": "24h",
    "p50": {
-    "release": 0.028,
-    "main": 0.024,
-    "loki": 4.516
+    "release": 0.023,
+    "main": 0.023,
+    "loki": 4.539
    },
    "p95": {
-    "release": 0.029,
-    "main": 0.029,
-    "loki": 5.039
+    "release": 0.023,
+    "main": 0.024,
+    "loki": 4.847
    },
    "cold": {
-    "release": 0.025,
+    "release": 0.024,
     "main": 0.025,
-    "loki": 4.634
+    "loki": 4.824
    },
    "status": {
     "release": "200",
@@ -370,9 +370,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 3.97,
-    "main": 4.12,
-    "loki": 4.12
+    "release": 0.08,
+    "main": 3.28,
+    "loki": 4.22
    },
    "stale": [
     "release",
@@ -451,7 +451,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.17
+   "speedup": 1.0
   },
   {
    "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
@@ -459,17 +459,17 @@
    "p50": {
     "release": 0.048,
     "main": 0.046,
-    "loki": 0.018
-   },
-   "p95": {
-    "release": 0.051,
-    "main": 0.047,
     "loki": 0.019
    },
+   "p95": {
+    "release": 0.049,
+    "main": 0.05,
+    "loki": 0.021
+   },
    "cold": {
-    "release": 0.075,
-    "main": 0.073,
-    "loki": 0.16
+    "release": 0.095,
+    "main": 0.102,
+    "loki": 0.19
    },
    "status": {
     "release": "200",
@@ -477,9 +477,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 32.29,
-    "main": 32.29,
-    "loki": 32.29
+    "release": 49.96,
+    "main": 49.96,
+    "loki": 49.96
    },
    "cache": {
     "loki": {
@@ -519,7 +519,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 118591
+       "bytesReceived": 117656
       },
       "statsResult": {
        "entriesFound": 6,
@@ -560,18 +560,18 @@
    "range": "3h",
    "p50": {
     "release": 0.07,
-    "main": 0.069,
+    "main": 0.07,
     "loki": 0.019
    },
    "p95": {
-    "release": 0.074,
-    "main": 0.072,
-    "loki": 0.02
+    "release": 0.073,
+    "main": 0.071,
+    "loki": 0.021
    },
    "cold": {
-    "release": 0.122,
-    "main": 0.112,
-    "loki": 0.451
+    "release": 0.118,
+    "main": 0.116,
+    "loki": 0.389
    },
    "status": {
     "release": "200",
@@ -579,9 +579,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 48.85,
-    "main": 48.85,
-    "loki": 48.85
+    "release": 45.85,
+    "main": 45.85,
+    "loki": 45.85
    },
    "cache": {
     "loki": {
@@ -589,7 +589,7 @@
       "result": {
        "entriesFound": 2,
        "entriesRequested": 4,
-       "bytesReceived": 20547
+       "bytesReceived": 20529
       },
       "statsResult": {
        "entriesFound": 3,
@@ -621,7 +621,7 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 343405
+       "bytesReceived": 341870
       },
       "statsResult": {
        "entriesFound": 6,
@@ -658,25 +658,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.01
+   "speedup": 1.0
   },
   {
    "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
    "range": "6h",
    "p50": {
-    "release": 0.121,
-    "main": 0.12,
-    "loki": 0.04
+    "release": 0.119,
+    "main": 0.119,
+    "loki": 0.043
    },
    "p95": {
-    "release": 0.124,
-    "main": 0.124,
-    "loki": 0.048
+    "release": 0.134,
+    "main": 0.126,
+    "loki": 0.047
    },
    "cold": {
-    "release": 0.22,
-    "main": 0.203,
-    "loki": 1.048
+    "release": 0.213,
+    "main": 0.204,
+    "loki": 0.852
    },
    "status": {
     "release": "200",
@@ -684,9 +684,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 93.82,
-    "main": 88.34,
-    "loki": 93.82
+    "release": 87.74,
+    "main": 87.74,
+    "loki": 87.74
    },
    "cache": {
     "loki": {
@@ -699,7 +699,7 @@
       "statsResult": {
        "entriesFound": 8,
        "entriesRequested": 8,
-       "bytesReceived": 1432
+       "bytesReceived": 1428
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -726,12 +726,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 348000
+       "bytesReceived": 347955
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1086
+       "bytesReceived": 1080
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -760,25 +760,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.01
+   "speedup": 1.0
   },
   {
    "shape": "O2 explore log volume (Grafana form), underscore structured-metadata filter",
    "range": "24h",
    "p50": {
-    "release": 0.351,
-    "main": 0.35,
-    "loki": 0.039
+    "release": 0.347,
+    "main": 0.355,
+    "loki": 0.04
    },
    "p95": {
-    "release": 0.351,
-    "main": 0.355,
-    "loki": 0.045
+    "release": 0.349,
+    "main": 0.375,
+    "loki": 0.052
    },
    "cold": {
-    "release": 0.861,
-    "main": 0.849,
-    "loki": 4.58
+    "release": 0.897,
+    "main": 0.842,
+    "loki": 4.306
    },
    "status": {
     "release": "200",
@@ -786,9 +786,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 138.52,
-    "main": 276.05,
-    "loki": 276.05
+    "release": 223.72,
+    "main": 327.99,
+    "loki": 327.99
    },
    "cache": {
     "loki": {
@@ -801,7 +801,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 4690
+       "bytesReceived": 4668
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -828,12 +828,12 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 301100
+       "bytesReceived": 299850
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1086
+       "bytesReceived": 1080
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -862,7 +862,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.98
   },
   {
    "shape": "O3 explore logs, dotted structured-metadata filter",
@@ -888,9 +888,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 141.92,
-    "main": 141.92,
-    "loki": 141.92
+    "release": 131.96,
+    "main": 131.96,
+    "loki": 131.96
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -922,9 +922,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 3.48,
-    "main": 3.48,
-    "loki": 3.48
+    "release": 43.33,
+    "main": 43.33,
+    "loki": 43.33
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -942,7 +942,7 @@
    },
    "p95": {
     "release": 0.001,
-    "main": 0.001,
+    "main": 0.002,
     "loki": 0.001
    },
    "cold": {
@@ -956,9 +956,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 3.48,
-    "main": 3.48,
-    "loki": 3.48
+    "release": 43.33,
+    "main": 43.33,
+    "loki": 43.33
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -990,9 +990,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 0.11,
-    "main": 3.52,
-    "loki": 3.52
+    "release": 3.38,
+    "main": 3.38,
+    "loki": 3.38
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -1024,9 +1024,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 3.52,
-    "main": 3.52,
-    "loki": 3.52
+    "release": 3.54,
+    "main": 3.54,
+    "loki": 3.54
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -1058,9 +1058,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 3.45,
-    "main": 3.45,
-    "loki": 3.37
+    "release": 3.53,
+    "main": 3.53,
+    "loki": 3.53
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -1092,9 +1092,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 3.37,
-    "main": 1.78,
-    "loki": 1.78
+    "release": 3.5,
+    "main": 3.5,
+    "loki": 3.5
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -1126,9 +1126,9 @@
     "loki": "400"
    },
    "vl_cpu_max": {
-    "release": 0.14,
-    "main": 3.35,
-    "loki": 3.35
+    "release": 3.5,
+    "main": 3.59,
+    "loki": 3.59
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
@@ -1137,6 +1137,6 @@
    "speedup": null
   }
  ],
- "baseline_ref": "v2.30.1",
- "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b"
+ "baseline_ref": "v2.34.1",
+ "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249"
 }
