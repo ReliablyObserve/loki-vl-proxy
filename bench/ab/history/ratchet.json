@@ -1183,6 +1183,48 @@
   "shape": "D4 logfmt ttl duration rate, instant"
  },
  {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "instant",
+  "set": "unwrap-gate",
+  "shape": "G11 logfmt amount sum_over_time, instant"
+ },
+ {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G5 logfmt amount sum by rate"
+ },
+ {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G5 logfmt amount sum by rate"
+ },
+ {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G6 json duration_ms sum by rate"
+ },
+ {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G6 json duration_ms sum by rate"
+ },
+ {
+  "added": "2026-10-24",
+  "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G6 json duration_ms sum by rate"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "instant",
