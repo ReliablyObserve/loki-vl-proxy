@@ -26,7 +26,7 @@ import (
 // on()/ignoring() with group_left and nested binaries, over the unwrap sum
 // fixture's logfmt streams, on every window shape and at an instant: the
 // proxy's series, timestamps and values are Loki's.
-// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/aggregation-over-binary-dropped, semantics/without-comparison-inside-ignored, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_AggregationOverBinary(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)
 	fx.waitForLoki(t)
@@ -56,6 +56,9 @@ func TestCompat_AggregationOverBinary(t *testing.T) {
 			"max by (route) (" + lines + " / ignoring (route) group_left " + perApp + ")",
 			"sum by (app) ((" + lines + " + " + lines + ") / 2)",
 			"max(sum by (app) (" + amount + " / " + lines + "))",
+			// A comparison inside a without filters before the sum
+			// (semantics/without-comparison-inside-ignored).
+			"sum without (route) (rate(" + sel + " | logfmt | unwrap amount [" + shape.window + "]) > 0.2)",
 		} {
 			t.Run(shape.name+"/"+query, func(t *testing.T) {
 				loki := shape.run(t, fx, lokiURL, query)

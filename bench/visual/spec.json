@@ -1160,6 +1160,19 @@
    ]
   },
   {
+   "id": "explore-sum-without-comparison-inside",
+   "kind": "explore",
+   "query": "sum without (pod) (rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [$__auto]) > 40)",
+   "covers": [
+    "semantics/without-comparison-inside-ignored",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/without-comparison-inside-ignored"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
