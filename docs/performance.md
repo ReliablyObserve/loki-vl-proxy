@@ -7,7 +7,7 @@ description: Per-request latency, throughput benchmarks, cache hit rates, and co
 
 ## Current position versus Loki
 
-State of `main` on 2026-10-26 (`91470b5c`); it includes changes that are not released yet. Every figure below comes from the generated [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md), the [daily A/B trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md) or the description of the pull request named next to it. The tables further down this page are older, dated measurements.
+State of `main` on 2026-10-26, release 2.35.0. Every figure below comes from the generated [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md), the [daily A/B trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md) or the description of the pull request named next to it. The tables further down this page are older, dated measurements.
 
 How to read the comparison: both sides run on the same fresh stack with the same seeded data (the e2e stack's Loki, 3.7.7 by default). Loki ignores `Cache-Control: no-cache` on `query_range` and `volume_range`, so its first run can still hit caches warmed by earlier requests and understates a truly cold Loki. Warm timings on both sides come largely from results caches. Rows Loki's own cache counters show as cache-answered are left out of the slower-than-Loki counts. A pair counts as slower only beyond noise: 25% and 50 ms.
 

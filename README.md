@@ -49,7 +49,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
-State of `main` on 2026-10-26 (`91470b5c`), measured against Loki v3.7.7. It includes changes not yet released; the latest release is 2.34.1. Every row names its source. The sources are generated from the conformance registry and the daily A/B run, and they move with the code.
+State of `main` on 2026-10-26, release 2.35.0, measured against Loki v3.7.7. Every row names its source. The sources are generated from the conformance registry and the daily A/B run, and they move with the code.
 
 | | Now | Source |
 |---|---|---|
@@ -59,7 +59,7 @@ State of `main` on 2026-10-26 (`91470b5c`), measured against Loki v3.7.7. It inc
 | Behaviour and feature items | 6 proven, 12 partial, 3 gaps | [roadmap](conformance/reports/roadmap.md) |
 | Known differences from Loki (ranked rows) | **88**: 69 open, 12 documented, 5 owner-kept, 2 upstream; 26 more are fixed and wait for the next differential run | [ranked differences](conformance/reports/parity-gaps.md) |
 | Cold first request vs Loki | **54** shape and range pairs are slower than Loki beyond noise (25% and 50 ms); no other compared pair is. A/B runs from 2026-09-30 to the daily run of 2026-10-24 | [performance evidence](conformance/reports/performance.md) |
-| Repeated and refreshed metric windows vs Loki | Before #862 the proxy was 10 to 200 times slower than Loki on a repeated or moved 6h window, because it cached only exact windows. With #862 (on `main`, not released) the six measured shapes answer in 0.003 s to 0.023 s, against Loki's 0.005 s to 0.075 s; for example 0.387 s to 0.007 s against Loki's 0.006 s. Only 6h was measured, and the daily run has not yet measured the change | [performance guide](docs/performance.md#current-position-versus-loki) |
+| Repeated and refreshed metric windows vs Loki | Before #862 the proxy was 10 to 200 times slower than Loki on a repeated or moved 6h window, because it cached only exact windows. With #862 (released in 2.35.0) the six measured shapes answer in 0.003 s to 0.023 s, against Loki's 0.005 s to 0.075 s; for example 0.387 s to 0.007 s against Loki's 0.006 s. Only 6h was measured, and the daily run has not yet measured the change | [performance guide](docs/performance.md#current-position-versus-loki) |
 | Cold, with Loki's results caches off (measured during #862 review, merged 2026-10-26) | 22 of 221 shape and range pairs are slower than uncached Loki; none is slower than on the previous build | [performance guide](docs/performance.md#current-position-versus-loki) |
 | Regression guard | The daily run of 2026-10-24 found 0 regressions and holds 194 rows that are as good as Loki | [daily report #865](https://github.com/ReliablyObserve/loki-vl-proxy/pull/865), [trend](bench/ab/history/trend.md) |
 | Load, backend safety (#862, not a Loki comparison) | 32 clients for 180 s on 80 metric shapes: p50 2.9 s against 5.6 s on the previous build, no 429, VictoriaLogs and Loki restarts 0 to 0 | [performance guide](docs/performance.md#current-position-versus-loki) |
@@ -109,7 +109,7 @@ Full per-query breakdown, side-by-side latency table, methodology, and the heap-
 
 ## Query Performance
 
-> **Historical: measured on proxy v1.50.0 (released 2026-05-26) with Loki 3.6.x and VictoriaLogs v1.50.0; the current release is 2.34.1.** The throughput, latency and Drilldown tables in this section are those original measurements. They compare a warm, cache-assisted proxy with Loki on a synthetic mix, so do not read them as the current position: see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
+> **Historical: measured on proxy v1.50.0 (released 2026-05-26) with Loki 3.6.x and VictoriaLogs v1.50.0; the current release is 2.35.0.** The throughput, latency and Drilldown tables in this section are those original measurements. They compare a warm, cache-assisted proxy with Loki on a synthetic mix, so do not read them as the current position: see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
 
 Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
