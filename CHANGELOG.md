@@ -111,6 +111,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BenchmarkStatsExtentWarmDrilldownBreakdown`); to be re-measured against
   Loki. Registry: `quality/query-range-extent-cache`.
 
+### Fixed
+
+- **`Proxy.Shutdown` waits for the label warm-up goroutines and ends a keep-warm
+  request in flight.** The keep-warm loop's request ran on its own context, and
+  `Shutdown` only signalled the loop: a warm run still in flight finished after
+  `Shutdown` had closed the backend clients' idle connections and handed its
+  connection back to the pool, keeping two goroutines alive while the backend
+  stayed up (seen by the lifecycle leak fuzz target under load). The request now
+  ends when `Shutdown` runs, and `Shutdown` waits for the startup warm-up and the
+  keep-warm loop, bounded by its context, before it closes idle connections.
+
 ## [2.34.1] - 2026-10-23
 
 ### Fixed

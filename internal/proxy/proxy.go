@@ -713,6 +713,7 @@ type Proxy struct {
 	labelValuesIndexPersistStop          chan struct{}
 	labelValuesIndexPersistDone          chan struct{}
 	keepWarmStop                         chan struct{}
+	keepWarmWG                           sync.WaitGroup // startup warm-up and keep-warm loop; Shutdown waits for them
 	labelValuesIndexMu                   sync.RWMutex
 	labelValuesIndex                     map[string]*labelValuesIndexState
 	labelValuesIndexPersistDigest        [sha256.Size]byte
@@ -1716,6 +1717,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 			close(p.keepWarmStop)
 		}
 	}
+	waitKeepWarm(ctx, &p.keepWarmWG)
 	p.stopStreamLabelNames()
 	if p.limiter != nil {
 		p.limiter.Stop()
@@ -2810,4 +2812,23 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	code := unwrapRecordedStatus(r.Context(), sc.code)
 	p.metrics.RecordRequest("query", code, elapsed)
 	p.queryTracker.Record("query", logqlQuery, elapsed, code >= 400)
+}
+
+// waitKeepWarm waits for the warm-up goroutines to return, bounded by ctx: a
+// warm request still in flight would otherwise hand its connection back to the
+// idle pool after Shutdown closed it.
+func waitKeepWarm(ctx context.Context, wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	if ctx == nil {
+		<-done
+		return
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -308,6 +309,64 @@ func TestProxyLifecycle_ShutdownClosesIdleBackendConnections(t *testing.T) {
 				t.Fatalf("idle backend connections outlived Shutdown: %s", report)
 			}
 		})
+	}
+}
+
+// A warm-up request still in flight when Shutdown runs must end with it: it
+// would otherwise finish later and hand its connection back to the idle pool
+// Shutdown already closed, keeping two goroutines alive while the backend stays
+// up. The backend answers slowly and is closed only after the check.
+// conformance: shutdown-releases-background-work
+func TestProxyLifecycle_ShutdownEndsAnInFlightWarmUp(t *testing.T) {
+	var inFlight atomic.Int32
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			_, _ = w.Write([]byte("OK"))
+			return
+		}
+		inFlight.Add(1)
+		defer inFlight.Add(-1)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	defer slow.Close()
+	defer close(release)
+
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+	before := goroutineCreators()
+
+	callerCache := cache.New(time.Minute, 100)
+	p, err := New(leakConfig(leakFlagLabelsWarm, slow.URL, t.TempDir(), callerCache))
+	if err != nil {
+		callerCache.Close()
+		t.Fatalf("New: %v", err)
+	}
+	p.Init()
+	deadline := time.Now().Add(5 * time.Second)
+	for inFlight.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if inFlight.Load() == 0 {
+		t.Fatal("no warm request reached the backend")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown: %v", err)
+	}
+	callerCache.Close()
+
+	if report := settleGoroutines(baseline, before); report != "" {
+		t.Fatalf("an in-flight warm-up request outlived Shutdown: %s", report)
 	}
 }
 
