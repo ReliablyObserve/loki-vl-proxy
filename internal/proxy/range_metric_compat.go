@@ -1434,7 +1434,11 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	// Parse Prometheus range vector response:
 	// {"status":"success","data":{"result":[{"metric":{...},"values":[[ts,"v"],...]}]}}
-	v, parseErr := fj.ParseBytes(body)
+	// A pooled parser reuses its values across requests; nothing parsed outlives
+	// this call (labels and values are copied out).
+	parser := statsQRFJPool.Get()
+	defer statsQRFJPool.Put(parser)
+	v, parseErr := parser.ParseBytes(body)
 	if parseErr != nil {
 		return nil, nil, fmt.Errorf("parse stats_query_range response: %w", parseErr)
 	}
