@@ -1,6 +1,7 @@
 id: api_prom_push
-state: gap
+state: not-applicable
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
-owner_decision: null
+  Write path, out of scope by design: the proxy is a read-only Loki front for VictoriaLogs and serves no push route. Ingest goes to VictoriaLogs directly.
+owner_decision: |
+  "Write API is not a gap - we will only implement the read API, and some delete, but nothing more from the write path." (owner 2026-10-26)
 waiver: null

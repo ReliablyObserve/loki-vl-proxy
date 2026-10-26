@@ -4,6 +4,8 @@ Generated from the registry by `conformance/scripts/gaps.py`. Do not edit by han
 
 Priority = consumer weight (explore/drilldown 3, datasource 2, api 1), plus 3 when no test
 compares the endpoint against Loki, plus 2 when the proxy computes the result itself.
+An endpoint the owner named a priority for is placed by that first: `first` above all
+others (and always listed), `last` below all others; the score orders within each group.
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
@@ -27,13 +29,11 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 | 4 | `/api/prom/series` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/rules/{namespace}/{groupName}` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
 | 4 | `/api/prom/query` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/push` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label/{name}/values` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 3 | `/prometheus/api/v1/rules` | api | proxy_side | 5 | 1 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 3 | `/loki/api/v1/rules` | api | proxy_side | 9 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 1 | `/loki/api/v1/push` | api | not_implemented | 45 | 42 | not implemented; no test wired to the registry |
 
 ## Error surface
 

@@ -1,6 +1,7 @@
 id: loki_api_v1_push
-state: gap
+state: not-applicable
 reason: |
-  Seeded from the repository: the proxy answers it only to refuse it (read-only proxy, handleWriteBlocked). internal/proxy/critical_fixes_test.go asserts the 405 refusal.
-owner_decision: null
+  Write path, out of scope by design: the proxy is a read-only Loki front for VictoriaLogs and refuses the route (handleWriteBlocked, 405). internal/proxy/critical_fixes_test.go asserts the 405 refusal. Ingest goes to VictoriaLogs directly.
+owner_decision: |
+  "Write API is not a gap - we will only implement the read API, and some delete, but nothing more from the write path." (owner 2026-10-26)
 waiver: null

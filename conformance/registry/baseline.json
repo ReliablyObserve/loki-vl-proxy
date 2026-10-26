@@ -1,15 +1,15 @@
 {
-  "endpoints": 35,
+  "endpoints": 33,
   "proven": 12,
   "scores": {
-    "coverage": 0.5429,
-    "implementation": 0.6571,
+    "coverage": 0.5455,
+    "implementation": 0.697,
     "native_share_of_implemented": 0.2609
   },
   "states": {
     "api_prom_label": "gap",
     "api_prom_label_name_values": "gap",
-    "api_prom_push": "gap",
+    "api_prom_push": "not-applicable",
     "api_prom_query": "gap",
     "api_prom_rules": "partial",
     "api_prom_rules_namespace": "partial",
@@ -39,7 +39,7 @@
     "loki_api_v1_label_name_values": "partial",
     "loki_api_v1_labels": "proven",
     "loki_api_v1_patterns": "proven",
-    "loki_api_v1_push": "gap",
+    "loki_api_v1_push": "not-applicable",
     "loki_api_v1_query": "proven",
     "loki_api_v1_query_range": "proven",
     "loki_api_v1_rules": "partial",

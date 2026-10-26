@@ -1,22 +1,21 @@
 {
-  "endpoints": 35,
+  "endpoints": 33,
   "execution": {
     "hybrid": 4,
     "native_vl": 6,
-    "not_implemented": 12,
+    "not_implemented": 10,
     "proxy_side": 13
   },
   "implemented": 23,
   "loki_version": "v3.7.7",
   "proven": 12,
   "scores": {
-    "coverage": 0.5429,
-    "implementation": 0.6571,
+    "coverage": 0.5455,
+    "implementation": 0.697,
     "native_share_of_implemented": 0.2609
   },
   "state": {
-    "gap": 12,
-    "not-applicable": 0,
+    "gap": 10,
     "partial": 11,
     "proven": 12,
     "unknown": 0,
@@ -28,5 +27,5 @@
     "stats_functions": 14,
     "version_gated": 2
   },
-  "with_differential_tests": 19
+  "with_differential_tests": 18
 }
