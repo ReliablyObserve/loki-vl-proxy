@@ -2540,7 +2540,7 @@
    ]
   },
   "label-replace": {
-   "description": "label_replace adds its label to instant answers, to post-aggregated series and around a bare range function or a `| json` metric (PR for semantics/label-replace-new-label). L1 instant and L2 range are the registry row's form over a sum by; L3 is the transform under topk (ranked after the transform, as Loki evaluates it); L4 is an instant label_replace over a bare count_over_time (one series per stream, not one total); L5 and L6 are the transform over a `| json` metric that drops __error__ (answered by the evaluator that owns JSON parser errors). Run with the control set.",
+   "description": "label_replace adds its label to instant answers, to post-aggregated series and around a bare range function or a `| json` metric (PR for semantics/label-replace-new-label). L1 instant and L2 range are the registry row's form over a sum by; L3 is the transform under topk (ranked after the transform, as Loki evaluates it); L4 is an instant label_replace over a bare count_over_time (one series per stream, not one total); L5 and L6 are the transform over a `| json` metric that drops __error__ (answered by the evaluator that owns JSON parser errors). Run with the control set. L7 and L8 are the rows this change also closes: a label_replace around a binary of two sums on query_range (semantics/label-replace-range-binary-marker) and the instant label_replace around a sum by of the registry request (semantics/label-replace-instant-vector).",
    "ranges": [
     "1h",
     "6h",
@@ -2600,6 +2600,23 @@
       "semantics/pipeline-error-text-parity",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "L7 label_replace around a binary of two sums by level",
+     "query": "label_replace(sum by (level) (rate({service_name=\"payment-service\"}[5m])) / sum by (level) (rate({service_name=\"payment-service\"}[5m])), \"dst\", \"$1\", \"level\", \"(.*)\")",
+     "covers": [
+      "semantics/label-replace-range-binary-marker",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "L8 label_replace over sum by level count, instant",
+     "query": "label_replace(sum by (level) (count_over_time({service_name=\"payment-service\"}[5m])), \"dst\", \"$1\", \"level\", \"(.*)\")",
+     "covers": [
+      "semantics/label-replace-instant-vector",
+      "loki_api_v1_query"
+     ],
+     "instant": true
     }
    ]
   },

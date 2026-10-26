@@ -438,7 +438,9 @@ None measured.
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 32 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | same | locked 2026-10-27 |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 8 same | worst 1.39s / 0.05s (24h) | 5.50s / 0.06s | same | locked 2026-10-27 |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | differs | locked 2026-10-27 |
+| `semantics/label-replace-instant-vector` | — | not measured | | | | — |
 | `semantics/label-replace-new-label` | 6 × 2 ranges | 5 same, 1 slower | worst 0.54s / 0.55s (1h) | 0.11s / 0.01s | differs; 1 slower than Loki cold | — |
+| `semantics/label-replace-range-binary-marker` | — | not measured | | | | — |
 | `semantics/labels-end-inclusive-like-loki` | 12 × 4 ranges | 48 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | differs | locked 2026-10-27 |
 | `semantics/line-filter-or-alternatives` | 6 × 5 ranges | 21 same | worst 0.74s / 0.05s (24h) | 3.34s / 0.03s | same; 2 slower than Loki cold | not locked |
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.01s † / 0.01s | differs | locked 2026-10-27 |

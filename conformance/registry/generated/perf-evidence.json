@@ -73697,6 +73697,7 @@
       "warm_p50": 0.001
     }
   ],
+  "semantics/label-replace-instant-vector": [],
   "semantics/label-replace-new-label": [
     {
       "baseline": "base",
@@ -73819,6 +73820,7 @@
       "warm_p50": 0.554
     }
   ],
+  "semantics/label-replace-range-binary-marker": [],
   "semantics/labels-end-inclusive-like-loki": [
     {
       "baseline": "release",
