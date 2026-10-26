@@ -743,12 +743,24 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // decodes compression. It does NOT interact with the circuit breaker — callers are
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	// A metric checked for unwrap conversion errors counts them in its own stats.
+	// The rewrite goes ahead of the stats extent cache, which keys and stores the
+	// counting query's buckets, the counted groups included; the counter is read
+	// off the answer the cache assembles, stored buckets and fresh ones alike. A
+	// read the cache sends itself carries the rewritten query already.
+	sentParams := params
+	var stripUnwrapCounter func([]byte) ([]byte, error)
+	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); !fetch {
+		params, stripUnwrapCounter, _ = unwrapCheckFrom(ctx).countingStatsQuery(path, params)
+	}
 	if resp, ok, err := p.statsExtentPost(ctx, path, params); ok {
+		if err == nil && stripUnwrapCounter != nil {
+			if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
+				return nil, err
+			}
+		}
 		return resp, err
 	}
-	// A metric checked for unwrap conversion errors counts them in its own stats.
-	sentParams := params
-	params, stripUnwrapCounter, _ := unwrapCheckFrom(ctx).countingStatsQuery(path, params)
 	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend

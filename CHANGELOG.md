@@ -131,6 +131,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `[5m]` shapes at step 10m go from 3.9 to 2.9 MiB. Registry:
   `window-bounds-and-step-alignment`.
 
+- **An unwrap metric reads only the VictoriaLogs buckets it did not read
+  before when its window moves by a step or more.** Every query holding `unwrap` carries the
+  conversion-error check, which counts the values Loki's conversion rejects
+  (Loki's 400, `pkg/logql/evaluator.go:726-733`) and the nan values, even with
+  `| __error__=""`; the stats extent cache refused every call of such a
+  request, so a dashboard refresh read the whole window again: on the A/B
+  refresh pass all 77 unwrap rows were slower than Loki, up to 544 ms against
+  3 ms for `sum by (service_name) (sum_over_time({env="production"} | logfmt |
+  unwrap latency_ms [5m]))` at 6h. The query is now rewritten to its counting
+  form before the cache, which keys and stores that query's buckets, the
+  rejected and nan values included as groups of their own, and the check reads
+  them off the answer the cache assembles: a rejected value in a stored bucket
+  still answers Loki's 400, and only the new buckets are read from
+  VictoriaLogs. As for every other metric, a row written into a stored bucket
+  later is seen once the entry expires (`-query-range-extent-cache-ttl`).
+  Not covered: a window that moves by less than a step (a refresh every few
+  seconds on a 60 s or 600 s step) is still read from VictoriaLogs again (the
+  cause is not isolated yet); on the A/B stack at 24h,
+  step 60 s, windows moving 15 s, the unwrap shapes took 0.23 to 2.3 s while
+  Loki answered in 3 to 5 ms. Registry: `quality/unwrap-query-range-extent-cache`.
+
 ## [2.38.0] - 2026-10-28
 
 ### Added
