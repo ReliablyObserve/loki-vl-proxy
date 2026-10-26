@@ -3,7 +3,6 @@ package proxy
 import (
 	"math"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -294,13 +293,6 @@ func unwrapWindowForm(query string) bool {
 func isRangeAggregation(expr logqlpkg.Expr) bool {
 	_, ok := expr.(*logqlpkg.RangeAggregation)
 	return ok
-}
-
-// windowSamples returns the ascending samples labelled in [from, to).
-func windowSamples(samples []rangeMetricSample, from, to int64) []rangeMetricSample {
-	lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= from })
-	hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= to })
-	return samples[lo:hi]
 }
 
 // queryWithoutUnwrapGate returns a translated query without the unwrap gate

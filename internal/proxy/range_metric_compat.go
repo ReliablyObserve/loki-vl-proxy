@@ -1590,27 +1590,36 @@ func eachBucketPoint(values []byte, start time.Time, hitStep time.Duration, fn f
 	if hitStep <= 0 {
 		return
 	}
-	_, _ = jsonparser.ArrayEach(values, func(pair []byte, _ jsonparser.ValueType, _ int, _ error) {
-		var ts, value []byte
-		n := 0
-		_, _ = jsonparser.ArrayEach(pair, func(v []byte, _ jsonparser.ValueType, _ int, _ error) {
-			switch n {
-			case 0:
-				ts = v
-			case 1:
-				value = v
-			}
-			n++
-		})
-		if n < 2 {
+	// VictoriaLogs writes `[[1700000000.5,"1.25"],...]`: a number and a
+	// number as a string per pair, no bracket or comma inside either.
+	i := bytes.IndexByte(values, '[')
+	if i < 0 {
+		return
+	}
+	for i++; ; {
+		open := bytes.IndexByte(values[i:], '[')
+		if open < 0 {
 			return
 		}
+		i += open + 1
+		comma := bytes.IndexByte(values[i:], ',')
+		if comma < 0 {
+			return
+		}
+		ts := bytes.TrimSpace(values[i : i+comma])
+		i += comma + 1
+		end := bytes.IndexByte(values[i:], ']')
+		if end < 0 {
+			return
+		}
+		value := bytes.Trim(bytes.TrimSpace(values[i:i+end]), `"`)
+		i += end + 1
 		sec, err := jsonparser.ParseFloat(ts)
 		if err != nil {
-			return
+			continue
 		}
 		fn(snapSlidingBucketNanos(int64(math.Round(sec*1e9)), start, hitStep), value)
-	})
+	}
 }
 
 // appendBucketSamples appends the points of one stats_query_range series as
@@ -2429,34 +2438,45 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			samples = append([]rangeMetricSample(nil), samples...)
 			sort.Slice(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
 		}
-		prefix := make([]float64, len(samples)+1)
-		for i, sample := range samples {
-			prefix[i+1] = prefix[i] + sample.value
+		var prefix []float64
+		if !mergedUnwrap {
+			prefix = make([]float64, len(samples)+1)
+			for i, sample := range samples {
+				prefix[i+1] = prefix[i] + sample.value
+			}
 		}
 		present := seriesEntry.PresentBuckets // ascending; nil without presence data
+		counts := seriesEntry.Counts          // ascending; avg over time only
 
 		for k, v := range seriesEntry.Metric {
 			encodedBytes += len(k) + len(v) + 6
 		}
 		var points []byte
+		// The windows move forward with t, so each bound only moves forward:
+		// samples[lo:hi] (and counts[cLo:cHi]) are the buckets labelled in
+		// [t-window, t), present[pLo] the first present bucket from t-window.
+		var sampleWindow, countWindow windowCursor
+		pLo := 0
 		for t := start; !t.After(end); t = t.Add(step) {
 			tNS := t.UnixNano()
 			windowStartNS := tNS - windowNS
-			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStartNS })
-			hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= tNS })
-			sum := prefix[hi] - prefix[lo]
+			lo, hi := sampleWindow.span(samples, windowStartNS, tNS)
+			var sum float64
 			if mergedUnwrap {
 				// Unwrap values are floats: one infinity would turn every later
 				// prefix difference into NaN, and large values lose precision to
 				// cancellation, so each window is merged on its own.
-				sum = 0
-				if lo < hi {
-					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], windowSamples(seriesEntry.Counts, windowStartNS, tNS))
+				if cLo, cHi := countWindow.span(counts, windowStartNS, tNS); lo < hi {
+					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], counts[cLo:cHi])
 				}
+			} else {
+				sum = prefix[hi] - prefix[lo]
 			}
 			hasLines := sum != 0 || (mergedUnwrap && lo < hi)
 			if present != nil {
-				pLo := sort.Search(len(present), func(i int) bool { return present[i] >= windowStartNS })
+				for pLo < len(present) && present[pLo] < windowStartNS {
+					pLo++
+				}
 				hasLines = pLo < len(present) && present[pLo] < tNS
 			}
 			if !hasLines {
@@ -2494,6 +2514,19 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		}
 	}
 	return marshalManualMetricResponse("matrix", results), nil
+}
+
+// windowCursor holds the bounds [lo, hi) of the ascending samples labelled in
+// a window [from, to) that only moves forward.
+type windowCursor struct{ lo, hi int }
+
+func (c *windowCursor) span(samples []rangeMetricSample, from, to int64) (int, int) {
+	for c.lo < len(samples) && samples[c.lo].ts < from {
+		c.lo++
+	}
+	for c.hi = max(c.hi, c.lo); c.hi < len(samples) && samples[c.hi].ts < to; c.hi++ {
+	}
+	return c.lo, c.hi
 }
 
 func buildManualRangeMetricVector(functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration) []byte {
