@@ -1,6 +1,8 @@
 id: api_prom_tail
 state: gap
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
-owner_decision: null
+  Not routed: the proxy answers 404. Loki serves /api/prom/tail with the same TailHandler as /loki/api/v1/tail (pkg/loki/modules.go:718-719), so it needs the same behaviour and the same frames, and shares the missing items of loki_api_v1_tail (history replay for start and limit, limit and delay_for validation, multi-tenant answer).
+owner_decision: |
+  Tail must mimic Loki (owner 2026-10-26).
+priority: first
 waiver: null

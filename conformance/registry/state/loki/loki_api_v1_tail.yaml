@@ -1,6 +1,8 @@
 id: loki_api_v1_tail
-state: proven
+state: partial
 reason: |
-  Seeded from the repository: the proxy routes it, 4 test files compare it against Loki.
-owner_decision: null
+  Routed (handleTail) and compared against Loki in 4 test files, but not yet Loki-identical. Missing: start and limit history replay (Loki sends the last limit entries since start before live lines, pkg/loghttp/tail.go:70-94; open case semantics/tail-history-start-limit); limit and delay_for validation (limit must be positive, delay_for above 5 is refused, tail.go:101-103 and params.go:27-36); a multi-tenant tail request, which the proxy refuses (docs/KNOWN_ISSUES.md) with no registry row yet pinning Loki's answer.
+owner_decision: |
+  Tail must mimic Loki (owner 2026-10-26).
+priority: first
 waiver: null

@@ -11,7 +11,7 @@ Writes:
 Usage: coverage_map.py [--docs docs/compatibility-coverage.md]
 """
 import argparse, json, os, re, sys
-from registry_io import load_json, read_text, write_text
+from registry_io import load_json, out_of_scope, read_text, write_text
 
 ROOT = "conformance/registry"
 STATE_LABEL = {"proven": "proven", "partial": "partial", "gap": "gap",
@@ -41,8 +41,11 @@ def collect():
                       load_json(os.path.join(ROOT, "generated/proxy/implementation.json"))["endpoints"]}
     vl = load_json(os.path.join(ROOT, "generated/vl/usage.json"))
     rows = []
+    skipped = out_of_scope()
     for endpoint in coverage["endpoints"]:
         identifier = endpoint["id"]
+        if identifier in skipped:
+            continue
         state = read_yaml_field(os.path.join(ROOT, "state/loki", identifier + ".yaml"), "state") or "unknown"
         impl = implementation.get(identifier, {})
         rows.append({
@@ -73,7 +76,8 @@ def main():
         "proven": proven, "with_differential_tests": differential,
         "execution": {key: sum(1 for row in rows if row["execution"] == key)
                       for key in EXECUTION_LABEL},
-        "state": {key: sum(1 for row in rows if row["state"] == key) for key in STATE_LABEL},
+        "state": {key: sum(1 for row in rows if row["state"] == key)
+                  for key in STATE_LABEL if key != "not-applicable"},
         "vl_surface": {"endpoints": len(vl["endpoints_used"]), "pipes": len(vl["pipes_used"]),
                        "stats_functions": len(vl["stats_functions_used"]),
                        "version_gated": len(vl["version_gated"])},
@@ -96,6 +100,8 @@ def main():
         ("Generated from the conformance registry by "
          + "`conformance/scripts/coverage_map.py`. Do not edit by hand."), "",
         f"Loki surface: **{loki_version}**, extracted from the Loki source.", "",
+        ("The proxy serves Loki's read API. Write endpoints (push) are not supported: "
+         + "ingest goes to VictoriaLogs directly."), "",
         "## Scores", "",
         "| Score | Value | Meaning |", "|---|---|---|",
         f"| Implementation | {implemented}/{total} | endpoints the proxy routes |",

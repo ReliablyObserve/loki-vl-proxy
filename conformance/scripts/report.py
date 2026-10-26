@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print the conformance registry state: coverage, implementation and evidence."""
 import os, re, sys
-from registry_io import load_json, read_text
+from registry_io import load_json, out_of_scope, read_text
 
 ROOT = "conformance/registry"
 
@@ -19,7 +19,10 @@ def main():
     implementation = {entry["id"]: entry for entry in
                       load_json(os.path.join(ROOT, "generated/proxy/implementation.json"))["endpoints"]}
     rows, states, executions = [], {}, {}
+    skipped = out_of_scope()
     for endpoint in coverage["endpoints"]:
+        if endpoint["id"] in skipped:
+            continue
         state = read_state("loki", endpoint["id"])
         impl = implementation.get(endpoint["id"], {})
         execution = impl.get("execution", "not_implemented")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rank what is still missing, from the registry. Writes conformance/reports/gaps.md."""
 import os, re, sys
-from registry_io import load_json, read_text, write_text
+from registry_io import load_json, out_of_scope, read_text, state_field, write_text
 
 ROOT = "conformance/registry"
 WEIGHT = {"explore": 3, "drilldown": 3, "datasource": 2, "api": 1}
@@ -16,6 +16,12 @@ def consumers(identifier):
 
 
 GENERIC = ("loki_api_v1_", "api_prom_")
+
+
+def state_reason(identifier):
+    path = f"{ROOT}/state/loki/{identifier}.yaml"
+    match = re.search(r'^reason: \|\n((?:\s+.*\n)+)', read_text(path), re.M)
+    return " ".join(match.group(1).split()) if match else ""
 
 
 def fmt(value):
@@ -67,8 +73,11 @@ def main():
     wiring = load_json(f"{ROOT}/generated/wiring.json")
     errors = load_json(f"{ROOT}/generated/proxy/errors.json")["summary"]["by_status"]
     rows = []
+    skipped = out_of_scope()
     for endpoint in coverage["endpoints"]:
         identifier = endpoint["id"]
+        if identifier in skipped:
+            continue
         people = consumers(identifier)
         impl = implementation.get(identifier, {})
         execution = impl.get("execution", "not_implemented")
@@ -83,17 +92,24 @@ def main():
             missing.append("no test wired to the registry")
         if execution == "proxy_side":
             missing.append("proxy-side: justify in the registry or push down to VictoriaLogs")
+        # Owner ordering: `priority: first` ranks above everything and is always listed;
+        # `priority: last` ranks below everything. Within a tier the score decides.
+        tier = {"first": 1, "last": -1}.get(state_field(identifier, "priority"), 0)
+        if tier == 1:
+            missing.append("owner priority: " + state_reason(identifier))
         score = (sum(WEIGHT.get(p, 1) for p in people) + (3 if not differential else 0)
                  + (2 if execution == "proxy_side" else 0))
-        rows.append((score, endpoint["path"], people, execution, tests, differential, missing))
+        rows.append((tier, score, endpoint["path"], people, execution, tests, differential, missing))
     rows.sort(reverse=True)
     lines = ["# Open gaps", "",
              "Generated from the registry by `conformance/scripts/gaps.py`. Do not edit by hand.", "",
              "Priority = consumer weight (explore/drilldown 3, datasource 2, api 1), plus 3 when no test",
-             "compares the endpoint against Loki, plus 2 when the proxy computes the result itself.", "",
+             "compares the endpoint against Loki, plus 2 when the proxy computes the result itself.",
+             "An endpoint the owner named a priority for is placed by that first: `first` above all",
+             "others (and always listed), `last` below all others; the score orders within each group.", "",
              "| Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |",
              "|---:|---|---|---|---:|---:|---|"]
-    for score, path, people, execution, tests, differential, missing in rows:
+    for tier, score, path, people, execution, tests, differential, missing in rows:
         if not missing:
             continue
         lines.append(f"| {score} | `{path}` | {', '.join(people) or '—'} | {execution} | {tests} | "
@@ -159,7 +175,7 @@ def main():
     lines.append("")
     os.makedirs("conformance/reports", exist_ok=True)
     write_text("conformance/reports/gaps.md", "\n".join(lines))
-    print(f"conformance/reports/gaps.md: {sum(1 for r in rows if r[6])} endpoints with gaps")
+    print(f"conformance/reports/gaps.md: {sum(1 for r in rows if r[7])} endpoints with gaps")
     return 0
 
 

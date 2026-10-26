@@ -2,5 +2,7 @@ id: api_prom_rules
 state: partial
 reason: |
   The proxy routes it (handleRules); 0 test files compare it against Loki.
-owner_decision: null
+owner_decision: |
+  Alerting and recording rules are scheduled last (owner 2026-10-26).
+priority: last
 waiver: null
