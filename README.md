@@ -49,41 +49,45 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
-State of `main` on 2026-10-26, release 2.35.0, measured against Loki v3.7.7. Every row names its source. The sources are generated from the conformance registry and the daily A/B run, and they move with the code.
+Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same hardware, release 2.35.0. A pair is one query shape over one time range (1h to 7d); "comparable" means both sides answered and Loki's results cache did not answer the first request. The proxy serves Loki's read API (and an opt-in delete). Write endpoints (push) are not supported: ingest goes to VictoriaLogs directly.
 
-| | Now | Source |
-|---|---|---|
-| Loki endpoints the proxy routes | **23 of 35** (66%) | [coverage map](conformance/reports/coverage-map.md) |
-| Endpoints with tests that compare the proxy against Loki | **19 of 35** (54%) | [coverage map](conformance/reports/coverage-map.md) |
-| Endpoints whose registry state is `proven` | **12 of 35** (34%) | [coverage map](conformance/reports/coverage-map.md) |
-| Behaviour and feature items | 6 proven, 12 partial, 3 gaps | [roadmap](conformance/reports/roadmap.md) |
-| Known differences from Loki (ranked rows) | **88**: 69 open, 12 documented, 5 owner-kept, 2 upstream; 26 more are fixed and wait for the next differential run | [ranked differences](conformance/reports/parity-gaps.md) |
-| Cold first request vs Loki | **54** shape and range pairs are slower than Loki beyond noise (25% and 50 ms); no other compared pair is. A/B runs from 2026-09-30 to the daily run of 2026-10-24 | [performance evidence](conformance/reports/performance.md) |
-| Repeated and refreshed metric windows vs Loki | Before #862 the proxy was 10 to 200 times slower than Loki on a repeated or moved 6h window, because it cached only exact windows. With #862 (released in 2.35.0) the six measured shapes answer in 0.003 s to 0.023 s, against Loki's 0.005 s to 0.075 s; for example 0.387 s to 0.007 s against Loki's 0.006 s. Only 6h was measured, and the daily run has not yet measured the change | [performance guide](docs/performance.md#current-position-versus-loki) |
-| Cold, with Loki's results caches off (measured during #862 review, merged 2026-10-26) | 22 of 221 shape and range pairs are slower than uncached Loki; none is slower than on the previous build | [performance guide](docs/performance.md#current-position-versus-loki) |
-| Regression guard | The daily run of 2026-10-24 found 0 regressions and holds 194 rows that are as good as Loki | [daily report #865](https://github.com/ReliablyObserve/loki-vl-proxy/pull/865), [trend](bench/ab/history/trend.md) |
-| Load, backend safety (#862, not a Loki comparison) | 32 clients for 180 s on 80 metric shapes: p50 2.9 s against 5.6 s on the previous build, no 429, VictoriaLogs and Loki restarts 0 to 0 | [performance guide](docs/performance.md#current-position-versus-loki) |
+**Where the proxy is better than Loki**
 
-**Open differences with the most impact** (all explore-visible; query counts are from the differential run of 2026-10-05):
+- First request: **185 of 357** comparable pairs are faster (52%).
+- Drilldown and Explore pages: **64 of 87** faster (74%); median first request **0.16 s** against Loki's **0.85 s**.
+- Metric queries: **116 of 220** faster (53%); median first request **0.11 s** against **0.24 s**.
+- Label and label-value calls: median repeat **under 0.01 s** against Loki's **0.03 s to 0.04 s**, over 48 pairs.
 
-1. `profiles/keep-removes-derived-service-name`: `| keep` removes a `service_name` the proxy derived (117 corpus queries).
-2. `severity/detected-level-stage-side-effects`: `keep`, `drop` and a `detected_level` filter change other labels (37).
-3. `semantics/logfmt-existence-filter-ungrouped-sum`: an ungrouped sum over `| logfmt | key!=""` returns no series (36).
-4. `parsed-identity/bare-parser-metric-duplicates-extracted`: a bare `| json` metric labels each series with every parsed key twice (34).
-5. `semantics/topk-bottomk-range-series`: `topk` and `bottomk` on `query_range` return k series overall, not the top k per step (29).
+**Where it is on par**
 
-Larger by query count but lower in impact rank: parse-error text differs from Loki's on invalid queries (`semantics/parse-error-text-parity`, 210 queries) and the proxy rejects some LogQL Loki accepts, such as comments and compound offsets (`semantics/proxy-rejects-valid-logql`, 79). Differences we keep on purpose or cannot remove are listed as documented or owner-kept in the same report, for example volume bytes (Loki counts chunk bytes with structured metadata, the proxy counts line bytes) and `| json` series identity (opt-in flag `-exact-parser-series-identity`).
+- First request: **118 of 357** pairs are within noise (33%); noise is 25% and 50 ms.
+- Log queries: **24 of 48** on par; metric queries: **86 of 220** on par.
+- Repeated and refreshed 6h metric windows (six shapes measured on this build): **0.003 s to 0.023 s** against Loki's **0.005 s to 0.075 s**.
+- Answers: **418 of 581** pairs return the same result as Loki (72%).
 
-**Where the proxy is still slower than Loki or fails where Loki answers:**
+**Where it is worse**
 
-- Cold first requests of `| json` queries that filter or group on `level_extracted`: 22.13 s against Loki's 4.52 s at 24h, 5.88 s against 1.10 s at 6h (daily run of 2026-10-24, Loki's cache counters show no cache answer).
-- Cold and repeated `detected_level` volume over `| json`: 10.30 s to 10.40 s at 24h against Loki's 0.97 s to 1.02 s cold (daily run of 2026-10-24, verified the same way), and the repeat is not faster.
-- Unwrap metrics over 7d, for example a logfmt `latency_ms` rate: 13.13 s against Loki's 0.005 s in the run of 2026-10-08. That run recorded no Loki cache counters, so Loki's time is unverified and may understate a truly cold Loki; the proxy's time is real.
-- Label metadata after a cache flush: 0.14 s to 0.17 s against 0.02 s to 0.06 s (#862).
+- First request: **54 of 357** pairs are slower (15%): log queries **20 of 48**, Drilldown and Explore pages **15 of 87**, metric queries **18 of 220**.
+- The largest gaps: `| json` queries that filter or group on `level_extracted`, **22.13 s** against **4.52 s** at 24h; `detected_level` volume over `| json`, **10.30 s to 10.40 s** against **0.97 s to 1.02 s** at 24h; unwrap metrics over 7d, up to **13.13 s** (Loki's time there, 0.005 s, is unverified).
+- Repeat of the same query in the daily A/B, median p50: metric queries **0.10 s** against **0.02 s**, Drilldown and Explore pages **0.12 s** against **0.05 s**, log queries **0.05 s** against **0.04 s**.
+- Label metadata right after a cache flush: **0.14 s to 0.17 s** against **0.02 s to 0.06 s**.
+- Answers: **112 of 581** pairs return a different result from Loki, and **51** could not be compared.
 - A 7d Drilldown breakdown can fail on the 64 MiB response budget where Loki answers (`limits/drilldown-7d-breakdown-response-limit`, open).
-- Some shapes under concurrent load answer 502 on both the previous and the current build (a detected-level `| json` shape, #862).
 
-Details: [performance guide](docs/performance.md#current-position-versus-loki) · [Known Issues](docs/KNOWN_ISSUES.md) · [coverage map](docs/compatibility-coverage.md) · [open gaps](conformance/reports/gaps.md). The two sections below are historical measurements, dated and labelled with their conditions.
+**Quality of the Loki read API**
+
+| | Now |
+|---|---|
+| Loki endpoints the proxy routes | **23 of 33** (70%) |
+| Endpoints with tests that compare the proxy against Loki | **18 of 33** (55%) |
+| Endpoints whose registry state is `proven` | **11 of 33** (33%) |
+| Routed endpoints answered natively by VictoriaLogs | 6 of 23 |
+| Behaviour and feature items | 6 proven, 12 partial, 3 gaps |
+| Known differences from Loki (ranked) | **88**: 69 open, 12 documented, 5 owner-kept, 2 upstream |
+
+The five open differences with the most impact (all explore-visible): `profiles/keep-removes-derived-service-name` (`| keep` removes a `service_name` the proxy derived), `severity/detected-level-stage-side-effects` (`keep`, `drop` and a `detected_level` filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (a bare `| json` metric labels each series with every parsed key twice) and `semantics/topk-bottomk-range-series` (`topk` and `bottomk` on `query_range` return k series overall, not per step). Differences kept on purpose are listed as documented or owner-kept, for example volume bytes (Loki counts chunk bytes, the proxy counts line bytes) and `| json` series identity (opt-in flag `-exact-parser-series-identity`).
+
+Details, the per-workload tables and the method: [performance summary](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki) · [ranked differences](conformance/reports/parity-gaps.md) · [coverage map](conformance/reports/coverage-map.md) · [Known Issues](docs/KNOWN_ISSUES.md).
 
 ---
 
@@ -109,13 +113,49 @@ Full per-query breakdown, side-by-side latency table, methodology, and the heap-
 
 ## Query Performance
 
-> **Historical: measured on proxy v1.50.0 (released 2026-05-26) with Loki 3.6.x and VictoriaLogs v1.50.0; the current release is 2.35.0.** The throughput, latency and Drilldown tables in this section are those original measurements. They compare a warm, cache-assisted proxy with Loki on a synthetic mix, so do not read them as the current position: see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
+Medians over the comparable pairs of the daily A/B against Loki v3.7.7 (generated: [performance summary](conformance/reports/performance.md#summary-versus-loki)). Cold is the first request; warm is the p50 of the repeats.
 
-Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
+### Latency by workload
 
-### Production-realistic throughput (v1.50.0)
+| Workload | Pairs compared | Cold faster / on par / slower | Proxy cold | Loki cold | Proxy warm | Loki warm |
+|---|---:|:---:|---:|---:|---:|---:|
+| Drilldown and Explore pages | 87 | 64 / 8 / 15 | 0.16 s | 0.85 s | 0.12 s | 0.05 s |
+| Log queries | 48 | 4 / 24 / 20 | 0.10 s | 0.04 s | 0.05 s | 0.04 s |
+| Metric queries | 220 | 116 / 86 / 18 | 0.11 s | 0.24 s | 0.10 s | 0.02 s |
+| Metadata and label browser | 2 | 1 / 0 / 1 | 0.07 s | 0.06 s | 0.06 s | 0.05 s |
 
-Measured with `loki-bench --jitter=2h --warmup=5s --duration=30s` — a realistic mix of cache hits and misses simulating Grafana dashboard refresh patterns. Not a 100% cache-hit ceiling; not a 100% cold floor. This is what you get in production.
+Loki's results cache answered 58 of the 60 metadata pairs, so they are listed apart.
+
+### Label browser and Drilldown metadata
+
+| Call | Pairs | Proxy cold | Loki cold | Proxy warm | Loki warm |
+|---|---:|---:|---:|---:|---:|
+| Labels (label browser) | 24 | 0.01 s | 0.03 s | under 0.01 s | 0.03 s |
+| Label values | 24 | 0.01 s | 0.04 s | under 0.01 s | 0.04 s |
+| Drilldown detected labels and fields | 8 | 0.01 s | 0.03 s | under 0.01 s | 0.02 s |
+| Volume (Drilldown landing) | 4 | 0.12 s | 0.12 s | 0.11 s | 0.11 s |
+
+Medians over 1h to 7d; Loki's times are mostly its own cache hits.
+
+### Translation overhead
+
+LogQL to LogsQL translation takes **5.9 to 17.1 µs per query**. For a 100 to 500 ms VictoriaLogs round-trip this is under 0.02% of wall time.
+
+| Query type | Time | Allocs |
+|---|---:|---:|
+| Selector `{app="nginx"}` | 7.3 µs | 22 |
+| `rate({...}[5m])` | 8.0 µs | 54 |
+| `sum(rate({...}[5m])) by (host)` | 5.9 µs | 47 |
+| `ip("10.0.0.0/8")` filter (native `ipv4_range()`) | 7.8 µs | 41 |
+| Binary metric `sum(rate) / sum(rate)` | 17.1 µs | 90 |
+
+Median of 5 runs of `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` with `GOMAXPROCS=4` on an Apple M5 Pro (arm64), Go 1.27.3, on a host that was also running other work, so the times are an upper bound.
+
+### Throughput under load (historical)
+
+> **Historical: measured on proxy v1.50.0 (released 2026-05-26) with Loki 3.6.x and VictoriaLogs v1.50.0 using `loki-bench`; not re-measured.** It compares a warm, cache-assisted proxy with Loki on a synthetic mix and is not the current position. The method and the other throughput tables are in [Benchmarks](docs/benchmarks.md).
+
+Measured with `loki-bench --jitter=2h --warmup=5s --duration=30s` on an Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
 | Workload | Concurrency | Loki | Proxy | VL native | Proxy / Loki |
 |---|:---:|---:|---:|---:|:---:|
@@ -134,45 +174,6 @@ Measured with `loki-bench --jitter=2h --warmup=5s --duration=30s` — a realisti
 - **Compute:** parity at c=10; proxy dominates under pressure because Loki saturates.
 
 † Loki compute c=50: **90.55% error rate** (saturated). c=100: **97.49% error rate**. Proxy: 0% errors at all concurrency levels.
-
-### Translation overhead
-
-LogQL→LogsQL translation is **4.7–15.5 µs per query** (arm64). For a 100–500 ms VL round-trip this is under 0.01% of wall time.
-
-| Query type | Time | Allocs |
-|---|---:|---:|
-| Selector `{app="nginx"}` | 4.7 µs | 18 |
-| `rate({...}[5m])` | 6.1 µs | 45 |
-| `sum(rate({...}[5m])) by (host)` | 8.9 µs | 48 |
-| `ip("10.0.0.0/8")` filter (native `ipv4_range()`) | 8.4 µs | 36 |
-| Binary metric `sum(rate) / sum(rate)` | 12.5 µs | 76 |
-
-Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64).
-
-### P50 latency
-
-| Workload | Concurrency | Loki | Proxy | VL native |
-|---|:---:|---:|---:|---:|
-| Small | c=10 | 5 ms | 1 ms | 1 ms |
-| Small | c=50 | 57 ms | 5 ms | 6 ms |
-| Small | c=100 | 156 ms | 22 ms | 13 ms |
-| Heavy | c=10 | 13 ms | 2 ms | 1 ms |
-| Heavy | c=50 | 21 ms | 22 ms | 13 ms |
-| Heavy | c=100 | 31 ms | 96 ms | 30 ms |
-| Compute | c=10 | 2 ms | 2 ms | 1 ms |
-| Compute | c=50 | 5 ms | 38 ms | 7 ms |
-| Compute | c=100 | 10 ms† | 144 ms | 13 ms |
-
-† Loki compute c=100 P50 is misleading — 97.49% errors, so only 2.51% of requests completed; survivors have low latency.
-
-### Drilldown and label-browser latency
-
-| Path | Before | After (cold) | After (warm) |
-|---|---:|---:|---:|
-| `service_name/values` | ~5,000ms | **235ms** | **12ms** |
-| Background label refresh (6–24h) | 5–10s per call | **<100ms** | — |
-
-The proxy previously called `stream_field_names` — an O(data-volume) scan — for every service-name lookup and every background label refresh. Wide Grafana time windows (6h/24h) produced 5–10s backend calls, appearing as CPU spikes in Grafana. Now uses `field_names` (O(index), ~30ms at any range) for all non-strict paths. The synchronous `/loki/api/v1/labels` endpoint keeps `stream_field_names` (1h-capped) for strict Loki label-only semantics.
 
 ### Dashboard load spikes — request coalescer
 
