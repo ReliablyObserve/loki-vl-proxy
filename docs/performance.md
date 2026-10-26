@@ -9,7 +9,7 @@ description: Per-request latency, throughput benchmarks, cache hit rates, and co
 
 State of `main` on 2026-10-26 (`91470b5c`); it includes changes that are not released yet. Every figure below comes from the generated [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md), the [daily A/B trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md) or the description of the pull request named next to it. The tables further down this page are older, dated measurements.
 
-How to read the comparison: both sides run on the same fresh stack with the same seeded data (Loki 3.7.7). Loki ignores `Cache-Control: no-cache` on `query_range` and `volume_range`, so its first run can still hit caches warmed by earlier requests and understates a truly cold Loki. Warm timings on both sides come largely from results caches. Rows Loki's own cache counters show as cache-answered are left out of the slower-than-Loki counts. A pair counts as slower only beyond noise: 25% and 50 ms.
+How to read the comparison: both sides run on the same fresh stack with the same seeded data (the e2e stack's Loki, 3.7.7 by default). Loki ignores `Cache-Control: no-cache` on `query_range` and `volume_range`, so its first run can still hit caches warmed by earlier requests and understates a truly cold Loki. Warm timings on both sides come largely from results caches. Rows Loki's own cache counters show as cache-answered are left out of the slower-than-Loki counts. A pair counts as slower only beyond noise: 25% and 50 ms.
 
 ### First request
 
@@ -28,7 +28,7 @@ The report lists **54** shape and range pairs where the proxy is slower than Lok
 | E8 json duration_ms sum by service, namespace prod | 7d | 9.29 s | 0.01 s | 13.40 s | 0.06 s |
 | E1 json duration_ms sum by service | 7d | 5.93 s | 0.10 s | 4.46 s | 0.05 s |
 
-The registry items behind each row are in the report (for example `semantics/extracted-suffix-collision`, `semantics/json-metric-detected-level-derivation` and `semantics/unwrap-conversion-error`). The report also lists, per registry item, the worst row and whether the answers match Loki's.
+The report lists the registry items that cover each row. The X1 and DLV rows come from the daily run of 2026-10-24, where Loki's cache counters show no cache answer. The 7d rows (E1, E3, E8) come from the run of 2026-10-08, which recorded no Loki cache counters, so Loki's cold time there is unverified and may understate a truly cold Loki. The report also lists, per registry item, the worst row and whether the answers match Loki's.
 
 ### Repeated and refreshed windows
 
@@ -53,9 +53,9 @@ Not covered by the reuse, so they keep their earlier repeat times: subquery-base
 
 ### First request with Loki's results caches off
 
-#862 also measured a true cold run on a quiet host: both proxies flushed before each shape's first run, Loki started with its results caches off.
+#862 also measured a true cold run on a quiet host (measured during its review; it merged on 2026-10-26): both proxies flushed before each shape's first run, Loki started with its results caches off.
 
-- 0 of 221 shape and range pairs are slower than on `main`; 17 are faster and 210 the same, with no new difference from Loki's answers.
+- 0 of 221 shape and range pairs are slower than on `main`, and no new difference from Loki's answers appeared.
 - 22 pairs are still slower than uncached Loki. They are the same on `main`: `level_extracted` shapes at 6h (3.1 to 3.3 s against 0.6 to 0.8 s), E7 (1.34 s against 0.16 s), explore volume with two filters and drop (1.36 s against 0.57 s), field breakdowns (1.37 to 1.43 s against 0.72 to 0.82 s), and label browser and label values after a flush (0.14 to 0.17 s against 0.02 to 0.06 s).
 
 ### Load and backend safety
