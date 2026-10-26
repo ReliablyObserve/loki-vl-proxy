@@ -162,6 +162,14 @@ const withoutAllLabels = "*"
 //   - the excluded labels are removed and the values of the series that share the
 //     key are combined as op says (sum when it is unknown)
 func applyWithoutGrouping(body []byte, excludeLabels []string, op string) []byte {
+	if folded, ok := foldLevels(body, withoutFoldLevel(excludeLabels, op)); ok {
+		return folded
+	}
+	return applyWithoutGroupingGeneric(body, excludeLabels, op)
+}
+
+// applyWithoutGroupingGeneric folds the answers foldLevels does not read.
+func applyWithoutGroupingGeneric(body []byte, excludeLabels []string, op string) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {

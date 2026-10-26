@@ -301,6 +301,7 @@
       "internal/proxy/vector_agg_fold_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
       "internal/proxy/without_open_shapes_test.go",
+      "internal/proxy/without_pushdown_differential_test.go",
       "internal/translator/nested_vector_chain_test.go",
       "internal/translator/series_aggregation_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
@@ -584,12 +585,16 @@
     "semantics/nested-aggregation-outer-by-native-routes": [
       "internal/proxy/nested_vector_aggregation_differential_test.go",
       "internal/proxy/nested_vector_fold_test.go",
+      "internal/proxy/typed_fold_test.go",
       "internal/proxy/without_open_shapes_test.go",
+      "internal/proxy/without_pushdown_differential_test.go",
       "internal/translator/nested_vector_chain_test.go",
+      "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go"
     ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
+      "internal/proxy/typed_fold_test.go",
       "internal/proxy/vector_agg_fold_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go"
@@ -731,6 +736,8 @@
     ],
     "semantics/without-over-inner-aggregation-collapses": [
       "internal/proxy/without_open_shapes_test.go",
+      "internal/proxy/without_pushdown_differential_test.go",
+      "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go"
     ],
     "series-limits-and-partial-results": [
@@ -1247,6 +1254,10 @@
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/typed_fold_test.go": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "semantics/non-sum-vector-aggregation-unreduced"
+    ],
     "internal/proxy/unwrap_bytes_gate_property_test.go": [
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-sample-validity"
@@ -1319,6 +1330,11 @@
       "semantics/without-nested-under-aggregation",
       "semantics/without-over-inner-aggregation-collapses"
     ],
+    "internal/proxy/without_pushdown_differential_test.go": [
+      "metric-series-identity",
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
@@ -1380,6 +1396,10 @@
     "internal/translator/without_grouping_test.go": [
       "metric-series-identity",
       "semantics/unwrap-sum-without-collapses"
+    ],
+    "internal/translator/without_pushdown_test.go": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "semantics/without-over-inner-aggregation-collapses"
     ],
     "test/e2e-compat/bad_request_status_parity_test.go": [
       "loki-compatible-profile"
@@ -1658,7 +1678,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 168,
+  "tests_with_markers": 171,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

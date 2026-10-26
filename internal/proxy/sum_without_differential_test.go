@@ -862,6 +862,9 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 				if !strings.HasPrefix(query, "sum without") && res.Code == http.StatusOK {
 					return // one series: it fits, whatever the rows
 				}
+				if !instant && strings.Contains(query, "count_over_time") && res.Code == http.StatusOK {
+					return // a tumbling window: VictoriaLogs folds the series, and the two it answers fit
+				}
 				if res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit") {
 					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
 				}

@@ -286,6 +286,16 @@ var nestedAggForms = []string{
 	"min by (zone) (avg without (pod) (%s))",
 	"max(sum without (pod, svc) (%s))",
 	"sum by (zone) (count by (pod, zone) (max without (svc) (%s)))",
+	// a single `without`, which a tumbling window has VictoriaLogs fold (the
+	// excluded label first, in the middle, last, absent from every stream, and
+	// two of them)
+	"avg without (pod) (%s)",
+	"sum without (svc) (%s)",
+	"max without (pod, svc) (%s)",
+	"count without (zone) (%s)",
+	"min without (probe) (%s)",
+	"avg without (baz) (%s)",
+	"min by (zone) (avg without (pod, baz) (%s))",
 }
 
 // TestCompat_NestedVectorAggregation: a vector aggregation over another one
@@ -302,7 +312,7 @@ func TestCompat_NestedVectorAggregation(t *testing.T) {
 	for _, shape := range nestedAggShapes {
 		for _, function := range []string{"count_over_time", "rate"} {
 			for _, form := range nestedAggForms {
-				if function == "rate" && strings.HasPrefix(form, "max(sum without") {
+				if function == "rate" && (strings.HasPrefix(form, "max(sum without") || strings.HasPrefix(form, "sum without")) {
 					// `sum without (...) (rate(...))` alone is a separate gap.
 					continue
 				}

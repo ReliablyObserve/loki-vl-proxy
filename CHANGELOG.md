@@ -43,6 +43,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values of an over-time unwrap function there are the open row
   `semantics/unwrap-over-time-range-windows`. Not covered: a `group`, `topk`,
   `stddev` or `stdvar` level inside the nest.
+  A `<op> without (...)` over a tumbling window, alone or as the innermost level
+  of a nest, is folded by VictoriaLogs when the excluded labels are plain names
+  (letters and digits, and none the proxy builds another label from: `level`,
+  `detected_level`, `service_name` and the labels the service name is derived
+  from). The labels of a series are the pairs of its `_stream` text, so the pairs
+  of the excluded labels are cut out of that text between the stats pipe that
+  counts a series and the one that combines the series that now share a stream
+  (`stats by (_stream, level) count() as a | replace_regexp(...) at _stream |
+  stats by (_stream, level) avg(a)`), and the levels above read their labels as
+  columns of the pipes; only the final groups come back. `avg without (pod)
+  (count_over_time({env="production"}[10s]))` over 6h at a 10 s step answers in
+  25 to 70 ms warm and 175 ms cold where the proxy took 0.8 to 1.2 s to fold a row per
+  stream and bucket, and `min by (app) (avg without (pod) (...))` in 14 ms
+  (Loki 45 ms; 178 ms cold, Loki 1.26 s). A parser, an underscore or derived
+  name, a custom field mapping, a sliding window and an instant query keep the
+  proxy's fold of the series rows, which now decodes the answer once, folds every
+  level over it and encodes it once: 3.5 times faster and 35 times fewer
+  allocations on 200 series of 2160 points (`BenchmarkFoldWithoutMatrix`), and
+  the sliding `sum by (app) (max by (app, pod) (count_over_time(...[5m])))`, which
+  folds two levels, 28 to 66% faster. A query with one aggregation no longer
+  parses for a nest (identical allocations to main on the control queries,
+  `benchstat` -count=10).
   Registry:
   `semantics/nested-aggregation-outer-by-native-routes`,
   `semantics/without-nested-under-aggregation`,

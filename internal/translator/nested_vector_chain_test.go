@@ -171,3 +171,41 @@ func TestVectorLabelSetAlgebra(t *testing.T) {
 		t.Errorf("subtractLabels = %v", got)
 	}
 }
+
+// conformance: semantics/nested-aggregation-outer-by-native-routes, metric-series-identity
+// The word scan that lets a query with one aggregation skip the parse of the
+// nest never says no to a nest (every spelling of the grouping) and costs a
+// query that is not one nothing: no allocation.
+func TestHasNestedVectorKeywords(t *testing.T) {
+	for _, nest := range []string{
+		`min by (zone) (avg by (pod, zone) (count_over_time({app="x"}[5m])))`,
+		`min(avg by (pod, zone) (count_over_time({app="x"}[5m]))) by (zone)`,
+		`min(avg(count_over_time({app="x"}[5m])) by (pod, zone)) by (zone)`,
+		`min by(zone)(avg by(pod,zone)(count_over_time({app="x"}[5m])))`,
+		"max by (zone)\n\t(sum without (pod)\n(rate({app=\"x\"}[5m])))",
+		`topk(2, max(sum without (pod) (rate({app="x"}[5m]))))`,
+		`max by (zone) (min by (pod, zone) (max by (pod, zone, svc) (count_over_time({app="x"}[5m]))))`,
+		`sort(count by (zone) (avg without (svc) (count_over_time({app="x"}[5m]))))`,
+		`label_replace(sum by (a) (max by (a, b) (rate({app="x"}[5m]))), "d", "$1", "a", "(.*)")`,
+	} {
+		if !HasNestedVectorKeywords(nest) {
+			t.Errorf("a nest was not recognised: %s", nest)
+		}
+	}
+	for _, single := range []string{
+		`sum by (app) (count_over_time({env="production"}[1m]))`,
+		`topk(5, sum by (app) (rate({env="production"}[5m])))`,
+		`sum(rate({env="production"} | json [5m]))`,
+		`max by (service_name) (max_over_time({service_name="cache-redis"} | logfmt | unwrap size_bytes [1m]))`,
+		`sum by (count, min) (min_over_time({app="x"} | unwrap sum [5m]))`,
+		`{app="x"} | json | level="warn"`,
+	} {
+		if HasNestedVectorKeywords(single) {
+			t.Errorf("one aggregation was taken for a nest: %s", single)
+		}
+		single := single
+		if allocs := testing.AllocsPerRun(50, func() { _, _, _, _ = tryTranslateVectorChain(single, func(s string) string { return s }) }); allocs != 0 {
+			t.Errorf("%d allocations for a query that is not a nest: %s", int(allocs), single)
+		}
+	}
+}

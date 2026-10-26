@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // seriesAggregationChain returns the vector aggregations over a range
@@ -87,8 +88,16 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 	}
 	body, code := buf.body, buf.code
 	if code == 0 || code == http.StatusOK {
-		for _, agg := range chain {
-			body = foldByGrouping(body, agg)
+		levels := make([]foldLevel, len(chain))
+		for i, agg := range chain {
+			levels[i] = foldLevelOf(agg)
+		}
+		if folded, ok := foldLevels(body, levels...); ok {
+			body = folded
+		} else {
+			for _, agg := range chain {
+				body = foldByGrouping(body, agg)
+			}
 		}
 		capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 		if err != nil {
@@ -160,6 +169,9 @@ func metricLabelNames(body []byte) []string {
 // in order: the outermost level's labels are the answer's, which the fold of the
 // levels above computes (foldVectorAggregations).
 func innermostByLabels(logql string) ([]string, bool) {
+	if !translator.HasNestedVectorKeywords(logql) {
+		return nil, false
+	}
 	chain, ok := seriesAggregationChain(logql)
 	if !ok || len(chain) < 2 || chain[0].Grouping == nil {
 		return nil, false

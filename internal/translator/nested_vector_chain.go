@@ -65,6 +65,45 @@ func splitVectorLevel(expr string) (vectorLevel, string, bool) {
 	return lv, rest[:end], true
 }
 
+// HasNestedVectorKeywords reports whether a query names two or more of the
+// aggregation operators a nest is made of (sum, avg, max, min, count), each as a
+// word followed by its grouping or its parenthesis. A vector aggregation over
+// another one needs both, so every other query skips the parse that finds the
+// levels. It may say yes to a query that is not a nest (a label named like an
+// operator), never no to one that is.
+func HasNestedVectorKeywords(logql string) bool {
+	found := 0
+	for i := 0; i < len(logql); i++ {
+		c := logql[i]
+		if c != 's' && c != 'a' && c != 'm' && c != 'c' {
+			continue
+		}
+		if i > 0 && isIdentByte(logql[i-1]) {
+			continue
+		}
+		for _, kw := range [...]string{"sum", "avg", "max", "min", "count"} {
+			if !strings.HasPrefix(logql[i:], kw) {
+				continue
+			}
+			j := i + len(kw)
+			for j < len(logql) && (logql[j] == ' ' || logql[j] == '\t' || logql[j] == '\n' || logql[j] == '\r') {
+				j++
+			}
+			if j < len(logql) && (logql[j] == '(' || strings.HasPrefix(logql[j:], "by") || strings.HasPrefix(logql[j:], "without")) {
+				if found++; found == 2 {
+					return true
+				}
+			}
+			break
+		}
+	}
+	return false
+}
+
+func isIdentByte(c byte) bool {
+	return c == '_' || c == '.' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
 // carriesTranslationMarker reports whether a translated query ends in, or is
 // wrapped by, a marker the proxy post-processes (group, binary, without):
 // appending a stats pipe after one would corrupt it.
@@ -95,6 +134,9 @@ func carriesTranslationMarker(query string) bool {
 // Levels the chain does not model (group, topk, stddev, stdvar, ...) and
 // translations that carry a marker are left to the single-level paths.
 func tryTranslateVectorChain(logql string, labelFn LabelTranslateFunc) (query string, withoutLabels []string, foldOp string, ok bool) {
+	if !HasNestedVectorKeywords(logql) {
+		return "", nil, "", false
+	}
 	var levels []vectorLevel // outermost first
 	var exprs []string
 	expr := strings.TrimSpace(logql)

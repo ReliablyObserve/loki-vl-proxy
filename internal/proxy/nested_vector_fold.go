@@ -2,7 +2,9 @@ package proxy
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
+	"sync/atomic"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -20,6 +22,14 @@ func applyWithoutChain(body []byte, withoutLabels []string, logql, withoutOp str
 	if !ok {
 		return applyWithoutGrouping(body, withoutLabels, withoutOp)
 	}
+	levels := make([]foldLevel, len(chain))
+	for i, level := range chain {
+		levels[i] = foldLevelOf(level)
+	}
+	if folded, ok := foldLevels(body, levels...); ok {
+		return folded
+	}
+	// An answer foldLevels does not read: the generic fold, level by level.
 	for _, level := range chain {
 		exclude := level.Grouping.Labels
 		if !level.Grouping.Without {
@@ -34,9 +44,21 @@ func applyWithoutChain(body []byte, withoutLabels []string, logql, withoutOp str
 				}
 			}
 		}
-		body = applyWithoutGrouping(body, exclude, string(level.Op))
+		body = applyWithoutGroupingGeneric(body, exclude, string(level.Op))
 	}
 	return body
+}
+
+// foldLevelOf is the fold of one vector aggregation: `without` drops the listed
+// labels, `by` keeps the listed labels a series has, no grouping keeps none.
+func foldLevelOf(agg *logqlpkg.VectorAggregation) foldLevel {
+	switch {
+	case agg.Grouping != nil && agg.Grouping.Without:
+		return withoutFoldLevel(agg.Grouping.Labels, string(agg.Op))
+	case agg.Grouping != nil:
+		return byFoldLevel(agg.Grouping.Labels, string(agg.Op))
+	}
+	return byFoldLevel(nil, string(agg.Op))
 }
 
 // withoutAggregationChain returns the levels of a vector aggregation over
@@ -45,6 +67,9 @@ func applyWithoutChain(body []byte, withoutLabels []string, logql, withoutOp str
 // as series rows), under any ranking, sorting or label transform the proxy
 // applies to the folded answer.
 func withoutAggregationChain(logql string) ([]*logqlpkg.VectorAggregation, bool) {
+	if !translator.HasNestedVectorKeywords(logql) {
+		return nil, false
+	}
 	expr, err := logqlpkg.Parse(translator.PeelWithoutWrappers(logql))
 	if err != nil {
 		return nil, false
@@ -102,6 +127,9 @@ func seriesLabelNames(body []byte) []string {
 // leading-spelling peeling of parseOriginalRangeMetricSpec reads only
 // `sum by (l) (...)`, not `sum(...) by (l)`.
 func nestedVectorRange(logql string) (string, bool) {
+	if !translator.HasNestedVectorKeywords(logql) {
+		return "", false
+	}
 	text := translator.PeelWithoutWrappers(logql)
 	expr, err := logqlpkg.Parse(text)
 	if err != nil {
@@ -128,4 +156,29 @@ func nestedVectorRange(logql string) (string, bool) {
 		return rng, true
 	}
 	return "", false
+}
+
+// withoutPushdownOff switches the VictoriaLogs-side fold of a `without` off, for
+// the tests that compare it with the proxy's.
+var withoutPushdownOff atomic.Bool
+
+// pushDownWithoutFold returns the translation that has VictoriaLogs fold a
+// `<op> without (...)` itself (translator.PushDownWithout), for a range query
+// whose windows are the step buckets VictoriaLogs answers natively (range equal
+// to step; a sliding window is evaluated from the series rows by the proxy, and
+// an instant query keeps the fold of the rows it asks for). series is the
+// translation with its without marker removed. ok is false when the proxy has to
+// fold the series rows itself.
+func (p *Proxy) pushDownWithoutFold(r *http.Request, logql, series string) (string, bool) {
+	if withoutPushdownOff.Load() {
+		return "", false
+	}
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok {
+		return "", false
+	}
+	if spec, ok := parseOriginalRangeMetricSpec(logql); !ok || !statsRangeIsTumbling(spec.Window, step) {
+		return "", false
+	}
+	return translator.PushDownWithout(logql, series, p.labelTranslator.ToVL, p.labelTranslator.ToLoki)
 }

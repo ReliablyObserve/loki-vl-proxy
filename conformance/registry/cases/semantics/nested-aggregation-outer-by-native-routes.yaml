@@ -49,6 +49,19 @@ why: |
   semantics/without-over-inner-aggregation-collapses). The sliding differential
   covers count_over_time and rate; the window values of an over-time unwrap
   function there are the open row semantics/unwrap-over-time-range-windows.
+  An innermost `without` over a tumbling window (range equal to the step) with
+  plain excluded names (letters and digits, no label a derived label is built
+  from: level, detected_level, service_name and its sources) is folded by
+  VictoriaLogs as well: the labels of a series are the pairs of its `_stream`
+  text, so the pairs of the excluded labels are cut out of that text between the
+  stats pipe that counts a series and the one that combines the series that now
+  share a stream (`stats by (_stream, level) count() as a | replace_regexp(...)
+  at _stream | stats by (_stream, level) avg(a)`), and the levels above read the
+  labels they group by as columns of the first pipes (PushDownWithout,
+  internal/translator/without_pushdown.go). A parser, an underscore or derived
+  name, a sliding window and an instant query keep the proxy's fold of the
+  series rows, which decodes the answer once, folds every level over it and
+  encodes it once (internal/proxy/typed_fold.go).
   Levels the chain does not model (group, topk, stddev, stdvar) keep their own
   paths.
 request:
@@ -69,9 +82,9 @@ gap:
   fixed_by: "#746"
   impact: explore-visible
   effort: M
-  area: 'internal/translator/nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy/nested_vector_fold.go (applyWithoutChain) + internal/proxy/vector_agg_fold.go (seriesAggregationChain, innermostByLabels)'
+  area: 'internal/translator/without_pushdown.go (PushDownWithout) + internal/proxy/typed_fold.go (foldLevels) + internal/translator/nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy/nested_vector_fold.go (applyWithoutChain) + internal/proxy/vector_agg_fold.go (seriesAggregationChain, innermostByLabels)'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (each level keeps its own grouping)'
   proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy; a sliding window folds every level over the innermost level series'
-  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator); TestWithoutNestedAggregationMatchesLoki (internal/proxy)'
+  planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator); TestWithoutNestedAggregationMatchesLoki, TestWithoutPushdownMatchesFoldAndLoki, TestWithoutPushdownDirectedStreams, TestWithoutPushdownOnlyForTumblingWindows and TestTypedFoldMatchesGenericFold (internal/proxy); TestPushDownWithoutEmitsTheFoldAsStatsPipes and TestPushDownWithoutLeavesTheFoldToTheProxyWhenNotExact (internal/translator)'
   note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows are covered by the same differential (window != step, count_over_time and rate).'
   clusters: []
