@@ -59,6 +59,619 @@
    "core": true
   },
   {
+   "id": "lvl-dd-logs-pill-json",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true,
+   "serviceName": "api-gateway",
+   "levels": "detected_level|=|error",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-dd-logs-pill-otel",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true,
+   "levels": "detected_level|=|warn",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-dd-fields-pill",
+   "kind": "drilldown",
+   "path": "service/{service}/fields",
+   "service": true,
+   "serviceName": "api-gateway",
+   "levels": "detected_level|=|error",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "semantics/detected-level-filter-before-parser-pushdown",
+    "semantics/json-metric-detected-level-derivation",
+    "parser-json",
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-dd-field-method-pill",
+   "kind": "drilldown",
+   "path": "service/{service}/field/method",
+   "service": true,
+   "serviceName": "api-gateway",
+   "levels": "detected_level|=|error",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "semantics/detected-level-filter-before-parser-pushdown",
+    "semantics/json-metric-detected-level-derivation",
+    "parser-json",
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_query_range",
+    "loki_api_v1_detected_field_name_values"
+   ]
+  },
+  {
+   "id": "lvl-dd-field-pipeline-pill",
+   "kind": "drilldown",
+   "path": "service/{service}/field/pipeline",
+   "service": true,
+   "levels": "detected_level|=|warn",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "semantics/detected-level-filter-before-parser-pushdown",
+    "semantics/json-metric-detected-level-derivation",
+    "parser-json",
+    "loki_api_v1_detected_fields",
+    "loki_api_v1_query_range",
+    "loki_api_v1_detected_field_name_values"
+   ]
+  },
+  {
+   "id": "lvl-dd-logs-pill-logfmt",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true,
+   "serviceName": "payment-service",
+   "levels": "detected_level|=|warn",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-dd-labels-pill",
+   "kind": "drilldown",
+   "path": "service/{service}/labels",
+   "service": true,
+   "serviceName": "api-gateway",
+   "levels": "detected_level|=|error",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range",
+    "loki_api_v1_detected_labels",
+    "loki_api_v1_labels"
+   ]
+  },
+  {
+   "id": "lvl-dd-label-pod-pill",
+   "kind": "drilldown",
+   "path": "service/{service}/label/pod",
+   "service": true,
+   "levels": "detected_level|=|warn",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range",
+    "loki_api_v1_label_name_values",
+    "limits/drilldown-breakdown-exact"
+   ]
+  },
+  {
+   "id": "lvl-dd-logs-pill-multi-json",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true,
+   "serviceName": "frontend-ssr",
+   "levels": "detected_level|=~|error__gfp__warn",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-dl-prefilter-json",
+   "kind": "explore",
+   "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | detected_level=\"error\" | json | drop __error__ [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "semantics/detected-level-filter-before-parser-pushdown",
+    "semantics/json-metric-detected-level-derivation",
+    "explore-logs-volume-json",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-json-by-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-json-error-by-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | __error__!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-eq",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | detected_level=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-dl-regexp",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level=~\"error|warn\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-json-dl",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | json | detected_level=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "semantics/json-metric-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-json-dl-filter",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | json | detected_level=\"error\" | drop __error__ [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "semantics/json-metric-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-regexp",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | detected_level=~\"error|warn\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-dl-neq",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level!=\"info\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-json-level",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | json | level=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/plain-name-after-parser-reads-stream-label",
+    "parser-error-and-label-collision",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-logfmt-dl-filter",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"payment-service\"} | logfmt | detected_level=\"error\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-logfmt-level-regexp",
+   "kind": "explore",
+   "query": "{service_name=\"payment-service\"} | logfmt | level=~\"(?i)err.*\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/plain-name-after-parser-reads-stream-label",
+    "parser-error-and-label-collision",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-dl-unknown-or-error",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level=~\"unknown|error\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-neq-all",
+   "kind": "explore",
+   "query": "{env=\"production\"} | detected_level!=\"info\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-unknown-or-error",
+   "kind": "explore",
+   "query": "{env=\"production\"} | detected_level=~\"unknown|error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-plaintext",
+   "kind": "explore",
+   "query": "{service_name=\"db-postgres\"} | detected_level=~\"info|error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-level-label-stored",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | level=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "severity-exposure-surfaces",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-level-selector-stored",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\", level=\"error\"}",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity-exposure-surfaces",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-json-level-extracted-stored",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | json | level_extracted=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/extracted-suffix-collision",
+    "parser-error-and-label-collision",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-logfmt-level-extracted-stored",
+   "kind": "explore",
+   "query": "{service_name=\"payment-service\"} | logfmt | level_extracted=~\"(?i)err.*\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/extracted-suffix-collision",
+    "parser-error-and-label-collision",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-keep-dl",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | keep detected_level",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-drop-dl",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | drop detected_level",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-drop",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-drop-level",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | drop level",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-drop",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-plaintext",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"db-postgres\"} | detected_level!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-logfmt-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"payment-service\"} | logfmt [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "parser-logfmt",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-json-level-filter",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({service_name=\"api-gateway\"} | json | level=\"error\" | drop __error__ [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/plain-name-after-parser-reads-stream-label",
+    "parser-error-and-label-collision",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-rate-errors-by-service",
+   "kind": "explore",
+   "query": "sum by (service_name) (rate({env=\"production\"} | detected_level=\"error\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "range_function-rate",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-count-warn-by-service",
+   "kind": "explore",
+   "query": "sum by (service_name) (count_over_time({env=\"production\"} | drop __error__ | detected_level=\"warn\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "range_function-count-over-time",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-topk-errors-by-service",
+   "kind": "explore",
+   "query": "topk(5, sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"error\" [$__auto])))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "operator-topk",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-keep-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | keep detected_level [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-drop-level",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | drop level [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-drop",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-level-label-stored",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\"} | level=\"error\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "severity-exposure-surfaces",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-level-extracted-stored",
+   "kind": "explore",
+   "query": "sum by (level_extracted) (count_over_time({service_name=\"api-gateway\"} | json | level_extracted=\"error\" | drop __error__ [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/extracted-suffix-collision",
+    "semantics/json-extracted-metric-pushdown",
+    "parser-error-and-label-collision",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-A",
    "kind": "explore",
    "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [$__auto]))",
@@ -622,6 +1235,62 @@
    "covers": [
     "semantics/unwrap-sum-without-collapses",
     "metric-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-error-plaintext-bodyonly",
+   "kind": "explore",
+   "query": "{service_name=\"db-postgres\"} | detected_level=\"error\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-unknown-bodyonly",
+   "kind": "explore",
+   "query": "{env=\"production\"} | detected_level=\"unknown\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-dl-unknown-bodyonly",
+   "kind": "explore",
+   "query": "sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"unknown\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-dd-logs-pill-plaintext-bodyonly",
+   "kind": "drilldown",
+   "path": "service/{service}/logs",
+   "service": true,
+   "serviceName": "db-postgres",
+   "levels": "detected_level|=|error",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity-detected-level-derivation",
+    "severity/detected-level-filter-json-level",
+    "drilldown-service-landing",
     "loki_api_v1_query_range"
    ]
   }

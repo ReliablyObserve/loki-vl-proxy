@@ -236,6 +236,20 @@ class ChangedCasesTest(unittest.TestCase):
     def test_repository_spec_is_consistent(self):
         self.assertEqual(plan.check(), [])
 
+    def test_repository_level_code_selects_the_level_pages_first(self):
+        # The level pages (Drilldown level pill, Explore detected_level filters and volumes, keep/drop) come first among
+        # the detailed entries, so the capture budget keeps the Drilldown pill pages and the main Explore forms.
+        for path in ("internal/proxy/detected_level.go", "internal/proxy/detected_level_presence.go",
+                     "internal/translator/detected_level_logsql.go", "internal/proxy/stream_processing.go"):
+            entries = plan.plan([path])["entries"]
+            for pid in ("lvl-dd-logs-pill-json", "lvl-dd-fields-pill", "lvl-dd-field-method-pill",
+                        "lvl-explore-volume-dl-prefilter-json", "lvl-explore-logs-dl-eq"):
+                self.assertIn(pid, entries, f"{path} does not capture {pid}")
+                self.assertEqual(entries[pid]["ranges"], ["1h"])
+        spec = plan.load_spec()
+        pills = [p for p in spec["pages"] if p.get("levels")]
+        self.assertTrue(pills and all(p["kind"] == "drilldown" and p["levels"].startswith("detected_level|=") for p in pills))
+
 
 if __name__ == "__main__":
     unittest.main()

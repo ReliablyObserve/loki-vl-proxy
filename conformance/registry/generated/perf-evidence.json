@@ -37479,6 +37479,8 @@
       "warm_p50": 0.013
     }
   ],
+  "operator-drop": [],
+  "operator-keep": [],
   "operator-sum": [
     {
       "baseline": "release",
@@ -50210,6 +50212,7 @@
       "warm_p50": 0.006
     }
   ],
+  "semantics/detected-level-filter-before-parser-pushdown": [],
   "semantics/extracted-suffix-collision": [
     {
       "baseline": "release",
@@ -76476,5 +76479,8 @@
       "verdict_vs_baseline": "same",
       "warm_p50": 0.038
     }
-  ]
+  ],
+  "severity-exposure-surfaces": [],
+  "severity/detected-level-filter-json-level": [],
+  "severity/detected-level-stage-side-effects": []
 }

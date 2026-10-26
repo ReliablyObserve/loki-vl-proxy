@@ -107,6 +107,8 @@ None measured.
 | `loki_api_v1_query` | 16 × 1 ranges | 16 same | worst 0.21s / 0.19s (instant) | 0.55s / 0.44s | same |
 | `loki_api_v1_query_range` | 152 × 6 ranges | 11 faster, 4 fixed, 490 same | worst 22.13s / 2.59s (24h) | 4.52s / 0.04s | differs; 53 slower than Loki cold |
 | `metric-series-identity` | 31 × 6 ranges | 6 faster, 2 fixed, 92 same | worst 8.55s / 8.62s (7d) | — / — | differs; 5 slower than Loki cold |
+| `operator-drop` | — | not measured | | | |
+| `operator-keep` | — | not measured | | | |
 | `operator-sum` | 3 × 4 ranges | 12 same | worst 0.42s / 0.42s (24h) | 4.31s / 0.07s | same |
 | `operator-topk` | 1 × 4 ranges | 4 same | worst 0.24s / 0.25s (24h) | 4.58s / 0.07s | differs |
 | `parsed-label-series-identity` | 6 × 4 ranges | 1 faster, 23 same | worst 7.83s / 0.37s (24h) | 4.50s / 0.05s | same; 3 slower than Loki cold |
@@ -121,6 +123,7 @@ None measured.
 | `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.42s / 0.42s (24h) | 4.31s / 0.07s | same |
 | `range_function-count-over-time` | 1 × 4 ranges | 4 same | worst 0.17s / 0.08s (6h) | — / — | same |
 | `range_function-rate` | 3 × 5 ranges | 9 same | worst 0.24s / 0.25s (24h) | 4.58s / 0.07s | differs |
+| `semantics/detected-level-filter-before-parser-pushdown` | — | not measured | | | |
 | `semantics/extracted-suffix-collision` | 13 × 5 ranges | 30 same | worst 22.13s / 2.59s (24h) | 4.52s / 0.04s | same; 4 slower than Loki cold |
 | `semantics/json-error-filter-metric-split-pushdown` | 5 × 3 ranges | 15 same | worst 3.41s / 2.47s (24h) | 5.53s / 0.10s | same |
 | `semantics/json-extracted-metric-pushdown` | 5 × 3 ranges | 15 same | worst 22.13s / 2.59s (24h) | 4.52s / 0.04s | same; 3 slower than Loki cold |
@@ -149,3 +152,6 @@ None measured.
 | `series-limits-and-partial-results` | 4 × 5 ranges | 1 faster, 19 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
 | `service-name-derivation` | 2 × 4 ranges | 8 same | worst 0.19s / 0.20s (24h) | 4.61s / 0.06s | same |
 | `severity-detected-level-derivation` | 18 × 5 ranges | 63 same | worst **502** / **502** (24h) | 4.83s / 0.04s | differs; 8 slower than Loki cold |
+| `severity-exposure-surfaces` | — | not measured | | | |
+| `severity/detected-level-filter-json-level` | — | not measured | | | |
+| `severity/detected-level-stage-side-effects` | — | not measured | | | |
