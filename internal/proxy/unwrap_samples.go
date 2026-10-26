@@ -153,6 +153,13 @@ func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query stri
 	if agg.Grouping != nil {
 		labels = agg.Grouping.Labels
 	}
+	for _, label := range labels {
+		if label == "detected_level" || label == "level" {
+			// The level a stream's series is labelled by (unknown when it has
+			// none) comes from the per-stream read (buildMetricSeriesEntry).
+			return spec, false
+		}
+	}
 	vlLabels := make(map[string]bool, len(labels))
 	for _, label := range labels {
 		vlLabels[label] = true
@@ -172,12 +179,20 @@ func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query stri
 	if len(kept) != len(labels) {
 		return spec, false
 	}
-	for _, g := range kept {
-		if !vlLabels[g] {
+	// The Loki name of each kept field, in the translation's order, which the
+	// collector pairs by position (collectRangeMetricHitsAux vlToLoki).
+	names := make([]string, len(kept))
+	for i, g := range kept {
+		for _, label := range labels {
+			if label == g || (p.labelTranslator != nil && p.labelTranslator.ToVL(label) == g) {
+				names[i] = label
+			}
+		}
+		if names[i] == "" {
 			return spec, false
 		}
 	}
-	spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = kept, labels, len(labels) == 0
+	spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = kept, names, len(labels) == 0
 	return spec, true
 }
 

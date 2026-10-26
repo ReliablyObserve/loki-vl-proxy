@@ -551,25 +551,34 @@ func owRawAnswer(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) (int, s
 	if res.Code != http.StatusOK {
 		return res.Code, res.Body.String()
 	}
-	// The series in label order, as Loki sorts its matrix; every byte of the
-	// series themselves as sent.
+	// The series in label order, as Loki sorts its matrix, each with its labels
+	// (a JSON object, whose key order means nothing) and every byte of its
+	// values as sent.
 	var resp struct {
 		Data struct {
-			Result []json.RawMessage `json:"result"`
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values json.RawMessage   `json:"values"`
+			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	sort.Slice(resp.Data.Result, func(i, j int) bool { return string(resp.Data.Result[i]) < string(resp.Data.Result[j]) })
-	out, _ := json.Marshal(resp.Data.Result)
-	return res.Code, string(out)
+	series := make([]string, 0, len(resp.Data.Result))
+	for _, r := range resp.Data.Result {
+		metric, _ := json.Marshal(r.Metric)
+		series = append(series, string(metric)+"="+string(r.Values))
+	}
+	sort.Strings(series)
+	return res.Code, strings.Join(series, "\n")
 }
 
 // TestUnwrapGroupPushdownMatchesPerStreamFold: `max by (L) (max_over_time(...))`
 // and `min by (L) (min_over_time(...))`, grouped or not and under topk, answer
-// what the per-stream fold answers (unwrapGroupPushdownOff), every series byte
-// for byte (the fold's series order is not Loki's label order): the
+// what the per-stream fold answers (unwrapGroupPushdownOff), every series'
+// values byte for byte under the same labels (the fold's series order is not
+// Loki's label order): the
 // same series, timestamps, values and sample presence over generated rows with
 // sparse and dense windows and lines on window edges, and the same 400 when the
 // groups pass max_query_series (Loki counts the limit on the groups:
@@ -579,7 +588,14 @@ func owRawAnswer(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) (int, s
 // conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
 func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 	t.Cleanup(func() { unwrapGroupPushdownOff = false })
-	shapes := []owShape{owShapes[6], owShapes[7], owShapes[8], owShapes[9]}
+	byAppPod := func(stream string) string { return "app=uw,pod=" + owPod(stream) }
+	shapes := []owShape{owShapes[6], owShapes[7], owShapes[8], owShapes[9],
+		// Two outer labels in either order: each value under its own name.
+		{name: "max by (app, pod)", query: func(ra string) string { return "max by (app, pod) (" + ra + ")" }, outer: "max", group: byAppPod},
+		{name: "min by (pod, app)", query: func(ra string) string { return "min by (pod, app) (" + ra + ")" }, outer: "min", group: byAppPod},
+		// detected_level (unknown for a stream with no level) keeps the fold.
+		{name: "max by (detected_level, pod)", query: func(ra string) string { return "max by (detected_level, pod) (" + ra + ")" }, outer: "max", group: owByPod},
+	}
 	pushed := 0
 	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
 		for _, parser := range []string{"", "logfmt"} {
@@ -608,7 +624,7 @@ func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 						if gotCode != wantCode || got != want {
 							t.Fatalf("#%d %s step=%v window=%v limit=%d:\npushed %d %s\nfolded %d %s", i, c.query(), c.step, c.window, limit, gotCode, got, wantCode, want)
 						}
-						if c.window > c.step {
+						if c.window > c.step && !strings.Contains(shape.name, "detected_level") {
 							for _, q := range emu.endpointCalls("/select/logsql/stats_query_range") {
 								if strings.Contains(q, "_stream") {
 									t.Fatalf("#%d %s: the pushed-down query reads a series per stream: %s", i, c.query(), q)
@@ -623,6 +639,38 @@ func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
 	}
 	if pushed == 0 {
 		t.Fatal("no case took the pushed-down route")
+	}
+}
+
+// TestUnwrapGroupPushdownDerivesServiceName: a pushed-down `max by
+// (service_name)` groups by the service_name the translation derives ahead of
+// the stats (the coalesce over the stored names), as `sum by (service_name)`
+// does, so a stream without a stored service_name is grouped under the derived
+// one rather than an empty label. The emulator runs no coalesce, so the
+// query is checked.
+//
+// conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
+func TestUnwrapGroupPushdownDerivesServiceName(t *testing.T) {
+	const base = int64(1_800_000_000) * 1e9
+	rows := []emuRow{{ts: base - 60e9, stream: `{app="uw",pod="a"}`, value: 1}}
+	for _, query := range []string{
+		`max by (service_name) (max_over_time({app="uw"} | unwrap amount [5m]))`,
+		`min by (service_name) (min_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
+	} {
+		emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+		c := owCase{shape: owShape{query: func(string) string { return query }}, step: time.Minute, start: base, end: base + 120e9}
+		if code, body := owRawAnswer(t, emu, c, 0); code != http.StatusOK {
+			t.Fatalf("%s: %d %s", query, code, body)
+		}
+		calls := emu.endpointCalls("/select/logsql/stats_query_range")
+		if len(calls) != 1 {
+			t.Fatalf("%s: %d stats calls", query, len(calls))
+		}
+		q := calls[0]
+		derive, group := strings.Index(q, "coalesce(service_name"), strings.Index(q, "| stats by (service_name, __lvp_bad) ")
+		if derive < 0 || group < derive || strings.Contains(q, "_stream") {
+			t.Fatalf("%s: want service_name derived ahead of a grouping by it, without a series per stream: %s", query, q)
+		}
 	}
 }
 

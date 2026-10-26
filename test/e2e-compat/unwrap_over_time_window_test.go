@@ -124,8 +124,9 @@ func compareWindowSeries(t *testing.T, query string, loki, proxy map[string]map[
 // sum, avg, max and min over time with unwrap is Loki's, over a logfmt and a
 // JSON stream group, grouped by series, ungrouped (sum over time), with an
 // offset, for ranges equal to, longer and shorter than the step and not a
-// multiple of it; over lines on every window edge, on query_range and at an
-// instant on an edge.
+// multiple of it, and the max or min of a group's lines (max by, min by and
+// an ungrouped max over max or min over time); over lines on every window edge,
+// on query_range and at an instant on an edge.
 // conformance: semantics/unwrap-over-time-range-windows, semantics/lower-bound-exclusive, window-bounds-and-step-alignment, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnwrapOverTimeRangeWindows(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)
@@ -142,7 +143,12 @@ func TestCompat_UnwrapOverTimeRangeWindows(t *testing.T) {
 					fmt.Sprintf(`sum by (app, route) (%s(%s | %s | unwrap amount | __error__="" [%s]))`, function, g.selector, g.parser, shape.window),
 					fmt.Sprintf(`sum by (app, route) (%s(%s | %s | unwrap amount | __error__="" [%s] offset 2m))`, function, g.selector, g.parser, shape.window))
 			}
-			queries = append(queries, fmt.Sprintf(`sum(sum_over_time(%s | %s | unwrap amount [%s]))`, g.selector, g.parser, shape.window))
+			queries = append(queries,
+				fmt.Sprintf(`sum(sum_over_time(%s | %s | unwrap amount [%s]))`, g.selector, g.parser, shape.window),
+				// The extreme of a group's lines, grouped upstream whatever the series.
+				fmt.Sprintf(`max by (app) (max_over_time(%s | %s | unwrap amount [%s]))`, g.selector, g.parser, shape.window),
+				fmt.Sprintf(`min by (route) (min_over_time(%s | %s | unwrap amount [%s]))`, g.selector, g.parser, shape.window),
+				fmt.Sprintf(`max(max_over_time(%s | %s | unwrap amount [%s]))`, g.selector, g.parser, shape.window))
 			for _, query := range queries {
 				t.Run(g.name+"/"+shape.name+"/"+query, func(t *testing.T) {
 					start, end := fx.s0.Add(shape.start), fx.s0.Add(shape.finish)
@@ -161,23 +167,28 @@ func TestCompat_UnwrapOverTimeRangeWindows(t *testing.T) {
 			window string
 			step   time.Duration
 		}{{"1m", time.Minute}, {"2m", time.Minute}, {"150s", time.Minute}, {"30s", time.Minute}, {"5m", 2 * time.Minute}} {
-			for _, function := range functions {
-				query := fmt.Sprintf(`sum by (app) (%s(%s | %s | unwrap amount [%s]))`, function, g.selector, g.parser, shape.window)
-				t.Run(g.name+"/"+query, func(t *testing.T) {
-					start, end := edge.s0.Add(10*time.Minute), edge.s0.Add(50*time.Minute)
-					compareWindowSeries(t, query, slidingRangeSeries(t, lokiURL, query, start, end, shape.step, nil), slidingRangeSeries(t, proxyURL, query, start, end, shape.step, nil))
-				})
-				t.Run(g.name+"/instant/"+query, func(t *testing.T) {
-					at := edge.s0.Add(20 * time.Minute)
-					wrap := func(m map[string]string) map[string]map[string]string {
-						out := map[string]map[string]string{}
-						for key, value := range m {
-							out[key] = map[string]string{strconv.FormatInt(at.Unix(), 10): value}
-						}
-						return out
+			for _, form := range []string{"sum by (app) (%s(%s | %s | unwrap amount [%s]))", "max by (app) (%s(%s | %s | unwrap amount [%s]))", "max(%s(%s | %s | unwrap amount [%s]))"} {
+				for _, function := range functions {
+					if form != "sum by (app) (%s(%s | %s | unwrap amount [%s]))" && function != "max_over_time" {
+						continue
 					}
-					compareWindowSeries(t, query, wrap(unwrapInstant(t, lokiURL, query, at)), wrap(unwrapInstant(t, proxyURL, query, at)))
-				})
+					query := fmt.Sprintf(form, function, g.selector, g.parser, shape.window)
+					t.Run(g.name+"/"+query, func(t *testing.T) {
+						start, end := edge.s0.Add(10*time.Minute), edge.s0.Add(50*time.Minute)
+						compareWindowSeries(t, query, slidingRangeSeries(t, lokiURL, query, start, end, shape.step, nil), slidingRangeSeries(t, proxyURL, query, start, end, shape.step, nil))
+					})
+					t.Run(g.name+"/instant/"+query, func(t *testing.T) {
+						at := edge.s0.Add(20 * time.Minute)
+						wrap := func(m map[string]string) map[string]map[string]string {
+							out := map[string]map[string]string{}
+							for key, value := range m {
+								out[key] = map[string]string{strconv.FormatInt(at.Unix(), 10): value}
+							}
+							return out
+						}
+						compareWindowSeries(t, query, wrap(unwrapInstant(t, lokiURL, query, at)), wrap(unwrapInstant(t, proxyURL, query, at)))
+					})
+				}
 			}
 		}
 	}
