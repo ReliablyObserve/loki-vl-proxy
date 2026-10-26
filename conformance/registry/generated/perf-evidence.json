@@ -60323,6 +60323,7 @@
       "warm_p50": 0.001
     }
   ],
+  "semantics/nested-aggregation-outer-by-native-routes": [],
   "semantics/parenthesized-log-range": [
     {
       "baseline": "release",
@@ -72601,6 +72602,8 @@
       "warm_p50": 8.62
     }
   ],
+  "semantics/without-nested-under-aggregation": [],
+  "semantics/without-over-inner-aggregation-collapses": [],
   "series-limits-and-partial-results": [
     {
       "baseline": "release",

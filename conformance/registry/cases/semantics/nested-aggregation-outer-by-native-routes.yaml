@@ -69,7 +69,7 @@ gap:
   fixed_by: "#746"
   impact: explore-visible
   effort: M
-  area: 'internal/translator nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy nested_vector_fold.go (applyWithoutChain) + vector_agg_fold.go (seriesAggregationChain, innermostByLabels)'
+  area: 'internal/translator/nested_vector_chain.go (tryTranslateVectorChain) + internal/proxy/nested_vector_fold.go (applyWithoutChain) + internal/proxy/vector_agg_fold.go (seriesAggregationChain, innermostByLabels)'
   loki: 'pkg/logql/evaluator.go:435-529 VectorAggEvaluator.Next (each level keeps its own grouping)'
   proxy: 'one stats pipe per level with its own by; an innermost without folds every level in the proxy; a sliding window folds every level over the innermost level series'
   planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator); TestWithoutNestedAggregationMatchesLoki (internal/proxy)'

@@ -139,6 +139,7 @@ None measured.
 | `semantics/labels-end-inclusive-like-loki` | 12 × 4 ranges | 48 same | worst 0.72s / 0.00s (24h) | 0.07s / 0.08s | differs |
 | `semantics/line-filter-or-alternatives` | 6 × 5 ranges | 21 same | worst 0.74s / 0.47s (24h) | 3.48s / 0.04s | same; 2 slower than Loki cold |
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.01s / 0.01s | differs |
+| `semantics/nested-aggregation-outer-by-native-routes` | — | not measured | | | |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 25 same | worst 1.48s / 1.43s (24h) | 5.19s / 0.06s | same |
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.06s / 0.05s (1h) | 0.03s / 0.02s | same |
 | `semantics/pattern-line-filter-anchoring` | 9 × 2 ranges | 18 same | worst 0.27s / 0.02s (24h) | 0.02s / 0.04s | same; 4 slower than Loki cold |
@@ -149,6 +150,8 @@ None measured.
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 2 faster, 2 fixed, 23 same | worst 2.74s / 2.60s (24h) | 6.33s / 0.06s | differs |
 | `semantics/unwrap-sample-validity` | 14 × 4 ranges | 1 faster, 37 same | worst 2.09s / 2.17s (24h) | — / — | differs |
 | `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 4 faster, 22 same | worst 8.55s / 8.62s (7d) | — / — | differs; 2 slower than Loki cold |
+| `semantics/without-nested-under-aggregation` | — | not measured | | | |
+| `semantics/without-over-inner-aggregation-collapses` | — | not measured | | | |
 | `series-limits-and-partial-results` | 4 × 5 ranges | 1 faster, 19 same | worst **502** / **502** (7d) | 180.00s / 41.84s | differs |
 | `service-name-derivation` | 2 × 4 ranges | 8 same | worst 0.19s / 0.20s (24h) | 4.61s / 0.06s | same |
 | `severity-detected-level-derivation` | 18 × 5 ranges | 63 same | worst **502** / **502** (24h) | 4.83s / 0.04s | differs; 8 slower than Loki cold |
