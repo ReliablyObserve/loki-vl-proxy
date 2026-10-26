@@ -144,11 +144,14 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 		{"nested binary", `sum by (job) ((` + count + ` + ` + count + `) / 2)`, map[string]float64{ja: 4, jb: 2}},
 		{"on group_left", `sum by (job) (` + count + ` / on (job) group_left ` + perJob + `)`, map[string]float64{ja: 1, jb: 1}},
 		{"ignoring group_left", `max(` + count + ` / ignoring (pod) group_left ` + perJob + `)`, map[string]float64{none: 1}},
+		// The shape of semantics/binary-ignoring-matching: the ignored label is on
+		// no series, so both sides match on job and the outer sum adds them.
+		{"ignoring an absent label under an outer sum", `sum by (job) (` + perJob + ` + ignoring(machine) sum by (job, machine) (count_over_time({app="uw"}[1m])))`, map[string]float64{ja: 8, jb: 4}},
 		{"aggregation over the aggregation", `max(sum by (job) (` + amount + ` / ` + count + `))`, map[string]float64{none: 6}},
 		{"empty after the filter", `sum(` + count + ` > 100)`, map[string]float64{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, version := range []string{"v1.52.0", "v1.40.0"} {
+			for _, version := range []string{"v1.52.0", "v1.49.0"} {
 				emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: version}
 				got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt, 0)
 				if resultType != "vector" {
@@ -198,7 +201,7 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 		{`sum(60 * ` + count + ` > 1)`, map[string]map[int64]float64{`{}`: {t0: 5}}},
 		{`avg without (pod) (` + count + ` * 180)`, map[string]map[int64]float64{`{"job":"a"}`: {t0: 6, t1: 3}, `{"job":"b"}`: {t0: 6, t1: 3}}},
 	} {
-		for _, version := range []string{"v1.52.0", "v1.40.0"} {
+		for _, version := range []string{"v1.52.0", "v1.49.0"} {
 			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
 			got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt+60e9, time.Minute)
 			if resultType != "matrix" {

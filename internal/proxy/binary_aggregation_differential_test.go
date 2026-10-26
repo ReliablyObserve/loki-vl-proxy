@@ -393,12 +393,12 @@ func generateBinaryAggregation(rnd *rand.Rand) (*refNode, []refAggregation) {
 // (sliding, tumbling, longer and shorter than the step, starting on and off the
 // step grid, instant) and generated expressions, the proxy's answer to an
 // aggregation over a binary is Loki's: the same series, timestamps and values (to 1e-9 relative: sums of floats in
-// another order), on VictoriaLogs v1.52 and v1.40.
+// another order), on VictoriaLogs v1.52 and v1.49 (the supported floor).
 //
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
 func TestAggregationOverBinaryDifferential(t *testing.T) {
 	jobs := map[string]string{"a": "x", "b": "x", "c": "y"}
-	for _, version := range []string{"v1.52.0", "v1.40.0"} {
+	for _, version := range []string{"v1.52.0", "v1.49.0"} {
 		for _, instant := range []bool{false, true} {
 			name := fmt.Sprintf("version=%s/instant=%v", version, instant)
 			t.Run(name, func(t *testing.T) {
@@ -419,13 +419,6 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 					for j := range s.rows {
 						pod := s.rows[j].stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
 						s.rows[j].stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
-						if version == "v1.40.0" && s.step > 0 && s.rows[j].ts%1e9 == 0 {
-							// Before v1.45 VictoriaLogs has no stats_query_range offset: its
-							// epoch buckets [T, T+b) put a line exactly on a bucket edge T in
-							// the next window, not Loki's (T-range, T], on any operand alone
-							// (versions/stats-bucket-label-v1.45).
-							s.rows[j].ts++
-						}
 					}
 					query := expr.query(uwWindowText(s.window))
 					for _, agg := range chain {
