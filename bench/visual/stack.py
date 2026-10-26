@@ -44,9 +44,10 @@ LOKI_OVERLAY = "bench/visual/docker-compose.visual.yml"
 PORTS = dict(loki=33101, vl=33428, main=33200, pr=33202, grafana=33002)
 
 
-def stack(project, overlays=()):
-    """overlays: further compose files after LOKI_OVERLAY (bench/parity raises Loki's gRPC message limits)."""
-    return ab.Stack(project, PORTS["loki"], PORTS["vl"], overlays=[LOKI_OVERLAY, *overlays])
+def stack(project, overlays=(), no_level_label=False):
+    """overlays: further compose files after LOKI_OVERLAY (bench/parity raises Loki's gRPC message limits);
+    no_level_label: seed rows whose level is only in the line (the generator's LOG_NO_LEVEL_LABEL)."""
+    return ab.Stack(project, PORTS["loki"], PORTS["vl"], overlays=[LOKI_OVERLAY, *overlays], no_level_label=no_level_label)
 
 
 def grafana_host_network():
@@ -104,6 +105,8 @@ def seed_vl_only(st, start, end, out):
     env = dict(os.environ, LOKI_URL=f"http://127.0.0.1:{sink.server_address[1]}", VL_URL=st.vl, LOG_BATCH=str(ab.BACKFILL_BATCH),
                LOG_BACKFILL_SECONDS=str(end - start), LOG_BACKFILL_INTERVAL=str(ab.BACKFILL_INTERVAL),
                LOG_BACKFILL_END=str(end), LOG_BACKFILL_ONLY="1", LOG_BACKFILL_SEED=f"{end}-old")
+    if st.no_level_label:
+        env["LOG_NO_LEVEL_LABEL"] = "1"
     with open(os.path.join(out, "seed-vl-only.log"), "w") as f:
         sh(sys.executable, ab.GENERATOR, cwd=ab.ROOT, env=env, stdout=f, stderr=subprocess.STDOUT)
     sink.shutdown()
@@ -111,7 +114,7 @@ def seed_vl_only(st, start, end, out):
 
 def up(a):
     os.makedirs(a.out, exist_ok=True)
-    st = stack(a.project, a.overlay)
+    st = stack(a.project, a.overlay, a.no_level_label)
     state = dict(project=a.project, ports=PORTS, pids={}, overlays=a.overlay)
     sp = os.path.join(a.out, "state.json")
     old = load_json(sp) if a.skip_seed and os.path.exists(sp) else {}
@@ -234,6 +237,8 @@ def main():
     ap.add_argument("--project", default="vp")
     ap.add_argument("--port-offset", type=int, default=0, help="shift every port (a second stack next to another)")
     ap.add_argument("--overlay", action="append", default=[], help="a further compose file for Loki/VictoriaLogs")
+    ap.add_argument("--no-level-label", action="store_true",
+                    help="seed rows whose level lives only in the line (the detected_level routes that read the body)")
     ap.add_argument("--main-ref", default="origin/main")
     ap.add_argument("--hours", type=float, default=24, help="VictoriaLogs history (hours)")
     ap.add_argument("--skip-seed", action="store_true", help="reuse the data and end of an earlier up (state.json)")

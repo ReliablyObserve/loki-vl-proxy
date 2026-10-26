@@ -20,6 +20,8 @@ type PageSpec = {
   query?: string;
   path?: string; // drilldown path below /explore, {service} {label} {field} expanded
   service?: boolean; // drilldown: filter by var-filters service_name
+  serviceName?: string; // drilldown: that service instead of vars.service
+  levels?: string; // drilldown: the level pill, as var-levels (detected_level|=|error)
   ranges?: string[];
 };
 const spec = JSON.parse(fs.readFileSync(process.env.VP_SPEC || path.join(__dirname, "spec.json"), "utf8"));
@@ -32,7 +34,8 @@ const plan: Record<string, { ranges: string[] }> | null = process.env.VP_PLAN
   ? JSON.parse(fs.readFileSync(process.env.VP_PLAN, "utf8")).entries : null;
 const dss: Ds[] = spec.datasources;
 const vars: Record<string, string> = spec.vars || {};
-const expand = (s: string) => s.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(vars[k] ?? ""));
+const expand = (s: string, service?: string) =>
+  s.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent((k === "service" && service) || (vars[k] ?? "")));
 
 function rangeOf(r: string) {
   const to = END * 1000;
@@ -44,12 +47,13 @@ function url(p: PageSpec, uid: string, r: string): string {
   if (p.kind === "drilldown") {
     const q = new URLSearchParams({
       patterns: "[]", from, to, timezone: "browser", "var-lineFormat": "", "var-ds": uid,
-      "var-filters": p.service ? `service_name|=|${vars.service}` : "", "var-fields": "", "var-levels": "",
+      "var-filters": p.service ? `service_name|=|${p.serviceName || vars.service}` : "", "var-fields": "",
+      "var-levels": p.levels || "",
       "var-metadata": "", "var-jsonFields": "", "var-all-fields": "", "var-patterns": "",
       "var-lineFilterV2": "", "var-lineFilters": "", "var-primary_label": "service_name|=~|.+",
       ...(p.service ? { displayedFields: "[]", urlColumns: "[]" } : {}),
     });
-    return `/a/grafana-lokiexplore-app/explore${p.path ? "/" + expand(p.path) : ""}?${q}`;
+    return `/a/grafana-lokiexplore-app/explore${p.path ? "/" + expand(p.path, p.serviceName) : ""}?${q}`;
   }
   const pane = {
     A: {
@@ -167,7 +171,7 @@ async function tail(browser: any, p: PageSpec, ds: Ds) {
 // kind through the first datasource and saves nothing.
 if (process.env.VP_WARMUP === "1") {
   test("warmup", async ({ browser }) => {
-    const first = spec.pages.find((x: PageSpec) => x.kind === "drilldown" && !x.path);
+    const first = spec.pages.find((x: PageSpec) => x.kind === "drilldown" && !x.path && !x.levels);
     const explore = spec.pages.find((x: PageSpec) => x.kind === "explore");
     for (const p of [first, explore].filter(Boolean) as PageSpec[]) {
       const ctx = await browser.newContext();

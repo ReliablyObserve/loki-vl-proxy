@@ -32,6 +32,7 @@ implementation:
   - "internal/proxy/detected_level.go deriveRowLevel, detectedLevelName"
   - "internal/proxy/stream_processing.go newLogRowLevels, logRowLevels.mapRow"
   - "internal/translator/detected_level_logsql.go BuildDetectedLevelChain"
+  - "internal/proxy/detected_level_presence.go levelPresenceMask, levelPresenceFromMask"
 
 cases:
   - severity/json-body-level

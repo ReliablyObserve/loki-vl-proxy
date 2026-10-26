@@ -179,6 +179,19 @@ python3 bench/ab/pr_smoke.py --base origin/main --no-level-label --out /tmp/ab-b
 (`stack.py seed --no-level-label` does the same for a hand-run stack; the
 generator option is `LOG_NO_LEVEL_LABEL=1`.)
 
+The level-filter sets follow the two seeds. `level-filter` (detected_level
+filters, Drilldown's level pill and volumes, level filters after a parser,
+metrics by detected_level, keep and drop of the level labels) answers with data
+on both seeds, so run it on each; its unknown forms (`=~"unknown|error"`) put the
+rows without a level under data on the line-only seed. `level-filter-stored` (the
+`level` stream label and `level_extracted` filters) answers with data only on the
+default seed and is empty on the other (Loki too). The per-PR smoke and the daily
+run seed the default stack only, and an empty answer on both sides compares as
+the same, so a set that is only meaningful on the line-only seed is not added to
+`shapes.json` (`detected_level="unknown"` alone is such a query). Any change to the
+code that derives, filters or exposes the level selects these sets through the
+registry like any other.
+
 ### The first view of a window
 
 A proxy remembers what it learned about a window (which level fields and keys it

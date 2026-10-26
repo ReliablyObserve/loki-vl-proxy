@@ -35,6 +35,17 @@ python3 montage.py $OUT
 python3 stack.py down --out $OUT
 ```
 
+`stack.py up --no-level-label` seeds rows whose level lives only in the line (no `level` stream label), the data the
+detected_level routes that read the body answer. The `lvl-` pages of `spec.json` are the level-filter proof: Logs Drilldown
+service pages with a level pill (`levels` is the page's `var-levels`, `serviceName` picks another service than
+`vars.service`) and Explore pages for each level filter form, volume by detected_level, keep and drop of the level labels.
+Run them on the default stack and again on a `--no-level-label` stack; pages named `-stored` answer with data only on the
+first, pages named `-bodyonly` only on the second (Loki too). The CI stack is the default one, so the `-bodyonly` pages come
+last in the spec, where the capture budget drops them first. The Drilldown pill is `var-levels=detected_level|=|error`
+(`detected_level|=~|error__gfp__warn` for several levels), the form the plugin's own URLs use (logs-drilldown v2.6.0,
+`src/services/extensions/links.test.ts`); it renders as `| detected_level="error"` before the parser stage. The landing page
+ignores `var-levels`, so it has no pill page.
+
 `stack.py up --skip-seed` restarts the proxies and Grafana on data seeded earlier. Filters: `VP_PAGES=explore-B,dd-fields VP_RANGES=15m,1h`, `WORKERS=2`.
 Outputs: `$OUT/shots`, `$OUT/data`, `$OUT/montage`, `$OUT/compare.md`,
 `$OUT/pixeldiff.json`. Before pushing images, keep each montage at or below

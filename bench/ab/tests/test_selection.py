@@ -28,6 +28,8 @@ ITEMS = {
     "behaviour-b": ({"internal/proxy/ordered_json_metric.go"}, set()),
 }
 
+LEVEL_SETS = ("level-filter", "level-filter-stored")
+
 
 def pick(files):
     return selection.select(files, spec=SPEC, items=ITEMS)
@@ -102,6 +104,31 @@ class CheckTest(unittest.TestCase):
         result = selection.select(["internal/proxy/ordered_json_metric.go"])
         self.assertIn("json-filter-pushdown", result["sets"])
         self.assertTrue(any(s.get("smoke") for s in selection.load_shapes()["sets"]["control"]["shapes"]))
+
+    def test_repository_level_code_selects_level_filter_sets(self):
+        # Every non-test file that derives, filters or exposes the level must run the level-filter sets, so a PR
+        # touching it is measured on the level filters Explore and Drilldown send (bench/ab/shapes.json).
+        for path in ("internal/proxy/detected_level.go", "internal/proxy/detected_level_presence.go",
+                     "internal/translator/detected_level_logsql.go", "internal/proxy/stream_processing.go"):
+            sets = selection.select([path])["sets"]
+            for name in LEVEL_SETS:
+                self.assertIn(name, sets, f"{path} does not select {name}")
+        self.assertIn("level-filter", selection.select(["internal/proxy/ordered_json_metric.go"])["sets"])
+
+    def test_level_filter_sets_are_seed_specific(self):
+        # The default seed stores a level label on every stream; --no-level-label leaves the level in the line only.
+        # The per-PR smoke and the daily run seed only the default stack, and an empty answer on both sides compares
+        # as "same", so every set selected automatically must answer with data there. level-filter must also answer
+        # on the line-only seed, so it carries neither the stream label forms nor detected_level="unknown" alone.
+        sets = selection.load_shapes()["sets"]
+        for name in LEVEL_SETS:
+            names = [s["name"] for s in sets[name]["shapes"]]
+            self.assertEqual(len(names), len(set(names)), name)
+        for shape in sets["level-filter"]["shapes"]:
+            self.assertNotRegex(shape["query"], r"\} \| level(=|=~|!=)", shape["name"])  # stream label: empty on the line-only seed
+            self.assertNotIn('detected_level="unknown"', shape["query"], shape["name"])  # empty on the stored seed
+            self.assertNotRegex(shape["query"], r"(?<![_a-z])level_extracted", shape["name"])  # empty on the line-only seed
+        self.assertNotIn("level-filter-body-only", sets)  # would run empty in CI and the daily run
 
 
 if __name__ == "__main__":

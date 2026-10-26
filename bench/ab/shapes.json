@@ -2076,6 +2076,468 @@
      "instant": true
     }
    ]
+  },
+  "level-filter": {
+   "description": "Level filtering as Grafana Explore and Logs Drilldown send it, on data that carries a stored level and on data whose level is only in the line: detected_level equals, regexp, not-equal and unknown forms on log queries, Drilldown's service logs with a level pill, its logs volume by level (with and without the pill), field and label breakdowns under a level filter before | json, level filters after | json and | logfmt, metrics by detected_level, rate, topk, and keep or drop of the level labels. Every answer is non-empty on both seeds, so run it on the default stack and again with --no-level-label (README, Rows with no stored level); the unknown forms (LF4, LF19) put the no-level rows under data on the second run.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "LF1 logs, detected_level equals",
+     "query": "{service_name=\"api-gateway\"} | detected_level=\"error\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF2 logs, detected_level regexp",
+     "query": "{service_name=\"api-gateway\"} | detected_level=~\"error|warn\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF3 logs, detected_level not equal, all services",
+     "query": "{env=\"production\"} | detected_level!=\"info\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF4 logs, detected_level regexp with unknown",
+     "query": "{env=\"production\"} | detected_level=~\"unknown|error\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF5 logs, plain-text service, detected_level regexp",
+     "query": "{service_name=\"db-postgres\"} | detected_level=~\"info|error\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF6 logs, json then detected_level",
+     "query": "{service_name=\"api-gateway\"} | json | detected_level=\"error\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "semantics/json-metric-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF7 logs, json then level equals",
+     "query": "{service_name=\"api-gateway\"} | json | level=\"error\"",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "parser-error-and-label-collision",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF8 logs, logfmt then level regexp",
+     "query": "{service_name=\"payment-service\"} | logfmt | level=~\"(?i)err.*\"",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "parser-error-and-label-collision",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF9 drilldown logs, level pill, logfmt service",
+     "query": "{service_name=\"payment-service\"} | detected_level=\"warn\"",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "drilldown-service-landing",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF10 drilldown logs, level pill multi-select, json service",
+     "query": "{service_name=\"frontend-ssr\"} | detected_level=~\"warn|error\"",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "drilldown-service-landing",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF11 drilldown logs volume by level, existing level",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "drilldown-service-landing",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF12 drilldown logs volume by level, level pill",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | detected_level=~\"error|warn\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "drilldown-service-landing",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF13 explore volume, level filter before json",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | detected_level=\"error\" | json | drop __error__ [$__auto]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "semantics/detected-level-filter-before-parser-pushdown",
+      "semantics/json-metric-detected-level-derivation",
+      "explore-logs-volume-json",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF14 explore volume, plain-text service",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"db-postgres\"} | detected_level!=\"\" [$__auto]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF15 drilldown field breakdown, level filter",
+     "query": "sum by (method) (count_over_time({service_name=\"api-gateway\"} | detected_level=\"error\" | json | drop __error__, __error_details__ | method!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "semantics/detected-level-filter-before-parser-pushdown",
+      "semantics/json-metric-detected-level-derivation",
+      "parser-json",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF16 drilldown label breakdown, level filter",
+     "query": "sum(count_over_time({env=\"production\", namespace=\"monitoring\"} | detected_level=\"warn\" | json | drop __error__, __error_details__ | pipeline=\"logs/loki\" [$__auto])) by (pod)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "semantics/detected-level-filter-before-parser-pushdown",
+      "semantics/json-metric-detected-level-derivation",
+      "parser-json",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF17 detected_level count, level regexp",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level=~\"error|warn\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF18 detected_level count, level not equal",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level!=\"info\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF19 detected_level count, regexp with unknown",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level=~\"unknown|error\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF20 logfmt count by detected_level",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"payment-service\"} | logfmt [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "parser-logfmt",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF21 logfmt count by detected_level, level filter",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"payment-service\"} | logfmt | detected_level=\"error\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF22 json count by detected_level, level filter",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | json | detected_level=\"error\" | drop __error__ [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "semantics/json-metric-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF23 json count by level, level filter",
+     "query": "sum by (level) (count_over_time({service_name=\"api-gateway\"} | json | level=\"error\" | drop __error__ [1m]))",
+     "covers": [
+      "semantics/plain-name-after-parser-reads-stream-label",
+      "parser-error-and-label-collision",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF24 rate of errors by service",
+     "query": "sum by (service_name) (rate({env=\"production\"} | detected_level=\"error\" [5m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "range_function-rate",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF25 count of warnings, error label dropped",
+     "query": "sum by (service_name) (count_over_time({env=\"production\"} | drop __error__ | detected_level=\"warn\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "range_function-count-over-time",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF26 topk services by errors",
+     "query": "topk(5, sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"error\" [5m])))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "operator-topk",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF27 detected_level count, instant",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\"} | detected_level!=\"info\" [5m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "LF28 logs, keep detected_level",
+     "query": "{service_name=\"api-gateway\"} | keep detected_level",
+     "covers": [
+      "severity/detected-level-stage-side-effects",
+      "severity-exposure-surfaces",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF29 logs, drop detected_level",
+     "query": "{service_name=\"api-gateway\"} | drop detected_level",
+     "covers": [
+      "severity/detected-level-stage-side-effects",
+      "severity-exposure-surfaces",
+      "operator-drop",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF30 logs, drop level",
+     "query": "{service_name=\"api-gateway\"} | drop level",
+     "covers": [
+      "severity/detected-level-stage-side-effects",
+      "severity-exposure-surfaces",
+      "operator-drop",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LF31 count by detected_level, level dropped",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | drop level [1m]))",
+     "covers": [
+      "severity/detected-level-stage-side-effects",
+      "severity-exposure-surfaces",
+      "operator-drop",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF32 count by detected_level, detected_level kept",
+     "query": "sum by (detected_level) (count_over_time({service_name=\"api-gateway\"} | keep detected_level [1m]))",
+     "covers": [
+      "severity/detected-level-stage-side-effects",
+      "severity-exposure-surfaces",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF33 drilldown logs count, level pill, instant",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | detected_level=\"error\" [5m]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "drilldown-service-landing",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
+  },
+  "level-filter-stored": {
+   "description": "Level filters that read the stream's stored level: the level stream label, a level in the selector, and the level_extracted collision after | json and | logfmt. Empty without the stored level (Loki too), so run it on the default stack only, never with --no-level-label.",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "shapes": [
+    {
+     "name": "LS1 logs, level stream label",
+     "query": "{service_name=\"api-gateway\"} | level=\"error\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "severity-exposure-surfaces",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LS2 logs, level stream label regexp, all services",
+     "query": "{env=\"production\"} | level=~\"error|warn\"",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "severity-exposure-surfaces",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LS3 logs, level in the selector",
+     "query": "{service_name=\"api-gateway\", level=\"error\"}",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity-exposure-surfaces",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LS4 logs, json then level_extracted",
+     "query": "{service_name=\"api-gateway\"} | json | level_extracted=\"error\"",
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LS5 logs, logfmt then level_extracted regexp",
+     "query": "{service_name=\"payment-service\"} | logfmt | level_extracted=~\"(?i)err.*\"",
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "parser-error-and-label-collision",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "LS6 level stream label count",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | level=\"error\" [1m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "severity-exposure-surfaces",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LS7 rate of level stream label by service",
+     "query": "sum by (service_name) (rate({env=\"production\"} | level=\"error\" [5m]))",
+     "covers": [
+      "severity-detected-level-derivation",
+      "severity/detected-level-filter-json-level",
+      "range_function-rate",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LS8 json count by level_extracted, collision",
+     "query": "sum by (level_extracted) (count_over_time({service_name=\"api-gateway\"} | json | level_extracted=\"error\" | drop __error__ [1m]))",
+     "covers": [
+      "semantics/extracted-suffix-collision",
+      "semantics/json-extracted-metric-pushdown",
+      "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }
