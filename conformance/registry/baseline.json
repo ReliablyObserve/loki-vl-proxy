@@ -1,6 +1,6 @@
 {
   "endpoints": 33,
-  "proven": 12,
+  "proven": 11,
   "scores": {
     "coverage": 0.5455,
     "implementation": 0.697,
@@ -47,7 +47,7 @@
     "loki_api_v1_rules_namespace_groupname": "gap",
     "loki_api_v1_series": "proven",
     "loki_api_v1_status_buildinfo": "partial",
-    "loki_api_v1_tail": "proven",
+    "loki_api_v1_tail": "partial",
     "metric-series-identity": "partial",
     "numeric-and-response-formatting": "gap",
     "operator-configurable-limits": "proven",

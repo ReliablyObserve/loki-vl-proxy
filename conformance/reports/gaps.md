@@ -9,31 +9,32 @@ others (and always listed), `last` below all others; the score orders within eac
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
+| 4 | `/loki/api/v1/tail` | explore, api | native_vl | 13 | 4 | owner priority: Routed (handleTail) and compared against Loki in 4 test files, but not yet Loki-identical. Missing: start and limit history replay (Loki sends the last limit entries since start before live lines, pkg/loghttp/tail.go:70-94; open case semantics/tail-history-start-limit); limit and delay_for validation (limit must be positive, delay_for above 5 is refused, tail.go:101-103 and params.go:27-36); a multi-tenant tail request, which the proxy refuses (docs/KNOWN_ISSUES.md) with no registry row yet pinning Loki's answer. |
+| 4 | `/api/prom/tail` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry; owner priority: Not routed: the proxy answers 404. Loki serves /api/prom/tail with the same TailHandler as /loki/api/v1/tail (pkg/loki/modules.go:718-719), so it needs the same behaviour and the same frames, and shares the missing items of loki_api_v1_tail (history replay for start and limit, limit and delay_for validation, multi-tenant answer). |
 | 9 | `/loki/api/v1/detected_fields` | explore, drilldown, api | proxy_side | 37 | 13 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/prometheus/api/v1/alerts` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/loki/api/v1/rules/{namespace}` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/index/volume_range` | drilldown, api | proxy_side | 19 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/index/volume` | drilldown, api | proxy_side | 26 | 9 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/format_query` | explore, api | proxy_side | 3 | 1 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/loki/api/v1/detected_labels` | drilldown, api | proxy_side | 17 | 6 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/api/prom/rules/{namespace}` | api | proxy_side | 1 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 6 | `/api/prom/rules` | api | proxy_side | 2 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 5 | `/loki/api/v1/status/buildinfo` | datasource, api | proxy_side | 8 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
-| 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 20 | 3 | no test wired to the registry |
 | 4 | `/loki/api/v1/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/index/shards` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/delete` | api | native_vl | 3 | 0 | no test compares it against Loki |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/tail` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/series` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/api/prom/rules/{namespace}/{groupName}` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
 | 4 | `/api/prom/query` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label/{name}/values` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/api/prom/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
+| 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
+| 6 | `/prometheus/api/v1/alerts` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
+| 6 | `/loki/api/v1/rules/{namespace}` | api | proxy_side | 4 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
+| 6 | `/api/prom/rules/{namespace}` | api | proxy_side | 1 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
+| 6 | `/api/prom/rules` | api | proxy_side | 2 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
+| 4 | `/loki/api/v1/rules/{namespace}/{groupName}` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
+| 4 | `/api/prom/rules/{namespace}/{groupName}` | api | not_implemented | 4 | 0 | not implemented; no test compares it against Loki |
 | 3 | `/prometheus/api/v1/rules` | api | proxy_side | 5 | 1 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 3 | `/loki/api/v1/rules` | api | proxy_side | 9 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
-| 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
 
 ## Error surface
 

@@ -8,7 +8,7 @@
   },
   "implemented": 23,
   "loki_version": "v3.7.7",
-  "proven": 12,
+  "proven": 11,
   "scores": {
     "coverage": 0.5455,
     "implementation": 0.697,
@@ -16,8 +16,8 @@
   },
   "state": {
     "gap": 10,
-    "partial": 11,
-    "proven": 12,
+    "partial": 12,
+    "proven": 11,
     "unknown": 0,
     "waived": 0
   },

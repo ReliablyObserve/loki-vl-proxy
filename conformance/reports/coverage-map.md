@@ -17,7 +17,7 @@ The proxy serves Loki's read API. Write endpoints (push) are not supported: inge
 |---|---|---|
 | Implementation | 23/33 | endpoints the proxy routes |
 | Differential evidence | 18/33 | endpoints with tests comparing the proxy against Loki |
-| Proven | 12/33 | endpoints whose registry state is `proven` |
+| Proven | 11/33 | endpoints whose registry state is `proven` |
 | VictoriaLogs native share | 6/23 | implemented endpoints answered natively |
 
 ## Endpoints
@@ -44,7 +44,7 @@ The proxy serves Loki's read API. Write endpoints (push) are not supported: inge
 | `/loki/api/v1/rules/{namespace}` | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:94 |
 | `/loki/api/v1/series` | proven | hybrid | explore, datasource, api | 35 | 12 | internal/proxy/label_handlers.go:404 |
 | `/loki/api/v1/status/buildinfo` | partial | proxy-side | datasource, api | 8 | 4 | internal/proxy/alerting.go:127 |
-| `/loki/api/v1/tail` | proven | VictoriaLogs native | explore, api | 13 | 4 | internal/proxy/tail.go:26 |
+| `/loki/api/v1/tail` | partial | VictoriaLogs native | explore, api | 13 | 4 | internal/proxy/tail.go:26 |
 | `/prometheus/api/v1/alerts` | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:110 |
 | `/prometheus/api/v1/rules` | partial | proxy-side | api | 5 | 1 | internal/proxy/alerting.go:94 |
 | `/api/prom/label` | gap | not implemented | api | 0 | 0 | — |
