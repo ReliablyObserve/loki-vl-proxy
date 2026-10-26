@@ -2,13 +2,15 @@ package proxy
 
 import "testing"
 
-// Loki's batchRangeVectorIterator.load (pkg/logql/range_vector.go, v3.7.1)
+// Loki's batchRangeVectorIterator.load (pkg/logql/range_vector.go:148-189, v3.7.7)
 // skips `sample.Timestamp <= start` for every range aggregation — the comment
 // in that loop reads "the lower bound of the range is not inclusive", and the
 // iterator is shared by unwrapped ranges too. An unwrapped `sum_over_time`,
 // `avg_over_time`, `min_over_time`, `max_over_time` or `quantile_over_time`
 // must therefore drop a sample sitting exactly on windowStart, the same way
 // count_over_time does.
+//
+// conformance: semantics/lower-bound-exclusive, window-bounds-and-step-alignment
 func TestLowerBoundIsExclusiveForEveryRangeFunction(t *testing.T) {
 	samples := []rangeMetricSample{{ts: 0, value: 1}, {ts: 10, value: 2}, {ts: 20, value: 3}}
 	for _, tc := range []struct {

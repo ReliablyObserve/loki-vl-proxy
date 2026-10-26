@@ -29,8 +29,8 @@ why: |
   Loki's, as an operand of a binary operation too, and with the conversion-error
   check, which counts only the lines inside a window as Loki fails only on those.
 
-  Not covered: a range longer than the step (semantics/unwrap-over-time-range-windows),
-  the series identity of avg, max and min under an outer aggregation
+  A range longer than the step is fixed with semantics/unwrap-over-time-range-windows.
+  Not covered: the series identity of avg, max and min under an outer aggregation
   (semantics/unwrap-sum-by-per-series-function-extraction-list). VictoriaLogs
   evaluates the phase in float64, so a line within a few hundred nanoseconds of a
   window edge may fall on either side, as for the window evaluator.
@@ -54,10 +54,10 @@ gap:
   fixed_by: TBD-PR
   impact: explore-visible
   visual: none
-  visual_reason: 'a fix proof is captured at the ranges Loki holds in the visual stack (up to 1.5h), where Explore''s auto step is a few seconds and any range a panel can show is longer than the step (semantics/unwrap-over-time-range-windows, open); range < step needs a step of minutes (7d), proven by the window comparison against Loki in the e2e'
+  visual_reason: 'a fix proof is captured at the ranges Loki holds in the visual stack (up to 1.5h), where Explore''s auto step is a few seconds and any range a panel can show is longer than the step (semantics/unwrap-over-time-range-windows); range < step needs a step of minutes (7d), proven by the window comparison against Loki in the e2e'
   effort: S
   area: 'internal/proxy metric_binary.go proxyStatsQueryRange (statsRateRangeEqualsStepShift branch) and range_metric_compat.go withWindowPhaseFilter'
   loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
   proxy: 'anchored step buckets restricted to the lines of (t-range, t] by the window filter'
-  planned_test: 'TestUnwrapOverTimeShortRangeMatchesLoki (internal/proxy); TestCompat_UnwrapOverTimeShortRange (test/e2e-compat, group semantics)'
+  planned_test: 'TestUnwrapOverTimeShortRangeMatchesLoki (internal/proxy); TestCompat_UnwrapOverTimeShortRange (test/e2e-compat, group core)'
   clusters: []

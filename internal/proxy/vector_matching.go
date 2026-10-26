@@ -126,16 +126,21 @@ func (m withoutMerge) combine(acc, value float64, n int) float64 {
 // unless the tenant's limit is lower, the budget's error is what they answer,
 // and capWithoutFold applies the tenant's limit to the answer.
 func (p *Proxy) withWithoutFold(r *http.Request) *http.Request {
-	if scope, _ := r.Context().Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil {
-		// The budget bounds the reads before the fold unless the tenant's limit is
-		// the lower of the two, which then stays the bound (equal limits: the
-		// budget, which is what the request is reading under).
-		if budget, err := p.manualMetricRowBudget(); err == nil && budget >= p.requestQueryLimits(r.Context()).MaxQuerySeries {
+	p.recordFoldBudget(r.Context())
+	ctx := context.WithValue(r.Context(), withoutFoldKey{}, true)
+	return r.WithContext(context.WithValue(ctx, foldedSumKey{}, true))
+}
+
+// recordFoldBudget records the raw-row budget the reads of a request that
+// folds its series afterwards are bounded by, unless the tenant's limit is the
+// lower of the two, which then stays the bound (equal limits: the budget, which
+// is what the request is reading under).
+func (p *Proxy) recordFoldBudget(ctx context.Context) {
+	if scope, _ := ctx.Value(seriesLimitScopeKey{}).(*seriesLimitScope); scope != nil {
+		if budget, err := p.manualMetricRowBudget(); err == nil && budget >= p.requestQueryLimits(ctx).MaxQuerySeries {
 			scope.foldBudget = budget
 		}
 	}
-	ctx := context.WithValue(r.Context(), withoutFoldKey{}, true)
-	return r.WithContext(context.WithValue(ctx, foldedSumKey{}, true))
 }
 
 // withoutFoldKey marks a request whose `without` the proxy folds

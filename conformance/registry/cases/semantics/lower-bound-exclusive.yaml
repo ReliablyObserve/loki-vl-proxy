@@ -1,0 +1,57 @@
+id: semantics/lower-bound-exclusive
+title: the raw-row range evaluator reads the window (t-range, t] for every range function (fixed)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki's batchRangeVectorIterator.load skips a sample with `Timestamp <= start`
+  ("the lower bound of the range is not inclusive") and keeps samples up to and
+  including the evaluation time, for every range aggregation, unwrapped ones
+  included (pkg/logql/range_vector.go:148-189, Loki v3.7.7).
+
+  The raw-row evaluator (aggregateManualWindow) excluded the lower bound only for
+  rate, count_over_time, bytes_over_time and bytes_rate, and extended its
+  VictoriaLogs fetch by 1ns past the evaluation time (the fetch end is
+  exclusive) only for those and quantile_over_time. Every other function read
+  the window [t-range, t): over samples {0:1, 10:2, 20:3} and the window
+  (0, 20], sum 3 where Loki has 5, avg 1.5 (2.5), min 1 (2), and a sample at t
+  was never read. It answers rate_counter on query_range, the instant queries
+  over a JSON parser of sum, avg, max, min, stddev, stdvar, first and last over
+  time, and any range grid of more than 11,000 buckets.
+
+  Fixed (contributed in #570): the window is (t-range, t] for every function,
+  on query_range and instant queries. Only samples exactly on a window edge
+  move, which second-precision timestamps make common.
+
+  Not covered: rate_counter's value itself is this evaluator's counter
+  increase over the window; Loki extrapolates it to the window edges
+  (pkg/logql/range_vector.go:275-346 rateCounter, extrapolatedRate), which the
+  evaluator does not.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum by (app) (sum_over_time({app="payment-service"} | json | unwrap amount [2m]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    The sum of the lines in (time-2m, time]: a line at time-2m is out, a line at time is in.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'it moves only a sample that sits exactly on a window edge, one line per window at most, which no panel at Explore''s steps tells apart; proven by the window comparison over lines on every edge against Loki in the e2e'
+  effort: S
+  area: 'internal/proxy range_metric_compat.go aggregateManualWindow, proxyManualRangeMetricRange and proxyManualRangeMetricInstant (fetch end)'
+  loki: 'pkg/logql/range_vector.go:148-189 batchRangeVectorIterator.load'
+  proxy: '(t-range, t] for every function of the raw-row evaluator'
+  planned_test: 'TestLowerBoundIsExclusiveForEveryRangeFunction, TestCompatHelpers_AggregateManualWindow, TestUnwrapOverTimeRawWindowBounds (internal/proxy); TestCompat_UnwrapOverTimeRangeWindows (test/e2e-compat, group core: the JSON instant over lines on the window edges)'
+  note: 'Contributed in #570. rate_counter extrapolation is not covered.'
+  clusters: []

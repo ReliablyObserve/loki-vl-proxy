@@ -1,0 +1,56 @@
+id: semantics/unwrap-over-time-range-windows-residual-forms
+title: some outer aggregations of sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step (open)
+proves:
+  - window-bounds-and-step-alignment
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki takes these functions per series over the window (t-range, t]
+  (pkg/logql/range_vector.go:102-189, range_vector.go:371-420), a series being
+  the stream plus the labels a parser extracted less the unwrapped one
+  (pkg/logql/log/metrics_extraction.go), and applies the outer aggregations per
+  step (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+
+  The window merge of semantics/unwrap-over-time-range-windows reads per-series
+  buckets of partial aggregates and applies the outer aggregation after the
+  window. Three kinds of query keep VictoriaLogs' native step buckets with a
+  range longer than the step, so every point is the step (t-step, t]:
+  - a JSON parser query whose series the translation groups by stream and line
+    (`stats by (_stream, _msg)`) under an outer aggregation, such as
+    `sum(avg_over_time({..} | json | unwrap x [5m]))` or
+    `max by (pod) (sum_over_time({..} | json | unwrap x [5m]))`, and a `without`
+    over a parser query grouped by line: buckets per distinct line are not a
+    bounded grouping, and (_stream, _msg) is not Loki's series either;
+  - nested aggregations the evaluator does not apply after the window (a sum
+    over a sum, a `without` under another aggregation, a ranking `without`);
+  - an empty `without ()` (semantics/without-empty-grouping-range-collapses).
+  Exact windows need Loki's parsed series identity as a stats grouping first;
+  then the partial aggregates merge per window like the other forms. Found with
+  an emulated VictoriaLogs while fixing semantics/unwrap-over-time-range-windows
+  (not measured on a stack).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(avg_over_time({service_name="api-gateway"} | json | unwrap duration_ms | __error__="" [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series, the per-series window averages of Loki added up at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/proxy unwrap_samples.go unwrapWindowBuckets and unwrapWindowForm (these forms keep native step buckets); the translator''s per-series grouping of parser queries'
+  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator; range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime; pkg/logql/evaluator.go VectorAggEvaluator.Next'
+  proxy: 'native step buckets: the step-sized bucket, not the window'
+  planned_test: 'TestUnwrapOverTimeResidualShapesKeepStatsBuckets pins the route today (internal/proxy); the forms join TestUnwrapOverTimeWindowsDifferential and TestCompat_UnwrapOverTimeRangeWindows once fixed'
+  note: 'Residual of semantics/unwrap-over-time-range-windows; depends on the parsed series identity rows.'
+  clusters: []

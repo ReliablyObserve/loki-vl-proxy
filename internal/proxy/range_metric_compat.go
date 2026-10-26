@@ -452,7 +452,11 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
+	// Native step buckets answer sum, avg, max and min over time with unwrap
+	// for a range up to the step; a longer range merges its windows from
+	// anchored buckets (unwrapWindowBuckets).
+	if !p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step) &&
+		!shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -817,8 +821,11 @@ var maxStatsBucketResponseBytes int64 = 64 << 20
 // past the window start preceding it, modulo the step: a line is in a window
 // when 0 < phase <= window. VictoriaLogs evaluates math in float64, so a line
 // within a few hundred nanoseconds of a window edge may fall on either side.
+// The anchor is the window start modulo the step, the same phase for every
+// line: the query text, and with it the stats extent cache key, is the same
+// for every start on one step grid, as a refresh moved by whole steps is.
 func windowPhaseFilter(start time.Time, step, window time.Duration) string {
-	anchor := start.Add(-window).UnixNano()
+	anchor := ((start.Add(-window).UnixNano())%int64(step) + int64(step)) % int64(step)
 	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
 		") as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=" + strconv.FormatInt(int64(window), 10)
 }
@@ -861,6 +868,9 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 		}
 		for i := range entry.PresentBuckets {
 			entry.PresentBuckets[i] += int64(shift)
+		}
+		for i := range entry.Counts {
+			entry.Counts[i].ts += int64(shift)
 		}
 		series[key] = entry
 	}
@@ -1463,29 +1473,16 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
 			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
+			if statsAggFunc == avgBucketSum {
+				// avg over time divides each window's sum by its sample count.
+				entry.Counts = append(entry.Counts, bucketSamples(res.GetArray("values"), start, hitStep)...)
+				sort.Slice(entry.Counts, func(i, j int) bool { return entry.Counts[i].ts < entry.Counts[j].ts })
+			}
 			seriesMap[seriesKey] = entry
 			continue
 		}
 
-		values := res.GetArray("values")
-		samples := make([]rangeMetricSample, 0, len(values))
-		for _, pair := range values {
-			arr := pair.GetArray()
-			if len(arr) < 2 {
-				continue
-			}
-			ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
-			if !tsOK {
-				continue
-			}
-			valStr := string(arr[1].GetStringBytes())
-			val, valErr := strconv.ParseFloat(valStr, 64)
-			if valErr != nil {
-				continue
-			}
-			samples = append(samples, rangeMetricSample{ts: ts, value: val})
-		}
-
+		samples := bucketSamples(res.GetArray("values"), start, hitStep)
 		if existing, ok := seriesMap[seriesKey]; ok {
 			existing.Samples = append(existing.Samples, samples...)
 			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
@@ -1563,6 +1560,28 @@ func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]strin
 		metric[lokiKey] = value
 	})
 	return metric
+}
+
+// bucketSamples reads the [timestamp, value] pairs of one stats_query_range
+// series as samples on the start+k*hitStep grid.
+func bucketSamples(values []*fj.Value, start time.Time, hitStep time.Duration) []rangeMetricSample {
+	samples := make([]rangeMetricSample, 0, len(values))
+	for _, pair := range values {
+		arr := pair.GetArray()
+		if len(arr) < 2 {
+			continue
+		}
+		ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
+		if !tsOK {
+			continue
+		}
+		val, valErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+		if valErr != nil {
+			continue
+		}
+		samples = append(samples, rangeMetricSample{ts: ts, value: val})
+	}
+	return samples
 }
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
@@ -2069,6 +2088,9 @@ type manualSeriesSamples struct {
 	// ascending left edges of buckets holding lines. Non-nil (possibly empty) only
 	// for byte sums; raw log samples retain their compact shape.
 	PresentBuckets []int64
+	// Counts holds the sample count of every present bucket, ascending, for
+	// avg over time, which divides a window's sum by them.
+	Counts []rangeMetricSample
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -2320,6 +2342,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
+	mergedUnwrap := unwrapBucketAgg(manualFunc) != ""
 
 	keys := make([]string, 0, len(series))
 	for key := range series {
@@ -2357,13 +2380,13 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			lo := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= windowStartNS })
 			hi := sort.Search(len(samples), func(i int) bool { return samples[i].ts >= tNS })
 			sum := prefix[hi] - prefix[lo]
-			if manualFunc == "unwrap_rate" {
+			if mergedUnwrap {
 				// Unwrap values are floats: one infinity would turn every later
 				// prefix difference into NaN, and large values lose precision to
-				// cancellation, so each window is summed on its own.
+				// cancellation, so each window is merged on its own.
 				sum = 0
-				for _, sample := range samples[lo:hi] {
-					sum += sample.value
+				if lo < hi {
+					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], windowSamples(seriesEntry.Counts, windowStartNS, tNS))
 				}
 			}
 			hasLines := sum != 0

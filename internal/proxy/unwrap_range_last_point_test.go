@@ -27,10 +27,13 @@ func unwrapRangeResult(t *testing.T, emu *vlEmulator, query string, startSec, en
 	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	c := cache.New(60*time.Second, 1000)
+	defer c.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
 	if emu.version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
