@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -489,42 +488,44 @@ func TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant(t *testing.T) {
 
 // TestLabelReplaceOfABinaryExpressionRoutesByTheBinary: a label_replace around
 // a binary expression evaluates the binary, then replaces the label, on
-// query_range as on an instant query (pkg/logql/evaluator.go:385-388). The
-// translator's binary marker never reaches VictoriaLogs as a query it cannot
-// parse.
+// query_range as on an instant query (pkg/logql/evaluator.go:385-388; the
+// transform is LabelReplaceEvaluator.Next at :1279-1309 over the binary's
+// vector). Each ns divided by itself is 1 at every step, with dst equal to ns.
+// The translator's binary marker never reaches VictoriaLogs as a query.
 //
 // conformance: semantics/label-replace-range-binary-marker
 func TestLabelReplaceOfABinaryExpressionRoutesByTheBinary(t *testing.T) {
 	const query = `label_replace(sum by (ns) (rate({app="uw"}[5m])) / sum by (ns) (rate({app="uw"}[5m])), "dst", "$1", "ns", "(.*)")`
-	var (
-		mu      sync.Mutex
-		queries []string
-	)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		mu.Lock()
-		queries = append(queries, r.Form.Get("query"))
-		mu.Unlock()
-		if strings.HasPrefix(r.Form.Get("query"), "__binary__:") {
-			// VictoriaLogs' answer to a query it cannot parse.
-			http.Error(w, `{"status":"error","error":"cannot parse query"}`, http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
-	}))
-	defer backend.Close()
 	for _, instant := range []bool{false, true} {
-		mu.Lock()
-		queries = nil
-		mu.Unlock()
-		got := openShapeRunAgainst(t, backend.URL, query, instant)
-		mu.Lock()
-		sent := strings.Join(queries, "\n")
-		mu.Unlock()
-		if marker := strings.Contains(sent, "__binary__:"); got.code != http.StatusOK || marker {
-			t.Fatalf("instant=%v: %d, binary marker sent=%v, want 200 and no marker: %s", instant, got.code, marker, got.raw)
-		}
+		t.Run(fmt.Sprintf("instant=%v", instant), func(t *testing.T) {
+			emu := &vlEmulator{t: t, rows: withoutScopeRows(), field: "amount", version: "v1.52.0"}
+			backend := httptest.NewServer(emu.handler())
+			defer backend.Close()
+			got := openShapeRunAgainst(t, backend.URL, query, instant)
+			if got.code != http.StatusOK {
+				t.Fatalf("%d %s", got.code, got.raw)
+			}
+			emu.mu.Lock()
+			for _, c := range emu.calls {
+				if strings.Contains(c.query, "__binary__:") {
+					t.Errorf("the binary marker reached VictoriaLogs: %s %s", c.path, c.query)
+				}
+			}
+			emu.mu.Unlock()
+			if len(got.series) != 2 || got.series["ns=x"] == "" || got.series["ns=y"] == "" {
+				t.Fatalf("want the series ns=x and ns=y, as Loki answers: %v\n%s", got.series, got.raw)
+			}
+			for key, values := range got.series {
+				for _, v := range strings.Split(values, ",") {
+					if v != "1" {
+						t.Fatalf("%s: values %s, want 1 at every point (each ns divided by itself)\n%s", key, values, got.raw)
+					}
+				}
+			}
+			if !strings.Contains(got.raw, `"dst":"x"`) || !strings.Contains(got.raw, `"dst":"y"`) {
+				t.Fatalf("want dst=x and dst=y on the series, as Loki answers\n%s", got.raw)
+			}
+		})
 	}
 }
 

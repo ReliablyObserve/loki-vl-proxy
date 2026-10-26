@@ -1,5 +1,5 @@
 id: semantics/label-replace-range-binary-marker
-title: label_replace around a binary expression on query_range sends the binary marker to VictoriaLogs and answers no series or an error (open)
+title: label_replace around a binary expression on query_range evaluates the binary, then replaces the label, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -15,7 +15,15 @@ why: |
   query strips the transform before routing (stripLabelTransforms in handleQuery) and
   answers; handleQueryRange never calls it. Measured through the handlers against a stub backend that rejects the marker (TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
 
-  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, query_range over 10 minutes): Loki answers three series (error, info, warn, each valued 1 with `dst`); the proxy answers 200 with no series, VictoriaLogs v1.52.0 not failing on the marker the way the stub does. The registered request uses the `level` stream label of the generator data.
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, query_range over 10 minutes): Loki answers three series (error, info, warn, each valued 1 with `dst`); the proxy answered 200 with no series, VictoriaLogs v1.52.0 not failing on the marker the way the stub does. The registered request uses the `level` stream label of the generator data.
+
+  Fixed with semantics/label-replace-new-label: handleQueryRange strips the
+  transform before routing as handleQuery does (stripLabelTransforms), clones
+  the request from its own query so each operand keeps its parser, evaluates
+  the binary expression through the binary path and applies the transform to
+  its answer (pkg/logql/evaluator.go:385-388). No marker reaches VictoriaLogs.
+  TestLabelReplaceOfABinaryExpressionRoutesByTheBinary (the test that pinned
+  the old answer, converted) asserts 200 and no marker on both endpoints.
 
 request:
   method: GET
@@ -33,12 +41,13 @@ compare:
   expect: |
     The ratio per level with dst on every series.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#744"
   impact: explore-visible
   effort: S
   area: 'internal/proxy handleQueryRange (stripLabelTransforms for a label transform around a binary expression)'
   loki: 'pkg/logql/evaluator.go:1275-1310 LabelReplaceEvaluator.Next over the binary vector'
-  proxy: 'the binary marker reaches VictoriaLogs; an empty matrix from VictoriaLogs v1.52.0, 502 from a backend that rejects the query'
-  planned_test: 'TestRangeLabelReplaceOfABinaryExpressionSendsTheMarker (internal/proxy); an e2e test vs Loki in group semantics when fixed'
+  proxy: 'the binary is routed by the expression under the transform on both endpoints; the transform is applied to its answer'
+  planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceOfABinaryExpressionRoutesByTheBinary (internal/proxy)'
   note: 'Related: semantics/label-replace-instant-vector, semantics/label-replace-new-label.'
   clusters: []

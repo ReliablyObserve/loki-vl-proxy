@@ -28,7 +28,7 @@ import (
 // Both must answer the same status; when they answer, the same result type, the
 // same label sets (and, on query, the same number of samples per label set). The
 // values and the points per step are compared by the other registry items.
-// conformance: semantics/label-replace-new-label, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/label-replace-new-label, semantics/label-replace-instant-vector, semantics/label-replace-range-binary-marker, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 	ensureDataIngested(t)
 	waitForLokiMetricData(t)

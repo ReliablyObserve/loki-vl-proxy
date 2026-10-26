@@ -154,6 +154,8 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `drilldown-service-landing` | 4 | 1.14s (LF12 drilldown logs volume by level, level pill, 24h) | 0.43s | 0.03s | 0.01s | — |
 | `loki-compatible-profile` | 14 | 0.52s (E7 json count by level_extracted, 1h) | 0.06s | 0.06s | 0.01s | — |
 | `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.06s | 0.06s | 0.01s | — |
+| `semantics/label-replace-new-label` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s | 0.55s | 0.01s | — |
+| `semantics/pipeline-error-text-parity` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s | 0.55s | 0.01s | — |
 | `profiles/stage-field-exposure` | 13 | 0.38s (SF5 logs, regexp capture, 6h) | 0.04s | 0.12s | 0.04s | — |
 | `parser-json` | 2 | 0.73s (LF15 drilldown field breakdown, level filter, 24h) | 0.47s | 0.02s | 0.01s | — |
 | `semantics/detected-level-filter-before-parser-pushdown` | 2 | 0.73s (LF15 drilldown field breakdown, level filter, 24h) | 0.47s | 0.02s | 0.01s | — |
