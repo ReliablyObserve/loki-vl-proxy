@@ -49,7 +49,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
-Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same hardware, release 2.35.0. A pair is one query shape over one time range (1h to 7d); "comparable" means both sides answered and Loki's results cache did not answer the first request. The proxy serves Loki's read API (and an opt-in delete). Write endpoints (push) are not supported: ingest goes to VictoriaLogs directly.
+Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same hardware. A pair is one query shape over one time range (1h to 7d); "comparable" means both sides answered and Loki's results cache did not answer the first request. The proxy serves Loki's read API (and an opt-in delete). Write endpoints (push) are not supported: ingest goes to VictoriaLogs directly.
 
 **Where the proxy is better than Loki**
 
@@ -69,7 +69,7 @@ Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same
 
 - First request: **54 of 357** pairs are slower (15%): log queries **20 of 48**, Drilldown and Explore pages **15 of 87**, metric queries **18 of 220**.
 - The largest gaps: `| json` queries that filter or group on `level_extracted`, **22.13 s** against **4.52 s** at 24h; `detected_level` volume over `| json`, **10.30 s to 10.40 s** against **0.97 s to 1.02 s** at 24h; unwrap metrics over 7d, up to **13.13 s** (Loki's time there, 0.005 s, is unverified).
-- Repeat of the same query in the daily A/B, median p50: metric queries **0.10 s** against **0.02 s**, Drilldown and Explore pages **0.12 s** against **0.05 s**, log queries **0.05 s** against **0.04 s**.
+- Repeat of the same query in the daily A/B, measured before metric bucket reuse, median p50: metric queries **0.10 s** against **0.02 s**, Drilldown and Explore pages **0.12 s** against **0.05 s**, log queries **0.05 s** against **0.04 s**.
 - Label metadata right after a cache flush: **0.14 s to 0.17 s** against **0.02 s to 0.06 s**.
 - Answers: **112 of 581** pairs return a different result from Loki, and **51** could not be compared.
 - A 7d Drilldown breakdown can fail on the 64 MiB response budget where Loki answers (`limits/drilldown-7d-breakdown-response-limit`, open).
@@ -93,7 +93,7 @@ Details, the per-workload tables and the method: [performance summary](conforman
 
 ## One-glance comparison
 
-> **Historical, measured 2026-06-05 on the e2e stack with Loki given 12 GiB; not the current position.** For the current position see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
+> **Historical, measured on an earlier release on the e2e stack with Loki given 12 GiB; not the current position.** For the current position see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
 
 Measured 2026-06-05 on the included e2e stack — 36 cold Drilldown queries (`pod` / `trace_id` / `k8s_pod_name` / `service_version` / `/detected_fields` / `/labels` × 30 m – 24 h ranges) against `namespace=prod` (~5 000 pods, ~50 000 trace_ids/h, 8 M entries over 7 days). Loki given 12 GiB.
 
@@ -153,7 +153,7 @@ Median of 5 runs of `go test ./internal/translator/ -bench BenchmarkTranslate -b
 
 ### Throughput under load (historical)
 
-> **Historical: measured on proxy v1.50.0 (released 2026-05-26) with Loki 3.6.x and VictoriaLogs v1.50.0 using `loki-bench`; not re-measured.** It compares a warm, cache-assisted proxy with Loki on a synthetic mix and is not the current position. The method and the other throughput tables are in [Benchmarks](docs/benchmarks.md).
+> **Historical: measured on proxy v1.50.0 with Loki 3.6.x and VictoriaLogs v1.50.0 using `loki-bench`; not re-measured.** It compares a warm, cache-assisted proxy with Loki on a synthetic mix and is not the current position. The method and the other throughput tables are in [Benchmarks](docs/benchmarks.md).
 
 Measured with `loki-bench --jitter=2h --warmup=5s --duration=30s` on an Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
