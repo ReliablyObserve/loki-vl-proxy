@@ -250,6 +250,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_convert_test.go",
       "internal/proxy/unwrap_samples_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "internal/translator/extracted_suffix_test.go",
       "internal/translator/regexp_escaping_test.go",
       "internal/translator/unwrap_gate_test.go",
@@ -693,6 +694,7 @@
     "semantics/unwrap-conversion-error": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
@@ -850,6 +852,7 @@
       "internal/proxy/unwrap_range_last_point_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
@@ -1372,6 +1375,11 @@
       "loki_api_v1_index_volume",
       "status-400"
     ],
+    "internal/proxy/window_phase_filter_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-conversion-error",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/without_fold_scope_test.go": [
       "limits/series-limit-error",
       "semantics/unwrap-sum-without-collapses"
@@ -1746,7 +1754,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 177,
+  "tests_with_markers": 178,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

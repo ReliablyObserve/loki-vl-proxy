@@ -715,9 +715,9 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		// and a raw fetch reads only window lines. gcd(step, range) buckets would
 		// grow with every step that range does not divide (a 604.8s step and a
 		// 5m range need 2.4s buckets: 252k per series over 7 days).
-		spec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
-		rawSpec.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
-		gated.BaseQuery += windowPhaseFilter(startTS, step, origSpec.Window)
+		spec.BaseQuery = withWindowPhaseFilter(r.Context(), spec.BaseQuery, startTS, step, origSpec.Window)
+		rawSpec.BaseQuery = withWindowPhaseFilter(r.Context(), rawSpec.BaseQuery, startTS, step, origSpec.Window)
+		gated.BaseQuery = withWindowPhaseFilter(r.Context(), gated.BaseQuery, startTS, step, origSpec.Window)
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
@@ -821,6 +821,30 @@ func windowPhaseFilter(start time.Time, step, window time.Duration) string {
 	anchor := start.Add(-window).UnixNano()
 	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
 		") as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=" + strconv.FormatInt(int64(window), 10)
+}
+
+// withWindowPhaseFilter puts windowPhaseFilter at the head of query's pipeline,
+// right after its filters, so the lines outside every window are dropped
+// before any pipe parses or rewrites them (for a [5m] range at a 10m step half
+// the lines, for [1m] nine in ten). The phase reads only the row's stored
+// _time, which no pipe of a metric's log pipeline groups, orders or limits
+// by, so the rows the stats see are the same wherever the filter stands. A
+// query holding the derived detected_level chain keeps the pipes before the
+// chain as they are: they are the base the chain's presence probe is
+// remembered under (pruneLevelChain), so the filter follows the chain there.
+func withWindowPhaseFilter(ctx context.Context, query string, start time.Time, step, window time.Duration) string {
+	at := translator.FirstTopLevelPipe(query)
+	if chain, _ := levelChains(ctx, query); chain != "" && strings.Count(query, chain) == 1 {
+		at = strings.Index(query, chain) + len(chain)
+		if strings.HasPrefix(query[at:], levelChainDelete) {
+			at += len(levelChainDelete)
+		}
+	}
+	filter := windowPhaseFilter(start, step, window)
+	if at < 0 || strings.TrimSpace(query[at:]) == "" {
+		return strings.TrimRight(query, " ") + filter
+	}
+	return strings.TrimRight(query[:at], " ") + filter + " " + strings.TrimLeft(query[at:], " ")
 }
 
 // shiftSeriesSamples moves every bucket label and present bucket forward by

@@ -886,8 +886,9 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 				continue
 			}
 			query := unwrapLookupQuery(h.base, h.field, h.conv)
-			if !c.instant && c.step > probe.window {
-				query += windowPhaseFilter(c.start, c.step, probe.window)
+			if !c.instant && c.step > probe.window && !strings.Contains(h.base, "__lvp_window_phase") {
+				// A base read through the window evaluator holds the filter already.
+				query = withWindowPhaseFilter(ctx, query, c.start, c.step, probe.window)
 			}
 			query += " | limit 3"
 			key := query + from.String() + to.String()
