@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,6 +154,8 @@ type owShape struct {
 	parser func(parser, fn string) bool
 	// fold sums the answer's series per step before the comparison.
 	fold bool
+	// rangeOnly keeps the form off instant queries.
+	rangeOnly bool
 }
 
 func owPod(stream string) string {
@@ -212,19 +216,38 @@ var owShapes = []owShape{
 	},
 	{
 		// The outer aggregations other than sum read one value per series
-		// (foldVectorAggregations) after the window.
+		// (foldVectorAggregations) after the window; max by over
+		// max_over_time is grouped upstream (unwrapGroupPushdown), whatever
+		// names the series.
 		name:   "max by (pod)",
 		query:  func(ra string) string { return "max by (pod) (" + ra + ")" },
 		outer:  "max",
 		group:  owByPod,
-		parser: owNoParser,
+		parser: func(parser, fn string) bool { return parser == "" || fn == "max_over_time" },
 	},
 	{
 		name:   "min by (pod)",
 		query:  func(ra string) string { return "min by (pod) (" + ra + ")" },
 		outer:  "min",
 		group:  owByPod,
-		parser: owNoParser,
+		parser: func(parser, fn string) bool { return parser == "" || fn == "min_over_time" },
+	},
+	{
+		name:   "max",
+		query:  func(ra string) string { return "max(" + ra + ")" },
+		outer:  "max",
+		group:  func(string) string { return "" },
+		parser: func(parser, fn string) bool { return parser == "" || fn == "max_over_time" },
+	},
+	{
+		// The ranking is applied after the max by (handleRangeMetricPostAggregation);
+		// an instant topk over a series-level chain is a residual of its own.
+		name:      "topk of max by (pod)",
+		query:     func(ra string) string { return "topk(5, max by (pod) (" + ra + "))" },
+		outer:     "max",
+		group:     owByPod,
+		parser:    func(parser, fn string) bool { return parser == "" || fn == "max_over_time" },
+		rangeOnly: true,
 	},
 	{
 		name:   "avg",
@@ -405,6 +428,9 @@ func compareOverTime(t *testing.T, label string, c owCase, got, want map[string]
 	}
 }
 
+// owWindowMergeRE matches the bucket stats of the window merge (unwrapBucketAgg).
+var owWindowMergeRE = regexp.MustCompile(`\) as (c|__lvp_sum)(,|$|\n)`)
+
 // checkOverTimeRoute: the answer came from VictoriaLogs stats, never from raw
 // rows, and a range longer than the step merged its windows from buckets of
 // the partial aggregates (the sample count is their presence). An instant
@@ -421,7 +447,7 @@ func checkOverTimeRoute(t *testing.T, label string, emu *vlEmulator, c owCase) {
 	if len(stats) == 0 {
 		t.Fatalf("%s: no stats query\nquery %s", label, c.query())
 	}
-	if c.step > 0 && c.window > c.step && (c.parser == "" || c.shape.name != "per stream") && !strings.Contains(strings.Join(stats, "\n"), "__sample_count") {
+	if c.step > 0 && c.window > c.step && (c.parser == "" || c.shape.name != "per stream") && !owWindowMergeRE.MatchString(strings.Join(stats, "\n")) {
 		t.Fatalf("%s: a range longer than the step read step buckets: %s\nquery %s", label, stats[0], c.query())
 	}
 }
@@ -488,7 +514,7 @@ func TestUnwrapOverTimeWindowsDifferential(t *testing.T) {
 					t.Run(name, func(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + int64(name[len(name)-1])))
 						for i := 0; i < 12; i++ {
-							c := owGenerate(rnd, fn, parser, shape, i%6 == 5)
+							c := owGenerate(rnd, fn, parser, shape, i%6 == 5 && !shape.rangeOnly)
 							emu := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
 							got := runOverTimeCase(t, emu, c, 0)
 							label := fmt.Sprintf("%s #%d", name, i)
@@ -499,6 +525,104 @@ func TestUnwrapOverTimeWindowsDifferential(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// owRawAnswer runs the case through the handler and returns the status and the
+// body as sent.
+func owRawAnswer(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) (int, string) {
+	t.Helper()
+	backend := httptest.NewServer(emu.handler())
+	defer backend.Close()
+	rc := cache.New(60*time.Second, 1000)
+	defer rc.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: rc, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	if emu.version != "" {
+		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	params := url.Values{"query": {c.query()}, "start": {strconv.FormatInt(c.start/1e9, 10)}, "end": {strconv.FormatInt(c.end/1e9, 10)}, "step": {strconv.FormatInt(int64(c.step/time.Second), 10)}}
+	res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	if res.Code != http.StatusOK {
+		return res.Code, res.Body.String()
+	}
+	// The series in label order, as Loki sorts its matrix; every byte of the
+	// series themselves as sent.
+	var resp struct {
+		Data struct {
+			Result []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	sort.Slice(resp.Data.Result, func(i, j int) bool { return string(resp.Data.Result[i]) < string(resp.Data.Result[j]) })
+	out, _ := json.Marshal(resp.Data.Result)
+	return res.Code, string(out)
+}
+
+// TestUnwrapGroupPushdownMatchesPerStreamFold: `max by (L) (max_over_time(...))`
+// and `min by (L) (min_over_time(...))`, grouped or not and under topk, answer
+// what the per-stream fold answers (unwrapGroupPushdownOff), every series byte
+// for byte (the fold's series order is not Loki's label order): the
+// same series, timestamps, values and sample presence over generated rows with
+// sparse and dense windows and lines on window edges, and the same 400 when the
+// groups pass max_query_series (Loki counts the limit on the groups:
+// pkg/logql/engine.go:530-590 JoinSampleVector), while VictoriaLogs reads one
+// row per group and bucket instead of one per stream.
+//
+// conformance: semantics/unwrap-over-time-range-windows, metric-series-identity
+func TestUnwrapGroupPushdownMatchesPerStreamFold(t *testing.T) {
+	t.Cleanup(func() { unwrapGroupPushdownOff = false })
+	shapes := []owShape{owShapes[6], owShapes[7], owShapes[8], owShapes[9]}
+	pushed := 0
+	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+		for _, parser := range []string{"", "logfmt"} {
+			for _, shape := range shapes {
+				if parser != "" && shape.name == "max" {
+					// Grouped per line without the push-down: no fold to compare
+					// with (TestUnwrapOverTimeWindowsDifferential holds it to Loki).
+					continue
+				}
+				fn := "max_over_time"
+				if shape.outer == "min" {
+					fn = "min_over_time"
+				}
+				name := fmt.Sprintf("version=%s/parser=%s/%s", version, parser, shape.name)
+				t.Run(name, func(t *testing.T) {
+					rnd := rand.New(rand.NewSource(int64(len(name))*6151 + 7))
+					for i := 0; i < 15; i++ {
+						c := owGenerate(rnd, fn, parser, shape, false)
+						limit := []int{0, 1, 2, 3}[rnd.Intn(4)]
+						emu := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
+						unwrapGroupPushdownOff = false
+						gotCode, got := owRawAnswer(t, emu, c, limit)
+						unwrapGroupPushdownOff = true
+						wantCode, want := owRawAnswer(t, &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}, c, limit)
+						unwrapGroupPushdownOff = false
+						if gotCode != wantCode || got != want {
+							t.Fatalf("#%d %s step=%v window=%v limit=%d:\npushed %d %s\nfolded %d %s", i, c.query(), c.step, c.window, limit, gotCode, got, wantCode, want)
+						}
+						if c.window > c.step {
+							for _, q := range emu.endpointCalls("/select/logsql/stats_query_range") {
+								if strings.Contains(q, "_stream") {
+									t.Fatalf("#%d %s: the pushed-down query reads a series per stream: %s", i, c.query(), q)
+								}
+								pushed++
+							}
+						}
+					}
+				})
+			}
+		}
+	}
+	if pushed == 0 {
+		t.Fatal("no case took the pushed-down route")
 	}
 }
 
@@ -548,7 +672,7 @@ func TestUnwrapOverTimeRangeWindowEdgeCases(t *testing.T) {
 		{"max_over_time", owShapes[2], map[string]map[int64]float64{
 			"": {at(70): 2, at(130): 20, at(190): 24, at(250): 8},
 		}},
-		{"avg_over_time", owShapes[8], map[string]map[int64]float64{
+		{"avg_over_time", owShapes[10], map[string]map[int64]float64{
 			"": {at(70): 1.5, at(130): 9.5, at(190): 11, at(250): 8},
 		}},
 	} {
@@ -656,7 +780,7 @@ func TestUnwrapOverTimeUngroupedSumIgnoresSeriesLimit(t *testing.T) {
 		}
 	}
 	for _, fn := range []string{"avg_over_time", "max_over_time", "min_over_time"} {
-		for _, shape := range []owShape{owShapes[2], owShapes[8]} {
+		for _, shape := range []owShape{owShapes[2], owShapes[10]} {
 			t.Run(fn+"/"+shape.name, func(t *testing.T) {
 				c := owCase{fn: fn, shape: shape, window: 5 * time.Minute, step: time.Minute, start: base, end: base + int64(10*time.Minute), rows: rows}
 				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
@@ -717,7 +841,7 @@ func TestUnwrapOverTimeResidualShapesKeepStatsBuckets(t *testing.T) {
 				t.Fatalf("%s: read raw rows: %s", query, raw[0])
 			}
 			for _, q := range emu.endpointCalls("/select/logsql/stats_query_range") {
-				if strings.Contains(q, "__sample_count") {
+				if owWindowMergeRE.MatchString(q) {
 					t.Fatalf("%s: answered from the window merge: %s", query, q)
 				}
 			}
@@ -822,9 +946,6 @@ func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 			return
 		}
-		if !strings.Contains(query, "__sample_count") {
-			t.Errorf("a range longer than the step read step buckets: %s", query)
-		}
 		start, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
 		end, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
 		step := int64(parseVLStepParam(r.Form.Get("step")))
@@ -847,19 +968,27 @@ func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 		series := func(name, flag string, points []string) string {
 			return `{"metric":{"__name__":"` + name + `","app":"x","__lvp_bad":"` + flag + `"},"values":[` + strings.Join(points, ",") + `]}`
 		}
-		result := []string{series(name, "0", values), series("__sample_count", "0", counts)}
+		withCounts := strings.Contains(query, "__sample_count")
+		result := []string{series(name, "0", values)}
+		if withCounts {
+			result = append(result, series("__sample_count", "0", counts))
+		}
 		if strings.Contains(query, `:="2"`) && len(nanValues) > 0 {
-			result = append(result, series(name, "2", nanValues), series("__sample_count", "2", nanCounts))
+			result = append(result, series(name, "2", nanValues))
+			if withCounts {
+				result = append(result, series("__sample_count", "2", nanCounts))
+			}
 		}
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` + strings.Join(result, ",") + `]}}`))
 	}))
 	t.Cleanup(srv.Close)
 	for _, tc := range []struct {
-		fn   string
-		nans int
-	}{{"sum_over_time", 5}, {"avg_over_time", 5}, {"max_over_time", 0}, {"min_over_time", 0}} {
+		fn    string
+		nans  int
+		outer string
+	}{{"sum_over_time", 5, "sum"}, {"avg_over_time", 5, "sum"}, {"max_over_time", 0, "sum"}, {"min_over_time", 0, "sum"}, {"max_over_time", 0, "max"}, {"min_over_time", 0, "min"}} {
 		for _, post := range []string{"", ` | __error__=""`} {
-			query := fmt.Sprintf(`sum by (app) (%s({app="x"} | logfmt | unwrap b%s [5m]))`, tc.fn, post)
+			query := fmt.Sprintf(`%s by (app) (%s({app="x"} | logfmt | unwrap b%s [5m]))`, tc.outer, tc.fn, post)
 			t.Run(query, func(t *testing.T) {
 				p := newSlidingTestProxy(t, srv.URL)
 				params := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(12*time.Minute).UnixNano(), 10)}, "step": {"60"}}
@@ -875,6 +1004,31 @@ func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
 					t.Fatalf("max and min keep the clean samples: %s", rec.Body)
 				}
 			})
+		}
+	}
+}
+
+// TestDropKeptFlagMatchesReplacements: the one-pass removal of the kept
+// conversion flag gives what the three replacements it stands for give
+// (`,kept`, then `kept,`, then `kept`), over generated answers with the flag
+// first, last, alone and between other labels.
+//
+// conformance: semantics/unwrap-conversion-error
+func TestDropKeptFlagMatchesReplacements(t *testing.T) {
+	kept := []byte(`"__lvp_bad":"0"`)
+	parts := []string{`{`, `}`, `,`, `"app":"x"`, string(kept), `"__name__":"c"`, `[1,"2"]`, `"values":`, `"__lvp_bad":"1"`}
+	rnd := rand.New(rand.NewSource(17))
+	for i := 0; i < 5000; i++ {
+		var b strings.Builder
+		for n := rnd.Intn(12); n >= 0; n-- {
+			b.WriteString(parts[rnd.Intn(len(parts))])
+		}
+		body := b.String()
+		want := bytes.ReplaceAll([]byte(body), append([]byte(","), kept...), nil)
+		want = bytes.ReplaceAll(want, append(append([]byte(nil), kept...), ','), nil)
+		want = bytes.ReplaceAll(want, kept, nil)
+		if got := dropKeptFlag([]byte(body), kept); !bytes.Equal(got, want) {
+			t.Fatalf("%s: got %s, want %s", body, got, want)
 		}
 	}
 }

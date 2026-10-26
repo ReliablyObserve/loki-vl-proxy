@@ -13,11 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -455,8 +457,8 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// Native step buckets answer sum, avg, max and min over time with unwrap
 	// for a range up to the step; a longer range merges its windows from
 	// anchored buckets (unwrapWindowBuckets).
-	if !p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step) &&
-		!shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
+	unwrapSpec, grouped, unwrapWindows := p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step)
+	if !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -466,6 +468,10 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if metricFuncRequiresUnwrap(origSpec.Func) && (!origSpec.HasUnwrap || strings.TrimSpace(origSpec.UnwrapField) == "") {
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
+	}
+	if grouped {
+		// VictoriaLogs groups the buckets by the outer labels (unwrapGroupPushdown).
+		return p.proxyManualRangeMetricRange(w, r, unwrapSpec, origSpec, manualFunc)
 	}
 	// A bare outer aggregation without by() collapses all streams into one empty-label
 	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
@@ -1434,35 +1440,46 @@ func (p *Proxy) collectRangeMetricHitsAux(
 
 	// Parse Prometheus range vector response:
 	// {"status":"success","data":{"result":[{"metric":{...},"values":[[ts,"v"],...]}]}}
-	// A pooled parser reuses its values across requests; nothing parsed outlives
-	// this call (labels and values are copied out).
-	parser := statsQRFJPool.Get()
-	defer statsQRFJPool.Put(parser)
-	v, parseErr := parser.ParseBytes(body)
-	if parseErr != nil {
-		return nil, nil, fmt.Errorf("parse stats_query_range response: %w", parseErr)
+	// The answer holds a point per series and bucket: the points are read in
+	// place (eachBucketPoint) and only each series' labels are parsed, with a
+	// pooled parser; nothing parsed outlives this call (labels are copied out).
+	if !json.Valid(body) {
+		return nil, nil, fmt.Errorf("parse stats_query_range response: invalid JSON")
 	}
-	if status := string(v.GetStringBytes("status")); status != "success" {
+	if status, _ := jsonparser.GetString(body, "status"); status != "success" {
 		return nil, nil, fmt.Errorf("stats_query_range non-success status: %s", status)
 	}
+	parser := statsQRFJPool.Get()
+	defer statsQRFJPool.Put(parser)
 
-	results := v.GetArray("data", "result")
 	// Stream-grouped series carry the labels the raw evaluator derives from
 	// _stream and level.
 	streamGrouped := false
 	for _, g := range groupBy {
 		streamGrouped = streamGrouped || g == "_stream"
 	}
-	seriesMap := make(map[string]manualSeriesSamples, len(results))
+	seriesMap := make(map[string]manualSeriesSamples)
 	var auxEdges []int64
-	for _, res := range results {
-		if aux != "" && string(res.GetStringBytes("metric", "__name__")) == aux {
-			var entry manualSeriesSamples
-			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
-			auxEdges = append(auxEdges, entry.PresentBuckets...)
-			continue
+	var resultErr error
+	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
+		if resultErr != nil {
+			return
 		}
-		metricObj := res.GetObject("metric")
+		metricRaw, _, _, _ := jsonparser.Get(res, "metric")
+		values, _, _, _ := jsonparser.Get(res, "values")
+		mv, err := parser.ParseBytes(metricRaw)
+		if err != nil {
+			resultErr = fmt.Errorf("parse stats_query_range response: %w", err)
+			return
+		}
+		name := string(mv.GetStringBytes("__name__"))
+		if aux != "" && name == aux {
+			var entry manualSeriesSamples
+			addPresentBucketPoints(&entry, values, start, hitStep)
+			auxEdges = append(auxEdges, entry.PresentBuckets...)
+			return
+		}
+		metricObj := mv.GetObject()
 		var metric map[string]string
 		if streamGrouped {
 			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), groupBy, byExplicit, origGroupBy).translated
@@ -1473,27 +1490,26 @@ func (p *Proxy) collectRangeMetricHitsAux(
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
 		}
 		seriesKey := canonicalLabelsKey(metric)
-		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
+		if withPresence && name == "__sample_count" {
 			entry := seriesMap[seriesKey]
 			entry.Metric = metric
-			addPresentBuckets(&entry, res.GetArray("values"), start, hitStep)
+			addPresentBucketPoints(&entry, values, start, hitStep)
 			if statsAggFunc == avgBucketSum {
 				// avg over time divides each window's sum by its sample count.
-				entry.Counts = append(entry.Counts, bucketSamples(res.GetArray("values"), start, hitStep)...)
-				sort.Slice(entry.Counts, func(i, j int) bool { return entry.Counts[i].ts < entry.Counts[j].ts })
+				entry.Counts = appendBucketSamples(entry.Counts, values, start, hitStep)
 			}
 			seriesMap[seriesKey] = entry
-			continue
+			return
 		}
-
-		samples := bucketSamples(res.GetArray("values"), start, hitStep)
-		if existing, ok := seriesMap[seriesKey]; ok {
-			existing.Samples = append(existing.Samples, samples...)
-			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
-			seriesMap[seriesKey] = existing
-		} else {
-			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
+		entry, ok := seriesMap[seriesKey]
+		if !ok {
+			entry.Metric = metric
 		}
+		entry.Samples = appendBucketSamples(entry.Samples, values, start, hitStep)
+		seriesMap[seriesKey] = entry
+	}, "data", "result")
+	if resultErr != nil {
+		return nil, nil, resultErr
 	}
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
 	return series, auxEdges, err
@@ -1566,26 +1582,71 @@ func (p *Proxy) statsGroupMetric(metricObj *fj.Object, vlToLoki map[string]strin
 	return metric
 }
 
-// bucketSamples reads the [timestamp, value] pairs of one stats_query_range
-// series as samples on the start+k*hitStep grid.
-func bucketSamples(values []*fj.Value, start time.Time, hitStep time.Duration) []rangeMetricSample {
-	samples := make([]rangeMetricSample, 0, len(values))
-	for _, pair := range values {
-		arr := pair.GetArray()
-		if len(arr) < 2 {
-			continue
-		}
-		ts, tsOK := snapSlidingBucketTimestamp(arr[0], start, hitStep)
-		if !tsOK {
-			continue
-		}
-		val, valErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
-		if valErr != nil {
-			continue
-		}
-		samples = append(samples, rangeMetricSample{ts: ts, value: val})
+// eachBucketPoint calls fn with the bucket (the left edge on the
+// start+k*hitStep grid, snapSlidingBucketNanos) and the value text of every
+// [timestamp, "value"] pair of one stats_query_range series, reading the pairs
+// in place.
+func eachBucketPoint(values []byte, start time.Time, hitStep time.Duration, fn func(ts int64, value []byte)) {
+	if hitStep <= 0 {
+		return
 	}
-	return samples
+	_, _ = jsonparser.ArrayEach(values, func(pair []byte, _ jsonparser.ValueType, _ int, _ error) {
+		var ts, value []byte
+		n := 0
+		_, _ = jsonparser.ArrayEach(pair, func(v []byte, _ jsonparser.ValueType, _ int, _ error) {
+			switch n {
+			case 0:
+				ts = v
+			case 1:
+				value = v
+			}
+			n++
+		})
+		if n < 2 {
+			return
+		}
+		sec, err := jsonparser.ParseFloat(ts)
+		if err != nil {
+			return
+		}
+		fn(snapSlidingBucketNanos(int64(math.Round(sec*1e9)), start, hitStep), value)
+	})
+}
+
+// appendBucketSamples appends the points of one stats_query_range series as
+// samples on the start+k*hitStep grid, keeping dst ascending (series merged
+// into one can interleave).
+func appendBucketSamples(dst []rangeMetricSample, values []byte, start time.Time, hitStep time.Duration) []rangeMetricSample {
+	from := len(dst)
+	if n := bytes.Count(values, []byte{'['}) - 1; n > 0 {
+		dst = slices.Grow(dst, n) // a pair per bracket but the outer one
+	}
+	eachBucketPoint(values, start, hitStep, func(ts int64, value []byte) {
+		if v, err := jsonparser.ParseFloat(value); err == nil {
+			dst = append(dst, rangeMetricSample{ts: ts, value: v})
+		}
+	})
+	if from > 0 && !sort.SliceIsSorted(dst, func(i, j int) bool { return dst[i].ts < dst[j].ts }) {
+		sort.Slice(dst, func(i, j int) bool { return dst[i].ts < dst[j].ts })
+	}
+	return dst
+}
+
+// addPresentBucketPoints is addPresentBuckets over a stats_query_range series
+// read in place.
+func addPresentBucketPoints(entry *manualSeriesSamples, values []byte, start time.Time, hitStep time.Duration) {
+	if entry.PresentBuckets == nil {
+		entry.PresentBuckets = []int64{}
+	}
+	eachBucketPoint(values, start, hitStep, func(ts int64, value []byte) {
+		if count, err := jsonparser.ParseFloat(value); err == nil && count > 0 {
+			entry.PresentBuckets = append(entry.PresentBuckets, ts)
+		}
+	})
+	present := entry.PresentBuckets
+	if !sort.SliceIsSorted(present, func(i, j int) bool { return present[i] < present[j] }) {
+		sort.Slice(present, func(i, j int) bool { return present[i] < present[j] })
+	}
 }
 
 func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value, start time.Time, hitStep time.Duration) {
@@ -2377,7 +2438,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		for k, v := range seriesEntry.Metric {
 			encodedBytes += len(k) + len(v) + 6
 		}
-		var points [][]interface{}
+		var points []byte
 		for t := start; !t.After(end); t = t.Add(step) {
 			tNS := t.UnixNano()
 			windowStartNS := tNS - windowNS
@@ -2393,7 +2454,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 					sum = mergeUnwrapBuckets(manualFunc, samples[lo:hi], windowSamples(seriesEntry.Counts, windowStartNS, tNS))
 				}
 			}
-			hasLines := sum != 0
+			hasLines := sum != 0 || (mergedUnwrap && lo < hi)
 			if present != nil {
 				pLo := sort.Search(len(present), func(i int) bool { return present[i] >= windowStartNS })
 				hasLines = pLo < len(present) && present[pLo] < tNS
@@ -2405,20 +2466,30 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			if manualFunc == "rate" || manualFunc == "bytes_rate" || manualFunc == "unwrap_rate" {
 				value = sum / windowSec
 			}
+			// The points are written as encoding/json writes [][]interface{}{{float64
+			// seconds, value text}}, without a value per point.
 			if points == nil {
-				points = make([][]interface{}, 0, expectedBuckets)
+				points = make([]byte, 0, 32*expectedBuckets)
+				points = append(points, '[')
+			} else {
+				points = append(points, ',')
 			}
-			formatted := strconv.FormatFloat(value, 'f', -1, 64)
+			points = append(points, '[')
+			points = strconv.AppendInt(points, t.Unix(), 10)
+			points = append(points, ',', '"')
+			mark := len(points)
+			points = strconv.AppendFloat(points, value, 'f', -1, 64)
+			formatted := len(points) - mark
+			points = append(points, '"', ']')
 			// `[1700000000,"<value>"],`: a timestamp of at most 20 bytes plus punctuation.
-			if encodedBytes += len(formatted) + 26; encodedBytes > maxBytes {
+			if encodedBytes += formatted + 26; encodedBytes > maxBytes {
 				return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
 			}
-			points = append(points, []interface{}{float64(t.Unix()), formatted})
 		}
 		if points != nil {
 			results = append(results, map[string]interface{}{
 				"metric": seriesEntry.Metric,
-				"values": points,
+				"values": json.RawMessage(append(points, ']')),
 			})
 		}
 	}
@@ -2515,7 +2586,8 @@ func appendManualMetricResponse(dst []byte, resultType string, result []map[stri
 		size := 64
 		for _, item := range result {
 			points, _ := item["values"].([][]interface{})
-			size += 64 + 24*len(points)
+			raw, _ := item["values"].(json.RawMessage)
+			size += 64 + 24*len(points) + len(raw)
 		}
 		dst = make([]byte, 0, size)
 	}
@@ -2555,6 +2627,9 @@ func appendManualJSONValue(dst []byte, value interface{}) ([]byte, bool) {
 		return appendManualJSONArray(dst, v)
 	case [][]interface{}:
 		return appendManualJSONArrays(dst, v)
+	case json.RawMessage:
+		// Compact JSON its builder wrote as encoding/json would.
+		return append(dst, v...), true
 	}
 	return nil, false
 }

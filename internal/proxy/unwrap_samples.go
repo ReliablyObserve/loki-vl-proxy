@@ -53,16 +53,18 @@ const avgBucketSum = "sum(" + translator.UnwrapValueAlias + ") as __lvp_sum, cou
 
 // unwrapBucketAgg is the stats of one bucket of an unwrap range function whose
 // windows merge from buckets: its partial aggregate (the sum for rate, sum and
-// avg over time, the extreme for max and min over time) and the sample count,
-// which proves presence and divides an average. "" for every other function.
+// avg over time, the extreme for max and min over time). VictoriaLogs answers a
+// bucket only when it holds a row, so the aggregate's point is the presence of
+// sum, max and min over time; an average also takes the sample count to divide
+// by, and rate keeps it as presence. "" for every other function.
 func unwrapBucketAgg(manualFunc string) string {
 	switch manualFunc {
-	case "unwrap_rate", "sum":
+	case "unwrap_rate":
 		return "sum(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
+	case "sum", "max", "min":
+		return manualFunc + "(" + translator.UnwrapValueAlias + ") as c"
 	case "avg":
 		return avgBucketSum
-	case "max", "min":
-		return manualFunc + "(" + translator.UnwrapValueAlias + ") as c, count() as __sample_count"
 	}
 	return ""
 }
@@ -104,17 +106,100 @@ func mergeUnwrapBuckets(manualFunc string, buckets, counts []rangeMetricSample) 
 // foldVectorAggregations), Loki counts its series limit on the folded answer:
 // the reads are bounded by the raw-row budget, as for a `without`
 // (withWithoutFold records it itself).
-func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, manualFunc, originalLogql string, step time.Duration) bool {
+//
+// grouped reports that the returned spec groups the buckets by the outer
+// labels (unwrapGroupPushdown): the evaluator answers the outer aggregation
+// itself and nothing folds afterwards.
+func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, manualFunc, originalLogql string, step time.Duration) (routed statsCompatSpec, grouped, ok bool) {
 	query := r.FormValue("query")
-	if !hasOrigSpec || !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, query, step) {
-		return false
+	if !hasOrigSpec {
+		return spec, false, false
+	}
+	if pushed, ok := p.unwrapGroupPushdown(spec, manualFunc, query); ok && !unwrapGroupPushdownOff && unwrapWindowBuckets(pushed, origSpec, manualFunc, originalLogql, query, step) {
+		return pushed, true, true
+	}
+	if !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, query, step) {
+		return spec, false, false
 	}
 	if _, chain := seriesAggregationChain(query); chain {
 		p.recordFoldBudget(r.Context())
 	} else if _, ungrouped := ungroupedSumRange(query); ungrouped && !isSumAllLogRange(query) {
 		p.recordFoldBudget(r.Context())
 	}
-	return true
+	return spec, false, true
+}
+
+// unwrapGroupPushdownOff turns unwrapGroupPushdown off, so tests can compare
+// its answers with the per-stream fold's.
+var unwrapGroupPushdownOff bool
+
+// unwrapGroupPushdown returns spec grouped by L for `max by (L)
+// (max_over_time(...))` and `min by (L) (min_over_time(...))`, L possibly
+// empty, under an optional label_replace. Loki
+// takes the extreme per series over the window and then per group of L
+// (pkg/logql/range_vector.go:405-420 maxOverTime, minOverTime;
+// pkg/logql/evaluator.go VectorAggEvaluator.Next, a NaN giving way in both),
+// which is the extreme of the group's samples in the window: VictoriaLogs takes
+// it per bucket and group of L, the proxy over the window's buckets, and no
+// series per stream (or per line, for a parser query) is read or folded. Loki
+// counts max_query_series on the groups (pkg/logql/engine.go:530-590
+// JoinSampleVector). The translated grouping must be L and the series
+// identity (_stream, _msg, level); anything else is not pushed down.
+func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query string) (statsCompatSpec, bool) {
+	agg, ok := decomposableUnwrapAggregation(query, manualFunc)
+	if !ok {
+		return spec, false
+	}
+	var labels []string
+	if agg.Grouping != nil {
+		labels = agg.Grouping.Labels
+	}
+	vlLabels := make(map[string]bool, len(labels))
+	for _, label := range labels {
+		vlLabels[label] = true
+		if p.labelTranslator != nil {
+			vlLabels[p.labelTranslator.ToVL(label)] = true
+		}
+	}
+	var kept []string
+	for _, g := range spec.GroupBy {
+		// The series identity the translation adds after the outer labels: the
+		// stream, the line, and the stored level a stream's series is labelled by.
+		if g == "_stream" || g == "_msg" || (g == "level" && !vlLabels[g]) {
+			continue
+		}
+		kept = append(kept, g)
+	}
+	if len(kept) != len(labels) {
+		return spec, false
+	}
+	for _, g := range kept {
+		if !vlLabels[g] {
+			return spec, false
+		}
+	}
+	spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = kept, labels, len(labels) == 0
+	return spec, true
+}
+
+// decomposableUnwrapAggregation returns the outer max or min of `max by (L)
+// (max_over_time(...))` or `min by (L) (min_over_time(...))` (by or none, not
+// without), under an optional label_replace. A ranking around it is applied
+// to the answer by its caller (handleRangeMetricPostAggregation).
+func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAggregation, bool) {
+	if manualFunc != "max" && manualFunc != "min" {
+		return nil, false
+	}
+	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	if err != nil {
+		return nil, false
+	}
+	agg, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || string(agg.Op) != manualFunc || (agg.Grouping != nil && agg.Grouping.Without) {
+		return nil, false
+	}
+	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
+	return agg, ok && ra.Grouping == nil
 }
 
 // unwrapWindowBuckets reports whether the window evaluator answers sum, avg,

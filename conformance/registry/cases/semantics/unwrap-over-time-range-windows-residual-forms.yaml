@@ -21,7 +21,9 @@ why: |
     `sum(avg_over_time({..} | json | unwrap x [5m]))` or
     `max by (pod) (sum_over_time({..} | json | unwrap x [5m]))`, and a `without`
     over a parser query grouped by line: buckets per distinct line are not a
-    bounded grouping, and (_stream, _msg) is not Loki's series either;
+    bounded grouping, and (_stream, _msg) is not Loki's series either. A max by
+    over max_over_time and a min by over min_over_time are not among them: their
+    buckets group by the outer labels (unwrapGroupPushdown);
   - nested aggregations the evaluator does not apply after the window (a sum
     over a sum, a `without` under another aggregation, a ranking `without`);
   - an empty `without ()` (semantics/without-empty-grouping-range-collapses).

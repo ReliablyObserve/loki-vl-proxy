@@ -34,9 +34,16 @@ why: |
   greatest common divisor of range and step anchored at the request
   (stats_query_range with the offset argument), each holding the partial
   aggregate of its lines (the sum, the maximum or the minimum of the converted
-  value) and their count; the proxy merges the buckets of every window
-  (mergeUnwrapBuckets): the sum, the sum over the window's count for avg, the
-  extreme for max and min, and a sample only where the window holds a line.
+  value; VictoriaLogs answers only a bucket that holds a line, so the point is
+  the presence) and, for avg, their count; the proxy merges the buckets of every
+  window (mergeUnwrapBuckets): the sum, the sum over the window's count for avg,
+  the extreme for max and min, and a sample only where the window holds a line.
+  `max by (L) (max_over_time(...))` and `min by (L) (min_over_time(...))`, L
+  possibly empty, are the extreme of the group's lines in the window whatever
+  the series are (pkg/logql/range_vector.go:405-420, VectorAggEvaluator.Next):
+  VictoriaLogs groups those buckets by L (unwrapGroupPushdown), with no series
+  per stream or line read, also over a JSON parser, and Loki's series limit
+  counts the groups (pkg/logql/engine.go:530-590 JoinSampleVector).
   Windows overlap when the range is longer than the step, so one VictoriaLogs
   bucket per point cannot hold a window, and VictoriaLogs has no sliding-window
   stats: the merge in the proxy reads aggregated buckets only (series times

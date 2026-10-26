@@ -704,6 +704,7 @@
     "semantics/unwrap-conversion-error": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
@@ -1375,6 +1376,7 @@
       "metric-series-identity",
       "quality/query-range-extent-cache",
       "semantics/lower-bound-exclusive",
+      "semantics/unwrap-conversion-error",
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-over-time-range-windows-residual-forms",
