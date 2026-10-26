@@ -269,6 +269,7 @@
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
@@ -727,6 +728,10 @@
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
+    "semantics/unwrap-over-time-range-windows": [
+      "internal/proxy/unwrap_range_last_point_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go"
+    ],
     "semantics/unwrap-quantile-response-limit": [
       "internal/proxy/quantile_histogram_test.go",
       "internal/proxy/unwrap_quantile_response_limit_test.go",
@@ -854,12 +859,13 @@
       "internal/proxy/vector_agg_series_differential_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 337,
+  "registry_items": 338,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1347,6 +1353,7 @@
       "semantics/unwrap-quantile-response-limit"
     ],
     "internal/proxy/unwrap_range_last_point_test.go": [
+      "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-range-last-point",
       "window-bounds-and-step-alignment"
     ],
@@ -1697,6 +1704,11 @@
       "semantics/unwrap-duration-seconds",
       "status-400"
     ],
+    "test/e2e-compat/unwrap_over_time_short_range_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-over-time-range-windows",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/unwrap_quantile_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1754,7 +1766,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 178,
+  "tests_with_markers": 179,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1839,7 +1851,7 @@
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
-    "semantics/unwrap-over-time-range-windows",
+    "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
@@ -1852,5 +1864,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 161
+  "wired_items": 162
 }

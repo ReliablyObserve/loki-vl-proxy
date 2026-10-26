@@ -1,5 +1,5 @@
 id: semantics/unwrap-over-time-range-windows
-title: sum, avg, max and min over time with unwrap answer the step bucket, not the window, when range != step on query_range (open)
+title: sum, avg, max and min over time with unwrap answer the step bucket, not the window, when the range is longer than the step on query_range (open)
 proves:
   - window-bounds-and-step-alignment
   - loki_api_v1_query_range
@@ -18,11 +18,13 @@ why: |
   covers these functions, logRangeFunctions), so the labels, the end sample and
   the values are Loki's (TestUnwrapOverTimeTumblingMatchesLoki).
 
-  Open, range != step: the value is the step-sized bucket (t-step, t], not the
+  Range < step is fixed with semantics/unwrap-over-time-short-range-windows: the
+  window filter keeps only the lines of (t-range, t] in the step bucket.
+
+  Open, range > step: the value is the step-sized bucket (t-step, t], not the
   window (t-range, t] (before that change it was the bucket [t, t+step)). Whether
   a step has a sample follows the step bucket too: a source with a line every
-  4.5 minutes under [5m] at step 60 gives 13 samples where Loki has 61, and a
-  [30s] range at step 60 gives samples Loki does not. Measured before that change
+  4.5 minutes under [5m] at step 60 gives 13 samples where Loki has 61. Measured before that change
   on an isolated stack (Loki 3.7.7, VictoriaLogs v1.52.0, generator data),
   `sum(sum_over_time({app="payment-service"} | logfmt | unwrap amount [5m]))`
   sliding (step 60) at t=1791665280: Loki 9.84307e+06, proxy 2.00257e+06 (about a
@@ -50,9 +52,9 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy range_metric_compat.go shouldUseManualRangeMetricCompat (unwrap sum/avg/min/max, range != step) and the window evaluator (buildHitsRangeMetricMatrix)'
+  area: 'internal/proxy range_metric_compat.go shouldUseManualRangeMetricCompat (unwrap sum/avg/min/max, range > step) and the window evaluator (buildHitsRangeMetricMatrix)'
   loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
-  proxy: 'range != step: the step-sized bucket (t-step, t], not the window (t-range, t]'
+  proxy: 'range > step: the step-sized bucket (t-step, t], not the window (t-range, t]'
   planned_test: 'TestCompat_UnwrapOverTimeRangeWindows (test/e2e-compat, group core) over sum/avg/max/min x tumbling/sliding x logfmt/json'
-  note: 'Range == step fixed with semantics/unwrap-range-last-point. Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. The instant path matches Loki.'
+  note: 'Range == step fixed with semantics/unwrap-range-last-point, range < step with semantics/unwrap-over-time-short-range-windows. Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. The instant path matches Loki.'
   clusters: []
