@@ -1,30 +1,42 @@
 id: profiles/label-filter-regexp-anchoring
-title: A label-filter regexp after a parser is not anchored the way Loki's is (open)
+title: A label-filter regexp after a parser matches what Loki's simplified, anchored filter matches (fixed)
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
 consumer: api
 why: |
-  Loki matches a label-filter regexp against the whole label value
-  (`| json | msg=~"a"` selects a line whose msg is exactly "a", not "cat").
-  The proxy translates `label=~"re"` to VictoriaLogs' `field:~"re"`, a
-  substring match, so a pattern that is not anchored by itself also selects
-  values that merely contain a match, and an alternative that matches the empty
-  string (`=~"GET|"`) matches every value. Found while checking filters on
-  sanitized JSON keys (the filter is translated the same way for every label);
-  reproduced with no dotted key involved (`| json | other=~"no"` selected a
-  line whose value is "no dotted keys here"; Loki selected none).
+  Loki does not match `| label =~ "re"` as written. parseRegexpFilter
+  (pkg/logql/log/filter.go:645, from NewStringLabelFilter in
+  label_filter.go:360) first runs RegexSimplifier.Simplify (filter.go:696) and
+  anchors only what it cannot simplify, as ^(?:re)$ without the s flag. A
+  literal is an equality check (`| json | other=~"no"` selects only the value
+  "no"); `.*` and the empty pattern keep every line; `.+` keeps non-empty
+  values; a literal with `.*` parts (`api.*`, `.*api`) is a substring check; a
+  literal followed by an alternation, which is what Go's parser makes of a
+  common prefix (`api|api-gateway`, `prod-eu|prod`), is one substring check
+  per branch; and an alternation drops a branch that keeps everything
+  (newOrFilter, filter.go:309), so `GET|` is an equality check on GET.
 
-  Open and pre-existing: it is broader than this change (every label-filter
-  regexp, including stream-selector fallbacks) and selector matchers have an
-  open external change in this area, so it is recorded here and not fixed in
-  the sanitized-key work.
+  The proxy translated `label=~"re"` to VictoriaLogs' `field:~"re"`, a
+  substring match: `| json | other=~"no"` selected a line whose value is "no
+  dotted keys here" (Loki selected none), `=~""` selected only empty values
+  (Loki keeps every line) and `=~"GET|"` matched every value. It now emits the
+  filter Loki's simplification describes: an exact filter for a literal, the
+  substring regexp for a `.*`-wrapped literal, `.*`/`.+` as VictoriaLogs'
+  match-all and non-empty filters, and ^(?:re)$ (spelled (?-s:) when the
+  pattern has a '.', because VictoriaLogs compiles '.' to match newlines)
+  otherwise. 40 patterns, both operators, over 28 values, agree with Loki
+  v3.7.7 on VictoriaLogs v1.49.0 and v1.53.0 storage.
+
+  Not covered: case-insensitive equality on non-ASCII values (Loki lowercases
+  both sides, the regexp folds case), and the `detected_level` label filter
+  on a stored level field, which keeps its own anchored matcher.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{app="compat-anchoring-<ts>"} | json | other=~"no"'
-    start: now-10m
+    query: '{probe="anchor<ts>"} | json | svc=~"api|api-gateway"'
+    start: now-15m
     end: now
   headers:
     X-Scope-OrgID: "0"
@@ -32,15 +44,16 @@ compare:
   mode: observed
   fields: [streams.values]
   expect: |
-    Loki returns no line for a value that only contains the pattern; the proxy
-    returns it. The expected end state is Loki's answer; until then this case
-    records the observed difference, not a passing assertion.
+    The lines Loki selects: equality for literals and literal alternations,
+    a substring check for `.*`-wrapped literals and factored alternations
+    (here svc api, api-gateway and my-api).
 gap:
-  status: open
+  status: fixed
+  fixed_by: TBD-PR
   impact: explore-visible
   effort: S
-  area: 'internal/translator label-filter regexp emission (anchor ^(?:re)$); external PR #572 open'
-  loki: 'pkg/logql/log/label_filter.go (regexp matcher on the whole value)'
-  proxy: 'substring match'
-  planned_test: 'TestCompat_LabelFilterRegexpAnchoring (test/e2e-compat, group semantics)'
+  area: 'internal/translator/label_matcher_regexp.go lokiLabelFilterPattern + labelFilterRegexpFieldFilter (label filters, sanitized-key variants, service_name label filter)'
+  loki: 'pkg/logql/log/filter.go:645 parseRegexpFilter, :696 RegexSimplifier.Simplify, :309 newOrFilter; label_filter.go:360 NewStringLabelFilter'
+  proxy: 'the filter Loki simplification describes, anchored where Loki anchors'
+  planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator)'
   clusters: []

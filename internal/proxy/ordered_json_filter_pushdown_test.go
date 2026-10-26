@@ -1016,7 +1016,7 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		{`sum(count_over_time({app="api"} | json | pipeline="logs/loki" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter pipeline:="logs/loki" | stats count() as c`},
 		{`sum(rate({app="api"} | json | pipeline=~"logs/.*" [2m]))`, 2,
-			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter pipeline:~"^(?:logs/.*)$" | stats count() as c`},
+			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter pipeline:~"logs/" | stats count() as c`},
 		// A Drilldown field breakdown on a structured-metadata label.
 		{`sum by (service_version) (count_over_time({app="api"} | json | drop __error__ | service_version!="" [1m]))`, 2,
 			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") | unpack_json if ((-service_version:* -` + "`service.version`" + `:*)) fields (service_version) keep_original_fields` + stored + ` | filter -service_version:="" | stats by (service_version) count() as c`},
@@ -1024,7 +1024,7 @@ func TestOrderedJSONFilterPushdownUsesStatsBuckets(t *testing.T) {
 		{`sum by (pipeline) (count_over_time({app="api"} | json | pipeline!="" [1m]))`, 2,
 			` | filter (pipeline:* or _msg:"pipeline" or _msg:~"\\\\u") | unpack_json if ((-pipeline:*)) fields (pipeline) keep_original_fields | filter -pipeline:="" | stats by (pipeline) count() as c`},
 		{`sum by (level, detected_level) (bytes_over_time({app="api"} | json | service_version=~"0\\.9[0-9]\\.0" | drop __error__ [1m]))`, 2 + levelProbes,
-			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*)", "level", "service_version") + stored + ` | filter service_version:~"^(?:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
+			` | filter (service_version:* or ` + "`service.version`" + `:* or _msg:"service_version" or _msg:~"\\\\u") ` + sharedLevelChain("(-level:*) or (-service_version:* -`service.version`:*)", "level", "service_version") + stored + ` | filter service_version:~"^(?-s:0\\.9[0-9]\\.0)$" | stats by (level, detected_level) sum_len(_msg) as c, count() as __sample_count`},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			srv, fake := newPushdownFakeVL(t, rows, nil)

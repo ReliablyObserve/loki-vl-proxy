@@ -5,13 +5,18 @@ import "testing"
 // TestLabelMatchersAreAnchoredLineFiltersAreNot locks the boundary between the
 // two kinds of regex in LogQL:
 //
-//   - a LABEL matcher (`{label=~"re"}`, `| label =~ "re"`) is fully anchored in
-//     Loki — it must match the whole label value;
+//   - a LABEL matcher (`{label=~"re"}`) is fully anchored in Loki — it must
+//     match the whole label value; a label filter (`| label =~ "re"`) is
+//     anchored after Loki's simplifications (see
+//     TestLabelRegexpMatchesWhatLokiMatches);
 //   - a LINE filter (`|~ "re"`, `!~ "re"`) is a substring regex over the log
 //     line, which is what VictoriaLogs already does.
 //
 // Getting this backwards is silent in both directions: an unanchored label
-// matcher inflates results, an anchored line filter drops them.
+// matcher inflates results, an anchored line filter drops them. A whole-value
+// literal reaches VictoriaLogs as an exact filter and `.*` as its match-all.
+//
+// conformance: profiles/stream-selector-regexp-anchoring, profiles/label-filter-regexp-anchoring
 func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 	tests := []struct {
 		name string
@@ -21,7 +26,7 @@ func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 		{
 			name: "stream selector =~ is anchored",
 			in:   `{namespace=~"nch"}`,
-			want: `namespace:~"^(?s:nch)$"`,
+			want: `namespace:="nch"`,
 		},
 		{
 			name: "stream selector !~ is anchored and negated",
@@ -36,7 +41,7 @@ func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 		{
 			name: "match-all",
 			in:   `{namespace=~".*"}`,
-			want: `namespace:~"^(?s:.*)$"`,
+			want: `namespace:~".*"`,
 		},
 		{
 			// An inline flag stays inside the group: hoisted, a (?m) would
@@ -47,8 +52,8 @@ func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 		},
 		{
 			name: "multiline flag cannot widen the anchors",
-			in:   `{namespace=~"(?m)prod"}`,
-			want: `namespace:~"^(?s:(?m)prod)$"`,
+			in:   `{namespace=~"(?m)prod.+"}`,
+			want: `namespace:~"^(?s:(?m)prod.+)$"`,
 		},
 		{
 			name: "exact matcher is untouched",
@@ -69,12 +74,12 @@ func TestLabelMatchersAreAnchoredLineFiltersAreNot(t *testing.T) {
 		{
 			name: "pipeline label filter =~ is anchored",
 			in:   `{app="x"} | json | status =~ "4|5"`,
-			want: `app:="x" | unpack_json | filter status:~"^(?s:4|5)$"`,
+			want: `app:="x" | unpack_json | filter (status:="4" OR status:="5")`,
 		},
 		{
 			name: "pipeline label filter !~ is anchored",
 			in:   `{app="x"} | json | status !~ "2.."`,
-			want: `app:="x" | unpack_json | filter -status:~"^(?s:2..)$"`,
+			want: `app:="x" | unpack_json | filter -status:~"^(?-s:2..)$"`,
 		},
 		{
 			name: "anchoring survives a metric wrapper",

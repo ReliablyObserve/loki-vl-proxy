@@ -60181,6 +60181,7 @@
       "warm_p50": 0.029
     }
   ],
+  "profiles/label-filter-regexp-anchoring": [],
   "profiles/stage-field-exposure": [
     {
       "baseline": "release",
@@ -61639,6 +61640,7 @@
       "warm_p50": 0.021
     }
   ],
+  "profiles/stream-selector-regexp-anchoring": [],
   "profiles/structured-metadata-keys-per-profile": [
     {
       "baseline": "release",

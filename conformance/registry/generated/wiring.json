@@ -180,6 +180,9 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
+    "loki_api_v1_detected_labels": [
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
+    ],
     "loki_api_v1_drilldown_limits": [
       "internal/proxy/tenant_query_limits_test.go",
       "test/e2e-compat/tenant_limits_published_test.go"
@@ -190,12 +193,14 @@
     ],
     "loki_api_v1_index_volume": [
       "internal/proxy/volume_test.go",
-      "test/e2e-compat/drilldown_volume_bytes_test.go"
+      "test/e2e-compat/drilldown_volume_bytes_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
     "loki_api_v1_label_name_values": [
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "internal/proxy/metadata_inventory_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
     "loki_api_v1_labels": [
@@ -226,6 +231,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
@@ -274,6 +280,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -306,7 +313,8 @@
       "internal/proxy/alerting_tenant_label_test.go"
     ],
     "loki_api_v1_series": [
-      "internal/proxy/label_metadata_freshness_test.go"
+      "internal/proxy/label_metadata_freshness_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
     "loki_api_v1_tail": [
       "internal/proxy/extracted_suffix_collision_test.go",
@@ -440,6 +448,11 @@
       "internal/proxy/stage_field_exposure_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
+    "profiles/label-filter-regexp-anchoring": [
+      "internal/translator/label_matcher_anchoring_test.go",
+      "internal/translator/label_matcher_regexp_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
+    ],
     "profiles/parsed-fields-without-parser": [
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/loki_profile_test.go",
@@ -464,6 +477,13 @@
       "internal/proxy/stage_field_exposure_test.go",
       "internal/translator/label_format_rename_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
+    ],
+    "profiles/stream-selector-regexp-anchoring": [
+      "internal/proxy/label_matcher_regexp_routes_test.go",
+      "internal/proxy/tenant_matcher_anchor_test.go",
+      "internal/translator/label_matcher_anchoring_test.go",
+      "internal/translator/label_matcher_regexp_test.go",
+      "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
     "profiles/structured-metadata-keys-per-profile": [
       "internal/proxy/loki_profile_test.go",
@@ -936,7 +956,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 343,
+  "registry_items": 344,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1130,6 +1150,9 @@
     ],
     "internal/proxy/label_empty_run_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/label_matcher_regexp_routes_test.go": [
+      "profiles/stream-selector-regexp-anchoring"
     ],
     "internal/proxy/label_metadata_freshness_test.go": [
       "loki_api_v1_series",
@@ -1378,6 +1401,9 @@
     "internal/proxy/tail_pipeline_test.go": [
       "loki_api_v1_tail"
     ],
+    "internal/proxy/tenant_matcher_anchor_test.go": [
+      "profiles/stream-selector-regexp-anchoring"
+    ],
     "internal/proxy/tenant_query_limits_test.go": [
       "limits/effective-limit-resolution",
       "limits/max-entries-limit-rejects",
@@ -1558,6 +1584,14 @@
     "internal/translator/label_format_rename_test.go": [
       "profiles/stage-field-exposure"
     ],
+    "internal/translator/label_matcher_anchoring_test.go": [
+      "profiles/label-filter-regexp-anchoring",
+      "profiles/stream-selector-regexp-anchoring"
+    ],
+    "internal/translator/label_matcher_regexp_test.go": [
+      "profiles/label-filter-regexp-anchoring",
+      "profiles/stream-selector-regexp-anchoring"
+    ],
     "internal/translator/line_filter_or_test.go": [
       "semantics/line-filter-or-alternatives"
     ],
@@ -1711,6 +1745,16 @@
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "test/e2e-compat/label_matcher_regexp_anchoring_test.go": [
+      "loki_api_v1_detected_labels",
+      "loki_api_v1_index_volume",
+      "loki_api_v1_label_name_values",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "loki_api_v1_series",
+      "profiles/label-filter-regexp-anchoring",
+      "profiles/stream-selector-regexp-anchoring"
     ],
     "test/e2e-compat/labels_zero_width_test.go": [
       "semantics/labels-end-inclusive-like-loki"
@@ -1924,7 +1968,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 194,
+  "tests_with_markers": 199,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1944,7 +1988,6 @@
     "limits/drilldown-breakdown-keeps-busiest",
     "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
-    "loki_api_v1_detected_labels",
     "loki_api_v1_format_query",
     "loki_api_v1_index_shards",
     "loki_api_v1_index_volume_range",
@@ -1966,7 +2009,6 @@
     "profiles/keep-removes-derived-service-name",
     "profiles/keep-structured-metadata-key",
     "profiles/label-endpoints-window-and-data",
-    "profiles/label-filter-regexp-anchoring",
     "profiles/metadata-default-lookback",
     "profiles/multi-tenant-volume-merge",
     "profiles/volume-bytes-accounting",
@@ -2020,5 +2062,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 169
+  "wired_items": 172
 }

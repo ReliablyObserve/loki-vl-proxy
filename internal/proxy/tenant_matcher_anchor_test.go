@@ -5,7 +5,10 @@ import "testing"
 // `__tenant_id__` is a Loki LABEL matcher, so its regexp is anchored like every
 // other one: Prometheus compiles a matcher as `^(?s:v)$`. Unanchored, it decides
 // which tenants a fan-out queries, so `=~"prod"` reached `prod-eu` and
-// `nonprod` as well.
+// `nonprod` as well. Loki matches the tenant ids with the selector's matcher
+// (filterValuesByMatchers, pkg/querier/multi_tenant_querier.go:421).
+//
+// conformance: profiles/stream-selector-regexp-anchoring
 func TestTenantMatcherRegexpIsAnchored(t *testing.T) {
 	tenants := []string{"prod", "prod-eu", "nonprod", "staging"}
 	for _, tc := range []struct {
@@ -17,6 +20,14 @@ func TestTenantMatcherRegexpIsAnchored(t *testing.T) {
 		{"=~", "prod.*", []string{"prod", "prod-eu"}},
 		{"!~", "prod", []string{"prod-eu", "nonprod", "staging"}},
 		{"=~", "prod|staging", []string{"prod", "staging"}},
+		{"=~", "prod-eu|prod", []string{"prod", "prod-eu"}},
+		{"=~", "(?i)PROD", []string{"prod"}},
+		{"=~", ".*prod", []string{"prod", "nonprod"}},
+		{"=~", ".*", tenants},
+		{"=~", ".+", tenants},
+		{"=~", "", nil},
+		{"!~", ".+", nil},
+		{"!~", "", tenants},
 	} {
 		got, matched, err := applyTenantMatch(tenants, tc.op, tc.raw)
 		if err != nil || !matched {

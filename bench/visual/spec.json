@@ -1372,6 +1372,42 @@
    "fixes": [
     "semantics/topk-bottomk-without-strips-label"
    ]
+  },
+  {
+   "id": "explore-logs-multivalue-regexp",
+   "kind": "explore",
+   "query": "{app=~\"api-gateway|auth\"}",
+   "covers": [
+    "profiles/stream-selector-regexp-anchoring",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/stream-selector-regexp-anchoring"
+   ]
+  },
+  {
+   "id": "explore-volume-multivalue-regexp",
+   "kind": "explore",
+   "query": "sum by (app) (count_over_time({app=~\"api-gateway|auth\"} [$__auto]))",
+   "covers": [
+    "profiles/stream-selector-regexp-anchoring",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/stream-selector-regexp-anchoring"
+   ]
+  },
+  {
+   "id": "explore-volume-label-filter-regexp",
+   "kind": "explore",
+   "query": "sum by (region) (count_over_time({app=\"api-gateway\"} | json | region=~\"us-east|eu-west-1\" [$__auto]))",
+   "covers": [
+    "profiles/label-filter-regexp-anchoring",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/label-filter-regexp-anchoring"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

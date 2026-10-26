@@ -1083,7 +1083,7 @@ func TestFieldFilterMigration(t *testing.T) {
 		{
 			name:  "negated regex pipeline label filter",
 			logql: `{app="api"} | status !~ "5.."`,
-			want:  `app:="api" -status:~"^(?s:5..)$"`,
+			want:  `app:="api" -status:~"^(?-s:5..)$"`,
 		},
 		{
 			name:  "empty value — non-level field in stream selector",

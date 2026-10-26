@@ -166,7 +166,7 @@ func TestAdvanced_RegexpParser(t *testing.T) {
 
 func TestAdvanced_RegexLabelFilter(t *testing.T) {
 	logql := `{app="api"} | json | status =~ "5.."`
-	want := `app:="api" | unpack_json | filter status:~"^(?s:5..)$"`
+	want := `app:="api" | unpack_json | filter status:~"^(?-s:5..)$"`
 
 	got, err := TranslateLogQL(logql)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestAdvanced_RegexLabelFilter(t *testing.T) {
 
 func TestAdvanced_NegativeRegexLabelFilter(t *testing.T) {
 	logql := `{app="api"} | json | method !~ "GET|HEAD"`
-	want := `app:="api" | unpack_json | filter -method:~"^(?s:GET|HEAD)$"`
+	want := `app:="api" | unpack_json | filter -(method:="GET" OR method:="HEAD")`
 
 	got, err := TranslateLogQL(logql)
 	if err != nil {

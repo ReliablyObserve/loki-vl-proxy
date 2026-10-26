@@ -376,7 +376,7 @@ func TestOrderedJSONDetectedLevelFilters(t *testing.T) {
 	}{
 		{"not empty", `| json | drop __error__, __error_details__ | detected_level != ""`, func(string) bool { return true }, true, ""},
 		{"equals", `| json | drop __error__ | detected_level="info"`, func(l string) bool { return l == "info" }, true, `| filter (detected_level:="info" OR __lw:="1")`},
-		{"regexp", `| json | drop __error__ | detected_level=~"warn|error"`, func(l string) bool { return l == "warn" || l == "error" }, true, `| filter (detected_level:~"^(?:warn|error)$" OR __lw:="1")`},
+		{"regexp", `| json | drop __error__ | detected_level=~"warn|error"`, func(l string) bool { return l == "warn" || l == "error" }, true, `| filter ((detected_level:="warn" OR detected_level:="error") OR __lw:="1")`},
 		{"not equals", `| json | drop __error__ | detected_level!="unknown"`, func(l string) bool { return l != "unknown" }, true, `| filter (-detected_level:="unknown" OR __lw:="1")`},
 		// No error drop: a parse error survives a filter on detected_level, which
 		// holds for every line, so the raw-row evaluator answers.
