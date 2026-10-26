@@ -169,6 +169,10 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 				if !reflect.DeepEqual(flat, tc.want) {
 					t.Fatalf("%s %s:\n got %v\nwant %v", version, tc.query, flat, tc.want)
 				}
+				// Each operand is a VictoriaLogs stats query: no raw rows are read.
+				if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+					t.Fatalf("%s %s: read raw rows: %v", version, tc.query, raw)
+				}
 			}
 		})
 	}
