@@ -496,7 +496,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   machine) (B))`, the query of `semantics/binary-ignoring-matching`: on the
   unit fixture the proxy answered one unlabeled series valued 6 where Loki
   answers `{job="a"}` 8 and `{job="b"}` 4. That row stays open for its error
-  text. Registry: `semantics/aggregation-over-binary-dropped`; new open
+  text. It also closes `semantics/without-comparison-inside-ignored`:
+  `sum without (pod) (rate({...} | unwrap amount [5m]) > 0.33)` summed every
+  series, the comparison dropped (on the unit fixture `{ns="x"}` 1.23333 at an
+  instant where Loki answers 0.333333, the only pod above the threshold); the
+  comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
   rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
 
 ## [2.39.1] - 2026-10-28
