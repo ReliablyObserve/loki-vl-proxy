@@ -2430,6 +2430,9 @@ func marshalManualMetricResponse(resultType string, result []map[string]interfac
 	if result == nil {
 		result = []map[string]interface{}{}
 	}
+	if payload, ok := appendManualMetricResponse(nil, resultType, result); ok {
+		return payload
+	}
 	payload, _ := json.Marshal(map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
@@ -2438,6 +2441,156 @@ func marshalManualMetricResponse(resultType string, result []map[string]interfac
 		},
 	})
 	return payload
+}
+
+// appendManualMetricResponse writes the response marshalManualMetricResponse
+// marshals, byte for byte as encoding/json writes it (map keys sorted, the
+// float and string forms of encoding/json), without its reflection: a 6h
+// matrix of a few dozen series is tens of thousands of points, which
+// encoding/json spent most of a cached answer's time on. It reports false for
+// a value it does not write the same way (a type other than the ones the
+// metric builders use, a float encoding/json writes with an exponent, a
+// string that needs escaping), and the caller marshals instead.
+func appendManualMetricResponse(dst []byte, resultType string, result []map[string]interface{}) ([]byte, bool) {
+	var ok bool
+	if dst == nil {
+		size := 64
+		for _, item := range result {
+			points, _ := item["values"].([][]interface{})
+			size += 64 + 24*len(points)
+		}
+		dst = make([]byte, 0, size)
+	}
+	dst = append(dst, `{"data":{"result":[`...)
+	for i, item := range result {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		if dst, ok = appendManualJSONValue(dst, item); !ok {
+			return nil, false
+		}
+	}
+	dst = append(dst, `],"resultType":`...)
+	if dst, ok = appendManualJSONValue(dst, resultType); !ok {
+		return nil, false
+	}
+	return append(dst, `},"status":"success"}`...), true
+}
+
+func appendManualJSONValue(dst []byte, value interface{}) ([]byte, bool) {
+	switch v := value.(type) {
+	case string:
+		return appendManualJSONString(dst, v)
+	case float64:
+		return appendManualJSONFloat(dst, v)
+	case map[string]string:
+		if v == nil {
+			return append(dst, "null"...), true
+		}
+		return appendManualJSONObject(dst, sortedMapKeys(v), func(dst []byte, k string) ([]byte, bool) { return appendManualJSONString(dst, v[k]) })
+	case map[string]interface{}:
+		if v == nil {
+			return append(dst, "null"...), true
+		}
+		return appendManualJSONObject(dst, sortedMapKeys(v), func(dst []byte, k string) ([]byte, bool) { return appendManualJSONValue(dst, v[k]) })
+	case []interface{}:
+		return appendManualJSONArray(dst, v)
+	case [][]interface{}:
+		return appendManualJSONArrays(dst, v)
+	}
+	return nil, false
+}
+
+// appendManualJSONString writes a string that needs no escaping, as
+// encoding/json writes it.
+func appendManualJSONString(dst []byte, v string) ([]byte, bool) {
+	for i := 0; i < len(v); i++ {
+		if c := v[i]; c < 0x20 || c > 0x7e || c == '"' || c == '\\' || c == '<' || c == '>' || c == '&' {
+			return nil, false
+		}
+	}
+	return append(append(append(dst, '"'), v...), '"'), true
+}
+
+// appendManualJSONFloat writes a float encoding/json writes without an
+// exponent, in its form.
+func appendManualJSONFloat(dst []byte, v float64) ([]byte, bool) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, false
+	}
+	if abs := math.Abs(v); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
+		return nil, false
+	}
+	if v == math.Trunc(v) && math.Abs(v) < 1<<53 && !math.Signbit(v) {
+		// A whole number (a timestamp in seconds): the same digits.
+		return strconv.AppendInt(dst, int64(v), 10), true
+	}
+	return strconv.AppendFloat(dst, v, 'f', -1, 64), true
+}
+
+// appendManualJSONObject writes an object of keys in order, each value
+// written by value.
+func appendManualJSONObject(dst []byte, keys []string, value func([]byte, string) ([]byte, bool)) ([]byte, bool) {
+	ok := true
+	dst = append(dst, '{')
+	for i, k := range keys {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		if dst, ok = appendManualJSONString(dst, k); ok {
+			dst, ok = value(append(dst, ':'), k)
+		}
+		if !ok {
+			return nil, false
+		}
+	}
+	return append(dst, '}'), true
+}
+
+func sortedMapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// appendManualJSONArrays writes the points of a matrix series.
+func appendManualJSONArrays(dst []byte, v [][]interface{}) ([]byte, bool) {
+	if v == nil {
+		return append(dst, "null"...), true
+	}
+	ok := true
+	dst = append(dst, '[')
+	for i, elem := range v {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		if dst, ok = appendManualJSONArray(dst, elem); !ok {
+			return nil, false
+		}
+	}
+	return append(dst, ']'), true
+}
+
+// appendManualJSONArray is appendManualJSONValue for a []interface{}, taken
+// without boxing it (a point of a matrix).
+func appendManualJSONArray(dst []byte, v []interface{}) ([]byte, bool) {
+	if v == nil {
+		return append(dst, "null"...), true
+	}
+	ok := true
+	dst = append(dst, '[')
+	for i, elem := range v {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		if dst, ok = appendManualJSONValue(dst, elem); !ok {
+			return nil, false
+		}
+	}
+	return append(dst, ']'), true
 }
 
 func manualWindowValues(samples []rangeMetricSample, windowStart, windowEnd int64, excludeStart bool) []float64 {

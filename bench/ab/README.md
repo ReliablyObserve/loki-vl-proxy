@@ -13,7 +13,7 @@ pull request. See [Automation](#automation).
 | file | purpose |
 |---|---|
 | `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. Shapes marked `"smoke": true` run on every code change. |
-| `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. No target gets a `Cache-Control` header; `--refresh-s` runs the windows forward like a dashboard refresh. |
+| `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. No target gets a `Cache-Control` header; `--refresh-s` runs the windows forward like a dashboard refresh; `--flush-before-run0 http://HOST:ADMIN_PORT/admin/cache/flush` (repeatable, token from `$AB_ADMIN_TOKEN`) empties a proxy's cache tiers (memory and disk: responses, kept stats buckets, parse-risk verdicts) before run 0 of every shape and range, so run 0 is that proxy's cold first request. |
 | `report.py` | `summarize` turns raw rows into a compact table and a summary JSON; `compare` diffs two summaries. |
 | `selection.py` | Picks the shapes a change needs from the files it touches, through the registry. `--check` is part of the conformance gate. |
 | `stack.py` | A fresh Loki + VictoriaLogs stack under its own compose project and ports, seeded with a fixed window of the log generator's data; proxy builds run as host processes with the stack proxy's flags. |
@@ -98,6 +98,15 @@ answered from a cache the harness itself filled.
 | cold | run 0 of a shape x range, on a window no earlier request of that query covered | no header; whether its results cache answered is read from its own counters | no header |
 | warm | runs 1.. , each window shifted back by the shape's `shift` (a minute by default) | no header; its cache serves the overlapping splits, as for a user | no header |
 | refresh (opt-in) | run k ends at `end + k*refresh_s`, the last run at `end` (nothing in the future); the p50 of runs 1.. | no header, so run 0 fills its cache the way a first dashboard load does | no header |
+
+A strictly cold comparison, where neither side answers run 0 from an extent
+another set or range filled: start the stack with `--loki-uncached` (`stack.py`
+and `pr_smoke.py`; it adds `docker-compose.ab-loki-uncached.yml`, the stack's
+Loki with every query results cache off through Loki's
+`-querier.cache-*-results=false` flags) and pass each proxy's
+`/admin/cache/flush` to `perf_matrix.py --flush-before-run0`. Loki then computes
+every request, so in such a run its warm and refresh numbers are cold numbers
+too: use it for the cold column and a normal run for warm and refresh.
 
 - No target gets a `Cache-Control` header. Loki 3.7.7 does not honour
   `Cache-Control: no-cache` on `query_range` or index `volume_range`: it still

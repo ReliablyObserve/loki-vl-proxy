@@ -42,7 +42,7 @@ import (
 //     full chain.
 //
 // The mask of a window is cached per tenant and base like the guard probes'
-// verdicts (coveredWindowProbe): only the part older than statsPushdownRiskSettle
+// verdicts (coveredWindowProbe): only the part older than -parse-risk-probe-settle
 // is remembered, the rest is probed on every request, so a key that first
 // appears in recent lines is seen at once.
 
@@ -421,7 +421,7 @@ func (p *Proxy) windowProbeKey(ctx context.Context, key string) string {
 // checked before) found, and returns what the last check returned; a check that
 // stops, or fails, ends the run and nothing is remembered. The entry covers a
 // window per tenant and key, so a refresh or a wider range checks only the
-// uncovered part. It never covers time later than statsPushdownRiskSettle
+// uncovered part. It never covers time later than -parse-risk-probe-settle
 // before now, whatever the window, so lines arriving late for recent
 // timestamps are checked on every request, and it keeps the age of the check
 // that covered each part: extending an entry leaves its expiry where it was,
@@ -434,7 +434,7 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 	type window struct{ from, to time.Time }
 	todo := []window{{start, end}}
 	coveredFrom, coveredTo := start, end
-	acc, ttl := "", statsPushdownRiskCacheTTL
+	acc, ttl := "", p.parseRiskProbeCacheTTL
 	if raw, remaining, ok := p.cache.GetWithTTL(key); ok {
 		parts := strings.SplitN(string(raw), " ", 3)
 		var fromNs, toNs int64
@@ -471,10 +471,10 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 			return acc, stop, err
 		}
 	}
-	if settled := cache.Now().Add(-statsPushdownRiskSettle); coveredTo.After(settled) {
+	if settled := cache.Now().Add(-p.parseRiskProbeSettle); coveredTo.After(settled) {
 		coveredTo = settled
 	}
-	if len(todo) > 0 && coveredTo.After(coveredFrom) {
+	if len(todo) > 0 && ttl > 0 && coveredTo.After(coveredFrom) {
 		// Only a window that was actually checked refreshes the entry (see above).
 		p.cache.SetLocalOnlyWithTTL(key, []byte(fmt.Sprintf("%d %d %s", coveredFrom.UnixNano(), coveredTo.UnixNano(), acc)), ttl)
 	}
@@ -532,8 +532,8 @@ func (p *Proxy) levelNeedsChain(ctx context.Context, base string) bool {
 }
 
 func (p *Proxy) markLevelNeedsChain(ctx context.Context, base string) {
-	if p.cache != nil {
-		p.cache.SetLocalOnlyWithTTL(levelNeedsChainKey(p, ctx, base), []byte("1"), statsPushdownRiskCacheTTL)
+	if p.cache != nil && p.parseRiskProbeCacheTTL > 0 {
+		p.cache.SetLocalOnlyWithTTL(levelNeedsChainKey(p, ctx, base), []byte("1"), p.parseRiskProbeCacheTTL)
 	}
 }
 

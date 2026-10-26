@@ -873,7 +873,9 @@ var labelWarmupWindows = []time.Duration{
 func (p *Proxy) warmMetadataCacheOnStartup() {
 	const warmupStaleThreshold = 30 * time.Second
 	stop := p.keepWarmStop // closed by Shutdown
+	p.keepWarmWG.Add(1)
 	go func() {
+		defer p.keepWarmWG.Done()
 		// Wait until VL is reachable before warming. Exponential backoff up to 10s
 		// per retry; total deadline 60s aligns with Kubernetes readiness probe timeout.
 		warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -1218,15 +1220,26 @@ func (p *Proxy) labelKeepWarmSchedule() (ttl, interval, skipIfRemaining time.Dur
 // The goroutine exits when p.keepWarmStop is closed (via Shutdown).
 func (p *Proxy) startLabelCacheKeepWarmLoop() {
 	ttl, interval, skipIfRemaining := p.labelKeepWarmSchedule()
+	stop := p.keepWarmStop // closed by Shutdown
+	p.keepWarmWG.Add(1)
 	go func() {
+		defer p.keepWarmWG.Done()
 		timer := time.NewTimer(labelKeepWarmDelay(interval))
 		defer timer.Stop()
 		for {
 			select {
-			case <-p.keepWarmStop:
+			case <-stop:
 				return
 			case <-timer.C:
+				// A warm run in flight ends when Shutdown closes stop.
 				ctx, cancel := context.WithTimeout(context.Background(), interval)
+				go func() {
+					select {
+					case <-stop:
+						cancel()
+					case <-ctx.Done():
+					}
+				}()
 				p.warmLabelWindows(ctx, skipIfRemaining, ttl, true, 0)
 				cancel()
 				timer.Reset(labelKeepWarmDelay(interval))

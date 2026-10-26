@@ -16,7 +16,7 @@ Ranked by which clients depend on it.
 |---|---|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
 
@@ -43,9 +43,9 @@ Held by at least one test that declares it.
 
 | Item | Consumers | Tests | Why |
 |---|---|---:|---|
-| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 7 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
+| `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 8 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
 | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 2 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
 | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 8 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
-| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 4 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
+| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 5 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
 | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 3 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |
