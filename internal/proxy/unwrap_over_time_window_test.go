@@ -802,3 +802,79 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 		})
 	}
 }
+
+// TestUnwrapOverTimeRangeWindowsNaN: a nan value is a sample for Loki
+// (strconv.ParseFloat reads it): sum and avg over a window that holds one are
+// NaN (pkg/logql/range_vector.go:371-404), max and min ignore it unless every
+// sample is one (range_vector.go:405-420). With a range longer than the step the
+// nan group of the counting gate (flag 2) reaches the merged windows: the five
+// steps whose window holds the nan bucket are NaN for sum and avg, and max
+// keeps the clean value. The fake answers the bucket queries of the window merge.
+//
+// conformance: semantics/unwrap-over-time-range-windows, semantics/unwrap-gate-parsefloat-divergences
+func TestUnwrapOverTimeRangeWindowsNaN(t *testing.T) {
+	at := time.Unix(1700000040, 0)
+	nanAt := at.Add(5*time.Minute + 20*time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		query := r.Form.Get("query")
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+			return
+		}
+		if !strings.Contains(query, "__sample_count") {
+			t.Errorf("a range longer than the step read step buckets: %s", query)
+		}
+		start, _ := parseFlexibleUnixNanos(r.Form.Get("start"))
+		end, _ := parseFlexibleUnixNanos(r.Form.Get("end"))
+		step := int64(parseVLStepParam(r.Form.Get("step")))
+		offset, _ := time.ParseDuration(r.Form.Get("offset"))
+		name := "c"
+		if strings.Contains(query, "as __lvp_sum") {
+			name = "__lvp_sum"
+		}
+		var values, counts, nanValues, nanCounts []string
+		for k := floorDiv(start+int64(offset), step); k*step-int64(offset) < end; k++ {
+			edge := k*step - int64(offset)
+			ts := strconv.FormatFloat(float64(edge)/1e9, 'f', -1, 64)
+			values = append(values, `[`+ts+`,"1"]`)
+			counts = append(counts, `[`+ts+`,"1"]`)
+			if nanAt.UnixNano() >= edge && nanAt.UnixNano() < edge+step {
+				nanValues = append(nanValues, `[`+ts+`,"0"]`)
+				nanCounts = append(nanCounts, `[`+ts+`,"1"]`)
+			}
+		}
+		series := func(name, flag string, points []string) string {
+			return `{"metric":{"__name__":"` + name + `","app":"x","__lvp_bad":"` + flag + `"},"values":[` + strings.Join(points, ",") + `]}`
+		}
+		result := []string{series(name, "0", values), series("__sample_count", "0", counts)}
+		if strings.Contains(query, `:="2"`) && len(nanValues) > 0 {
+			result = append(result, series(name, "2", nanValues), series("__sample_count", "2", nanCounts))
+		}
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` + strings.Join(result, ",") + `]}}`))
+	}))
+	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		fn   string
+		nans int
+	}{{"sum_over_time", 5}, {"avg_over_time", 5}, {"max_over_time", 0}, {"min_over_time", 0}} {
+		for _, post := range []string{"", ` | __error__=""`} {
+			query := fmt.Sprintf(`sum by (app) (%s({app="x"} | logfmt | unwrap b%s [5m]))`, tc.fn, post)
+			t.Run(query, func(t *testing.T) {
+				p := newSlidingTestProxy(t, srv.URL)
+				params := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.Add(12*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+				rec := httptest.NewRecorder()
+				p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+				if rec.Code != http.StatusOK {
+					t.Fatalf("%d %s", rec.Code, rec.Body)
+				}
+				if got := strings.Count(rec.Body.String(), `"NaN"`); got != tc.nans {
+					t.Fatalf("%d NaN samples, want %d (the windows (t-5m, t] holding the nan line): %s", got, tc.nans, rec.Body)
+				}
+				if tc.nans == 0 && !strings.Contains(rec.Body.String(), `"1"]`) {
+					t.Fatalf("max and min keep the clean samples: %s", rec.Body)
+				}
+			})
+		}
+	}
+}

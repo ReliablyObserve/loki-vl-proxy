@@ -733,6 +733,7 @@
     "semantics/unwrap-gate-parsefloat-divergences": [
       "internal/proxy/unwrap_bytes_gate_property_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/translator/unwrap_gate_property_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
@@ -1374,6 +1375,7 @@
       "metric-series-identity",
       "quality/query-range-extent-cache",
       "semantics/lower-bound-exclusive",
+      "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-over-time-range-windows-residual-forms",
       "window-bounds-and-step-alignment"

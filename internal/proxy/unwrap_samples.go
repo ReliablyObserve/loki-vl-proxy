@@ -99,15 +99,21 @@ func mergeUnwrapBuckets(manualFunc string, buckets, counts []rangeMetricSample) 
 }
 
 // unwrapWindowRoute reports whether the window evaluator answers the request
-// from merged buckets (unwrapWindowBuckets). An outer aggregation folds the
-// series the buckets hold afterwards (foldUngroupedSum, foldVectorAggregations,
-// withWithoutFold), and Loki counts its series limit on the folded answer: the
-// reads are bounded by the raw-row budget, as for a `without`.
+// from merged buckets (unwrapWindowBuckets). When an outer aggregation folds
+// the series the buckets hold afterwards (foldUngroupedSum,
+// foldVectorAggregations), Loki counts its series limit on the folded answer:
+// the reads are bounded by the raw-row budget, as for a `without`
+// (withWithoutFold records it itself).
 func (p *Proxy) unwrapWindowRoute(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, hasOrigSpec bool, manualFunc, originalLogql string, step time.Duration) bool {
-	if !hasOrigSpec || !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, r.FormValue("query"), step) {
+	query := r.FormValue("query")
+	if !hasOrigSpec || !unwrapWindowBuckets(spec, origSpec, manualFunc, originalLogql, query, step) {
 		return false
 	}
-	p.recordFoldBudget(r.Context())
+	if _, chain := seriesAggregationChain(query); chain {
+		p.recordFoldBudget(r.Context())
+	} else if _, ungrouped := ungroupedSumRange(query); ungrouped && !isSumAllLogRange(query) {
+		p.recordFoldBudget(r.Context())
+	}
 	return true
 }
 
