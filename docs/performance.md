@@ -5,6 +5,82 @@ description: Per-request latency, throughput benchmarks, cache hit rates, and co
 
 # Performance
 
+## Current position versus Loki
+
+State of `main` on 2026-10-26 (`91470b5c`); it includes changes that are not released yet. Every figure below comes from the generated [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md), the [daily A/B trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md) or the description of the pull request named next to it. The tables further down this page are older, dated measurements.
+
+How to read the comparison: both sides run on the same fresh stack with the same seeded data (Loki 3.7.7). Loki ignores `Cache-Control: no-cache` on `query_range` and `volume_range`, so its first run can still hit caches warmed by earlier requests and understates a truly cold Loki. Warm timings on both sides come largely from results caches. Rows Loki's own cache counters show as cache-answered are left out of the slower-than-Loki counts. A pair counts as slower only beyond noise: 25% and 50 ms.
+
+### First request
+
+The report lists **54** shape and range pairs where the proxy is slower than Loki on a cold request (A/B runs from 2026-09-30 to the daily run of 2026-10-24). The largest, with the warm repeat of the same query:
+
+| shape | range | proxy cold | Loki cold | proxy warm | Loki warm |
+|---|---|---|---|---|---|
+| X1 json filter level_extracted, by level | 24h | 22.13 s | 4.52 s | 2.59 s | 0.04 s |
+| X1 json filter level_extracted, by level | 6h | 5.88 s | 1.10 s | 0.71 s | 0.04 s |
+| DLV2 json error filter, detected_level | 6h | 10.99 s | 1.23 s | 10.95 s | 0.04 s |
+| DLV1 drilldown logs volume, json | 24h | 10.40 s | 1.02 s | 10.32 s | 0.02 s |
+| DLV3 plain json, detected_level | 24h | 10.30 s | 0.97 s | 10.35 s | 0.01 s |
+| A explore volume, 2 filters, drop | 24h | 7.99 s | 4.29 s | 0.37 s | 0.08 s |
+| F field breakdown service_version (explore) | 24h | 7.83 s | 4.50 s | 0.37 s | 0.05 s |
+| E3 logfmt latency_ms rate, production | 7d | 13.13 s | 0.01 s | 13.44 s | 0.00 s |
+| E8 json duration_ms sum by service, namespace prod | 7d | 9.29 s | 0.01 s | 13.40 s | 0.06 s |
+| E1 json duration_ms sum by service | 7d | 5.93 s | 0.10 s | 4.46 s | 0.05 s |
+
+The registry items behind each row are in the report (for example `semantics/extracted-suffix-collision`, `semantics/json-metric-detected-level-derivation` and `semantics/unwrap-conversion-error`). The report also lists, per registry item, the worst row and whether the answers match Loki's.
+
+### Repeated and refreshed windows
+
+Before #862 the proxy cached only exact windows. A Grafana refresh moves the window forward a minute and a re-run moves it back, so each recomputed the whole range in VictoriaLogs while Loki answered from the extents of its results cache. A 6h A/B on `main` had the proxy 10 to 200 times slower than Loki on those repeated and refreshed metric windows.
+
+Metric `query_range` now keeps the VictoriaLogs stats buckets it has read (`-query-range-extent-cache`, on by default) and asks only for the buckets a moved or widened window lacks. Answers are byte-for-byte those of the uncached path. Finished buckets older than `-query-range-freshness` (10m, Loki's `max_cache_freshness`) are kept per tenant, query, step and offset for `-query-range-extent-cache-ttl` (1h, Loki's default validity), in memory, on disk and on the peer fleet when those tiers are configured.
+
+A/B at 6h, p50 of the runs after the first, measured on `ff3b9337` during #862 review (unreleased):
+
+| shape | mode | main | with #862 | Loki |
+|---|---|--:|--:|--:|
+| X1 json filter level_extracted, by level | shifted window | 0.387 s | 0.007 s | 0.006 s |
+| X3 json rate, level_extracted equality | shifted window | 2.240 s | 0.006 s | 0.075 s |
+| X5 logfmt filter level_extracted, by level | refresh | 0.960 s | 0.009 s | 0.007 s |
+| logfmt count by level, filter, drop | refresh | 0.705 s | 0.003 s | 0.005 s |
+| J4 json no-error count by service_name | shifted window | 0.389 s | 0.019 s | 0.007 s |
+| DL1 drilldown field breakdown json-expr | shifted window | 0.768 s | 0.023 s | 0.010 s |
+
+That run: 22 faster, 187 same, 0 new differences against Loki, VictoriaLogs restarts 0 to 0. Only 6h was measured, and the daily run of 2026-10-24 predates the change, so the rows of that report are not yet re-measured with it.
+
+Not covered by the reuse, so they keep their earlier repeat times: subquery-based shapes (including Drilldown's over-limit ranked breakdowns and `volume_range`), queries with `_time:` or `time_add`, unwrap metrics with the conversion check, and the grids behind `topk` and `bottomk`. Instant queries, `/hits`, log queries and raw-row evaluation are unchanged. Because finished buckets are reused, a line that arrives late in a bucket older than the freshness horizon is not seen until the kept bucket expires (at most the TTL).
+
+### First request with Loki's results caches off
+
+#862 also measured a true cold run on a quiet host: both proxies flushed before each shape's first run, Loki started with its results caches off.
+
+- 0 of 221 shape and range pairs are slower than on `main`; 17 are faster and 210 the same, with no new difference from Loki's answers.
+- 22 pairs are still slower than uncached Loki. They are the same on `main`: `level_extracted` shapes at 6h (3.1 to 3.3 s against 0.6 to 0.8 s), E7 (1.34 s against 0.16 s), explore volume with two filters and drop (1.36 s against 0.57 s), field breakdowns (1.37 to 1.43 s against 0.72 to 0.82 s), and label browser and label values after a flush (0.14 to 0.17 s against 0.02 to 0.06 s).
+
+### Load and backend safety
+
+#862 load test on an isolated stack: 7h of seeded data, 32 concurrent clients for 180 s, 80 range metric shapes at 6h with random step-aligned windows. This compares the build before and after the change; it is not a comparison with Loki.
+
+| | main | with #862 |
+|---|--:|--:|
+| requests | 1,028 | 1,314 |
+| 200 / 400 / 502 / 429 | 812 / 203 / 13 / 0 | 1,040 / 258 / 16 / 0 |
+| p50 / p95 | 5.6 s / 14.5 s | 2.9 s / 14.8 s |
+| proxy RSS peak | 1.47 GB | 1.63 GB (the cache filling its `-cache-max-bytes` budget) |
+| `/labels` probe | 91/91 200, max 3.1 s | 92/92 200, max 2.1 s |
+| Loki / VictoriaLogs restarts | 0 to 0 | 0 to 0 |
+
+The 400s are shapes rejected identically on both builds. The 502s are a detected-level `| json` shape that fails under load on both builds at the same rate.
+
+### Daily regression guard
+
+The daily A/B (`bench/ab/daily.py`, run from `main` against the last release and Loki) of 2026-10-24 (#865) reported 0 regressions and 4 improvements (stage-field-exposure SF2 to SF5 at 6h, warm p50 for example 225 ms to 128 ms). The ratchet holds 194 shape and range rows that are as good as Loki; losing one fails the run. Two rows are listed as informational because Loki did not answer (`unwrap-sum-without` W8 at 6h and 24h).
+
+### Answers that differ
+
+Speed is only meaningful where the answer matches. The performance report marks each registry item as same or differs against Loki; the open differences are ranked in [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md) and the intended ones are in [Known Issues](KNOWN_ISSUES.md).
+
 ## Architecture Optimizations
 
 ### Lock-Free Hot Paths
@@ -93,6 +169,8 @@ The proxy now has two cache layers in front of the backend execution path:
 | Tier0 compatibility-edge cache | Final Loki-shaped `GET` responses on safe read endpoints | Bypass translation and backend work for hot repeated reads |
 | L1/L2/L3 cache stack | Local memory, optional disk, optional peer fleet reuse | Reduce backend load and share results across replicas |
 
+Metric `query_range` also keeps the VictoriaLogs stats buckets it has read, in the same cache tiers (see [Current position versus Loki](#current-position-versus-loki)).
+
 Tier0 is intentionally small and bounded as a percentage of the primary L1 memory budget. The deeper L1/L2/L3 stack still handles broader reuse, peer sharing, and persistent cache warming.
 
 ### What This Means For Operators
@@ -131,7 +209,7 @@ VictoriaLogs exposes two field-name endpoints with very different cost profiles:
 
 Grafana's time picker uses a sliding end-timestamp that drifts a few seconds between requests. Before this fix, each click produced a unique cache key, defeating the 30s TTL and ensuring every click hit the backend. The fix floors the `end` timestamp to 30-second intervals so all requests within the same logical window share one cache entry.
 
-**Measured improvement** (e2e-compat, ~8M log entries, 1h window):
+**Measured improvement** (e2e-compat, ~8M log entries, 1h window; recorded 2026-06-05 in #421, historical):
 
 | Path | Before | After (cold) | After (warm) |
 |---|---:|---:|---:|
