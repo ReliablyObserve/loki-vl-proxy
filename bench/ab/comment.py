@@ -14,12 +14,24 @@ does not), is slower beyond noise on the confirmation re-run, or returns a
 result that differs from Loki where the base's did not; 2 when the run is
 invalid (VictoriaLogs restarted mid-run); 3 when the run did not complete
 (pr_smoke.py renders that comment); 0 otherwise.
+
+Above 2× Loki (over2x.gate, given the base's bench/ab/history/over-2x-loki.json):
+rows the PR adds above 2× Loki or makes worse are listed in a ⚠️ section at the
+top of the comment. In meta's over_2x_loki "warn" mode (the default) the state and
+exit status stay what they would be without them; in "fail" mode they fail the
+check (exit 1). Known above-2× rows are listed in a collapsed section.
 """
 import argparse
 import json
+import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import over2x  # noqa: E402
+
 MARKER = "<!-- perf-ab-smoke -->"
+# Known above-2× rows listed in the collapsed section; a comment is limited to 65,536 characters.
+KNOWN_CAP = 40
 ICON = {"fixed": "✅", "broken": "❌", "slower": "🔴", "faster": "🟢", "same": "⚪", "n/a": "⚪"}
 ORDER = {"broken": 0, "slower": 1, "fixed": 2, "faster": 3, "same": 4, "n/a": 5}
 
@@ -132,7 +144,33 @@ def errored(selection, meta, message):
     return "\n".join(lines) + "\n", {"state": "error", "failed": True, "exit": 3}
 
 
-def render(summaries, selection, meta):
+def over_2x_table(findings, with_note=False):
+    out = ["| | mode | shape | range | PR | Loki | PR ÷ Loki | base ÷ Loki | listed ÷ Loki |" + (" why |" if with_note else ""),
+           "|---|---|---|---|--:|--:|--:|--:|--:|" + ("---|" if with_note else "")]
+    for f in findings:
+        mark = " ¹" if f.get("confirmed") else ""
+        out.append(f"| {f['kind']} | {f['mode']} | {cell(f['shape'])} | {f['range']} | {secs(f['proxy_s'])}{mark} | "
+                   f"{secs(f['loki_s'])} | **{over2x.times(f['ratio'])}** | {over2x.times(f['base_ratio'])} | "
+                   f"{over2x.times(f['baseline_ratio'])} |" + (f" {f.get('note', '')} |" if with_note else ""))
+    return out
+
+
+def over_2x_section(bad, mode):
+    """The warning (or failure) at the top of the comment: rows the PR adds above 2× Loki or makes worse."""
+    new = sum(1 for f in bad if f["kind"] == "new")
+    icon, effect = (("🔴", "This fails `perf-smoke`.") if mode == "fail" else
+                    ("⚠️", "Warning only: `perf-smoke` does not fail on it yet; it becomes blocking once the "
+                           f"above-2× list (`{over2x.BASELINE_REL}`) is empty."))
+    return [f"#### {icon} Above 2× Loki: {new} new, {len(bad) - new} worsened", "",
+            "A shape × range slower than 2× Loki (cold, warm or refresh, beyond the "
+            f"{over2x.MIN_GAP * 1000:.0f} ms floor) is a defect. These rows are above 2× on this PR and either are "
+            "not in the list and not as slow on the base build, or are worse than both the list and the base build "
+            f"beyond noise. {effect} How to clear one: `bench/ab/README.md`.", "",
+            *over_2x_table(bad), ""]
+
+
+def render(summaries, selection, meta, baseline=None):
+    """baseline: the above-2× Loki list (over2x.read_baseline / baseline_at); None leaves that check out."""
     if not summaries:
         return skipped(selection, meta)
     b, c, r = summaries[0]["baseline"], summaries[0]["candidate"], summaries[0]["reference"]
@@ -146,11 +184,19 @@ def render(summaries, selection, meta):
     pre = sum(1 for _, row in rows if row.get("parity_vs_reference") == "differs" and not new_difference(row))
     same_as_loki = sum(1 for _, row in rows if row.get("parity_vs_reference", "").startswith("same"))
     failed = bool(counts.get("broken") or counts.get("slower") or new_diffs)
+    mode = meta.get("over_2x_loki", over2x.DEFAULT_GATE)
+    findings = ([f for s in summaries for f in over2x.gate(s, baseline, meta.get("noise", 0.30),
+                                                            meta.get("min_delta", 0.10))]
+                if baseline is not None else [])
+    bad = over2x.failing(findings)
+    failed_2x = mode == "fail" and bool(bad)
 
     if not valid:
         title, state = "⚠️ Performance A/B: invalid run (VictoriaLogs restarted), re-run the job", "invalid"
     elif failed:
         title, state = "🔴 Performance A/B: regression", "failed"
+    elif failed_2x:
+        title, state = "🔴 Performance A/B: above 2× Loki", "failed"
     elif counts.get("faster") or counts.get("fixed"):
         title, state = "🟢 Performance A/B: faster, no regression", "passed"
     else:
@@ -158,7 +204,7 @@ def render(summaries, selection, meta):
 
     n = len(rows)
     verdict_bits = [f"{counts[k]} {ICON[k]} {k}" for k in ("broken", "slower", "fixed", "faster", "same") if counts.get(k)]
-    lines = [MARKER, f"### {title}", "",
+    lines = [MARKER, f"### {title}", "", *(over_2x_section(bad, mode) if bad else []),
              f"**{n} shape×range** — " + " · ".join(verdict_bits) +
              f" · results vs Loki: {same_as_loki} same, {len(new_diffs)} new difference(s), {pre} pre-existing", ""]
     moved = [x for x in rows if x[1]["verdict"] not in ("same", "n/a") or new_difference(x[1])]
@@ -185,6 +231,25 @@ def render(summaries, selection, meta):
         lines += ["", "↺ Loki cold taken from the first set that ran the same query; Loki's cache answered this one."]
     lines += ["", "</details>"]
 
+    known = [f for f in findings if f["kind"] == "known"]
+    cleared = sum(1 for f in findings if f["kind"] == "cleared")
+    loki_failed = sum(1 for f in findings if f["kind"] == "loki_failed")
+    if known or cleared or loki_failed:
+        lines += ["", f"<details><summary>{len(known)} shape×range above 2× Loki already (listed, or as slow on the "
+                  "base build)</summary>", ""]
+        if known:
+            lines += over_2x_table(known[:KNOWN_CAP], with_note=True)
+            if len(known) > KNOWN_CAP:
+                lines.append(f"… and {len(known) - KNOWN_CAP} more (`verdict.json` counts them; the job's "
+                             "`summary-<set>.json` files have every row).")
+        if cleared:
+            lines += ["", f"{cleared} listed shape×range within 2× Loki in this run (the daily run removes a row from "
+                      "the list after two runs under 2×)."]
+        if loki_failed:
+            lines += ["", f"{loki_failed} shape×range×mode where Loki did not answer 200: not compared (not a proxy "
+                      "defect)."]
+        lines += ["", "</details>"]
+
     why = selection.get("why", {})
     if why:
         lines += ["", "<details><summary>Why these shapes</summary>", ""]
@@ -208,9 +273,13 @@ def render(summaries, selection, meta):
         stamp.append(f"refresh p50: windows moving forward {meta['refresh_s']} s per run, informational")
     lines += ["", "<sub>" + " · ".join(stamp) + ". Same runner, one fresh stack, targets interleaved per request. "
               "How to read and reproduce: `bench/ab/README.md`.</sub>"]
-    exit_code = 2 if not valid else (1 if failed else 0)
-    verdict = {"state": state, "failed": failed or not valid, "exit": exit_code, "counts": counts,
+    exit_code = 2 if not valid else (1 if failed or failed_2x else 0)
+    verdict = {"state": state, "failed": failed or failed_2x or not valid, "exit": exit_code, "counts": counts,
                "new_differences": len(new_diffs), "preexisting_differences": pre, "rows": n}
+    if baseline is not None:
+        verdict["over_2x"] = {"mode": mode, "new": sum(1 for f in bad if f["kind"] == "new"),
+                              "worsened": sum(1 for f in bad if f["kind"] == "worsened"), "known": len(known),
+                              "cleared": cleared, "loki_not_200": loki_failed, "rows": bad}
     return "\n".join(lines) + "\n", verdict
 
 

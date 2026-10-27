@@ -28,7 +28,12 @@ Steps:
      With --refresh-s N each set is also run in refresh mode (windows moving
      forward N seconds per run, like a dashboard refresh) and its p50 is
      reported next to cold and warm. Off by default: it adds requests.
-  6. comment.py renders the sticky comment and sets the exit status.
+     A row above 2× Loki that the PR adds or makes worse (over2x.gate, against
+     bench/ab/history/over-2x-loki.json as committed on the base) is re-measured
+     the same way before it is reported.
+  6. comment.py renders the sticky comment and sets the exit status. With
+     --over-2x-loki warn (the default) an above-2× finding is a warning at the
+     top of the comment and a ::warning:: annotation; with fail it fails the job.
 
 Outputs in --out: selection.json, raw-<set>.json, summary-<set>.json,
 comment.md, verdict.json, meta.json and the proxies' logs.
@@ -44,6 +49,7 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import comment  # noqa: E402
+import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
 import selection  # noqa: E402
 import stack  # noqa: E402
@@ -100,14 +106,16 @@ def run_matrix(set_name, shapes, targets, args, end, st, out, runs, tag="", rang
 KEEP_ON_CONFIRM = ("refresh", "refresh_status")
 
 
-def confirm(summary, args, plan, st, out, targets):
-    """Re-measure the shapes the first pass called slower or faster; keep the re-run's verdict.
+def confirm(summary, args, plan, st, out, targets, baseline=None):
+    """Re-measure the shapes the first pass called slower or faster, or found newly or further above 2× Loki;
+    keep the re-run's rows.
 
     A/A runs (the same build as both targets) move single shapes by up to
     ~70% on a first pass of 4 runs; a 7-run pass on fresh windows settles them.
     """
     moved = ("slower", "faster")
-    slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] in moved})
+    over = set(over2x.remeasure(summary, baseline, args.noise, args.min_delta)) if baseline is not None else set()
+    slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] in moved} | over)
     if not slow:
         return summary
     stack.log(f"re-measuring {len(slow)} shape(s) the first pass moved in {summary['set']}")
@@ -117,9 +125,17 @@ def confirm(summary, args, plan, st, out, targets):
                        tag="-confirm")
     redo = {(row["shape"], row["range"]): row for row in again["rows"]}
     for i, row in enumerate(summary["rows"]):
-        if (row["shape"], row["range"]) in redo and row["verdict"] in moved:
-            summary["rows"][i] = dict(redo[(row["shape"], row["range"])], confirmed=True,
-                                      **{k: row[k] for k in KEEP_ON_CONFIRM if k in row})
+        if (row["shape"], row["range"]) in redo and (row["verdict"] in moved or row["shape"] in over):
+            new = dict(redo[(row["shape"], row["range"])], confirmed=True,
+                       **{k: row[k] for k in KEEP_ON_CONFIRM if k in row})
+            ref = summary.get("reference", "loki")
+            if (row["shape"] in over and ref in new.get("cold_cache_served", [])
+                    and ref not in row.get("cold_cache_served", [])):
+                # Loki's cache answered the re-run's cold from the first pass's overlapping extents: for the
+                # above-2× check the first pass's computed cold stands (each pass has one cold sample).
+                new.pop("cold_cache_served")
+                new.update(cold=row["cold"], cold_from_first_pass=True)
+            summary["rows"][i] = new
     summary["valid"] = summary.get("valid", True) and again.get("valid", True)
     summary["restart_after"] = again.get("restart_after")
     counts = {}
@@ -152,6 +168,12 @@ def main():
     ap.add_argument("--proxy-port", type=int, default=23190, help="base listens here, PR on +2 (admin +1)")
     ap.add_argument("--keep-stack", action="store_true", help="leave the stack running (for a re-run)")
     ap.add_argument("--same-build", action="store_true", help="A/A: run the PR build as both targets (noise check)")
+    ap.add_argument("--over-2x-loki", choices=over2x.GATE_MODES, default=over2x.DEFAULT_GATE,
+                    help="a row the PR adds above 2x Loki or makes worse: warn (comment + annotation, the verdict is "
+                         "unchanged) or fail (fails the check)")
+    ap.add_argument("--over-2x-baseline", default="",
+                    help="the above-2x Loki list to compare with (default: bench/ab/history/over-2x-loki.json as "
+                         "committed on the base ref, so a PR cannot list its own rows)")
     stack.stack_args(ap)
     args = ap.parse_args()
     args.ranges = [r for r in args.ranges.split(",") if r]
@@ -166,7 +188,7 @@ def main():
 
     meta = {"runs": args.runs, "ranges": args.ranges, "noise": args.noise, "min_delta": args.min_delta,
             "confirm_runs": args.confirm_runs, "same_build": args.same_build,
-            "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs}
+            "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs, "over_2x_loki": args.over_2x_loki}
     sel = {"run": True, "sets": {}}
     try:
         base = args.base or git("merge-base", "origin/main", "HEAD")
@@ -183,14 +205,22 @@ def main():
         if not sel["run"]:
             text, verdict = comment.render([], sel, meta)
         else:
-            summaries = measure(args, sel, out, base_sha, meta)
+            if args.over_2x_baseline:
+                baseline, problem = over2x.read_baseline(args.over_2x_baseline)
+                if problem:
+                    raise ValueError(problem)
+            else:
+                baseline = over2x.baseline_at(base_sha)
+            summaries = measure(args, sel, out, base_sha, meta, baseline)
             meta["elapsed_s"] = round(time.time() - t0)
-            text, verdict = comment.render(summaries, sel, meta)
+            text, verdict = comment.render(summaries, sel, meta, baseline)
     except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
         traceback.print_exc()
         meta["elapsed_s"] = round(time.time() - t0)
         text, verdict = comment.errored(sel, meta, f"{type(e).__name__}: {e}")
     finish(out, text, verdict, meta)
+    for line in over2x.annotations(verdict.get("over_2x", {}).get("rows", []), args.over_2x_loki):
+        print(line)
     return verdict["exit"]
 
 
@@ -263,7 +293,7 @@ def write_summaries(summaries, out):
             json.dump(summary, f, indent=1)
 
 
-def measure(args, sel, out, base_sha, meta=None):
+def measure(args, sel, out, base_sha, meta=None, baseline=None):
     """Stack up, seed, build, run every selected set; returns the summaries."""
     st = stack.stack_from(args)
     proxies, trees, summaries = [], {}, []
@@ -289,7 +319,7 @@ def measure(args, sel, out, base_sha, meta=None):
         for plan, (set_name, shapes) in zip(plans, sel["sets"].items()):
             refresh = (plan["refresh_end"], args.refresh_s, args.refresh_runs) if args.refresh_s else None
             summary = run_matrix(set_name, shapes, targets, args, plan["end"], st, out, args.runs, refresh=refresh)
-            summary = confirm(summary, args, plan, st, out, targets)
+            summary = confirm(summary, args, plan, st, out, targets, baseline)
             # The set ran on its own block of windows: perf_evidence trusts its warm and refresh figures.
             # summary-<set>.json is rewritten with the marker and the confirmed rows, as the comment shows them.
             summary["isolated_windows"] = True
