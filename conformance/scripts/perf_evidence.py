@@ -8,7 +8,10 @@ Every query shape in bench/ab/shapes.json names the registry items it measures
   conformance/registry/generated/perf-evidence.json  the latest measurements
   conformance/reports/performance.md                  the report, with every
                                                       item the proxy answers
-                                                      slower than Loki cold
+                                                      slower than Loki cold,
+                                                      and the rows above 2× Loki
+                                                      (bench/ab/history/
+                                                      over-2x-loki.json)
 
 Loki is compared on cold (first-run) timings: warm timings on both sides come
 largely from results caches and would hide the difference a user sees when a
@@ -48,6 +51,8 @@ SHAPES = "bench/ab/shapes.json"
 RESULTS = "bench/ab/results"
 EVIDENCE = f"{ROOT}/generated/perf-evidence.json"
 REPORT = "conformance/reports/performance.md"
+# Rows above 2× Loki, kept by the daily run (bench/ab/over2x.py has the definition).
+OVER_2X = "bench/ab/history/over-2x-loki.json"
 # A shape is slower than Loki when its cold time exceeds Loki's by both.
 NOISE, MIN_DELTA = 0.25, 0.05
 # Endpoint items sit under every shape; the gap table names the specific ones.
@@ -175,11 +180,33 @@ def main():
         return 1 if problems else 0
 
     dump_json(EVIDENCE, evidence)
-    write_text(REPORT, render(evidence, latest, problems))
+    over = load_json(OVER_2X) if os.path.exists(OVER_2X) else None
+    write_text(REPORT, render(evidence, latest, problems, over))
     return 0
 
 
-def render(evidence, latest, problems):
+def over_2x(over):
+    """The "Above 2× Loki (must fix)" section from the list the daily run keeps; nothing without the file."""
+    if over is None:
+        return []
+    rows = over.get("rows", [])
+    modes = {m: sum(1 for r in rows if r["mode"] == m) for m in ("cold", "warm", "refresh")}
+    out = ["## Above 2× Loki (must fix)", "",
+           f"Rows the daily run measured above 2× Loki ({over.get('rule', '')}), from `{OVER_2X}`. A shape × range",
+           "slower than 2× Loki on any mode is a defect. The list only shrinks: the daily run removes a row after two",
+           "consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`.", "",
+           f"{len(rows)} rows: " + ", ".join(f"{m} {n}" for m, n in modes.items()) + ".", ""]
+    if rows:
+        out += ["| set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |", "|---|---|---|---|---|---|---|---|"]
+        for r in sorted(rows, key=lambda r: (r["set"], r["shape"], r["range"], r["mode"])):
+            out.append(f"| {r['set']} | {r['shape'].replace('|', chr(92) + '|')} | {r['range']} | {r['mode']} | "
+                       f"{fmt(r.get('proxy_s'))} | {fmt(r.get('loki_s'))} | {r['ratio']:.2f}× | {r.get('since', '')} |")
+    else:
+        out.append("None.")
+    return out + [""]
+
+
+def render(evidence, latest, problems, over=None):
     gaps = {}
     for item, rows in evidence.items():
         for r in rows:
@@ -200,6 +227,7 @@ def render(evidence, latest, problems):
            "the first set's computed Loki cold (`loki_cold_reused_from`). Warm and refresh timings are",
            "compared with the same noise rules; a row Loki's cache answered is excluded from all three.", "",
            f"Runs: {', '.join(f'{label} ({date})' for date, label in labels) or 'none yet'}.", ""]
+    out += over_2x(over)
     out += ["## Slower than Loki on first load", ""]
     if gaps:
         out += ["| shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |",

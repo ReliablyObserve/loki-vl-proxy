@@ -15,7 +15,10 @@ name: Perf daily
 # reports regressions, improvements and the ratchet (bench/ab/history/ratchet.json,
 # rows as good as Loki) at the top of the daily pull request and in the job
 # summary. A regression or a lost ratchet row turns the run red, which is the
-# notification; nothing else is opened or labelled.
+# notification; nothing else is opened or labelled. The above-2x Loki list
+# (bench/ab/history/over-2x-loki.json) is kept the same way: it only shrinks,
+# and a new row above 2x Loki is a warning at the top of the pull request and
+# an annotation, never a red run.
 #
 # A pull request that edits this pipeline runs a short validation instead
 # (control set, 1h, 3 runs): it writes the files on the runner and shows the
@@ -44,6 +47,7 @@ on:
       - ".github/workflows/perf-daily.yaml"
       - "bench/ab/daily.py"
       - "bench/ab/history.py"
+      - "bench/ab/over2x.py"
       - "bench/ab/pr_smoke.py"
       - "bench/ab/stack.py"
       - "bench/ab/perf_matrix.py"
@@ -284,5 +288,8 @@ jobs:
                   shown += 1
           if shown > 10:
               print(f"{shown - 10} more in the job summary")
+          # Above 2x Loki rows the list does not hold: warnings, never a failure.
+          for r in a.get("over_2x_new", [])[:10]:
+              print(f"::warning title=above 2x Loki::{r['set']} / {r['shape']} / {r['range']} / {r['mode']}: {r['detail']} ({r['commits']})")
           sys.exit(1 if a["regressions"] or a["ratchet_lost"] else 0)
           PY

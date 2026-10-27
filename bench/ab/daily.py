@@ -10,6 +10,9 @@ fresh runner and opens a bot pull request with what it writes:
   bench/ab/history/<set>.jsonl        one appended line per set per day
   bench/ab/history/trend.md           day-over-day and week-over-week report
   bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
+  bench/ab/history/over-2x-loki.json  rows above 2x Loki (only ever removed from:
+                                      after two runs within 2x; new rows are
+                                      warnings in alerts, see over2x.py)
   <out>/alerts.md, alerts.json        regressions, improvements and ratchet
   alerts-body.md                      losses of this run's lines (not committed:
                                       they describe one run; the workflow puts
@@ -139,7 +142,8 @@ def main():
         stack.log(f"alerts: {len(found['regressions'])} regressions, {len(found['improvements'])} improvements, "
                   f"{len(found['ratchet_lost'])} ratchet losses, {len(found['loki_failed'])} Loki failures, "
                   f"ratchet {len(found['ratchet'])} rows (+{len(found['ratchet_added'])}, "
-                  f"{found['ratchet_unmeasured']} not measured)")
+                  f"{found['ratchet_unmeasured']} not measured), above 2x Loki {len(found['over_2x'])} rows "
+                  f"(-{len(found['over_2x_removed'])}, {len(found['over_2x_new'])} new not listed)")
     except Exception as e:  # noqa: BLE001
         stack.log(f"alerts failed, the day is delivered without them: {e!r}")
     for script in ("perf_evidence.py", "gaps.py"):

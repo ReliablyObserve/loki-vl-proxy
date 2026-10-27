@@ -4,7 +4,9 @@ name: Perf A/B
 # fresh stack, over the shapes bench/ab/selection.py picks from the changed
 # files. Posts one sticky comment and fails the `perf-smoke` check on a broken
 # shape, a slowdown confirmed by a re-run, or a new result difference from
-# Loki. See bench/ab/README.md.
+# Loki. A row the PR adds above 2x Loki or makes worse (bench/ab/over2x.py)
+# is a warning at the top of the comment and an annotation; --over-2x-loki
+# below is the switch that makes it fail the check. See bench/ab/README.md.
 
 on:
   pull_request:
@@ -70,7 +72,8 @@ jobs:
           BASE: ${{ steps.select.outputs.base }}
         run: |
           set +e
-          python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT"
+          python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT" \
+            --over-2x-loki warn
           # The verdict file, not the exit status, decides: a crash of the
           # interpreter itself leaves none and is reported as incomplete.
           CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
@@ -135,7 +138,7 @@ jobs:
         run: |
           case "$CODE" in
             0) echo "no regression" ;;
-            1) echo "::error::A/B smoke: a shape broke, got slower on the re-run, or differs from Loki where the base did not (see the PR comment)"; exit 1 ;;
+            1) echo "::error::A/B smoke: a shape broke, got slower on the re-run, differs from Loki where the base did not, or (in fail mode) is newly or further above 2x Loki (see the PR comment)"; exit 1 ;;
             2) echo "::error::A/B smoke run invalid: VictoriaLogs restarted during the run; re-run the job"; exit 1 ;;
             3) echo "::error::A/B smoke did not complete; see the PR comment, the log and the uploaded artifacts"; exit 1 ;;
             *) echo "::error::A/B smoke did not complete (exit ${CODE:-none}); see the log and the uploaded artifacts"; exit 1 ;;

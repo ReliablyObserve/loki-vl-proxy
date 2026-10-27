@@ -313,6 +313,10 @@ what the change did. The collapsed sections hold cold (first-run) timings —
 what a user opening a panel sees, since warm timings on both sides are
 helped by caches — and the reason each shape was selected.
 
+A row the pull request adds above 2× Loki, or makes worse, is listed in a
+⚠️ section right under the title (see "Above 2× Loki" below); a collapsed
+section lists the rows that are above 2× already.
+
 The check fails on ❌, on 🔴 and on ⚠️ (a new difference from Loki). A run in
 which VictoriaLogs restarted is invalid and fails with a request to re-run; a
 run that could not finish posts what stopped it. A shape counts as slower only
@@ -378,6 +382,7 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | `history/<set>.jsonl` | one line per set per day, append-only: date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
+| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per set × shape × range × mode; the run only removes from it (see "Above 2× Loki" below) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
@@ -445,6 +450,72 @@ loss, even when the pull request step failed, so the red run is the
 notification. A failure of the alerts themselves is logged and the day is still
 delivered. A pull request that edits the pipeline runs a cut-down measurement,
 so it has nothing to compare; it never fails on alerts.
+
+### Above 2× Loki
+
+Any shape × range where the proxy is slower than 2× Loki, cold, warm or
+refresh, is a defect, as serious as a wrong answer. `over2x.py` holds the one
+definition the pull request smoke, the daily run and `perf_evidence.py` share:
+
+- above 2× Loki: proxy time more than 2 × Loki's time and more than 50 ms
+  slower (the absolute noise floor of the daily report and `perf_evidence.py`,
+  so 10 ms against 3 ms is not counted);
+- only when the pair is comparable: both answer 200, and for the cold run,
+  Loki's results cache did not answer it (its counters, or identical answers
+  for moved windows). Loki's warm and refresh timings come from its results
+  cache by design (that is what a repeat view of Loki costs), so they are
+  compared as measured. A Loki error or timeout is not a proxy defect: it is
+  recorded apart ("Loki failed") and never counted.
+
+`history/over-2x-loki.json` is the list of rows above 2× Loki, seeded from the
+daily results of 2026-10-27 (`over2x.py seed`): 165 rows, 55 cold and 110
+warm. Each daily run (`history.py alerts`, full measurements only) keeps it:
+
+- a listed row is removed once two consecutive full runs measure it
+  comparable and within 2× (a run where Loki failed, or its cache answered the
+  cold run, does not count either way). The state comes from the history
+  lines, so an unmerged daily pull request does not reset it;
+- a listed row's ratio is tightened when a run measures it lower, never raised;
+- a row above 2× that is not listed is a warning at the top of the daily pull
+  request body and a `::warning::` annotation. It is never added: the list only
+  shrinks. The body starts with `above-2× baseline: N rows ...; the gate
+  becomes blocking at 0`.
+
+In each pull request, `over2x.gate` compares the PR build's rows with the list
+as committed on the base (so a pull request cannot list its own rows) and with
+the base build in the same run, which decides first because the smoke's data
+and ranges are not the daily run's:
+
+| kind | when |
+|---|---|
+| known | above 2× on the PR and on the base build within noise (±30% and 100 ms), listed or not; or listed and not worsened; or the base is comparable, just under 2×, and the PR is within noise of it |
+| new | above 2× on the PR, not listed, the base not above 2× and the PR slower than the base beyond noise (or the base did not answer comparably) |
+| worsened | listed, and the PR is worse beyond noise than both the listed ratio and the base build in the same run; or not listed, above 2× on the base too, and the PR worse than the base beyond noise |
+
+A new or worsened cold or warm row is re-measured with the 7-run pass, like a
+slower row, before it is reported. The confirmation pass has no refresh run,
+so a refresh finding stands on the first pass. A cold one does too when Loki's
+cache answered the re-run's cold run from the first pass's extents (each pass
+has one cold sample): the row keeps the first pass's cold timings
+(`cold_from_first_pass`).
+The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
+
+- `warn` (now): new and worsened rows are a ⚠️ section at the top of the
+  comment and `::warning::` annotations; the check's verdict and exit status
+  are what they would be without them.
+- `fail`: the same rows fail `perf-smoke` (state `failed`, exit 1, title
+  "above 2× Loki"). Once the list is empty, switching is the one-line change
+  of `--over-2x-loki warn` to `--over-2x-loki fail` in
+  `.github/workflows/perf-ab.yaml`. The daily run only ever warns.
+
+To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
+on cold, warm and refresh, and check the comment's PR ÷ Loki column; a row the
+re-measure does not confirm is gone on the next push. A row that is above 2×
+on the base build too and not made worse is already known and does not need
+clearing in this pull request. Adding a row to the list by hand needs the
+owner's approval. `python3 bench/ab/over2x.py replay summary-<set>.json ...`
+shows what the gate says about saved summaries; `conformance/reports/performance.md`
+lists the current rows under "Above 2× Loki (must fix)".
 
 For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits

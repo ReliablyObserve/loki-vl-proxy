@@ -31,6 +31,10 @@ an improvement, and the ratchet. history/ratchet.json lists the rows that were
 as good as Loki (same result, 200, cold no slower than Loki's computed cold);
 the generator only adds to it, an owner removes a row by hand, and a row that
 stops being as good is a ratchet loss. Cold, never warm p50: Loki's warm is its results cache.
+alerts also keeps history/over-2x-loki.json, the rows above 2× Loki (over2x.py has
+the definition): a listed row is removed once two consecutive full lines measure
+it comparable and within 2×, its ratio is tightened when a line measures it
+lower, and a row above 2× that is not listed is reported (never added).
 """
 import argparse
 import datetime
@@ -51,6 +55,8 @@ FULL_RUNS, FULL_MAX_RANGE = 7, "24h"
 # A day-over-day or week-over-week move is reported only beyond both.
 NOISE, MIN_DELTA = 0.25, 0.05
 RATCHET = "ratchet.json"
+sys.path.insert(0, HERE)
+import over2x  # noqa: E402
 
 
 def cold_computed(row, ref):
@@ -326,9 +332,15 @@ def alerts(directory=HISTORY, sets=None, spec=None):
     """
     spec = spec or load_spec()
     out = {"regressions": [], "improvements": [], "ratchet_lost": [], "ratchet_added": [], "loki_failed": [],
-           "ratchet_unmeasured": 0, "ratchet_problem": "", "range": {}}
+           "ratchet_unmeasured": 0, "ratchet_problem": "", "range": {},
+           "over_2x_new": [], "over_2x_removed": [], "over_2x_pending": []}
     entries_held, out["ratchet_problem"] = read_ratchet(directory)
     held = {(r["set"], r["shape"], r["range"]): r for r in entries_held}
+    # Without the list (it is seeded by over2x.py seed) there is nothing to keep and nothing to compare with.
+    baseline_path = os.path.join(directory, over2x.BASELINE_NAME)
+    out["over_2x_active"] = os.path.exists(baseline_path)
+    listed, out["over_2x_problem"] = over2x.read_baseline(baseline_path)
+    listed = {k: dict(v) for k, v in listed.items()}
     added, measured, looked = [], set(), set()
     for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
         entries = read(path)
@@ -386,6 +398,8 @@ def alerts(directory=HISTORY, sets=None, spec=None):
                         out["regressions"].append(alert(
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
                             "held for two runs", prev2))
+            if out["over_2x_active"] and not out["over_2x_problem"]:
+                over_2x(out, listed, name, key, row, old, new)
             where = (name, *key)
             if where in held and not out["ratchet_problem"]:
                 reason = ratchet_loss(row, old)
@@ -400,12 +414,40 @@ def alerts(directory=HISTORY, sets=None, spec=None):
                               "commit": new.get("commit") or ""})
     for k in ("regressions", "improvements", "ratchet_lost", "loki_failed"):
         out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], a["kind"]))
+    for k in ("over_2x_new", "over_2x_removed", "over_2x_pending"):
+        out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], over2x.MODES.index(a["mode"])))
     # Ratchet rows whose set was measured (or no longer exists) but whose shape/range this run did not.
     out["ratchet_unmeasured"] = sum(1 for k in held if k not in measured and (
         k[0] in looked or (sets is None and full_ranges(spec, k[0]) is None)))
     out["ratchet_added"] = added
     out["ratchet"] = sorted(list(held.values()) + added, key=lambda r: (r["set"], r["shape"], r["range"]))
+    gone = {over2x.key(r) for r in out["over_2x_removed"]}
+    out["over_2x"] = [r for k, r in sorted(listed.items()) if k not in gone]
     return out
+
+
+def over_2x(out, listed, name, key, row, old, new):
+    """One history row against the above-2× Loki list, cold and warm: a listed row within 2× on this line and
+    on the previous full line is removed, a lower ratio tightens it, an unlisted row above 2× is reported."""
+    for mode, pair in over2x.history_pairs(row).items():
+        k, state = (name, key[0], key[1], mode), over2x.judge(*pair)
+        measured = over2x.ratio(*pair[:2])
+        detail = f"{secs(pair[0])} against Loki's {secs(pair[1])}, {over2x.times(measured)}" + (
+            f" (inside the {over2x.MIN_GAP * 1000:.0f} ms floor)" if state == "within" and (measured or 0) > over2x.RATIO
+            else "")
+        if k not in listed:
+            if state == "above":
+                out["over_2x_new"].append({"set": name, "shape": key[0], "range": key[1], "mode": mode,
+                                           "kind": "over_2x", "detail": detail, "commits": short(new.get("commit"))})
+            continue
+        if state == "above" and measured is not None and measured < listed[k]["ratio"]:
+            listed[k].update(ratio=measured, proxy_s=pair[0], loki_s=pair[1])
+        if state != "within":
+            continue
+        before = over2x.judge(*over2x.history_pairs(old)[mode]) if old else ""
+        item = {**listed[k], "detail": detail + (", and within 2× on the previous run too" if before == "within"
+                                                  else "; removed if the next run agrees")}
+        out["over_2x_removed" if before == "within" else "over_2x_pending"].append(item)
 
 
 PR_LIMIT = 50
@@ -429,11 +471,29 @@ def render_alerts(a, limit=None):
             text.append(f"… and {len(a[key]) - len(rows)} more, see the job summary")
         return text or ["none"]
 
+    def over(key, cap):
+        rows = a.get(key, [])
+        text = [f"- `{r['set']}` {r['shape']} · {r['range']} · {r['mode']}: {r['detail']}" for r in rows[:cap]]
+        if len(rows) > len(text):
+            text.append(f"… and {len(rows) - len(text)} more, see the job summary")
+        return text or ["none"]
+
+    cap = None if limit is None else 20
+    over_2x = ["## ⚠️ Above 2× Loki", "",
+               f"**{over2x.count_line(a.get('over_2x', []))}.** Any shape × range slower than 2× Loki (cold, warm or "
+               f"refresh) is a defect; the list is `bench/ab/history/{over2x.BASELINE_NAME}` and only shrinks.", "",
+               f"New this run, not listed (warning; never added automatically) ({len(a.get('over_2x_new', []))}):", "",
+               *over("over_2x_new", cap), "",
+               f"Removed: within 2× on two consecutive runs ({len(a.get('over_2x_removed', []))}):", "",
+               *over("over_2x_removed", cap), "",
+               f"Within 2× once, removed if the next run agrees ({len(a.get('over_2x_pending', []))}):", "",
+               *over("over_2x_pending", cap), "",
+               *([f"**{a['over_2x_problem']}**", ""] if a.get("over_2x_problem") else [])] if a.get("over_2x_active") else []
     held = f"Held: {len(a['ratchet'])} rows ({len(a['ratchet_added'])} added by this run)"
     if a.get("ratchet_unmeasured"):
         held += f"; {a['ratchet_unmeasured']} not measured by this run (renamed or removed shapes or sets?)"
     return "\n".join(
-        ["## Regressions", "", *items("regressions"), "",
+        [*over_2x, "## Regressions", "", *items("regressions"), "",
          "## Improvements", "", *items("improvements"), "",
          "## Ratchet", "", f"Lost ({len(a['ratchet_lost'])}):", "", *items("ratchet_lost"), "",
          f"{held}; the list is `bench/ab/history/{RATCHET}`.",
@@ -450,6 +510,9 @@ def write_alerts(directory=HISTORY, sets=None, json_out="", markdown_out="", bod
     os.makedirs(directory, exist_ok=True)
     if not a["ratchet_problem"]:
         write_ratchet(a["ratchet"], directory)
+    # The list is seeded by over2x.py seed; alerts only ever shrinks or tightens an existing one.
+    if a["over_2x_active"] and not a["over_2x_problem"]:
+        over2x.write_baseline(a["over_2x"], os.path.join(directory, over2x.BASELINE_NAME))
     if json_out:
         with open(json_out, "w") as f:
             json.dump(a, f, indent=1, sort_keys=True, ensure_ascii=False)
