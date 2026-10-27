@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A request that nobody cancelled is no longer answered with a 499 when the
+  proxy cancels another call of the same request beside it.** Loki answers 499
+  only for a query whose own context was cancelled (`pkg/util/server/error.go:22-23`,
+  `:69`, `:105` in v3.7.7). A metric query asks VictoriaLogs for several things
+  at once (the counts, a presence probe, guard and hazard probes) and cancels the
+  calls still running as soon as one answer decides the route. net/http puts a
+  connection back in the pool when an empty response arrives (a probe that
+  finds no line answers with an empty body), before the call that read it has
+  returned; a call the proxy cancels at that moment marks the pooled connection
+  cancelled, and a call of the same request that already took the connection
+  fails with `Post "http://.../select/logsql/query": context canceled`, which the
+  client got as status 499 with `errorType: canceled` although its own request
+  was live. It showed as one failure of the
+  `sum by (detected_level) (count_over_time({env="prod"} | json | __error__="" [5m]))`
+  test in CI's race shard and one in a local full run on a loaded host. With a
+  random delay of up to 1 ms before every upstream call of the test's fake
+  backend (8 processes, race build), 10 of 16,000 requests of that query were
+  answered 499. The same race can hit any request that shares a connection with
+  a call being cancelled (a Grafana panel whose range just changed). A read
+  call (a GET, or a POST to a select endpoint other than delete) whose own
+  context is live and that the transport fails with `context.Canceled` is now sent
+  once more, on a new connection (`doBackendClient`, the one place every select,
+  listing and metrics call goes through; counted as `backend_request_retry` with
+  outcome `stale_connection_cancel` in the internal operations). A call that was
+  cancelled, a deadline, the delete call and any other failure are returned after
+  one attempt, and a second stale failure is returned as it is. The same
+  measurement after the change: 0 of 16,000. Not covered: the few calls that use
+  the HTTP client directly (the label metadata warmers, the label index, the
+  patterns store, the version probe and the cold tier's client) keep one attempt.
+  Registry: `semantics/live-request-not-cancelled-by-sibling`.
+
 ## [2.37.0] - 2026-10-27
 
 ### Performance

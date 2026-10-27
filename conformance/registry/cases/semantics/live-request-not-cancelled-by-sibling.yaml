@@ -1,0 +1,41 @@
+id: semantics/live-request-not-cancelled-by-sibling
+title: A request that was not cancelled is never answered with a cancellation, whatever call of the same request the proxy cancels beside it (499)
+proves:
+  - backend-deadlines-and-cancellation
+consumer: any
+why: |
+  A metric query asks VictoriaLogs for several things at once (the counts, a
+  presence probe, guard probes) and cancels the calls still running as soon as
+  one answer decides the route. net/http puts a connection back in the pool
+  when an empty response arrives, before the call that read it has returned; a
+  call the proxy cancels at that moment marks the pooled connection cancelled,
+  and a call of the same request that took the connection fails with
+  `Post ".../select/logsql/query": context canceled`, which the client gets as
+  status 499 although it never cancelled anything. Loki answers 499 only for a
+  query whose own context was cancelled (pkg/util/server/error.go:22-23, :69,
+  :105 in v3.7.7). Seen as one failure of the detected_level volume test in
+  CI's race shard and one in a local full run, and measured as 10 of 16,000
+  requests with random delays before every upstream call of the test's fake
+  backend (0 of 16,000 after the change). The same race hits any request
+  while another is cancelled on a shared connection (a Grafana panel that
+  changes its range). A read call (a GET, or a POST to a select endpoint other
+  than delete) whose own context is live is now sent once more on a new
+  connection when the transport fails it with context.Canceled; a real
+  cancellation (its own context is done), a deadline, the delete call and any
+  other failure are not repeated.
+request:
+  scope: internal
+  entry: doBackendClient, handleQueryRange
+  setup: |
+    A transport that fails the first call with context.Canceled while the
+    call's context is live (and one that fails every call, one whose caller
+    cancelled, and one that fails a delete), and a `sum by (detected_level) (count_over_time({...} |
+    json | __error__="" [5m]))` query for a stream carrying a severity label,
+    whose first raw-row call is failed that way.
+compare:
+  mode: exact
+  expect: |
+    The call is sent a second time with the same body and succeeds; a second
+    stale failure is returned after two attempts, and a cancelled caller, a
+    delete and another error after one; the metric query answers 200 with
+    Loki's series.
