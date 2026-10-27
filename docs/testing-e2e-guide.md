@@ -37,7 +37,7 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 
 | Service | Host Port | Purpose |
 |---------|-----------|---------|
-| `loki` (Loki 3.7.7) | 13101 | Reference implementation (ground truth) |
+| `loki` (Loki 3.7.9) | 13101 | Reference implementation (ground truth) |
 | `victorialogs` (VictoriaLogs v1.52.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
 | `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
@@ -211,7 +211,7 @@ Set environment variables before `docker compose up` to override image versions:
 
 | Variable | Default |
 |----------|---------|
-| `LOKI_IMAGE` | `grafana/loki:3.7.7` |
+| `LOKI_IMAGE` | `grafana/loki:3.7.9` |
 | `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.52.0` |
 | `GRAFANA_IMAGE` | `grafana/grafana:13.2.3` |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |

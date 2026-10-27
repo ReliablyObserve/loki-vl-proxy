@@ -1,8 +1,9 @@
-# Current stable review baseline, verified against upstream on 2026-09-14.
+# Current stable review baseline, verified against upstream on 2026-09-14
+# (Loki moved from 3.7.7 to 3.7.9 on 2026-10-27).
 # Use alongside docker-compose.yml; explicit versions make review reproducible.
 services:
   loki:
-    image: grafana/loki:3.7.7
+    image: grafana/loki:3.7.9
   grafana:
     image: grafana/grafana:13.2.3
     environment:
