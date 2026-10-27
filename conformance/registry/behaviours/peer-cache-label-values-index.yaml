@@ -1,0 +1,23 @@
+id: peer-cache-label-values-index
+kind: resource_control
+title: A replica that lost its disk restores the label-values index from its peers
+
+loki: |
+  Loki has no per-querier label index to lose; its index is shared.
+
+victorialogs: |
+  Not applicable: the index is the proxy's own browse cache.
+
+proxy: |
+  With -label-values-indexed-cache and -label-values-index-persist-path each
+  replica persists its label-values index and publishes the latest snapshot
+  in its memory under __label_values_index_snapshot:v1 (label_index.go:73).
+  On start a replica restores it from its disk and, when that is missing or
+  older than -label-values-index-startup-stale-threshold, from every peer
+  (label_index.go:257, 340), then persists and publishes it again.
+  Fleet proof (TestFleetPeerCacheProof): after label values were answered on
+  A, a peer publishes the snapshot; B recreated without its disk restores it
+  from its peers and publishes it itself.
+
+implementation:
+  - internal/proxy/label_index.go

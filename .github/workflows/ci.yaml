@@ -927,14 +927,21 @@ jobs:
           cache-from: type=gha,scope=fleet-proxy
           cache-to: type=gha,mode=max,scope=fleet-proxy
 
-      - name: Start 3-proxy fleet
+      - name: Start 3-proxy fleet with VictoriaLogs and Loki
         working-directory: test/e2e-fleet
         run: |
           docker compose up -d --no-build --wait --wait-timeout 180
           docker compose ps
 
-      - name: Run fleet cache smoke tests
-        run: go test -v -tags=e2e -timeout=120s -run '^TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics$' ./test/e2e-fleet/
+      # TestFleetPeerCacheProof restarts and recreates the proxies itself with
+      # `docker compose` from test/e2e-fleet (same project as the step above).
+      - name: Run fleet cache tests
+        run: go test -v -tags=e2e -timeout=15m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof)$' ./test/e2e-fleet/
+
+      - name: Fleet logs on failure
+        if: failure()
+        working-directory: test/e2e-fleet
+        run: docker compose logs --no-color --tail=300
 
       - name: Tear down fleet
         if: always()

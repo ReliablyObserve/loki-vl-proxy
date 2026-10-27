@@ -1,0 +1,29 @@
+id: peer-cache-fleet-recovery
+kind: resource_control
+title: With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs
+
+loki: |
+  Losing a results-cache node or every cache makes Loki slower, never
+  different: the queriers read the store again.
+
+victorialogs: |
+  VictoriaLogs holds the data; every answer can be read again.
+
+proxy: |
+  A key has one owner and no backup copy on another replica. When the owner
+  is unreachable the lookup fails (the per-peer breaker opens) and the
+  replica reads VictoriaLogs (peer.go:330-376). With every replica's memory
+  and disk gone the first request of each shape reads VictoriaLogs and the
+  write-through layers are shared again at once.
+  Fleet proof (TestFleetPeerCacheProof): with A stopped after it computed a
+  fresh set of every layer's requests, B and C answer each one exactly as A
+  did while their lookups to A fail; after all three replicas are recreated
+  without disks the answers equal the first ones, the metric, the log lines
+  and the label values equal Loki's, and B and C answer the write-through
+  layers without VictoriaLogs.
+  Not covered (open): there is no replica copy of an owner's keys, so while
+  an owner is down its keys cost a VictoriaLogs read on every other replica.
+
+implementation:
+  - internal/cache/peer.go
+  - internal/cache/cache.go

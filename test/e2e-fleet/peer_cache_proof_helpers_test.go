@@ -1,0 +1,626 @@
+//go:build e2e
+
+package e2e_fleet
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os/exec"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+// Helpers of the fleet peer cache proof (peer_cache_proof_test.go): stack
+// control through the docker CLI, /metrics scraping and the fixture.
+
+const fleetPeerToken = "e2e-test-token"
+
+var (
+	fleetVLURL   = envOr("FLEET_VL_URL", "http://localhost:9428")
+	fleetLokiURL = envOr("FLEET_LOKI_URL", "http://localhost:3110")
+	// fleetServices are the compose services behind proxyAddrs, in order.
+	fleetServices = []string{"proxy-a", "proxy-b", "proxy-c"}
+	fleetHTTP     = &http.Client{Timeout: 60 * time.Second}
+)
+
+// --- stack control -----------------------------------------------------------
+
+// fleetCompose runs `docker compose <args>` in this directory, where the
+// stack's docker-compose.yml lives. COMPOSE_PROJECT_NAME, DOCKER_CONTEXT,
+// PROXY_IMAGE and the port overrides come from the environment the stack was
+// started with.
+func fleetCompose(t *testing.T, args ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker compose %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+// waitProxyReady polls /ready until the proxy answers 200.
+func waitProxyReady(t *testing.T, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for {
+		resp, err := client.Get(addr + "/ready")
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not become ready within 90s (last error %v)", addr, err)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// restartKeepDisk restarts a proxy container: its memory tier is lost, its
+// disk tier (the container's anonymous /cache volume) is kept.
+func restartKeepDisk(t *testing.T, idx int) {
+	t.Helper()
+	fleetCompose(t, "restart", fleetServices[idx])
+	waitProxyReady(t, proxyAddrs[idx])
+}
+
+// recreateWithoutDisk removes the containers and their anonymous /cache
+// volumes and starts them again: memory and disk tiers are both lost.
+func recreateWithoutDisk(t *testing.T, idxs ...int) {
+	t.Helper()
+	services := make([]string, 0, len(idxs))
+	for _, i := range idxs {
+		services = append(services, fleetServices[i])
+	}
+	fleetCompose(t, append([]string{"rm", "--stop", "--force", "--volumes"}, services...)...)
+	fleetCompose(t, append([]string{"up", "-d", "--no-deps", "--no-build", "--wait", "--wait-timeout", "120"}, services...)...)
+	for _, i := range idxs {
+		waitProxyReady(t, proxyAddrs[i])
+	}
+}
+
+// --- metrics -----------------------------------------------------------------
+
+type promSample struct {
+	name   string
+	labels map[string]string
+	value  float64
+}
+
+type promScrape []promSample
+
+func scrapeMetrics(t *testing.T, addr string) promScrape {
+	t.Helper()
+	resp, err := fleetHTTP.Get(addr + "/metrics")
+	if err != nil {
+		t.Fatalf("scrape %s/metrics: %v", addr, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("scrape %s/metrics: status %d err %v", addr, resp.StatusCode, err)
+	}
+	var out promScrape
+	for _, line := range strings.Split(string(body), "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if s, ok := parsePromLine(line); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// parsePromLine parses `name{k="v",...} value` and `name value`.
+func parsePromLine(line string) (promSample, bool) {
+	s := promSample{labels: map[string]string{}}
+	rest := line
+	if i := strings.IndexAny(rest, "{ "); i < 0 {
+		return s, false
+	} else {
+		s.name = rest[:i]
+		rest = rest[i:]
+	}
+	if strings.HasPrefix(rest, "{") {
+		rest = rest[1:]
+		for {
+			rest = strings.TrimLeft(rest, ", ")
+			if strings.HasPrefix(rest, "}") {
+				rest = rest[1:]
+				break
+			}
+			eq := strings.Index(rest, "=")
+			if eq < 0 || len(rest) < eq+2 || rest[eq+1] != '"' {
+				return s, false
+			}
+			key := rest[:eq]
+			rest = rest[eq+1:]
+			// Find the closing quote, skipping escaped ones.
+			end := 1
+			for end < len(rest) && (rest[end] != '"' || rest[end-1] == '\\') {
+				end++
+			}
+			if end >= len(rest) {
+				return s, false
+			}
+			value, err := strconv.Unquote(rest[:end+1])
+			if err != nil {
+				return s, false
+			}
+			s.labels[key] = value
+			rest = rest[end+1:]
+		}
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return s, false
+	}
+	v, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return s, false
+	}
+	s.value = v
+	return s, true
+}
+
+// sum adds every sample of name whose labels match all of want (a value
+// ending in "*" matches as a prefix).
+func (m promScrape) sum(name string, want map[string]string) float64 {
+	total := 0.0
+	for _, s := range m {
+		if s.name != name {
+			continue
+		}
+		matched := true
+		for k, v := range want {
+			got, ok := s.labels[k]
+			if strings.HasSuffix(v, "*") {
+				matched = ok && strings.HasPrefix(got, strings.TrimSuffix(v, "*"))
+			} else {
+				matched = ok && got == v
+			}
+			if !matched {
+				break
+			}
+		}
+		if matched {
+			total += s.value
+		}
+	}
+	return total
+}
+
+// fleetCounters are the counters one proof step compares before and after.
+type fleetCounters struct {
+	vlSelect     float64 // VictoriaLogs /select/* calls this replica made
+	vlStats      float64 // of which /select/logsql/stats_query_range
+	peerHits     float64 // values fetched from the owning peer (L3)
+	peerMisses   float64
+	peerErrors   float64
+	wtPushes     float64 // write-through pushes to owner peers
+	wtErrors     float64
+	tierL2Hits   float64 // shared read path (metadata endpoints) disk hits
+	tierL3Hits   float64 // shared read path peer hits
+	windowHits   float64 // query_range window cache hits (any tier)
+	windowMisses float64
+	patternsPeer float64 // pattern entries restored from peer snapshots at startup
+}
+
+func readCounters(t *testing.T, addr string) fleetCounters {
+	t.Helper()
+	m := scrapeMetrics(t, addr)
+	vl := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/*"}
+	stats := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/logsql/stats_query_range"}
+	return fleetCounters{
+		vlSelect:     m.sum("loki_vl_proxy_requests_total", vl),
+		vlStats:      m.sum("loki_vl_proxy_requests_total", stats),
+		peerHits:     m.sum("loki_vl_proxy_peer_cache_hits_total", nil),
+		peerMisses:   m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
+		peerErrors:   m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
+		wtPushes:     m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
+		wtErrors:     m.sum("loki_vl_proxy_peer_cache_write_through_errors_total", nil),
+		tierL2Hits:   m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l2_disk"}),
+		tierL3Hits:   m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l3_peer"}),
+		windowHits:   m.sum("loki_vl_proxy_window_cache_hit_total", nil),
+		windowMisses: m.sum("loki_vl_proxy_window_cache_miss_total", nil),
+		patternsPeer: m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
+	}
+}
+
+func (a fleetCounters) minus(b fleetCounters) fleetCounters {
+	return fleetCounters{
+		vlSelect: a.vlSelect - b.vlSelect, vlStats: a.vlStats - b.vlStats,
+		peerHits: a.peerHits - b.peerHits, peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
+		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
+		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
+		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
+		patternsPeer: a.patternsPeer - b.patternsPeer,
+	}
+}
+
+func (a fleetCounters) plus(b fleetCounters) fleetCounters {
+	return a.minus(fleetCounters{}.minus(b))
+}
+
+func (a fleetCounters) String() string {
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f peer_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f",
+		a.vlSelect, a.vlStats, a.peerHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses)
+}
+
+// waitSettled waits until addr's VictoriaLogs calls and write-through pushes
+// stop changing: pushes run asynchronously after the response was written,
+// and a request may start background refreshes. Counting before they settle
+// would charge them to the next request.
+func waitSettled(t *testing.T, addr string) fleetCounters {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	last := readCounters(t, addr)
+	for stable := 0; stable < 2; {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: VictoriaLogs calls or write-through pushes still changing after 15s (%s)", addr, last)
+		}
+		time.Sleep(150 * time.Millisecond)
+		cur := readCounters(t, addr)
+		if cur.vlSelect == last.vlSelect && cur.wtPushes == last.wtPushes && cur.wtErrors == last.wtErrors {
+			stable++
+		} else {
+			stable = 0
+		}
+		last = cur
+	}
+	return last
+}
+
+// --- peer endpoint -----------------------------------------------------------
+
+// peerHasKey asks a replica's peer endpoint whether its memory holds key.
+func peerHasKey(t *testing.T, addr, key string) bool {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, addr+"/_cache/has?keys="+url.QueryEscape(key), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Peer-Token", fleetPeerToken)
+	resp, err := fleetHTTP.Do(req)
+	if err != nil {
+		t.Fatalf("%s /_cache/has: %v", addr, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s /_cache/has: %d %s", addr, resp.StatusCode, body)
+	}
+	var presence map[string]struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(body, &presence); err != nil {
+		t.Fatalf("%s /_cache/has: %v in %s", addr, err, body)
+	}
+	return presence[key].OK
+}
+
+// waitPeerHasKey polls until one of addrs holds key in memory.
+func waitPeerHasKey(t *testing.T, key string, timeout time.Duration, addrs ...string) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		for _, addr := range addrs {
+			if peerHasKey(t, addr, key) {
+				return addr
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("none of %v holds %q after %s", addrs, key, timeout)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// --- requests ----------------------------------------------------------------
+
+// fleetGet sends a GET and returns the body, failing on any non-200 answer
+// or a Loki-style error status.
+func fleetGet(t *testing.T, base, path string) []byte {
+	t.Helper()
+	resp, err := fleetHTTP.Get(base + path)
+	if err != nil {
+		t.Fatalf("GET %s%s: %v", base, path, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("GET %s%s: read: %v", base, path, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s%s: status %d: %.400s", base, path, resp.StatusCode, body)
+	}
+	if resp.Header.Get("X-Loki-VL-Partial-Response") != "" {
+		t.Fatalf("GET %s%s: partial response, not a comparable answer", base, path)
+	}
+	return body
+}
+
+// canonicalJSON re-encodes body so equal JSON compares equal byte for byte.
+func canonicalJSON(t *testing.T, label string, body []byte) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		t.Fatalf("%s: invalid JSON: %v: %.400s", label, err, body)
+	}
+	if m, ok := v.(map[string]any); ok {
+		if s, _ := m["status"].(string); s != "" && s != "success" {
+			t.Fatalf("%s: status %q: %.400s", label, s, body)
+		}
+		// Per-request execution statistics differ between a cached and a
+		// computed answer; they are not part of what is compared.
+		if data, ok := m["data"].(map[string]any); ok {
+			delete(data, "stats")
+		}
+	}
+	out, _ := json.Marshal(v)
+	return string(out)
+}
+
+// --- fixture -----------------------------------------------------------------
+
+type fleetFixture struct {
+	probe string
+	start time.Time // first bucket, hour aligned
+	end   time.Time // start + 8h, hour aligned, at least an hour old
+	lines int
+}
+
+// Four streams, one JSON line a minute each over 8 hours, each stream on its
+// own sub-minute offset; the whole range ended at least an hour ago, so every
+// window, bucket and metadata entry over it is historical and cacheable.
+func ingestFleetFixture(t *testing.T) fleetFixture {
+	t.Helper()
+	now := time.Now().UTC()
+	fx := fleetFixture{probe: fmt.Sprintf("fp%d", now.UnixNano())}
+	fx.start = now.Truncate(time.Hour).Add(-10 * time.Hour)
+	fx.end = fx.start.Add(8 * time.Hour)
+
+	type stream struct {
+		app, env string
+		offset   time.Duration
+	}
+	streams := []stream{{"web", "prod", 7 * time.Second}, {"web", "staging", 19 * time.Second}, {"api", "prod", 31 * time.Second}, {"api", "staging", 43 * time.Second}}
+	methods := []string{"GET", "POST", "PUT"}
+	statuses := []int{200, 200, 404, 500}
+	var vlRows strings.Builder
+	var lokiStreams []any
+	for _, s := range streams {
+		labels := map[string]string{"fleet_probe": fx.probe, "app": s.app, "env": s.env}
+		var values [][]string
+		i := 0
+		for at := fx.start.Add(s.offset); at.Before(fx.end); at = at.Add(time.Minute) {
+			status := statuses[i%len(statuses)]
+			level := "info"
+			if status >= 500 {
+				level = "error"
+			} else if status >= 400 {
+				level = "warn"
+			}
+			line := fmt.Sprintf(`{"level":%q,"method":%q,"status":%d,"path":"/v1/items/%d","msg":"request served"}`, level, methods[i%len(methods)], status, i%7)
+			values = append(values, []string{strconv.FormatInt(at.UnixNano(), 10), line})
+			row := map[string]string{"_time": at.Format(time.RFC3339Nano), "_msg": line}
+			for k, v := range labels {
+				row[k] = v
+			}
+			encoded, _ := json.Marshal(row)
+			vlRows.Write(encoded)
+			vlRows.WriteByte('\n')
+			i++
+		}
+		fx.lines += len(values)
+		lokiStreams = append(lokiStreams, map[string]any{"stream": labels, "values": values})
+	}
+
+	post := func(target, contentType, body string) {
+		resp, err := fleetHTTP.Post(target, contentType, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST %s: %v", target, err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			t.Fatalf("POST %s: status %d: %.400s", target, resp.StatusCode, b)
+		}
+	}
+	waitLokiReady(t)
+	post(fleetVLURL+"/insert/jsonline?_stream_fields="+url.QueryEscape("fleet_probe,app,env"), "application/stream+json", vlRows.String())
+	payload, _ := json.Marshal(map[string]any{"streams": lokiStreams})
+	post(fleetLokiURL+"/loki/api/v1/push", "application/json", string(payload))
+	post(fleetVLURL+"/internal/force_flush", "text/plain", "")
+	// The fixture is older than Loki's query_ingesters_within: Loki serves it
+	// from the store once the ingester flushed it.
+	post(fleetLokiURL+"/flush", "text/plain", "")
+
+	// VictoriaLogs must hold every line before the proxies read it. Loki is
+	// checked only before the comparison (waitLokiFixture): its metric path
+	// answers empty for a few minutes on a fresh stack, and the cache phases
+	// do not need it.
+	deadline := time.Now().Add(time.Minute)
+	for {
+		vlCount := vlCountLines(t, fx)
+		if vlCount == fx.lines {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture not ready after 1m: %d lines pushed, VictoriaLogs holds %d", fx.lines, vlCount)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fx
+}
+
+// waitLokiFixture waits until Loki counts every fixture line on its metric
+// path, so a comparison with Loki never compares against its blank window.
+func waitLokiFixture(t *testing.T, fx fleetFixture) {
+	t.Helper()
+	deadline := time.Now().Add(4 * time.Minute)
+	for {
+		lokiCount := lokiCountLines(t, fx)
+		if lokiCount == fx.lines {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Loki counts %d of the %d fixture lines after 4m", lokiCount, fx.lines)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func waitLokiReady(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for {
+		resp, err := client.Get(fleetLokiURL + "/ready")
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Loki at %s not ready after 2m", fleetLokiURL)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func vlCountLines(t *testing.T, fx fleetFixture) int {
+	t.Helper()
+	params := url.Values{
+		"query": {fmt.Sprintf(`fleet_probe:=%q | stats count() n`, fx.probe)},
+		"start": {strconv.FormatInt(fx.start.Add(-time.Hour).UnixNano(), 10)},
+		"end":   {strconv.FormatInt(fx.end.Add(time.Hour).UnixNano(), 10)},
+	}
+	body := fleetGet(t, fleetVLURL, "/select/logsql/query?"+params.Encode())
+	var row struct {
+		N string `json:"n"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(body))), &row); err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(row.N)
+	return n
+}
+
+func lokiCountLines(t *testing.T, fx fleetFixture) int {
+	t.Helper()
+	params := url.Values{
+		"query": {fmt.Sprintf(`sum(count_over_time({fleet_probe=%q}[10h]))`, fx.probe)},
+		"time":  {strconv.FormatInt(fx.end.Add(time.Minute).Unix(), 10)},
+	}
+	body := fleetGet(t, fleetLokiURL, "/loki/api/v1/query?"+params.Encode())
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Value []any `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Value) != 2 {
+		return 0
+	}
+	n, _ := strconv.Atoi(fmt.Sprint(resp.Data.Result[0].Value[1]))
+	return n
+}
+
+// --- answers compared with Loki ----------------------------------------------
+
+// matrixPoints maps series (its `by` labels) -> timestamp -> value.
+func matrixPoints(t *testing.T, label string, body []byte, by ...string) map[string]map[string]string {
+	t.Helper()
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "matrix" {
+		t.Fatalf("%s: not a successful matrix: %v: %.400s", label, err, body)
+	}
+	out := map[string]map[string]string{}
+	for _, series := range resp.Data.Result {
+		parts := make([]string, 0, len(by))
+		for _, name := range by {
+			parts = append(parts, name+"="+series.Metric[name])
+		}
+		key := strings.Join(parts, ",")
+		if _, dup := out[key]; dup {
+			t.Fatalf("%s: two series for {%s}", label, key)
+		}
+		out[key] = map[string]string{}
+		for _, pair := range series.Values {
+			if len(pair) != 2 {
+				t.Fatalf("%s: malformed sample %v", label, pair)
+			}
+			out[key][fmt.Sprint(pair[0])] = fmt.Sprint(pair[1])
+		}
+	}
+	return out
+}
+
+// streamLines returns the sorted "app env ts line" entries of a streams answer.
+func streamLines(t *testing.T, label string, body []byte) []string {
+	t.Helper()
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Stream map[string]string `json:"stream"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "streams" {
+		t.Fatalf("%s: not a successful streams answer: %v: %.400s", label, err, body)
+	}
+	var out []string
+	for _, s := range resp.Data.Result {
+		for _, v := range s.Values {
+			if len(v) < 2 {
+				t.Fatalf("%s: malformed entry %v", label, v)
+			}
+			out = append(out, fmt.Sprintf("%s %s %v %v", s.Stream["app"], s.Stream["env"], v[0], v[1]))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// labelValues returns the sorted values of a /labels or /label/x/values answer.
+func labelValues(t *testing.T, label string, body []byte) []string {
+	t.Helper()
+	var resp struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" {
+		t.Fatalf("%s: not a successful label answer: %v: %.400s", label, err, body)
+	}
+	sort.Strings(resp.Data)
+	return resp.Data
+}

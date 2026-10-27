@@ -1,0 +1,34 @@
+id: peer-cache-stats-extent
+kind: resource_control
+title: Stats extent buckets read on one replica are served by every replica without VictoriaLogs
+
+loki: |
+  Loki's results cache is shared by every query frontend (memcached or the
+  embedded cache behind one frontend): a split read once is reused whichever
+  frontend receives the next request (pkg/storage/chunk/cache/resultscache).
+
+victorialogs: |
+  VictoriaLogs has no cache a proxy replica can share: every stats_query_range
+  call reads its buckets again.
+
+proxy: |
+  The extent cache stores each sealed bucket range of a stats_query_range
+  answer with SetWithTTL (stats_extent_cache.go:1038): memory, the disk tier
+  on the ring owner, and a write-through push to the owner when the writer is
+  not the owner (cache.go:536-566, -peer-write-through). A replica reads a
+  bucket entry with Get (stats_extent_cache.go:470): memory, its disk, then
+  the owner's memory over /_cache/get. A non-owner keeps only a 30s shadow and
+  writes no disk copy (cache.go:541, cache.go:555).
+  Fleet proof (TestFleetPeerCacheProof, e2e-fleet, 3 replicas): buckets read
+  on A are answered by B and C with no stats_query_range call; after B
+  restarts (memory lost, disk kept) it answers with none; after B loses its
+  disk the buckets owned by A and C come from them, the ones B owned are read
+  once from VictoriaLogs (an owner never asks its peers for its own keys,
+  peer.go:326) and the fleet then answers with none; with A down B and C
+  answer the same from VictoriaLogs; after every replica lost its caches the
+  rebuilt answer equals the first one and Loki's.
+
+implementation:
+  - internal/proxy/stats_extent_cache.go
+  - internal/cache/cache.go
+  - internal/cache/peer.go
