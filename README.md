@@ -49,7 +49,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 ## Quality and performance vs Loki (current)
 
-Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same hardware. A pair is one query shape over one time range (1h to 7d); "comparable" means both sides answered and Loki's results cache did not answer the first request. The proxy serves Loki's read API (and an opt-in delete). Write endpoints (push) are not supported: ingest goes to VictoriaLogs directly.
+Measured against Loki v3.7.7 on the project's A/B stack: the same data, the same hardware. A pair is one query shape over one time range (1h to 7d); "comparable" means both sides answered and Loki's results cache did not answer the first request. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API may come last.
 
 **Where the proxy is better than Loki**
 
