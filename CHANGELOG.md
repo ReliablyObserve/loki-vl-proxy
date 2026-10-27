@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.36.0] - 2026-10-27
+
 ### Fixed
 
 - **A vector aggregation over another one keeps every level's own `by`.**
@@ -71,7 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `semantics/nested-aggregation-outer-by-native-routes`,
   `semantics/without-nested-under-aggregation`,
   `semantics/without-over-inner-aggregation-collapses` (#746).
-
 
 ## [2.35.0] - 2026-10-26
 
