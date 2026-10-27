@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Near-now label answers may now lag VictoriaLogs by up to 10 s.** This is
+  a documented difference from Loki, which lists labels from its index and
+  ingesters (`pkg/querier/querier.go:307-342`) and never caches a metadata
+  answer ending within `max_metadata_cache_freshness`
+  (`pkg/querier/queryrange/series_cache.go:111-125`). A label or value
+  written a moment ago can be missing from a `/labels` or
+  `/label/{name}/values` answer for at most `-metadata-max-staleness`,
+  counted from the start of the VictoriaLogs read behind the answer.
+  - Such answers carry `X-Proxy-Stale-Response: true`, and the
+    compatibility-edge and multi-tenant merge caches never keep them. An
+    empty answer is never served this way.
+  - Requests ending more than `-max-metadata-cache-freshness` ago read
+    settled data and are never stale.
+  - `-metadata-max-staleness=0` restores exact answers that wait for
+    VictoriaLogs.
+
+  Registry: `quality/metadata-bounded-staleness` (owner-kept).
+
 - **go-humanize v1.1.0.** The module is only used by tests; the proxy's own
   port of Loki's `bytes()` unwrap conversion is unchanged. v1.1.0 parses
   integers beyond float64 precision exactly, while v1.0.1, the version Loki
