@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **go-humanize v1.1.0.** The module is only used by tests; the proxy's own
+  port of Loki's `bytes()` unwrap conversion is unchanged. v1.1.0 parses
+  integers beyond float64 precision exactly, while v1.0.1, the version Loki
+  3.7.x pins for `convertBytes`, rounds them through a float64
+  (`446744073709551615` reads as `446744073709551616`). The property test now
+  checks the port and the unwrap bytes gate against v1.0.1's `ParseBytes`,
+  kept in the tests, so the proxy keeps Loki's answers.
+
 ## [2.36.0] - 2026-10-27
 
 ### Fixed
