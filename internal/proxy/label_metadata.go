@@ -713,23 +713,44 @@ func (p *Proxy) metadataCacheLookup(endpoint, cacheKey string, ttl time.Duration
 // syncFetchStrings runs a synchronous label listing fetch so concurrent requests
 // for the same cache key share one backend pass (a near-now request refetches
 // a stale hit, so a burst of identical refreshes would otherwise each scan).
-// A leader whose own request went away fails its waiters with a cancellation;
-// a waiter that is still alive runs the fetch again.
+// A leader whose own request went away, or whose own deadline passed (a
+// background edge refresh), fails its waiters with that error; a waiter that
+// is still alive runs the fetch again.
 func (p *Proxy) syncFetchStrings(ctx context.Context, cacheKey string, fetch func() ([]string, error)) ([]string, error) {
+	values, _, err := p.syncFetchStringsAt(ctx, cacheKey, fetch)
+	return values, err
+}
+
+// sharedFetch is the result of a shared listing fetch and when its leader
+// started reading VictoriaLogs.
+type sharedFetch struct {
+	values  []string
+	started time.Time
+}
+
+// syncFetchStringsAt is syncFetchStrings that also returns when the shared
+// fetch started, which is how old the listing's near-now edge is.
+func (p *Proxy) syncFetchStringsAt(ctx context.Context, cacheKey string, fetch func() ([]string, error)) ([]string, time.Time, error) {
 	for attempt := 0; ; attempt++ {
-		v, err, _ := p.labelRefreshGroup.Do("sync:"+cacheKey, func() (interface{}, error) { return fetch() })
+		led := false
+		v, err, _ := p.labelRefreshGroup.Do("sync:"+cacheKey, func() (interface{}, error) {
+			led = true
+			started := time.Now()
+			values, err := fetch()
+			return sharedFetch{values: values, started: started}, err
+		})
 		if err != nil {
-			if attempt < 2 && ctx.Err() == nil && errors.Is(err, context.Canceled) {
+			if attempt < 2 && ctx.Err() == nil && (errors.Is(err, context.Canceled) || !led && errors.Is(err, context.DeadlineExceeded)) {
 				continue
 			}
-			return nil, err
+			return nil, time.Time{}, err
 		}
-		values, _ := v.([]string)
-		if values == nil {
-			return nil, nil
+		shared, _ := v.(sharedFetch)
+		if shared.values == nil {
+			return nil, shared.started, nil
 		}
 		// Waiters get their own copy: callers sort and filter in place.
-		return append(make([]string, 0, len(values)), values...), nil
+		return append(make([]string, 0, len(shared.values)), shared.values...), shared.started, nil
 	}
 }
 

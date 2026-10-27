@@ -21,7 +21,7 @@ import (
 // were answered and cached (non-empty, so with the window-scaled TTL of up to an
 // hour). The proxy used to serve the cached answer until it expired.
 //
-// conformance: semantics/metadata-answers-include-last-24h-like-loki
+// conformance: semantics/metadata-answers-include-last-24h-like-loki, quality/metadata-bounded-staleness
 func TestCompat_LabelsIncludeStreamWrittenAfterCaching(t *testing.T) {
 	id := strconv.FormatInt(time.Now().UnixNano(), 36)
 	app := "label-fresh-" + id
@@ -106,8 +106,13 @@ func TestCompat_LabelsIncludeStreamWrittenAfterCaching(t *testing.T) {
 	})
 	vlCount(2)
 
-	// Older than -recent-tail-refresh-max-staleness (2s) at the next request.
-	time.Sleep(3 * time.Second)
+	// The answers above were read from VictoriaLogs before the second stream.
+	// Past -metadata-max-staleness (10s by default, above
+	// -recent-tail-refresh-max-staleness) the proxy no longer answers from them
+	// while it refreshes, so the next request reads VictoriaLogs whatever its
+	// load; within it a slow refresh may answer from them (a documented bound,
+	// quality/metadata-bounded-staleness).
+	time.Sleep(11 * time.Second)
 	fixtureLabels := func(labels []string) []string {
 		var out []string
 		for _, l := range labels {

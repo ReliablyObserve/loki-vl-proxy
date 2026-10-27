@@ -476,6 +476,17 @@ type Config struct {
 	// written in the window are listed as Loki lists them. 0 disables.
 	MetadataCacheFreshness time.Duration
 
+	// MetadataMaxStaleness (-metadata-max-staleness) bounds how old an answer
+	// a near-now /labels or /label/{name}/values request may get while its
+	// edge refresh runs in the background: measured from the start of the
+	// VictoriaLogs read behind the answer. 0 (the zero value) disables it:
+	// every such request waits for VictoriaLogs.
+	MetadataMaxStaleness time.Duration
+	// MetadataEdgeRefreshBudget (-metadata-edge-refresh-budget) is how long
+	// such a request waits for its edge refresh before it is answered from
+	// the last answer within MetadataMaxStaleness.
+	MetadataEdgeRefreshBudget time.Duration
+
 	// MetadataDefaultLookback is the default time window applied to /labels,
 	// /label/{name}/values, and /series when the client omits both start and
 	// end. 0 disables (unbounded scan, prior behavior).
@@ -597,6 +608,9 @@ type Proxy struct {
 	errorMessageField                     bool                  // -error-response-message-field
 	streamFieldsMap                       map[string]bool       // known _stream_fields for VL stream selector optimization
 	streamLabelNames                      streamLabelNamesState // last known stream label names per tenant, refreshed in the background
+	metadataEdges                         metadataEdgeState     // last VictoriaLogs read per near-now label answer, and its background refreshes
+	metadataMaxStaleness                  time.Duration         // -metadata-max-staleness
+	metadataEdgeRefreshBudget             time.Duration         // -metadata-edge-refresh-budget
 	declaredLabelFields                   []string              // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache      // L3 fleet peer cache
 	peerAuthToken                         string
@@ -1344,6 +1358,8 @@ func New(cfg Config) (*Proxy, error) {
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
+		metadataMaxStaleness:                  max(cfg.MetadataMaxStaleness, 0),
+		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
 	p.metadataScanLimiter = newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, resolveMetadataScanFloor(cfg.BackendMinConcurrentMetadataScans),
@@ -1719,6 +1735,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	}
 	waitKeepWarm(ctx, &p.keepWarmWG)
 	p.stopStreamLabelNames()
+	p.stopMetadataEdgeRefreshes(ctx)
 	if p.limiter != nil {
 		p.limiter.Stop()
 	}

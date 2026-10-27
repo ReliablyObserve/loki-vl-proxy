@@ -249,6 +249,8 @@ type proxyRuntimeConfig struct {
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
 	metadataCacheFreshness              time.Duration
+	metadataMaxStaleness                time.Duration
+	metadataEdgeRefreshBudget           time.Duration
 	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
 }
@@ -445,6 +447,8 @@ func run(
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
 	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
+	metadataMaxStaleness := fs.Duration("metadata-max-staleness", 10*time.Second, "Longest a near-now /labels or /label/{name}/values answer may lag VictoriaLogs while its edge refresh runs in the background, measured from the start of the VictoriaLogs read behind it. A request ending within -max-metadata-cache-freshness of now whose cached answer is older than -recent-tail-refresh-max-staleness waits -metadata-edge-refresh-budget for the refresh, then gets the last answer if this replica read it within this bound (marked X-Proxy-Stale-Response); past it, the request waits for VictoriaLogs. Loki reads its index and never lags; 0 keeps that exactness at the cost of waiting for VictoriaLogs under load.")
+	metadataEdgeRefreshBudget := fs.Duration("metadata-edge-refresh-budget", 100*time.Millisecond, "How long a near-now /labels or /label/{name}/values request waits for its edge refresh from VictoriaLogs before it is answered from the last answer within -metadata-max-staleness. An idle VictoriaLogs answers the edge in 5-40 ms (exact answers); under heavy load it took 0.35-2.6 s (bounded-stale answers). 0 answers from the last answer at once whenever one is within the bound.")
 	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
 	drilldownScanTimeout := fs.Duration("drilldown-scan-timeout", 5*time.Second, "Per-request timeout for the detected_fields / detected_field_values log scan path. Caps the time a single Drilldown panel can spend scanning logs with a parser filter. 0 disables the cap (use VL's natural response time).")
 
@@ -1008,6 +1012,8 @@ func run(
 			debugLogRawQueries:                  *debugLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
 			metadataCacheFreshness:              *metadataCacheFreshness,
+			metadataMaxStaleness:                *metadataMaxStaleness,
+			metadataEdgeRefreshBudget:           *metadataEdgeRefreshBudget,
 			drilldownScanTimeout:                *drilldownScanTimeout,
 		},
 		otlpCfg: otlpRuntimeConfig{
@@ -2218,6 +2224,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
 		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
+		MetadataMaxStaleness:                cfg.metadataMaxStaleness,
+		MetadataEdgeRefreshBudget:           cfg.metadataEdgeRefreshBudget,
 		DrilldownScanTimeout:                cfg.drilldownScanTimeout,
 	}, nil
 }

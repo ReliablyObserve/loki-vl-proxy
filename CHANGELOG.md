@@ -7,7 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **A near-now `/labels` or `/label/{name}/values` no longer waits for a busy
+  VictoriaLogs: it answers within `-metadata-edge-refresh-budget`, from an
+  answer at most `-metadata-max-staleness` old.** Every Grafana refresh of a
+  label list ending within `-max-metadata-cache-freshness` (24h) of now, once
+  its cached answer was older than `-recent-tail-refresh-max-staleness` (2s),
+  read the near-now edge from VictoriaLogs synchronously. That edge is a few
+  small listings: the settled buckets come from the metadata inventory. Under
+  32 heavy clients, though, `stream_field_names` waited 0.35-0.6 s at p95,
+  and up to 2.6 s, for VictoriaLogs CPU (360-470 % on average). `/labels`
+  p95 was then 50-450 ms, against 5-40 ms on an idle VictoriaLogs.
+
+  Such a request now starts the edge refresh detached from itself and waits
+  for it at most `-metadata-edge-refresh-budget` (default `100ms`).
+  - A refresh that finishes in time is the answer, so an idle VictoriaLogs
+    still answers exactly.
+  - Otherwise the request gets the last answer this replica read for the
+    same tenant, auth scope and window, provided that read started at most
+    `-metadata-max-staleness` (default `10s`) ago. The refresh completes in
+    the background, and the next request lists what it found.
+  - Past the bound, or with no such answer, the request waits for
+    VictoriaLogs as before.
+
+  One refresh runs per cache key. Concurrent requests share it, it ends
+  within the background timeout, and `Shutdown` cancels it.
+
+  New metrics, all under `loki_vl_proxy_internal_operation_*`:
+  - `{operation="metadata_edge_answer"}` with outcome `exact`, `stale` or
+    `waited`;
+  - `{operation="metadata_edge_staleness"}`, the age of each stale answer by
+    endpoint;
+  - `{operation="metadata_edge_refresh"}`, the background refresh duration.
+
+  Not covered:
+  - `/series` has no response cache and still reads VictoriaLogs on every
+    request.
+  - The first request for a window this replica has not answered yet waits
+    for VictoriaLogs.
+
+  Registry: `quality/metadata-bounded-staleness`.
+
 ### Changed
+
+- **Near-now label answers may now lag VictoriaLogs by up to 10 s.** This is
+  a documented difference from Loki, which lists labels from its index and
+  ingesters (`pkg/querier/querier.go:307-342`) and never caches a metadata
+  answer ending within `max_metadata_cache_freshness`
+  (`pkg/querier/queryrange/series_cache.go:111-125`). A label or value
+  written a moment ago can be missing from a `/labels` or
+  `/label/{name}/values` answer for at most `-metadata-max-staleness`,
+  counted from the start of the VictoriaLogs read behind the answer.
+  - Such answers carry `X-Proxy-Stale-Response: true`, and the
+    compatibility-edge and multi-tenant merge caches never keep them. An
+    empty answer is never served this way.
+  - Requests ending more than `-max-metadata-cache-freshness` ago read
+    settled data and are never stale.
+  - `-metadata-max-staleness=0` restores exact answers that wait for
+    VictoriaLogs.
+
+  Registry: `quality/metadata-bounded-staleness` (owner-kept).
 
 - **go-humanize v1.1.0.** The module is only used by tests; the proxy's own
   port of Loki's `bytes()` unwrap conversion is unchanged. v1.1.0 parses
