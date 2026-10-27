@@ -1551,6 +1551,11 @@ func New(cfg Config) (*Proxy, error) {
 	}
 
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
+	if p.peerCache != nil {
+		// Entries computed with a user's forwarded credentials stay on the
+		// replica that computed them.
+		p.peerCache.SetPushFilter(peerPushAllowed)
+	}
 	return p, nil
 }
 
@@ -2126,6 +2131,9 @@ func (p *Proxy) peerCacheMetrics() string {
 	errorReasons, _ := stats["peer_error_reasons"].(map[string]int64)
 	wtPushes, _ := stats["wt_pushes"].(int64)
 	wtErrors, _ := stats["wt_errors"].(int64)
+	backupHits, _ := stats["backup_hits"].(int64)
+	pushTooLarge, _ := stats["push_too_large"].(int64)
+	replication, _ := stats["replication_factor"].(int)
 	raHotRequests, _ := stats["ra_hot_requests"].(int64)
 	raHotErrors, _ := stats["ra_hot_errors"].(int64)
 	raPrefetches, _ := stats["ra_prefetches"].(int64)
@@ -2154,17 +2162,26 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_cluster_members Number of total cache ring members including this proxy instance.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_cluster_members gauge\n"+
 			"loki_vl_proxy_peer_cache_cluster_members %d\n"+
+			"# HELP loki_vl_proxy_peer_cache_replication_factor Replicas of every peer-cache key, owner included.\n"+
+			"# TYPE loki_vl_proxy_peer_cache_replication_factor gauge\n"+
+			"loki_vl_proxy_peer_cache_replication_factor %d\n"+
 			"# HELP loki_vl_proxy_peer_cache_hits_total Successful peer-cache fetches.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_hits_total counter\n"+
 			"loki_vl_proxy_peer_cache_hits_total %d\n"+
-			"# HELP loki_vl_proxy_peer_cache_misses_total Peer-cache lookups that missed on the owner.\n"+
+			"# HELP loki_vl_proxy_peer_cache_backup_hits_total Peer-cache fetches served by a replica other than the key's owner (included in hits).\n"+
+			"# TYPE loki_vl_proxy_peer_cache_backup_hits_total counter\n"+
+			"loki_vl_proxy_peer_cache_backup_hits_total %d\n"+
+			"# HELP loki_vl_proxy_peer_cache_misses_total Peer-cache lookups that missed on every replica asked.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_misses_total counter\n"+
 			"loki_vl_proxy_peer_cache_misses_total %d\n"+
 			"# HELP loki_vl_proxy_peer_cache_errors_total Peer-cache fetch errors.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_errors_total counter\n"+
 			"loki_vl_proxy_peer_cache_errors_total %d\n"+
 			"%s"+
-			"# HELP loki_vl_proxy_peer_cache_write_through_pushes_total Successful owner write-through pushes from non-owner peers.\n"+
+			"# HELP loki_vl_proxy_peer_cache_push_too_large_total Peer pushes skipped because the value is above the peers' accepted body size.\n"+
+			"# TYPE loki_vl_proxy_peer_cache_push_too_large_total counter\n"+
+			"loki_vl_proxy_peer_cache_push_too_large_total %d\n"+
+			"# HELP loki_vl_proxy_peer_cache_write_through_pushes_total Successful write-through pushes to a key's replicas.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_write_through_pushes_total counter\n"+
 			"loki_vl_proxy_peer_cache_write_through_pushes_total %d\n"+
 			"# HELP loki_vl_proxy_peer_cache_write_through_errors_total Owner write-through push errors.\n"+
@@ -2188,7 +2205,7 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total Hot read-ahead candidates skipped by tenant fairness pass.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total counter\n"+
 			"loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total %d\n",
-		remotePeers, clusterMembers, hits, misses, errors, reasonLines.String(), wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
+		remotePeers, clusterMembers, replication, hits, backupHits, misses, errors, reasonLines.String(), pushTooLarge, wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
 	)
 }
 

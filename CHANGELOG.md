@@ -7,7 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Peer-cache keys now have a backup replica, so a replica that loses its
+  disk, or a fleet whose owner is down, reads cached answers from another
+  replica instead of computing them again from VictoriaLogs.**
+  `-peer-replication-factor` (default 2: the key's owner on the peer ring and
+  the next distinct peer clockwise; 1-5; Helm `extraArgs`) sets how many
+  replicas hold each key.
+  - **Writes.** A write-through write is pushed to every replica other than
+    the writer. A replica stores a pushed copy in memory and on disk with the
+    TTL it was sent with, and never pushes it on, so one write costs
+    replication factor minus one pushes and no copy bounces between replicas.
+  - **Reads.** A lookup that misses memory and disk asks the replicas in ring
+    order, owner first. An owner that lost its disk now asks its backup; on
+    main an owner never asked its peers for its own keys. With the owner down
+    or slow, another replica reaches the backup within `-peer-timeout`.
+  - **Peer side.** A peer now serves keys from its disk as well as its memory,
+    so a replica that restarted with its disk still serves its copies; on
+    main a restarted owner served nothing until it recomputed.
+  - **Not pushed.** Entries computed with a user's forwarded credentials
+    (`-forward-headers`, `-forward-cookies`) and values above the peers' 8 MiB
+    body limit are never pushed.
+    - To recognise those entries, the auth fingerprint of a request that
+      forwards credentials now starts with `fwdid.`. Their cache keys
+      therefore change once on upgrade.
+    - Such tenants take one cache miss per key after the upgrade.
+    - Their entries in a persisted patterns snapshot or scoped label-values
+      index from before the upgrade are no longer found and age out.
+  - **New metrics.** `loki_vl_proxy_peer_cache_replication_factor`,
+    `loki_vl_proxy_peer_cache_backup_hits_total` and
+    `loki_vl_proxy_peer_cache_push_too_large_total`.
+  - **Cost** (three replicas over loopback, 4 KiB values):
+    - **Writes.** Every write-through write pushes one more copy: 4,096 bytes
+      on the wire at factor 2, and about 0.22 ms of CPU across sender and
+      receiver, most of it the per-request zstd encoder and the receiver's
+      disk write.
+    - **Memory, disk and capacity.**
+      - Each copy is held in memory and on disk on its replica. At factor 2
+        the ring holds 8.2 KiB of memory and 14.6 KiB of disk per 4 KiB key,
+        against 4.1 KiB and 8.5 KiB at factor 1.
+      - With the same `-cache-max-bytes` the fleet keeps half as many
+        distinct keys. A two-pod fleet holds every key on both pods. Set the
+        factor to 1 to keep the previous capacity.
+    - **Lookups.**
+      - A lookup of a key no replica holds asks one more peer before the
+        answer is computed: about 40 µs on loopback. An owner now asks its
+        backup instead of nobody.
+      - A refill after a lost disk costs one peer round trip per key (1,000
+        keys in 0.26 s).
+      - A local memory hit is as fast as before. The synchronous part of a
+        Set with a peer ring measured 197 ns before and after at factor 1;
+        at factor 2 it is 217 ns for keys this replica does not own (the
+        walk to the second replica). Neither path makes new allocations.
+
 ### Fixed
+
+- **A key fetched from a peer is no longer pushed straight back to its
+  owner, and its TTL is no longer extended.** `Cache.Get` stored a peer hit
+  with `SetWithTTL`, which pushed it back to the owner it came from. It
+  promoted a disk hit with `Set`, which reset its TTL to the default and
+  pushed it to the owner. A fetched or promoted copy is now kept with the TTL
+  it had left and is never pushed.
+- **Owner copies of a write from another replica keep the write's TTL.**
+  The writer clamped its own copy to a 30s shadow and then pushed the clamped
+  TTL, so the owner kept the entry for 30s instead of its TTL.
 
 - **A request that nobody cancelled is no longer answered with a 499 when the
   proxy cancels another call of the same request beside it.** Loki answers 499

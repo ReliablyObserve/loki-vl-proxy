@@ -346,12 +346,15 @@ When the peer cache is enabled, `/metrics` appends these fleet-cache families (P
 |---|---|---|---|---|
 | `loki_vl_proxy_peer_cache_peers` | gauge | none | `Low` | remote peers currently in the fleet-cache ring, excluding self |
 | `loki_vl_proxy_peer_cache_cluster_members` | gauge | none | `Low` | total ring members, including this instance |
-| `loki_vl_proxy_peer_cache_hits_total` | counter | none | `Low` | successful peer-cache fetches |
-| `loki_vl_proxy_peer_cache_misses_total` | counter | none | `Low` | peer-cache lookups that missed on the owner |
+| `loki_vl_proxy_peer_cache_replication_factor` | gauge | none | `Low` | replicas of every key, owner included (`-peer-replication-factor`) |
+| `loki_vl_proxy_peer_cache_hits_total` | counter | none | `Low` | successful peer-cache fetches, from the owner or another replica |
+| `loki_vl_proxy_peer_cache_backup_hits_total` | counter | none | `Low` | peer-cache fetches served by a replica other than the key's owner (owner down or without the key, or this instance is the owner); included in hits |
+| `loki_vl_proxy_peer_cache_misses_total` | counter | none | `Low` | peer-cache lookups that missed on every replica asked |
 | `loki_vl_proxy_peer_cache_errors_total` | counter | none | `Low` | peer-cache fetch errors |
 | `loki_vl_proxy_peer_cache_error_reason_total` | counter | `reason` | `Low` | peer-cache fetch errors by reason (emitted once any error has been recorded) |
-| `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful owner write-through pushes |
-| `loki_vl_proxy_peer_cache_write_through_errors_total` | counter | none | `Low` | owner write-through push errors |
+| `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful pushes to a key's replicas (one per replica) |
+| `loki_vl_proxy_peer_cache_write_through_errors_total` | counter | none | `Low` | replica push errors |
+| `loki_vl_proxy_peer_cache_push_too_large_total` | counter | none | `Low` | pushes skipped because the value is above the peers' accepted body size (8 MiB) |
 | `loki_vl_proxy_peer_cache_hot_index_requests_total` | counter | none | `Low` | peer hot-index requests |
 | `loki_vl_proxy_peer_cache_hot_index_errors_total` | counter | none | `Low` | peer hot-index request errors |
 | `loki_vl_proxy_peer_cache_read_ahead_prefetches_total` | counter | none | `Low` | successful hot read-ahead prefetches |

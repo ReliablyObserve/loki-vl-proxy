@@ -66,6 +66,16 @@ var Limits = []Limit{
 		Sizing:     "4: VictoriaLogs already spreads one query over its cores, so more buys little on a cold window (three concurrent 7-day scans took 1.8x as long as one on the e2e stack) while a warm window needs only its two edges. Lower it to 1-2 for a small VictoriaLogs; the day bucket scans of a long listing also take -backend-max-concurrent-metadata-scans slots, each only while its own call runs. 0 turns the inventory off: every listing is one VictoriaLogs call over the whole range, as before.",
 	},
 	{
+		Flag:       "peer-replication-factor",
+		Unit:       "replicas",
+		Bounds:     "replicas of every peer-cache key, owner included (1-5): the key's owner on the peer ring and the next distinct peers clockwise; a write-through write is pushed to each replica other than the writer, which keeps the copy in memory and on disk; a lookup that misses memory and disk asks the replicas in ring order, each for at most -peer-timeout",
+		Error:      "none; a value out of 1-5 is clamped to that range; a key no replica holds is computed as before",
+		Metric:     "loki_vl_proxy_peer_cache_replication_factor; loki_vl_proxy_peer_cache_backup_hits_total; loki_vl_proxy_peer_cache_write_through_pushes_total, loki_vl_proxy_peer_cache_write_through_errors_total, loki_vl_proxy_peer_cache_push_too_large_total; loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "2: one replica can lose its disk, restart or stop without its keys being computed again (an owner that lost its disk reads them from its backup, one peer round trip per key; other replicas reach the backup within -peer-timeout while the owner is down). Each replica holds a full copy, so the fleet keeps memory and disk times the factor per key (measured with 4 KiB values: 8.2 KiB of memory and 14.6 KiB of disk per key at 2, 4.1 and 8.5 at 1) and, with a fixed -cache-max-bytes, the fleet's distinct keys divide by the factor (a two-replica fleet at 2 holds every key on both). Every write-through write pushes factor minus one copies (4,096 bytes on the wire per 4 KiB write at 2). A lookup on a key no replica holds asks up to factor minus one peers before computing it, each bounded by -peer-timeout. 1 keeps one copy on the owner (the behaviour before this flag); 3 survives two losses at a third more memory and disk.",
+	},
+	{
 		Flag:       "backend-heavy-query-queue-wait",
 		Unit:       "duration",
 		Bounds:     "how long the heavy calls of one request wait, together, for heavy-query slots, and how long each long-range metadata scan of a request (one listing, or one day bucket of the label inventory, all of a request's bucket scans together at most twice this) waits for a metadata-scan slot; the adaptive metadata limiter re-reads VictoriaLogs' /metrics every 250 ms while a scan waits, and the request context bounds the whole",

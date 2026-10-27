@@ -397,7 +397,8 @@ extraArgs:
   # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
-  # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
+  # peer-replication-factor: "2"               # replicas per peer-cache key (owner + backups); a replica that lost its disk or whose owner is down reads the key from the next replica
+  # peer-write-through: "true"                  # push eligible writes to the key's replicas
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
   # peer-hot-read-ahead-enabled: "false"        # bounded periodic prefetch from peer hot indexes
   # peer-hot-read-ahead-interval: "30s"         # base period for hot-index pull cycle

@@ -1025,7 +1025,37 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 	// JSON encoding is unambiguous even when header values contain delimiters.
 	data, _ := json.Marshal([]any{scope, identity, cookies})
 	sum := sha256.Sum256(data)
+	if len(cookies) > 0 || p.forwardsCredentialHeader(r) {
+		return identityFingerprintPrefix + hex.EncodeToString(sum[:])
+	}
 	return hex.EncodeToString(sum[:])
+}
+
+// forwardsCredentialHeader reports whether r carries a header the proxy
+// forwards to VictoriaLogs (-forward-headers); trusted proxy identity headers
+// (-metrics-trust-proxy-headers) only label metrics and logs.
+func (p *Proxy) forwardsCredentialHeader(r *http.Request) bool {
+	for _, name := range p.forwardHeaders {
+		if r.Header.Get(name) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// identityFingerprintPrefix starts the auth fingerprint of a request that
+// forwards a user's credentials or identity to VictoriaLogs (a
+// -forward-headers header or a -forward-cookies cookie). Cache keys carry
+// the fingerprint as ":auth:<fingerprint>", so entries computed with a
+// user's credentials are recognisable and never pushed to peer replicas
+// (peerPushAllowed): they stay on the replica that computed them.
+const identityFingerprintPrefix = "fwdid."
+
+// peerPushAllowed reports whether a cache entry may be pushed to the key's
+// peer replicas: not when it was computed with a user's forwarded
+// credentials or identity.
+func peerPushAllowed(key string) bool {
+	return !strings.Contains(key, ":auth:"+identityFingerprintPrefix)
 }
 
 // injectAuthFingerprint precomputes the forwardedAuthFingerprint for r and

@@ -357,6 +357,10 @@
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go"
     ],
+    "peer-cache-replication": [
+      "internal/cache/peer_replication_test.go",
+      "internal/proxy/peer_push_identity_test.go"
+    ],
     "profiles/detected-fields-dotted-json-keys": [
       "internal/proxy/loki_profile_test.go",
       "internal/proxy/sanitized_json_key_filter_test.go",
@@ -832,7 +836,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 330,
+  "registry_items": 331,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -844,6 +848,9 @@
     ],
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/peer_replication_test.go": [
+      "peer-cache-replication"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
@@ -1176,6 +1183,9 @@
     "internal/proxy/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
+    ],
+    "internal/proxy/peer_push_identity_test.go": [
+      "peer-cache-replication"
     ],
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
@@ -1704,7 +1714,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 173,
+  "tests_with_markers": 175,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1802,5 +1812,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 154
+  "wired_items": 155
 }

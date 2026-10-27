@@ -34,6 +34,15 @@ const (
 	maxPeerHotIndexBytes    int64 = 4 << 20
 	maxPeerSetBodyBytes     int64 = 8 << 20
 	peerCompressionMinBytes       = 1024
+
+	// MaxReplicationFactor bounds PeerConfig.ReplicationFactor: the replicas
+	// a write is pushed to and a lookup may ask.
+	MaxReplicationFactor = 5
+
+	// peerMemoryOnlyHeader marks a value its replica keeps in memory only
+	// (SetLocalOnlyWithTTL); the replica that fetches it does not write it to
+	// its disk either.
+	peerMemoryOnlyHeader = "X-Cache-Memory-Only"
 )
 
 // PeerCache implements a sharded distributed cache layer (L3).
@@ -45,9 +54,16 @@ const (
 //	Store shadow copy in L1 (short TTL) → next request same peer = 0 hops
 //	If I'm the owner → skip L3, go to VL directly
 //
-// The only network traffic is the actual cache fetch on L1 miss.
-// With N replicas, each key lives on exactly 1 peer (the owner).
-// Non-owners keep short-lived shadow copies after fetching.
+// The only network traffic is the actual cache fetch on L1 miss, and the
+// write-through pushes.
+//
+// Replication: a key's replicas are its owner and the next distinct peers
+// clockwise on the ring, ReplicationFactor in all. A write-through write is
+// pushed to every replica; a replica stores a pushed value in memory and on
+// disk and never pushes it again. A lookup that misses memory and disk asks
+// the replicas in ring order (an owner that lost its disk asks its backup)
+// and stores what it gets locally, without pushing. Non-replicas keep
+// short-lived shadow copies after fetching.
 type PeerCache struct {
 	mu           sync.RWMutex
 	ring         *hashRing
@@ -64,6 +80,8 @@ type PeerCache struct {
 	authToken    string
 	writeThrough bool
 	wtMinTTL     time.Duration
+	replication  int                   // replicas per key, owner included (1..MaxReplicationFactor)
+	pushFilter   func(key string) bool // keys that may be pushed; nil allows all
 	localCache   *Cache
 
 	// Bounded hot read-ahead (optional).
@@ -100,19 +118,26 @@ type PeerCache struct {
 	PeerErrors atomic.Int64
 	WTPushes   atomic.Int64
 	WTErrors   atomic.Int64
-	RAHotReq   atomic.Int64
-	RAHotErr   atomic.Int64
-	RAPrefetch atomic.Int64
-	RABytes    atomic.Int64
-	RABudget   atomic.Int64
-	RATenant   atomic.Int64
+	// BackupHits counts peer hits served by a replica other than the key's
+	// owner (included in PeerHits).
+	BackupHits atomic.Int64
+	// PushTooLarge counts pushes skipped because the value is above the
+	// peers' accepted body size.
+	PushTooLarge atomic.Int64
+	RAHotReq     atomic.Int64
+	RAHotErr     atomic.Int64
+	RAPrefetch   atomic.Int64
+	RABytes      atomic.Int64
+	RABudget     atomic.Int64
+	RATenant     atomic.Int64
 }
 
 type inflightEntry struct {
-	done   chan struct{}
-	result []byte
-	ttl    time.Duration
-	ok     bool
+	done    chan struct{}
+	result  []byte
+	ttl     time.Duration
+	memOnly bool
+	ok      bool
 }
 
 // PeerConfig configures the distributed peer cache.
@@ -130,6 +155,7 @@ type PeerConfig struct {
 	AuthToken                string        // optional shared token for peer cache endpoints
 	WriteThrough             bool          // push owner copies on local SetWithTTL
 	WriteThroughMinTTL       time.Duration // minimum TTL to trigger write-through
+	ReplicationFactor        int           // replicas per key, owner included; 0 means 1 (owner only)
 	ReadAheadEnabled         bool          // periodically prefetch bounded hot keys from peers
 	ReadAheadInterval        time.Duration // read-ahead base interval
 	ReadAheadJitter          time.Duration // random jitter added to interval
@@ -239,6 +265,7 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 	if pc.wtMinTTL <= 0 {
 		pc.wtMinTTL = 30 * time.Second
 	}
+	pc.replication = min(max(cfg.ReplicationFactor, 1), MaxReplicationFactor)
 
 	switch cfg.DiscoveryType {
 	case "dns":
@@ -311,26 +338,76 @@ func (pc *PeerCache) IsOwner(key string) bool {
 	return pc.ring.get(key) == pc.selfAddr
 }
 
-// Get fetches a value from the owning peer.
+// ReplicationFactor returns the replicas per key, owner included.
+func (pc *PeerCache) ReplicationFactor() int {
+	if pc == nil {
+		return 1
+	}
+	return pc.replication
+}
+
+// SetPushFilter sets which keys may be pushed to peers (nil allows all): a
+// key it rejects stays on the replica that wrote it.
+func (pc *PeerCache) SetPushFilter(allow func(key string) bool) {
+	pc.mu.Lock()
+	pc.pushFilter = allow
+	pc.mu.Unlock()
+}
+
+// replicasOf returns the key's replicas in ring order, owner first, or nil
+// when no peers are known.
+func (pc *PeerCache) replicasOf(key string) []string {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	if len(pc.peers) == 0 {
+		return nil
+	}
+	return pc.ring.getN(key, pc.replication)
+}
+
+// IsReplica reports whether this instance is one of the key's replicas (true
+// without peers). It does not allocate.
+func (pc *PeerCache) IsReplica(key string) bool {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	if len(pc.peers) == 0 {
+		return true
+	}
+	return pc.ring.has(key, pc.replication, pc.selfAddr)
+}
+
+// pushAllowed reports whether a value may be pushed to peers.
+func (pc *PeerCache) pushAllowed(key string, value []byte) bool {
+	pc.mu.RLock()
+	allow := pc.pushFilter
+	pc.mu.RUnlock()
+	if allow != nil && !allow(key) {
+		return false
+	}
+	if int64(len(value)) > maxPeerSetBodyBytes {
+		// A peer refuses it; sending it would only count a failure against
+		// the peer's breaker, which also gates reads from it.
+		pc.PushTooLarge.Add(1)
+		return false
+	}
+	return true
+}
+
+// Get fetches a value from the key's replicas in ring order (owner first,
+// skipping this instance), and returns the first hit.
 // Returns (value, remainingTTL, true) on hit.
 // The caller should use remainingTTL for the shadow copy — never extend the original.
 func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
-	pc.mu.RLock()
-	if len(pc.peers) == 0 {
-		pc.mu.RUnlock()
-		return nil, 0, false
-	}
-	owner := pc.ring.get(key)
-	pc.mu.RUnlock()
+	v, ttl, _, ok := pc.getReplica(key)
+	return v, ttl, ok
+}
 
-	if owner == pc.selfAddr || owner == "" {
-		return nil, 0, false
-	}
-
-	if !pc.peerAllowed(owner) {
-		pc.RecordPeerErrorReason("breaker_open")
-		pc.PeerErrors.Add(1)
-		return nil, 0, false
+// getReplica is Get, also reporting whether the replica that answered keeps
+// the value in memory only.
+func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) {
+	replicas := pc.replicasOf(key)
+	if len(replicas) == 0 || (len(replicas) == 1 && replicas[0] == pc.selfAddr) {
+		return nil, 0, false, false
 	}
 
 	// Singleflight: coalesce concurrent fetches for the same key
@@ -342,7 +419,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		} else {
 			pc.PeerMisses.Add(1)
 		}
-		return inf.result, inf.ttl, inf.ok
+		return inf.result, inf.ttl, inf.memOnly, inf.ok
 	}
 
 	inf := pc.getInflight(key)
@@ -351,7 +428,38 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		pc.inflight.Delete(key)
 	}()
 
-	// Fetch from owner
+	asked := false
+	for i, addr := range replicas {
+		if addr == pc.selfAddr {
+			continue
+		}
+		if !pc.peerAllowed(addr) {
+			pc.RecordPeerErrorReason("breaker_open")
+			pc.PeerErrors.Add(1)
+			continue
+		}
+		asked = true
+		body, ttl, memOnly, status := pc.fetchFrom(addr, key)
+		if status != http.StatusOK {
+			continue
+		}
+		inf.result, inf.ttl, inf.memOnly, inf.ok = body, ttl, memOnly, true
+		pc.PeerHits.Add(1)
+		if i > 0 {
+			pc.BackupHits.Add(1)
+		}
+		return body, ttl, memOnly, true
+	}
+	if asked {
+		pc.PeerMisses.Add(1)
+	}
+	return nil, 0, false, false
+}
+
+// fetchFrom asks one replica for key: the value, its remaining TTL and
+// whether the replica keeps it in memory only, with status 200; 404 on a
+// miss; 0 on an error (recorded against the peer).
+func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, int) {
 	endpoint := fmt.Sprintf("http://%s/_cache/get?%s", owner, url.Values{"key": []string{key}}.Encode())
 	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
 	defer cancel()
@@ -361,7 +469,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason("request_build")
 		pc.PeerErrors.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 	if pc.authToken != "" {
 		req.Header.Set("X-Peer-Token", pc.authToken)
@@ -373,22 +481,20 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason(classifyPeerFetchError(err))
 		pc.PeerErrors.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
 		pc.recordPeerSuccess(owner)
 		pc.recordPeerSetEncoding(owner, resp.Header.Get("X-Peer-Set-Encoding"))
-		inf.ok = false
-		pc.PeerMisses.Add(1)
-		return nil, 0, false
+		return nil, 0, false, http.StatusNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason(peerStatusReason(resp.StatusCode))
 		pc.PeerErrors.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 
 	body, err := readPeerBodyLimited(resp.Body, maxPeerResponseBytes)
@@ -396,14 +502,14 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason("body_read")
 		pc.PeerErrors.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body, maxPeerDecodedBodyBytes)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason("decode")
 		pc.PeerErrors.Add(1)
-		return nil, 0, false
+		return nil, 0, false, 0
 	}
 
 	// Parse remaining TTL from owner's response
@@ -417,11 +523,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 
 	pc.recordPeerSuccess(owner)
 	pc.recordPeerSetEncoding(owner, resp.Header.Get("X-Peer-Set-Encoding"))
-	inf.result = body
-	inf.ttl = remainingTTL
-	inf.ok = true
-	pc.PeerHits.Add(1)
-	return body, remainingTTL, true
+	return body, remainingTTL, resp.Header.Get(peerMemoryOnlyHeader) == "1", http.StatusOK
 }
 
 // Set optionally pushes the key to owner based on write-through config.
@@ -430,8 +532,10 @@ func (pc *PeerCache) Set(key string, value []byte) {
 	pc.SetWithTTL(key, value, 0)
 }
 
-// SetWithTTL optionally pushes the key to its owner peer so the ring stays warm
-// even when client traffic is temporarily skewed to a subset of replicas.
+// SetWithTTL optionally pushes the key to its replicas (owner and backups)
+// so the ring stays warm even when client traffic is temporarily skewed to a
+// subset of replicas, and a replica that loses its disk finds its keys on
+// the others.
 func (pc *PeerCache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	if !pc.writeThrough || len(value) == 0 {
 		return
@@ -439,21 +543,26 @@ func (pc *PeerCache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	if ttl > 0 && ttl < pc.wtMinTTL {
 		return
 	}
-	pc.mu.RLock()
-	if len(pc.peers) == 0 {
-		pc.mu.RUnlock()
+	pc.Replicate(key, value, ttl)
+}
+
+// Replicate pushes the key to its replicas other than this instance,
+// whatever the write-through setting, in the background. Keys the push
+// filter rejects and values above the peers' body limit are not pushed.
+func (pc *PeerCache) Replicate(key string, value []byte, ttl time.Duration) {
+	if pc == nil || len(value) == 0 || !pc.pushAllowed(key, value) {
 		return
 	}
-	owner := pc.ring.get(key)
-	pc.mu.RUnlock()
-	if owner == "" || owner == pc.selfAddr {
-		return
+	for _, addr := range pc.replicasOf(key) {
+		if addr == pc.selfAddr {
+			continue
+		}
+		if !pc.peerAllowed(addr) {
+			pc.WTErrors.Add(1)
+			continue
+		}
+		go pc.pushToOwner(addr, key, value, ttl)
 	}
-	if !pc.peerAllowed(owner) {
-		pc.WTErrors.Add(1)
-		return
-	}
-	go pc.pushToOwner(owner, key, value, ttl)
 }
 
 // WriteThroughMinTTL returns the minimum TTL a write needs to be pushed to its
@@ -625,7 +734,8 @@ func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache
 		return
 	}
 
-	value, remaining, ok := localCache.GetWithTTL(key)
+	// Memory, then disk: a replica that restarted keeps its copies there.
+	value, remaining, memOnly, ok := localCache.getForPeer(key)
 	if !ok || remaining < MinUsableTTL {
 		// Expired or about to expire — treat as miss (force refresh from VL)
 		w.WriteHeader(http.StatusNotFound)
@@ -634,6 +744,9 @@ func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Cache-TTL-Ms", fmt.Sprintf("%d", remaining.Milliseconds()))
+	if memOnly {
+		w.Header().Set(peerMemoryOnlyHeader, "1")
+	}
 	w.Header().Set("X-Peer-Set-Encoding", "zstd")
 	writePeerEncodedResponse(w, r, value)
 }
@@ -669,7 +782,8 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 		http.Error(w, "empty value", http.StatusBadRequest)
 		return
 	}
-	localCache.SetWithTTL(key, body, ttl)
+	// A replica's copy: memory and disk, never pushed again.
+	localCache.storeReplica(key, body, ttl)
 	w.Header().Set("X-Peer-Set-Encoding", "zstd")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1239,6 +1353,9 @@ func (pc *PeerCache) Stats() map[string]interface{} {
 		"peer_error_reasons": pc.PeerErrorReasons(),
 		"wt_pushes":          pc.WTPushes.Load(),
 		"wt_errors":          pc.WTErrors.Load(),
+		"backup_hits":        pc.BackupHits.Load(),
+		"push_too_large":     pc.PushTooLarge.Load(),
+		"replication_factor": pc.replication,
 		"ra_hot_requests":    pc.RAHotReq.Load(),
 		"ra_hot_errors":      pc.RAHotErr.Load(),
 		"ra_prefetches":      pc.RAPrefetch.Load(),
@@ -1602,6 +1719,92 @@ func (hr *hashRing) get(key string) string {
 		idx = 0
 	}
 	return hr.nodeMap[hr.ring[idx]]
+}
+
+// getN returns up to n distinct nodes for key, walking the ring clockwise
+// from the key's owner.
+func (hr *hashRing) getN(key string, n int) []string {
+	if len(hr.ring) == 0 {
+		return nil
+	}
+	out := make([]string, 0, n)
+	hr.walk(key, n, func(addr string) bool {
+		out = append(out, addr)
+		return true
+	})
+	return out
+}
+
+// has reports whether addr is one of the first n distinct nodes for key. It
+// does not allocate.
+func (hr *hashRing) has(key string, n int, addr string) bool {
+	if len(hr.ring) == 0 || n <= 0 {
+		return false
+	}
+	h := hashKey(key)
+	idx := sort.Search(len(hr.ring), func(i int) bool { return hr.ring[i] >= h })
+	if idx == len(hr.ring) {
+		idx = 0
+	}
+	first := hr.nodeMap[hr.ring[idx]]
+	if first == addr {
+		return true
+	}
+	if n == 1 {
+		return false
+	}
+	var seen [MaxReplicationFactor]string
+	seen[0] = first
+	count := 1
+	for i := 1; i < len(hr.ring) && count < n && count < len(seen); i++ {
+		node := hr.nodeMap[hr.ring[(idx+i)%len(hr.ring)]]
+		dup := false
+		for _, s := range seen[:count] {
+			if s == node {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		if node == addr {
+			return true
+		}
+		seen[count] = node
+		count++
+	}
+	return false
+}
+
+// walk calls visit with up to n distinct nodes for key in ring order until
+// visit returns false. It does not allocate for n <= MaxReplicationFactor.
+func (hr *hashRing) walk(key string, n int, visit func(string) bool) {
+	if len(hr.ring) == 0 || n <= 0 {
+		return
+	}
+	var seen [MaxReplicationFactor]string
+	count := 0
+	h := hashKey(key)
+	idx := sort.Search(len(hr.ring), func(i int) bool { return hr.ring[i] >= h })
+	for i := 0; i < len(hr.ring) && count < n && count < len(seen); i++ {
+		addr := hr.nodeMap[hr.ring[(idx+i)%len(hr.ring)]]
+		dup := false
+		for _, s := range seen[:count] {
+			if s == addr {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		seen[count] = addr
+		count++
+		if !visit(addr) {
+			return
+		}
+	}
 }
 
 func hashKey(key string) uint32 {
