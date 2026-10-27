@@ -371,6 +371,13 @@
   "shape": "X5 logfmt filter level_extracted, by level"
  },
  {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "extracted-suffix",
+  "shape": "E6 logfmt count by level_extracted"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "instant",
@@ -472,6 +479,13 @@
   "added": "2026-10-23",
   "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
   "range": "24h",
+  "set": "json-error-split",
+  "shape": "J3 json no-error count by parsed method"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
   "set": "json-error-split",
   "shape": "J3 json no-error count by parsed method"
  },
@@ -665,6 +679,237 @@
   "shape": "I grafana volume of B"
  },
  {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF1 logs, detected_level equals"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF10 drilldown logs, level pill multi-select, json service"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF13 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF13 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter",
+  "shape": "LF13 explore volume, level filter before json"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF16 drilldown label breakdown, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF2 logs, detected_level regexp"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF21 logfmt count by detected_level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF22 json count by detected_level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF22 json count by detected_level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter",
+  "shape": "LF22 json count by detected_level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF23 json count by level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter",
+  "shape": "LF23 json count by level, level filter"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF29 logs, drop detected_level"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF30 logs, drop level"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF31 count by detected_level, level dropped"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF31 count by detected_level, level dropped"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter",
+  "shape": "LF31 count by detected_level, level dropped"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF32 count by detected_level, detected_level kept"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF32 count by detected_level, detected_level kept"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter",
+  "shape": "LF32 count by detected_level, detected_level kept"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "instant",
+  "set": "level-filter",
+  "shape": "LF33 drilldown logs count, level pill, instant"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF6 logs, json then detected_level"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF7 logs, json then level equals"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF8 logs, logfmt then level regexp"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS1 logs, level stream label"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS3 logs, level in the selector"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS4 logs, json then level_extracted"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS5 logs, logfmt then level_extracted regexp"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS6 level stream label count"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter-stored",
+  "shape": "LS6 level stream label count"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS7 rate of level stream label by service"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
+  "set": "level-filter-stored",
+  "shape": "LS7 rate of level stream label by service"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -710,6 +955,13 @@
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
+  "set": "metric-latency-gap",
+  "shape": "DL2 drilldown field breakdown, level + stream-label filter before json"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "6h",
   "set": "metric-latency-gap",
   "shape": "DL2 drilldown field breakdown, level + stream-label filter before json"
  },
@@ -1188,6 +1440,13 @@
   "range": "instant",
   "set": "unwrap-gate",
   "shape": "G11 logfmt amount sum_over_time, instant"
+ },
+ {
+  "added": "2026-10-27",
+  "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
+  "range": "instant",
+  "set": "unwrap-gate",
+  "shape": "G12 json duration_ms sum_over_time, instant"
  },
  {
   "added": "2026-10-24",
