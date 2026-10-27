@@ -25,7 +25,9 @@ why: |
   multi-tenant caches. The refresh completes in the background (one per cache
   key, cancelled by Shutdown) and the next request reads it. Past the bound,
   or without such an answer, the request waits for VictoriaLogs as before.
-  An empty answer is never served stale. An exact answer taken from a
+  The label warm-up records its reads the same way, so the first request
+  for a warmed preset is answered within the budget too. An empty answer is
+  never served stale. An exact answer taken from a
   refresh another request started may reflect a read that began up to the
   background timeout (10 s at most) earlier, as for any request that joins an
   in-flight listing. Requests ending earlier than

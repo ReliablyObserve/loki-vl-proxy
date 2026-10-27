@@ -32,7 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     VictoriaLogs as before.
 
   One refresh runs per cache key. Concurrent requests share it, it ends
-  within the background timeout, and `Shutdown` cancels it.
+  within the background timeout, and `Shutdown` cancels it. The label warm-up
+  records its reads the same way, so the first request for a warmed preset
+  after a pass is answered within the budget too (exactly, or from the warm
+  answer, aged from the start of the warm read).
 
   New metrics, all under `loki_vl_proxy_internal_operation_*`:
   - `{operation="metadata_edge_answer"}` with outcome `exact`, `stale` or
@@ -44,8 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Not covered:
   - `/series` has no response cache and still reads VictoriaLogs on every
     request.
-  - The first request for a window this replica has not answered yet waits
-    for VictoriaLogs.
+  - The first request for a window this replica has neither answered nor
+    warmed waits for VictoriaLogs.
 
   Registry: `quality/metadata-bounded-staleness`.
 

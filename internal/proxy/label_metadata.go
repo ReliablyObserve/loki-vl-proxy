@@ -1180,7 +1180,12 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		// It runs as the /labels request it stands for, so the inventory
 		// buckets and field-name entries it fills carry the same tenant and
 		// scope as those of a user request without a tenant header.
+		// The warm answer serves the window's next near-now request within
+		// -metadata-max-staleness from the start of this read, so the read
+		// skips the short-lived exact-window field-name cache like a refresh.
 		fetchCtx, fetchCancel := context.WithTimeout(context.WithValue(withBackgroundInventory(ctx), origRequestKey, w.req), 60*time.Second)
+		fetchCtx = context.WithValue(fetchCtx, labelCacheBypassKey{}, true)
+		readStarted := time.Now()
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
@@ -1219,6 +1224,11 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 			entryTTL = metadataWindowTTL(w.startStr, w.endStr, ttl)
 		}
 		p.mergeLabelsIntoCache("labels", w.cacheKey, labels, entryTTL)
+		if len(labels) > 0 {
+			// Stored above (an empty list is not), so the record never runs
+			// ahead of the answer.
+			p.recordMetadataEdgeRead(w.cacheKey, readStarted)
+		}
 		p.log.Debug("label cache warmed from VL", "window", w.window)
 	}
 }

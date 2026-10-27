@@ -446,6 +446,7 @@
     ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
+      "internal/proxy/metadata_edge_refresh_test.go",
       "test/e2e-compat/stack_profiles_test.go"
     ],
     "quality/metadata-bounded-staleness": [
@@ -1053,6 +1054,7 @@
     "internal/proxy/metadata_edge_refresh_test.go": [
       "loki_api_v1_label_name_values",
       "loki_api_v1_labels",
+      "quality/label-cache-warm",
       "quality/metadata-bounded-staleness",
       "tenant-numeric-routing"
     ],

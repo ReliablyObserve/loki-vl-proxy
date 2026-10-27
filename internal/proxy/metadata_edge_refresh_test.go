@@ -487,3 +487,35 @@ func TestMetadataEdge_ShutdownStopsBackgroundRefreshes(t *testing.T) {
 		t.Fatal("a refresh started after Shutdown")
 	}
 }
+
+// The warm-up records when its read started, like a request: the first
+// Grafana /labels of a warmed preset after the pass, with VictoriaLogs
+// holding its edge refresh, is answered within the budget from the warm
+// answer (bounded-stale, its age counted from the warm read's start), and the
+// refresh it starts lists what was written since.
+//
+// conformance: quality/metadata-bounded-staleness, quality/label-cache-warm
+func TestMetadataEdge_FirstRequestAfterWarmUpAnswersWithinBudget(t *testing.T) {
+	vl := &edgeVL{base: []string{"app", "pod"}}
+	const budget = 50 * time.Millisecond
+	p, mux := newEdgeProxy(t, vl, edgeProxyOptions{maxStaleness: 10 * time.Second, budget: budget})
+	p.warmLabelWindows(context.Background(), 0, time.Minute, false, 2*time.Hour) // the 1h preset, as at startup
+	if !refreshedSince(p, time.Time{}) {
+		t.Fatal("the warm-up recorded no read")
+	}
+	vl.addFresh("canary")
+	vl.close()
+	t.Cleanup(vl.open)
+	held := vl.edgeCalls.Load()
+	first := quickEdgeRequest(t, mux, "", "", time.Now())
+	if first.code != http.StatusOK || !first.stale {
+		t.Fatalf("first request after the warm-up: %+v, want the warm answer marked stale", first)
+	}
+	if !slices.Contains(first.data, "app") || !slices.Contains(first.data, "pod") || slices.Contains(first.data, "canary") {
+		t.Fatalf("first request after the warm-up listed %v, want the warm answer", first.data)
+	}
+	if first.took > budget+2*time.Second {
+		t.Fatalf("first request after the warm-up took %s with a %s budget", first.took, budget)
+	}
+	await(t, "the edge refresh at the gate", func() bool { return vl.waiting.Load() > 0 && vl.edgeCalls.Load() > held })
+}
