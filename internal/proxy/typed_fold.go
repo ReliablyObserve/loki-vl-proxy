@@ -7,8 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	fj "github.com/valyala/fastjson"
+	"unsafe"
 )
 
 // foldLevel is one vector aggregation of a fold: the series that share the
@@ -69,92 +68,356 @@ type typedBody struct {
 	series []typedSeries
 }
 
-var typedFoldParsers fj.ParserPool
-
 // decodeTypedBody reads a successful matrix or vector answer whose labels are
 // strings and whose samples are numeric timestamps with a number or a string
 // for the value; ok is false for anything else, which the generic fold reads.
+// It scans the bytes into the series directly: a JSON document tree of a body
+// of millions of samples is a few gigabytes under load, the series are 16 bytes
+// a sample.
 func decodeTypedBody(body []byte) (typedBody, bool) {
-	parser := typedFoldParsers.Get()
-	defer typedFoldParsers.Put(parser)
-	root, err := parser.ParseBytes(body)
-	if err != nil || string(root.GetStringBytes("status")) != "success" {
-		return typedBody{}, false
-	}
-	data := root.Get("data")
-	if data == nil {
-		return typedBody{}, false
-	}
+	s := typedScanner{b: body}
 	var out typedBody
-	switch string(data.GetStringBytes("resultType")) {
-	case "vector":
-		out.vector = true
-	case "matrix":
-	default:
+	var kind string
+	resultAt := -1
+	status := ""
+	if !s.expect('{') {
 		return typedBody{}, false
 	}
-	items, err := data.Get("result").Array()
-	if err != nil {
-		return typedBody{}, false
-	}
-	out.series = make([]typedSeries, 0, len(items))
-	for _, item := range items {
-		metric, err := item.Get("metric").Object()
-		if err != nil {
+	for first := true; ; first = false {
+		if s.peek() == '}' {
+			s.i++
+			break
+		}
+		if !first && !s.expect(',') {
 			return typedBody{}, false
 		}
-		series := typedSeries{metric: make(map[string]string, metric.Len())}
-		bad := false
-		metric.Visit(func(k []byte, v *fj.Value) {
-			if v.Type() != fj.TypeString {
-				bad = true
-				return
-			}
-			series.metric[string(k)] = string(v.GetStringBytes())
-		})
-		if bad {
+		key, ok := s.str()
+		if !ok || !s.expect(':') {
 			return typedBody{}, false
 		}
-		var samples []*fj.Value
-		if out.vector {
-			value := item.Get("value")
-			if value == nil {
+		switch key {
+		case "status":
+			if status, ok = s.str(); !ok {
 				return typedBody{}, false
 			}
-			samples = []*fj.Value{value}
-		} else if values := item.Get("values"); values != nil {
-			if samples, err = values.Array(); err != nil {
+		case "data":
+			if !s.expect('{') {
 				return typedBody{}, false
 			}
-		}
-		series.points = make([]typedPoint, 0, len(samples))
-		for _, sample := range samples {
-			pair, err := sample.Array()
-			if err != nil || len(pair) < 2 {
-				continue
-			}
-			if pair[0].Type() != fj.TypeNumber {
-				return typedBody{}, false
-			}
-			ts, _ := pair[0].Float64()
-			var v float64
-			switch pair[1].Type() {
-			case fj.TypeString:
-				v, _ = strconv.ParseFloat(string(pair[1].GetStringBytes()), 64)
-			case fj.TypeNumber:
-				v, _ = pair[1].Float64()
-			default:
-				if out.vector {
-					v = 0 // an instant value that is not a string reads as 0
-				} else {
-					continue
+			for firstData := true; ; firstData = false {
+				if s.peek() == '}' {
+					s.i++
+					break
+				}
+				if !firstData && !s.expect(',') {
+					return typedBody{}, false
+				}
+				dkey, ok := s.str()
+				if !ok || !s.expect(':') {
+					return typedBody{}, false
+				}
+				switch dkey {
+				case "resultType":
+					if kind, ok = s.str(); !ok {
+						return typedBody{}, false
+					}
+				case "result":
+					resultAt = s.i
+					if !s.skip() {
+						return typedBody{}, false
+					}
+				default:
+					if !s.skip() {
+						return typedBody{}, false
+					}
 				}
 			}
-			series.points = append(series.points, typedPoint{ts, v})
+		default:
+			if !s.skip() {
+				return typedBody{}, false
+			}
+		}
+	}
+	if status != "success" || resultAt < 0 || (kind != "matrix" && kind != "vector") {
+		return typedBody{}, false
+	}
+	out.vector = kind == "vector"
+	s.i = resultAt
+	if !s.series(&out) {
+		return typedBody{}, false
+	}
+	return out, true
+}
+
+// typedScanner is a cursor over a JSON document.
+type typedScanner struct {
+	b []byte
+	i int
+}
+
+func (s *typedScanner) ws() {
+	for s.i < len(s.b) && (s.b[s.i] == ' ' || s.b[s.i] == '\n' || s.b[s.i] == '\t' || s.b[s.i] == '\r') {
+		s.i++
+	}
+}
+
+func (s *typedScanner) peek() byte {
+	s.ws()
+	if s.i >= len(s.b) {
+		return 0
+	}
+	return s.b[s.i]
+}
+
+func (s *typedScanner) expect(c byte) bool {
+	if s.peek() != c {
+		return false
+	}
+	s.i++
+	return true
+}
+
+// str reads a JSON string.
+func (s *typedScanner) str() (string, bool) {
+	if s.peek() != '"' {
+		return "", false
+	}
+	start := s.i
+	s.i++
+	escaped := false
+	for s.i < len(s.b) {
+		switch s.b[s.i] {
+		case '\\':
+			escaped = true
+			s.i += 2
+			continue
+		case '"':
+			s.i++
+			if !escaped {
+				return string(s.b[start+1 : s.i-1]), true
+			}
+			var out string
+			if json.Unmarshal(s.b[start:s.i], &out) != nil {
+				return "", false
+			}
+			return out, true
+		}
+		s.i++
+	}
+	return "", false
+}
+
+// number reads a JSON number.
+func (s *typedScanner) number() (float64, bool) {
+	s.ws()
+	start := s.i
+	for s.i < len(s.b) && (s.b[s.i] >= '0' && s.b[s.i] <= '9' || s.b[s.i] == '-' || s.b[s.i] == '+' || s.b[s.i] == '.' || s.b[s.i] == 'e' || s.b[s.i] == 'E') {
+		s.i++
+	}
+	if s.i == start {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(unsafe.String(&s.b[start], s.i-start), 64)
+	return v, err == nil
+}
+
+// skip passes over one JSON value.
+func (s *typedScanner) skip() bool {
+	switch c := s.peek(); c {
+	case 0:
+		return false
+	case '"':
+		_, ok := s.str()
+		return ok
+	case '{', '[':
+		depth := 0
+		for s.i < len(s.b) {
+			switch s.b[s.i] {
+			case '"':
+				if _, ok := s.str(); !ok {
+					return false
+				}
+				continue
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+				if depth == 0 {
+					s.i++
+					return true
+				}
+			}
+			s.i++
+		}
+		return false
+	default:
+		for s.i < len(s.b) && s.b[s.i] != ',' && s.b[s.i] != '}' && s.b[s.i] != ']' && s.b[s.i] != ' ' && s.b[s.i] != '\n' && s.b[s.i] != '\t' && s.b[s.i] != '\r' {
+			s.i++
+		}
+		return true
+	}
+}
+
+// series reads the "result" array into out.
+func (s *typedScanner) series(out *typedBody) bool {
+	if !s.expect('[') {
+		return false
+	}
+	for first := true; ; first = false {
+		if s.peek() == ']' {
+			s.i++
+			return true
+		}
+		if !first && !s.expect(',') {
+			return false
+		}
+		if !s.expect('{') {
+			return false
+		}
+		series := typedSeries{}
+		seenMetric, seenValue := false, false
+		for firstKey := true; ; firstKey = false {
+			if s.peek() == '}' {
+				s.i++
+				break
+			}
+			if !firstKey && !s.expect(',') {
+				return false
+			}
+			key, ok := s.str()
+			if !ok || !s.expect(':') {
+				return false
+			}
+			switch {
+			case key == "metric":
+				if series.metric, ok = s.metric(); !ok {
+					return false
+				}
+				seenMetric = true
+			case key == "values" && !out.vector:
+				if !s.points(&series, false) {
+					return false
+				}
+				seenValue = true
+			case key == "value" && out.vector:
+				if !s.points(&series, true) {
+					return false
+				}
+				seenValue = true
+			default:
+				return false
+			}
+		}
+		if !seenMetric || (out.vector && !seenValue) {
+			return false
 		}
 		out.series = append(out.series, series)
 	}
-	return out, true
+}
+
+// metric reads an object of string values.
+func (s *typedScanner) metric() (map[string]string, bool) {
+	if !s.expect('{') {
+		return nil, false
+	}
+	m := map[string]string{}
+	for first := true; ; first = false {
+		if s.peek() == '}' {
+			s.i++
+			return m, true
+		}
+		if !first && !s.expect(',') {
+			return nil, false
+		}
+		k, ok := s.str()
+		if !ok || !s.expect(':') {
+			return nil, false
+		}
+		v, ok := s.str()
+		if !ok {
+			return nil, false
+		}
+		m[k] = v
+	}
+}
+
+// points reads the samples of a matrix series (an array of pairs), or the one
+// pair of a vector series.
+func (s *typedScanner) points(series *typedSeries, one bool) bool {
+	if one {
+		return s.pair(series, true)
+	}
+	if !s.expect('[') {
+		return false
+	}
+	for first := true; ; first = false {
+		if s.peek() == ']' {
+			s.i++
+			return true
+		}
+		if !first && !s.expect(',') {
+			return false
+		}
+		if !s.pair(series, false) {
+			return false
+		}
+	}
+}
+
+// pair reads [timestamp, value]: a pair of fewer than two elements is passed
+// over, a value that is neither a string nor a number is passed over in a
+// matrix and reads 0 in a vector.
+func (s *typedScanner) pair(series *typedSeries, vector bool) bool {
+	if !s.expect('[') {
+		return false
+	}
+	if s.peek() == ']' {
+		s.i++
+		return !vector
+	}
+	ts, ok := s.number()
+	if !ok {
+		return false
+	}
+	if s.peek() == ']' {
+		s.i++
+		return !vector
+	}
+	if !s.expect(',') {
+		return false
+	}
+	var v float64
+	keep := true
+	switch c := s.peek(); {
+	case c == '"':
+		raw, ok := s.str()
+		if !ok {
+			return false
+		}
+		v, _ = strconv.ParseFloat(raw, 64)
+	case c == '-' || c >= '0' && c <= '9':
+		if v, ok = s.number(); !ok {
+			return false
+		}
+	default:
+		if !s.skip() {
+			return false
+		}
+		keep = vector
+	}
+	for s.peek() == ',' { // elements past the value
+		s.i++
+		if !s.skip() {
+			return false
+		}
+	}
+	if !s.expect(']') {
+		return false
+	}
+	if keep {
+		series.points = append(series.points, typedPoint{ts, v})
+	}
+	return true
 }
 
 type typedCell struct {

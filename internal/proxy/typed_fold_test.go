@@ -214,3 +214,111 @@ func BenchmarkFoldWithoutMatrix(b *testing.B) {
 		}
 	})
 }
+
+// refDecodeTyped reads the same shapes through encoding/json's document tree.
+func refDecodeTyped(body []byte) (typedBody, bool) {
+	var doc map[string]any
+	if json.Unmarshal(body, &doc) != nil || doc["status"] != "success" {
+		return typedBody{}, false
+	}
+	data, _ := doc["data"].(map[string]any)
+	var out typedBody
+	switch data["resultType"] {
+	case "vector":
+		out.vector = true
+	case "matrix":
+	default:
+		return typedBody{}, false
+	}
+	items, _ := data["result"].([]any)
+	for _, raw := range items {
+		item, _ := raw.(map[string]any)
+		series := typedSeries{metric: map[string]string{}}
+		metric, _ := item["metric"].(map[string]any)
+		for k, v := range metric {
+			text, ok := v.(string)
+			if !ok {
+				return typedBody{}, false
+			}
+			series.metric[k] = text
+		}
+		var samples []any
+		if out.vector {
+			samples = []any{item["value"]}
+		} else {
+			samples, _ = item["values"].([]any)
+		}
+		for _, sample := range samples {
+			pair, _ := sample.([]any)
+			if len(pair) < 2 {
+				continue
+			}
+			ts, ok := pair[0].(float64)
+			if !ok {
+				return typedBody{}, false
+			}
+			var v float64
+			switch x := pair[1].(type) {
+			case string:
+				v, _ = strconv.ParseFloat(x, 64)
+			case float64:
+				v = x
+			default:
+				if !out.vector {
+					continue
+				}
+			}
+			series.points = append(series.points, typedPoint{ts, v})
+		}
+		out.series = append(out.series, series)
+	}
+	return out, true
+}
+
+// conformance: semantics/nested-aggregation-outer-by-native-routes
+func TestTypedScannerReadsWhatTheDocumentTreeReads(t *testing.T) {
+	rnd := rand.New(rand.NewSource(77))
+	for i := 0; i < 800; i++ {
+		body := randomFoldBody(rnd, i%3 == 0)
+		var doc map[string]any
+		_ = json.Unmarshal(body, &doc)
+		// Re-encode with another layout: indented, and with extra keys the fold ignores.
+		if i%2 == 0 {
+			doc["warnings"] = []any{"a, {b}", `q"r`}
+			doc["data"].(map[string]any)["stats"] = map[string]any{"x": []any{1, "]", map[string]any{"}": nil}}}
+		}
+		var layout []byte
+		if i%4 < 2 {
+			layout, _ = json.MarshalIndent(doc, " ", "\t")
+		} else {
+			layout, _ = json.Marshal(doc)
+		}
+		got, ok := decodeTypedBody(layout)
+		want, wantOK := refDecodeTyped(layout)
+		if ok != wantOK {
+			t.Fatalf("#%d: scanner ok=%v, document tree ok=%v: %s", i, ok, wantOK, layout)
+		}
+		if !ok {
+			continue
+		}
+		if got.vector != want.vector || len(got.series) != len(want.series) {
+			t.Fatalf("#%d: %d series against %d: %s", i, len(got.series), len(want.series), layout)
+		}
+		for j := range want.series {
+			if fmt.Sprint(got.series[j].metric) != fmt.Sprint(want.series[j].metric) || fmt.Sprint(got.series[j].points) != fmt.Sprint(want.series[j].points) {
+				t.Fatalf("#%d series %d: %v against %v", i, j, got.series[j], want.series[j])
+			}
+		}
+	}
+	for _, bad := range []string{``, `{`, `{"status":"success"}`, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"a":1},"values":[]}]}}`,
+		`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[["1","2"]]}]}}`,
+		`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1,"2"]`, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{}}]}}`} {
+		if _, ok := decodeTypedBody([]byte(bad)); ok {
+			t.Errorf("read: %s", bad)
+		}
+	}
+	// result before resultType.
+	if got, ok := decodeTypedBody([]byte(`{"data":{"result":[{"metric":{"a":"b"},"values":[[1,"2"]]}],"resultType":"matrix"},"status":"success"}`)); !ok || len(got.series) != 1 || got.series[0].points[0].v != 2 {
+		t.Errorf("result before resultType: %v %v", got, ok)
+	}
+}

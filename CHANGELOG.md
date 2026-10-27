@@ -59,8 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Loki 45 ms; 178 ms cold, Loki 1.26 s). A parser, an underscore or derived
   name, a custom field mapping, a sliding window and an instant query keep the
   proxy's fold of the series rows, which now decodes the answer once, folds every
-  level over it and encodes it once: 3.5 times faster and 35 times fewer
-  allocations on 200 series of 2160 points (`BenchmarkFoldWithoutMatrix`), and
+  level over it and encodes it once, reading the body into the series with a
+  scanner and not a document tree (which was 1.5 GB of the heap of one busy
+  proxy): 4 times faster, 430 times fewer allocations and a third of the memory
+  on 200 series of 2160 points (`BenchmarkFoldWithoutMatrix`), and
   the sliding `sum by (app) (max by (app, pod) (count_over_time(...[5m])))`, which
   folds two levels, 28 to 66% faster. A query with one aggregation no longer
   parses for a nest (identical allocations to main on the control queries,
