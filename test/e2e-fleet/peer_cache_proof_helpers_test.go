@@ -27,10 +27,27 @@ var (
 	fleetLokiURL = envOr("FLEET_LOKI_URL", "http://localhost:3110")
 	// fleetServices are the compose services behind proxyAddrs, in order.
 	fleetServices = []string{"proxy-a", "proxy-b", "proxy-c"}
-	fleetHTTP     = &http.Client{Timeout: 60 * time.Second}
+	// Edge-case proxies (compose profile "edge"), outside the ring of the
+	// three above: one whose disk tier is a tiny tmpfs, one with no
+	// writable disk at all.
+	fleetDiskFullURL = envOr("FLEET_PROXY_DISKFULL_URL", "http://localhost:3103")
+	fleetReadOnlyURL = envOr("FLEET_PROXY_READONLY_URL", "http://localhost:3104")
+	fleetHTTP        = &http.Client{Timeout: 60 * time.Second}
 )
 
 // --- stack control -----------------------------------------------------------
+
+// replica is one proxy of the fleet: its compose service and host address.
+type replica struct {
+	name string
+	addr string
+}
+
+func fleetReplica(idx int) replica { return replica{name: fleetServices[idx], addr: proxyAddrs[idx]} }
+
+func fleetReplicas() []replica {
+	return []replica{fleetReplica(0), fleetReplica(1), fleetReplica(2)}
+}
 
 // fleetCompose runs `docker compose <args>` in this directory, where the
 // stack's docker-compose.yml lives. COMPOSE_PROJECT_NAME, DOCKER_CONTEXT,
@@ -45,6 +62,35 @@ func fleetCompose(t *testing.T, args ...string) {
 	if err != nil {
 		t.Fatalf("docker compose %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
+}
+
+// fleetComposeOutput is fleetCompose returning the command's output.
+func fleetComposeOutput(t *testing.T, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker compose %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// containerState returns a container's status and exit code.
+func containerState(t *testing.T, name string) (string, int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Status}} {{.State.ExitCode}}", name).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker inspect %s: %v\n%s", name, err, out)
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) != 2 {
+		t.Fatalf("docker inspect %s: unexpected %q", name, out)
+	}
+	code, _ := strconv.Atoi(fields[1])
+	return fields[0], code
 }
 
 // waitProxyReady polls /ready until the proxy answers 200.
@@ -103,14 +149,34 @@ type promScrape []promSample
 
 func scrapeMetrics(t *testing.T, addr string) promScrape {
 	t.Helper()
-	resp, err := fleetHTTP.Get(addr + "/metrics")
+	m, err := scrapeMetricsErr(addr)
 	if err != nil {
-		t.Fatalf("scrape %s/metrics: %v", addr, err)
+		t.Fatal(err)
+	}
+	return m
+}
+
+// scrapeMetricsErr is scrapeMetrics for goroutines, which must not fail the
+// test while a replica restarts.
+func scrapeMetricsErr(addr string) (promScrape, error) {
+	return scrapeMetricsCtx(context.Background(), addr)
+}
+
+// scrapeMetricsCtx scrapes with ctx, so the resource sampler can bound a
+// scrape of a paused replica and abort it when the phase ends.
+func scrapeMetricsCtx(ctx context.Context, addr string) (promScrape, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/metrics", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := fleetHTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("scrape %s/metrics: %w", addr, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("scrape %s/metrics: status %d err %v", addr, resp.StatusCode, err)
+		return nil, fmt.Errorf("scrape %s/metrics: status %d err %v", addr, resp.StatusCode, err)
 	}
 	var out promScrape
 	for _, line := range strings.Split(string(body), "\n") {
@@ -121,7 +187,7 @@ func scrapeMetrics(t *testing.T, addr string) promScrape {
 			out = append(out, s)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // parsePromLine parses `name{k="v",...} value` and `name value`.
@@ -207,6 +273,7 @@ func (m promScrape) sum(name string, want map[string]string) float64 {
 type fleetCounters struct {
 	vlSelect     float64 // VictoriaLogs /select/* calls this replica made
 	vlStats      float64 // of which /select/logsql/stats_query_range
+	vlSeconds    float64 // time spent waiting on VictoriaLogs, all routes
 	peerHits     float64 // values fetched from the owning peer (L3)
 	peerMisses   float64
 	peerErrors   float64
@@ -221,12 +288,16 @@ type fleetCounters struct {
 
 func readCounters(t *testing.T, addr string) fleetCounters {
 	t.Helper()
-	m := scrapeMetrics(t, addr)
+	return countersFrom(scrapeMetrics(t, addr))
+}
+
+func countersFrom(m promScrape) fleetCounters {
 	vl := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/*"}
 	stats := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/logsql/stats_query_range"}
 	return fleetCounters{
 		vlSelect:     m.sum("loki_vl_proxy_requests_total", vl),
 		vlStats:      m.sum("loki_vl_proxy_requests_total", stats),
+		vlSeconds:    m.sum("loki_vl_proxy_backend_duration_seconds_sum", nil),
 		peerHits:     m.sum("loki_vl_proxy_peer_cache_hits_total", nil),
 		peerMisses:   m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
 		peerErrors:   m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
@@ -242,7 +313,7 @@ func readCounters(t *testing.T, addr string) fleetCounters {
 
 func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 	return fleetCounters{
-		vlSelect: a.vlSelect - b.vlSelect, vlStats: a.vlStats - b.vlStats,
+		vlSelect: a.vlSelect - b.vlSelect, vlStats: a.vlStats - b.vlStats, vlSeconds: a.vlSeconds - b.vlSeconds,
 		peerHits: a.peerHits - b.peerHits, peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
 		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
 		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
@@ -256,8 +327,8 @@ func (a fleetCounters) plus(b fleetCounters) fleetCounters {
 }
 
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f peer_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f",
-		a.vlSelect, a.vlStats, a.peerHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs peer_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.peerHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses)
 }
 
 // waitSettled waits until addr's VictoriaLogs calls and write-through pushes
@@ -312,6 +383,42 @@ func peerHasKey(t *testing.T, addr, key string) bool {
 	return presence[key].OK
 }
 
+// peerGet reads key from a replica's peer endpoint and returns the status
+// and the size of the value.
+func peerGet(addr, key string) (int, int, error) {
+	req, err := http.NewRequest(http.MethodGet, addr+"/_cache/get?key="+url.QueryEscape(key), nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	req.Header.Set("X-Peer-Token", fleetPeerToken)
+	resp, err := fleetHTTP.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, len(body), err
+}
+
+// peerSet stores value under key through a replica's peer endpoint, the
+// call an owner receives from a write-through push.
+func peerSet(addr, key string, value []byte) (int, error) {
+	target := addr + "/_cache/set?" + url.Values{"key": {key}, "ttl_ms": {"120000"}}.Encode()
+	req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(string(value)))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-Peer-Token", fleetPeerToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := fleetHTTP.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
 // waitPeerHasKey polls until one of addrs holds key in memory.
 func waitPeerHasKey(t *testing.T, key string, timeout time.Duration, addrs ...string) string {
 	t.Helper()
@@ -332,37 +439,54 @@ func waitPeerHasKey(t *testing.T, key string, timeout time.Duration, addrs ...st
 // --- requests ----------------------------------------------------------------
 
 // fleetGet sends a GET and returns the body, failing on any non-200 answer
-// or a Loki-style error status.
+// or a partial response.
 func fleetGet(t *testing.T, base, path string) []byte {
 	t.Helper()
+	body, err := fleetGetErr(base, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// fleetGetErr is fleetGet for goroutines, which must not fail the test.
+func fleetGetErr(base, path string) ([]byte, error) {
 	resp, err := fleetHTTP.Get(base + path)
 	if err != nil {
-		t.Fatalf("GET %s%s: %v", base, path, err)
+		return nil, fmt.Errorf("GET %s%s: %w", base, path, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("GET %s%s: read: %v", base, path, err)
+		return nil, fmt.Errorf("GET %s%s: read: %w", base, path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET %s%s: status %d: %.400s", base, path, resp.StatusCode, body)
+		return nil, fmt.Errorf("GET %s%s: status %d: %.400s", base, path, resp.StatusCode, body)
 	}
 	if resp.Header.Get("X-Loki-VL-Partial-Response") != "" {
-		t.Fatalf("GET %s%s: partial response, not a comparable answer", base, path)
+		return nil, fmt.Errorf("GET %s%s: partial response, not a comparable answer", base, path)
 	}
-	return body
+	return body, nil
 }
 
 // canonicalJSON re-encodes body so equal JSON compares equal byte for byte.
 func canonicalJSON(t *testing.T, label string, body []byte) string {
 	t.Helper()
+	out, err := canonicalJSONErr(label, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func canonicalJSONErr(label string, body []byte) (string, error) {
 	var v any
 	if err := json.Unmarshal(body, &v); err != nil {
-		t.Fatalf("%s: invalid JSON: %v: %.400s", label, err, body)
+		return "", fmt.Errorf("%s: invalid JSON: %v: %.400s", label, err, body)
 	}
 	if m, ok := v.(map[string]any); ok {
 		if s, _ := m["status"].(string); s != "" && s != "success" {
-			t.Fatalf("%s: status %q: %.400s", label, s, body)
+			return "", fmt.Errorf("%s: status %q: %.400s", label, s, body)
 		}
 		// Per-request execution statistics differ between a cached and a
 		// computed answer; they are not part of what is compared.
@@ -371,7 +495,7 @@ func canonicalJSON(t *testing.T, label string, body []byte) string {
 		}
 	}
 	out, _ := json.Marshal(v)
-	return string(out)
+	return string(out), nil
 }
 
 // --- fixture -----------------------------------------------------------------

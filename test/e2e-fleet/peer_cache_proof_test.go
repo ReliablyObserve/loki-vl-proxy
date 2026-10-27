@@ -16,7 +16,9 @@ import (
 // on one replica and read on the others, then survives a replica losing its
 // memory (disk kept), a replica losing its disk, its owner going down and the
 // whole fleet losing every cache, with answers equal to the first ones and,
-// after the rebuild, to Loki's.
+// after the rebuild, to Loki's. Edge cases follow (peer_cache_proof_edge_test.go).
+// Every request is timed and counted, every phase sampled for CPU, memory and
+// cache sizes (peer_cache_proof_report_test.go).
 //
 // The ring owner of a key is not chosen by the test. The assertions hold
 // whichever replica owns each key:
@@ -32,16 +34,36 @@ import (
 //     C reads every key not owned by C from a peer; with 12 metadata probes
 //     and 16 windows the chance that C owns them all is below 1e-5.
 //
-// Layers that never reach the peer tier (the compatibility edge cache, the
-// query_range response cache behind it, the translation and stream field
-// name caches, the detected-level probes) are per-replica memory by design;
-// the registry rows wired here say which layer uses which tier.
+// The compatibility edge cache in front of every endpoint is per replica:
+// a replica that already answered a request answers it again from there, so
+// every assertion about tiers reads a request on a replica for the first
+// time (a restarted or recreated replica, a fresh request, or the same
+// buckets through a shifted window).
+//
+// Layers that never reach the peer tier (that edge cache, the query_range
+// response cache behind it, the translation and stream field name caches,
+// the detected-level probes) are per-replica memory by design; the registry
+// rows wired here say which layer uses which tier.
 
 const (
 	replicaA = 0
 	replicaB = 1
 	replicaC = 2
+	// repeatReads is how many times each request is read again on a replica
+	// that has answered it, for the repeat latency.
+	repeatReads = 2
 )
+
+// peerTimeout is the proxies' -peer-timeout (default 2s): an unreachable
+// owner may add at most this, plus scheduling slack, to a request.
+var peerTimeout = func() time.Duration {
+	if d, err := time.ParseDuration(envOr("FLEET_PEER_TIMEOUT", "2s")); err == nil {
+		return d
+	}
+	return 2 * time.Second
+}()
+
+const ownerDownSlack = time.Second
 
 type proofRequest struct {
 	layer string // stats_extent, query_range_window, metadata, patterns
@@ -51,35 +73,35 @@ type proofRequest struct {
 
 func (r proofRequest) String() string { return r.layer + "/" + r.name }
 
-func fleetRange(fx fleetFixture) url.Values {
+func fleetRange(start, end time.Time) url.Values {
 	return url.Values{
-		"start": {strconv.FormatInt(fx.start.UnixNano(), 10)},
-		"end":   {strconv.FormatInt(fx.end.UnixNano(), 10)},
+		"start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
 	}
 }
 
-// metricRequest is a tumbling count (range == step) over the 8h fixture:
+// metricRequest is a tumbling count (range == step) over [from, fx.end):
 // VictoriaLogs answers it from stats_query_range, whose buckets the extent
 // cache keeps (about four entries over 8h at a 60s step).
-func metricRequest(fx fleetFixture, by string) proofRequest {
-	v := fleetRange(fx)
+func metricRequest(fx fleetFixture, by string, from time.Time, name string) proofRequest {
+	v := fleetRange(from, fx.end)
 	v.Set("query", fmt.Sprintf(`sum by (%s) (count_over_time({fleet_probe=%q}[1m]))`, by, fx.probe))
 	v.Set("step", "60")
-	return proofRequest{layer: "stats_extent", name: "count_by_" + by, path: "/loki/api/v1/query_range?" + v.Encode()}
+	return proofRequest{layer: "stats_extent", name: name, path: "/loki/api/v1/query_range?" + v.Encode()}
 }
 
 // logRequest is a log query over the 8h fixture: eight 1h windows.
-func logRequest(fx fleetFixture, label, value string) proofRequest {
-	v := fleetRange(fx)
-	v.Set("query", fmt.Sprintf(`{fleet_probe=%q, %s=%q}`, fx.probe, label, value))
+func logRequest(fx fleetFixture, selector, name string) proofRequest {
+	v := fleetRange(fx.start, fx.end)
+	v.Set("query", selector)
 	v.Set("limit", "5000")
 	v.Set("direction", "backward")
-	return proofRequest{layer: "query_range_window", name: label + "_" + value, path: "/loki/api/v1/query_range?" + v.Encode()}
+	return proofRequest{layer: "query_range_window", name: name, path: "/loki/api/v1/query_range?" + v.Encode()}
 }
 
 // metadataRequests are six metadata answers for one selector.
 func metadataRequests(fx fleetFixture, name, selector string) []proofRequest {
-	v := fleetRange(fx)
+	v := fleetRange(fx.start, fx.end)
 	v.Set("query", selector)
 	q := v.Encode()
 	return []proofRequest{
@@ -93,14 +115,14 @@ func metadataRequests(fx fleetFixture, name, selector string) []proofRequest {
 }
 
 func patternsRequest(fx fleetFixture, name, selector string) proofRequest {
-	v := fleetRange(fx)
+	v := fleetRange(fx.start, fx.end)
 	v.Set("query", selector)
 	v.Set("step", "60s")
 	return proofRequest{layer: "patterns", name: name, path: "/loki/api/v1/patterns?" + v.Encode()}
 }
 
-// proofSet is one request per layer shape; fresh sets use other selectors so
-// none of their keys is cached anywhere yet.
+// proofSet is one request per layer shape; each set uses its own selectors,
+// so none of its keys is cached anywhere before it is first read.
 type proofSet struct {
 	metric   []proofRequest
 	windows  []proofRequest
@@ -115,61 +137,108 @@ func (s proofSet) all() []proofRequest {
 	return append(out, s.patterns...)
 }
 
-func baseProofSet(fx fleetFixture) proofSet {
-	all := fmt.Sprintf(`{fleet_probe=%q}`, fx.probe)
-	web := fmt.Sprintf(`{fleet_probe=%q, app="web"}`, fx.probe)
+// selectorSet builds a proof set from a metric grouping and two selectors.
+func selectorSet(fx fleetFixture, tag, by string, names [2]string, selectors [2]string) proofSet {
 	return proofSet{
-		metric:   []proofRequest{metricRequest(fx, "app")},
-		windows:  []proofRequest{logRequest(fx, "app", "web"), logRequest(fx, "app", "api")},
-		metadata: append(metadataRequests(fx, "all", all), metadataRequests(fx, "web", web)...),
-		patterns: []proofRequest{patternsRequest(fx, "all", all), patternsRequest(fx, "web", web)},
+		metric:   []proofRequest{metricRequest(fx, by, fx.start, tag+"_count_by_"+by)},
+		windows:  []proofRequest{logRequest(fx, selectors[0], tag+"_"+names[0]), logRequest(fx, selectors[1], tag+"_"+names[1])},
+		metadata: append(metadataRequests(fx, tag+"_"+names[0], selectors[0]), metadataRequests(fx, tag+"_"+names[1], selectors[1])...),
+		patterns: []proofRequest{patternsRequest(fx, tag+"_"+names[0], selectors[0]), patternsRequest(fx, tag+"_"+names[1], selectors[1])},
 	}
 }
 
-func freshProofSet(fx fleetFixture) proofSet {
-	prod := fmt.Sprintf(`{fleet_probe=%q, env="prod"}`, fx.probe)
-	api := fmt.Sprintf(`{fleet_probe=%q, app="api"}`, fx.probe)
-	return proofSet{
-		metric:   []proofRequest{metricRequest(fx, "env")},
-		windows:  []proofRequest{logRequest(fx, "env", "prod"), logRequest(fx, "env", "staging")},
-		metadata: append(metadataRequests(fx, "prod", prod), metadataRequests(fx, "api", api)...),
-		patterns: []proofRequest{patternsRequest(fx, "prod", prod), patternsRequest(fx, "api", api)},
+func baseProofSet(fx fleetFixture) proofSet {
+	return selectorSet(fx, "base", "app", [2]string{"all", "web"}, [2]string{
+		fmt.Sprintf(`{fleet_probe=%q}`, fx.probe),
+		fmt.Sprintf(`{fleet_probe=%q, app="web"}`, fx.probe),
+	})
+}
+
+func freshProofSet(fx fleetFixture, tag string) proofSet {
+	switch tag {
+	case "paused":
+		return selectorSet(fx, tag, "env, app", [2]string{"web_prod", "api_staging"}, [2]string{
+			fmt.Sprintf(`{fleet_probe=%q, app="web", env="prod"}`, fx.probe),
+			fmt.Sprintf(`{fleet_probe=%q, app="api", env="staging"}`, fx.probe),
+		})
+	case "killed":
+		return selectorSet(fx, tag, "app, env", [2]string{"web_staging", "api_prod"}, [2]string{
+			fmt.Sprintf(`{fleet_probe=%q, app="web", env="staging"}`, fx.probe),
+			fmt.Sprintf(`{fleet_probe=%q, app="api", env="prod"}`, fx.probe),
+		})
+	case "diskfull":
+		return selectorSet(fx, tag, "fleet_probe", [2]string{"staging", "any_app"}, [2]string{
+			fmt.Sprintf(`{fleet_probe=%q, env="staging"}`, fx.probe),
+			fmt.Sprintf(`{fleet_probe=%q, app=~"web|api"}`, fx.probe),
+		})
+	default: // "down"
+		return selectorSet(fx, tag, "env", [2]string{"prod", "api"}, [2]string{
+			fmt.Sprintf(`{fleet_probe=%q, env="prod"}`, fx.probe),
+			fmt.Sprintf(`{fleet_probe=%q, app="api"}`, fx.probe),
+		})
 	}
 }
 
 // answers holds the first answer of every request, canonical JSON.
 type answers map[string]string
 
-// ask sends req to a replica and returns the answer and the replica's counter
-// deltas for that one request.
-func ask(t *testing.T, idx int, req proofRequest) (string, fleetCounters) {
+// ask sends req to a replica and returns the answer, the replica's counter
+// deltas for that one request (after its background work settled) and the
+// request's latency. Every call is recorded for the report.
+func ask(t *testing.T, rep replica, req proofRequest) (string, fleetCounters, time.Duration) {
 	t.Helper()
-	before := readCounters(t, proxyAddrs[idx])
-	body := fleetGet(t, proxyAddrs[idx], req.path)
-	after := waitSettled(t, proxyAddrs[idx])
-	return canonicalJSON(t, fmt.Sprintf("%s on %s", req, fleetServices[idx]), body), after.minus(before)
+	before := readCounters(t, rep.addr)
+	started := time.Now()
+	body := fleetGet(t, rep.addr, req.path)
+	latency := time.Since(started)
+	after := waitSettled(t, rep.addr)
+	d := after.minus(before)
+	proofRec.addRequest(requestRecordFrom(rep, req, 0, latency, d))
+	return canonicalJSON(t, fmt.Sprintf("%s on %s", req, rep.name), body), d, latency
 }
 
 // askSame sends req to a replica and fails unless the answer equals want.
-func askSame(t *testing.T, idx int, req proofRequest, want string) fleetCounters {
+func askSame(t *testing.T, rep replica, req proofRequest, want string) (fleetCounters, time.Duration) {
 	t.Helper()
-	got, d := ask(t, idx, req)
+	got, d, latency := ask(t, rep, req)
 	if got != want {
-		t.Fatalf("%s on %s answered differently from the first answer:\n got: %.600s\nwant: %.600s", req, fleetServices[idx], got, want)
+		t.Fatalf("%s on %s answered differently from the first answer:\n got: %.600s\nwant: %.600s", req, rep.name, got, want)
 	}
-	return d
+	return d, latency
 }
 
-// warm computes every request of reqs on idx and records the answers.
-func warm(t *testing.T, idx int, reqs []proofRequest, into answers) fleetCounters {
+// readAgain reads every request repeatReads more times on each replica, for
+// the repeat latency; the answer must not change.
+func readAgain(t *testing.T, reps []replica, reqs []proofRequest, want answers) {
+	t.Helper()
+	for _, rep := range reps {
+		for _, req := range reqs {
+			for i := 1; i <= repeatReads; i++ {
+				started := time.Now()
+				body := fleetGet(t, rep.addr, req.path)
+				latency := time.Since(started)
+				if got := canonicalJSON(t, req.String(), body); got != want[req.path] {
+					t.Fatalf("%s on %s changed on repeat %d:\n got: %.600s\nwant: %.600s", req, rep.name, i, got, want[req.path])
+				}
+				proofRec.addRequest(requestRecordFrom(rep, req, i, latency, fleetCounters{}))
+			}
+		}
+	}
+}
+
+// warm computes every request of reqs on rep and records the answers and
+// their (cold) latencies.
+func warm(t *testing.T, rep replica, reqs []proofRequest, into answers) (fleetCounters, map[string]time.Duration) {
 	t.Helper()
 	var total fleetCounters
+	cold := map[string]time.Duration{}
 	for _, req := range reqs {
-		got, d := ask(t, idx, req)
+		got, d, latency := ask(t, rep, req)
 		into[req.path] = got
+		cold[req.path] = latency
 		total = total.plus(d)
 	}
-	return total
+	return total, cold
 }
 
 // requireReadsWithoutVL reads every write-through request on B and C and
@@ -179,10 +248,10 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 	t.Helper()
 	peerReads := 0.0
 	for _, req := range reqs {
-		for _, idx := range []int{replicaB, replicaC} {
-			d := askSame(t, idx, req, want[req.path])
+		for _, rep := range []replica{fleetReplica(replicaB), fleetReplica(replicaC)} {
+			d, _ := askSame(t, rep, req, want[req.path])
 			if route(d) != 0 {
-				t.Errorf("%s on %s made %.0f VictoriaLogs %s calls; every entry was written on another replica and pushed to its owner (%s)", req, fleetServices[idx], route(d), routeName, d)
+				t.Errorf("%s on %s made %.0f VictoriaLogs %s calls; every entry was written on another replica and pushed to its owner (%s)", req, rep.name, route(d), routeName, d)
 			}
 			peerReads += d.peerHits
 		}
@@ -192,19 +261,18 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 	}
 }
 
-// requireMetadataReadThrough reads each metadata request on B then C. A
-// shared-tier hit (disk or peer) must cost no VictoriaLogs call; at least
-// one request must come from a peer.
+// requireMetadataReadThrough reads each metadata request on the replicas in
+// order. A shared-tier hit (disk or peer) must cost no VictoriaLogs call.
 func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers, replicas ...int) fleetCounters {
 	t.Helper()
 	var total fleetCounters
 	for _, req := range reqs {
 		for _, idx := range replicas {
-			d := askSame(t, idx, req, want[req.path])
+			rep := fleetReplica(idx)
+			d, _ := askSame(t, rep, req, want[req.path])
 			if (d.tierL3Hits > 0 || d.tierL2Hits > 0) && d.vlSelect != 0 {
-				t.Errorf("%s on %s was a cache hit (disk %.0f, peer %.0f) yet made %.0f VictoriaLogs calls", req, fleetServices[idx], d.tierL2Hits, d.tierL3Hits, d.vlSelect)
+				t.Errorf("%s on %s was a cache hit (disk %.0f, peer %.0f) yet made %.0f VictoriaLogs calls", req, rep.name, d.tierL2Hits, d.tierL3Hits, d.vlSelect)
 			}
-			t.Logf("%s on %s: %s", req, fleetServices[idx], d)
 			total = total.plus(d)
 		}
 	}
@@ -218,12 +286,30 @@ func requireWindowReadThrough(t *testing.T, reqs []proofRequest, want answers, r
 	var total fleetCounters
 	for _, req := range reqs {
 		for _, idx := range replicas {
-			d := askSame(t, idx, req, want[req.path])
+			rep := fleetReplica(idx)
+			d, _ := askSame(t, rep, req, want[req.path])
 			if d.windowHits > d.peerHits {
-				t.Errorf("%s on %s: %.0f window hits but only %.0f peer reads; windows are kept in memory only, so every hit on a cold replica must come from a peer", req, fleetServices[idx], d.windowHits, d.peerHits)
+				t.Errorf("%s on %s: %.0f window hits but only %.0f peer reads; windows are kept in memory only, so every hit on a cold replica must come from a peer", req, rep.name, d.windowHits, d.peerHits)
 			}
-			t.Logf("%s on %s: %s", req, fleetServices[idx], d)
 			total = total.plus(d)
+		}
+	}
+	return total
+}
+
+// requireOwnerDownBound reads every request on B and C while A is down and
+// requires A's answer, within A's cold latency plus the peer timeout.
+func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldOnA map[string]time.Duration) fleetCounters {
+	t.Helper()
+	var total fleetCounters
+	for _, req := range reqs {
+		for _, idx := range []int{replicaB, replicaC} {
+			rep := fleetReplica(idx)
+			d, latency := askSame(t, rep, req, onA[req.path])
+			total = total.plus(d)
+			if bound := coldOnA[req.path] + peerTimeout + ownerDownSlack; latency > bound {
+				t.Errorf("contract: %s on %s took %s with its owner down, more than the cold read on A (%s) plus the peer timeout (%s) and %s slack", req, rep.name, latency, coldOnA[req.path], peerTimeout, ownerDownSlack)
+			}
 		}
 	}
 	return total
@@ -240,36 +326,56 @@ func patternsCount(t *testing.T, label, answer string) int {
 	return len(resp.Data)
 }
 
+const (
+	patternsSnapshotKey    = "__patterns_snapshot:v1"
+	labelValuesSnapshotKey = "__label_values_index_snapshot:v1"
+)
+
 // conformance: peer-cache-stats-extent, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery
 func TestFleetPeerCacheProof(t *testing.T) {
 	for _, addr := range proxyAddrs {
 		waitProxyReady(t, addr)
 	}
+	proofRec.report = proofReport{
+		Started: time.Now(),
+		Images: map[string]string{
+			"proxy": envOr("PROXY_IMAGE", "loki-vl-proxy:fleet-local"), "victorialogs": envOr("VICTORIALOGS_IMAGE", "victoriametrics/victoria-logs:v1.52.0"), "loki": envOr("LOKI_IMAGE", "grafana/loki:3.7.9"),
+		},
+		Bounds: map[string]float64{"peer_timeout_ms": ms(peerTimeout), "owner_down_slack_ms": ms(ownerDownSlack), "rss_refill_slack_bytes": rssRefillSlack},
+	}
+	t.Cleanup(func() { writeProofReport(t) })
+
 	fx := ingestFleetFixture(t)
+	proofRec.report.Fixture = map[string]any{"probe": fx.probe, "lines": fx.lines, "start": fx.start, "end": fx.end}
 	base := baseProofSet(fx)
 	first := answers{}
+	a, b, c := fleetReplica(replicaA), fleetReplica(replicaB), fleetReplica(replicaC)
 	t.Logf("fixture %s: %d lines over [%s, %s)", fx.probe, fx.lines, fx.start.Format(time.RFC3339), fx.end.Format(time.RFC3339))
 
 	// Phase 1: an entry computed on A is read by B and C.
 	ok := t.Run("cross_peer_read", func(t *testing.T) {
+		phase := startPhase("cross_peer_read", fleetReplicas())
+		defer phase.stop()
 		t.Run("stats_extent", func(t *testing.T) {
-			d := warm(t, replicaA, base.metric, first)
+			d, _ := warm(t, a, base.metric, first)
 			if d.vlStats == 0 {
 				t.Fatalf("A answered %s without a stats_query_range call: the extent cache path was not taken (%s)", base.metric[0], d)
 			}
 			requireReadsWithoutVL(t, base.metric, first, func(c fleetCounters) float64 { return c.vlStats }, "stats_query_range")
+			readAgain(t, fleetReplicas(), base.metric, first)
 		})
 		t.Run("patterns", func(t *testing.T) {
-			warm(t, replicaA, base.patterns, first)
+			warm(t, a, base.patterns, first)
 			for _, req := range base.patterns {
 				if patternsCount(t, req.String(), first[req.path]) == 0 {
 					t.Fatalf("%s: A mined no pattern; an empty answer is never cached, so nothing would be proven", req)
 				}
 			}
 			requireReadsWithoutVL(t, base.patterns, first, func(c fleetCounters) float64 { return c.vlSelect }, "select")
+			readAgain(t, fleetReplicas(), base.patterns, first)
 		})
 		t.Run("query_range_window", func(t *testing.T) {
-			d := warm(t, replicaA, base.windows, first)
+			d, _ := warm(t, a, base.windows, first)
 			if d.windowMisses == 0 {
 				t.Fatalf("A answered the log queries without window fetches: windowing was not used (%s)", d)
 			}
@@ -277,19 +383,23 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			if total.windowHits < 1 {
 				t.Errorf("no window computed on A was read by B or C through the peer tier (%s)", total)
 			}
+			readAgain(t, fleetReplicas(), base.windows, first)
 		})
 		t.Run("metadata", func(t *testing.T) {
-			warm(t, replicaA, base.metadata, first)
+			warm(t, a, base.metadata, first)
 			total := requireMetadataReadThrough(t, base.metadata, first, replicaB, replicaC)
 			if total.tierL3Hits < 1 {
 				t.Errorf("no metadata answer computed elsewhere was read by B or C from its owner (%s)", total)
 			}
+			readAgain(t, fleetReplicas(), base.metadata, first)
 		})
 		t.Run("snapshots_published", func(t *testing.T) {
 			// The patterns and label-values index snapshots a replica that
 			// lost its disk warms from: some peer other than B must hold each.
-			waitPeerHasKey(t, "__patterns_snapshot:v1", 20*time.Second, proxyAddrs[replicaA], proxyAddrs[replicaC])
-			waitPeerHasKey(t, "__label_values_index_snapshot:v1", 20*time.Second, proxyAddrs[replicaA], proxyAddrs[replicaC])
+			waitPeerHasKey(t, patternsSnapshotKey, 20*time.Second, a.addr, c.addr)
+			waitPeerHasKey(t, labelValuesSnapshotKey, 20*time.Second, a.addr, c.addr)
+			probePeerGet(t, patternsSnapshotKey, fleetReplicas())
+			probePeerGet(t, labelValuesSnapshotKey, fleetReplicas())
 		})
 	})
 	if !ok {
@@ -298,20 +408,23 @@ func TestFleetPeerCacheProof(t *testing.T) {
 
 	// Phase 2: B restarts with its disk; its memory is empty.
 	t.Run("memory_lost_disk_kept", func(t *testing.T) {
+		phase := startPhase("memory_lost_disk_kept", fleetReplicas())
+		defer phase.stop()
+		started := time.Now()
 		restartKeepDisk(t, replicaB)
+		proofRec.addEdge("restart_keep_disk", map[string]any{"replica": b.name, "ready_after_ms": ms(time.Since(started))})
 		t.Run("stats_extent", func(t *testing.T) {
 			// Buckets B owns were pushed to it and written to its disk; the
 			// others are on their owners.
 			for _, req := range base.metric {
-				d := askSame(t, replicaB, req, first[req.path])
-				if d.vlStats != 0 {
+				if d, _ := askSame(t, b, req, first[req.path]); d.vlStats != 0 {
 					t.Errorf("%s on B after a restart made %.0f stats_query_range calls; its buckets are on its disk or its peers (%s)", req, d.vlStats, d)
 				}
 			}
 		})
 		t.Run("patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
-				if d := askSame(t, replicaB, req, first[req.path]); d.vlSelect != 0 {
+				if d, _ := askSame(t, b, req, first[req.path]); d.vlSelect != 0 {
 					t.Errorf("%s on B after a restart made %.0f VictoriaLogs calls (%s)", req, d.vlSelect, d)
 				}
 			}
@@ -327,14 +440,24 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			// restart every window hit on B is a peer read, none a disk read.
 			requireWindowReadThrough(t, base.windows, first, replicaB)
 		})
+		readAgain(t, []replica{b}, base.all(), first)
 	})
 
 	// Phase 3: B loses its disk too and refills from its peers.
 	t.Run("disk_lost_refill_from_peers", func(t *testing.T) {
+		phase := startPhase("disk_lost_refill_from_peers", fleetReplicas())
+		stopped := false
+		defer func() {
+			if !stopped {
+				phase.stop()
+			}
+		}()
+		started := time.Now()
 		recreateWithoutDisk(t, replicaB)
+		proofRec.addEdge("recreate_without_disk", map[string]any{"replicas": []string{b.name}, "ready_after_ms": ms(time.Since(started))})
 		t.Run("snapshots_warmed_from_peers", func(t *testing.T) {
 			deadline := time.Now().Add(30 * time.Second)
-			for readCounters(t, proxyAddrs[replicaB]).patternsPeer < 1 {
+			for readCounters(t, b.addr).patternsPeer < 1 {
 				if time.Now().After(deadline) {
 					t.Fatal("B started without a disk and restored no pattern from its peers' snapshot within 30s")
 				}
@@ -342,11 +465,12 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			// B persists the label-values index it warmed from its peers and
 			// publishes it to the fleet again.
-			waitPeerHasKey(t, "__label_values_index_snapshot:v1", 30*time.Second, proxyAddrs[replicaB])
+			waitPeerHasKey(t, labelValuesSnapshotKey, 30*time.Second, b.addr)
+			proofRec.addEdge("snapshot_warm_from_peers", map[string]any{"replica": b.name, "warm_after_ready_ms": ms(time.Since(started))})
 		})
 		t.Run("patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
-				if d := askSame(t, replicaB, req, first[req.path]); d.vlSelect != 0 {
+				if d, _ := askSame(t, b, req, first[req.path]); d.vlSelect != 0 {
 					t.Errorf("%s on B without a disk made %.0f VictoriaLogs calls; the patterns came back from its peers (%s)", req, d.vlSelect, d)
 				}
 			}
@@ -354,15 +478,21 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		t.Run("stats_extent", func(t *testing.T) {
 			// Buckets owned by A or C come from them; the ones B owned are
 			// lost with its disk (an owner never asks its peers for its own
-			// keys) and are read again from VictoriaLogs once, after which the
-			// fleet serves them without VictoriaLogs.
+			// keys) and are read again from VictoriaLogs once. The same
+			// buckets through a shifted window (a new request everywhere, so
+			// no replica answers it from its edge cache) then cost no
+			// VictoriaLogs call on any replica.
 			for _, req := range base.metric {
-				d := askSame(t, replicaB, req, first[req.path])
-				t.Logf("%s on B without a disk: %s", req, d)
-				for _, idx := range []int{replicaB, replicaC} {
-					if d := askSame(t, idx, req, first[req.path]); d.vlStats != 0 {
-						t.Errorf("%s on %s after B refilled made %.0f stats_query_range calls (%s)", req, fleetServices[idx], d.vlStats, d)
-					}
+				askSame(t, b, req, first[req.path])
+			}
+			shifted := metricRequest(fx, "app", fx.start.Add(time.Hour), "base_count_by_app_shifted")
+			onA, d, _ := ask(t, a, shifted)
+			if d.vlStats != 0 {
+				t.Errorf("%s on A made %.0f stats_query_range calls after B refilled (%s)", shifted, d.vlStats, d)
+			}
+			for _, rep := range []replica{b, c} {
+				if d, _ := askSame(t, rep, shifted, onA); d.vlStats != 0 {
+					t.Errorf("%s on %s made %.0f stats_query_range calls after B refilled (%s)", shifted, rep.name, d.vlStats, d)
 				}
 			}
 		})
@@ -378,37 +508,41 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Errorf("B without a disk read no window from its peers (%s)", total)
 			}
 		})
+		readAgain(t, []replica{b}, base.all(), first)
+		res := phase.stop()
+		stopped = true
+		requireRefillRSSBound(t, res)
 	})
 
 	// Phase 4: A goes down holding the only copy of the entries it owns; B
-	// and C answer from VictoriaLogs, unchanged.
+	// and C answer from VictoriaLogs, unchanged, within the peer timeout.
 	t.Run("owner_down_served_by_others", func(t *testing.T) {
-		fresh := freshProofSet(fx)
+		phase := startPhase("owner_down_served_by_others", fleetReplicas())
+		defer phase.stop()
+		fresh := freshProofSet(fx, "down")
 		onA := answers{}
-		warm(t, replicaA, fresh.all(), onA)
-		fleetCompose(t, "stop", fleetServices[replicaA])
+		_, cold := warm(t, a, fresh.all(), onA)
+		fleetCompose(t, "stop", a.name)
 		defer func() {
-			fleetCompose(t, "start", fleetServices[replicaA])
-			waitProxyReady(t, proxyAddrs[replicaA])
+			fleetCompose(t, "start", a.name)
+			waitProxyReady(t, a.addr)
 		}()
-		var total fleetCounters
-		for _, req := range fresh.all() {
-			for _, idx := range []int{replicaB, replicaC} {
-				total = total.plus(askSame(t, idx, req, onA[req.path]))
-			}
-		}
+		total := requireOwnerDownBound(t, fresh.all(), onA, cold)
 		if total.peerErrors < 1 {
 			t.Errorf("no lookup on B or C reached for the stopped A; the requests did not exercise its keys (%s)", total)
 		}
-		t.Logf("owner down, B+C: %s", total)
 	})
 
 	// Phase 5: every replica loses memory and disk; the fleet rebuilds from
 	// VictoriaLogs and answers like Loki.
+	rebuilt := answers{}
 	t.Run("all_lost_rebuild_equals_loki", func(t *testing.T) {
+		phase := startPhase("all_lost_rebuild_equals_loki", fleetReplicas())
+		defer phase.stop()
+		started := time.Now()
 		recreateWithoutDisk(t, replicaA, replicaB, replicaC)
-		rebuilt := answers{}
-		warm(t, replicaA, base.all(), rebuilt)
+		proofRec.addEdge("recreate_without_disk", map[string]any{"replicas": fleetServices, "ready_after_ms": ms(time.Since(started))})
+		warm(t, a, base.all(), rebuilt)
 		for _, req := range base.all() {
 			if rebuilt[req.path] != first[req.path] {
 				t.Errorf("%s after the rebuild differs from the first answer:\n got: %.600s\nwant: %.600s", req, rebuilt[req.path], first[req.path])
@@ -418,6 +552,34 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		requireReadsWithoutVL(t, base.patterns, rebuilt, func(c fleetCounters) float64 { return c.vlSelect }, "select")
 		compareWithLoki(t, fx, base, rebuilt)
 	})
+
+	runEdgeCases(t, fx, base, first)
+}
+
+// rssRefillSlack is what Go's heap may grow beyond the refilled cache bytes.
+const rssRefillSlack = 64 << 20
+
+// requireRefillRSSBound: a replica that lost its disk and refilled must not
+// hold more resident memory than before the loss plus what it refilled.
+func requireRefillRSSBound(t *testing.T, refill phaseResources) {
+	t.Helper()
+	before, ok := proofRec.phaseResources("cross_peer_read")
+	if !ok {
+		return
+	}
+	pre, post := before.Replicas[fleetServices[replicaB]], refill.Replicas[fleetServices[replicaB]]
+	if pre == nil || post == nil || pre.Samples == 0 || post.Samples == 0 {
+		t.Logf("RSS bound not checked: no resource samples of B")
+		return
+	}
+	grown := post.MemCacheBytes - pre.MemCacheBytes
+	if grown < 0 {
+		grown = 0
+	}
+	if bound := pre.RSSMedianBytes + grown + rssRefillSlack; post.RSSMedianBytes > bound {
+		t.Errorf("contract: B's median RSS after refilling (%s) exceeds its median before the disk loss (%s) plus the refilled cache bytes (%s) and %s slack",
+			describeBytes(post.RSSMedianBytes), describeBytes(pre.RSSMedianBytes), describeBytes(grown), describeBytes(rssRefillSlack))
+	}
 }
 
 // compareWithLoki checks the rebuilt answers against Loki for the shapes both
@@ -451,14 +613,19 @@ func compareWithLoki(t *testing.T, fx fleetFixture, base proofSet, rebuilt answe
 			t.Errorf("%s: rebuilt lines differ from Loki: Loki %d lines, proxy %d", req, len(loki), len(proxy))
 		}
 	}
+	compared := 0
 	for _, req := range base.metadata {
-		switch {
-		case req.name == "all/app_values" || req.name == "all/env_values" || req.name == "web/app_values" || req.name == "web/env_values":
+		switch req.name {
+		case "base_all/app_values", "base_all/env_values", "base_web/app_values", "base_web/env_values":
 			loki := labelValues(t, "Loki "+req.String(), fleetGet(t, fleetLokiURL, req.path))
 			proxy := labelValues(t, "proxy "+req.String(), []byte(rebuilt[req.path]))
 			if len(loki) == 0 || !reflect.DeepEqual(loki, proxy) {
 				t.Errorf("%s: rebuilt values %v, Loki %v", req, proxy, loki)
 			}
+			compared++
 		}
+	}
+	if compared != 4 {
+		t.Errorf("compared %d label-value answers with Loki, want 4", compared)
 	}
 }

@@ -13,8 +13,11 @@ version: "3.8"
 # was started with. Host ports, images and container names can be overridden
 # to run a second, isolated copy of the stack:
 #   FLEET_VL_PORT, FLEET_LOKI_PORT, FLEET_PROXY_{A,B,C}_PORT,
+#   FLEET_PROXY_{DISKFULL,READONLY}_PORT,
 #   VICTORIALOGS_IMAGE, LOKI_IMAGE, PROXY_IMAGE, FLEET_NAME_PREFIX
-# and the test reads FLEET_VL_URL, FLEET_LOKI_URL and FLEET_PROXY_{A,B,C}_URL.
+# and the test reads FLEET_VL_URL, FLEET_LOKI_URL,
+# FLEET_PROXY_{A,B,C,DISKFULL,READONLY}_URL; it writes its measurements to
+# FLEET_PROOF_REPORT (JSON).
 
 services:
   victorialogs:
@@ -216,6 +219,66 @@ services:
       timeout: 2s
       retries: 10
       start_period: 5s
+
+  # Edge cases of the peer cache proof, started and removed by the test
+  # itself (`docker compose --profile edge up proxy-diskfull`). Both read
+  # their peers but are outside the ring of proxy-a/b/c.
+  # proxy-diskfull: the disk tier is a 64 KiB tmpfs, full after a few writes.
+  proxy-diskfull:
+    profiles: ["edge"]
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-diskfull
+    user: root
+    ports:
+      - "${FLEET_PROXY_DISKFULL_PORT:-3103}:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-cache-ttl=30s"
+      - "-cache-max=20000"
+      - "-disk-cache-path=/cache/proxy-diskfull.db"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-diskfull:3100"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-server.register-instrumentation=true"
+      - "-labels-cache-warm=false"
+    tmpfs:
+      - /cache:size=64k
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # proxy-readonly: read-only root filesystem and no volume, so the disk
+  # cache path cannot be created.
+  proxy-readonly:
+    profiles: ["edge"]
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-readonly
+    read_only: true
+    restart: "no"
+    ports:
+      - "${FLEET_PROXY_READONLY_PORT:-3104}:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-disk-cache-path=/cache/proxy-readonly.db"
+      - "-peer-self=proxy-readonly:3100"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-labels-cache-warm=false"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
 
 volumes:
   vl-data:
