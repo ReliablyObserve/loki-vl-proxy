@@ -199,6 +199,13 @@ func TestOrderedJSONDetectedLevelLikeLoki(t *testing.T) {
 					srv, fake := newPushdownFakeVL(t, []pushdownRow{probe.row(s0.Add(100 * time.Second))}, nil)
 					fake.presence = pruned
 					p := newFilterPushdownProxy(t, srv.URL)
+					// A proxy and its cache kept alive by every subtest of every run
+					// hold their workers and connections: gigabytes under -count=500,
+					// until dials time out.
+					t.Cleanup(func() {
+						_ = p.Shutdown(context.Background())
+						p.cache.Close() // the cache handed to the proxy is the caller's
+					})
 					fake.stored = p.labelTranslator.ToVL
 					if code, got, body := detectedLevelQuery(t, p, query, start, end, time.Minute); code != http.StatusOK || !reflect.DeepEqual(got, want) {
 						t.Fatalf("status %d %.200s, got %v, want %v", code, body, got, want)

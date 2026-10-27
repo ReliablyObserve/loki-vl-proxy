@@ -23,14 +23,19 @@ proxy: |
   recorded as a backend failure or open the circuit breaker. A response
   VictoriaLogs aborts after its headers (a query past its deadline) is answered
   with Loki's 504 timeout text when the budget ran out, a sanitized 502
-  otherwise, and its partial body is never decoded or cached.
+  otherwise, and its partial body is never decoded or cached. A call whose own
+  context is live is never answered with a cancellation: when the transport
+  fails it with context.Canceled (a pooled connection marked cancelled by a
+  sibling call the proxy cancelled), it is sent once more on a new connection.
 
 implementation:
   - internal/proxy/backend.go
   - internal/proxy/backend_heavy.go
   - internal/proxy/backend_response_guard.go
+  - internal/proxy/backend_budget.go
 
 cases:
   - semantics/backend-timeout-argument
   - semantics/client-cancellation-propagates
   - semantics/backend-aborted-response
+  - semantics/live-request-not-cancelled-by-sibling
