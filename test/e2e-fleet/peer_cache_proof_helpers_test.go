@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -274,16 +275,25 @@ type fleetCounters struct {
 	vlSelect     float64 // VictoriaLogs /select/* calls this replica made
 	vlStats      float64 // of which /select/logsql/stats_query_range
 	vlSeconds    float64 // time spent waiting on VictoriaLogs, all routes
-	peerHits     float64 // values fetched from the owning peer (L3)
+	peerHits     float64 // values fetched from a peer replica (L3)
+	backupHits   float64 // of which from a replica other than the owner (replication builds)
 	peerMisses   float64
 	peerErrors   float64
 	wtPushes     float64 // write-through pushes to owner peers
 	wtErrors     float64
-	tierL2Hits   float64 // shared read path (metadata endpoints) disk hits
+	tierL2Hits   float64 // shared read path disk hits
 	tierL3Hits   float64 // shared read path peer hits
 	windowHits   float64 // query_range window cache hits (any tier)
 	windowMisses float64
 	patternsPeer float64 // pattern entries restored from peer snapshots at startup
+	// Where label stream inventory units came from, on builds that have the
+	// inventory (metadata_stream_inventory_unit); its unit lookups use the
+	// shared read path, so they are also in tierL2Hits and tierL3Hits.
+	invMemory, invDisk, invPeer, invVL float64
+	// VictoriaLogs calls made by every running replica of the fleet while
+	// one request was answered (set by ask): a replica may forward work to
+	// a peer, so "no VictoriaLogs call" is checked fleet-wide.
+	fleetVLSelect, fleetVLStats, fleetVLSeconds float64
 }
 
 func readCounters(t *testing.T, addr string) fleetCounters {
@@ -294,11 +304,15 @@ func readCounters(t *testing.T, addr string) fleetCounters {
 func countersFrom(m promScrape) fleetCounters {
 	vl := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/*"}
 	stats := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/logsql/stats_query_range"}
+	inv := func(source string) float64 {
+		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory_unit", "outcome": source})
+	}
 	return fleetCounters{
 		vlSelect:     m.sum("loki_vl_proxy_requests_total", vl),
 		vlStats:      m.sum("loki_vl_proxy_requests_total", stats),
 		vlSeconds:    m.sum("loki_vl_proxy_backend_duration_seconds_sum", nil),
 		peerHits:     m.sum("loki_vl_proxy_peer_cache_hits_total", nil),
+		backupHits:   m.sum("loki_vl_proxy_peer_cache_backup_hits_total", nil),
 		peerMisses:   m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
 		peerErrors:   m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
 		wtPushes:     m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
@@ -308,17 +322,24 @@ func countersFrom(m promScrape) fleetCounters {
 		windowHits:   m.sum("loki_vl_proxy_window_cache_hit_total", nil),
 		windowMisses: m.sum("loki_vl_proxy_window_cache_miss_total", nil),
 		patternsPeer: m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
+		invMemory:    inv("memory"),
+		invDisk:      inv("disk"),
+		invPeer:      inv("peer"),
+		invVL:        inv("vl"),
 	}
 }
 
 func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 	return fleetCounters{
 		vlSelect: a.vlSelect - b.vlSelect, vlStats: a.vlStats - b.vlStats, vlSeconds: a.vlSeconds - b.vlSeconds,
-		peerHits: a.peerHits - b.peerHits, peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
+		peerHits: a.peerHits - b.peerHits, backupHits: a.backupHits - b.backupHits,
+		peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
 		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
 		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
 		patternsPeer: a.patternsPeer - b.patternsPeer,
+		invMemory:    a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
+		fleetVLSelect: a.fleetVLSelect - b.fleetVLSelect, fleetVLStats: a.fleetVLStats - b.fleetVLStats, fleetVLSeconds: a.fleetVLSeconds - b.fleetVLSeconds,
 	}
 }
 
@@ -326,26 +347,93 @@ func (a fleetCounters) plus(b fleetCounters) fleetCounters {
 	return a.minus(fleetCounters{}.minus(b))
 }
 
+// topLevelL2Hits and topLevelL3Hits are the shared-tier hits of the answer
+// itself, without the inventory's unit lookups.
+func (a fleetCounters) topLevelL2Hits() float64 { return a.tierL2Hits - a.invDisk }
+func (a fleetCounters) topLevelL3Hits() float64 { return a.tierL3Hits - a.invPeer }
+
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs peer_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f",
-		a.vlSelect, a.vlStats, a.vlSeconds, a.peerHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f)",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL)
 }
 
-// waitSettled waits until addr's VictoriaLogs calls and write-through pushes
-// stop changing: pushes run asynchronously after the response was written,
-// and a request may start background refreshes. Counting before they settle
-// would charge them to the next request.
-func waitSettled(t *testing.T, addr string) fleetCounters {
+// fleetDown holds the services the proof stopped or paused: they are left
+// out of fleet-wide counting (a paused one would hang the scrape).
+var fleetDown sync.Map
+
+func markDown(name string, down bool) {
+	if down {
+		fleetDown.Store(name, true)
+	} else {
+		fleetDown.Delete(name)
+	}
+}
+
+// countedReplicas are the running ring replicas plus extra (an edge proxy).
+func countedReplicas(extra replica) []replica {
+	var out []replica
+	seen := false
+	for _, rep := range fleetReplicas() {
+		if _, down := fleetDown.Load(rep.name); down {
+			continue
+		}
+		seen = seen || rep.name == extra.name
+		out = append(out, rep)
+	}
+	if !seen && extra.name != "" {
+		out = append(out, extra)
+	}
+	return out
+}
+
+// scrapeAll reads the counters of every replica concurrently.
+func scrapeAll(t *testing.T, reps []replica) map[string]fleetCounters {
+	t.Helper()
+	type result struct {
+		name string
+		c    fleetCounters
+		err  error
+	}
+	ch := make(chan result, len(reps))
+	for _, rep := range reps {
+		go func(rep replica) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			m, err := scrapeMetricsCtx(ctx, rep.addr)
+			ch <- result{rep.name, countersFrom(m), err}
+		}(rep)
+	}
+	out := map[string]fleetCounters{}
+	for range reps {
+		r := <-ch
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		out[r.name] = r.c
+	}
+	return out
+}
+
+// settleFleet waits until the VictoriaLogs calls and write-through pushes of
+// every replica stop changing: pushes run asynchronously after the response
+// was written, and a request may start background refreshes. Counting before
+// they settle would charge them to the next request.
+func settleFleet(t *testing.T, reps []replica) map[string]fleetCounters {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
-	last := readCounters(t, addr)
+	last := scrapeAll(t, reps)
 	for stable := 0; stable < 2; {
 		if time.Now().After(deadline) {
-			t.Fatalf("%s: VictoriaLogs calls or write-through pushes still changing after 15s (%s)", addr, last)
+			t.Fatalf("VictoriaLogs calls or write-through pushes still changing after 15s: %v", last)
 		}
 		time.Sleep(150 * time.Millisecond)
-		cur := readCounters(t, addr)
-		if cur.vlSelect == last.vlSelect && cur.wtPushes == last.wtPushes && cur.wtErrors == last.wtErrors {
+		cur := scrapeAll(t, reps)
+		same := true
+		for name, c := range cur {
+			l := last[name]
+			same = same && c.vlSelect == l.vlSelect && c.wtPushes == l.wtPushes && c.wtErrors == l.wtErrors
+		}
+		if same {
 			stable++
 		} else {
 			stable = 0
@@ -353,6 +441,30 @@ func waitSettled(t *testing.T, addr string) fleetCounters {
 		last = cur
 	}
 	return last
+}
+
+// waitSettled is settleFleet for one replica.
+func waitSettled(t *testing.T, addr string) fleetCounters {
+	t.Helper()
+	return settleFleet(t, []replica{{name: addr, addr: addr}})[addr]
+}
+
+// fleetReplicationFactor is the replicas of every peer-cache key the
+// proxies report; builds without replication report nothing and keep one.
+func fleetReplicationFactor(t *testing.T) int {
+	t.Helper()
+	factor := 0
+	for _, rep := range fleetReplicas() {
+		f := int(scrapeMetrics(t, rep.addr).sum("loki_vl_proxy_peer_cache_replication_factor", nil))
+		if f < 1 {
+			f = 1
+		}
+		if factor != 0 && f != factor {
+			t.Fatalf("the replicas disagree on the replication factor: %d and %d", factor, f)
+		}
+		factor = f
+	}
+	return factor
 }
 
 // --- peer endpoint -----------------------------------------------------------

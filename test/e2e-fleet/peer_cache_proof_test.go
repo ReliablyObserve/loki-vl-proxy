@@ -187,12 +187,19 @@ type answers map[string]string
 // request's latency. Every call is recorded for the report.
 func ask(t *testing.T, rep replica, req proofRequest) (string, fleetCounters, time.Duration) {
 	t.Helper()
-	before := readCounters(t, rep.addr)
+	counted := countedReplicas(rep)
+	before := scrapeAll(t, counted)
 	started := time.Now()
 	body := fleetGet(t, rep.addr, req.path)
 	latency := time.Since(started)
-	after := waitSettled(t, rep.addr)
-	d := after.minus(before)
+	after := settleFleet(t, counted)
+	d := after[rep.name].minus(before[rep.name])
+	for _, peer := range counted {
+		f := after[peer.name].minus(before[peer.name])
+		d.fleetVLSelect += f.vlSelect
+		d.fleetVLStats += f.vlStats
+		d.fleetVLSeconds += f.vlSeconds
+	}
 	proofRec.addRequest(requestRecordFrom(rep, req, 0, latency, d))
 	return canonicalJSON(t, fmt.Sprintf("%s on %s", req, rep.name), body), d, latency
 }
@@ -242,8 +249,12 @@ func warm(t *testing.T, rep replica, reqs []proofRequest, into answers) (fleetCo
 }
 
 // requireReadsWithoutVL reads every write-through request on B and C and
-// requires no VictoriaLogs call for the layer and at least one peer read.
-// route selects the counter: vlStats for the extent cache, vlSelect for all.
+// requires no VictoriaLogs call for the layer anywhere in the fleet. With one
+// copy per key (factor 1) at least one of B and C must read from a peer (a
+// key owned by A is read by both, by B by C, by C by B). With a backup
+// replica a key whose replicas are B and C is a local hit on both, so there
+// only the absence of VictoriaLogs calls is required.
+// route selects the counter: fleetVLStats for the extent cache, fleetVLSelect for all.
 func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, route func(fleetCounters) float64, routeName string) {
 	t.Helper()
 	peerReads := 0.0
@@ -251,15 +262,21 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 		for _, rep := range []replica{fleetReplica(replicaB), fleetReplica(replicaC)} {
 			d, _ := askSame(t, rep, req, want[req.path])
 			if route(d) != 0 {
-				t.Errorf("%s on %s made %.0f VictoriaLogs %s calls; every entry was written on another replica and pushed to its owner (%s)", req, rep.name, route(d), routeName, d)
+				t.Errorf("%s on %s caused %.0f VictoriaLogs %s calls in the fleet; every entry was written on another replica and pushed to its replicas (%s)", req, rep.name, route(d), routeName, d)
 			}
 			peerReads += d.peerHits
 		}
 	}
-	if peerReads < 1 {
+	if peerReads < 1 && replicationFactor < 2 {
 		t.Errorf("%s: no replica read an entry from a peer; one written elsewhere must come through the peer tier", reqs[0].layer)
 	}
 }
+
+func fleetStats(c fleetCounters) float64  { return c.fleetVLStats }
+func fleetSelect(c fleetCounters) float64 { return c.fleetVLSelect }
+
+// replicationFactor is read from the proxies when the proof starts.
+var replicationFactor = 1
 
 // requireMetadataReadThrough reads each metadata request on the replicas in
 // order. A shared-tier hit (disk or peer) must cost no VictoriaLogs call.
@@ -270,8 +287,8 @@ func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers,
 		for _, idx := range replicas {
 			rep := fleetReplica(idx)
 			d, _ := askSame(t, rep, req, want[req.path])
-			if (d.tierL3Hits > 0 || d.tierL2Hits > 0) && d.vlSelect != 0 {
-				t.Errorf("%s on %s was a cache hit (disk %.0f, peer %.0f) yet made %.0f VictoriaLogs calls", req, rep.name, d.tierL2Hits, d.tierL3Hits, d.vlSelect)
+			if (d.topLevelL3Hits() > 0 || d.topLevelL2Hits() > 0) && d.fleetVLSelect != 0 {
+				t.Errorf("%s on %s was a cache hit (disk %.0f, peer %.0f) yet caused %.0f VictoriaLogs calls in the fleet (%s)", req, rep.name, d.topLevelL2Hits(), d.topLevelL3Hits(), d.fleetVLSelect, d)
 			}
 			total = total.plus(d)
 		}
@@ -298,8 +315,16 @@ func requireWindowReadThrough(t *testing.T, reqs []proofRequest, want answers, r
 }
 
 // requireOwnerDownBound reads every request on B and C while A is down and
-// requires A's answer, within A's cold latency plus the peer timeout.
-func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldOnA map[string]time.Duration) fleetCounters {
+// requires A's answer, within A's cold latency plus the peer timeout. With a
+// backup replica the write-through layers (extent buckets, patterns) and the
+// inventory units A wrote are on another replica as well, so they cost no
+// VictoriaLogs call.
+//
+// checkInventory is false right after a replica lost its disk: inventory
+// units are scoped to the tenant, not to the request, and that replica
+// refills a unit only when it looks it up, so a unit whose other replica is
+// the stopped owner may have no live copy left and is rightly read again.
+func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldOnA map[string]time.Duration, checkInventory bool) fleetCounters {
 	t.Helper()
 	var total fleetCounters
 	for _, req := range reqs {
@@ -307,12 +332,35 @@ func requireOwnerDownBound(t *testing.T, reqs []proofRequest, onA answers, coldO
 			rep := fleetReplica(idx)
 			d, latency := askSame(t, rep, req, onA[req.path])
 			total = total.plus(d)
+			if replicationFactor >= 2 {
+				requireBackupServes(t, rep, req, d, checkInventory)
+			}
 			if bound := coldOnA[req.path] + peerTimeout + ownerDownSlack; latency > bound {
 				t.Errorf("contract: %s on %s took %s with its owner down, more than the cold read on A (%s) plus the peer timeout (%s) and %s slack", req, rep.name, latency, coldOnA[req.path], peerTimeout, ownerDownSlack)
 			}
 		}
 	}
 	return total
+}
+
+// requireBackupServes: with a backup replica of every key, a write-through
+// layer answers without VictoriaLogs after its owner went away, and
+// inventory units come from memory, disk or a peer.
+func requireBackupServes(t *testing.T, rep replica, req proofRequest, d fleetCounters, checkInventory bool) {
+	t.Helper()
+	switch req.layer {
+	case "stats_extent":
+		if d.fleetVLStats != 0 {
+			t.Errorf("%s on %s: %.0f stats_query_range calls although every bucket has a backup replica (%s)", req, rep.name, d.fleetVLStats, d)
+		}
+	case "patterns":
+		if d.fleetVLSelect != 0 {
+			t.Errorf("%s on %s: %.0f VictoriaLogs calls although the patterns have a backup replica (%s)", req, rep.name, d.fleetVLSelect, d)
+		}
+	}
+	if checkInventory && d.invVL != 0 {
+		t.Errorf("%s on %s read %.0f inventory units from VictoriaLogs although every sealed unit has a backup replica (%s)", req, rep.name, d.invVL, d)
+	}
 }
 
 func patternsCount(t *testing.T, label, answer string) int {
@@ -345,6 +393,9 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	}
 	t.Cleanup(func() { writeProofReport(t) })
 
+	replicationFactor = fleetReplicationFactor(t)
+	proofRec.report.ReplicationFactor = replicationFactor
+	t.Logf("peer-cache replication factor reported by the proxies: %d", replicationFactor)
 	fx := ingestFleetFixture(t)
 	proofRec.report.Fixture = map[string]any{"probe": fx.probe, "lines": fx.lines, "start": fx.start, "end": fx.end}
 	base := baseProofSet(fx)
@@ -358,10 +409,10 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		defer phase.stop()
 		t.Run("stats_extent", func(t *testing.T) {
 			d, _ := warm(t, a, base.metric, first)
-			if d.vlStats == 0 {
+			if d.fleetVLStats == 0 {
 				t.Fatalf("A answered %s without a stats_query_range call: the extent cache path was not taken (%s)", base.metric[0], d)
 			}
-			requireReadsWithoutVL(t, base.metric, first, func(c fleetCounters) float64 { return c.vlStats }, "stats_query_range")
+			requireReadsWithoutVL(t, base.metric, first, fleetStats, "stats_query_range")
 			readAgain(t, fleetReplicas(), base.metric, first)
 		})
 		t.Run("patterns", func(t *testing.T) {
@@ -371,7 +422,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 					t.Fatalf("%s: A mined no pattern; an empty answer is never cached, so nothing would be proven", req)
 				}
 			}
-			requireReadsWithoutVL(t, base.patterns, first, func(c fleetCounters) float64 { return c.vlSelect }, "select")
+			requireReadsWithoutVL(t, base.patterns, first, fleetSelect, "select")
 			readAgain(t, fleetReplicas(), base.patterns, first)
 		})
 		t.Run("query_range_window", func(t *testing.T) {
@@ -417,15 +468,15 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			// Buckets B owns were pushed to it and written to its disk; the
 			// others are on their owners.
 			for _, req := range base.metric {
-				if d, _ := askSame(t, b, req, first[req.path]); d.vlStats != 0 {
-					t.Errorf("%s on B after a restart made %.0f stats_query_range calls; its buckets are on its disk or its peers (%s)", req, d.vlStats, d)
+				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLStats != 0 {
+					t.Errorf("%s on B after a restart caused %.0f stats_query_range calls; its buckets are on its disk or its peers (%s)", req, d.fleetVLStats, d)
 				}
 			}
 		})
 		t.Run("patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
-				if d, _ := askSame(t, b, req, first[req.path]); d.vlSelect != 0 {
-					t.Errorf("%s on B after a restart made %.0f VictoriaLogs calls (%s)", req, d.vlSelect, d)
+				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLSelect != 0 {
+					t.Errorf("%s on B after a restart caused %.0f VictoriaLogs calls (%s)", req, d.fleetVLSelect, d)
 				}
 			}
 		})
@@ -470,29 +521,34 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		})
 		t.Run("patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
-				if d, _ := askSame(t, b, req, first[req.path]); d.vlSelect != 0 {
-					t.Errorf("%s on B without a disk made %.0f VictoriaLogs calls; the patterns came back from its peers (%s)", req, d.vlSelect, d)
+				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLSelect != 0 {
+					t.Errorf("%s on B without a disk caused %.0f VictoriaLogs calls; the patterns came back from its peers (%s)", req, d.fleetVLSelect, d)
 				}
 			}
 		})
 		t.Run("stats_extent", func(t *testing.T) {
-			// Buckets owned by A or C come from them; the ones B owned are
-			// lost with its disk (an owner never asks its peers for its own
-			// keys) and are read again from VictoriaLogs once. The same
-			// buckets through a shifted window (a new request everywhere, so
-			// no replica answers it from its edge cache) then cost no
-			// VictoriaLogs call on any replica.
+			// Buckets owned by A or C come from them. The ones B owned are
+			// lost with its disk: with one copy per key (an owner never asks
+			// its peers for its own keys) they are read again from
+			// VictoriaLogs once; with a backup replica they come from the
+			// backup with no VictoriaLogs call. The same buckets through a
+			// shifted window (a new request everywhere, so no replica answers
+			// it from its edge cache) then cost no VictoriaLogs call on any
+			// replica.
 			for _, req := range base.metric {
-				askSame(t, b, req, first[req.path])
+				d, _ := askSame(t, b, req, first[req.path])
+				if replicationFactor >= 2 && d.fleetVLStats != 0 {
+					t.Errorf("%s on B without a disk caused %.0f stats_query_range calls although every bucket it owned has a backup replica (%s)", req, d.fleetVLStats, d)
+				}
 			}
 			shifted := metricRequest(fx, "app", fx.start.Add(time.Hour), "base_count_by_app_shifted")
 			onA, d, _ := ask(t, a, shifted)
-			if d.vlStats != 0 {
-				t.Errorf("%s on A made %.0f stats_query_range calls after B refilled (%s)", shifted, d.vlStats, d)
+			if d.fleetVLStats != 0 {
+				t.Errorf("%s on A caused %.0f stats_query_range calls after B refilled (%s)", shifted, d.fleetVLStats, d)
 			}
 			for _, rep := range []replica{b, c} {
-				if d, _ := askSame(t, rep, shifted, onA); d.vlStats != 0 {
-					t.Errorf("%s on %s made %.0f stats_query_range calls after B refilled (%s)", shifted, rep.name, d.vlStats, d)
+				if d, _ := askSame(t, rep, shifted, onA); d.fleetVLStats != 0 {
+					t.Errorf("%s on %s caused %.0f stats_query_range calls after B refilled (%s)", shifted, rep.name, d.fleetVLStats, d)
 				}
 			}
 		})
@@ -501,6 +557,12 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			if total.tierL3Hits < 1 {
 				t.Errorf("B without a disk read no metadata answer from its peers (%s)", total)
 			}
+			// Builds with the label stream inventory replicate its sealed
+			// units: B gets every unit it lost from a peer.
+			if replicationFactor >= 2 && total.invVL != 0 {
+				t.Errorf("B without a disk read %.0f inventory units from VictoriaLogs although every sealed unit has a backup replica (%s)", total.invVL, total)
+			}
+			proofRec.addEdge("disk_lost_inventory_units", map[string]any{"replica": b.name, "memory": total.invMemory, "disk": total.invDisk, "peer": total.invPeer, "vl": total.invVL})
 		})
 		t.Run("query_range_window", func(t *testing.T) {
 			total := requireWindowReadThrough(t, base.windows, first, replicaB)
@@ -523,11 +585,14 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		onA := answers{}
 		_, cold := warm(t, a, fresh.all(), onA)
 		fleetCompose(t, "stop", a.name)
+		markDown(a.name, true)
 		defer func() {
 			fleetCompose(t, "start", a.name)
 			waitProxyReady(t, a.addr)
+			markDown(a.name, false)
 		}()
-		total := requireOwnerDownBound(t, fresh.all(), onA, cold)
+		total := requireOwnerDownBound(t, fresh.all(), onA, cold, false)
+		proofRec.addEdge("owner_down_inventory_units", map[string]any{"memory": total.invMemory, "disk": total.invDisk, "peer": total.invPeer, "vl": total.invVL, "backup_hits": total.backupHits})
 		if total.peerErrors < 1 {
 			t.Errorf("no lookup on B or C reached for the stopped A; the requests did not exercise its keys (%s)", total)
 		}
@@ -548,8 +613,8 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Errorf("%s after the rebuild differs from the first answer:\n got: %.600s\nwant: %.600s", req, rebuilt[req.path], first[req.path])
 			}
 		}
-		requireReadsWithoutVL(t, base.metric, rebuilt, func(c fleetCounters) float64 { return c.vlStats }, "stats_query_range")
-		requireReadsWithoutVL(t, base.patterns, rebuilt, func(c fleetCounters) float64 { return c.vlSelect }, "select")
+		requireReadsWithoutVL(t, base.metric, rebuilt, fleetStats, "stats_query_range")
+		requireReadsWithoutVL(t, base.patterns, rebuilt, fleetSelect, "select")
 		compareWithLoki(t, fx, base, rebuilt)
 	})
 

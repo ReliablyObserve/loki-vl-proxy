@@ -197,11 +197,14 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 		onA := answers{}
 		_, cold := warm(t, a, set.all(), onA)
 		fleetCompose(t, "pause", a.name)
+		markDown(a.name, true)
 		defer func() {
 			fleetCompose(t, "unpause", a.name)
 			waitProxyReady(t, a.addr)
+			markDown(a.name, false)
 		}()
-		total := requireOwnerDownBound(t, set.all(), onA, cold)
+		// After the rebuild every inventory unit has its replicas again.
+		total := requireOwnerDownBound(t, set.all(), onA, cold, true)
 		if total.peerErrors < 1 {
 			t.Errorf("no lookup on B or C waited for the paused A (%s)", total)
 		}

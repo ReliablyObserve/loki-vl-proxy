@@ -27,20 +27,23 @@ import (
 // recorded.
 
 type requestRecord struct {
-	Phase        string  `json:"phase"`
-	Layer        string  `json:"layer"`
-	Replica      string  `json:"replica"`
-	Request      string  `json:"request"`
-	Repeat       int     `json:"repeat"` // 0 = first read on this replica in this phase
-	LatencyMs    float64 `json:"latency_ms"`
-	VLCalls      float64 `json:"vl_calls"`
-	VLUpstreamMs float64 `json:"vl_upstream_ms"`
-	PeerHits     float64 `json:"peer_hits"`
-	PeerMisses   float64 `json:"peer_misses"`
-	PeerErrors   float64 `json:"peer_errors"`
-	DiskHits     float64 `json:"disk_hits"`
-	WindowHits   float64 `json:"window_hits"`
-	Error        string  `json:"error,omitempty"`
+	Phase        string             `json:"phase"`
+	Layer        string             `json:"layer"`
+	Replica      string             `json:"replica"`
+	Request      string             `json:"request"`
+	Repeat       int                `json:"repeat"` // 0 = first read on this replica in this phase
+	LatencyMs    float64            `json:"latency_ms"`
+	VLCalls      float64            `json:"vl_calls"`
+	VLUpstreamMs float64            `json:"vl_upstream_ms"`
+	FleetVLCalls float64            `json:"fleet_vl_calls"`
+	PeerHits     float64            `json:"peer_hits"`
+	BackupHits   float64            `json:"backup_hits"`
+	InvUnits     map[string]float64 `json:"inventory_units,omitempty"`
+	PeerMisses   float64            `json:"peer_misses"`
+	PeerErrors   float64            `json:"peer_errors"`
+	DiskHits     float64            `json:"disk_hits"`
+	WindowHits   float64            `json:"window_hits"`
+	Error        string             `json:"error,omitempty"`
 }
 
 type replicaResources struct {
@@ -93,16 +96,19 @@ type layerSummary struct {
 }
 
 type proofReport struct {
-	Started   time.Time          `json:"started"`
-	Seconds   float64            `json:"seconds"`
-	Images    map[string]string  `json:"images"`
-	Fixture   map[string]any     `json:"fixture"`
-	Summary   []layerSummary     `json:"summary"`
-	Phases    []phaseResources   `json:"phases"`
-	Edges     []map[string]any   `json:"edge_cases"`
-	PeerProbe []map[string]any   `json:"peer_get_probes"`
-	Requests  []requestRecord    `json:"requests"`
-	Bounds    map[string]float64 `json:"contract_bounds"`
+	Started time.Time `json:"started"`
+	// ReplicationFactor is the peer-cache replicas per key the proxies
+	// reported (1 on builds without replication).
+	ReplicationFactor int                `json:"replication_factor"`
+	Seconds           float64            `json:"seconds"`
+	Images            map[string]string  `json:"images"`
+	Fixture           map[string]any     `json:"fixture"`
+	Summary           []layerSummary     `json:"summary"`
+	Phases            []phaseResources   `json:"phases"`
+	Edges             []map[string]any   `json:"edge_cases"`
+	PeerProbe         []map[string]any   `json:"peer_get_probes"`
+	Requests          []requestRecord    `json:"requests"`
+	Bounds            map[string]float64 `json:"contract_bounds"`
 }
 
 type proofRecorder struct {
@@ -171,9 +177,18 @@ func requestRecordFrom(rep replica, req proofRequest, repeat int, latency time.D
 		LatencyMs:    ms(latency),
 		VLCalls:      d.vlSelect,
 		VLUpstreamMs: d.vlSeconds * 1000,
-		PeerHits:     d.peerHits, PeerMisses: d.peerMisses, PeerErrors: d.peerErrors,
+		FleetVLCalls: d.fleetVLSelect,
+		PeerHits:     d.peerHits, BackupHits: d.backupHits, PeerMisses: d.peerMisses, PeerErrors: d.peerErrors,
+		InvUnits: inventoryUnits(d),
 		DiskHits: d.tierL2Hits, WindowHits: d.windowHits,
 	}
+}
+
+func inventoryUnits(d fleetCounters) map[string]float64 {
+	if d.invMemory == 0 && d.invDisk == 0 && d.invPeer == 0 && d.invVL == 0 {
+		return nil
+	}
+	return map[string]float64{"memory": d.invMemory, "disk": d.invDisk, "peer": d.invPeer, "vl": d.invVL}
 }
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }

@@ -35,6 +35,13 @@ proxy: |
   upstream time, peer hits and errors, and every phase's per-replica CPU,
   RSS and cache tier sizes and the backends' docker stats are written to the
   JSON report the e2e-fleet job uploads (fleet-peer-cache-proof).
+  "No VictoriaLogs call" is counted on every running replica, not only the
+  one asked. The proof reads the replicas per key the proxies report
+  (loki_vl_proxy_peer_cache_replication_factor, absent: one) and, from two
+  on, also requires the stronger behaviour of a backup replica: a replica
+  that lost its disk gets the extent buckets it owned from their backup, and
+  with the owner down the extent buckets, patterns and label stream
+  inventory units it wrote cost no VictoriaLogs call.
   Not covered (open): there is no replica copy of an owner's keys, so while
   an owner is down its keys cost a VictoriaLogs read on every other replica.
 
