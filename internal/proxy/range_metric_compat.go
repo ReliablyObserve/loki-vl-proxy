@@ -2452,6 +2452,15 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			encodedBytes += len(k) + len(v) + 6
 		}
 		var points []byte
+		// A point needs a bucket in its window, and a bucket is in the window of
+		// at most window/step+2 evaluation times, so a series with few buckets
+		// (one per stream, thousands of streams before an outer fold) does not
+		// reserve the room of every step of the range.
+		holders := len(samples)
+		if present != nil {
+			holders = len(present)
+		}
+		pointHint := min(expectedBuckets, holders*(int(window/step)+2))
 		// The windows move forward with t, so each bound only moves forward:
 		// samples[lo:hi] (and counts[cLo:cHi]) are the buckets labelled in
 		// [t-window, t), present[pLo] the first present bucket from t-window.
@@ -2489,7 +2498,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			// The points are written as encoding/json writes [][]interface{}{{float64
 			// seconds, value text}}, without a value per point.
 			if points == nil {
-				points = make([]byte, 0, 32*expectedBuckets)
+				points = make([]byte, 0, 32*pointHint)
 				points = append(points, '[')
 			} else {
 				points = append(points, ',')
