@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unsafe"
 )
 
 // foldLevel is one vector aggregation of a fold: the series that share the
@@ -217,8 +216,28 @@ func (s *typedScanner) number() (float64, bool) {
 	if s.i == start {
 		return 0, false
 	}
-	v, err := strconv.ParseFloat(unsafe.String(&s.b[start], s.i-start), 64)
+	if v, ok := smallUint(s.b[start:s.i]); ok {
+		return v, true
+	}
+	v, err := strconv.ParseFloat(string(s.b[start:s.i]), 64)
 	return v, err == nil
+}
+
+// smallUint reads up to 15 decimal digits (a sample's whole-second timestamp).
+// A float64 holds every such integer exactly, so the result is the one
+// strconv.ParseFloat returns, without converting the bytes to a string.
+func smallUint(b []byte) (float64, bool) {
+	if len(b) == 0 || len(b) > 15 {
+		return 0, false
+	}
+	var u uint64
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		u = u*10 + uint64(c-'0')
+	}
+	return float64(u), true
 }
 
 // skip passes over one JSON value.

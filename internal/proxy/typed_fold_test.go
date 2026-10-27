@@ -176,6 +176,21 @@ func TestTypedFoldLeavesOtherAnswersToTheGenericFold(t *testing.T) {
 }
 
 // conformance: semantics/nested-aggregation-outer-by-native-routes
+func TestScannerNumberMatchesParseFloat(t *testing.T) {
+	for _, in := range []string{"0", "7", "007", "1793000000", "999999999999999", "9999999999999999", "18446744073709551616", "1793000010.5", "-1", "1e3", "1E+3", "-0", "1.", ".5", "+1", "1-"} {
+		want, err := strconv.ParseFloat(in, 64)
+		s := typedScanner{b: []byte(in + "]")}
+		got, ok := s.number()
+		if ok != (err == nil) || ok && math.Float64bits(got) != math.Float64bits(want) {
+			t.Errorf("%q: scanner %v %v, strconv.ParseFloat %v %v", in, got, ok, want, err)
+		}
+		if ok && s.b[s.i] != ']' {
+			t.Errorf("%q: stopped at %d", in, s.i)
+		}
+	}
+}
+
+// conformance: semantics/nested-aggregation-outer-by-native-routes
 func TestJSONNumberAndTextMatchEncodingJSON(t *testing.T) {
 	for _, f := range []float64{0, 1, -1, 1793000000, 1793000010.5, 1.5e-7, 1e-6, 9.99e-7, 1e21, 1e20, 123456789.125, math.SmallestNonzeroFloat64, 1e-10, 1.5e300} {
 		want, _ := json.Marshal(f)
