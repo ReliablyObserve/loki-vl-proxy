@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // seriesAggregationChain returns the vector aggregations over a range
@@ -34,14 +35,22 @@ func seriesAggregationChain(query string) ([]*logqlpkg.VectorAggregation, bool) 
 		default:
 			return nil, false
 		}
-		if agg.Grouping != nil && agg.Grouping.Without {
-			return nil, false
-		}
 		chain = append([]*logqlpkg.VectorAggregation{agg}, chain...)
 		expr = agg.Inner
 	}
 	ra, ok := expr.(*logqlpkg.RangeAggregation)
-	return chain, ok && ra.Grouping == nil && seriesLevel
+	if !ok || ra.Grouping != nil {
+		return nil, false
+	}
+	// A `without` the translator did not strip is folded by the without marker.
+	// One over a level that names its labels is a static `by` in a nested
+	// query's translation, which this fold answers on a sliding window.
+	for i, agg := range chain {
+		if agg.Grouping != nil && agg.Grouping.Without && (i == 0 || len(chain) < 2) {
+			return nil, false
+		}
+	}
+	return chain, seriesLevel || len(chain) > 1
 }
 
 // vectorAggFoldKey marks a request whose vector aggregations
@@ -79,8 +88,16 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 	}
 	body, code := buf.body, buf.code
 	if code == 0 || code == http.StatusOK {
-		for _, agg := range chain {
-			body = foldByGrouping(body, agg)
+		levels := make([]foldLevel, len(chain))
+		for i, agg := range chain {
+			levels[i] = foldLevelOf(agg)
+		}
+		if folded, ok := foldLevels(body, levels...); ok {
+			body = folded
+		} else {
+			for _, agg := range chain {
+				body = foldByGrouping(body, agg)
+			}
 		}
 		capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 		if err != nil {
@@ -102,7 +119,9 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 // aggregation's operator. A grouping of no labels keeps none.
 func foldByGrouping(body []byte, agg *logqlpkg.VectorAggregation) []byte {
 	exclude := []string{withoutAllLabels}
-	if agg.Grouping != nil && len(agg.Grouping.Labels) > 0 {
+	if agg.Grouping != nil && agg.Grouping.Without {
+		exclude = agg.Grouping.Labels
+	} else if agg.Grouping != nil && len(agg.Grouping.Labels) > 0 {
 		keep := make(map[string]bool, len(agg.Grouping.Labels))
 		for _, label := range agg.Grouping.Labels {
 			keep[label] = true
@@ -141,4 +160,21 @@ func metricLabelNames(body []byte) []string {
 		}
 	}
 	return names
+}
+
+// innermostByLabels returns the `by` labels of the innermost level of a vector
+// aggregation over another one (sum, avg, min, max or count over a range
+// aggregation). The first stats pipe of its translation groups by those labels,
+// then by the series identity, and the labels are matched to the pipe's by list
+// in order: the outermost level's labels are the answer's, which the fold of the
+// levels above computes (foldVectorAggregations).
+func innermostByLabels(logql string) ([]string, bool) {
+	if !translator.HasNestedVectorKeywords(logql) {
+		return nil, false
+	}
+	chain, ok := seriesAggregationChain(logql)
+	if !ok || len(chain) < 2 || chain[0].Grouping == nil {
+		return nil, false
+	}
+	return chain[0].Grouping.Labels, true
 }

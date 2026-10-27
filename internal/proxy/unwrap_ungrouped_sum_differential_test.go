@@ -178,6 +178,8 @@ var (
 	// unpack_json from <field> fields (<name>): the named key of the JSON in the field.
 	emuUnpackJSONRE = regexp.MustCompile(`^unpack_json from (\w+) fields \((\w+)\)$`)
 	emuFuncRE       = regexp.MustCompile(`^(\w+)\(([^)]*)\)(?: as (\w+))?$`)
+	// replace_regexp(`<expression>`, "<replacement>") at <field>: Go regexp, as VictoriaLogs runs it.
+	emuReplaceRegexpRE = regexp.MustCompile("^replace_regexp\\(`(.*)`, \"(.*)\"\\) at (\\w+)$")
 
 	emuStreamLabelRE = regexp.MustCompile(`(\w+)="([^"]*)"`)
 	emuPhaseMathRE   = regexp.MustCompile(`^math \(\(_time - (\d+)\) % (\d+)\) as __lvp_window_phase$`)
@@ -279,6 +281,16 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 					e.t.Fatalf("emulator: unpack_json of %q: %v", rec.f[m[1]], err)
 				}
 				rec.f[m[2]] = obj[m[2]]
+			}
+			continue
+		}
+		if m := emuReplaceRegexpRE.FindStringSubmatch(pipe); m != nil {
+			re, err := regexp.Compile(m[1])
+			if err != nil {
+				e.t.Fatalf("emulator: replace_regexp %q: %v", m[1], err)
+			}
+			for _, rec := range recs {
+				rec.f[m[3]] = re.ReplaceAllString(rec.f[m[3]], m[2])
 			}
 			continue
 		}

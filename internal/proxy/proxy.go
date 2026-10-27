@@ -2432,6 +2432,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
+	if foldWithout && len(withoutLabels) > 0 {
+		if pushed, ok := p.pushDownWithoutFold(r, logqlQuery, logsqlQuery); ok {
+			logsqlQuery, withoutLabels, foldWithout = pushed, nil, false
+		}
+	}
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
@@ -2497,7 +2502,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if capture != nil {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
-			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels, withoutOp)
+			cacheOut = applyWithoutChain(cacheOut, withoutLabels, logqlQuery, withoutOp)
 		}
 		if isGroupQuery {
 			cacheOut = applyGroupNormalization(cacheOut)
@@ -2784,7 +2789,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	} else if bw != nil && needsCapture {
 		result := bw.body
 		if len(withoutLabels) > 0 {
-			result = applyWithoutGrouping(result, withoutLabels, withoutOp)
+			result = applyWithoutChain(result, withoutLabels, logqlQuery, withoutOp)
 		}
 		if isGroupQuery {
 			result = applyGroupNormalization(result)
