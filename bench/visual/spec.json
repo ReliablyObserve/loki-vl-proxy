@@ -1071,7 +1071,7 @@
   {
    "id": "explore-nested-aggregation-outer-by",
    "kind": "explore",
-   "query": "min by (service_name) (avg by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "query": "min by (service_name) (avg by (service_name, level) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
    "covers": [
     "semantics/nested-aggregation-outer-by-native-routes",
     "metric-series-identity",
@@ -1097,7 +1097,7 @@
   {
    "id": "explore-without-nested-under-aggregation",
    "kind": "explore",
-   "query": "max(sum without (service_name) (count_over_time({env=\"production\"}[$__auto])))",
+   "query": "max(sum without (pod) (count_over_time({app=\"payment-service\"}[5m])))",
    "covers": [
     "semantics/without-nested-under-aggregation",
     "metric-series-identity",
