@@ -213,6 +213,34 @@
       "sizing": "The VictoriaLogs response carries a hit count per value, so it is about 1.7x the Loki JSON answer: on the e2e stack `pod` values for `{env=\"production\"}` are 2.4 MB from VictoriaLogs (1.4 MB of Loki JSON, 54,405 values) over 1h and grow with the window, about 53 MB for 24h. The 64 MiB default (the same per-response budget as -backend-max-buffered-response-bytes, 16x Loki's default message size) admits about 1.4 million such values, so a day of a high-churn label still answers, while Loki on the same stack already fails the 1h request. While an admitted response is decoded, indexed and encoded, proxy memory holds a small multiple of it (the body, the decoded values and the Loki JSON) per concurrent request. Lower it towards 4 MiB to fail where Loki's defaults would; raise it only with replica memory, since Grafana's label pickers cannot render lists of that size anyway."
     },
     {
+      "flag": "metadata-max-staleness",
+      "helm_value": "extraArgs.metadata-max-staleness",
+      "type": "Duration",
+      "default": "10s",
+      "unit": "duration",
+      "bounds": "how far behind VictoriaLogs a /labels or /label/{name}/values answer may be when the request ends within -max-metadata-cache-freshness of now and its cached answer is older than -recent-tail-refresh-max-staleness: measured from the start of the VictoriaLogs read behind the answer this replica stored for the same tenant, auth scope and window; such a request waits -metadata-edge-refresh-budget for its edge refresh, then gets that answer (header X-Proxy-Stale-Response: true, never kept by the compatibility-edge or multi-tenant caches) while the refresh completes in the background, one per cache key, within the background timeout and cancelled by shutdown. Past the bound, or with no answer read on this replica, the request waits for VictoriaLogs; requests ending earlier read settled data and are never stale",
+      "error": "none; past the bound the request waits for VictoriaLogs, as with 0",
+      "metric": "loki_vl_proxy_internal_operation_total{operation=\"metadata_edge_answer\"} (outcome exact, stale or waited); loki_vl_proxy_internal_operation_duration_seconds{operation=\"metadata_edge_staleness\"} (age of each stale answer, by endpoint); {operation=\"metadata_edge_refresh\"} (background refresh duration, outcome ok or error)",
+      "alert": "none",
+      "loki_parity": "none: Loki lists labels from its index and ingesters (pkg/querier/querier.go:307-342) and does not cache a metadata answer ending within max_metadata_cache_freshness (pkg/querier/queryrange/series_cache.go:111-125), so it never lags; this bound is a proxy deviation",
+      "per_tenant": false,
+      "sizing": "10s: VictoriaLogs makes ingested rows searchable within about a second (rows buffer flush, lib/logstorage/datadb.go:776 in v1.49.0, :780 in v1.53.0), and Grafana's shortest dashboard refresh is 5s (min_refresh_interval), so a new label or value shows at most two refreshes late. Lower it for live-tail label pickers; 0 makes every near-now answer exact and lets it wait for VictoriaLogs. Values below -recent-tail-refresh-max-staleness add nothing: answers younger than that are served as cached anyway."
+    },
+    {
+      "flag": "metadata-edge-refresh-budget",
+      "helm_value": "extraArgs.metadata-edge-refresh-budget",
+      "type": "Duration",
+      "default": "100ms",
+      "unit": "duration",
+      "bounds": "how long a near-now /labels or /label/{name}/values request with an answer within -metadata-max-staleness waits for its edge refresh from VictoriaLogs before that answer is served; a refresh that finishes in time is the answer",
+      "error": "none",
+      "metric": "loki_vl_proxy_internal_operation_total{operation=\"metadata_edge_answer\"} (exact: refreshed within the budget; stale: answered from the last answer)",
+      "alert": "none",
+      "loki_parity": "",
+      "per_tenant": false,
+      "sizing": "100ms: an idle VictoriaLogs answers the edge listing in 5-40 ms (p95 of /labels on an idle e2e stack), so answers stay exact; under 32 heavy clients stream_field_names took 0.35-0.6 s at p95 and up to 2.6 s, which the budget turns into bounded-stale answers. Raise it to prefer exact answers over latency; 0 serves the last answer at once whenever one is within the bound."
+    },
+    {
       "flag": "max-query-length-bytes",
       "helm_value": "extraArgs.max-query-length-bytes",
       "type": "Int",

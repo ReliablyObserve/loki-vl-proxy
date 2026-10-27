@@ -713,23 +713,44 @@ func (p *Proxy) metadataCacheLookup(endpoint, cacheKey string, ttl time.Duration
 // syncFetchStrings runs a synchronous label listing fetch so concurrent requests
 // for the same cache key share one backend pass (a near-now request refetches
 // a stale hit, so a burst of identical refreshes would otherwise each scan).
-// A leader whose own request went away fails its waiters with a cancellation;
-// a waiter that is still alive runs the fetch again.
+// A leader whose own request went away, or whose own deadline passed (a
+// background edge refresh), fails its waiters with that error; a waiter that
+// is still alive runs the fetch again.
 func (p *Proxy) syncFetchStrings(ctx context.Context, cacheKey string, fetch func() ([]string, error)) ([]string, error) {
+	values, _, err := p.syncFetchStringsAt(ctx, cacheKey, fetch)
+	return values, err
+}
+
+// sharedFetch is the result of a shared listing fetch and when its leader
+// started reading VictoriaLogs.
+type sharedFetch struct {
+	values  []string
+	started time.Time
+}
+
+// syncFetchStringsAt is syncFetchStrings that also returns when the shared
+// fetch started, which is how old the listing's near-now edge is.
+func (p *Proxy) syncFetchStringsAt(ctx context.Context, cacheKey string, fetch func() ([]string, error)) ([]string, time.Time, error) {
 	for attempt := 0; ; attempt++ {
-		v, err, _ := p.labelRefreshGroup.Do("sync:"+cacheKey, func() (interface{}, error) { return fetch() })
+		led := false
+		v, err, _ := p.labelRefreshGroup.Do("sync:"+cacheKey, func() (interface{}, error) {
+			led = true
+			started := time.Now()
+			values, err := fetch()
+			return sharedFetch{values: values, started: started}, err
+		})
 		if err != nil {
-			if attempt < 2 && ctx.Err() == nil && errors.Is(err, context.Canceled) {
+			if attempt < 2 && ctx.Err() == nil && (errors.Is(err, context.Canceled) || !led && errors.Is(err, context.DeadlineExceeded)) {
 				continue
 			}
-			return nil, err
+			return nil, time.Time{}, err
 		}
-		values, _ := v.([]string)
-		if values == nil {
-			return nil, nil
+		shared, _ := v.(sharedFetch)
+		if shared.values == nil {
+			return nil, shared.started, nil
 		}
 		// Waiters get their own copy: callers sort and filter in place.
-		return append(make([]string, 0, len(values)), values...), nil
+		return append(make([]string, 0, len(shared.values)), shared.values...), shared.started, nil
 	}
 }
 
@@ -1159,7 +1180,12 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		// It runs as the /labels request it stands for, so the inventory
 		// buckets and field-name entries it fills carry the same tenant and
 		// scope as those of a user request without a tenant header.
+		// The warm answer serves the window's next near-now request within
+		// -metadata-max-staleness from the start of this read, so the read
+		// skips the short-lived exact-window field-name cache like a refresh.
 		fetchCtx, fetchCancel := context.WithTimeout(context.WithValue(withBackgroundInventory(ctx), origRequestKey, w.req), 60*time.Second)
+		fetchCtx = context.WithValue(fetchCtx, labelCacheBypassKey{}, true)
+		readStarted := time.Now()
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
@@ -1198,6 +1224,11 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 			entryTTL = metadataWindowTTL(w.startStr, w.endStr, ttl)
 		}
 		p.mergeLabelsIntoCache("labels", w.cacheKey, labels, entryTTL)
+		if len(labels) > 0 {
+			// Stored above (an empty list is not), so the record never runs
+			// ahead of the answer.
+			p.recordMetadataEdgeRead(w.cacheKey, readStarted)
+		}
 		p.log.Debug("label cache warmed from VL", "window", w.window)
 	}
 }

@@ -1,0 +1,62 @@
+id: quality/metadata-bounded-staleness
+title: Near-now label answers may lag VictoriaLogs by at most -metadata-max-staleness (owner-kept deviation)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_labels
+  - loki_api_v1_label_name_values
+consumer: explore
+why: |
+  Loki lists labels and label values from its index and ingesters
+  (pkg/querier/querier.go:307-342) and never caches a metadata answer whose
+  end is within max_metadata_cache_freshness of now
+  (pkg/querier/queryrange/series_cache.go:111-125), so a stream written a
+  moment ago is listed at once, whatever load its queriers carry. The proxy
+  lists the settled part of a window from the metadata inventory and reads
+  the near-now edge from VictoriaLogs. Under 32 heavy clients that edge call
+  waited 0.35-2.6 s for VictoriaLogs CPU (360-470 % on average), so every
+  /labels refresh did too, while an idle VictoriaLogs answers it in 5-40 ms.
+  With -metadata-max-staleness (default 10s) a near-now request whose cached
+  answer is past -recent-tail-refresh-max-staleness waits
+  -metadata-edge-refresh-budget (default 100ms) for its edge refresh; when the
+  refresh does not finish in time it is answered from the last answer this
+  replica read for the same tenant, auth scope and window, if that read
+  started at most -metadata-max-staleness ago, marked
+  X-Proxy-Stale-Response: true and never kept by the compatibility-edge or
+  multi-tenant caches. The refresh completes in the background (one per cache
+  key, cancelled by Shutdown) and the next request reads it. Past the bound,
+  or without such an answer, the request waits for VictoriaLogs as before.
+  The label warm-up records its reads the same way, so the first request
+  for a warmed preset is answered within the budget too. An empty answer is
+  never served stale. An exact answer taken from a
+  refresh another request started may reflect a read that began up to the
+  background timeout (10 s at most) earlier, as for any request that joins an
+  in-flight listing. Requests ending earlier than
+  -max-metadata-cache-freshness and /series are always exact. The e2e
+  freshness test (TestCompat_LabelsIncludeStreamWrittenAfterCaching) asks
+  again after the bound. The owner approved the deviation on 2026-10-27:
+  bounded-stale answers by default, exact answers with
+  -metadata-max-staleness=0.
+request:
+  method: GET
+  path: /loki/api/v1/labels
+  params:
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Loki's labels of the window, at most -metadata-max-staleness behind
+    VictoriaLogs; a label written since appears on the first request after
+    the background refresh.
+gap:
+  status: owner-kept
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/metadata_edge_refresh.go serveMetadataEdge; -metadata-max-staleness, -metadata-edge-refresh-budget'
+  loki: 'pkg/querier/querier.go:307-342 Label reads ingesters; pkg/querier/queryrange/series_cache.go:111-125 shouldCacheMetadataReq'
+  proxy: 'last answer within the bound when the edge refresh misses the budget'
+  planned_test: 'TestMetadataEdge_* (internal/proxy) + TestCompat_LabelsIncludeStreamWrittenAfterCaching (test/e2e-compat, group core)'
+  clusters: []
