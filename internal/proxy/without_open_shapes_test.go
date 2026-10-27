@@ -371,6 +371,9 @@ func TestWithoutNestedAggregationMatchesLoki(t *testing.T) {
 			return openShapeGroup(toStreams(openShapeGroup(rate(i), "sum", nil, true)), "max", nil, false)
 		}},
 		{`sum by (ns) (sum without (pod) (` + unwrapRate + `))`, func(i bool) map[string]string { return openShapeGroup(rate(i), "sum", nil, true) }},
+		{`max(sum without (pod) (count_over_time({app="uw"}[5m])))`, func(i bool) map[string]string {
+			return openShapeGroup(toStreams(openShapeGroup(openShapeStreams("count_over_time", 5*time.Minute, i), "sum", nil, true)), "max", nil, false)
+		}},
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", tc.query, instant), func(t *testing.T) {
