@@ -12,8 +12,12 @@ Fails when:
   * a bench/visual entry covers an unknown registry id, or (outside the core
     set) covers nothing that names code, so no change could select it for the
     per-PR visual smoke (bench/visual/plan.py);
-  * a generated report is stale (performance, coverage map, gaps, translation map, roadmap,
-    compatibility matrix, ranked parity gaps),
+  * a generated report is stale (performance, coverage map and its published copy
+    docs/compatibility-coverage.md, gaps, translation map, roadmap, compatibility matrix,
+    ranked parity gaps),
+  * the method-level scope is inconsistent: a write method of an endpoint is neither listed
+    in its state's out_of_scope_methods (with the owner decision) nor allowed (delete), or
+    an endpoint with every method out of scope is not not-applicable,
   * a cluster of the last differential run (bench/parity) is accounted for by
     no registry case, or a case names a cluster the run does not hold,
   * a flag is missing from the places that list every flag,
@@ -34,10 +38,14 @@ import sys
 import tempfile
 
 SCRIPTS = "conformance/scripts"
+sys.path.insert(0, SCRIPTS)
+from registry_io import scope_problems  # noqa: E402
 REPORTS = (
     # perf_evidence.py runs first: gaps.py reads the evidence it writes.
     ("perf_evidence.py", "conformance/reports/performance.md", None),
     ("coverage_map.py", "conformance/reports/coverage-map.md", "--docs"),
+    # The published copy of the same map (docs site); it went stale unchecked before.
+    ("coverage_map.py", "docs/compatibility-coverage.md", "--docs"),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),
@@ -85,6 +93,12 @@ def main():
     print(parity.stdout.strip())
     if parity.returncode:
         failures.append("parity gap registration")
+
+    scope = scope_problems()
+    for problem in scope:
+        print(f"write-method scope: {problem}")
+    if scope:
+        failures.append("write-method scope")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

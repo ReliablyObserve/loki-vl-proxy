@@ -11,7 +11,7 @@ Writes:
 Usage: coverage_map.py [--docs docs/compatibility-coverage.md]
 """
 import argparse, json, os, re, sys
-from registry_io import load_json, out_of_scope, read_text, write_text
+from registry_io import SCOPE_SENTENCE, load_json, out_of_scope, read_methods, read_text, write_text
 
 ROOT = "conformance/registry"
 STATE_LABEL = {"proven": "proven", "partial": "partial", "gap": "gap",
@@ -49,7 +49,7 @@ def collect():
         state = read_yaml_field(os.path.join(ROOT, "state/loki", identifier + ".yaml"), "state") or "unknown"
         impl = implementation.get(identifier, {})
         rows.append({
-            "id": identifier, "path": endpoint["path"], "methods": endpoint["methods"],
+            "id": identifier, "path": endpoint["path"], "methods": read_methods(identifier) or endpoint["methods"],
             "state": state, "execution": impl.get("execution", "not_implemented"),
             "where": (impl.get("where") or [None])[0],
             "consumers": consumers(identifier),
@@ -100,8 +100,7 @@ def main():
         ("Generated from the conformance registry by "
          + "`conformance/scripts/coverage_map.py`. Do not edit by hand."), "",
         f"Loki surface: **{loki_version}**, extracted from the Loki source.", "",
-        ("The proxy serves Loki's read API. Write endpoints (push) are not supported: "
-         + "ingest goes to VictoriaLogs directly."), "",
+        SCOPE_SENTENCE, "",
         "## Scores", "",
         "| Score | Value | Meaning |", "|---|---|---|",
         f"| Implementation | {implemented}/{total} | endpoints the proxy routes |",
@@ -110,13 +109,13 @@ def main():
         f"| VictoriaLogs native share | {native}/{implemented} | implemented endpoints answered natively |",
         "",
         "## Endpoints", "",
-        "| Endpoint | State | Served by | Consumers | Tests | vs Loki | Implemented in |",
-        "|---|---|---|---|---:|---:|---|",
+        "| Endpoint | Methods | State | Served by | Consumers | Tests | vs Loki | Implemented in |",
+        "|---|---|---|---|---|---:|---:|---|",
     ]
     for row in sorted(rows, key=lambda r: (r["execution"] == "not_implemented", r["id"])):
         where = row["where"].split(" ")[0] if row["where"] else "—"
         lines.append(
-            f"| `{row['path']}` | {STATE_LABEL.get(row['state'], row['state'])} | "
+            f"| `{row['path']}` | {', '.join(row['methods'])} | {STATE_LABEL.get(row['state'], row['state'])} | "
             f"{EXECUTION_LABEL.get(row['execution'], row['execution'])} | "
             f"{', '.join(row['consumers']) or '—'} | {row['tests']} | {row['tests_vs_loki']} | "
             f"{where} |")

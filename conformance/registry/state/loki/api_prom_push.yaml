@@ -4,4 +4,6 @@ reason: |
   Write path, out of scope by design: the proxy is a read-only Loki front for VictoriaLogs and serves no push route. Ingest goes to VictoriaLogs directly.
 owner_decision: |
   "Write API is not a gap - we will only implement the read API, and some delete, but nothing more from the write path." (owner 2026-10-26)
+  "do not list write APIs as gap; we will only support delete maybe, not any other." (owner 2026-10-27)
+out_of_scope_methods: [POST]
 waiver: null

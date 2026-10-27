@@ -9,7 +9,7 @@ Generated from the conformance registry by `conformance/scripts/coverage_map.py`
 
 Loki surface: **v3.7.7**, extracted from the Loki source.
 
-The proxy serves Loki's read API. Write endpoints (push) are not supported: ingest goes to VictoriaLogs directly.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API may come last; no other write endpoint is planned.
 
 ## Scores
 
@@ -22,41 +22,41 @@ The proxy serves Loki's read API. Write endpoints (push) are not supported: inge
 
 ## Endpoints
 
-| Endpoint | State | Served by | Consumers | Tests | vs Loki | Implemented in |
-|---|---|---|---|---:|---:|---|
-| `/api/prom/rules` | partial | proxy-side | api | 2 | 0 | internal/proxy/alerting.go:94 |
-| `/api/prom/rules/{namespace}` | partial | proxy-side | api | 1 | 0 | internal/proxy/alerting.go:94 |
-| `/loki/api/v1/delete` | partial | VictoriaLogs native | api | 3 | 0 | internal/proxy/patterns.go:1431 |
-| `/loki/api/v1/detected_field/{name}/values` | partial | VictoriaLogs native | drilldown, api | 18 | 4 | internal/proxy/label_handlers.go:764 |
-| `/loki/api/v1/detected_fields` | proven | proxy-side | explore, drilldown, api | 37 | 13 | internal/proxy/label_handlers.go:691 |
-| `/loki/api/v1/detected_labels` | proven | proxy-side | drilldown, api | 17 | 6 | internal/proxy/patterns.go:1367 |
-| `/loki/api/v1/drilldown-limits` | partial | proxy-side | api | 8 | 2 | internal/proxy/patterns.go:1256 |
-| `/loki/api/v1/format_query` | proven | proxy-side | explore, api | 3 | 1 | internal/proxy/patterns.go:1246 |
-| `/loki/api/v1/index/stats` | proven | VictoriaLogs native | explore, datasource, api | 18 | 7 | internal/proxy/label_handlers.go:525 |
-| `/loki/api/v1/index/volume` | proven | proxy-side | drilldown, api | 26 | 9 | internal/proxy/volume.go:192 |
-| `/loki/api/v1/index/volume_range` | proven | proxy-side | drilldown, api | 19 | 4 | internal/proxy/volume.go:200 |
-| `/loki/api/v1/label/{name}/values` | partial | VictoriaLogs native | explore, drilldown, datasource, api | 45 | 14 | internal/proxy/label_handlers.go:102 |
-| `/loki/api/v1/labels` | proven | VictoriaLogs native | explore, drilldown, datasource, api | 72 | 16 | internal/proxy/label_handlers.go:24 |
-| `/loki/api/v1/patterns` | proven | hybrid | drilldown, api | 20 | 3 | internal/proxy/patterns.go:108 |
-| `/loki/api/v1/query` | proven | hybrid | explore, drilldown, api | 72 | 27 | internal/proxy/proxy.go:2532 |
-| `/loki/api/v1/query_range` | proven | hybrid | explore, drilldown, api | 169 | 50 | internal/proxy/proxy.go:2172 |
-| `/loki/api/v1/rules` | partial | proxy-side | api | 9 | 2 | internal/proxy/alerting.go:94 |
-| `/loki/api/v1/rules/{namespace}` | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:94 |
-| `/loki/api/v1/series` | proven | hybrid | explore, datasource, api | 35 | 12 | internal/proxy/label_handlers.go:404 |
-| `/loki/api/v1/status/buildinfo` | partial | proxy-side | datasource, api | 8 | 4 | internal/proxy/alerting.go:127 |
-| `/loki/api/v1/tail` | partial | VictoriaLogs native | explore, api | 13 | 4 | internal/proxy/tail.go:26 |
-| `/prometheus/api/v1/alerts` | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:110 |
-| `/prometheus/api/v1/rules` | partial | proxy-side | api | 5 | 1 | internal/proxy/alerting.go:94 |
-| `/api/prom/label` | gap | not implemented | api | 0 | 0 | — |
-| `/api/prom/label/{name}/values` | gap | not implemented | api | 0 | 0 | — |
-| `/api/prom/query` | gap | not implemented | api | 0 | 0 | — |
-| `/api/prom/rules/{namespace}/{groupName}` | gap | not implemented | api | 4 | 0 | — |
-| `/api/prom/series` | gap | not implemented | api | 0 | 0 | — |
-| `/api/prom/tail` | gap | not implemented | api | 0 | 0 | — |
-| `/loki/api/v1/cache/generation_numbers` | gap | not implemented | api | 0 | 0 | — |
-| `/loki/api/v1/index/shards` | gap | not implemented | api | 0 | 0 | — |
-| `/loki/api/v1/label` | gap | not implemented | api | 0 | 0 | — |
-| `/loki/api/v1/rules/{namespace}/{groupName}` | gap | not implemented | api | 4 | 0 | — |
+| Endpoint | Methods | State | Served by | Consumers | Tests | vs Loki | Implemented in |
+|---|---|---|---|---|---:|---:|---|
+| `/api/prom/rules` | GET | partial | proxy-side | api | 2 | 0 | internal/proxy/alerting.go:94 |
+| `/api/prom/rules/{namespace}` | GET | partial | proxy-side | api | 1 | 0 | internal/proxy/alerting.go:94 |
+| `/loki/api/v1/delete` | DELETE, GET, POST, PUT | partial | VictoriaLogs native | api | 3 | 0 | internal/proxy/patterns.go:1431 |
+| `/loki/api/v1/detected_field/{name}/values` | GET, POST | partial | VictoriaLogs native | drilldown, api | 18 | 4 | internal/proxy/label_handlers.go:764 |
+| `/loki/api/v1/detected_fields` | GET, POST | proven | proxy-side | explore, drilldown, api | 37 | 13 | internal/proxy/label_handlers.go:691 |
+| `/loki/api/v1/detected_labels` | GET, POST | proven | proxy-side | drilldown, api | 17 | 6 | internal/proxy/patterns.go:1367 |
+| `/loki/api/v1/drilldown-limits` | GET | partial | proxy-side | api | 8 | 2 | internal/proxy/patterns.go:1256 |
+| `/loki/api/v1/format_query` | GET, POST | proven | proxy-side | explore, api | 3 | 1 | internal/proxy/patterns.go:1246 |
+| `/loki/api/v1/index/stats` | GET, POST | proven | VictoriaLogs native | explore, datasource, api | 18 | 7 | internal/proxy/label_handlers.go:525 |
+| `/loki/api/v1/index/volume` | GET, POST | proven | proxy-side | drilldown, api | 26 | 9 | internal/proxy/volume.go:192 |
+| `/loki/api/v1/index/volume_range` | GET, POST | proven | proxy-side | drilldown, api | 19 | 4 | internal/proxy/volume.go:200 |
+| `/loki/api/v1/label/{name}/values` | GET, POST | partial | VictoriaLogs native | explore, drilldown, datasource, api | 45 | 14 | internal/proxy/label_handlers.go:102 |
+| `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 72 | 16 | internal/proxy/label_handlers.go:24 |
+| `/loki/api/v1/patterns` | GET, POST | proven | hybrid | drilldown, api | 20 | 3 | internal/proxy/patterns.go:108 |
+| `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 72 | 27 | internal/proxy/proxy.go:2532 |
+| `/loki/api/v1/query_range` | GET, POST | proven | hybrid | explore, drilldown, api | 169 | 50 | internal/proxy/proxy.go:2172 |
+| `/loki/api/v1/rules` | GET | partial | proxy-side | api | 9 | 2 | internal/proxy/alerting.go:94 |
+| `/loki/api/v1/rules/{namespace}` | GET | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:94 |
+| `/loki/api/v1/series` | GET, POST | proven | hybrid | explore, datasource, api | 35 | 12 | internal/proxy/label_handlers.go:404 |
+| `/loki/api/v1/status/buildinfo` | GET | partial | proxy-side | datasource, api | 8 | 4 | internal/proxy/alerting.go:127 |
+| `/loki/api/v1/tail` | GET, POST | partial | VictoriaLogs native | explore, api | 13 | 4 | internal/proxy/tail.go:26 |
+| `/prometheus/api/v1/alerts` | GET | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:110 |
+| `/prometheus/api/v1/rules` | GET | partial | proxy-side | api | 5 | 1 | internal/proxy/alerting.go:94 |
+| `/api/prom/label` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/api/prom/label/{name}/values` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/api/prom/query` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/api/prom/rules/{namespace}/{groupName}` | GET | gap | not implemented | api | 4 | 0 | — |
+| `/api/prom/series` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/api/prom/tail` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/loki/api/v1/cache/generation_numbers` | GET | gap | not implemented | api | 0 | 0 | — |
+| `/loki/api/v1/index/shards` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/loki/api/v1/label` | GET, POST | gap | not implemented | api | 0 | 0 | — |
+| `/loki/api/v1/rules/{namespace}/{groupName}` | GET | gap | not implemented | api | 4 | 0 | — |
 
 ## Proxy-side work
 

@@ -4,5 +4,8 @@ reason: |
   Seeded from the repository: no proxy route, 0 test files compare it against Loki.
 owner_decision: |
   Alerting and recording rules are scheduled last (owner 2026-10-26).
+  "do not list write APIs as gap; we will only support delete maybe, not any other." (owner 2026-10-27)
+  The write methods of this endpoint are out of scope, the endpoint is judged on its read methods alone. The proxy serves Loki's read API; the alerting-rules API may come last.
 priority: last
+out_of_scope_methods: [DELETE]
 waiver: null

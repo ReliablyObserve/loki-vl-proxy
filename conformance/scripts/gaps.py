@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rank what is still missing, from the registry. Writes conformance/reports/gaps.md."""
 import os, re, sys
-from registry_io import load_json, out_of_scope, read_text, state_field, write_text
+from registry_io import SCOPE_SENTENCE, load_json, out_of_scope, read_text, state_field, write_text
 
 ROOT = "conformance/registry"
 WEIGHT = {"explore": 3, "drilldown": 3, "datasource": 2, "api": 1}
@@ -107,6 +107,7 @@ def main():
              "compares the endpoint against Loki, plus 2 when the proxy computes the result itself.",
              "An endpoint the owner named a priority for is placed by that first: `first` above all",
              "others (and always listed), `last` below all others; the score orders within each group.", "",
+             SCOPE_SENTENCE, "",
              "| Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |",
              "|---:|---|---|---|---:|---:|---|"]
     for tier, score, path, people, execution, tests, differential, missing in rows:

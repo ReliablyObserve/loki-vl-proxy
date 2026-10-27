@@ -7,6 +7,8 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 An endpoint the owner named a priority for is placed by that first: `first` above all
 others (and always listed), `last` below all others; the score orders within each group.
 
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API may come last; no other write endpoint is planned.
+
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
 | 4 | `/loki/api/v1/tail` | explore, api | native_vl | 13 | 4 | owner priority: Routed (handleTail) and compared against Loki in 4 test files, but not yet Loki-identical. Missing: start and limit history replay (Loki sends the last limit entries since start before live lines, pkg/loghttp/tail.go:70-94; open case semantics/tail-history-start-limit); limit and delay_for validation (limit must be positive, delay_for above 5 is refused, tail.go:101-103 and params.go:27-36); a multi-tenant tail request, which the proxy refuses (docs/KNOWN_ISSUES.md) with no registry row yet pinning Loki's answer. |

@@ -25,6 +25,23 @@ parameter combinations differ (Grafana Explore and Logs Drilldown send different
 real example requests, what VictoriaLogs answers natively, what the proxy must compute
 itself and why VictoriaLogs cannot, and the edge cases that prove it.
 
+## Write methods are out of scope
+
+The proxy serves Loki's read API. A state file lists the write methods of an endpoint that
+are left out of scope, with the owner decision quoted; every generator judges the endpoint on
+its remaining (read) methods and the gate rejects a write method that is neither listed nor
+allowed:
+
+```yaml
+owner_decision: |
+  "do not list write APIs as gap; we will only support delete maybe, not any other." (owner 2026-10-27)
+out_of_scope_methods: [DELETE, POST]
+```
+
+An endpoint whose every method is listed is `not-applicable` (the push routes) and is left out
+of every total, ratio, gap list and ranking. `POST` on a query, label or series endpoint is a
+form-encoded read and is never listed. The delete endpoint stays in scope.
+
 ## Refreshing the generated data
 
 ```bash
