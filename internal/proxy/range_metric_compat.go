@@ -174,7 +174,13 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	// Strip outer aggregations like "sum by (method) (rate(...))" → "rate(...)"
 	// so we parse the inner range function, not the aggregation operators; a
 	// nested one (sum(max(rate(...)))) goes down to the range function too.
-	for depth := 0; ; depth++ {
+	// A vector aggregation over another one, in either spelling of its grouping,
+	// goes down to the range aggregation under every level at once.
+	nestedRange, nested := nestedVectorRange(logql)
+	if nested {
+		logql = nestedRange
+	}
+	for depth := 0; !nested; depth++ {
 		loc := outerAggregationRE.FindStringIndex(logql)
 		if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
 			break
@@ -373,6 +379,9 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 // metric query. Handles both "sum(...) by (labels)" and "sum by (labels) (...)"
 // forms. Returns nil when no outer by-clause is present.
 func parseOriginalByLabels(logql string) []string {
+	if labels, ok := innermostByLabels(logql); ok {
+		return labels
+	}
 	var raw string
 	if m := outerByAfterRE.FindStringSubmatch(logql); m != nil {
 		raw = m[1]

@@ -1796,7 +1796,7 @@
    ]
   },
   "unwrap-sum-without": {
-   "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), parsed with `| logfmt amount` so a Loki series is the stream (a bare `| logfmt` makes every payment line a series of its own on Loki: thousands of series, and Loki cannot answer within the timeout; semantics/unwrap-per-series-identity-raw-rows), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer, W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
+   "description": "`sum without` over a range function with unwrap (PR for semantics/unwrap-sum-without-collapses): Loki keeps a series per remaining label set; the last stats pipe had no grouping and VictoriaLogs answered one row, so the proxy answered one series. W1-W4 are range queries over a logfmt stream group (max_over_time, sum_over_time, rate, max without), parsed with `| logfmt amount` so a Loki series is the stream (a bare `| logfmt` makes every payment line a series of its own on Loki: thousands of series, and Loki cannot answer within the timeout; semantics/unwrap-per-series-identity-raw-rows), W5-W6 are instant, W7 wraps the aggregation in topk, W8 counts a stream-label function whose series limit now applies to the folded answer (its selector leaves out the OTel-instrumented streams and the otel-collector: Loki carries their structured metadata, trace_id and span_id, in the series, so under a `without` every OTel line is a series of its own and Loki did not answer W8 within the timeout), W9 is the label_replace instant control that must not move. A sum without over an unwrap with no parser is left out: no field of the generator's data is numeric without a parser, so every build answers an empty result. Run with the control set.",
    "ranges": [
     "1h",
     "6h",
@@ -1871,7 +1871,7 @@
     },
     {
      "name": "W8 sum without pod, count_over_time (production)",
-     "query": "sum without (pod) (count_over_time({env=\"production\"}[1m]))",
+     "query": "sum without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
@@ -2534,6 +2534,170 @@
       "semantics/extracted-suffix-collision",
       "semantics/json-extracted-metric-pushdown",
       "parser-error-and-label-collision",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
+  "nested-aggregation": {
+   "description": "A vector aggregation over another one keeps every level's own `by` (semantics/nested-aggregation-outer-by-native-routes, with the `without` levels of semantics/without-over-inner-aggregation-collapses and semantics/without-nested-under-aggregation): the translator sent the nest to VictoriaLogs as one outer aggregation and dropped the outer grouping, so an instant query and a tumbling window (range == step, `[$__auto]`) answered one series without labels where Loki answers one per group. N1-N8 are range queries over tumbling windows (two-level nests of sum, max, min, avg and count, a three-level chain, a `| json` and a `| logfmt` inner level, a `without` over a level that names its labels), N9-N13 the same forms as instant queries, N13 with an innermost `without`, N14-N15 sliding windows (range 5m over the step), which the proxy folds from the innermost level's series (a nest of sums goes through the same fold). N16 is the innermost `without` on a tumbling window, which VictoriaLogs folds itself when the excluded labels are plain names (the proxy folds the series rows otherwise: a parser, an underscore or derived label, a sliding window). The selector leaves out the OTel-instrumented streams and the otel-collector: Loki carries their structured metadata (trace_id, span_id) in the series, so an inner level grouped by pod counts per line there, a series identity difference that predates the nest fix and is not what this set measures. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "shapes": [
+    {
+     "name": "N1 sum by app of max by app,pod, count",
+     "query": "sum by (app) (max by (app, pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N2 max by namespace of sum by namespace,app, rate",
+     "query": "max by (namespace) (sum by (namespace, app) (rate({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N3 count by namespace of sum by namespace,app",
+     "query": "count by (namespace) (sum by (namespace, app) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N4 avg by app of min by app,pod",
+     "query": "avg by (app) (min by (app, pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N5 three levels, max min sum",
+     "query": "max by (cluster) (min by (cluster, namespace) (sum by (cluster, namespace, app) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto]))))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N6 json inner, sum of max",
+     "query": "sum by (app) (max by (app, region) (count_over_time({app=~\"api-gateway|frontend-ssr|ml-serving\"} | json region=\"region\" [$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N7 logfmt inner, max of sum",
+     "query": "max by (namespace) (sum by (namespace, pod) (count_over_time({app=\"payment-service\"} | logfmt | drop __error__ [$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N8 without over a named by level, tumbling",
+     "query": "min without (pod) (avg by (pod, app, namespace) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-nested-under-aggregation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N9 instant sum of max",
+     "query": "sum by (app) (max by (app, pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m])))",
+     "instant": true,
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "N10 instant min of avg, rate",
+     "query": "min by (namespace) (avg by (namespace, app) (rate({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m])))",
+     "instant": true,
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "N11 instant three levels",
+     "query": "max by (cluster) (min by (cluster, namespace) (sum by (cluster, namespace, app) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m]))))",
+     "instant": true,
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "N12 instant json inner, count of sum",
+     "query": "count by (namespace) (sum by (namespace, app) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"} | json | drop __error__ [5m])))",
+     "instant": true,
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "N13 instant without under by",
+     "query": "min by (app) (avg without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m])))",
+     "instant": true,
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-nested-under-aggregation",
+      "loki_api_v1_query"
+     ]
+    },
+    {
+     "name": "N14 sliding sum of max",
+     "query": "sum by (app) (max by (app, pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N15 sliding sums only",
+     "query": "sum by (namespace) (sum by (namespace, app) (rate({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[5m])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "N16 innermost without under by, tumbling",
+     "query": "min by (app) (avg without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+     "covers": [
+      "semantics/nested-aggregation-outer-by-native-routes",
+      "metric-series-identity",
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-nested-under-aggregation",
       "loki_api_v1_query_range"
      ]
     }

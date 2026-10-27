@@ -19,10 +19,13 @@ import (
 // (semantics/unwrap-sum-without-collapses). Only a sum, min, max, avg or count
 // without that is the outermost aggregation is: its fold is Loki's
 // (TestSumWithoutDifferential). Any other query that holds a `without` clause
-// (topk and bottomk without, a without under another aggregation) is answered as
-// it was before the fold existed: the answers below are the ones the proxy gave
-// then, byte for byte, not Loki's: the shapes whose answers differ from Loki's are
-// open rows of the registry (semantics/without-*).
+// (topk and bottomk without) is answered as it was before the fold existed: the
+// answers below are the ones the proxy gave then, byte for byte, not Loki's: the
+// shapes whose answers differ from Loki's are
+// open rows of the registry (semantics/without-*). A `without` that is the innermost
+// level of a sum, avg, min, max or count over it is folded level by level, innermost
+// first (semantics/nested-aggregation-outer-by-native-routes): the answers of those
+// shapes are Loki's.
 // The max_over_time answers are the ones the proxy gave then, preceded by one more
 // sample at `start`: the old values sit one step later, the last one on `end`
 // (semantics/unwrap-range-last-point).
@@ -120,17 +123,17 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		{`topk without (pod) (1, rate({app="uw"}[5m]))`,
 			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=2,5 {app=uw,detected_level=unknown,ns=y,service_name=uw}=4`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`}},
 		{`max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {}=138,90,42`, `200 {}=138,90,42`, `200 {}=154`, `200 {}=154`}},
 		{`sum by (ns) (sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {ns=x}=138,74,42 {ns=y}=122,90,26`, `400 series limit (1)`, `200 {ns=x}=138 {ns=y}=154`, `400 series limit (1)`}},
 		{`sum by (ns) (sum without (pod) (rate({app="uw"}[5m])))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=8,12,20 {app=uw,detected_level=unknown,ns=y,service_name=uw}=8,16,20`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
+			[4]string{`200 {ns=x}=0.0266667,0.04,0.0666667 {ns=y}=0.0266667,0.0533333,0.0666667`, `400 series limit (1)`, `200 {ns=x}=0.0666667 {ns=y}=0.0666667`, `400 series limit (1)`}},
 		{`max(sum without (pod) (rate({app="uw"}[5m])))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=2,3,5 {app=uw,detected_level=unknown,ns=y,service_name=uw}=2,4,5`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
+			[4]string{`200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0666667`, `200 {}=0.0666667`}},
 		{`topk(2, max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))))`,
-			[4]string{`200 {}=260,164,68`, `200 {}=260,164,68`, `200 {}=292`, `200 {}=292`}},
+			[4]string{`200 {}=138,90,42`, `200 {}=138,90,42`, `200 {}=154`, `200 {}=154`}},
 		{`sort(max(sum without (pod) (rate({app="uw"}[5m]))))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=8,12,20 {app=uw,detected_level=unknown,ns=y,service_name=uw}=8,16,20`, `400 series limit (1)`, `200 {}=0.133333`, `200 {}=0.133333`}},
+			[4]string{`200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0666667`, `200 {}=0.0666667`}},
 		// The shapes the fold answers (sum, min, max, avg, count without, the
 		// outermost aggregation, also under a ranking): a series per remaining
 		// label set, limited on the folded answer.

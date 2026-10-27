@@ -1069,6 +1069,45 @@
    ]
   },
   {
+   "id": "explore-nested-aggregation-outer-by",
+   "kind": "explore",
+   "query": "min by (service_name) (avg by (service_name, level) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[$__auto])))",
+   "covers": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/nested-aggregation-outer-by-native-routes"
+   ]
+  },
+  {
+   "id": "explore-without-over-inner-aggregation",
+   "kind": "explore",
+   "query": "sum without (service_name) (sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "covers": [
+    "semantics/without-over-inner-aggregation-collapses",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/without-over-inner-aggregation-collapses"
+   ]
+  },
+  {
+   "id": "explore-without-nested-under-aggregation",
+   "kind": "explore",
+   "query": "max(sum without (pod) (count_over_time({app=\"payment-service\"}[5m])))",
+   "covers": [
+    "semantics/without-nested-under-aggregation",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/without-nested-under-aggregation"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [
