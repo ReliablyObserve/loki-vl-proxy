@@ -96,15 +96,24 @@ def beyond_noise(cand, ref):
     return cand is not None and ref is not None and cand > ref * (1 + NOISE) and cand - ref > MIN_DELTA
 
 
+def cache_served(summary, row):
+    """A cold run Loki's cache answered, by the heuristic or by Loki's own counters."""
+    ref = summary["reference"]
+    return ref in row.get("stale", []) or ref in row.get("cold_cache_served", [])
+
+
+def is_comparable(summary, row):
+    """Both sides answered 200 and Loki's results cache did not answer the cold run."""
+    cand, ref = summary["candidate"], summary["reference"]
+    return (row["status"].get(cand) == "200" and row["status"].get(ref) == "200"
+            and not cache_served(summary, row))
+
+
 def measurement(summary, row):
     cand, ref, base = summary["candidate"], summary["reference"], summary["baseline"]
-    stale = row.get("stale", [])
     cand_cold, ref_cold = row["cold"].get(cand), row["cold"].get(ref)
-    cand_ok = row["status"].get(cand) == "200"
-    ref_ok = row["status"].get(ref) == "200"
-    # A cold run Loki's cache answered, by the heuristic or by Loki's own counters.
-    served = ref in stale or ref in row.get("cold_cache_served", [])
-    comparable = cand_ok and ref_ok and not served
+    served = cache_served(summary, row)
+    comparable = is_comparable(summary, row)
     # p50 of a --cold summary holds first runs: no warm timing was recorded there.
     cold_only = summary.get("timing") == "cold"
     cand_warm, ref_warm = (None, None) if cold_only else (row["p50"].get(cand), row["p50"].get(ref))
@@ -134,6 +143,169 @@ def measurement(summary, row):
                                      if refresh and isolated else None),
     }
     return {**measured, **{k: v for k, v in known.items() if v is not None}}
+
+
+# Workloads of the summary table. The shape sets carry no category, so the grouping is explicit:
+# an endpoint call is metadata, the sets and names below are Drilldown and Explore pages, a log
+# query is a log query, and every other shape is a metric query.
+DRILLDOWN_SETS = {"drilldown-breakdown-exact", "metric-latency-gap", "json-filter-pushdown", "json-detected-level"}
+WORKLOADS = ("Metadata and label browser", "Drilldown and Explore pages", "Log queries", "Metric queries")
+
+
+def workload(set_name, shape):
+    if shape.get("path"):
+        return WORKLOADS[0]
+    name = shape["name"].lower()
+    if set_name in DRILLDOWN_SETS or "drilldown" in name or "explore" in name:
+        return WORKLOADS[1]
+    return WORKLOADS[2] if shape.get("logs") else WORKLOADS[3]
+
+
+def compare(cand, ref):
+    """faster, par or slower by the same noise rule that flags a gap; None when a time is missing."""
+    if cand is None or ref is None:
+        return None
+    if beyond_noise(cand, ref):
+        return "slower"
+    return "faster" if beyond_noise(ref, cand) else "par"
+
+
+def median(values):
+    values = sorted(values)
+    if not values:
+        return None
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def metadata_kind(path):
+    if path.endswith("/labels"):
+        return "Labels (label browser)"
+    if "/label/" in path:
+        return "Label values"
+    if path.endswith("/detected_labels") or path.endswith("/detected_fields"):
+        return "Drilldown detected labels and fields"
+    return "Volume (Drilldown landing)"
+
+
+def metadata_summary(latest, shape_sets):
+    """Per endpoint kind, every pair both sides answered with 200, whether or not Loki's cache answered it."""
+    by_name = {(s, sh["name"]): sh for s, v in shape_sets.items() for sh in v["shapes"]}
+    kinds = {}
+    for (set_name, shape_name, _), (_, summary, row) in latest.items():
+        path = by_name[(set_name, shape_name)].get("path")
+        cand, ref = summary["candidate"], summary["reference"]
+        if not path or row["status"].get(cand) != "200" or row["status"].get(ref) != "200":
+            continue
+        k = kinds.setdefault(metadata_kind(path), {"pairs": 0, "served": 0, "cand_cold": [], "ref_cold": [],
+                                                   "cand_warm": [], "ref_warm": []})
+        k["pairs"] += 1
+        k["served"] += cache_served(summary, row)
+        k["cand_cold"].append(row["cold"].get(cand))
+        k["ref_cold"].append(row["cold"].get(ref))
+        k["cand_warm"].append(row["p50"].get(cand))
+        k["ref_warm"].append(row["p50"].get(ref))
+    return kinds
+
+
+def render_metadata(kinds):
+    out = ["### Metadata calls", "",
+           "Label, label value, Drilldown detected-field and volume calls, over 1h to 7d. Unlike the table above,",
+           "every pair both sides answered with 200 is included, because most of these calls are marked as answered",
+           "by Loki's cache (see above): the `Loki cache-answered` column counts them, and a Loki time near zero",
+           "there is a cache hit.",
+           "Medians of the recorded cold time and warm p50.", "",
+           "| Call | Pairs | Loki cache-answered | Proxy cold | Loki cold | Proxy warm | Loki warm |",
+           "|---|---|---|---|---|---|---|"]
+    for name, k in sorted(kinds.items()):
+        vals = {key: median([v for v in k[key] if v is not None]) for key in ("cand_cold", "ref_cold", "cand_warm", "ref_warm")}
+        out.append(f"| {name} | {k['pairs']} | {k['served']} | {fmt(vals['cand_cold'])} | {fmt(vals['ref_cold'])} | "
+                   f"{fmt(vals['cand_warm'])} | {fmt(vals['ref_warm'])} |")
+    return out
+
+
+def summarize(latest, shape_sets):
+    """Counts and medians over the latest run of every (set, shape, range), by the rules of measurement()."""
+    by_name = {(s, sh["name"]): sh for s, v in shape_sets.items() for sh in v["shapes"]}
+    out = {"pairs": 0, "comparable": 0, "isolated": 0, "cold": {}, "warm": {}, "refresh": {}, "results": {},
+           "workloads": {w: {"pairs": 0, "comparable": 0, "cold": {}, "cand_cold": [], "ref_cold": [],
+                             "cand_warm": [], "ref_warm": []} for w in WORKLOADS}}
+
+    def bump(counts, key):
+        counts[key] = counts.get(key, 0) + 1
+
+    for (set_name, shape_name, _), (_, summary, row) in latest.items():
+        cand, ref = summary["candidate"], summary["reference"]
+        group = out["workloads"][workload(set_name, by_name[(set_name, shape_name)])]
+        out["pairs"] += 1
+        group["pairs"] += 1
+        parity = row.get("parity_vs_reference", "n/a")
+        bump(out["results"], "differs" if parity == "differs"
+             else "same" if parity == "same" or parity.startswith("same series") else "not compared")
+        if not is_comparable(summary, row):
+            continue
+        out["comparable"] += 1
+        group["comparable"] += 1
+        cold = compare(row["cold"].get(cand), row["cold"].get(ref))
+        if cold:
+            bump(out["cold"], cold)
+            bump(group["cold"], cold)
+            group["cand_cold"].append(row["cold"][cand])
+            group["ref_cold"].append(row["cold"][ref])
+        # p50 of a --cold summary holds first runs; warm and refresh need a run with its own windows.
+        if summary.get("timing") != "cold" and row["p50"].get(cand) is not None and row["p50"].get(ref) is not None:
+            group["cand_warm"].append(row["p50"][cand])
+            group["ref_warm"].append(row["p50"][ref])
+        if summary.get("isolated_windows") is not True:
+            continue
+        out["isolated"] += 1
+        warm = None if summary.get("timing") == "cold" else compare(row["p50"].get(cand), row["p50"].get(ref))
+        if warm:
+            bump(out["warm"], warm)
+        refresh, status = row.get("refresh"), row.get("refresh_status", {})
+        if refresh and status.get(cand) == "200" and status.get(ref) == "200":
+            moved = compare(refresh.get(cand), refresh.get(ref))
+            if moved:
+                bump(out["refresh"], moved)
+    out["metadata"] = metadata_summary(latest, shape_sets)
+    return out
+
+
+def render_summary(summary):
+    def line(label, counts):
+        total = sum(counts.values())
+        cells = " | ".join(f"{counts.get(k, 0)}" for k in ("faster", "par", "slower"))
+        return f"| {label} | {cells} | {total} |"
+
+    out = ["## Summary versus Loki", "",
+           "Computed by this script over the latest saved run of each shape×range, with the rules above. A pair",
+           "is comparable when the proxy and Loki both answered 200 and Loki's results cache did not answer the",
+           "cold run. Faster, on par and slower use the noise rule of the tables below: slower or faster means",
+           f"beyond {int(NOISE * 100)}% and {int(MIN_DELTA * 1000)} ms, and everything else is on par.", "",
+           f"{summary['pairs']} shape×range pairs are measured and {summary['comparable']} are comparable.", "",
+           "| Timing | Faster | On par | Slower | Pairs compared |", "|---|---|---|---|---|",
+           line("Cold first request", summary["cold"]),
+           line("Warm repeat", summary["warm"]),
+           line("Refresh (window moved forward)", summary["refresh"]), ""]
+    out.append(f"Warm and refresh are compared only for runs that give each set its own windows: "
+               f"{summary['isolated']} of {summary['comparable']} comparable pairs have that data."
+               + (" The warm columns under By workload are the recorded p50s, whose Loki side may come from a cache "
+                  "an earlier set primed." if not summary["isolated"] else ""))
+    results = summary["results"]
+    out += ["", "| Results versus Loki | Pairs |", "|---|---|"]
+    out += [f"| {k} | {results.get(k, 0)} |" for k in ("same", "differs", "not compared")]
+    out += ["", "### By workload", "",
+            "Medians over the comparable pairs of each workload: the proxy and Loki, first request (cold) and the",
+            "recorded warm p50.", "",
+            "| Workload | Pairs | Comparable | Cold faster / on par / slower | Proxy cold | Loki cold | Proxy warm | Loki warm |",
+            "|---|---|---|---|---|---|---|---|"]
+    for name, g in summary["workloads"].items():
+        c = g["cold"]
+        out.append(f"| {name} | {g['pairs']} | {g['comparable']} | "
+                   f"{c.get('faster', 0)} / {c.get('par', 0)} / {c.get('slower', 0)} | "
+                   f"{fmt(median(g['cand_cold']))} | {fmt(median(g['ref_cold']))} | "
+                   f"{fmt(median(g['cand_warm']))} | {fmt(median(g['ref_warm']))} |")
+    return out + [""] + render_metadata(summary["metadata"])
 
 
 def fmt(value, status=None):
@@ -181,7 +353,7 @@ def main():
 
     dump_json(EVIDENCE, evidence)
     over = load_json(OVER_2X) if os.path.exists(OVER_2X) else None
-    write_text(REPORT, render(evidence, latest, problems, over))
+    write_text(REPORT, render(evidence, latest, problems, shape_sets, over))
     return 0
 
 
@@ -206,7 +378,7 @@ def over_2x(over):
     return out + [""]
 
 
-def render(evidence, latest, problems, over=None):
+def render(evidence, latest, problems, shape_sets=None, over=None):
     gaps = {}
     for item, rows in evidence.items():
         for r in rows:
@@ -227,6 +399,8 @@ def render(evidence, latest, problems, over=None):
            "the first set's computed Loki cold (`loki_cold_reused_from`). Warm and refresh timings are",
            "compared with the same noise rules; a row Loki's cache answered is excluded from all three.", "",
            f"Runs: {', '.join(f'{label} ({date})' for date, label in labels) or 'none yet'}.", ""]
+    if shape_sets:
+        out += render_summary(summarize(latest, shape_sets)) + [""]
     out += over_2x(over)
     out += ["## Slower than Loki on first load", ""]
     if gaps:

@@ -15,6 +15,56 @@ compared with the same noise rules; a row Loki's cache answered is excluded from
 
 Runs: pr624-final-drilldown-breakdown-exact (2026-09-30), backfilled-empty-buckets-metadata-freshness (2026-10-01), backfilled-empty-buckets-metadata-inventory (2026-10-01), plain-name-control (2026-10-06), plain-name-drilldown-breakdown-exact (2026-10-06), unwrap-validity-24h (2026-10-06), unwraperr-conversion (2026-10-08), unwrapsum-long (2026-10-11), unwrapgate-long (2026-10-12), unwrapwithout-control-long (2026-10-17), unwrapwithout-long (2026-10-17), daily-control (2026-10-27), daily-drilldown-breakdown-exact (2026-10-27), daily-extracted-pushdown (2026-10-27), daily-extracted-suffix (2026-10-27), daily-json-detected-level (2026-10-27), daily-json-error-split (2026-10-27), daily-json-filter-pushdown (2026-10-27), daily-level-filter (2026-10-27), daily-level-filter-stored (2026-10-27), daily-loki-profile-otel-metadata (2026-10-27), daily-metadata-freshness (2026-10-27), daily-metadata-inventory (2026-10-27), daily-metric-latency-gap (2026-10-27), daily-parenthesized-range-or-filters (2026-10-27), daily-pattern-line-filter (2026-10-27), daily-pattern-line-filter-anchoring (2026-10-27), daily-plain-name-after-parser (2026-10-27), daily-stage-field-exposure (2026-10-27), daily-unwrap-conversion-error (2026-10-27), daily-unwrap-duration-seconds (2026-10-27), daily-unwrap-gate (2026-10-27), daily-unwrap-sum-without (2026-10-27), daily-unwrap-ungrouped-sum (2026-10-27), daily-unwrap-validity (2026-10-27).
 
+## Summary versus Loki
+
+Computed by this script over the latest saved run of each shape×range, with the rules above. A pair
+is comparable when the proxy and Loki both answered 200 and Loki's results cache did not answer the
+cold run. Faster, on par and slower use the noise rule of the tables below: slower or faster means
+beyond 25% and 50 ms, and everything else is on par.
+
+692 shape×range pairs are measured and 455 are comparable.
+
+| Timing | Faster | On par | Slower | Pairs compared |
+|---|---|---|---|---|
+| Cold first request | 213 | 164 | 78 | 455 |
+| Warm repeat | 0 | 0 | 0 | 0 |
+| Refresh (window moved forward) | 0 | 0 | 0 | 0 |
+
+Warm and refresh are compared only for runs that give each set its own windows: 0 of 455 comparable pairs have that data. The warm columns under By workload are the recorded p50s, whose Loki side may come from a cache an earlier set primed.
+
+| Results versus Loki | Pairs |
+|---|---|
+| same | 498 |
+| differs | 143 |
+| not compared | 51 |
+
+### By workload
+
+Medians over the comparable pairs of each workload: the proxy and Loki, first request (cold) and the
+recorded warm p50.
+
+| Workload | Pairs | Comparable | Cold faster / on par / slower | Proxy cold | Loki cold | Proxy warm | Loki warm |
+|---|---|---|---|---|---|---|---|
+| Metadata and label browser | 60 | 2 | 1 / 0 / 1 | 0.07s | 0.07s | 0.06s | 0.05s |
+| Drilldown and Explore pages | 146 | 112 | 69 / 23 / 20 | 0.15s | 0.38s | 0.04s | 0.05s |
+| Log queries | 121 | 78 | 9 / 37 / 32 | 0.10s | 0.04s | 0.05s | 0.04s |
+| Metric queries | 365 | 263 | 134 / 104 / 25 | 0.11s | 0.24s | 0.03s | 0.02s |
+
+### Metadata calls
+
+Label, label value, Drilldown detected-field and volume calls, over 1h to 7d. Unlike the table above,
+every pair both sides answered with 200 is included, because most of these calls are marked as answered
+by Loki's cache (see above): the `Loki cache-answered` column counts them, and a Loki time near zero
+there is a cache hit.
+Medians of the recorded cold time and warm p50.
+
+| Call | Pairs | Loki cache-answered | Proxy cold | Loki cold | Proxy warm | Loki warm |
+|---|---|---|---|---|---|---|
+| Drilldown detected labels and fields | 8 | 8 | 0.01s | 0.02s | 0.00s | 0.02s |
+| Label values | 24 | 24 | 0.01s | 0.04s | 0.01s | 0.03s |
+| Labels (label browser) | 24 | 24 | 0.00s | 0.03s | 0.00s | 0.03s |
+| Volume (Drilldown landing) | 4 | 2 | 0.12s | 0.13s | 0.11s | 0.11s |
+
 ## Above 2× Loki (must fix)
 
 Rows the daily run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range

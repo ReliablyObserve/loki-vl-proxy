@@ -108,6 +108,66 @@ class MeasurementTest(unittest.TestCase):
         self.assertFalse(m["slower_than_loki_cold"] or m["slower_than_loki_warm"])
 
 
+def latest_of(*cells):
+    """cells: (set, shape, range, summary, row) -> the mapping latest_runs() returns."""
+    return {(s, n, r): ((summ["date"], "x"), summ, rw) for s, n, r, summ, rw in cells}
+
+
+SHAPE_SETS = {"a": {"shapes": [{"name": "plain", "query": "q"}, {"name": "logs", "query": "q", "logs": True},
+                               {"name": "labels", "path": "/loki/api/v1/labels"},
+                               {"name": "Drilldown volume", "query": "q"}]},
+              "drilldown-breakdown-exact": {"shapes": [{"name": "DB", "query": "q"}]}}
+
+
+class SummaryTest(unittest.TestCase):
+    def test_compare_uses_the_noise_rule_in_both_directions(self):
+        self.assertEqual(pe.compare(1.0, 0.1), "slower")
+        self.assertEqual(pe.compare(0.1, 1.0), "faster")
+        self.assertEqual(pe.compare(0.06, 0.05), "par")  # under 50 ms
+        self.assertEqual(pe.compare(0.5, 0.45), "par")  # under 25%
+        self.assertIsNone(pe.compare(None, 0.1))
+
+    def test_workloads(self):
+        w = {n: pe.workload("a", s) for n in ("plain", "logs", "labels", "Drilldown volume")
+             for s in SHAPE_SETS["a"]["shapes"] if s["name"] == n}
+        self.assertEqual(w["labels"], "Metadata and label browser")
+        self.assertEqual(w["Drilldown volume"], "Drilldown and Explore pages")
+        self.assertEqual(w["logs"], "Log queries")
+        self.assertEqual(w["plain"], "Metric queries")
+        self.assertEqual(pe.workload("drilldown-breakdown-exact", {"name": "DB"}), "Drilldown and Explore pages")
+
+    def test_counts_follow_the_same_rules_as_the_flags(self):
+        cells = [
+            ("a", "plain", "1h", summary(isolated_windows=False), row()),  # slower cold
+            ("a", "plain", "6h", summary(isolated_windows=False), row(branch_cold=0.01, loki_cold=1.0)),  # faster
+            ("a", "plain", "24h", summary(isolated_windows=False), row(branch_cold=0.1, loki_cold=0.1)),  # par
+            ("a", "logs", "1h", summary(isolated_windows=False), row(stale=["loki"])),  # Loki cache answered
+            ("a", "logs", "6h", summary(isolated_windows=False),
+             row(status={"main": "200", "branch": "502", "loki": "200"}, parity_vs_reference="differs")),
+            ("a", "labels", "1h", summary(), row(parity_vs_reference="n/a")),  # isolated: warm is compared
+        ]
+        s = pe.summarize(latest_of(*cells), SHAPE_SETS)
+        self.assertEqual((s["pairs"], s["comparable"]), (6, 4))
+        self.assertEqual(s["cold"], {"slower": 2, "faster": 1, "par": 1})
+        self.assertEqual((s["isolated"], s["warm"]), (1, {"slower": 1}))
+        self.assertEqual(s["results"], {"same": 4, "differs": 1, "not compared": 1})
+        metric = s["workloads"]["Metric queries"]
+        self.assertEqual((metric["pairs"], metric["comparable"], metric["cold"]), (3, 3, {"slower": 1, "faster": 1, "par": 1}))
+        self.assertEqual(pe.median(metric["cand_cold"]), 0.1)
+
+    def test_metadata_includes_cache_answered_pairs(self):
+        cells = [("a", "labels", "1h", summary(), row(stale=["loki"])),
+                 ("a", "labels", "6h", summary(), row())]
+        kinds = pe.metadata_summary(latest_of(*cells), SHAPE_SETS)
+        self.assertEqual((kinds["Labels (label browser)"]["pairs"], kinds["Labels (label browser)"]["served"]), (2, 1))
+
+    def test_the_summary_renders_without_mutating_anything(self):
+        s = pe.summarize(latest_of(("a", "plain", "1h", summary(), row())), SHAPE_SETS)
+        text = "\n".join(pe.render_summary(s))
+        self.assertIn("| Cold first request | 0 | 0 | 1 | 1 |", text)
+        self.assertIn("| Metric queries | 1 | 1 | 0 / 0 / 1 | 1.00s | 0.10s | 0.50s | 0.05s |", text)
+
+
 def evidence(isolated=False, **flags):
     base = pe.measurement(summary(isolated_windows=isolated), row())
     return {"parser-json": [dict(base, set="x", shape="s", range="1h", **flags)],

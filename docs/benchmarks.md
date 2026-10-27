@@ -5,6 +5,10 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 # Benchmarks
 
+:::caution Historical measurements
+The warm-cache, cold-cache and Drilldown comparison tables on this page (the workload throughput, latency, CPU and memory tables) were recorded between 2026-05-01 and 2026-06-05 on the stack named below (Loki 3.6.x, VictoriaLogs v1.50.0, the proxy of that time) and have not been replaced by a new run of this harness. They are not the current position against Loki. The current comparison, including the shapes where the proxy is slower, is the daily A/B in [Performance: current position versus Loki](performance.md#current-position-versus-loki). The harness commands and methodology below stay valid.
+:::
+
 **Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.4 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
 
 **Stack:** Loki 3.6.x, VictoriaLogs v1.50.0, loki-vl-proxy latest. ~8 M log entries across 15 services, 7-day window.
