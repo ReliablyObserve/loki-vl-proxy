@@ -1,0 +1,1427 @@
+{
+ "set": "unwrap-sum-without",
+ "description": "Rows of the daily run 2026-10-27 (set unwrap-sum-without) for W8 and W9: Loki timed out at 180 s on W8 at 6h and 24h on all 7 runs.",
+ "end": 1793072100,
+ "runs": 7,
+ "targets": [
+  "release",
+  "main",
+  "loki"
+ ],
+ "restart_before": "0",
+ "restart_after": "0",
+ "valid": true,
+ "cpu_samples_missed": 0,
+ "mode": "shifted",
+ "refresh_s": 0,
+ "rows": [
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.275,
+   "signature": "series=41 points=28509 sum=1.15485e+06",
+   "vl_cpu_max": 92.07,
+   "vl_cpu_avg": 92.07
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.273,
+   "signature": "series=41 points=28509 sum=1.15485e+06",
+   "vl_cpu_max": 92.07,
+   "vl_cpu_avg": 92.07
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "loki",
+   "status": 200,
+   "seconds": 1.644,
+   "signature": "series=18237 points=234142 sum=1.15485e+06",
+   "vl_cpu_max": 92.07,
+   "vl_cpu_avg": 46.08,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 2,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 354
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.279,
+   "signature": "series=41 points=28509 sum=1.14957e+06",
+   "vl_cpu_max": 3.59,
+   "vl_cpu_avg": 3.59
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.241,
+   "signature": "series=41 points=28509 sum=1.14957e+06",
+   "vl_cpu_max": 3.59,
+   "vl_cpu_avg": 3.59
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.464,
+   "signature": "series=18137 points=233142 sum=1.14957e+06",
+   "vl_cpu_max": 3.59,
+   "vl_cpu_avg": 3.59,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 13421341
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.244,
+   "signature": "series=41 points=28515 sum=1.147e+06",
+   "vl_cpu_max": 1.04,
+   "vl_cpu_avg": 1.04
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.258,
+   "signature": "series=41 points=28515 sum=1.147e+06",
+   "vl_cpu_max": 1.04,
+   "vl_cpu_avg": 1.04
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.427,
+   "signature": "series=18157 points=232662 sum=1.147e+06",
+   "vl_cpu_max": 1.04,
+   "vl_cpu_avg": 1.04,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 13608636
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.239,
+   "signature": "series=41 points=28510 sum=1.14491e+06",
+   "vl_cpu_max": 0.12,
+   "vl_cpu_avg": 0.12
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.241,
+   "signature": "series=41 points=28510 sum=1.14491e+06",
+   "vl_cpu_max": 0.12,
+   "vl_cpu_avg": 0.12
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.55,
+   "signature": "series=18127 points=232271 sum=1.14491e+06",
+   "vl_cpu_max": 4.08,
+   "vl_cpu_avg": 2.1,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 13824803
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.253,
+   "signature": "series=41 points=28490 sum=1.14468e+06",
+   "vl_cpu_max": 4.08,
+   "vl_cpu_avg": 4.08
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.244,
+   "signature": "series=41 points=28490 sum=1.14468e+06",
+   "vl_cpu_max": 4.08,
+   "vl_cpu_avg": 4.08
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.521,
+   "signature": "series=18102 points=232199 sum=1.14468e+06",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 14068574
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.239,
+   "signature": "series=41 points=28465 sum=1.14426e+06",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.244,
+   "signature": "series=41 points=28465 sum=1.14426e+06",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.517,
+   "signature": "series=18017 points=232153 sum=1.14426e+06",
+   "vl_cpu_max": 0.41,
+   "vl_cpu_avg": 0.41,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 14287985
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.24,
+   "signature": "series=41 points=28449 sum=1.13806e+06",
+   "vl_cpu_max": 0.41,
+   "vl_cpu_avg": 0.41
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.248,
+   "signature": "series=41 points=28449 sum=1.13806e+06",
+   "vl_cpu_max": 3.57,
+   "vl_cpu_avg": 3.57
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "1h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.517,
+   "signature": "series=18072 points=231023 sum=1.13806e+06",
+   "vl_cpu_max": 3.57,
+   "vl_cpu_avg": 3.57,
+   "cache": {
+    "result": {
+     "entriesFound": 2,
+     "entriesRequested": 2,
+     "bytesReceived": 14454119
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.277,
+   "signature": "series=41 points=85332 sum=3.46928e+06",
+   "vl_cpu_max": 56.98,
+   "vl_cpu_avg": 30.275
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.452,
+   "signature": "series=41 points=85332 sum=3.46928e+06",
+   "vl_cpu_max": 47.45,
+   "vl_cpu_avg": 25.575000000000003
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.002,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.18,
+   "vl_cpu_avg": 1.2034065934065934
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.394,
+   "signature": "series=41 points=85336 sum=3.46725e+06",
+   "vl_cpu_max": 3.53,
+   "vl_cpu_avg": 1.8199999999999998
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.401,
+   "signature": "series=41 points=85336 sum=3.46725e+06",
+   "vl_cpu_max": 57.59,
+   "vl_cpu_avg": 30.560000000000002
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.1,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 38.81,
+   "vl_cpu_avg": 1.6592307692307693
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.442,
+   "signature": "series=41 points=85343 sum=3.46766e+06",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.09
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.398,
+   "signature": "series=41 points=85343 sum=3.46766e+06",
+   "vl_cpu_max": 11.38,
+   "vl_cpu_avg": 5.73
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.088,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 3.59,
+   "vl_cpu_avg": 1.1935555555555555
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.373,
+   "signature": "series=41 points=85342 sum=3.46698e+06",
+   "vl_cpu_max": 61.0,
+   "vl_cpu_avg": 30.54
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.363,
+   "signature": "series=41 points=85342 sum=3.46698e+06",
+   "vl_cpu_max": 3.56,
+   "vl_cpu_avg": 1.82
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.098,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.01,
+   "vl_cpu_avg": 1.2316483516483516
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.37,
+   "signature": "series=41 points=85336 sum=3.46604e+06",
+   "vl_cpu_max": 64.89,
+   "vl_cpu_avg": 32.5
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.382,
+   "signature": "series=41 points=85336 sum=3.46604e+06",
+   "vl_cpu_max": 57.52,
+   "vl_cpu_avg": 28.810000000000002
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.101,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.08,
+   "vl_cpu_avg": 1.1865934065934067
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.407,
+   "signature": "series=41 points=85336 sum=3.46563e+06",
+   "vl_cpu_max": 0.13,
+   "vl_cpu_avg": 0.10500000000000001
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.406,
+   "signature": "series=41 points=85336 sum=3.46563e+06",
+   "vl_cpu_max": 61.85,
+   "vl_cpu_avg": 30.965
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.086,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 3.53,
+   "vl_cpu_avg": 1.126111111111111
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "release",
+   "status": 200,
+   "seconds": 2.388,
+   "signature": "series=41 points=85342 sum=3.46358e+06",
+   "vl_cpu_max": 22.33,
+   "vl_cpu_avg": 11.2
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "main",
+   "status": 200,
+   "seconds": 2.381,
+   "signature": "series=41 points=85342 sum=3.46358e+06",
+   "vl_cpu_max": 0.13,
+   "vl_cpu_avg": 0.1
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "6h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.091,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.14,
+   "vl_cpu_avg": 1.2398901098901098
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "release",
+   "status": 200,
+   "seconds": 3.977,
+   "signature": "series=41 points=56806 sum=2.28737e+06",
+   "vl_cpu_max": 208.19,
+   "vl_cpu_avg": 70.78666666666666
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "main",
+   "status": 200,
+   "seconds": 4.006,
+   "signature": "series=41 points=56806 sum=2.28737e+06",
+   "vl_cpu_max": 122.58,
+   "vl_cpu_avg": 61.339999999999996
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 0,
+   "end": 1793072100,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.097,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.25,
+   "vl_cpu_avg": 1.2574725274725276
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "release",
+   "status": 200,
+   "seconds": 3.552,
+   "signature": "series=41 points=56808 sum=2.28756e+06",
+   "vl_cpu_max": 13.16,
+   "vl_cpu_avg": 6.625
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.473,
+   "signature": "series=41 points=56808 sum=2.28756e+06",
+   "vl_cpu_max": 43.3,
+   "vl_cpu_avg": 23.43
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 1,
+   "end": 1793072040,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.094,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 1.2065555555555556
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "release",
+   "status": 200,
+   "seconds": 3.453,
+   "signature": "series=41 points=56810 sum=2.28764e+06",
+   "vl_cpu_max": 126.72,
+   "vl_cpu_avg": 63.405
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.473,
+   "signature": "series=41 points=56810 sum=2.28764e+06",
+   "vl_cpu_max": 187.38,
+   "vl_cpu_avg": 63.806666666666665
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 2,
+   "end": 1793071980,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.101,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.91,
+   "vl_cpu_avg": 1.197142857142857
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.535,
+   "signature": "series=41 points=56811 sum=2.28742e+06",
+   "vl_cpu_max": 219.55,
+   "vl_cpu_avg": 73.46000000000001
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 3,
+   "end": 1793071920,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.053,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.17,
+   "vl_cpu_avg": 1.1909890109890109
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.616,
+   "signature": "series=41 points=56808 sum=2.28731e+06",
+   "vl_cpu_max": 234.02,
+   "vl_cpu_avg": 79.15
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 4,
+   "end": 1793071860,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.094,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.89,
+   "vl_cpu_avg": 1.2286813186813188
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.602,
+   "signature": "series=41 points=56808 sum=2.28756e+06",
+   "vl_cpu_max": 252.42,
+   "vl_cpu_avg": 84.21
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 5,
+   "end": 1793071800,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.1,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 1.2267032967032967
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "main",
+   "status": 200,
+   "seconds": 3.611,
+   "signature": "series=41 points=56810 sum=2.28711e+06",
+   "vl_cpu_max": 236.64,
+   "vl_cpu_avg": 79.98
+  },
+  {
+   "shape": "W8 sum without pod, count_over_time (production)",
+   "range": "24h",
+   "run": 6,
+   "end": 1793071740,
+   "target": "loki",
+   "status": 0,
+   "seconds": 180.061,
+   "signature": "ERR timed out",
+   "vl_cpu_max": 4.26,
+   "vl_cpu_avg": 1.2464835164835166
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 0,
+   "end": 1793072100,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8693",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 0,
+   "end": 1793072100,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8693",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 0,
+   "end": 1793072100,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.034,
+   "signature": "series=15 points=15 sum=8693",
+   "vl_cpu_max": 0.1,
+   "vl_cpu_avg": 0.1,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 1,
+   "end": 1793072040,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8551",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 1,
+   "end": 1793072040,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8551",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 1,
+   "end": 1793072040,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.033,
+   "signature": "series=15 points=15 sum=8551",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 2,
+   "end": 1793071980,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8826",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 2,
+   "end": 1793071980,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.002,
+   "signature": "series=15 points=15 sum=8826",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 2,
+   "end": 1793071980,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.033,
+   "signature": "series=15 points=15 sum=8826",
+   "vl_cpu_max": 0.55,
+   "vl_cpu_avg": 0.55,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 3,
+   "end": 1793071920,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8674",
+   "vl_cpu_max": null,
+   "vl_cpu_avg": null
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 3,
+   "end": 1793071920,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8674",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 3.97
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 3,
+   "end": 1793071920,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.032,
+   "signature": "series=15 points=15 sum=8674",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 3.97,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 4,
+   "end": 1793071860,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=8870",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 3.97
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 4,
+   "end": 1793071860,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.002,
+   "signature": "series=15 points=15 sum=8870",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 3.97
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 4,
+   "end": 1793071860,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.033,
+   "signature": "series=15 points=15 sum=8870",
+   "vl_cpu_max": 3.97,
+   "vl_cpu_avg": 3.97,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 5,
+   "end": 1793071800,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.004,
+   "signature": "series=15 points=15 sum=9234",
+   "vl_cpu_max": null,
+   "vl_cpu_avg": null
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 5,
+   "end": 1793071800,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=9234",
+   "vl_cpu_max": 3.12,
+   "vl_cpu_avg": 3.12
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 5,
+   "end": 1793071800,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.034,
+   "signature": "series=15 points=15 sum=9234",
+   "vl_cpu_max": 3.12,
+   "vl_cpu_avg": 3.12,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 6,
+   "end": 1793071740,
+   "target": "release",
+   "status": 200,
+   "seconds": 0.002,
+   "signature": "series=15 points=15 sum=9039",
+   "vl_cpu_max": 3.12,
+   "vl_cpu_avg": 3.12
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 6,
+   "end": 1793071740,
+   "target": "main",
+   "status": 200,
+   "seconds": 0.003,
+   "signature": "series=15 points=15 sum=9039",
+   "vl_cpu_max": 3.12,
+   "vl_cpu_avg": 3.12
+  },
+  {
+   "shape": "W9 label_replace control, instant",
+   "range": "instant",
+   "run": 6,
+   "end": 1793071740,
+   "target": "loki",
+   "status": 200,
+   "seconds": 0.034,
+   "signature": "series=15 points=15 sum=9039",
+   "vl_cpu_max": 3.12,
+   "vl_cpu_avg": 3.12,
+   "cache": {
+    "result": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "statsResult": {
+     "entriesFound": 1,
+     "entriesRequested": 1,
+     "bytesReceived": 177
+    },
+    "volumeResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "seriesResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "labelResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    },
+    "instantMetricResult": {
+     "entriesFound": 0,
+     "entriesRequested": 0,
+     "bytesReceived": 0
+    }
+   }
+  }
+ ]
+}

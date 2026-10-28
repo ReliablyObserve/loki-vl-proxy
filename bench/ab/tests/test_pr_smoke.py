@@ -129,6 +129,15 @@ class ConfirmTest(unittest.TestCase):
         self.assertEqual(row["refresh"], {"pr": 0.2})
         self.assertEqual(row["refresh_status"], {"pr": "200"})
 
+    def test_confirm_does_not_ask_loki_again_about_what_timed_out_in_the_first_pass(self):
+        moved = {"set": "control", "valid": True, "rows": [{"shape": "s", "range": "1h", "verdict": "slower"}]}
+        redo = {"set": "control", "valid": True, "restart_after": "0", "rows": [
+            {"shape": "s", "range": "1h", "verdict": "same", "p50": {}}]}
+        with mock.patch.object(pr_smoke, "run_matrix", return_value=redo) as run, \
+                mock.patch.object(pr_smoke.stack, "log"):
+            pr_smoke.confirm(moved, args(), {"confirm_end": END}, None, "/out", [("base", "u")])
+        self.assertEqual(run.call_args.kwargs["extra"], ("--known-timeouts", "/out/raw-control.json"))
+
 
 FIRST = ("json-filter-pushdown", "D volume, no filters")  # the same query as the control set's row below
 REPEAT = ("control", "json volume no filters")
@@ -263,6 +272,9 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(refresh[refresh.index("--runs") + 1], "5")
         self.assertTrue(refresh[refresh.index("--out") + 1].endswith("raw-control-refresh.json"))
         self.assertEqual(report[report.index("--refresh") + 1], refresh[refresh.index("--out") + 1])
+        # the refresh pass reads the first pass's timeouts from its raw file
+        self.assertEqual(refresh[refresh.index("--known-timeouts") + 1], matrix[matrix.index("--out") + 1])
+        self.assertNotIn("--known-timeouts", matrix)
 
     def test_default_run_makes_no_refresh_call(self):
         st = mock.Mock(vl_container="vl", vl="http://vl")

@@ -93,8 +93,9 @@ def run_matrix(set_name, shapes, targets, args, end, st, out, runs, tag="", rang
         refresh_end, refresh_s, refresh_runs = refresh
         raw_refresh = os.path.join(out, f"raw-{set_name}{tag}-refresh.json")
         # Same shapes and targets; the windows move forward inside the set's own block.
+        # A shape and range Loki timed out on in the first pass is not sent to Loki again.
         subprocess.run(matrix_cmd(set_name, shapes, targets, args, refresh_end, st, refresh_runs, ranges,
-                                  raw_refresh, [*extra, "--refresh-s", str(refresh_s)]),
+                                  raw_refresh, [*extra, "--refresh-s", str(refresh_s), "--known-timeouts", raw]),
                        cwd=ROOT, check=True, stdout=sys.stderr)
         report_cmd += ["--refresh", raw_refresh]
     subprocess.run(report_cmd, cwd=ROOT, check=True, stdout=sys.stderr)
@@ -121,8 +122,11 @@ def confirm(summary, args, plan, st, out, targets, baseline=None):
     stack.log(f"re-measuring {len(slow)} shape(s) the first pass moved in {summary['set']}")
     # Windows the first pass did not use (plan_windows reserves them, shifts included):
     # a re-run over the same windows would time the caches the first pass filled.
+    # Loki is not asked again about a shape and range it timed out on in the first pass: the re-run's Loki rows
+    # repeat that timeout.
+    first_raw = os.path.join(out, f"raw-{summary['set']}.json")
     again = run_matrix(summary["set"], slow, targets, args, plan["confirm_end"], st, out, args.confirm_runs,
-                       tag="-confirm")
+                       tag="-confirm", extra=("--known-timeouts", first_raw))
     redo = {(row["shape"], row["range"]): row for row in again["rows"]}
     for i, row in enumerate(summary["rows"]):
         if (row["shape"], row["range"]) in redo and (row["verdict"] in moved or row["shape"] in over):
