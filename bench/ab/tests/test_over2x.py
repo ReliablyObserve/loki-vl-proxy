@@ -630,8 +630,9 @@ class AcceptanceTest(unittest.TestCase):
         b = over2x.bounds_at("HEAD", repo)
         self.assertEqual(b["blocks"], {"semantics/a": LOCK})
         self.assertTrue(over2x.bound_for(b, "control", "s", "warm")["locked"])
-        self.assertFalse(over2x.read_bounds(repo, json.load(open(os.path.join(repo, "bench/ab/shapes.json"))))[
-            "blocks"]["semantics/a"]["locked"])
+        with open(os.path.join(repo, "bench/ab/shapes.json")) as f:
+            shapes = json.load(f)
+        self.assertFalse(over2x.read_bounds(repo, shapes)["blocks"]["semantics/a"]["locked"])
         self.assertIsNone(over2x.bounds_at("no-such-ref", repo))
 
 
@@ -668,9 +669,12 @@ class LocksCommandTest(unittest.TestCase):
         b = self.blocks()
         self.assertEqual((b["semantics/clean"]["locked"], b["semantics/clean"]["locked_since"]), (True, "2026-10-27"))
         self.assertEqual((b["slow"]["locked"], b["slow"]["locked_since"]), (False, None))
-        before = open(os.path.join(self.root, "conformance/registry/behaviours/slow.yaml")).read()
+        slow = os.path.join(self.root, "conformance/registry/behaviours/slow.yaml")
+        with open(slow) as f:
+            before = f.read()
         self.run_locks("seed")
-        self.assertEqual(open(os.path.join(self.root, "conformance/registry/behaviours/slow.yaml")).read(), before)
+        with open(slow) as f:
+            self.assertEqual(f.read(), before)
 
     def test_lock_refuses_a_row_above_and_locks_once_it_is_within(self):
         self.run_locks("seed")
