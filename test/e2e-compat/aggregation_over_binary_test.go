@@ -103,8 +103,11 @@ func TestCompat_AggregationOverBinaryMixedParsers(t *testing.T) {
 		assertInstantVectorAt(t, aggregationOverBinaryCluster, at)
 	})
 	shape := unwrapSumShape{name: "instant", window: "5m", stop: unwrapSumShapes[len(unwrapSumShapes)-1].stop}
-	inner := "sum by (route) (sum by (route) (sum_over_time(" + fx.selJSON + " | json | unwrap amount [5m])) / sum by (route) (count_over_time(" + fx.selLogfmt + " | logfmt [5m])))"
-	for _, query := range []string{inner, `label_replace(` + inner + `, "dst", "$1", "route", "/(.*)")`} {
+	binary := "sum by (route) (sum_over_time(" + fx.selJSON + " | json | unwrap amount [5m])) / sum by (route) (count_over_time(" + fx.selLogfmt + " | logfmt [5m]))"
+	inner := "sum by (route) (" + binary + ")"
+	// The bare binary too: the parser probe cut it after its json operand's
+	// pipeline and answered the left operand alone with a 200.
+	for _, query := range []string{inner, `label_replace(` + inner + `, "dst", "$1", "route", "/(.*)")`, binary} {
 		loki := shape.run(t, fx, lokiURL, query)
 		proxy := shape.run(t, fx, proxyURL, query)
 		compareUnwrapSumSeries(t, query, loki, proxy)
