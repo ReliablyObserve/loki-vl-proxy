@@ -753,25 +753,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// aggregate-all queries with a | filter field != "" pattern.
 	// extractCommonBase strips | json / | logfmt + the field filter so VL uses its
 	// pre-indexed column index (| json before count() if returns empty in VL).
-	if p.drilldownCoalescer != nil && sampleShift == 0 && origSpec.Window >= step && statsAggFunc == "count() as c" && spec.ByExplicit && len(spec.GroupBy) == 0 {
-		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
-			orgID := r.Header.Get("X-Scope-OrgID")
-			bKey := burstKey{
-				scope:   p.contextScopeFingerprint(r.Context()),
-				orgID:   orgID,
-				base:    base,
-				startNs: startTS.Add(-origSpec.Window).UnixNano(),
-				endNs:   endTS.UnixNano(),
-				stepNs:  int64(bucket),
-			}
-			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, bucket)
-			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
-				markQueryStepsRoute(r.Context(), "coalesced")
-				p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
-				return true
-			}
-			// Fall through on error — coalescer failure is non-fatal.
-		}
+	if p.writeCoalescedManualMetric(w, r, spec, manualFunc, statsAggFunc, startTS, endTS, step, origSpec.Window, bucket, sampleShift) {
+		return true
 	}
 	// Anchored buckets hold every (t-range, t] window whatever range and step
 	// are, so per-stream series (range != step) and parser stages use them too.
@@ -830,6 +813,35 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return true
+}
+
+// writeCoalescedManualMetric handles a Drilldown burst when its field-presence
+// query can share one VictoriaLogs conditional-stats call with its peers.
+func (p *Proxy) writeCoalescedManualMetric(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, manualFunc, statsAggFunc string, start, end time.Time, step, window, bucket, sampleShift time.Duration) bool {
+	if p.drilldownCoalescer == nil || sampleShift != 0 || window < step || statsAggFunc != "count() as c" || !spec.ByExplicit || len(spec.GroupBy) != 0 {
+		return false
+	}
+	base, field, ok := extractCommonBase(spec.BaseQuery)
+	if !ok {
+		return false
+	}
+	orgID := r.Header.Get("X-Scope-OrgID")
+	bKey := burstKey{
+		scope:   p.contextScopeFingerprint(r.Context()),
+		orgID:   orgID,
+		base:    base,
+		startNs: start.Add(-window).UnixNano(),
+		endNs:   end.UnixNano(),
+		stepNs:  int64(bucket),
+	}
+	fireFn := p.fusedFieldHits(orgID, base, start.Add(-window), end, bucket)
+	series, err := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn)
+	if err != nil {
+		return false // a coalescer failure falls through to the regular route
+	}
+	markQueryStepsRoute(r.Context(), "coalesced")
+	p.writeHitsRangeMetricMatrix(w, manualFunc, series, start, end, step, window)
 	return true
 }
 

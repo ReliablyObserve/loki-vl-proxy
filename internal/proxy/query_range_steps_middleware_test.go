@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+func TestQueryStepsTeeForcesJSONAndNoSniff(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		rec := httptest.NewRecorder()
+		tee := &queryStepsTee{ResponseWriter: rec, run: &queryStepsRun{}}
+		if explicit {
+			tee.WriteHeader(http.StatusOK)
+		}
+		if _, err := tee.Write([]byte(`<script>alert(1)</script>`)); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "application/json" {
+			t.Fatalf("explicit=%t Content-Type = %q", explicit, got)
+		}
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Fatalf("explicit=%t X-Content-Type-Options = %q", explicit, got)
+		}
+	}
+}
+
 // queryStepsGetBehindMiddleware is queryStepsGet with the headers the
 // middleware has set on the writer before the handler runs (the security
 // headers: nosniff, no-store), as every request through the server has.

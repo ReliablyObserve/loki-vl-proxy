@@ -334,9 +334,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 		return whole("fallback")
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if pieces[0].names[3] == "nosniff" {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(body)
 	if _, ranked := parseInstantMetricPostAggQuery(logqlQuery); responseKey != "" && !ranked {
 		// As the evaluation of the whole window would (handleQueryRange keeps
@@ -603,19 +601,41 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	if order, ok = p.orderQuerySteps(key, order, fresh); !ok {
 		return nil, false
 	}
-	size := len(names[0]) + len(names[1])
+	limit := p.limits().BufferedBackendBodyBytes
+	if limit <= 0 {
+		limit = int(^uint(0) >> 1)
+	}
+	size, ok := queryStepsAddSize(0, len(names[0]), limit)
+	if !ok {
+		return nil, false
+	}
+	size, ok = queryStepsAddSize(size, len(names[1]), limit)
+	if !ok {
+		return nil, false
+	}
 	for _, s := range order {
 		sort.Slice(s.points, func(i, j int) bool { return s.points[i].k < s.points[j].k })
-		size += len(s.metric) + len(`{"metric":,"values":[]},`)
+		size, ok = queryStepsAddSize(size, len(s.metric), limit)
+		if !ok {
+			return nil, false
+		}
+		size, ok = queryStepsAddSize(size, len(`{"metric":,"values":[]},`), limit)
+		if !ok {
+			return nil, false
+		}
 		for i, point := range s.points {
 			if i > 0 && s.points[i-1].k == point.k {
 				return nil, false // pieces that overlap
 			}
-			size += len(point.raw) + 1
+			size, ok = queryStepsAddSize(size, len(point.raw), limit)
+			if !ok {
+				return nil, false
+			}
+			size, ok = queryStepsAddSize(size, 1, limit)
+			if !ok {
+				return nil, false
+			}
 		}
-	}
-	if limit := p.limits().BufferedBackendBodyBytes; limit > 0 && size > limit {
-		return nil, false // the evaluator's size limit applies to the whole window
 	}
 	out := make([]byte, 0, size)
 	out = append(out, names[0]...)
@@ -623,6 +643,15 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 		out = appendQueryStepsSeries(out, i, s)
 	}
 	return append(out, names[1]...), true
+}
+
+// queryStepsAddSize bounds every part before adding it, so a large response
+// cannot wrap the preallocation size or evade the buffered-body limit.
+func queryStepsAddSize(size, part, limit int) (int, bool) {
+	if size < 0 || part < 0 || limit < 0 || size > limit || part > limit-size {
+		return 0, false
+	}
+	return size + part, true
 }
 
 // mergeQuerySteps joins the series of pieces by their labels, in the order
@@ -861,6 +890,8 @@ type queryStepsTee struct {
 }
 
 func (t *queryStepsTee) WriteHeader(code int) {
+	t.Header().Set("Content-Type", "application/json")
+	t.Header().Set("X-Content-Type-Options", "nosniff")
 	if t.code == 0 {
 		t.code = code
 	}
@@ -875,6 +906,8 @@ func (t *queryStepsTee) snapshot() {
 }
 
 func (t *queryStepsTee) Write(b []byte) (int, error) {
+	t.Header().Set("Content-Type", "application/json")
+	t.Header().Set("X-Content-Type-Options", "nosniff")
 	if t.code == 0 {
 		t.code = http.StatusOK
 	}

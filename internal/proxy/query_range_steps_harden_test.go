@@ -23,6 +23,28 @@ import (
 // older than -query-range-freshness, so the rows must not be in the future.
 const qsBase = int64(1_700_000_000) * 1e9
 
+func TestQueryStepsAddSizeRejectsOverflowAndBodyLimit(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	for _, tc := range []struct {
+		name              string
+		size, part, limit int
+		want              int
+		ok                bool
+	}{
+		{"within limit", 8, 2, 10, 10, true},
+		{"body limit", 8, 3, 10, 0, false},
+		{"integer overflow", maxInt - 1, 2, maxInt, 0, false},
+		{"negative part", 1, -1, maxInt, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := queryStepsAddSize(tc.size, tc.part, tc.limit)
+			if got != tc.want || ok != tc.ok {
+				t.Fatalf("queryStepsAddSize(%d, %d, %d) = (%d, %t), want (%d, %t)", tc.size, tc.part, tc.limit, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
 // qsGenerate draws a case for a refresh sequence: windows longer than, shorter
 // than, equal to and not a multiple of the step, an offset now and then, rows
 // dense or sparse with a gap that leaves some steps empty, and lines on the
