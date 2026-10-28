@@ -1,0 +1,34 @@
+# A/B overlay for the "loki-defaults" profile: the stack's Loki with the two
+# settings the e2e config changes back at Loki's own defaults.
+#
+#   align_queries_with_step            e2e config: true   Loki default: false
+#   max_cache_freshness_per_query      e2e config: 0s     Loki default: 10m
+#
+# The "aligned" profile is the stack as it is (test/e2e-compat/loki-local-config.yaml):
+# a Loki with those two settings moves a request's bounds onto the step grid and
+# caches results up to the present, so it can answer a refresh of less than a step
+# as an exact results-cache hit. This profile is a Loki with its defaults: bounds as
+# the client sent them, and the newest 10 minutes of a window always recomputed.
+# Both are measured so a proxy build is compared with each (bench/ab/README.md,
+# "Like for like").
+#
+# The shared e2e config is not touched: Loki applies command-line flags after the
+# config file (pkg/util/cfg/cfg.go DefaultUnmarshal), so these two flags win over the
+# file, the way docker-compose.ab-loki-uncached.yml's do. Flag names and defaults, Loki v3.7.9:
+#   -querier.align-querier-with-step  pkg/querier/queryrange/queryrangebase/roundtrip.go:49 (default false)
+#   -frontend.max-cache-freshness     pkg/validation/limits.go:407-408 (default 10m)
+# The rest of the command is the base stack's (tests/test_stack.py fails when it drifts).
+# Selected by stack.py --profile loki-defaults; applied after docker-compose.ab.yml.
+services:
+  loki:
+    command: !override
+      - -config.file=/etc/loki/local-config.yaml
+      - -compactor.retention-enabled=true
+      - -compactor.working-directory=/tmp/loki/compactor
+      - -compactor.delete-request-store=filesystem
+      - -compactor.compaction-interval=10m
+      - -compactor.retention-delete-delay=1h
+      - -store.retention=72h
+      - -validation.reject-old-samples.max-age=72h
+      - -querier.align-querier-with-step=false
+      - -frontend.max-cache-freshness=10m

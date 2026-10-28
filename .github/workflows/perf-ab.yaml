@@ -8,6 +8,13 @@ name: Perf A/B
 # is a warning at the top of the comment and an annotation; --over-2x-loki
 # below is the switch that makes it fail the check. See bench/ab/README.md.
 #
+# Each build is compared with Loki in two profiles on the one seeded stack
+# (bench/ab/README.md, "Like for like"): the stack's Loki (aligned) and Loki with
+# its own defaults (loki-defaults). --profiles auto runs loki-defaults for the
+# whole selection and aligned for its range-metric shapes when a build supports
+# -align-queries-with-step; a build without the flag is marked not like-for-like
+# instead of being compared.
+#
 # A baseline run (change scope: the `baseline` label, or a big shipped diff on a
 # pull request into main) measures every shape of every set at these ranges
 # instead of the selected ones, and also writes what could become the new
@@ -88,7 +95,7 @@ jobs:
           CANDIDATE=()
           if [ "$BASELINE" = "true" ]; then CANDIDATE=(--baseline-candidate "$OUT/baseline-candidate"); fi
           python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT" \
-            --over-2x-loki warn "${CANDIDATE[@]}"
+            --over-2x-loki warn --profiles auto "${CANDIDATE[@]}"
           # The verdict file, not the exit status, decides: a crash of the
           # interpreter itself leaves none and is reported as incomplete.
           CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"

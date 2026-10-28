@@ -28,6 +28,7 @@ import concurrent.futures
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -45,6 +46,18 @@ BASE_COMPOSE = "test/e2e-compat/docker-compose.yml"
 OVERLAY = "bench/ab/docker-compose.ab.yml"
 # --loki-uncached: Loki with every query results cache off, a cold reference.
 LOKI_UNCACHED_OVERLAY = "bench/ab/docker-compose.ab-loki-uncached.yml"
+# The two Loki profiles a proxy build is compared with (README, "Like for like"):
+#   aligned        the stack's Loki as test/e2e-compat/loki-local-config.yaml configures it
+#                  (align_queries_with_step on, max_cache_freshness_per_query 0s); every proxy build
+#                  that supports -align-queries-with-step runs with it on
+#   loki-defaults  Loki's own defaults (align off, freshness 10m), through an overlay that changes
+#                  neither the shared config nor the e2e stack; proxy builds run with their defaults
+PROFILES = ("aligned", "loki-defaults")
+LOKI_DEFAULTS_OVERLAY = "bench/ab/docker-compose.ab-loki-defaults.yml"
+PROFILE_OVERLAYS = {"aligned": [], "loki-defaults": [LOKI_DEFAULTS_OVERLAY]}
+# The proxy flag that moves a metric query_range request onto the step grid, as Loki's frontend does.
+ALIGN_FLAG = "-align-queries-with-step"
+ALIGN_FLAG_ENABLED = f"{ALIGN_FLAG}=true"
 GENERATOR = "test/e2e-compat/log-generator.py"
 # Data profile of the backfill. Fixed so every run measures the same density:
 # about 75 lines/s across the generator's services (the live generator's rate
@@ -94,12 +107,48 @@ def port_free(port):
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+# What Loki's /config shows for each profile.
+PROFILE_SETTINGS = {"aligned": {"align_queries_with_step": True, "max_cache_freshness_per_query": "0s"},
+                    "loki-defaults": {"align_queries_with_step": False, "max_cache_freshness_per_query": "10m"}}
+
+
+def profile_check(profile):
+    if profile not in PROFILES:
+        raise ValueError(f"unknown Loki profile {profile!r}; one of {', '.join(PROFILES)}")
+    return profile
+
+
+# (top-level section of Loki's /config, key) of each setting the profiles differ in. align_queries_with_step
+# also appears under another section, so the section has to be named.
+PROFILE_KEYS = {"align_queries_with_step": ("query_range", "align_queries_with_step"),
+                "max_cache_freshness_per_query": ("limits_config", "max_cache_freshness_per_query")}
+
+
+def profile_settings(config_yaml):
+    """The settings the profiles differ in, from Loki's /config (YAML text); a missing one is None."""
+    sections, current = {}, None
+    for line in config_yaml.splitlines():
+        if line and not line[0].isspace() and line.rstrip().endswith(":") and not line.startswith("#"):
+            current = line.rstrip()[:-1]
+        elif current and (m := re.match(r"^  ([A-Za-z0-9_]+):\s+(\S+)\s*$", line)):
+            sections.setdefault(current, {}).setdefault(m.group(1), m.group(2))
+    out = {}
+    for name, (section, key) in PROFILE_KEYS.items():
+        value = sections.get(section, {}).get(key)
+        out[name] = {"true": True, "false": False}.get(value, value)
+    return out
+
+
 class Stack:
     def __init__(self, project, loki_port=23101, vl_port=29428, loki_mem=None, vl_mem=None, root=ROOT, overlays=(),
-                 no_level_label=False):
+                 no_level_label=False, profile="aligned"):
         self.project, self.loki_port, self.vl_port, self.root = project, loki_port, vl_port, root
         self.no_level_label = no_level_label  # seed rows whose level lives only in the line
-        self.overlays = list(overlays)  # further compose files after OVERLAY (relative to root)
+        self.extra_overlays = list(overlays)  # further compose files after OVERLAY (relative to root)
+        self.profile = profile_check(profile)
+        if self.extra_overlays and self.profile != "aligned":
+            raise ValueError("--loki-uncached replaces Loki's whole command; it cannot be combined with the "
+                             "loki-defaults profile")
         self.env = dict(os.environ, AB_PROJECT=project, AB_LOKI_PORT=str(loki_port), AB_VL_PORT=str(vl_port))
         if loki_mem:
             # GOMEMLIMIT at ~80% of the cgroup limit, as the base stack sets it.
@@ -111,6 +160,11 @@ class Stack:
         self.vl = f"http://127.0.0.1:{vl_port}"
         self.vl_container = f"{project}-victorialogs"
         self.loki_container = f"{project}-loki"
+
+    @property
+    def overlays(self):
+        """Compose files after OVERLAY: the profile's, then the extra ones."""
+        return [*PROFILE_OVERLAYS[self.profile], *self.extra_overlays]
 
     def compose(self, *args, capture=False):
         files = [x for f in (BASE_COMPOSE, OVERLAY, *self.overlays) for x in ("-f", f)]
@@ -131,6 +185,36 @@ class Stack:
 
     def down(self):
         self.compose("down", "-v", "--remove-orphans")
+
+    def set_profile(self, profile, window=None, timeout=900):
+        """Move the stack's Loki to `profile`; the seeded data and VictoriaLogs stay.
+
+        Loki is recreated with the profile's overlay (its results cache is in memory, so the new Loki starts
+        with every cache empty) on the same named volume, so the data written by seed() is still there.
+        Returns the Loki config values the profile is read back from /config (profile_settings), and with
+        window=(start, end) waits until Loki and VictoriaLogs count the same lines again.
+        """
+        profile = profile_check(profile)
+        if profile == self.profile:
+            return self.loki_settings()
+        if self.extra_overlays:
+            raise RuntimeError("--loki-uncached replaces Loki's whole command; it cannot be combined with moving "
+                               "the stack between Loki profiles")
+        self.profile = profile
+        self.compose("up", "-d", "--no-deps", "--force-recreate", "loki")
+        wait_http(f"{self.loki}/ready", 180, "Loki")
+        settings = self.loki_settings()
+        if settings != PROFILE_SETTINGS[profile]:
+            raise RuntimeError(f"Loki profile {profile}: /config says {settings}, expected {PROFILE_SETTINGS[profile]}")
+        if window:
+            self.wait_equal_counts(window[0], window[1], timeout)
+        log(f"Loki profile {profile}: {settings}")
+        return settings
+
+    def loki_settings(self):
+        """The two settings that differ between the profiles, as Loki reports them on /config."""
+        _, body = http_get(f"{self.loki}/config", timeout=10)
+        return profile_settings(body.decode())
 
     def restart_count(self):
         out = subprocess.check_output(["docker", "inspect", self.vl_container, "--format", "{{.RestartCount}}"], text=True)
@@ -274,13 +358,59 @@ def build_and_seed(st, builds, seed_args):
     return trees
 
 
-def start_proxies(specs, out, st, service, proxies):
-    """Start (name, binary, tree, port) builds with their tree's stack flags; appends to `proxies` first."""
+def probe_align_support(binary, timeout=20):
+    """Whether a proxy build knows -align-queries-with-step.
+
+    An unknown flag makes the process exit, so a build is asked before it is given the flag: with the flag and
+    -help, a build that knows it stops at -help ("flag: help requested") and one that does not stops at the flag
+    ("flag provided but not defined"). Only the first answer counts as support; anything else (a timeout, other
+    output) is "unsupported", which marks the build's aligned-profile rows not like-for-like instead of
+    guessing. The exit status is not read: -help exits 1.
+    """
+    try:
+        out = subprocess.run([binary, ALIGN_FLAG_ENABLED, "-help"], capture_output=True, text=True, timeout=timeout,
+                             stdin=subprocess.DEVNULL)
+    except (subprocess.SubprocessError, OSError):
+        return False
+    text = out.stdout + out.stderr
+    return "help requested" in text and "provided but not defined" not in text
+
+
+def align_args(args, profile, supported):
+    """(args, state): a proxy's command line with -align-queries-with-step set for the Loki profile.
+
+    The build's own stack file may already carry the flag (the e2e stack's proxies run with it), so any
+    occurrence is removed first and the profile decides:
+      aligned        "on"           the flag is added   (the stack's Loki aligns queries with the step)
+                     "unsupported"  the build has no such flag; nothing is added. The build does not do what
+                                    the stack's Loki does, so its aligned rows are not like-for-like
+      loki-defaults  "off"          no flag, the build's default (Loki's own default is off too)
+    """
+    profile_check(profile)
+    rest = [a for a in args if a.partition("=")[0] != ALIGN_FLAG]
+    if profile == "loki-defaults":
+        return rest, "off"
+    return (rest + [ALIGN_FLAG_ENABLED], "on") if supported else (rest, "unsupported")
+
+
+def like_for_like(profile, align_state):
+    """A proxy build is compared with the Loki profile only when it ran the matching setting."""
+    return profile_check(profile) != "aligned" or align_state == "on"
+
+
+def start_proxies(specs, out, st, service, proxies, profile="aligned", supported=None):
+    """Start (name, binary, tree, port) builds with their tree's stack flags for `profile`; appends to `proxies` first.
+
+    supported maps a build's name to whether its binary knows -align-queries-with-step (probe_align_support);
+    each started Proxy records its `align` state (align_args). Each profile has its own work directory and log.
+    """
+    supported = supported if supported is not None else {name: probe_align_support(binary) for name, binary, _, _ in specs}
     for name, binary, tree, port in specs:
-        work = os.path.join(out, f"work-{name}")
+        work = os.path.join(out, f"work-{name}-{profile}")
         os.makedirs(work, exist_ok=True)
         cmd, env = proxy_command(tree, service, port, st.vl, work)
-        proxy = Proxy(name, binary, cmd, env, port, out)
+        cmd, state = align_args(cmd, profile, supported[name])
+        proxy = Proxy(name, binary, cmd, env, port, out, profile, state)
         proxies.append(proxy)  # before start(): a start that fails is still stopped
         proxy.start()
 
@@ -300,9 +430,10 @@ def teardown(proxies, trees, st, keep_stack=False):
 class Proxy:
     """One proxy build as a host process on a port proven to be its own."""
 
-    def __init__(self, name, binary, args, env, port, log_dir):
+    def __init__(self, name, binary, args, env, port, log_dir, profile="aligned", align="off"):
         self.name, self.binary, self.args, self.env, self.port = name, binary, args, env, port
-        self.log_path = os.path.join(log_dir, f"proxy-{name}.log")
+        self.profile, self.align = profile, align  # the Loki profile it runs for, and align_args' state
+        self.log_path = os.path.join(log_dir, f"proxy-{name}-{profile}.log")
         self.proc = None
         self.url = f"http://127.0.0.1:{port}"
 
@@ -346,7 +477,7 @@ class Proxy:
                 os.killpg(self.proc.pid, signal.SIGKILL)
 
 
-def stack_args(ap):
+def stack_args(ap, profile=True):
     ap.add_argument("--project", default="ab-smoke", help="compose project and container-name prefix")
     ap.add_argument("--loki-port", type=int, default=23101)
     ap.add_argument("--vl-port", type=int, default=29428)
@@ -357,12 +488,17 @@ def stack_args(ap):
                          "first request of a window is computed, as a cold reference for the proxies' run 0")
     ap.add_argument("--no-level-label", action="store_true",
                     help="seed rows with no stored level (the level only in the line), for the detected_level routes")
+    if profile:  # pr_smoke.py and daily.py choose their profiles with --profiles and move the stack between them
+        ap.add_argument("--profile", choices=PROFILES, default="aligned",
+                        help="Loki profile the stack starts in: aligned = the stack's Loki as configured, "
+                             "loki-defaults = Loki's own defaults for align_queries_with_step and "
+                             "max_cache_freshness_per_query (docker-compose.ab-loki-defaults.yml)")
 
 
 def stack_from(args):
     return Stack(args.project, args.loki_port, args.vl_port, args.loki_mem or None, args.vl_mem or None,
                  overlays=[LOKI_UNCACHED_OVERLAY] if getattr(args, "loki_uncached", False) else [],
-                 no_level_label=args.no_level_label)
+                 no_level_label=args.no_level_label, profile=getattr(args, "profile", "aligned"))
 
 
 def main():

@@ -61,6 +61,7 @@ RUNTIME_ALL = ("go.mod", "go.sum")
 HARNESS = (
     "bench/ab/perf_matrix.py", "bench/ab/report.py", "bench/ab/stack.py", "bench/ab/selection.py",
     "bench/ab/pr_smoke.py", "bench/ab/comment.py", "bench/ab/docker-compose.ab.yml",
+    "bench/ab/docker-compose.ab-loki-defaults.yml",
     "test/e2e-compat/docker-compose.yml", "test/e2e-compat/loki-local-config.yaml",
     "test/e2e-compat/log-generator.py", ".github/workflows/perf-ab.yaml",
 )

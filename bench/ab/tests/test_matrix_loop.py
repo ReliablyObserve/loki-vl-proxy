@@ -126,6 +126,15 @@ def summarize(raw):
             return json.load(f)
 
 
+class ProfileRecordTest(unittest.TestCase):
+    def test_the_profile_and_the_unaligned_builds_go_into_the_raw_file(self):
+        raw = recorded()
+        written, _, _, _ = run_main(raw, ["--profile", "aligned", "--not-like-for-like", "release"])
+        self.assertEqual((written["profile"], written["not_like_for_like"]), ("aligned", ["release"]))
+        written, _, _, _ = run_main(raw)
+        self.assertEqual((written["profile"], written["not_like_for_like"]), ("", []))
+
+
 class NoSleepTest(unittest.TestCase):
     def test_no_request_is_followed_by_a_sleep(self):
         _, replay, sleeps, _ = run_main(recorded())
@@ -148,7 +157,9 @@ class NoSleepTest(unittest.TestCase):
     def test_rows_keep_their_field_order(self):
         written, _, _, _ = run_main(recorded())
         first = recorded()["rows"][0]
-        self.assertEqual(list(written["rows"][0]), list(first))
+        self.assertEqual(list(written["rows"][0]), [*first, "at"])  # the request time is the one new field
+        self.assertTrue(all(isinstance(r["at"], int) for r in written["rows"] if "skipped" not in r))
+        self.assertTrue(all("at" not in r for r in written["rows"] if "skipped" in r))
 
 
 class DrainTest(unittest.TestCase):

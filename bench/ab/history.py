@@ -21,7 +21,18 @@ Columns: shape, range, status (candidate HTTP status), p50 and cold (candidate
 warm p50 and first-run seconds), loki_p50, loki_cold, loki_status, parity
 (candidate result vs Loki), base_p50 and verdict (vs the baseline build) and
 loki_cold_computed (true: Loki computed its cold run; false: its results cache
-answered it; null: not known, as on every line written before the column).
+answered it; null: not known, as on every line written before the column) and
+like_for_like (false: the candidate build did not run the setting of the line's
+Loki profile, so the row is kept but compared with nothing; absent on older lines
+means true). A line with "loki_restarted" ran against a Loki recreated on the seeded
+data (the profile that ran second): its cold runs read the store, so it enters and
+leaves no ratchet.
+
+A line belongs to one Loki profile (stack.PROFILES, bench/ab/README.md "Like for
+like"): "profile" in the line, and the file: <set>.jsonl holds the "aligned"
+profile (the stack's Loki; every line written before the profiles existed is one,
+with a proxy side that was unaligned) and <set>.loki-defaults.jsonl the
+"loki-defaults" profile. Alerts compare a line only with lines of its own file.
 
 alerts compares each set's newest full line with the earlier full ones (a
 cut-down manual run is neither compared nor a baseline) and reports
@@ -61,7 +72,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 HISTORY = os.path.join(HERE, "history")
 COLS = ["shape", "range", "status", "p50", "cold", "loki_p50", "loki_cold", "loki_status", "parity", "base_p50",
-        "verdict", "loki_cold_computed"]
+        "verdict", "loki_cold_computed", "like_for_like"]
 SPARK = "▁▂▃▄▅▆▇█"
 SHAPES = os.path.join(HERE, "shapes.json")
 # What one full daily measurement is: this many runs per shape x range and
@@ -83,14 +94,26 @@ def cold_computed(row, ref):
     return True if (row.get("cache", {}).get(ref) or {}).get("cold") else None
 
 
+def profile_of(entry_or_summary):
+    return over2x.profile_of(entry_or_summary)
+
+
+def history_name(set_name, profile):
+    """<set>.jsonl for the aligned profile (and for every line that predates profiles), <set>.<profile>.jsonl else."""
+    return f"{set_name}.jsonl" if profile == over2x.LEGACY_PROFILE else f"{set_name}.{profile}.jsonl"
+
+
 def entry(summary, commit=""):
     c, r, b = summary["candidate"], summary["reference"], summary["baseline"]
+    lfl = over2x.like_for_like(summary, c)
     rows = []
     for row in summary["rows"]:
         rows.append([row["shape"], row["range"], row["status"].get(c), row["p50"].get(c), row["cold"].get(c),
                      row["p50"].get(r), row["cold"].get(r), row["status"].get(r),
-                     row.get("parity_vs_reference", "n/a"), row["p50"].get(b), row["verdict"], cold_computed(row, r)])
-    return {"date": summary["date"], "commit": commit, "set": summary["set"], "label": summary.get("label", ""),
+                     row.get("parity_vs_reference", "n/a"), row["p50"].get(b), row["verdict"], cold_computed(row, r), lfl])
+    return {"date": summary["date"], "commit": commit, "set": summary["set"], "profile": profile_of(summary),
+            **({"loki_restarted": True} if summary.get("loki_restarted") else {}),
+            "label": summary.get("label", ""),
             "baseline": b, "candidate": c, "reference": r, "runs": summary.get("runs"),
             "valid": summary.get("valid", True), "restarts": [summary.get("restart_before"), summary.get("restart_after")],
             "cols": COLS, "rows": rows}
@@ -117,8 +140,8 @@ def is_full(e, want):
 
 def append(summary, directory=HISTORY, commit="", spec=None):
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, f"{summary['set']}.jsonl")
     line = entry(summary, commit)
+    path = os.path.join(directory, history_name(summary["set"], line["profile"]))
     existing = read(path)
     same_day = [i for i, e in enumerate(existing) if e["date"] == line["date"] and e.get("label") == line["label"]]
     if same_day:
@@ -150,7 +173,10 @@ def last_commit(directory=HISTORY, spec=None):
     Only sets in shapes.json count (a renamed or removed set's file is stale),
     and only full measurements: FULL_RUNS runs and every range of the set up
     to FULL_MAX_RANGE, so a cut-down manual run does not stand for the day.
-    A current set without one, or lines without a recorded commit, give "".
+    A set's newest full measurement is the newest of its profiles' files (a
+    profile that does not run, for want of a build that supports its setting,
+    leaves its file behind). A current set without one, or lines without a
+    recorded commit, give "".
     """
     spec = spec or load_spec()
     commits = set()
@@ -158,10 +184,12 @@ def last_commit(directory=HISTORY, spec=None):
         want = full_ranges(spec, name)
         if not want:
             continue  # the daily run skips a set with no range that short
-        full = [e for e in read(os.path.join(directory, f"{name}.jsonl")) if is_full(e, want)]
+        full = [e for profile in over2x.PROFILES
+                for e in read(os.path.join(directory, history_name(name, profile))) if is_full(e, want)]
         if not full:
             return ""
-        commits.add(full[-1].get("commit") or "")
+        newest = max(full, key=lambda e: e["date"])
+        commits.add(newest.get("commit") or "")
     return commits.pop() if len(commits) == 1 else ""
 
 
@@ -217,7 +245,11 @@ def trend(directory=HISTORY, window=14):
              "fresh stack and seeded data every day: the proxy built from `main` against Loki direct, warm p50 "
              f"(the first run is cold). Day and week columns compare with the previous run and the run seven "
              f"or more days earlier; a move counts only beyond {NOISE * 100:.0f}% and {MIN_DELTA * 1000:.0f} ms. "
-             f"The sparkline is the last {window} runs of the proxy's warm p50.", ""]
+             f"The sparkline is the last {window} runs of the proxy's warm p50. Each set has a section per Loki "
+             "profile (aligned: the stack's Loki, align_queries_with_step on and freshness 0s; loki-defaults: Loki "
+             "with its own defaults). ‡ marks a build that did not run the setting of the profile (it is shown, never "
+             "compared); † after a Loki cold time means its results cache answered that run, so it is no reference.",
+             ""]
     files = sorted(glob.glob(os.path.join(directory, "*.jsonl")))
     if not files:
         lines.append("No history yet.")
@@ -231,7 +263,8 @@ def trend(directory=HISTORY, window=14):
         d_rows = rows_of(day) if day else {}
         w_rows = rows_of(week) if week else {}
         recent = entries[-window:]
-        lines += [f"## {last['set']}", "",
+        profile = profile_of(last)
+        lines += [f"## {last['set']}" + ("" if profile == over2x.LEGACY_PROFILE else f" ({profile})"), "",
                   f"Latest {last['date']} (`{(last.get('commit') or '?')[:10]}`, {last.get('runs')} runs"
                   f"{'' if last.get('valid', True) else ', **invalid: VictoriaLogs restarted**'}); "
                   f"previous {day['date'] if day else '—'}; week {week['date'] if week else '—'}.", "",
@@ -239,7 +272,9 @@ def trend(directory=HISTORY, window=14):
                   "|---|---|--:|--:|--:|--:|--:|--:|---|---|"]
         for key, row in cur.items():
             ratio = "—"
-            if row["status"] == "200" and row["loki_status"] == "200" and row["p50"] and row["loki_p50"]:
+            if row.get("like_for_like") is False:
+                ratio = "‡"  # the build did not run the setting of the line's Loki profile: not compared
+            elif row["status"] == "200" and row["loki_status"] == "200" and row["p50"] and row["loki_p50"]:
                 ratio = f"{row['p50'] / row['loki_p50']:.2f}×"
             d = d_rows.get(key, {}).get("p50") if d_rows.get(key, {}).get("status") == "200" else None
             w = w_rows.get(key, {}).get("p50") if w_rows.get(key, {}).get("status") == "200" else None
@@ -250,7 +285,8 @@ def trend(directory=HISTORY, window=14):
                 f"{moved(d, row['p50']) if row['status'] == '200' else ''} | "
                 f"{moved(w, row['p50']) if row['status'] == '200' else ''} | "
                 f"{secs(row['loki_p50'], row['loki_status'])} | {ratio} | "
-                f"{secs(row['cold'], row['status'])} / {secs(row['loki_cold'], row['loki_status'])} | {parity} | "
+                f"{secs(row['cold'], row['status'])} / {secs(row['loki_cold'], row['loki_status'])}"
+                f"{' †' if row.get('loki_cold_computed') is False else ''} | {parity} | "
                 f"{spark(series)} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -340,14 +376,25 @@ def ratchets(row):
 
 
 def line_bands(name, e, times=False):
-    """(set, shape, range, mode) -> over2x.band of every pair of a line both sides answered comparably
-    (with times: (band, the proxy's seconds))."""
-    out = {}
+    """(profile, set, shape, range, mode) -> over2x.band of every pair of a line both sides answered comparably
+    (with times: (band, the proxy's seconds)). The profile is the line's: the same row in two profiles is two
+    pairs, each against its own Loki; a build that was not like-for-like has no pair."""
+    out, profile = {}, profile_of(e)
     for key, row in rows_of(e).items():
         for mode, pair in over2x.history_pairs(row).items():
             if over2x.judge(*pair) in ("above", "within"):
                 b = over2x.band(*pair[:2])
-                out[(name, *key, mode)] = (b, pair[0]) if times else b
+                out[(profile, name, *key, mode)] = (b, pair[0]) if times else b
+    return out
+
+
+def distributions(bands):
+    """profile -> mode -> over2x.distribution, from {(profile, set, shape, range, mode): band}."""
+    out = {}
+    for profile in over2x.PROFILES:
+        mine = [(k[4], v) for k, v in bands.items() if k[0] == profile]
+        if mine:
+            out[profile] = over2x.distribution(mine)
     return out
 
 
@@ -403,6 +450,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
         entries = read(path)
         name = entries[-1]["set"] if entries else ""
+        profile = profile_of(entries[-1]) if entries else ""
         want = full_ranges(spec, name)
         if want is None or (sets is not None and name not in sets):
             continue
@@ -429,6 +477,10 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
 
         for key, row in cur.items():
             measured.add((name, *key))
+            # A row of a build that did not run the profile's setting is kept but takes part in no comparison
+            # with Loki: no result transition, no ratchet, no above-2× row (its timing against its own earlier
+            # lines is still a trend).
+            lfl = row.get("like_for_like") is not False
             hist = [(e, rs[key]) for e, rs in older if key in rs]
             (prev, old), (prev2, old2) = (hist[0] if hist else ({}, None)), (hist[1] if len(hist) > 1 else ({}, {}))
             if row.get("loki_status") not in (None, "200") and not fails_like_loki(row):
@@ -437,7 +489,8 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                                                      f"{row['status'] or 'none'}; the result is not compared"})
             if old:
                 # A result is compared only when Loki answered 200 on both lines.
-                if old.get("loki_status") == "200" and row.get("loki_status") == "200":
+                if lfl and old.get("like_for_like") is not False and old.get("loki_status") == "200" \
+                        and row.get("loki_status") == "200":
                     if same(old["parity"]) and row["parity"] == "differs":
                         out["regressions"].append(alert("result", key, "result vs Loki: same → differs", prev))
                     elif old["parity"] == "differs" and same(row["parity"]):
@@ -464,10 +517,12 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
                             "held for two runs", prev2))
             if out["over_2x_active"] and not out["over_2x_problem"]:
-                over_2x(out, listed, name, key, row, old, new)
-            acceptance(out, bounds, items, name, key, row, old, (prev, prev2), alert)
+                over_2x(out, listed, profile, name, key, row, old, new)
+            acceptance(out, bounds, items, profile, name, key, row, old, (prev, prev2), alert)
             where = (name, *key)
-            if where in held and not out["ratchet_problem"]:
+            if not lfl or new.get("loki_restarted"):
+                pass  # a Loki recreated on the seeded data reads the store: its colds are no ratchet reference
+            elif where in held and not out["ratchet_problem"]:
                 reason = ratchet_loss(row, old)
                 if reason:
                     # The range starts at the newest line the row was still as good as Loki on (or when the
@@ -481,25 +536,27 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     for k in ("regressions", "improvements", "ratchet_lost", "loki_failed"):
         out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], a["kind"]))
     for k in ("over_2x_new", "over_2x_removed", "over_2x_pending"):
-        out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], over2x.MODES.index(a["mode"])))
+        out[k].sort(key=lambda a: (over2x.PROFILES.index(a.get("profile") or over2x.LEGACY_PROFILE), a["set"],
+                                   a["shape"], a["range"], over2x.MODES.index(a["mode"])))
     # Ratchet rows whose set was measured (or no longer exists) but whose shape/range this run did not.
     if out["acceptance_active"]:
         ready(out, bounds, items, looked)
-    out["distribution"] = over2x.distribution((k[3], v[0]) for k, v in cur_bands.items())
+    out["distribution"] = distributions({k: v[0] for k, v in cur_bands.items()})
     for against, other in ((("the previous full run", prev_bands), ("the full run a week earlier", week_bands))
                            if out["acceptance_active"] else ()):
-        common = cur_bands.keys() & other.keys()
-        if not common:
-            continue
-        old = over2x.distribution((k[3], other[k][0]) for k in common)
-        moved = settled(other, {k: cur_bands[k] for k in common})
-        now = over2x.distribution((k[3], moved[k]) for k in common)
-        out["distribution_ratchet"].append({"against": against, "old": old, "new": now})
-        for mode, kind, detail in over2x.ratchet_moves(old, now):
-            what = "share below Loki" if kind == "share_below" else "rows above 2× Loki"
-            out["regressions"].append({"set": "all sets", "shape": f"{mode}: {what}", "range": "—",
-                                       "kind": "distribution", "detail": f"{detail}, against {against}",
-                                       "commits": commit})
+        for profile in over2x.PROFILES:  # each profile is ratcheted against its own earlier lines
+            common = {k for k in cur_bands.keys() & other.keys() if k[0] == profile}
+            if not common:
+                continue
+            old = over2x.distribution((k[4], other[k][0]) for k in common)
+            moved = settled(other, {k: cur_bands[k] for k in common})
+            now = over2x.distribution((k[4], moved[k]) for k in common)
+            out["distribution_ratchet"].append({"profile": profile, "against": against, "old": old, "new": now})
+            for mode, kind, detail in over2x.ratchet_moves(old, now):
+                what = "share below Loki" if kind == "share_below" else "rows above 2× Loki"
+                out["regressions"].append({"set": "all sets", "shape": f"{profile} {mode}: {what}", "range": "—",
+                                           "kind": "distribution", "detail": f"{detail}, against {against}",
+                                           "commits": commit})
     out["regressions"].sort(key=lambda a: (a["set"], a["shape"], a["range"], a["kind"]))
     for k in ("locked_pending", "lost_below", "between"):
         out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], over2x.MODES.index(a["mode"])))
@@ -512,19 +569,19 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     return out
 
 
-def over_2x(out, listed, name, key, row, old, new):
+def over_2x(out, listed, profile, name, key, row, old, new):
     """One history row against the above-2× Loki list, cold and warm: a listed row within 2× on this line and
     on the previous full line is removed, a lower ratio tightens it, an unlisted row above 2× is reported."""
     for mode, pair in over2x.history_pairs(row).items():
-        k, state = (name, key[0], key[1], mode), over2x.judge(*pair)
+        k, state = (profile, name, key[0], key[1], mode), over2x.judge(*pair)
         measured = over2x.ratio(*pair[:2])
         detail = f"{secs(pair[0])} against Loki's {secs(pair[1])}, {over2x.times(measured)}" + (
             f" (inside the {over2x.MIN_GAP * 1000:.0f} ms floor)" if state == "within" and (measured or 0) > over2x.RATIO
             else "")
         if k not in listed:
             if state == "above":
-                out["over_2x_new"].append({"set": name, "shape": key[0], "range": key[1], "mode": mode,
-                                           "kind": "over_2x", "detail": detail, "commits": short(new.get("commit"))})
+                out["over_2x_new"].append({"profile": profile, "set": name, "shape": key[0], "range": key[1],
+                                           "mode": mode, "kind": "over_2x", "detail": detail, "commits": short(new.get("commit"))})
             continue
         if state == "above" and measured is not None and measured < listed[k]["ratio"]:
             listed[k].update(ratio=measured, proxy_s=pair[0], loki_s=pair[1])
@@ -536,7 +593,7 @@ def over_2x(out, listed, name, key, row, old, new):
         out["over_2x_removed" if before == "within" else "over_2x_pending"].append(item)
 
 
-def acceptance(out, bounds, items, name, key, row, old, prevs, alert):
+def acceptance(out, bounds, items, profile, name, key, row, old, prevs, alert):
     """One history row against the registry's perf: blocks, cold and warm: a locked row above its bound (a
     regression, or pending for a first cold run), a row that lost its place below Loki, a row between 1× and
     2×, and the per-item counts ready() reads."""
@@ -556,12 +613,12 @@ def acceptance(out, bounds, items, name, key, row, old, prevs, alert):
         if state not in ("above", "within"):
             continue
         measured = over2x.ratio(*pair[:2])
-        where = {"set": name, "shape": key[0], "range": key[1], "mode": mode, "ratio": measured,
+        where = {"profile": profile, "set": name, "shape": key[0], "range": key[1], "mode": mode, "ratio": measured,
                  "detail": f"{mode} {secs(pair[0])} against Loki's {secs(pair[1])}, {over2x.times(measured)}"}
         if b["locked"] and state == "above":
             since = ", ".join(f"{i} since {bounds['blocks'][i]['locked_since']}" for i in b["locked_by"])
             before = over2x.judge(*over2x.history_pairs(old)[mode], bound=limit) if old else ""
-            text = f"{where['detail']}, above its {over2x.times(limit)} bound (locked: {since})"
+            text = f"{where['detail']}, above its {over2x.times(limit)} bound in the {profile} profile (locked: {since})"
             if mode == "warm" or before == "above":
                 out["regressions"].append(alert("locked", key, text + ("" if mode == "warm" else ", held for two runs"),
                                                 prev2 if mode == "cold" and prev2 else prev or {}))
@@ -592,27 +649,35 @@ def ready(out, bounds, items, looked):
 
 
 def acceptance_history(directory=HISTORY, spec=None):
-    """The distribution of every day of the history: per date, the full valid lines of the current sets."""
+    """The distribution of every day of the history, per Loki profile: per date, the full valid lines of the
+    current sets of each profile (the aligned file holds every line written before the profiles existed)."""
     spec = spec or load_spec()
     days = {}
     for name in spec["sets"]:
         want = full_ranges(spec, name)
         if not want:
             continue
-        for e in read(os.path.join(directory, f"{name}.jsonl")):
-            if e.get("valid", True) and is_full(e, want):
-                d = days.setdefault(e["date"], {"sets": 0, "commits": set(), "bands": {}})
-                d["sets"] += 1
-                d["commits"].add(short(e.get("commit")))
-                d["bands"].update(line_bands(name, e))
+        for profile in over2x.PROFILES:
+            for e in read(os.path.join(directory, history_name(name, profile))):
+                if e.get("valid", True) and is_full(e, want):
+                    d = days.setdefault(e["date"], {"commits": set(), "profiles": {}})
+                    p = d["profiles"].setdefault(profile, {"sets": 0, "bands": {}})
+                    p["sets"] += 1
+                    d["commits"].add(short(e.get("commit")))
+                    p["bands"].update(line_bands(name, e))
     out = []
     for date, d in sorted(days.items()):
-        dist = over2x.distribution((k[3], v) for k, v in d["bands"].items())
-        out.append({"date": date, "sets": d["sets"], "commits": sorted(d["commits"]),
-                    **{m: {k: dist[m][k] for k in ("rows", "share_below", "below", "close", "between", "above")}
-                       for m in dist}})
+        profiles = {}
+        for profile, p in d["profiles"].items():
+            dist = over2x.distribution((k[4], v) for k, v in p["bands"].items())
+            profiles[profile] = {"sets": p["sets"],
+                                 **{m: {k: dist[m][k] for k in ("rows", "share_below", "below", "close", "between", "above")}
+                                    for m in dist}}
+        out.append({"date": date, "commits": sorted(d["commits"]), "profiles": profiles})
     return {"about": "The distribution of proxy ÷ Loki over the rows each daily run compared (both answered 200; "
-                     "on cold, Loki's results cache did not answer): below Loki, close to Loki (within "
+                     "on cold, Loki's results cache did not answer), per Loki profile (aligned: the stack's Loki; "
+                     "loki-defaults: Loki with its own defaults; days before the profiles existed are aligned, "
+                     "measured with an unaligned proxy side): below Loki, close to Loki (within "
                      f"{over2x.DIST_NOISE * 100:.0f}% or {over2x.MIN_GAP * 1000:.0f} ms), between 1× and 2× and above "
                      "2×. Generated by bench/ab/history.py from the JSONL lines; see bench/ab/README.md.",
             "targets": {"share_below": "most queries below Loki (above 50%)", "above": "worst case at most 2× (0)"},
@@ -642,7 +707,8 @@ def render_alerts(a, limit=None):
 
     def over(key, cap):
         rows = a.get(key, [])
-        text = [f"- `{r['set']}` {r['shape']} · {r['range']} · {r['mode']}: {r['detail']}" for r in rows[:cap]]
+        text = [f"- `{r['set']}` ({r.get('profile') or over2x.LEGACY_PROFILE}) {r['shape']} · {r['range']} · "
+                f"{r['mode']}: {r['detail']}" for r in rows[:cap]]
         if len(rows) > len(text):
             text.append(f"… and {len(rows) - len(text)} more, see the job summary")
         return text or ["none"]
@@ -681,29 +747,31 @@ def render_acceptance(a, cap):
 
     def listing(key, rows=None):
         rows = a.get(key, []) if rows is None else rows
-        text = [f"- `{r['set']}` {r['shape']} · {r['range']} · {r['mode']}: {r['detail']}"
+        text = [f"- `{r['set']}` ({r.get('profile') or over2x.LEGACY_PROFILE}) {r['shape']} · {r['range']} · "
+                f"{r['mode']}: {r['detail']}"
                 + (f" (exception: {', '.join(r['exception'])})" if r.get("exception") else "")
                 + (" · locked" if r.get("locked") else "") for r in rows[:cap]]
         if cap is not None and len(rows) > cap:
             text.append(f"… and {len(rows) - cap} more, see the job summary")
         return text or ["none"]
 
-    dist = a["distribution"]
     out = ["## Acceptance versus Loki", "",
            "The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki in general; below Loki "
            "for most queries. Rows both sides answered comparably this run, by "
            f"`bench/ab/over2x.py` (below or above Loki beyond {over2x.DIST_NOISE * 100:.0f}% and "
            f"{over2x.MIN_GAP * 1000:.0f} ms):", "",
-           "| mode | rows | below Loki | close | 1–2× | above 2× | most below Loki | worst case ≤ 2× |",
-           "|---|--:|--:|--:|--:|--:|---|---|"]
-    for mode, d in dist.items():
-        out.append(f"| {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | {d['between']} | "
-                   f"{d['above']} | {'✅' if d['share_below'] > 50 else '❌'} | {'✅' if not d['above'] else '❌'} |")
+           "| profile | mode | rows | below Loki | close | 1–2× | above 2× | most below Loki | worst case ≤ 2× |",
+           "|---|---|--:|--:|--:|--:|--:|---|---|"]
+    for profile, dist in a["distribution"].items():
+        for mode, d in dist.items():
+            out.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | "
+                       f"{d['between']} | {d['above']} | {'✅' if d['share_below'] > 50 else '❌'} | "
+                       f"{'✅' if not d['above'] else '❌'} |")
     out += ["", "Ratchet (the rows comparable on both runs; a fall of the share below Loki beyond "
             f"{over2x.SHARE_NOISE_PP:g} points and {over2x.SHARE_NOISE_ROWS} rows, or a rise of the rows above 2× beyond "
             f"{over2x.OVER_NOISE_PP:g} points and {over2x.OVER_NOISE_ROWS} rows, is a regression above):", ""]
     for r in a.get("distribution_ratchet", []):
-        out.append(f"- against {r['against']}: " + "; ".join(
+        out.append(f"- {r.get('profile', over2x.LEGACY_PROFILE)} against {r['against']}: " + "; ".join(
             f"{m} {r['old'][m]['share_below']:.1f}% → {r['new'][m]['share_below']:.1f}% below, "
             f"{r['old'][m]['above']} → {r['new'][m]['above']} above 2× ({r['new'][m]['rows']} rows)"
             for m in r["new"] if m in r["old"]))

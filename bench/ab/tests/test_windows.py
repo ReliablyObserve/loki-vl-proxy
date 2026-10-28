@@ -131,12 +131,20 @@ class PlanTest(unittest.TestCase):
     def test_named_shapes_limit_the_shift(self):
         self.assertEqual(pm.plan_windows(SPEC, [("feature", ["a"])], ["1h"], 2, 2, END)[0]["shift"], 60)
 
-    def test_refresh_block_sits_below_the_passes_and_ends_before_the_next_set(self):
+    def test_refresh_block_is_the_top_of_its_block_and_the_passes_follow_below_it(self):
+        # the refresh pass models a dashboard refresh at now, so it is the nearest to now; the first and the
+        # confirm pass lie below it, inside the block
         plans = pm.plan_windows(SPEC, SETS, ["1h"], 4, 7, END, refresh_s=60, refresh_runs=5)
         p = plans[0]
-        self.assertLess(p["refresh_end"], p["confirm_end"] - p["shift"] * 6)
-        self.assertGreaterEqual(p["refresh_end"] - 4 * 60, END - p["span"])
-        self.assertIsNone(pm.plan_windows(SPEC, SETS, ["1h"], 4, 7, END)[0]["refresh_end"])
+        self.assertEqual(p["refresh_end"], END)
+        self.assertLessEqual(p["end"], p["refresh_end"] - 4 * 60)          # below the refresh pass's first window
+        self.assertLess(p["confirm_end"], p["end"] - p["shift"] * 3)
+        self.assertGreaterEqual(p["confirm_end"] - p["shift"] * 6, END - p["span"])
+        no_refresh = pm.plan_windows(SPEC, SETS, ["1h"], 4, 7, END)[0]
+        self.assertIsNone(no_refresh["refresh_end"])
+        self.assertEqual(no_refresh["end"], END)  # without a refresh pass the first pass is the top, as before
+        # the block is as tall as before: the refresh pass takes the room it always took
+        self.assertEqual(p["span"], pm.plan_windows(SPEC, SETS, ["1h"], 4, 7, END, refresh_s=60, refresh_runs=5)[0]["span"])
 
     def test_every_planned_end_is_a_whole_minute_even_for_odd_shifts(self):
         spec = {"sets": {"a": {"shapes": [shape("x", shift=317)]}, "b": {"shapes": [shape("y", shift=317)]}}}

@@ -96,7 +96,8 @@ class RenderTest(unittest.TestCase):
         self.assertIn("| base refresh | PR refresh | Loki refresh | PR ÷ Loki refresh |".strip(), text.replace("  ", " "))
         self.assertIn("| 300 ms | 50 ms | 6.00× |", text)
         self.assertIn("300 ms † |", text)
-        self.assertIn("† Loki's own counters say its results cache answered this cold run", text)
+        self.assertIn("† Loki's results cache answered this cold run", text)
+        self.assertIn("| 300 ms † | — |", text)  # cache-served: marked, in no ratio
         self.assertNotIn("no-cache", text)
         self.assertIn("refresh p50: windows moving forward 60 s per run", text)
 

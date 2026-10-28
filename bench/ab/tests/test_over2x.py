@@ -41,9 +41,9 @@ def summary(*rows, set_name="control", **extra):
             "restart_before": "0", "restart_after": "0", "rows": list(rows), **extra}
 
 
-def listed(shape="s", rng="1h", mode="warm", ratio=5.0, set_name="control"):
-    return {(set_name, shape, rng, mode): {"set": set_name, "shape": shape, "range": rng, "mode": mode,
-                                           "ratio": ratio}}
+def listed(shape="s", rng="1h", mode="warm", ratio=5.0, set_name="control", profile="aligned"):
+    return {(profile, set_name, shape, rng, mode): {"profile": profile, "set": set_name, "shape": shape, "range": rng,
+                                                    "mode": mode, "ratio": ratio}}
 
 
 def kinds(s, baseline, mode="warm"):
@@ -161,11 +161,13 @@ class GateTest(unittest.TestCase):
 
     def test_annotations(self):
         found = over2x.gate(summary(row(shape="50% | json", pr=0.5, base=0.15)), {}, NOISE, MIN_DELTA)
-        lines = over2x.annotations(found)
+        lines = over2x.annotations(over2x.merge_failing(found, [summary(row(shape="50% | json", pr=0.5, base=0.15))]))
         self.assertEqual(len(lines), 2)  # cold and warm
+        self.assertIn("PR ÷ Loki aligned 5.00× · loki-defaults not run", lines[0])
         self.assertTrue(all(line.startswith("::warning title=above 2x Loki::new: control / 50%25 | json") for line in lines))
-        self.assertTrue(over2x.annotations(found, "fail")[0].startswith("::error "))
-        many = [dict(found[0], shape=str(i)) for i in range(12)]
+        merged = over2x.merge_failing(found, [summary(row(shape="50% | json", pr=0.5, base=0.15))])
+        self.assertTrue(over2x.annotations(merged, "fail")[0].startswith("::error "))
+        many = [dict(merged[0], shape=str(i)) for i in range(12)]
         self.assertEqual(over2x.annotations(many)[-1], "2 more above-2× Loki row(s) in the PR comment")
 
 
@@ -189,7 +191,7 @@ class CommentTest(unittest.TestCase):
         self.assertEqual(lines[0], comment.MARKER)
         self.assertEqual(lines[3], "#### ⚠️ Above 2× Loki: 2 new, 0 worsened")  # right under the title
         self.assertIn("Warning only", text)
-        self.assertIn("| new | warm | new one | 1h | 500 ms | 100 ms | **5.00×** | 1.50× | — |", text)
+        self.assertIn("| new | warm | new one | 1h | **5.00×** | not run | 500 ms | 100 ms | 1.50× | — |", text)
         self.assertIn("2 shape×range above 2× Loki already", text)
         self.assertNotIn("Above 2× Loki", plain_text)
 
@@ -306,11 +308,12 @@ class BaselineFileTest(unittest.TestCase):
                     row(shape="c", pr=0.1, base=0.1), date="2026-10-24", commit="c" * 40)
         over2x.write_baseline(over2x.seed([s]), self.path)
         rows, _ = over2x.read_baseline(self.path)
-        self.assertEqual(list(rows), [("control", "a", "1h", "warm"), ("control", "b", "1h", "cold"),
-                                      ("control", "b", "1h", "warm")])
-        self.assertEqual(rows[("control", "b", "1h", "warm")]["since"], "2026-10-24")
+        self.assertEqual(list(rows), [("aligned", "control", "a", "1h", "warm"), ("aligned", "control", "b", "1h", "cold"),
+                                      ("aligned", "control", "b", "1h", "warm")])
+        self.assertEqual(rows[("aligned", "control", "b", "1h", "warm")]["since"], "2026-10-24")
         self.assertEqual(over2x.count_line(list(rows.values())),
-                         "above-2× baseline: 3 rows (cold 1, warm 2, refresh 0); the gate becomes blocking at 0")
+                         "above-2× baseline: 3 rows (cold 1, warm 2, refresh 0; aligned 3, loki-defaults 0); "
+                         "the gate becomes blocking at 0")
 
     def test_the_committed_list_reads(self):
         # pr_smoke reads it from the base of every pull request: a list that cannot be read would stop them all.
@@ -323,11 +326,11 @@ class BaselineFileTest(unittest.TestCase):
         git = ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
         subprocess.run(git[:3] + ["init", "-q"], check=True)
         os.makedirs(os.path.join(repo, "bench/ab/history"))
-        over2x.write_baseline([dict(listed()[("control", "s", "1h", "warm")])],
+        over2x.write_baseline([dict(listed()[("aligned", "control", "s", "1h", "warm")])],
                               os.path.join(repo, over2x.BASELINE_REL))
         subprocess.run(git + ["add", "."], check=True)
         subprocess.run(git + ["commit", "-q", "-m", "x"], check=True)
-        self.assertEqual(list(over2x.baseline_at("HEAD", repo)), [("control", "s", "1h", "warm")])
+        self.assertEqual(list(over2x.baseline_at("HEAD", repo)), [("aligned", "control", "s", "1h", "warm")])
         self.assertEqual(over2x.baseline_at("HEAD~5", repo), {})  # no such ref or file: empty
 
 
@@ -346,7 +349,7 @@ class DailyListTest(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         self.n = 0
         self.path = os.path.join(self.dir, over2x.BASELINE_NAME)
-        over2x.write_baseline([{"set": "control", "shape": "s", "range": "1h", "mode": "warm", "ratio": 5.0,
+        over2x.write_baseline([{"profile": "aligned", "set": "control", "shape": "s", "range": "1h", "mode": "warm", "ratio": 5.0,
                                 "proxy_s": 0.5, "loki_s": 0.1, "since": "2026-10-01", "commit": "c"}], self.path)
 
     def day(self, *rows, runs=7):
@@ -362,7 +365,7 @@ class DailyListTest(unittest.TestCase):
     def test_removal_needs_two_consecutive_runs_within_2x(self):
         a = self.day(daily_row(p50=0.15, cold=0.15))
         self.assertEqual([r["shape"] for r in a["over_2x_pending"]], ["s"])
-        self.assertEqual(self.held(), [("control", "s", "1h", "warm")])
+        self.assertEqual(self.held(), [("aligned", "control", "s", "1h", "warm")])
         a = self.day(daily_row(p50=0.5, cold=0.15))   # above again: starts over
         self.assertEqual((a["over_2x_pending"], a["over_2x_removed"]), ([], []))
         self.day(daily_row(p50=0.15, cold=0.15))
@@ -376,25 +379,25 @@ class DailyListTest(unittest.TestCase):
         a = self.day(daily_row(), daily_row(shape="t"))
         self.assertEqual([(r["shape"], r["mode"]) for r in a["over_2x_new"]],
                          [("s", "cold"), ("t", "cold"), ("t", "warm")])
-        self.assertEqual(self.held(), [("control", "s", "1h", "warm")])
+        self.assertEqual(self.held(), [("aligned", "control", "s", "1h", "warm")])
         body = history.render_alerts(a, limit=history.PR_LIMIT)
-        self.assertTrue(body.startswith("## ⚠️ Above 2× Loki\n\n**above-2× baseline: 1 rows (cold 0, warm 1, refresh 0); "
-                                        "the gate becomes blocking at 0.**"))
-        self.assertIn("- `control` t · 1h · warm: 500 ms against Loki's 100 ms, 5.00×", body)
+        self.assertTrue(body.startswith("## ⚠️ Above 2× Loki\n\n**above-2× baseline: 1 rows (cold 0, warm 1, refresh 0; "
+                                        "aligned 1, loki-defaults 0); the gate becomes blocking at 0.**"))
+        self.assertIn("- `control` (aligned) t · 1h · warm: 500 ms against Loki's 100 ms, 5.00×", body)
         self.assertEqual((a["regressions"], a["ratchet_lost"]), ([], []))  # warnings, never a red run
 
     def test_lower_ratio_tightens_and_higher_does_not(self):
         self.day(daily_row(p50=0.3))
-        self.assertEqual(over2x.read_baseline(self.path)[0][("control", "s", "1h", "warm")]["ratio"], 3.0)
+        self.assertEqual(over2x.read_baseline(self.path)[0][("aligned", "control", "s", "1h", "warm")]["ratio"], 3.0)
         self.day(daily_row(p50=0.9))
-        self.assertEqual(over2x.read_baseline(self.path)[0][("control", "s", "1h", "warm")]["ratio"], 3.0)
+        self.assertEqual(over2x.read_baseline(self.path)[0][("aligned", "control", "s", "1h", "warm")]["ratio"], 3.0)
 
     def test_loki_failure_and_cut_down_runs_do_not_count_as_within(self):
         self.day(daily_row(p50=0.15, loki_status="504"))
         a = self.day(daily_row(p50=0.15))
         self.assertEqual((len(a["over_2x_pending"]), a["over_2x_removed"]), (1, []))  # the 504 run did not count
         self.day(daily_row(p50=0.15), runs=3)  # a cut-down manual run is not compared
-        self.assertEqual(self.held(), [("control", "s", "1h", "warm")])
+        self.assertEqual(self.held(), [("aligned", "control", "s", "1h", "warm")])
 
     def test_inside_the_floor_counts_as_within(self):
         self.day(daily_row(p50=0.04, loki=0.006))
@@ -416,8 +419,8 @@ class PerfEvidenceTest(unittest.TestCase):
                                                "proxy_s": 0.5, "loki_s": 0.1, "ratio": 5.0, "since": "2026-10-24"}]}
         text = "\n".join(perf_evidence.over_2x(over))
         self.assertIn("## Above 2× Loki (must fix)", text)
-        self.assertIn("1 rows: cold 1, warm 0, refresh 0.", text)
-        self.assertIn("| control | a \\| b | 1h | cold | 0.50s | 0.10s | 5.00× | 2026-10-24 |", text)
+        self.assertIn("1 rows: cold 1, warm 0, refresh 0; aligned 1, loki-defaults 0.", text)
+        self.assertIn("| aligned | control | a \\| b | 1h | cold | 0.50s | 0.10s | 5.00× | 2026-10-24 |", text)
         self.assertEqual(perf_evidence.over_2x(None), [])
 
 
@@ -569,6 +572,52 @@ class AcceptanceTest(unittest.TestCase):
         self.assertEqual([f["kind"] for f in over2x.failing(unlocked)], ["new", "new"])
         self.assertEqual(over2x.locked_failing(unlocked), [])
 
+    # Loki profiles: the registry's bound is one per item; a locked row is judged against it in each profile.
+    def test_a_locked_row_is_judged_at_its_bound_in_each_profile(self):
+        slow, fine = row(pr=0.5, base=0.15, loki=0.1), row(pr=0.12, base=0.12, loki=0.1)
+        b = bounds({"a": LOCK})
+        found = {}
+        for profile, r in (("aligned", slow), ("loki-defaults", fine)):
+            found[profile] = over2x.gate(summary(r, profile=profile), {}, NOISE, MIN_DELTA, b)
+        self.assertEqual({(f["profile"], f["mode"]) for f in over2x.locked_failing(found["aligned"])},
+                         {("aligned", "cold"), ("aligned", "warm")})
+        self.assertEqual(over2x.locked_failing(found["loki-defaults"]), [])
+        # one record per row in the comment, locked because it is locked and above in one profile, ratios of both
+        sums = [summary(slow, profile="aligned"), summary(fine, profile="loki-defaults")]
+        merged = over2x.merge_failing(found["aligned"] + found["loki-defaults"], sums)
+        locked = over2x.locked_failing(merged)
+        self.assertEqual([(m["mode"], m["bound"], m["locked_by"]) for m in locked], [("cold", 2.0, ["a"]), ("warm", 2.0, ["a"])])
+        self.assertEqual(locked[1]["ratios"], {"aligned": 5.0, "loki-defaults": 1.2})
+        self.assertIn("locked at 2.00× by a", over2x.annotations(merged)[0])
+
+    def test_a_row_between_the_bound_and_2x_fails_only_in_the_profile_where_it_is_above_the_bound(self):
+        mid = row(pr=0.68, base=0.4, loki=0.4)   # 1.7× Loki, slower than the base build
+        b = bounds({"a": {**LOCK, "max_ratio": 1.5}})
+        a = over2x.gate(summary(mid, profile="aligned"), {}, NOISE, MIN_DELTA, b)
+        d = over2x.gate(summary(row(pr=0.4, base=0.4, loki=0.4), profile="loki-defaults"), {}, NOISE, MIN_DELTA, b)
+        self.assertEqual({f["profile"] for f in over2x.locked_failing(a + d)}, {"aligned"})
+
+    def test_lock_state_counts_a_row_above_its_bound_in_either_profile(self):
+        b = bounds({"a": OPEN}, {("control", "s"): ["a"]})
+        within = summary(row(pr=0.15, loki=0.1), profile="aligned")
+        above = summary(row(pr=0.5, loki=0.1), profile="loki-defaults")
+        self.assertTrue(over2x.lock_state([within], b)["a"]["lockable"])
+        state = over2x.lock_state([within, above], b)["a"]
+        self.assertFalse(state["lockable"])
+        self.assertEqual({r["profile"] for r in state["above"]}, {"loki-defaults"})
+
+    def test_a_build_that_is_not_like_for_like_is_no_evidence_for_a_lock(self):
+        b = bounds({"a": OPEN}, {("control", "s"): ["a"]})
+        s = summary(row(pr=0.15, loki=0.1), profile="aligned", not_like_for_like=["pr"])
+        state = over2x.lock_state([s], b)["a"]
+        self.assertEqual((state["within"], state["lockable"]), (0, False))
+
+    def test_lost_below_names_its_profile(self):
+        lost = row(pr=0.6, base=0.2, loki=0.4)
+        found = over2x.gate(summary(lost, profile="loki-defaults"), {}, NOISE, MIN_DELTA, bounds({"a": LOCK}))
+        self.assertTrue([f for f in found if f["kind"] == "lost_below"])
+        self.assertEqual({f["profile"] for f in found}, {"loki-defaults"})
+
     def test_a_tighter_bound_is_used(self):
         mid = row(pr=0.9, base=0.5, loki=0.5)  # 1.8×: within 2×, above a 1.5× lock, and slower than base
         self.assertEqual(over2x.failing(self.gate([mid], bounds({"a": OPEN}))), [])
@@ -704,6 +753,117 @@ class AcceptanceReplayTest(unittest.TestCase):
                         state[item][st] += 1
         self.assertEqual({i: v["above"] for i, v in state.items() if i in locked and v["above"]}, {})
         self.assertEqual([i for i, v in state.items() if i not in locked and v["within"] and not v["above"]], [])
+
+
+class ProfileGateTest(unittest.TestCase):
+    """Rows belong to a Loki profile: the baseline keys on it, a build that is not like-for-like is never compared,
+    and a row is above 2× when it is in either profile."""
+
+    def test_a_summary_without_a_profile_is_the_aligned_one(self):
+        self.assertEqual(over2x.profile_of(summary(row())), "aligned")
+        self.assertEqual(over2x.profile_of(summary(row(), profile="loki-defaults")), "loki-defaults")
+
+    def test_the_baseline_is_looked_up_in_the_summary_s_profile(self):
+        s_aligned = summary(row(pr=0.9, base=0.5), profile="aligned")
+        s_defaults = summary(row(pr=0.9, base=0.5), profile="loki-defaults")
+        base = listed(ratio=5.0, profile="aligned")
+        # listed in aligned only: the defaults profile has no entry for the row
+        self.assertEqual([f["baseline_ratio"] for f in over2x.gate(s_aligned, base, NOISE, MIN_DELTA) if f["mode"] == "warm"],
+                         [5.0])
+        self.assertEqual([f["baseline_ratio"] for f in over2x.gate(s_defaults, base, NOISE, MIN_DELTA) if f["mode"] == "warm"],
+                         [None])
+        self.assertTrue(all(f["profile"] == "loki-defaults" for f in over2x.gate(s_defaults, base, NOISE, MIN_DELTA)))
+
+    def test_a_listed_row_is_cleared_only_in_its_own_profile(self):
+        fixed = row(pr=0.12, base=0.12, loki=0.1)
+        base = listed(ratio=9.0, profile="loki-defaults")
+        self.assertEqual(kinds(summary(fixed, profile="loki-defaults"), base), [("cleared", "")])
+        self.assertEqual(kinds(summary(fixed, profile="aligned"), base), [])
+
+    def test_a_build_that_is_not_like_for_like_is_never_compared(self):
+        r = row(pr=0.9, base=0.5, loki=0.1)
+        s = summary(r, profile="aligned", not_like_for_like=["pr"])
+        self.assertEqual({m["state"] for m in over2x.measure(s)}, {"not_comparable"})
+        self.assertEqual(over2x.gate(s, {}, NOISE, MIN_DELTA), [])
+        # the base build not like-for-like: the PR is compared with Loki, the base cannot excuse it
+        s = summary(r, profile="aligned", not_like_for_like=["base"])
+        found = over2x.failing(over2x.gate(s, {}, NOISE, MIN_DELTA))
+        self.assertEqual({(f["kind"], f["mode"], f["base_ratio"]) for f in found}, {("new", "cold", None), ("new", "warm", None)})
+
+    def test_pairs_of_a_target_that_is_not_like_for_like_have_no_time_and_no_status_but_keep_loki(self):
+        s = summary(row(pr=0.9, loki=0.1), not_like_for_like=["pr"])
+        pairs = over2x.summary_pairs(s, s["rows"][0], "pr")
+        self.assertEqual(pairs["warm"], (None, 0.1, None, "200", False))
+        self.assertEqual(pairs["cold"][:4], (None, 0.1, None, "200"))
+
+    def test_cold_helpers(self):
+        r = row(loki=0.003, cold_cache_served=["loki"])
+        self.assertTrue(over2x.cold_served(r, "loki"))
+        self.assertIsNone(over2x.loki_cold(r, "loki"))
+        self.assertTrue(over2x.cold_served(row(stale=["loki"]), "loki"))
+        self.assertEqual(over2x.loki_cold(row(loki=0.2), "loki"), 0.2)
+        self.assertFalse(over2x.cold_served(row(cold_cache_served=["base"]), "loki"))  # another target's mark
+
+    def test_either_profile_makes_the_row_above_2x_and_both_ratios_are_reported(self):
+        aligned = summary(row(pr=0.5, base=0.15, loki=0.1), profile="aligned")
+        defaults = summary(row(pr=0.15, base=0.15, loki=0.1), profile="loki-defaults")
+        found = over2x.gate(aligned, {}, NOISE, MIN_DELTA) + over2x.gate(defaults, {}, NOISE, MIN_DELTA)
+        merged = over2x.merge_failing(found, [aligned, defaults])
+        self.assertEqual([(m["mode"], m["kind"], sorted(m["profiles"])) for m in merged],
+                         [("cold", "new", ["aligned"]), ("warm", "new", ["aligned"])])
+        self.assertEqual(merged[1]["ratios"], {"aligned": 5.0, "loki-defaults": 1.5})
+        line = over2x.annotations(merged)[1]
+        self.assertIn("PR ÷ Loki aligned 5.00× · loki-defaults 1.50×", line)
+
+    def test_a_profile_that_did_not_run_is_not_run_not_one_times(self):
+        aligned = summary(row(pr=0.5, base=0.15, loki=0.1), profile="aligned")
+        merged = over2x.merge_failing(over2x.gate(aligned, {}, NOISE, MIN_DELTA), [aligned])
+        self.assertEqual(over2x.both(merged[0]["ratios"]), "aligned 5.00× · loki-defaults not run")
+        self.assertNotIn("loki-defaults", merged[0]["ratios"])
+
+    def test_both_profiles_above_2x_make_one_record_with_the_worse_kind(self):
+        a = summary(row(pr=0.5, base=0.15, loki=0.1), profile="aligned")
+        d = summary(row(pr=0.9, base=0.5, loki=0.1), profile="loki-defaults")
+        base = listed(profile="loki-defaults", ratio=5.0)
+        merged = over2x.merge_failing(over2x.gate(a, base, NOISE, MIN_DELTA) + over2x.gate(d, base, NOISE, MIN_DELTA), [a, d])
+        warm = [m for m in merged if m["mode"] == "warm"]
+        self.assertEqual(len(warm), 1)
+        self.assertEqual((warm[0]["kind"], sorted(warm[0]["profiles"])), ("worsened", ["aligned", "loki-defaults"]))
+        self.assertEqual(warm[0]["ratios"], {"aligned": 5.0, "loki-defaults": 9.0})
+
+    def test_history_rows_of_a_build_that_was_not_like_for_like_have_no_proxy_side(self):
+        line = {"cold": 0.9, "loki_cold": 0.1, "status": "200", "loki_status": "200", "p50": 0.9, "loki_p50": 0.1,
+                "loki_cold_computed": True}
+        self.assertEqual({over2x.judge(*p) for p in over2x.history_pairs(line).values()}, {"above"})
+        self.assertEqual({over2x.judge(*p) for p in over2x.history_pairs({**line, "like_for_like": False}).values()},
+                         {"not_comparable"})
+        # a cold Loki's cache answered is a cache answer; a cold with no counters (None) is compared, as before
+        self.assertEqual(over2x.judge(*over2x.history_pairs({**line, "loki_cold_computed": False})["cold"]), "not_comparable")
+        self.assertEqual(over2x.judge(*over2x.history_pairs({**line, "loki_cold_computed": None})["cold"]), "above")
+
+    def test_a_baseline_row_without_a_profile_reads_as_aligned_and_a_bad_profile_is_refused(self):
+        legacy = {"rows": [{"set": "control", "shape": "s", "range": "1h", "mode": "warm", "ratio": 3.0}]}
+        self.assertEqual(list(over2x.parse_baseline(json.dumps(legacy))), [("aligned", "control", "s", "1h", "warm")])
+        legacy["rows"][0]["profile"] = "nope"
+        with self.assertRaises(ValueError):
+            over2x.parse_baseline(json.dumps(legacy))
+
+    def test_the_committed_list_is_all_aligned_with_an_unaligned_proxy_side_and_nothing_is_invented_for_defaults(self):
+        rows, _ = over2x.read_baseline(over2x.BASELINE)
+        self.assertEqual({k[0] for k in rows}, {"aligned"})
+        self.assertEqual({r.get("proxy_side") for r in rows.values()}, {"unaligned"})
+        self.assertIn("loki-defaults", over2x.count_line(list(rows.values())))
+
+    def test_the_comment_shows_both_profiles_and_marks_the_unaligned_build(self):
+        r = row(pr=0.5, base=0.15, loki=0.1)
+        sums = [summary(r, profile="aligned", not_like_for_like=["base"]), summary(r, profile="loki-defaults")]
+        meta = dict(META, profiles={"aligned": {"ran": True}, "loki-defaults": {"ran": True}})
+        text, verdict = comment.render(sums, SELECTION, dict(meta, over_2x_loki="fail"), {})
+        self.assertIn("PR ÷ Loki aligned | PR ÷ Loki defaults", text)
+        self.assertIn("**5.00×** | **5.00×**", text)
+        self.assertEqual(verdict["over_2x"]["new"], 2)  # one record per cold / warm, not per profile
+        self.assertEqual(verdict["profiles"]["aligned"]["not_like_for_like"], ["base"])
+        self.assertIn("‡", text)
 
 
 if __name__ == "__main__":

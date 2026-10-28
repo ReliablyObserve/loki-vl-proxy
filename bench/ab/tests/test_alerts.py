@@ -39,10 +39,10 @@ def row(p50=0.5, cold=0.4, loki_cold=0.9, status="200", parity="same", verdict="
     return r
 
 
-def summary(date, *rows, name="control", runs=7):
+def summary(date, *rows, name="control", runs=7, **extra):
     return {"set": name, "label": "daily", "date": date, "baseline": "release", "candidate": "main",
             "reference": "loki", "runs": runs, "valid": True, "restart_before": "0", "restart_after": "0",
-            "rows": list(rows or [row()])}
+            "rows": list(rows or [row()]), **extra}
 
 
 class AlertsTest(unittest.TestCase):
@@ -57,6 +57,78 @@ class AlertsTest(unittest.TestCase):
 
     def kinds(self, key, **kw):
         return [(a["kind"], a["detail"]) for a in alerts(self.dir, **kw)[key]]
+
+    # Loki profiles: a file and a history per profile; the aligned one is the one every older line is in.
+    def profile_day(self, profile, *rows, commit=None, **extra):
+        self.n += 1
+        history.append(summary(f"2026-10-{self.n:02d}", *rows, profile=profile, **extra), self.dir,
+                       commit or f"c{self.n}" * 12, SPEC)
+
+    def test_a_line_on_a_recreated_loki_is_flagged_and_enters_no_ratchet(self):
+        self.profile_day("aligned", row(), loki_restarted=True)
+        line = history.read(os.path.join(self.dir, "control.jsonl"))[0]
+        self.assertTrue(line["loki_restarted"])
+        a = alerts(self.dir)
+        self.assertEqual(a["ratchet_added"], [])
+        self.profile_day("loki-defaults", row(), commit="d" * 12)   # the seeded Loki's line does
+        self.assertEqual(len(alerts(self.dir)["ratchet_added"]), 1)
+        self.profile_day("aligned", row(parity="differs"), loki_restarted=True)   # a loss on the recreated Loki: not read
+        write(self.dir)
+        self.profile_day("aligned", row(parity="differs"), loki_restarted=True)
+        self.assertEqual(alerts(self.dir)["ratchet_lost"], [])
+        self.assertNotIn("loki_restarted", history.read(os.path.join(self.dir, "control.loki-defaults.jsonl"))[0])
+
+    def test_each_profile_has_its_own_history_file_and_old_lines_are_aligned(self):
+        self.profile_day("aligned", row())
+        self.profile_day("loki-defaults", row())
+        self.day(row())  # no profile: written before the profiles existed
+        self.assertEqual(sorted(os.listdir(self.dir)), ["control.jsonl", "control.loki-defaults.jsonl"])
+        self.assertEqual(len(history.read(os.path.join(self.dir, "control.jsonl"))), 2)
+        self.assertEqual(history.profile_of(history.read(os.path.join(self.dir, "control.jsonl"))[-1]), "aligned")
+        self.assertEqual(history.history_name("control", "loki-defaults"), "control.loki-defaults.jsonl")
+
+    def test_alerts_never_compare_a_line_with_the_other_profile_s(self):
+        self.profile_day("aligned", row(parity="same"))
+        self.profile_day("loki-defaults", row(parity="differs"))   # another Loki: not a regression
+        self.assertEqual(alerts(self.dir)["regressions"], [])
+        self.profile_day("loki-defaults", row(parity="same"))
+        self.assertEqual([a["detail"] for a in alerts(self.dir)["improvements"]], ["result vs Loki: differs → same"])
+
+    def test_last_commit_is_the_newest_full_line_of_any_profile(self):
+        self.profile_day("aligned", row(), commit="a" * 12)
+        one = {"ranges": SPEC["ranges"], "sets": {"control": SPEC["sets"]["control"]}}
+        self.assertEqual(history.last_commit(self.dir, one), "a" * 12)
+        # the aligned profile stops running (no build supports its flag): its file stays behind
+        self.profile_day("loki-defaults", row(), commit="b" * 12)
+        self.assertEqual(history.last_commit(self.dir, one), "b" * 12)
+
+    def test_a_line_of_a_build_that_was_not_like_for_like_enters_no_ratchet_and_no_list(self):
+        self.profile_day("aligned", row(), not_like_for_like=["main"])
+        a = alerts(self.dir)
+        self.assertEqual((a["ratchet_added"], a["over_2x_new"]), ([], []))
+        line = history.read(os.path.join(self.dir, "control.jsonl"))[0]
+        self.assertEqual(line["rows"][0][line["cols"].index("like_for_like")], False)
+        self.profile_day("loki-defaults", row(), commit="d" * 12)
+        self.assertEqual(len(alerts(self.dir)["ratchet_added"]), 1)  # the same row, like-for-like
+
+    def test_an_over_2x_row_is_listed_and_new_per_profile(self):
+        self.profile_day("aligned", timed(p50=2.0, loki_p50=0.4, cold=2.0))
+        self.profile_day("loki-defaults", timed(p50=2.0, loki_p50=0.4, cold=2.0))
+        new = alerts(self.dir)["over_2x_new"]
+        self.assertEqual({(r["profile"], r["mode"]) for r in new}, set())  # no baseline file: nothing to compare with
+        with open(os.path.join(self.dir, "over-2x-loki.json"), "w") as f:
+            json.dump({"rows": []}, f)
+        new = alerts(self.dir)["over_2x_new"]
+        self.assertEqual({r["profile"] for r in new}, {"aligned", "loki-defaults"})
+
+    def test_the_trend_gives_each_profile_a_section_and_marks_a_cache_served_cold(self):
+        self.profile_day("aligned", row(), not_like_for_like=["main"])
+        self.profile_day("loki-defaults", row(served=True))
+        text = history.trend(self.dir)
+        self.assertIn("## control\n", text)
+        self.assertIn("## control (loki-defaults)", text)
+        self.assertIn("‡", text)
+        self.assertIn("900 ms †", text)
 
     # regressions
     def test_result_regression_names_the_commit_range(self):
@@ -185,7 +257,7 @@ class AlertsTest(unittest.TestCase):
         stale = row()
         stale["stale"] = ["loki"]
         self.assertFalse(history.entry(summary("2026-10-01", stale))["rows"][0][col])
-        self.assertEqual(history.COLS[-1], "loki_cold_computed")
+        self.assertIn("loki_cold_computed", history.COLS)
 
     # ratchet
     def test_ratchet_adds_only_computed_loki_colds_no_slower_than_loki(self):
@@ -199,7 +271,9 @@ class AlertsTest(unittest.TestCase):
 
     def test_lines_without_the_column_never_ratchet(self):
         old = history.entry(summary("2026-10-01", row()))
-        old["cols"], old["rows"] = history.COLS[:-1], [r[:-1] for r in old["rows"]]
+        drop = history.COLS.index("loki_cold_computed")
+        old["cols"] = [c for i, c in enumerate(history.COLS) if i != drop]
+        old["rows"] = [[v for i, v in enumerate(r) if i != drop] for r in old["rows"]]
         with open(os.path.join(self.dir, "control.jsonl"), "w") as f:
             f.write(json.dumps(old) + "\n")
         a = alerts(self.dir)
@@ -495,9 +569,9 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         self.n = 0
 
-    def day(self, *rows):
+    def day(self, *rows, **extra):
         self.n += 1
-        history.append(summary(f"2026-10-{self.n:02d}", *rows), self.dir, f"c{self.n}" * 12, SPEC)
+        history.append(summary(f"2026-10-{self.n:02d}", *rows, **extra), self.dir, f"c{self.n}" * 12, SPEC)
 
     def run_alerts(self, block=LOCK, **kw):
         return alerts(self.dir, bounds=bounds(block, **kw))
@@ -509,8 +583,8 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.day(timed(p50=1.0))  # 2.5× Loki's warm 400 ms
         found = self.locked(self.run_alerts())
         self.assertEqual(len(found), 1)
-        self.assertIn("warm 1.00 s against Loki's 400 ms, 2.50×, above its 2.00× bound (locked: semantics/x since "
-                      "2026-10-27)", found[0][1])
+        self.assertIn("warm 1.00 s against Loki's 400 ms, 2.50×, above its 2.00× bound in the aligned profile "
+                      "(locked: semantics/x since 2026-10-27)", found[0][1])
         self.assertEqual(self.locked(self.run_alerts(OPEN)), [])  # unlocked: not a locked regression
 
     def test_locked_cold_needs_two_runs(self):
@@ -579,7 +653,7 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.day(*self.shapes(10, cold=0.9))      # all close now: 10 rows, 100 points
         found = self.dist(alerts(self.dir, bounds=bounds(OPEN, names)))
         self.assertEqual(len(found), 1)
-        self.assertEqual(found[0][0], "cold: share below Loki")
+        self.assertEqual(found[0][0], "aligned cold: share below Loki")
         self.assertIn("share below Loki 100.0% → 0.0% (10 → 0 of the 10 rows compared on both), against the previous "
                       "full run", found[0][1])
 
@@ -592,14 +666,14 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.day(*self.shapes(10))
         self.day(*self.shapes(10, p50=1.0))       # 10 warm rows above 2×
         self.assertEqual([s for s, _ in self.dist(alerts(self.dir, bounds=bounds(OPEN, names)))],
-                         ["warm: rows above 2× Loki"])
+                         ["aligned warm: rows above 2× Loki"])
 
     def test_a_move_only_loki_made_is_not_a_regression(self):
         names = [f"s{i}" for i in range(10)]
         self.day(*self.shapes(10, p50=0.3, loki_p50=0.2))     # warm 1.5×
         self.day(*self.shapes(10, p50=0.31, loki_p50=0.1))    # 3.1×: Loki's cache got faster, the proxy held
         a = alerts(self.dir, bounds=bounds(OPEN, names))
-        self.assertEqual(a["distribution"]["warm"]["above"], 10)  # reported as measured
+        self.assertEqual(a["distribution"]["aligned"]["warm"]["above"], 10)  # reported as measured
         self.assertEqual(self.dist(a), [])                         # but not a ratchet regression
         self.day(*self.shapes(10, cold=0.4))
         self.day(*self.shapes(10, cold=0.42, loki_cold=0.2))  # below Loki → above it, by Loki alone
@@ -616,11 +690,11 @@ class AcceptanceAlertsTest(unittest.TestCase):
     def test_distribution_and_section_with_targets(self):
         self.day(timed(cold=0.4), timed(shape="t", cold=3.0, p50=1.0))
         a = self.run_alerts(shapes=(SHAPE, "t"))
-        self.assertEqual(a["distribution"]["cold"], {"rows": 2, "below": 1, "close": 0, "between": 0, "above": 1,
+        self.assertEqual(a["distribution"]["aligned"]["cold"], {"rows": 2, "below": 1, "close": 0, "between": 0, "above": 1,
                                                      "share_below": 50.0})
         text = history.render_alerts(a)
         self.assertIn("## Acceptance versus Loki", text)
-        self.assertIn("| cold | 2 | 1 (50.0%) | 0 | 0 | 1 | ❌ | ❌ |", text)
+        self.assertIn("| aligned | cold | 2 | 1 (50.0%) | 0 | 0 | 1 | ❌ | ❌ |", text)
         self.assertNotIn("## Acceptance versus Loki", history.render_alerts(alerts(self.dir)))  # no blocks: off
 
     def test_acceptance_history_is_written_per_day(self):
@@ -629,9 +703,61 @@ class AcceptanceAlertsTest(unittest.TestCase):
         history.write_acceptance(self.dir, spec=SPEC)
         with open(os.path.join(self.dir, history.ACCEPTANCE)) as f:
             days = json.load(f)["days"]
-        self.assertEqual([(d["date"], d["cold"]["below"], d["cold"]["above"]) for d in days],
-                         [("2026-10-01", 1, 0), ("2026-10-02", 0, 1)])
-        self.assertEqual(days[0]["cold"]["share_below"], 100.0)
+        self.assertEqual([(d["date"], d["profiles"]["aligned"]["cold"]["below"], d["profiles"]["aligned"]["cold"]["above"])
+                          for d in days], [("2026-10-01", 1, 0), ("2026-10-02", 0, 1)])
+        self.assertEqual(days[0]["profiles"]["aligned"]["cold"]["share_below"], 100.0)
+
+    # Loki profiles: the registry's bound judges a locked row in each profile, and each profile has its own history,
+    # distribution and ratchet.
+    def test_a_locked_row_is_judged_at_its_bound_in_each_profile(self):
+        self.day(timed(p50=1.0), profile="aligned")
+        self.day(timed(p50=1.0), profile="loki-defaults")
+        found = self.locked(self.run_alerts())
+        self.assertEqual(len(found), 2)
+        self.assertEqual(sorted("aligned" in d or "loki-defaults" in d for _, d in found), [True, True])
+        self.assertEqual(sorted(("loki-defaults" in d, "aligned profile" in d) for _, d in found),
+                         [(False, True), (True, False)])
+
+    def test_a_locked_row_within_its_bound_in_one_profile_only_fails_in_the_other(self):
+        self.day(timed(p50=0.4), profile="aligned")           # 1.0×
+        self.day(timed(p50=1.0), profile="loki-defaults")     # 2.5×
+        found = self.locked(self.run_alerts())
+        self.assertEqual(len(found), 1)
+        self.assertIn("in the loki-defaults profile", found[0][1])
+
+    def test_each_profile_has_its_own_distribution_and_ratchet(self):
+        self.day(timed(cold=0.4), timed(shape="t", cold=3.0, p50=1.0), profile="aligned")
+        self.day(timed(cold=0.4), timed(shape="t", cold=0.4), profile="loki-defaults")
+        a = self.run_alerts(shapes=(SHAPE, "t"))
+        self.assertEqual(a["distribution"]["aligned"]["cold"]["above"], 1)
+        self.assertEqual(a["distribution"]["loki-defaults"]["cold"]["above"], 0)
+        text = history.render_alerts(a)
+        self.assertIn("| aligned | cold | 2 | 1 (50.0%) | 0 | 0 | 1 |", text)
+        self.assertIn("| loki-defaults | cold | 2 | 2 (100.0%) | 0 | 0 | 0 |", text)
+
+    def test_the_distribution_ratchet_does_not_compare_across_profiles(self):
+        names = [f"s{i}" for i in range(10)]
+        self.day(*self.shapes(10, cold=0.4), profile="aligned")
+        self.day(*self.shapes(10, cold=0.9), profile="loki-defaults")   # another Loki: a different line, not a drop
+        self.assertEqual(self.dist(alerts(self.dir, bounds=bounds(OPEN, names))), [])
+        self.day(*self.shapes(10, cold=0.9), profile="aligned")         # the drop is in the aligned profile itself
+        self.assertEqual([s for s, _ in self.dist(alerts(self.dir, bounds=bounds(OPEN, names)))],
+                         ["aligned cold: share below Loki"])
+
+    def test_a_build_that_was_not_like_for_like_is_in_no_distribution_and_locks_nothing(self):
+        self.day(timed(p50=1.0), profile="aligned", not_like_for_like=["main"])
+        a = self.run_alerts()
+        self.assertEqual((self.locked(a), a["locked_pending"], a["distribution"]), ([], [], {}))
+
+    def test_acceptance_history_has_a_record_per_profile_and_day(self):
+        self.day(timed(cold=0.4), profile="aligned")
+        self.day(timed(cold=3.0), profile="loki-defaults")
+        history.write_acceptance(self.dir, spec=SPEC)
+        with open(os.path.join(self.dir, history.ACCEPTANCE)) as f:
+            days = {d["date"]: d["profiles"] for d in json.load(f)["days"]}
+        self.assertEqual(list(days["2026-10-01"]), ["aligned"])
+        self.assertEqual(list(days["2026-10-02"]), ["loki-defaults"])
+        self.assertEqual(days["2026-10-02"]["loki-defaults"]["cold"]["above"], 1)
 
 
 class AcceptanceReplayTest(unittest.TestCase):
