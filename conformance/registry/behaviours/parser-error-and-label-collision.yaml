@@ -84,3 +84,10 @@ cases:
   - semantics/unwrap-conversion-error-stored-value-overwritten
   - semantics/unwrap-conversion-error-undetected-shapes
   - semantics/logfmt-existence-filter-ungrouped-sum
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

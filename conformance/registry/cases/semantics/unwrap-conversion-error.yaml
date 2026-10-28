@@ -127,3 +127,10 @@ gap:
   planned_test: 'TestCompat_UnwrapConversionErrorParity (test/e2e-compat, group core: TestCompat_.*); proxy TestUnwrapErrorProbePlans, TestUnwrapCountingQuery, TestStripUnwrapCounter, TestUnwrapLokiLabels, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapAcceptablePatternCoversConversions, TestUnwrapConversionErrorDifferential'
   note: 'The stack Loki aligns queries with the step (align_queries_with_step); the proxy evaluates at start+k*step as a default Loki does, so the e2e grids start on a step multiple. Related: semantics/unwrap-sample-validity (missing and empty labels make no sample), semantics/unwrap-duration-seconds.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

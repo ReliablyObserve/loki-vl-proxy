@@ -33,3 +33,10 @@ compare:
   expect: |
     The set of structured-metadata keys per line equals Loki's; no key
     contains a dot.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

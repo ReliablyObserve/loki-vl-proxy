@@ -20,6 +20,11 @@ rows the PR adds above 2× Loki or makes worse are listed in a ⚠️ section at
 top of the comment. In meta's over_2x_loki "warn" mode (the default) the state and
 exit status stay what they would be without them; in "fail" mode they fail the
 check (exit 1). Known above-2× rows are listed in a collapsed section.
+
+Locked rows (the registry's perf: blocks as committed on the base, over2x.bounds_at): a locked row the PR
+takes above its bound is a regression of the acceptance lock, listed in its own 🔒 section above the other
+above-2× rows; it follows the same warn|fail switch. A row whose base build was below Loki and whose PR build
+is above Loki (beyond noise) is listed as lost below-Loki: flagged, never failing.
 """
 import argparse
 import json
@@ -155,22 +160,48 @@ def over_2x_table(findings, with_note=False):
     return out
 
 
+def effect(mode):
+    return (("🔴", "This fails `perf-smoke`.") if mode == "fail" else
+            ("⚠️", "Warning only: `perf-smoke` does not fail on it yet; it becomes blocking once the "
+                   f"above-2× list (`{over2x.BASELINE_REL}`) is empty."))
+
+
+def locked_section(locked, mode):
+    """Locked rows the PR takes above their bound: a regression of the acceptance lock."""
+    icon, text = effect(mode)
+    return [f"#### {icon} 🔒 Locked rows above their bound: {len(locked)}", "",
+            "These rows are locked in the registry (a `perf:` block with `locked: true` on an item their shape "
+            "covers, as committed on the base): every daily run measured them within their bound, and this PR "
+            f"takes them above it beyond noise. {text} How to read and clear one: `bench/ab/README.md`.", "",
+            *over_2x_table(locked), "",
+            "Locked by: " + "; ".join(sorted({f"`{i}`" for f in locked for i in f.get("locked_by", [])})), ""]
+
+
+def lost_below_section(lost):
+    out = ["<details><summary>🟡 " + f"{len(lost)} shape×range×mode lost below-Loki: the base build was below "
+           "Loki, the PR build is above it (flagged, not failing)</summary>", "",
+           "| mode | shape | range | PR | Loki | PR ÷ Loki | base ÷ Loki |", "|---|---|---|--:|--:|--:|--:|"]
+    for f in lost:
+        out.append(f"| {f['mode']} | {cell(f['shape'])} | {f['range']} | {secs(f['proxy_s'])} | {secs(f['loki_s'])} | "
+                   f"{over2x.times(f['ratio'])} | {over2x.times(f['base_ratio'])} |")
+    return out + ["", "</details>"]
+
+
 def over_2x_section(bad, mode):
     """The warning (or failure) at the top of the comment: rows the PR adds above 2× Loki or makes worse."""
     new = sum(1 for f in bad if f["kind"] == "new")
-    icon, effect = (("🔴", "This fails `perf-smoke`.") if mode == "fail" else
-                    ("⚠️", "Warning only: `perf-smoke` does not fail on it yet; it becomes blocking once the "
-                           f"above-2× list (`{over2x.BASELINE_REL}`) is empty."))
+    icon, text = effect(mode)
     return [f"#### {icon} Above 2× Loki: {new} new, {len(bad) - new} worsened", "",
             "A shape × range slower than 2× Loki (cold, warm or refresh, beyond the "
             f"{over2x.MIN_GAP * 1000:.0f} ms floor) is a defect. These rows are above 2× on this PR and either are "
             "not in the list and not as slow on the base build, or are worse than both the list and the base build "
-            f"beyond noise. {effect} How to clear one: `bench/ab/README.md`.", "",
+            f"beyond noise. {text} How to clear one: `bench/ab/README.md`.", "",
             *over_2x_table(bad), ""]
 
 
-def render(summaries, selection, meta, baseline=None):
-    """baseline: the above-2× Loki list (over2x.read_baseline / baseline_at); None leaves that check out."""
+def render(summaries, selection, meta, baseline=None, bounds=None):
+    """baseline: the above-2× Loki list (over2x.read_baseline / baseline_at); None leaves that check out.
+    bounds: the registry's perf: blocks at the base (over2x.bounds_at); None locks no row."""
     if not summaries:
         return skipped(selection, meta)
     b, c, r = summaries[0]["baseline"], summaries[0]["candidate"], summaries[0]["reference"]
@@ -186,9 +217,11 @@ def render(summaries, selection, meta, baseline=None):
     failed = bool(counts.get("broken") or counts.get("slower") or new_diffs)
     mode = meta.get("over_2x_loki", over2x.DEFAULT_GATE)
     findings = ([f for s in summaries for f in over2x.gate(s, baseline, meta.get("noise", 0.30),
-                                                            meta.get("min_delta", 0.10))]
+                                                            meta.get("min_delta", 0.10), bounds)]
                 if baseline is not None else [])
     bad = over2x.failing(findings)
+    locked = over2x.locked_failing(findings)
+    lost = [f for f in findings if f["kind"] == "lost_below"]
     failed_2x = mode == "fail" and bool(bad)
 
     if not valid:
@@ -196,7 +229,8 @@ def render(summaries, selection, meta, baseline=None):
     elif failed:
         title, state = "🔴 Performance A/B: regression", "failed"
     elif failed_2x:
-        title, state = "🔴 Performance A/B: above 2× Loki", "failed"
+        title, state = ("🔴 Performance A/B: locked row above its bound" if locked else
+                        "🔴 Performance A/B: above 2× Loki"), "failed"
     elif counts.get("faster") or counts.get("fixed"):
         title, state = "🟢 Performance A/B: faster, no regression", "passed"
     else:
@@ -204,7 +238,9 @@ def render(summaries, selection, meta, baseline=None):
 
     n = len(rows)
     verdict_bits = [f"{counts[k]} {ICON[k]} {k}" for k in ("broken", "slower", "fixed", "faster", "same") if counts.get(k)]
-    lines = [MARKER, f"### {title}", "", *(over_2x_section(bad, mode) if bad else []),
+    others = [f for f in bad if not f.get("locked")]
+    lines = [MARKER, f"### {title}", "", *(locked_section(locked, mode) if locked else []),
+             *(over_2x_section(others, mode) if others else []),
              f"**{n} shape×range** — " + " · ".join(verdict_bits) +
              f" · results vs Loki: {same_as_loki} same, {len(new_diffs)} new difference(s), {pre} pre-existing", ""]
     moved = [x for x in rows if x[1]["verdict"] not in ("same", "n/a") or new_difference(x[1])]
@@ -250,6 +286,9 @@ def render(summaries, selection, meta, baseline=None):
                       "defect)."]
         lines += ["", "</details>"]
 
+    if lost:
+        lines += ["", *lost_below_section(lost)]
+
     why = selection.get("why", {})
     if why:
         lines += ["", "<details><summary>Why these shapes</summary>", ""]
@@ -279,7 +318,8 @@ def render(summaries, selection, meta, baseline=None):
     if baseline is not None:
         verdict["over_2x"] = {"mode": mode, "new": sum(1 for f in bad if f["kind"] == "new"),
                               "worsened": sum(1 for f in bad if f["kind"] == "worsened"), "known": len(known),
-                              "cleared": cleared, "loki_not_200": loki_failed, "rows": bad}
+                              "cleared": cleared, "loki_not_200": loki_failed, "rows": bad,
+                              "locked": len(locked), "lost_below": len(lost)}
     return "\n".join(lines) + "\n", verdict
 
 

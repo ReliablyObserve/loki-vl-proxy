@@ -89,3 +89,10 @@ gap:
   planned_test: 'TestCompat_UnwrapUngroupedSum and TestCompat_UnwrapUngroupedSumPerSeriesFunctions (test/e2e-compat, group core); TestUngroupedSumUnwrapDifferential and TestUngroupedSumUnwrapPerSeriesFunctions (internal/proxy)'
   note: 'Measured on origin/main e173e40b with VictoriaLogs v1.52.0; the e2e is green on v1.52.0, v1.47.0 and v1.40.0.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

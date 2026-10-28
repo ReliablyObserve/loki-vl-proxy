@@ -7,7 +7,16 @@ not favour one target. All targets share the same pinned, step-aligned window
 per run; each run shifts the window by one minute (or the shape's "shift") so
 repeated runs are not response-cache hits. VictoriaLogs CPU is sampled with `docker stats` and the
 container's RestartCount is recorded before and after: a run that spans a
-restart is marked invalid and stops.
+restart is marked invalid and stops. The sampler runs in its own thread and the
+CPU figures of every row are read from its samples once the loop has finished,
+so no request waits for a sample.
+
+A request to the reference target (`loki`) that times out is made once per
+shape and range: the later runs of that shape and range, in this pass and in
+every pass given the raw file through --known-timeouts, are not sent. Their rows
+are written with the first timeout's seconds and signature and `"skipped":
+"loki_timeout"`, so every consumer sees the same Loki status on each run. The
+raw file lists each first timeout under "timeouts".
 
 Cache handling, so a cold number is a computed one:
   - No Cache-Control header is sent to any target. Loki 3.7.7 does not honour
@@ -55,6 +64,10 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+SAMPLE_WINDOW = 1.5  # seconds around a request in which a sample belongs to it (CPUSampler.between)
+REFERENCE_TARGET = "loki"  # the target whose timeouts are not repeated (the README names the Loki reference this)
+
+
 class CPUSampler(threading.Thread):
     def __init__(self, container):
         super().__init__(daemon=True)
@@ -73,8 +86,17 @@ class CPUSampler(threading.Thread):
                 self.failed += 1
             time.sleep(0.5)
 
+    def drain(self, until, timeout=10.0):
+        """Wait, at most `timeout` seconds, for a sample taken at or after `until`."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.samples and self.samples[-1][0] >= until:
+                return True
+            time.sleep(0.1)
+        return False
+
     def between(self, t0, t1):
-        vals = [c for t, c in self.samples if t0 - 1.5 <= t <= t1 + 1.5]
+        vals = [c for t, c in self.samples if t0 - SAMPLE_WINDOW <= t <= t1 + SAMPLE_WINDOW]
         return (max(vals), sum(vals) / len(vals)) if vals else (None, None)
 
 
@@ -199,6 +221,30 @@ def request(url, headers, tenant, timeout):
     return status, body, time.time() - t0, t0
 
 
+def is_timeout(status, body):
+    """True when a request failed on its timeout (request() answers status 0 and the error text)."""
+    return status == 0 and b"timed out" in body
+
+
+def skipped_row(first, shape, rname, run, run_end, tname):
+    """The row of a request that was not sent because `first`, the same target's timeout on this shape and range, was.
+
+    It repeats the timeout's status, seconds and signature, so a summary reads the same Loki status on every run,
+    and carries no CPU figure (nothing ran).
+    """
+    return {"shape": shape, "range": rname, "run": run, "end": run_end, "target": tname, "status": first["status"],
+            "seconds": first["seconds"], "signature": first["signature"], "vl_cpu_max": None, "vl_cpu_avg": None,
+            "skipped": "loki_timeout"}
+
+
+def read_known_timeouts(path):
+    """(target, shape, range) -> the first timeout row, from the "timeouts" of an earlier pass's raw file."""
+    if not path:
+        return {}
+    with open(path) as f:
+        return {(t["target"], t["shape"], t["range"]): t for t in json.load(f).get("timeouts", [])}
+
+
 def flush_cache(url, token=""):
     """POST a proxy's /admin/cache/flush, so its next request meets empty cache tiers.
 
@@ -287,6 +333,11 @@ def main():
     ap.add_argument("--long-runs", default="", metavar="NAME=N",
                     help="cap runs of ranges >= 24h for a target, e.g. main=1 when an old build scans raw rows "
                          "(repeated long raw scans have killed the shared backend)")
+    ap.add_argument("--known-timeouts", default="", metavar="RAW.json",
+                    help="raw file of an earlier pass of the same set: a shape and range whose Loki request timed out "
+                         "there is not sent to Loki again (its rows repeat the timeout, marked skipped)")
+    ap.add_argument("--pause", type=float, default=0.0, metavar="SECONDS",
+                    help="wait this long after every request (default 0: sampling does not need it)")
     ap.add_argument("--flush-before-run0", action="append", default=[], metavar="URL",
                     help="POST this proxy admin URL (http://HOST:ADMIN_PORT/admin/cache/flush) before run 0 of every "
                          "shape and range, so run 0 is a cold first request for that proxy; repeatable; the admin "
@@ -328,7 +379,8 @@ def main():
         raise SystemExit(problem)
     sampler = CPUSampler(args.container)
     sampler.start()
-    restart0, rows, aborted = restarts(), [], False
+    timed_out = read_known_timeouts(args.known_timeouts)
+    restart0, rows, timings, timeouts, aborted = restarts(), [], [], [], False
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
             continue
@@ -356,6 +408,13 @@ def main():
                 for tname, base in targets:
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue
+                    key = (tname, shape["name"], rname)
+                    if tname == REFERENCE_TARGET and key in timed_out:
+                        row = skipped_row(timed_out[key], shape["name"], rname, run, run_end, tname)
+                        rows.append(row)
+                        print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {row['status']} not sent: "
+                              f"{tname} timed out on this shape and range", flush=True)
+                        continue
                     if shape.get("instant"):
                         url = f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
                     elif shape.get("path"):
@@ -372,16 +431,21 @@ def main():
                         url = f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
                     headers = request_headers(shape)
                     status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
-                    time.sleep(0.3)
-                    cmax, cavg = sampler.between(t0, t0 + dt)
+                    if args.pause:
+                        time.sleep(args.pause)
+                    # vl_cpu_max / vl_cpu_avg are filled from the sampler's samples after the loop.
                     row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False)),
-                           "vl_cpu_max": cmax, "vl_cpu_avg": cavg}
+                           "vl_cpu_max": None, "vl_cpu_avg": None}
+                    timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
                     if cache:
                         row["cache"] = cache
                     rows.append(row)
                     print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {status} {dt:7.2f}s {row['signature'][:70]}", flush=True)
+                    if tname == REFERENCE_TARGET and is_timeout(status, body):
+                        timed_out[key] = row
+                        timeouts.append({k: row[k] for k in ("target", "shape", "range", "run", "status", "seconds", "signature")})
                     if status in (0, 502) and not healthy_and_unrestarted(restart0):
                         print(f"ABORT: {args.container} RestartCount changed; this run is invalid", flush=True)
                         aborted = True
@@ -392,13 +456,17 @@ def main():
                 break
         if aborted:
             break
+    if timings:
+        sampler.drain(max(t0 + dt for _, t0, dt in timings) + SAMPLE_WINDOW)
     sampler.stop = True
+    for row, t0, dt in timings:
+        row["vl_cpu_max"], row["vl_cpu_avg"] = sampler.between(t0, t0 + dt)
     restart1 = restarts()
     result = {"set": args.set, "description": shape_set.get("description", ""), "end": end, "runs": args.runs,
                "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
               "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
-              "rows": rows}
+              "timeouts": timeouts, "rows": rows}
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)
     print(f"\nwrote {args.out}; VictoriaLogs RestartCount before={restart0} after={restart1}")

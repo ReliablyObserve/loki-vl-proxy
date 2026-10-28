@@ -65,6 +65,51 @@ Medians of the recorded cold time and warm p50.
 | Labels (label browser) | 24 | 24 | 0.01s | 0.01s | 0.01s | 0.01s |
 | Volume (Drilldown landing) | 4 | 2 | 0.12s | 0.07s | 0.11s | 0.06s |
 
+## Acceptance versus Loki
+
+The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki in general; below Loki
+for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
+hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
+run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
+29 of 68 items are locked; 0 carry an effort exception.
+
+Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
+definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
+measured (Loki's warm is its results cache by design), so these warm figures are not the summary's
+Warm repeat row. Below or above Loki means beyond 25% and 50 ms; close is within that.
+
+| Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |
+|---|---|---|---|---|---|---|---|---|
+| cold | 455 | 213 (46.8%) | 164 | 17 | 61 | 116 | **no** | **no** |
+| warm | 613 | 61 (10.0%) | 432 | 1 | 119 | 221 | **no** | **no** |
+| refresh | 0 | — | — | — | — | 0 | — | — |
+
+### Between 1× and 2× Loki
+
+18 rows: 18 without an effort exception (flagged for review: below Loki is the
+target) and 0 with one (accepted up to the bound).
+
+| shape | range | mode | proxy | Loki | proxy ÷ Loki | locked by | effort exception |
+|---|---|---|---|---|---|---|---|
+| logs plain | 24h | cold | 0.21s | 0.11s | 1.92× | — | **flagged: none** |
+| logs \| logfmt | 1h | cold | 0.14s | 0.08s | 1.84× | — | **flagged: none** |
+| logs \| logfmt | 1h | warm | 0.14s | 0.07s | 1.95× | — | **flagged: none** |
+| A explore volume, 2 filters, drop | 24h | cold | 7.97s | 4.67s | 1.71× | `semantics/json-filter-pushdown-translated-label`, `explore-logs-volume-json` | **flagged: none** |
+| A explore volume, 2 filters, drop | 6h | cold | 1.58s | 0.96s | 1.65× | `semantics/json-filter-pushdown-translated-label`, `explore-logs-volume-json` | **flagged: none** |
+| F field breakdown service_version (explore) | 24h | cold | 7.97s | 4.32s | 1.84× | — | **flagged: none** |
+| LF15 drilldown field breakdown, level filter | 6h | cold | 0.20s | 0.11s | 1.71× | — | **flagged: none** |
+| LF20 logfmt count by detected_level | 24h | cold | 0.34s | 0.25s | 1.35× | — | **flagged: none** |
+| LF26 topk services by errors | 24h | cold | 6.44s | 3.22s | 2.00× | — | **flagged: none** |
+| A5 drilldown exclude, volume by detected_level | 24h | cold | 0.25s | 0.13s | 1.91× | — | **flagged: none** |
+| E2 json duration_ms p95 by service | 24h | cold | 1.39s | 1.08s | 1.28× | — | **flagged: none** |
+| E2 json duration_ms p95 by service | 6h | cold | 0.52s | 0.31s | 1.67× | — | **flagged: none** |
+| D1 logfmt ttl duration_seconds rate by service | 24h | cold | 0.40s | 0.21s | 1.90× | — | **flagged: none** |
+| D2 logfmt ttl duration rate by service | 24h | cold | 0.40s | 0.21s | 1.86× | — | **flagged: none** |
+| G7 duration() of a unit string | 24h | cold | 0.40s | 0.22s | 1.82× | — | **flagged: none** |
+| G7 duration() of a unit string | 6h | cold | 0.12s | 0.07s | 1.75× | — | **flagged: none** |
+| G8 bytes() of a number | 24h | cold | 0.41s | 0.29s | 1.44× | — | **flagged: none** |
+| W3 sum without pod, rate | 24h | cold | 0.67s | 0.41s | 1.63× | — | **flagged: none** |
+
 ## Above 2× Loki (must fix)
 
 Rows the daily run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range

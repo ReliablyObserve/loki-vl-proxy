@@ -135,9 +135,13 @@ def ci_problems(text):
             continue
         if not reaches(jobs, name, gated):
             found.append(f"{name} is neither gated on scope nor downstream of a gated job")
-    for name in ("test", "bench", "conformance"):
+    # `conformance` reads the unit results of `test`, so it is downstream of a gated job (checked above)
+    # and skips with it; it carries no gate of its own.
+    for name in ("test", "bench"):
         if name in jobs and name not in gated:
             found.append(f"{name} must be gated on scope")
+    if "conformance" in jobs and not reaches(jobs, "conformance", {"test"}):
+        found.append("conformance must need test: it reads the unit results of test")
 
     # A job downstream of `test` keeps the implicit success(): it must skip
     # when `test` skips and must not run when `test` failed.
@@ -213,6 +217,11 @@ class ScopeWiringTest(unittest.TestCase):
             "condition on lint": self.text.replace(
                 "  lint:\n    runs-on: ubuntu-latest\n",
                 "  lint:\n    if: ${{ needs.scope.outputs.product != 'false' }}\n    runs-on: ubuntu-latest\n",
+                1,
+            ),
+            "conformance no longer reads the test results": self.text.replace(
+                "skipped when `test` fails or is skipped.\n    needs: [test]\n",
+                "skipped when `test` fails or is skipped.\n    needs: [scope]\n",
                 1,
             ),
             "aggregator ignores scope": self.text.replace(

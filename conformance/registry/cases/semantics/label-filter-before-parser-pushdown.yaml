@@ -48,3 +48,10 @@ compare:
     base and no raw-row fetch (0.29 s at 24 h against 1.65 s before and
     Loki's 0.33 s, measured when the level filter was still rendered as a
     logfmt unpack).
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

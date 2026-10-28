@@ -59,3 +59,10 @@ gap:
   planned_test: 'TestWithoutNestedAggregationMatchesLoki and TestWithoutOverInnerAggregationRateRangeMatchesLoki (internal/proxy, rate and count_over_time, range and instant); TestNestedVectorAggregationDifferential (internal/proxy); TestCompat_NestedVectorAggregation (test/e2e-compat)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/without-nested-under-aggregation (the without under an outer aggregation).'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

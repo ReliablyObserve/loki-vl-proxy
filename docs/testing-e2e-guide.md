@@ -153,19 +153,15 @@ Some `test/e2e-compat` tests match no group pattern (for example `TestOperations
 
 ### Playwright Shards (ci.yaml)
 
-9 parallel shards under `e2e-ui`, each starting the stack with `docker compose --profile ui up -d --no-build`:
+5 parallel shards under `e2e-ui`, each starting the stack with `docker compose --profile ui up -d --no-build` (the proxy image is built once by the `image` job and loaded by each shard):
 
 | Shard | Command |
 |-------|---------|
-| `datasource` | `tests/datasource.spec.ts` |
 | `explore-core` | `--grep @explore-core` |
-| `explore-tail` | `--grep @explore-tail` |
-| `drilldown-core` | `--grep @drilldown-core` |
-| `drilldown-multitenant` | `--grep @drilldown-mt` |
-| `explore-ops` | `--grep @explore-ops` |
-| `explore-mt` | `--grep @explore-mt` |
-| `explore-regression` | `--grep @regression` |
-| `explore-comprehensive` | `--grep @comprehensive-ui` |
+| `regression-datasource` | `--grep @regression`, then `tests/datasource.spec.ts` |
+| `drilldown-core-tail` | `--grep '@drilldown-core\|@explore-tail'` |
+| `comprehensive-drilldown-mt` | `--grep '@comprehensive-ui\|@drilldown-mt'` |
+| `ops-mt` | `--grep '@explore-ops\|@explore-mt'` |
 
 ### Compatibility Workflows
 

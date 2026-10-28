@@ -110,3 +110,10 @@ performance:
     lines VictoriaLogs' word index holds the label's pieces in: Explore's
     two-filter volume 1.1-1.4 s to 0.55 s at 1 h and 12 s to 1.4 s at 24 h
     on the shared stack; Loki cold 0.3-0.5 s at 1 h and 14-17 s at 24 h.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

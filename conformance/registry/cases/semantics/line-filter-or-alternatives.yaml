@@ -43,3 +43,10 @@ gap:
     - b349505b
     - c061fca0
     - dfe987e7
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -64,3 +64,10 @@ performance:
   evidence: |
     Landing volume answers within Loki's latency, but the derivation work is not
     in place yet and a 6h grouped query still drops Loki-push services.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

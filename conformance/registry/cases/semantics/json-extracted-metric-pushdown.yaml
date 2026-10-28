@@ -66,3 +66,10 @@ gap:
     Loki (semantics/extracted-metric-known-differences). Related, unchanged: semantics/unwrap-range-last-point
     (an unwrap window is one step late), profiles/parsed-key-colliding-with-structured-metadata.
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

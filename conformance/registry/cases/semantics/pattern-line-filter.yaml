@@ -62,3 +62,10 @@ gap:
   clusters:
     - 90e7eb36
     - f131187f
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

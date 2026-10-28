@@ -13,7 +13,7 @@ pull request. See [Automation](#automation).
 | file | purpose |
 |---|---|
 | `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. Shapes marked `"smoke": true` run on every code change. |
-| `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. No target gets a `Cache-Control` header; `--refresh-s` runs the windows forward like a dashboard refresh; `--flush-before-run0 http://HOST:ADMIN_PORT/admin/cache/flush` (repeatable, token from `$AB_ADMIN_TOKEN`) empties a proxy's cache tiers (memory and disk: responses, kept stats buckets, parse-risk verdicts) before run 0 of every shape and range, so run 0 is that proxy's cold first request. |
+| `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. No target gets a `Cache-Control` header; `--refresh-s` runs the windows forward like a dashboard refresh; `--flush-before-run0 http://HOST:ADMIN_PORT/admin/cache/flush` (repeatable, token from `$AB_ADMIN_TOKEN`) empties a proxy's cache tiers (memory and disk: responses, kept stats buckets, parse-risk verdicts) before run 0 of every shape and range, so run 0 is that proxy's cold first request. A request does not wait for the VictoriaLogs CPU sampler (`docker stats` runs in its own thread; each row's `vl_cpu_*` is read from its samples after the loop), and Loki is asked once about a shape and range it times out on: its later runs are not sent and their rows repeat the timeout marked `"skipped": "loki_timeout"` (the raw file lists the first ones under `timeouts`; `--known-timeouts RAW.json` carries them into the refresh and confirm passes). `--pause SECONDS` (default 0) waits after every request. |
 | `report.py` | `summarize` turns raw rows into a compact table and a summary JSON; `compare` diffs two summaries. |
 | `selection.py` | Picks the shapes a change needs from the files it touches, through the registry. `--check` is part of the conformance gate. |
 | `stack.py` | A fresh Loki + VictoriaLogs stack under its own compose project and ports, seeded with a fixed window of the log generator's data; proxy builds run as host processes with the stack proxy's flags. |
@@ -315,7 +315,10 @@ helped by caches — and the reason each shape was selected.
 
 A row the pull request adds above 2× Loki, or makes worse, is listed in a
 ⚠️ section right under the title (see "Above 2× Loki" below); a collapsed
-section lists the rows that are above 2× already.
+section lists the rows that are above 2× already. A locked row (see
+"Acceptance tiers and the registry lock" below) the pull request takes above
+its bound comes first, in its own 🔒 section, and a collapsed 🟡 section lists
+the rows that lost their place below Loki.
 
 The check fails on ❌, on 🔴 and on ⚠️ (a new difference from Loki). A run in
 which VictoriaLogs restarted is invalid and fails with a request to re-run; a
@@ -383,6 +386,7 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
 | `history/over-2x-loki.json` | the rows above 2× Loki, one entry per set × shape × range × mode; the run only removes from it (see "Above 2× Loki" below) |
+| `history/acceptance.json` | per day of the history, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
@@ -521,3 +525,105 @@ For docs, read `history/<set>.jsonl` (one JSON object per line; zip `cols`
 with each row) or reuse `history/trend.md` as is. A pull request that edits
 the daily pipeline runs a short version of it (control set, 1h, 3 runs) that
 writes the files on the runner and shows the trend in the job summary.
+
+### Acceptance tiers and the registry lock
+
+The owner's rule (2026-10-28): "our rule's acceptance is max 2× Loki worst
+case, but in general acceptance should be close to Loki — same or worse in a
+minority of cases — and below Loki for most queries", and up to 2× is accepted
+only where going lower is high effort now. Each comparable row (the
+definitions of "Above 2× Loki" above) falls in one band, beyond 25% and 50 ms
+(`over2x.band`):
+
+| band | meaning | acceptance |
+|---|---|---|
+| below Loki | Loki is slower beyond noise | the target for most rows |
+| close to Loki | within 25% or 50 ms of Loki | accepted |
+| 1–2× Loki | slower beyond noise, not above 2× | accepted only with an `effort_exception` on a registry item the shape covers; otherwise listed, flagged for review |
+| above 2× Loki | the definition above | a defect (the list above) |
+
+Every registry item a shape covers carries a `perf:` block in its own file
+(the form is in `conformance/scripts/registry_io.py`; the conformance gate
+checks it):
+
+```yaml
+perf:
+  max_ratio: 2.0                 # the hard bound, never above 2.0
+  target_ratio: 1.0              # below Loki; between it and max_ratio needs an effort_exception
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null         # or reason: '...' and follow_up: '...' on two indented lines
+```
+
+An item is locked once every comparable row of its shapes measured within its
+`max_ratio` in every mode on the daily run. The locks were seeded from the
+daily results of 2026-10-27 (`over2x.py locks seed`): 29 of the 68 covered
+items, which lock 110 cold and 201 warm rows (the daily run has no refresh
+pass, so refresh is bounded only in `perf-smoke`); the 39 others have a row
+above 2× (they stay on the above-2× list) or no comparable row. A row
+(set × shape × range × mode) is locked when any item that covers its shape is
+locked for that mode, and its bound is the smallest `max_ratio` of those
+items. Locks are set by people, in a pull request: the daily run lists the
+unlocked items whose rows were within their bound on its run and the previous
+one ("Ready to lock"), and `python3 bench/ab/over2x.py locks lock <id>` locks
+one after checking the latest daily results (it refuses an item with a row
+above its bound). The daily pull request never edits the registry. The
+conformance gate fails a `perf:` block that is malformed, a `max_ratio` above
+2.0, a covered item without a block, and a locked item that covers a row on the
+above-2× list.
+
+What the lock does:
+
+- **Daily run** (`history.py alerts`): a locked row above its bound is a
+  regression, so the run turns red. A warm row (a p50 of seven runs) counts
+  after one run. A cold row (one sample) counts when the previous full run was
+  above too; the first time it is listed as pending. The noise floor and the
+  comparability rules are those of "Above 2× Loki", so a row where Loki
+  failed, or where Loki's cache answered the cold run, never counts.
+- **Pull requests** (`perf-smoke`): the locks as committed on the base
+  (`over2x.bounds_at`, so a pull request cannot unlock its own rows) judge a
+  locked row at its bound in the same gate as above. A new or worsened locked
+  row is re-measured and then listed in the 🔒 section. Whether it fails the
+  check follows `--over-2x-loki` (`warn` today).
+- **Lost below-Loki**: a row that was below Loki (the previous daily run, or
+  the base build in the same pull request run) and is above Loki now, both
+  beyond noise, is flagged, never failing.
+- **1–2× rows**: the daily alerts and `conformance/reports/performance.md` list
+  them with the items whose exception accepts them, or as flagged with none.
+  No exception is seeded: the registry names no high-effort cause for today's
+  18 rows (two of them, "A explore volume, 2 filters, drop" over 6h and 24h
+  cold, are on locked items).
+
+The distribution is ratcheted on the daily run: on the rows comparable on both
+runs, against the previous full run and the full run a week earlier, the share
+below Loki may not fall by more than 3 points and 5 rows, and the count above
+2× may not rise by more than 2 points and 5 rows; a move beyond both margins is
+a regression. A row moves to a worse band there (and is flagged as lost
+below-Loki) only when the proxy's own time got slower beyond 25% and 50 ms, so
+Loki's cache timings and rows that cross a band edge by a few milliseconds do
+not count. Because the week-earlier comparison holds for seven days, a real
+move keeps the daily run red for up to a week unless it is fixed: that is the
+ratchet, not a flaky run.
+
+Replayed on the history of 2026-10-21 to 2026-10-27, the share below Loki moved
+by at most 2 points (6 rows) from one day to the next and no day trips the
+distribution ratchet (on 2026-10-22, 30 warm rows crossed the 2× line, 22 of
+them with the proxy's own time within noise). The same replay with today's
+locks flags 36, 53 and 54 locked rows on 2026-10-22, 10-23 and 10-24 (rows that
+became fast by 2026-10-27, so a revert of those speedups is a regression) and 0
+on 2026-10-27; going from the 2026-10-27 run back to the 2026-10-24 one trips
+the ratchet (warm rows above 2× Loki 98 → 195 of 462). In pull requests,
+reverting #758 trips 5 locked rows (J1 to J5 of `json-error-split`).
+
+The daily pull request shows the distribution with the owner's targets (most
+rows below Loki; no row above 2×) under "Acceptance versus Loki", and
+`conformance/reports/performance.md` shows it over the latest run of every
+shape × range, with the lock state of every item. `python3 bench/ab/over2x.py
+locks status` prints the locks, the locked rows above their bound, the 1–2×
+rows and the distribution for the saved daily results.
+
+To clear a flagged row: make it faster than Loki; when that is high effort now,
+add an `effort_exception` to the item, quoting the evidence (what VictoriaLogs
+cannot do, the measured cost) and the follow-up that would bring it below Loki,
+in a pull request the owner reviews.

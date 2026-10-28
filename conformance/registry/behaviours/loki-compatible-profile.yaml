@@ -65,3 +65,10 @@ cases:
   - profiles/existence-filter-on-sanitized-key
   - profiles/keep-structured-metadata-key
   - profiles/json-extraction-list-exposes-only-listed
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

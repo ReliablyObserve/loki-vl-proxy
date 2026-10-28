@@ -71,3 +71,10 @@ compare:
     __dl_l) ...`, with the parse-risk probes on the selector plus the
     stored-level filter (the rows the level filter can let through), with no
     `unpack_logfmt` and no raw-row fetch.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

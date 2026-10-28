@@ -54,3 +54,10 @@ gap:
   planned_test: 'TestCompat_UnwrapDurationSeconds (test/e2e-compat, group core: TestCompat_.*); translator TestUnwrapDurationSecondsTranslatesAsDuration, TestUnwrapGateOnTranslatedMetrics, TestExtractUnwrapField_ConversionWrappers, TestUnwrapConv; proxy TestUnwrapDurationSecondsIsConvertedAsDuration, TestUnwrapDurationSecondsRoutesLikeDuration, TestUnwrapConversionIsConvertedInTheStatsQuery, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential'
   note: 'The request is a rate: the sum, max, min and quantile over time of a range query take the step-sized bucket, whatever the conversion (semantics/unwrap-over-time-range-windows, open), so the e2e compares their series and the proxy answering duration_seconds() as duration(), not their values.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

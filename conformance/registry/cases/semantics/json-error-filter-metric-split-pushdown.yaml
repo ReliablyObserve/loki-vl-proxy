@@ -132,3 +132,10 @@ gap:
     limit); a deeper line is read raw and keeps the row evaluator's depth guard. A JSON key with an empty value still merges into the
     label-less series (semantics/json-empty-value-label-series), on this path as on the row evaluator.
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

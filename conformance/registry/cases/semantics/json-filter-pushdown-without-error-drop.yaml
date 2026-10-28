@@ -50,3 +50,10 @@ compare:
     With a line holding `pipeline` before a syntax error both Loki and the
     proxy answer 400 `pipeline error`. Measured on v1.91.0 at 3 h: proxy 502,
     Loki 200 in 1.2 s.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

@@ -82,3 +82,10 @@ compare:
     request is answered with 200 or the documented 429 naming
     -backend-max-concurrent-metadata-scans and the adaptive state, and the
     7-day label list is the list one full-range call returns.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null
