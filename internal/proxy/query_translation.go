@@ -611,9 +611,26 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 	return offset, strings.TrimSpace(stripped), nil
 }
 
+// operandsKeepTheirParsers reports a binary expression, or a vector
+// aggregation over one, under any label transforms: its operands are
+// evaluated through their own handlers, each probing its own query, and the
+// binary reads them from the request, so each keeps its own parser as Loki
+// evaluates it (pkg/logql/evaluator.go:385, a step evaluator per side).
+// Dropping one parser from the whole query would take it from the operand
+// that needs it, and the text rewrite of a metric query (removeParserStage)
+// cuts everything after a stage that is the last before its range.
+func operandsKeepTheirParsers(logql string) bool {
+	expr, err := logqlpkg.Parse(stripLabelTransforms(logql))
+	if err != nil {
+		return false
+	}
+	_, _, aggregated := binaryAggregationChain(expr)
+	return aggregated || isBinaryExpr(expr)
+}
+
 func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
 	opStart := time.Now()
-	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") {
+	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") || operandsKeepTheirParsers(logql) {
 		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}

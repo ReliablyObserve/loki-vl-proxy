@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -245,6 +247,95 @@ func TestAggregationOverBinaryKeepsEachOperandsParser(t *testing.T) {
 			if !jsonOperand || !logfmtOperand {
 				t.Fatalf("step=%v: an operand lost its parser (json %v, logfmt %v): %v", step, jsonOperand, logfmtOperand, emu.calls)
 			}
+		}
+	}
+}
+
+// The parser probe of a query that names both `| json` and `| logfmt` drops
+// one of them from the handler's query (preferWorkingParser,
+// removeParserStage). It rewrote a binary too, and when the dropped stage was
+// the last one before an operand's range the rewrite cut the query there
+// (`... count_over_time({app="uw"}`): an aggregation over the binary was no
+// longer one, so /query answered 400 "log queries are not supported as an
+// instant query type" (the e2e TestCompat_AggregationOverBinaryMixedParsers
+// shape) and /query_range answered log streams, and a top-level binary
+// answered its left operand alone with a 200. The probe now leaves a binary to
+// its operands. The lines here are JSON, so the probe prefers json. Loki evaluates
+// each operand with its own parser: sum_over_time of the JSON amount by job
+// (a: 10, b: 12) over the lines by job (a: 4, b: 2); a logfmt parse error only
+// labels a line, which `sum by (job)` drops.
+//
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query, loki_api_v1_query_range
+func TestAggregationOverBinaryMixedParsersAfterTheParserProbe(t *testing.T) {
+	const (
+		amount = `sum by (job) (sum_over_time({app="uw"} | json | unwrap amount [5m]))`
+		lines  = `sum by (job) (count_over_time({app="uw"} | logfmt [5m]))`
+	)
+	want := map[string]float64{`{"job":"a"}`: 2.5, `{"job":"b"}`: 6}
+	for _, tc := range []struct {
+		query string
+		want  map[string]float64
+	}{
+		{`sum by (job) (` + amount + ` / ` + lines + `)`, want},
+		{`max(` + amount + ` / ` + lines + `)`, map[string]float64{`{}`: 6}},
+		{`label_replace(sum by (job) (` + amount + ` / ` + lines + `), "dst", "$1", "job", "(.*)")`, map[string]float64{`{"dst":"a","job":"a"}`: 2.5, `{"dst":"b","job":"b"}`: 6}},
+		{amount + ` / ` + lines, want},
+	} {
+		for _, step := range []time.Duration{0, time.Minute} {
+			rows := binaryAggregationRows()
+			for i := range rows {
+				rows[i].msg = fmt.Sprintf(`{"amount":%g}`, rows[i].value)
+			}
+			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.49.0"}
+			got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt-300e9, binaryAggregationAt, step)
+			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
+				t.Fatalf("step=%v %s: resultType %q, want %q", step, tc.query, resultType, want)
+			}
+			flat := map[string]float64{}
+			for key, points := range got {
+				for ts, v := range points {
+					if ts != binaryAggregationAt/1e9 {
+						t.Fatalf("step=%v %s: sample at %d, want %d", step, tc.query, ts, binaryAggregationAt/1e9)
+					}
+					flat[key] = v
+				}
+			}
+			if !reflect.DeepEqual(flat, tc.want) {
+				t.Fatalf("step=%v %s:\n got %v\nwant %v", step, tc.query, flat, tc.want)
+			}
+		}
+	}
+}
+
+// The parser probe leaves a binary, and an aggregation over one, to its
+// operands: each operand is its own handler's query and keeps its own parser
+// (pkg/logql/evaluator.go:385). A query of one operand that names both
+// parsers is still probed.
+//
+// conformance: semantics/aggregation-over-binary-dropped
+func TestParserProbeLeavesBinariesToTheirOperands(t *testing.T) {
+	const (
+		amount = `sum by (job) (sum_over_time({app="uw"} | json | unwrap amount [5m]))`
+		lines  = `sum by (job) (count_over_time({app="uw"} | logfmt [5m]))`
+	)
+	for _, tc := range []struct {
+		query string
+		keep  bool
+	}{
+		{amount + ` / ` + lines, true},
+		{`sum by (job) (` + amount + ` / ` + lines + `)`, true},
+		{`max(sum by (job) (` + amount + ` / ` + lines + `))`, true},
+		{`label_replace(sum by (job) (` + amount + ` / ` + lines + `), "dst", "$1", "job", "(.*)")`, true},
+		{`sum(` + amount + ` > bool 1) / ` + lines, true},
+		{`sum by (job) (count_over_time({app="uw"} | json | logfmt [5m]))`, false},
+		{`count_over_time({app="uw"} | json | logfmt [5m])`, false},
+		{`topk(2, ` + amount + ` / ` + lines + `)`, false}, // no aggregation this path folds: unchanged routing
+	} {
+		if _, err := logqlpkg.Parse(tc.query); err != nil {
+			t.Fatalf("%s: the input does not parse: %v", tc.query, err)
+		}
+		if got := operandsKeepTheirParsers(tc.query); got != tc.keep {
+			t.Fatalf("%s: operandsKeepTheirParsers %v, want %v", tc.query, got, tc.keep)
 		}
 	}
 }
