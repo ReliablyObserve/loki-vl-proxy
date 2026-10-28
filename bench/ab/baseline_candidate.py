@@ -105,12 +105,12 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
     """The comment section."""
     lines = ["", "<details open><summary>🧭 New baseline candidate</summary>", "",
              "This pull request got the baseline run" + (": " + "; ".join(reasons) if reasons else "") +
-             f". Every shape of every set was measured at the smoke's ranges (1h, 4 runs). Nothing was committed. The "
-             f"`{ARTIFACT}` artifact of this run holds `over-2x-loki.json`, which a person can copy over "
-             "`bench/ab/history/over-2x-loki.json` to accept it, and `acceptance-day.json`, a report: the committed "
-             "`acceptance.json` is rebuilt from the daily history, so the next daily run after the merge writes the real "
+             f". Every shape of every set was measured at the smoke's ranges (1h, 4 runs). Nothing was committed. The " +
+             f"`{ARTIFACT}` artifact of this run holds `over-2x-loki.json`, which a person can copy over " +
+             "`bench/ab/history/over-2x-loki.json` to accept it, and `acceptance-day.json`, a report: the committed " +
+             "`acceptance.json` is rebuilt from the daily history, so the next daily run after the merge writes the real " +
              "new distribution.", "",
-             "| mode | rows compared | below Loki | close | 1–2× | above 2× | share below | "
+             "| mode | rows compared | below Loki | close | 1–2× | above 2× | share below | " +
              "committed share below |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for mode in over2x.MODES:
         d = day.get(mode)
@@ -120,9 +120,9 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
         lines.append(f"| {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | {d['above']} | "
                      f"{d['share_below']:.1f}% | " + (f"{old['share_below']:.1f}% ({committed.get('date', '?')})"
                                                          if old else "—") + " |")
-    lines += ["", "The committed column is the newest daily run (7 runs, ranges up to 24h): the direction is comparable, "
+    lines += ["", "The committed column is the newest daily run (7 runs, ranges up to 24h): the direction is comparable, " +
               "the rows are not the same ones.",
-              "", f"Above-2× list: {len(rows)} rows after this run, {len(added)} added, {len(removed)} not above 2× in "
+              "", f"Above-2× list: {len(rows)} rows after this run, {len(added)} added, {len(removed)} not above 2× in " +
               "this run's profile (the daily run's two-run rule decides for the committed list)."]
     for title, keys in (("Added", added), ("Not above 2× in this run", removed)):
         if keys:

@@ -127,11 +127,11 @@ jobs:
           # the new path of a rename. A failed diff leaves the list empty,
           # which the classifier reports as product (all three lanes true) and
           # as no baseline.
-          force=""
-          if [ "$FORCE" = "true" ]; then force="--force-product"; fi
+          force_arg=""
+          if [ "$FORCE" = "true" ]; then force_arg="--force-product"; fi
           git -c core.quotepath=false diff --numstat --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/numstat.txt"
           cut -f3- "$RUNNER_TEMP/numstat.txt" \
-            | python3 scripts/ci/change_scope.py --files-from - $force \
+            | python3 scripts/ci/change_scope.py --files-from - $force_arg \
                 --numstat "$RUNNER_TEMP/numstat.txt" --base-ref "$BASE_REF" --labels "$LABELS" \
                 --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
 

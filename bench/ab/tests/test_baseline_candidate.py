@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
@@ -136,7 +136,7 @@ class PrSmokeTest(unittest.TestCase):
             json.dump(selection.select_all(SPEC), f)
         out = os.path.join(tmp, "out")
         argv = ["pr_smoke.py", "--base", "HEAD", "--selection", sel, "--out", out, *extra]
-        with mock.patch.object(sys, "argv", argv), mock.patch.object(pr_smoke, "measure", return_value=[summary(slow(), fast())]), \
+        with unittest.mock.patch.object(sys, "argv", argv), unittest.mock.patch.object(pr_smoke, "measure", return_value=[summary(slow(), fast())]), \
                 contextlib.redirect_stdout(io.StringIO()):
             code = pr_smoke.main()
         with open(os.path.join(out, "comment.md")) as f:
