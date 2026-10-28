@@ -704,8 +704,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// rate 0 and only their presence is read (rate_counter_singletons.go).
 	var counterProof <-chan bool
 	counterSpec, counterFunc := spec, manualFunc
-	if ungrouped, ok := rateCounterUnderSum(r.FormValue("query")); ok && manualFunc == "rate_counter" {
-		counterProof = p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, startTS.Add(-origSpec.Window), endTS)
+	if label, ungrouped, ok := rateCounterUnderSum(r.FormValue("query")); ok && manualFunc == "rate_counter" {
+		counterProof = p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, label, startTS.Add(-origSpec.Window), endTS)
 		manualFunc = "unwrap_rate"
 		if ungrouped {
 			spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, true

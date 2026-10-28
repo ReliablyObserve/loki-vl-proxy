@@ -21,12 +21,14 @@ import (
 )
 
 // rateCounterEmuHandler serves vlEmulator plus the two reads of the
-// rate_counter one-sample proof on /select/logsql/query: `| limit N |
-// field_names` (the fields of the first N lines carrying the unwrapped field,
-// with hits) and `| stats count() as n, count_uniq_hash(<fields>) as u` (the
-// lines carrying it and their distinct tuples), as VictoriaLogs v1.49-v1.53
-// answer them (pipe_field_names.go, stats_count_uniq_hash.go: a tuple of only
-// empty values is not counted).
+// rate_counter one-sample proof on /select/logsql/query, as VictoriaLogs
+// v1.49-v1.53 answer them: `| limit N | unpack_logfmt from _msg result_prefix
+// "__lvpk." | field_names` (every field of the first N lines carrying the
+// unwrapped field, stored and parsed, with hits; pipe_field_names.go) and
+// `[| unpack_logfmt from _msg fields (...) result_prefix "__lvpk."] | stats
+// count() as n, count_uniq_hash(<fields>) as u` (stats_count_uniq_hash.go: a
+// tuple of only empty values is not counted). A row's stored fields are its
+// stream labels and emuRow.labels; its parsed keys come from its line.
 func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 	inner := e.handler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,8 +40,10 @@ func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 		}
 		e.record(r.URL.Path, query)
 		rateCounterEmuTenants.Store(r.Header.Get("AccountID")+"/"+r.Header.Get("ProjectID"), true)
+		selected := e.selectRows(r)
+		sort.SliceStable(selected, func(i, j int) bool { return selected[i].ts < selected[j].ts })
 		var rows []map[string]string
-		for _, row := range e.selectRows(r) {
+		for _, row := range selected {
 			if row.text() == "" {
 				continue
 			}
@@ -54,15 +58,22 @@ func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 			}
 			rows = append(rows, f)
 		}
+		unpack := func(f map[string]string, only map[string]bool) {
+			for _, kv := range emuLogfmt(f["_msg"]) {
+				if (only == nil || only[kv[0]]) && kv[1] != "" {
+					f["__lvpk."+kv[0]] = kv[1]
+				}
+			}
+		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		if m := rateCounterEmuNamesRE.FindStringSubmatch(query); m != nil {
 			limit, _ := strconv.Atoi(m[1])
-			sort.Slice(rows, func(i, j int) bool { return rows[i]["_time"] < rows[j]["_time"] })
 			if len(rows) > limit {
 				rows = rows[:limit]
 			}
 			hits := map[string]int{}
 			for _, row := range rows {
+				unpack(row, nil)
 				for k := range row {
 					hits[k]++
 				}
@@ -77,8 +88,17 @@ func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 		if m == nil {
 			e.t.Fatalf("emulator: unknown proof query %s", query)
 		}
+		if m[1] != "" {
+			only := map[string]bool{}
+			for _, k := range strings.Split(m[1], ",") {
+				only[strings.Trim(strings.TrimSpace(k), "`")] = true
+			}
+			for _, row := range rows {
+				unpack(row, only)
+			}
+		}
 		var fields []string
-		for _, f := range strings.Split(m[1], ",") {
+		for _, f := range strings.Split(m[2], ",") {
 			fields = append(fields, strings.Trim(strings.TrimSpace(f), "`"))
 		}
 		seen := map[string]bool{}
@@ -98,9 +118,19 @@ func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 	})
 }
 
+// emuLogfmt splits a test line of space-separated key=value pairs.
+func emuLogfmt(line string) [][2]string {
+	var out [][2]string
+	for _, pair := range strings.Fields(line) {
+		k, v, _ := strings.Cut(pair, "=")
+		out = append(out, [2]string{k, v})
+	}
+	return out
+}
+
 var (
-	rateCounterEmuNamesRE = regexp.MustCompile(`\| limit (\d+) \| field_names$`)
-	rateCounterEmuUniqRE  = regexp.MustCompile(`\| stats count\(\) as n, count_uniq_hash\((.*)\) as u$`)
+	rateCounterEmuNamesRE = regexp.MustCompile(`\| limit (\d+) \| unpack_logfmt from _msg result_prefix "__lvpk\." \| field_names$`)
+	rateCounterEmuUniqRE  = regexp.MustCompile(`(?: \| unpack_logfmt from _msg fields \((.*)\) result_prefix "__lvpk\.")? \| stats count\(\) as n, count_uniq_hash\((.*)\) as u$`)
 )
 
 // rateCounterEmuTenants holds the tenant headers the proof reads carried.
@@ -167,11 +197,10 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 			if row.ts <= t-window || row.ts > t {
 				continue
 			}
-			labels := make([]string, 0, len(row.labels))
-			for k, v := range row.labels {
-				if v != "" {
-					labels = append(labels, k+"="+v)
-				}
+			parsed := lokiRateCounterLabels(row.msg)
+			labels := make([]string, 0, len(parsed))
+			for k, v := range parsed {
+				labels = append(labels, k+"="+v)
 			}
 			sort.Strings(labels)
 			key := row.stream + "|" + strings.Join(labels, ",")
@@ -179,7 +208,7 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 			if s == nil {
 				s = &series{}
 				if group != "" {
-					s.group = row.labels[group]
+					s.group = parsed[group]
 				}
 				perSeries[key] = s
 			}
@@ -193,6 +222,23 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 			out[s.group][t] += lokiRateCounter(s.ts, s.vs, window)
 		}
 	}
+	return out
+}
+
+// lokiRateCounterLabels are the labels Loki's `| logfmt` extracts from a
+// test line, the unwrapped one (amount) left out: the key sanitized
+// (pkg/logql/log/util.go:22-39), the first value of a label kept, empty values
+// dropped.
+func lokiRateCounterLabels(line string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range emuLogfmt(line) {
+		name := lokiLogfmtLabel(kv[0])
+		if _, done := out[name]; done || kv[1] == "" {
+			continue
+		}
+		out[name] = kv[1]
+	}
+	delete(out, "amount")
 	return out
 }
 
@@ -364,10 +410,11 @@ func compareRateCounter(t testing.TB, label string, s rcScenario, got, want map[
 
 // TestRateCounterOneSampleMatchesLoki: over generated lines whose parsed
 // transaction id makes every line a series of its own, `sum` and `sum by
-// (level)` of rate_counter answer Loki's points bit for bit (0 at every step
-// whose window holds a sample, no point elsewhere), from VictoriaLogs stats
-// alone (no row read), with logfmt and json, on VictoriaLogs v1.49.0, v1.53.0
-// and an unknown version, under a mapped tenant and the default one.
+// (level)` of rate_counter over `| logfmt` answer Loki's points bit for bit
+// (0 at every step whose window holds a sample, no point elsewhere), from
+// VictoriaLogs stats alone (no row read), on VictoriaLogs v1.49.0, v1.53.0 and
+// an unknown version, under a mapped tenant and the default one. `| json`
+// keeps the per-row evaluator.
 //
 // conformance: semantics/unwrap-rate-counter-one-sample-series, semantics/unwrap-rate-ungrouped-sum-per-stream, metric-series-identity
 func TestRateCounterOneSampleMatchesLoki(t *testing.T) {
@@ -382,6 +429,12 @@ func TestRateCounterOneSampleMatchesLoki(t *testing.T) {
 						tenant = "team-a"
 					}
 					got, readRows := runRateCounterScenario(t, version, s, tenant)
+					if parser == "json" {
+						if !readRows {
+							t.Fatalf("#%d %s: | json took the stats-only answer", i, s.query())
+						}
+						continue
+					}
 					if readRows {
 						t.Fatalf("#%d %s: rows were read, want stats only", i, s.query())
 					}
@@ -425,6 +478,61 @@ func TestRateCounterOneSampleProofRefusesSharedSeries(t *testing.T) {
 	}
 }
 
+// TestRateCounterOneSampleProofEdges: lines that are one Loki series under a
+// tuple that could look finer never take the stats-only answer: a stored
+// per-line field Loki's `| logfmt` does not extract, two keys Loki names alike
+// (`a.b` and `a_b`, `0id` and `_0id`: one value kept); lines that differ by a
+// parsed key do, also with a stored field all of
+// them share, and so does a window with no line (no point).
+//
+// conformance: semantics/unwrap-rate-counter-one-sample-series
+func TestRateCounterOneSampleProofEdges(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	at := func(i int) int64 { return base - int64(4*time.Minute) + int64(i)*int64(7*time.Second) }
+	for _, tc := range []struct {
+		name   string
+		row    func(i int) emuRow
+		zeroOK bool
+	}{
+		{"unique parsed id", func(i int) emuRow {
+			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=t%d", i, i), labels: map[string]string{"txn": fmt.Sprintf("t%d", i)}}
+		}, true},
+		{"unique parsed id, shared stored field", func(i int) emuRow {
+			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=t%d", i, i), labels: map[string]string{"txn": fmt.Sprintf("t%d", i), "region": "eu"}}
+		}, true},
+		{"unique stored field only", func(i int) emuRow {
+			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=same", i), labels: map[string]string{"txn": "same", "rid": fmt.Sprintf("r%d", i)}}
+		}, false},
+		{"keys Loki names alike", func(i int) emuRow {
+			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d a_b=same a.b=u%d", i, i)}
+		}, false},
+		{"a digit-leading key and its sanitized twin", func(i int) emuRow {
+			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d _0id=same 0id=u%d", i, i)}
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := rcScenario{window: 5 * time.Minute, step: 30 * time.Second, start: base, end: base + int64(5*time.Minute), parser: "logfmt"}
+			for i := 0; i < 30; i++ {
+				s.rows = append(s.rows, tc.row(i))
+			}
+			got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+			if readRows == tc.zeroOK {
+				t.Fatalf("rows read %v, want %v", readRows, !tc.zeroOK)
+			}
+			if !readRows {
+				compareRateCounter(t, tc.name, s, got, lokiRateCounterSum(s.rows, int64(s.window), s.times(), s.group))
+			}
+		})
+	}
+	t.Run("no line", func(t *testing.T) {
+		s := rcScenario{window: 5 * time.Minute, step: 30 * time.Second, start: base, end: base + int64(5*time.Minute), parser: "logfmt"}
+		got, readRows := runRateCounterScenario(t, "v1.53.0", s, "0")
+		if readRows || len(got) != 0 {
+			t.Fatalf("rows read %v, %d series; want none", readRows, len(got))
+		}
+	})
+}
+
 // TestRateCounterUnderSumScope: only a sum (bare or by) directly over
 // rate_counter of a log query with a parser, and no stage that drops, keeps or
 // renames labels, takes the proof.
@@ -437,7 +545,13 @@ func TestRateCounterUnderSumScope(t *testing.T) {
 	}{
 		{`sum(rate_counter({app="a"} | logfmt | unwrap amount [5m]))`, true, true},
 		{`sum by () (rate_counter({app="a"} | logfmt | unwrap amount [5m]))`, true, true},
-		{`sum by (level) (rate_counter({app="a"} | json | unwrap amount [5m]))`, true, false},
+		{`sum by (level) (rate_counter({app="a"} | logfmt | unwrap amount [5m]))`, true, false},
+		{`sum by (level) (rate_counter({app="a"} | json | unwrap amount [5m]))`, false, false},
+		{`sum(rate_counter({app="a"} | logfmt --strict | unwrap amount [5m]))`, false, false},
+		{`sum(rate_counter({app="a"} | logfmt amount, txn | unwrap amount [5m]))`, false, false},
+		{`sum(rate_counter({app="a"} | logfmt | line_format "{{.txn}}" | unwrap amount [5m]))`, false, false},
+		{`sum(rate_counter({app="a"} | logfmt | logfmt | unwrap amount [5m]))`, false, false},
+		{`sum(rate_counter({app="a"} | regexp "(?P<amount>\\d+)" | unwrap amount [5m]))`, false, false},
 		{`label_replace(sum(rate_counter({app="a"} | logfmt | unwrap amount [5m])), "x", "y", "", "")`, true, true},
 		{`sum(rate_counter({app="a"} |= "pay" | logfmt | level="error" | unwrap amount | __error__="" [5m]))`, true, true},
 		{`sum(rate_counter({app="a"} | logfmt | unwrap duration(ttl) [5m]))`, true, true},
@@ -454,7 +568,7 @@ func TestRateCounterUnderSumScope(t *testing.T) {
 		{`not a query`, false, false},
 	}
 	for _, c := range cases {
-		ungrouped, ok := rateCounterUnderSum(c.query)
+		_, ungrouped, ok := rateCounterUnderSum(c.query)
 		if ok != c.ok || (ok && ungrouped != c.ungrouped) {
 			t.Errorf("%s: ok=%v ungrouped=%v, want %v %v", c.query, ok, ungrouped, c.ok, c.ungrouped)
 		}
