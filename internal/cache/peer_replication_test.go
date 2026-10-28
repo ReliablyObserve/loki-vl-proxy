@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -431,5 +432,152 @@ func TestPeerReplication_CloseLeavesNoGoroutines(t *testing.T) {
 			t.Fatalf("%d replication goroutines left", labelledGoroutines(label))
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// pause makes node i accept requests and never answer them until the
+// returned function is called (a paused or hung process).
+func (f *replFleet) pause(i int) (resume func()) {
+	release := make(chan struct{})
+	prev := f.nodes[i].handler.Load().(http.Handler)
+	f.nodes[i].handler.Store(http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})))
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			close(release)
+			f.nodes[i].handler.Store(prev)
+		})
+	}
+}
+
+// A paused owner costs a request of many lookups one peer timeout in all,
+// not one per lookup: the first lookup that times out suspends the owner for
+// the breaker cooldown and cancels the lookups still waiting on it, which go
+// on to the backup; later lookups skip the owner. After the cooldown one
+// lookup probes the owner while the others skip it.
+//
+// conformance: peer-cache-replication
+func TestPeerReplication_PausedOwnerCostsOneTimeout(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	const margin = 150 * time.Millisecond
+	f := newReplFleet(t, 3, 2, true, timeout)
+	owner, backup, other := 0, 1, 2
+	keys := f.keysWith(12, owner, backup)
+	for _, key := range keys {
+		f.nodes[owner].c.SetWithTTL(key, []byte("v-"+key), 10*time.Minute)
+	}
+	waitFor(t, "the backup copies", func() bool { ok, _ := f.pushes(); return ok == int64(len(keys)) })
+	resume := f.pause(owner)
+	defer resume()
+
+	// Sequential lookups of one request.
+	started := time.Now()
+	for _, key := range keys[:6] {
+		if v, ok := f.nodes[other].c.Get(key); !ok || string(v) != "v-"+key {
+			t.Fatalf("%s: %q %v", key, v, ok)
+		}
+	}
+	sequential := time.Since(started)
+	if sequential > timeout+margin {
+		t.Fatalf("6 sequential lookups with the owner paused took %s, want at most one timeout (%s) plus %s", sequential, timeout, margin)
+	}
+
+	// Concurrent lookups on a fresh replica, before any suspension.
+	f.restart(other, true)
+	pb := f.nodes[other].pc.breaker(f.addr(owner))
+	if pb.suspendedUntil.Load() != 0 {
+		t.Fatal("a fresh replica starts with the owner suspended")
+	}
+	var wg sync.WaitGroup
+	started = time.Now()
+	for _, key := range keys[6:] {
+		wg.Add(1)
+		go func(key string) {
+			defer wg.Done()
+			if v, ok := f.nodes[other].c.Get(key); !ok || string(v) != "v-"+key {
+				t.Errorf("%s: %q %v", key, v, ok)
+			}
+		}(key)
+	}
+	wg.Wait()
+	concurrent := time.Since(started)
+	if concurrent > timeout+margin {
+		t.Fatalf("6 concurrent lookups with the owner paused took %s, want at most one timeout (%s) plus %s", concurrent, timeout, margin)
+	}
+
+	// After the cooldown: one probe, the others skip the owner.
+	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
+	probeDone := make(chan time.Duration)
+	go func() {
+		t0 := time.Now()
+		f.nodes[other].pc.Get(keys[0])
+		probeDone <- time.Since(t0)
+	}()
+	time.Sleep(20 * time.Millisecond) // the probe is waiting on the owner
+	t0 := time.Now()
+	if _, _, ok := f.nodes[other].pc.Get(keys[1]); !ok {
+		t.Fatal("the lookup beside the probe missed")
+	}
+	if beside := time.Since(t0); beside > 50*time.Millisecond {
+		t.Fatalf("a lookup beside the probe waited %s on the paused owner", beside)
+	}
+	if probe := <-probeDone; probe < timeout {
+		t.Fatalf("the probe took %s, want the timeout: it did not ask the owner", probe)
+	}
+	if pb.suspendedUntil.Load() <= time.Now().UnixNano() {
+		t.Fatal("the failed probe did not suspend the owner again")
+	}
+
+	// The owner answers again: the next probe lifts the suspension.
+	resume()
+	pb.suspendedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
+	if _, _, ok := f.nodes[other].pc.Get(keys[2]); !ok {
+		t.Fatal("the probe of a resumed owner missed")
+	}
+	if pb.suspendedUntil.Load() != 0 {
+		t.Fatal("a successful probe left the owner suspended")
+	}
+	t.Logf("owner paused, timeout %s: 6 sequential lookups %s, 6 concurrent %s", timeout, sequential, concurrent)
+}
+
+// Cache.Get (the extent, window and inventory path) counts its tiers like
+// GetSharedWithAge, and every replica fetch is timed by the replica's role
+// and the outcome.
+//
+// conformance: peer-cache-replication
+func TestPeerReplication_GetTierCountersAndFetchDurations(t *testing.T) {
+	f := newReplFleet(t, 3, 2, true, time.Second)
+	owner, backup, other := 0, 1, 2
+	keys := f.keysWith(2, owner, backup)
+	f.nodes[owner].c.SetWithTTL(keys[0], []byte("v"), 10*time.Minute)
+	waitFor(t, "the backup copy", func() bool { ok, _ := f.pushes(); return ok == 1 })
+
+	c := f.nodes[other].c
+	c.Get(keys[0])    // l1 miss, l2 miss, l3 hit from the owner
+	c.Get(keys[0])    // l1 hit
+	c.Get("absent")   // misses everywhere: computed
+	f.stopNode(owner) // the next lookup errors on the owner, then hits the backup
+	f.nodes[backup].c.SetWithTTL(keys[1], []byte("w"), 10*time.Minute)
+	c.Get(keys[1])
+
+	st := c.Stats()
+	if st.L1.Requests != 4 || st.L1.Hits != 1 || st.L3.Hits != 2 || st.BackendFallthrough != 1 {
+		t.Fatalf("tier counters: l1 %+v, l2 %+v, l3 %+v, fall-through %d", st.L1, st.L2, st.L3, st.BackendFallthrough)
+	}
+	text := f.nodes[other].pc.FetchDurationText()
+	for _, want := range []string{
+		`loki_vl_proxy_peer_cache_fetch_duration_seconds_count{replica="owner",outcome="hit"} 1`,
+		`loki_vl_proxy_peer_cache_fetch_duration_seconds_count{replica="owner",outcome="error"} 1`,
+		`loki_vl_proxy_peer_cache_fetch_duration_seconds_count{replica="backup",outcome="hit"} 1`,
+		`loki_vl_proxy_peer_cache_fetch_duration_seconds_bucket{replica="owner",outcome="hit",le="+Inf"} 1`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
 	}
 }

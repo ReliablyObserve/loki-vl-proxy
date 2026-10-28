@@ -359,6 +359,7 @@
     ],
     "peer-cache-replication": [
       "internal/cache/peer_replication_test.go",
+      "internal/proxy/patterns_persistence_test.go",
       "internal/proxy/peer_push_identity_test.go"
     ],
     "profiles/detected-fields-dotted-json-keys": [
@@ -1184,6 +1185,9 @@
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
     ],
+    "internal/proxy/patterns_persistence_test.go": [
+      "peer-cache-replication"
+    ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
     ],
@@ -1714,7 +1718,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 175,
+  "tests_with_markers": 176,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

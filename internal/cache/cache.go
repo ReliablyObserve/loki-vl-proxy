@@ -395,11 +395,13 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if c == nil || c.disabled {
 		return nil, false
 	}
+	c.recordTierRequest("l1")
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok && !clockNow().After(e.expiresAt) {
 		v := e.value
 		c.mu.RUnlock()
+		c.recordTierHit("l1")
 		c.Hits.Add(1)
 		select {
 		case c.promoteBuf <- key:
@@ -408,19 +410,24 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 		return v, true
 	}
 	c.mu.RUnlock()
+	c.recordTierMiss("l1")
 
 	// L2 fallback (disk): promoted to memory with the TTL it has left, never
 	// written back to disk or pushed to peers.
 	if c.l2 != nil {
+		c.recordTierRequest("l2")
 		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
 			c.setLocalOnly(key, v, ttl, false, false)
+			c.recordTierHit("l2")
 			c.Hits.Add(1)
 			return v, true
 		}
+		c.recordTierMiss("l2")
 	}
 
 	// L3 fallback (peer fleet — sharded)
 	if c.l3 != nil {
+		c.recordTierRequest("l3")
 		if v, remainingTTL, memOnly, ok := c.l3.getReplica(key); ok {
 			// Use the owner's remaining TTL for the shadow copy — never extend.
 			// If TTL is unknown (0), use a short default.
@@ -429,11 +436,14 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 				shadowTTL = 30 * time.Second
 			}
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
+			c.recordTierHit("l3")
 			c.Hits.Add(1)
 			return v, true
 		}
+		c.recordTierMiss("l3")
 	}
 
+	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
 	return nil, false
 }

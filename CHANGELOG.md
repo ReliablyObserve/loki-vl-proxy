@@ -36,8 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Their entries in a persisted patterns snapshot or scoped label-values
       index from before the upgrade are no longer found and age out.
   - **New metrics.** `loki_vl_proxy_peer_cache_replication_factor`,
-    `loki_vl_proxy_peer_cache_backup_hits_total` and
-    `loki_vl_proxy_peer_cache_push_too_large_total`.
+    `loki_vl_proxy_peer_cache_backup_hits_total`,
+    `loki_vl_proxy_peer_cache_push_too_large_total` and the
+    `loki_vl_proxy_peer_cache_fetch_duration_seconds` histogram (by
+    `replica` owner/backup and `outcome` hit/miss/error).
+    `Cache.Get`, the path of the extent, window and inventory caches, now
+    also counts `loki_vl_proxy_cache_tier_*` and
+    `loki_vl_proxy_cache_backend_fallthrough_total`, as `GetSharedWithAge`
+    already did (a miss costs 1.6 ns more; no allocations).
   - **Cost** (three replicas over loopback, 4 KiB values):
     - **Writes.** Every write-through write pushes one more copy: 4,096 bytes
       on the wire at factor 2, and about 0.22 ms of CPU across sender and
@@ -63,6 +69,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A paused or hung peer costs a request one `-peer-timeout`, not one per
+  lookup.**
+  - Before, the per-peer breaker opened only after five failures
+    (`internal/cache/peer.go`). Every lookup of a request that needed a key
+    owned by a paused peer therefore waited a full timeout in turn.
+  - The fleet peer cache proof measured, at a 2 s timeout:
+    - log queries 4-6 s;
+    - patterns 4 s;
+    - label values 8-10 s.
+  - Now the first lookup that times out suspends the peer for the breaker
+    cooldown (10 s) and cancels the calls still waiting on it. Those calls
+    go on to the next replica, and later lookups skip the peer.
+  - After the cooldown, one call probes the peer while the others still skip
+    it. A successful probe lifts the suspension; a timed-out probe suspends
+    the peer again.
+  - Other errors count towards the failure threshold as before.
+  - Measured with a paused owner and a 200 ms timeout: 6 sequential lookups
+    take 201 ms, and 6 concurrent lookups take 202 ms.
+- **A replica that restores a patterns snapshot answers the requests the
+  snapshot answered.**
+  - Snapshot entries were kept under a key made of the query alone.
+    `/patterns` requests look up a key with the query, start, end, step,
+    level setting and auth, so a replica that restored its peers' or its
+    disk's snapshot still recomputed every request.
+  - A snapshot entry now also keeps the request keys its value answered (up
+    to 8, newest last; `request_keys` in the snapshot JSON). A restored entry
+    is stored under them too, so the same request is answered with no
+    VictoriaLogs call.
+  - Snapshots written before this change have no request keys and restore
+    as before.
 - **A key fetched from a peer is no longer pushed straight back to its
   owner, and its TTL is no longer extended.** `Cache.Get` stored a peer hit
   with `SetWithTTL`, which pushed it back to the owner it came from. It

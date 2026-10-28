@@ -23,6 +23,7 @@ func (p *Proxy) recordPatternSnapshotEntry(cacheKey string, payload []byte, now 
 	if !p.patternsEnabled {
 		return
 	}
+	requestKey := cacheKey
 	canonicalKey := canonicalPatternSnapshotCacheKey(cacheKey)
 	if canonicalKey != "" {
 		cacheKey = canonicalKey
@@ -41,8 +42,9 @@ func (p *Proxy) recordPatternSnapshotEntry(cacheKey string, payload []byte, now 
 		if bytes.Equal(existing.Value, copied) {
 			if existing.UpdatedAtUnixNano < now.UnixNano() {
 				existing.UpdatedAtUnixNano = now.UnixNano()
-				p.patternsSnapshotEntries[cacheKey] = existing
 			}
+			existing.RequestKeys = addPatternRequestKey(existing.RequestKeys, requestKey, cacheKey)
+			p.patternsSnapshotEntries[cacheKey] = existing
 			p.updatePatternSnapshotMetricsLocked()
 			p.patternsSnapshotMu.Unlock()
 			return
@@ -54,6 +56,7 @@ func (p *Proxy) recordPatternSnapshotEntry(cacheKey string, payload []byte, now 
 		Value:             copied,
 		UpdatedAtUnixNano: now.UnixNano(),
 		PatternCount:      patternCount,
+		RequestKeys:       addPatternRequestKey(nil, requestKey, cacheKey),
 	}
 	p.patternsSnapshotPatternCount += int64(patternCount)
 	p.patternsSnapshotPayloadBytes += int64(len(copied))
@@ -64,6 +67,29 @@ func (p *Proxy) recordPatternSnapshotEntry(cacheKey string, payload []byte, now 
 	if droppedEntries > 0 {
 		p.recordPatternSnapshotDedup(patternDedupSourceMemory, "update", droppedEntries)
 	}
+}
+
+// maxPatternRequestKeys bounds the request keys a snapshot entry keeps.
+const maxPatternRequestKeys = 8
+
+// addPatternRequestKey records a /patterns cache key a snapshot value
+// answered (not the canonical key itself), newest last, at most
+// maxPatternRequestKeys.
+func addPatternRequestKey(keys []string, requestKey, canonicalKey string) []string {
+	if requestKey == "" || requestKey == canonicalKey {
+		return keys
+	}
+	out := make([]string, 0, len(keys)+1)
+	for _, k := range keys {
+		if k != requestKey {
+			out = append(out, k)
+		}
+	}
+	out = append(out, requestKey)
+	if len(out) > maxPatternRequestKeys {
+		out = out[len(out)-maxPatternRequestKeys:]
+	}
+	return out
 }
 
 func patternCountFromPayload(payload []byte) int {
@@ -134,6 +160,7 @@ func (p *Proxy) buildPatternsSnapshot(now time.Time) patternsSnapshot {
 			Value:             append([]byte(nil), entry.Value...),
 			UpdatedAtUnixNano: entry.UpdatedAtUnixNano,
 			PatternCount:      patternCount,
+			RequestKeys:       append([]string(nil), entry.RequestKeys...),
 		}
 	}
 
@@ -183,10 +210,18 @@ func (p *Proxy) applyPatternsSnapshot(snapshot patternsSnapshot, source string) 
 			Value:             copied,
 			UpdatedAtUnixNano: incoming.UpdatedAtUnixNano,
 			PatternCount:      incomingPatternCount,
+			RequestKeys:       append([]string(nil), incoming.RequestKeys...),
 		}
 		p.patternsSnapshotPatternCount += int64(incomingPatternCount)
 		p.patternsSnapshotPayloadBytes += int64(len(copied))
 		p.cache.SetWithTTL(canonicalKey, copied, patternsCacheRetention)
+		// The requests this value answered look it up under their own keys
+		// (query, start, end, step, level setting, auth).
+		for _, requestKey := range incoming.RequestKeys {
+			if canonicalPatternSnapshotCacheKey(requestKey) == canonicalKey {
+				p.cache.SetWithTTL(requestKey, copied, patternsCacheRetention)
+			}
+		}
 		appliedEntries++
 		appliedPatterns += incomingPatternCount
 	}
@@ -714,6 +749,7 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 		merged.EntriesByKey[key] = patternSnapshotEntry{
 			Value:             append([]byte(nil), entry.Value...),
 			UpdatedAtUnixNano: entry.UpdatedAtUnixNano,
+			RequestKeys:       append([]string(nil), entry.RequestKeys...),
 		}
 	}
 	p.patternsSnapshotMu.RUnlock()
@@ -749,6 +785,7 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 				merged.EntriesByKey[key] = patternSnapshotEntry{
 					Value:             append([]byte(nil), incoming.Value...),
 					UpdatedAtUnixNano: incoming.UpdatedAtUnixNano,
+					RequestKeys:       append([]string(nil), incoming.RequestKeys...),
 				}
 			}
 		case <-deadline:

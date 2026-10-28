@@ -809,6 +809,10 @@ type patternSnapshotEntry struct {
 	Value             []byte `json:"value"`
 	UpdatedAtUnixNano int64  `json:"updated_at_unix_nano"`
 	PatternCount      int    `json:"pattern_count,omitempty"`
+	// RequestKeys are the /patterns cache keys (query, start, end, step,
+	// level setting, auth) this value answered, so a replica that restores
+	// the snapshot answers those requests from it.
+	RequestKeys []string `json:"request_keys,omitempty"`
 }
 
 type patternsSnapshot struct {
@@ -2206,7 +2210,7 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# TYPE loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total counter\n"+
 			"loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total %d\n",
 		remotePeers, clusterMembers, replication, hits, backupHits, misses, errors, reasonLines.String(), pushTooLarge, wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
-	)
+	) + p.peerCache.FetchDurationText()
 }
 
 // handleQueryRange translates Loki range queries.

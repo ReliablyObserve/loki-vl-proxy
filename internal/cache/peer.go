@@ -124,12 +124,15 @@ type PeerCache struct {
 	// PushTooLarge counts pushes skipped because the value is above the
 	// peers' accepted body size.
 	PushTooLarge atomic.Int64
-	RAHotReq     atomic.Int64
-	RAHotErr     atomic.Int64
-	RAPrefetch   atomic.Int64
-	RABytes      atomic.Int64
-	RABudget     atomic.Int64
-	RATenant     atomic.Int64
+	// fetchDurations times every replica fetch by the replica's role and the
+	// outcome.
+	fetchDurations [2][3]durationHistogram // [owner, backup][hit, miss, error]
+	RAHotReq       atomic.Int64
+	RAHotErr       atomic.Int64
+	RAPrefetch     atomic.Int64
+	RABytes        atomic.Int64
+	RABudget       atomic.Int64
+	RATenant       atomic.Int64
 }
 
 type inflightEntry struct {
@@ -439,7 +442,19 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 			continue
 		}
 		asked = true
+		started := time.Now()
 		body, ttl, memOnly, status := pc.fetchFrom(addr, key)
+		role, outcome := 0, 0
+		if i > 0 {
+			role = 1
+		}
+		switch status {
+		case http.StatusNotFound:
+			outcome = 1
+		case 0:
+			outcome = 2
+		}
+		pc.fetchDurations[role][outcome].observe(time.Since(started))
 		if status != http.StatusOK {
 			continue
 		}
@@ -461,7 +476,7 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 // miss; 0 on an error (recorded against the peer).
 func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, int) {
 	endpoint := fmt.Sprintf("http://%s/_cache/get?%s", owner, url.Values{"key": []string{key}}.Encode())
-	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
+	ctx, cancel := context.WithTimeout(pc.peerContext(owner), pc.client.Timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
@@ -478,7 +493,7 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 
 	resp, err := pc.client.Do(req)
 	if err != nil {
-		pc.recordPeerFailure(owner)
+		pc.recordPeerCallError(owner, ctx, err)
 		pc.RecordPeerErrorReason(classifyPeerFetchError(err))
 		pc.PeerErrors.Add(1)
 		return nil, 0, false, 0
@@ -499,7 +514,7 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 
 	body, err := readPeerBodyLimited(resp.Body, maxPeerResponseBytes)
 	if err != nil {
-		pc.recordPeerFailure(owner)
+		pc.recordPeerCallError(owner, ctx, err)
 		pc.RecordPeerErrorReason("body_read")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false, 0
@@ -575,7 +590,7 @@ func (pc *PeerCache) WriteThroughMinTTL() time.Duration {
 }
 
 func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
+	ctx, cancel := context.WithTimeout(pc.peerContext(owner), pc.client.Timeout)
 	defer cancel()
 	ttlMs := int64(0)
 	if ttl > 0 {
@@ -619,7 +634,7 @@ func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Durat
 	}
 	resp, err := pc.client.Do(req)
 	if err != nil {
-		pc.recordPeerFailure(owner)
+		pc.recordPeerCallError(owner, ctx, err)
 		pc.WTErrors.Add(1)
 		return
 	}
@@ -1819,14 +1834,44 @@ type peerBreaker struct {
 	lastFail  atomic.Int64
 	threshold int64
 	cooldown  time.Duration
+
+	// A peer that timed out is suspended for the cooldown at once (a
+	// paused or hung peer would otherwise cost every lookup of a request a
+	// full timeout, five times over before the failure count opens the
+	// breaker), and every call still waiting on it is cancelled. After the
+	// cooldown one call probes it; its success lifts the suspension.
+	suspendedUntil atomic.Int64 // Unix ns; 0 when not suspended
+	probeAt        atomic.Int64 // Unix ns the running probe started; 0 when none
+	mu             sync.Mutex
+	ctx            context.Context // cancelled when the peer is suspended
+	cancel         context.CancelFunc
 }
 
-func (pc *PeerCache) peerAllowed(addr string) bool {
+func (pc *PeerCache) breaker(addr string) *peerBreaker {
 	v, _ := pc.breakers.LoadOrStore(addr, &peerBreaker{
 		threshold: 5,
 		cooldown:  10 * time.Second,
 	})
-	pb := v.(*peerBreaker)
+	return v.(*peerBreaker)
+}
+
+func (pc *PeerCache) peerAllowed(addr string) bool {
+	pb := pc.breaker(addr)
+	if until := pb.suspendedUntil.Load(); until != 0 {
+		if time.Now().UnixNano() < until {
+			return false
+		}
+		// Half open: one call at a time probes a suspended peer (a probe
+		// that never reported back is replaced after the cooldown).
+		now := time.Now().UnixNano()
+		probe := pb.probeAt.Load()
+		if probe != 0 && now-probe < int64(pb.cooldown) {
+			return false
+		}
+		if !pb.probeAt.CompareAndSwap(probe, now) {
+			return false
+		}
+	}
 	if pb.failures.Load() >= pb.threshold {
 		if time.Since(time.UnixMilli(pb.lastFail.Load())) < pb.cooldown {
 			return false
@@ -1836,15 +1881,104 @@ func (pc *PeerCache) peerAllowed(addr string) bool {
 	return true
 }
 
+// peerContext returns the context calls to addr run under: it is cancelled
+// when the peer is suspended, so they stop waiting on it.
+func (pc *PeerCache) peerContext(addr string) context.Context {
+	pb := pc.breaker(addr)
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	if pb.ctx == nil || pb.ctx.Err() != nil {
+		pb.ctx, pb.cancel = context.WithCancel(context.Background())
+	}
+	return pb.ctx
+}
+
+// recordPeerCallError records a failed call to addr: a timeout suspends the
+// peer for the cooldown and cancels the calls still waiting on it; a call
+// cancelled by that suspension is not a failure of its own; anything else
+// counts towards the breaker's failure threshold as before.
+func (pc *PeerCache) recordPeerCallError(addr string, callCtx context.Context, err error) {
+	pb := pc.breaker(addr)
+	if errors.Is(callCtx.Err(), context.Canceled) {
+		return // the peer was suspended meanwhile
+	}
+	if classifyPeerFetchError(err) != "timeout" {
+		pc.recordPeerFailure(addr)
+		return
+	}
+	// A timeout suspends the peer instead of counting towards the failure
+	// threshold, so the half-open probe after the cooldown reaches it.
+	pb.probeAt.Store(0)
+	pb.suspendedUntil.Store(time.Now().Add(pb.cooldown).UnixNano())
+	pb.mu.Lock()
+	if pb.cancel != nil {
+		pb.cancel()
+	}
+	pb.mu.Unlock()
+}
+
 func (pc *PeerCache) recordPeerFailure(addr string) {
-	v, _ := pc.breakers.LoadOrStore(addr, &peerBreaker{threshold: 5, cooldown: 10 * time.Second})
-	pb := v.(*peerBreaker)
+	pb := pc.breaker(addr)
 	pb.failures.Add(1)
 	pb.lastFail.Store(time.Now().UnixMilli())
+	pb.probeAt.Store(0) // a failed probe leaves the peer suspended; the next call probes again
 }
 
 func (pc *PeerCache) recordPeerSuccess(addr string) {
 	if v, ok := pc.breakers.Load(addr); ok {
-		v.(*peerBreaker).failures.Store(0)
+		pb := v.(*peerBreaker)
+		pb.failures.Store(0)
+		if pb.suspendedUntil.Load() != 0 {
+			pb.suspendedUntil.Store(0)
+		}
+		pb.probeAt.Store(0)
 	}
+}
+
+// peerFetchBuckets are the upper bounds of the peer fetch duration
+// histogram, in seconds.
+var peerFetchBuckets = [...]float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
+
+// durationHistogram is a lock-free cumulative histogram over
+// peerFetchBuckets.
+type durationHistogram struct {
+	buckets [len(peerFetchBuckets)]atomic.Int64
+	count   atomic.Int64
+	sumNs   atomic.Int64
+}
+
+func (h *durationHistogram) observe(d time.Duration) {
+	sec := d.Seconds()
+	for i, le := range peerFetchBuckets {
+		if sec <= le {
+			h.buckets[i].Add(1)
+		}
+	}
+	h.count.Add(1)
+	h.sumNs.Add(int64(d))
+}
+
+// FetchDurationText renders the replica fetch duration histogram in the
+// Prometheus text format: loki_vl_proxy_peer_cache_fetch_duration_seconds
+// by replica (owner, backup) and outcome (hit, miss, error).
+func (pc *PeerCache) FetchDurationText() string {
+	if pc == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("# HELP loki_vl_proxy_peer_cache_fetch_duration_seconds Duration of peer-cache fetches by the replica asked (owner, backup) and outcome (hit, miss, error).\n")
+	b.WriteString("# TYPE loki_vl_proxy_peer_cache_fetch_duration_seconds histogram\n")
+	for r, role := range []string{"owner", "backup"} {
+		for o, outcome := range []string{"hit", "miss", "error"} {
+			h := &pc.fetchDurations[r][o]
+			for i, le := range peerFetchBuckets {
+				fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_fetch_duration_seconds_bucket{replica=%q,outcome=%q,le=%q} %d\n", role, outcome, strconv.FormatFloat(le, 'g', -1, 64), h.buckets[i].Load())
+			}
+			count := h.count.Load()
+			fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_fetch_duration_seconds_bucket{replica=%q,outcome=%q,le=\"+Inf\"} %d\n", role, outcome, count)
+			fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_fetch_duration_seconds_sum{replica=%q,outcome=%q} %g\n", role, outcome, time.Duration(h.sumNs.Load()).Seconds())
+			fmt.Fprintf(&b, "loki_vl_proxy_peer_cache_fetch_duration_seconds_count{replica=%q,outcome=%q} %d\n", role, outcome, count)
+		}
+	}
+	return b.String()
 }

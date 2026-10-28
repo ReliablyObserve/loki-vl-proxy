@@ -350,6 +350,7 @@ When the peer cache is enabled, `/metrics` appends these fleet-cache families (P
 | `loki_vl_proxy_peer_cache_hits_total` | counter | none | `Low` | successful peer-cache fetches, from the owner or another replica |
 | `loki_vl_proxy_peer_cache_backup_hits_total` | counter | none | `Low` | peer-cache fetches served by a replica other than the key's owner (owner down or without the key, or this instance is the owner); included in hits |
 | `loki_vl_proxy_peer_cache_misses_total` | counter | none | `Low` | peer-cache lookups that missed on every replica asked |
+| `loki_vl_proxy_peer_cache_fetch_duration_seconds` | histogram | `replica`, `outcome` | `Low` | duration of each peer-cache fetch by the replica asked (`owner`, `backup`) and its outcome (`hit`, `miss`, `error`); a fetch from a paused peer ends at `-peer-timeout`, or earlier when another fetch's timeout suspends that peer |
 | `loki_vl_proxy_peer_cache_errors_total` | counter | none | `Low` | peer-cache fetch errors |
 | `loki_vl_proxy_peer_cache_error_reason_total` | counter | `reason` | `Low` | peer-cache fetch errors by reason (emitted once any error has been recorded) |
 | `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful pushes to a key's replicas (one per replica) |
