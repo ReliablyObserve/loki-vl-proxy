@@ -357,6 +357,30 @@
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go"
     ],
+    "peer-cache-fleet-recovery": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-label-values-index": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-metadata": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-patterns": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-query-range-windows": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-replication": [
+      "internal/cache/peer_replication_test.go",
+      "internal/proxy/patterns_persistence_test.go",
+      "internal/proxy/peer_push_identity_test.go",
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
+    "peer-cache-stats-extent": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
     "profiles/detected-fields-dotted-json-keys": [
       "internal/proxy/loki_profile_test.go",
       "internal/proxy/sanitized_json_key_filter_test.go",
@@ -832,7 +856,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 330,
+  "registry_items": 337,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -844,6 +868,9 @@
     ],
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/peer_replication_test.go": [
+      "peer-cache-replication"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
@@ -1176,6 +1203,12 @@
     "internal/proxy/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
+    ],
+    "internal/proxy/patterns_persistence_test.go": [
+      "peer-cache-replication"
+    ],
+    "internal/proxy/peer_push_identity_test.go": [
+      "peer-cache-replication"
     ],
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
@@ -1698,13 +1731,22 @@
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
+    "test/e2e-fleet/peer_cache_proof_test.go": [
+      "peer-cache-fleet-recovery",
+      "peer-cache-label-values-index",
+      "peer-cache-metadata",
+      "peer-cache-patterns",
+      "peer-cache-query-range-windows",
+      "peer-cache-replication",
+      "peer-cache-stats-extent"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 173,
+  "tests_with_markers": 177,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1802,5 +1844,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 154
+  "wired_items": 161
 }

@@ -1,0 +1,31 @@
+id: peer-cache-patterns
+kind: resource_control
+title: Patterns mined on one replica are served by every replica and restored on a replica that lost its disk
+
+loki: |
+  Loki answers /loki/api/v1/patterns from its pattern ingesters, shared by
+  every querier; a querier restart loses nothing.
+
+victorialogs: |
+  VictoriaLogs has no pattern mining; the proxy mines the lines it reads.
+
+proxy: |
+  A mined, non-empty answer is stored with SetWithTTL (handlePatterns):
+  memory and a write-through push to the key's replicas; patterns: keys skip
+  the generic disk tier (skipL2WriteForKey) and are kept instead in a snapshot
+  file (-patterns-persist-path) whose latest copy each replica publishes in
+  its memory under __patterns_snapshot:v1 (persistPatternsNow). A replica
+  reads with Get: memory, then the replicas in ring order. On start a replica
+  restores the snapshot from its disk and from every peer
+  (warmPatternsOnStartup), under the keys its requests read.
+  Fleet proof (TestFleetPeerCacheProof): patterns mined on A are answered by
+  B and C with no VictoriaLogs call, by B after a restart with none, and by B
+  after it lost its disk with none, after it restored the peers' snapshot
+  (loki_vl_proxy_patterns_restored_from_peers_total); with A stopped or
+  paused B and C answer them from the backup replica with none. Compared
+  with the first answer only: Loki mines patterns with its own algorithm.
+
+implementation:
+  - internal/proxy/patterns.go
+  - internal/proxy/patterns_persistence.go
+  - internal/cache/cache.go

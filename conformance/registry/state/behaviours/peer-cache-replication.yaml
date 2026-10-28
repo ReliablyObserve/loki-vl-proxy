@@ -1,0 +1,10 @@
+id: peer-cache-replication
+state: partial
+pending: true
+reason: |
+  Unit-proven on a three-replica in-process ring (internal/cache/
+  peer_replication_test.go, internal/proxy/peer_push_identity_test.go). The
+  stack proof is the fleet peer cache proof (test/e2e-fleet), which runs the
+  same phases on three proxies.
+owner_decision: null
+waiver: null

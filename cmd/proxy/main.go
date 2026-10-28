@@ -197,6 +197,7 @@ type proxyRuntimeConfig struct {
 	peerAuthToken                       string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
+	peerReplicationFactor               int
 	peerHotReadAheadEnabled             bool
 	peerHotReadAheadInterval            time.Duration
 	peerHotReadAheadJitter              time.Duration
@@ -697,6 +698,7 @@ func run(
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
+	peerReplicationFactor := fs.Int("peer-replication-factor", 2, "Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner.")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes. Empty label and label-value answers are cached for max(30s, this, -disk-cache-min-ttl) so they replace older non-empty copies")
 	peerHotReadAheadEnabled := fs.Bool("peer-hot-read-ahead-enabled", false, "Enable bounded hot read-ahead from peer hot index to prewarm local shadows")
 	peerHotReadAheadInterval := fs.Duration("peer-hot-read-ahead-interval", 30*time.Second, "Base interval for periodic peer hot read-ahead pulls")
@@ -960,6 +962,7 @@ func run(
 			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
+			peerReplicationFactor:               *peerReplicationFactor,
 			peerHotReadAheadEnabled:             *peerHotReadAheadEnabled,
 			peerHotReadAheadInterval:            *peerHotReadAheadInterval,
 			peerHotReadAheadJitter:              *peerHotReadAheadJitter,
@@ -2046,6 +2049,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			AuthToken:                cfg.peerAuthToken,
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,
+			ReplicationFactor:        cfg.peerReplicationFactor,
 			ReadAheadEnabled:         cfg.peerHotReadAheadEnabled,
 			ReadAheadInterval:        cfg.peerHotReadAheadInterval,
 			ReadAheadJitter:          cfg.peerHotReadAheadJitter,

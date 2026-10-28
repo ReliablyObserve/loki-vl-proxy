@@ -16,6 +16,9 @@ type entry struct {
 	// storedAt is when this replica stored the value, the zero time when the
 	// store time is unknown (a copy promoted from disk keeps only its expiry).
 	storedAt time.Time
+	// memOnly marks a value its writer keeps in memory only
+	// (SetLocalOnlyWithTTL): a peer that fetches it keeps it off its disk too.
+	memOnly bool
 }
 
 type tierStats struct {
@@ -312,7 +315,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 	if c.l2 != nil {
 		c.recordTierRequest("l2")
 		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
-			c.setLocalOnly(key, v, ttl, false)
+			c.setLocalOnly(key, v, ttl, false, false)
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
 			return v, ttl, -1, "l2_disk", true
@@ -322,7 +325,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 
 	if c.l3 != nil {
 		c.recordTierRequest("l3")
-		if v, remainingTTL, ok := c.l3.Get(key); ok {
+		if v, remainingTTL, memOnly, ok := c.l3.getReplica(key); ok {
 			shadowTTL := remainingTTL
 			if shadowTTL <= 0 {
 				shadowTTL = 30 * time.Second
@@ -330,7 +333,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 			// The owner stored the value earlier and reports only what is left of
 			// its TTL: the age is unknown here (-1), so callers derive it from the
 			// TTL, which is exact because the owner stores with the same TTL.
-			c.setLocalOnly(key, v, shadowTTL, false)
+			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
 			return v, shadowTTL, -1, "l3_peer", true
@@ -392,11 +395,13 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if c == nil || c.disabled {
 		return nil, false
 	}
+	c.recordTierRequest("l1")
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok && !clockNow().After(e.expiresAt) {
 		v := e.value
 		c.mu.RUnlock()
+		c.recordTierHit("l1")
 		c.Hits.Add(1)
 		select {
 		case c.promoteBuf <- key:
@@ -405,31 +410,40 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 		return v, true
 	}
 	c.mu.RUnlock()
+	c.recordTierMiss("l1")
 
-	// L2 fallback (disk)
+	// L2 fallback (disk): promoted to memory with the TTL it has left, never
+	// written back to disk or pushed to peers.
 	if c.l2 != nil {
-		if v, ok := c.l2.Get(key); ok {
-			c.Set(key, v) // promote to L1
+		c.recordTierRequest("l2")
+		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
+			c.setLocalOnly(key, v, ttl, false, false)
+			c.recordTierHit("l2")
 			c.Hits.Add(1)
 			return v, true
 		}
+		c.recordTierMiss("l2")
 	}
 
 	// L3 fallback (peer fleet — sharded)
 	if c.l3 != nil {
-		if v, remainingTTL, ok := c.l3.Get(key); ok {
+		c.recordTierRequest("l3")
+		if v, remainingTTL, memOnly, ok := c.l3.getReplica(key); ok {
 			// Use the owner's remaining TTL for the shadow copy — never extend.
 			// If TTL is unknown (0), use a short default.
 			shadowTTL := remainingTTL
 			if shadowTTL <= 0 {
 				shadowTTL = 30 * time.Second
 			}
-			c.SetWithTTL(key, v, shadowTTL)
+			c.storePeerCopy(key, v, shadowTTL, memOnly)
+			c.recordTierHit("l3")
 			c.Hits.Add(1)
 			return v, true
 		}
+		c.recordTierMiss("l3")
 	}
 
+	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
 	return nil, false
 }
@@ -455,12 +469,13 @@ func (c *Cache) SetShadowWithTTL(key string, value []byte, ttl time.Duration) {
 // SetLocalOnlyWithTTL stores a value only in local L1 memory.
 // It skips L2 disk writes, L3 peer propagation, and non-owner TTL clamping.
 func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration) {
-	c.setLocalOnly(key, value, ttl, true)
+	c.setLocalOnly(key, value, ttl, true, true)
 }
 
 // setLocalOnly is SetLocalOnlyWithTTL; stamped false leaves the store time
-// unknown, for a copy whose real age is not known (promoted from disk).
-func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stamped bool) {
+// unknown, for a copy whose real age is not known (promoted from disk), and
+// memOnly marks a value its writer keeps in memory only.
+func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stamped, memOnly bool) {
 	if c == nil || c.disabled {
 		return
 	}
@@ -482,7 +497,7 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	c.evictIfNeeded(size)
 
 	now := clockNow()
-	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size}
+	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size, memOnly: memOnly}
 	if stamped {
 		e.storedAt = now
 	}
@@ -493,6 +508,68 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 		elem := c.lruList.PushFront(&lruEntry{key: key})
 		c.lruIndex[key] = elem
 	}
+}
+
+// storePeerCopy stores a value fetched from a peer with the TTL it had left
+// there, never pushing it again: in memory, and on disk when this instance
+// is one of the key's replicas or write-through is off (where any local
+// write goes to disk), unless the peer keeps it in memory only.
+func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOnly bool) {
+	toDisk := !memOnly && c.l2 != nil && !skipL2WriteForKey(key) && (c.l3.IsReplica(key) || !c.l3.WriteThroughEnabled())
+	if !toDisk {
+		c.setLocalOnly(key, value, ttl, false, memOnly)
+		return
+	}
+	if entrySize(key, value) > c.maxBytes/10 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.storeLocalLocked(key, value, ttl, entrySize(key, value), false)
+	c.l2.Set(key, value, ttl)
+}
+
+// storeReplica stores a value a peer pushed to this replica: in memory and
+// on disk with the TTL it was sent with, never pushed again (a replica
+// pushing it on would bounce it between replicas).
+func (c *Cache) storeReplica(key string, value []byte, ttl time.Duration) {
+	c.SetLocalAndDiskWithTTL(key, value, ttl)
+}
+
+// SetReplicatedWithTTL stores a value in memory and on disk and pushes it to
+// the key's other replicas whatever the write-through setting, for values a
+// replica that lost its disk must find on its peers. Values a peer cannot
+// accept and keys the peer push filter rejects stay local.
+func (c *Cache) SetReplicatedWithTTL(key string, value []byte, ttl time.Duration) {
+	if c == nil || c.disabled {
+		return
+	}
+	c.SetLocalAndDiskWithTTL(key, value, ttl)
+	if c.l3 != nil {
+		c.l3.Replicate(key, value, ttl)
+	}
+}
+
+// getForPeer returns a fresh value for a peer from memory, then disk, with
+// its remaining TTL and whether it is kept in memory only.
+func (c *Cache) getForPeer(key string) ([]byte, time.Duration, bool, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, false, false
+	}
+	c.mu.RLock()
+	e, ok := c.entries[key]
+	c.mu.RUnlock()
+	if ok {
+		if remaining := e.expiresAt.Sub(clockNow()); remaining > 0 {
+			return e.value, remaining, e.memOnly, true
+		}
+	}
+	if c.l2 != nil {
+		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
+			return v, ttl, false, true
+		}
+	}
+	return nil, 0, false, false
 }
 
 // SetLocalAndDiskWithTTL stores a value in local L1 and the local L2 disk cache,
@@ -531,14 +608,16 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 		return
 	}
 
-	ownerLocal := true
+	replicaLocal := true
 	writeThroughEnabled := false
+	pushTTL := ttl // the replicas keep the full TTL, whatever this copy keeps
 	if c.l3 != nil {
-		ownerLocal = c.l3.IsOwner(key)
+		replicaLocal = c.l3.IsReplica(key)
 		writeThroughEnabled = c.l3.WriteThroughEnabled()
-		// When write-through is enabled and this replica isn't owner, keep only
-		// a short-lived shadow copy locally. Owner peer keeps full TTL.
-		if writeThroughEnabled && !ownerLocal && ttl > nonOwnerShadowMaxTTL {
+		// When write-through is enabled and this instance is not one of the
+		// key's replicas, keep only a short-lived shadow copy locally. The
+		// replicas keep the full TTL.
+		if writeThroughEnabled && !replicaLocal && ttl > nonOwnerShadowMaxTTL {
 			ttl = nonOwnerShadowMaxTTL
 		}
 	}
@@ -551,8 +630,8 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	// Write-through to L2 (disk), except keys that already have dedicated
 	// persistence paths and would otherwise double-write to disk.
 	shouldWriteL2 := c.l2 != nil && !skipL2WriteForKey(key)
-	// Avoid concentrating disk writes on non-owner pods when write-through is active.
-	if shouldWriteL2 && writeThroughEnabled && !ownerLocal {
+	// Avoid concentrating disk writes on non-replica pods when write-through is active.
+	if shouldWriteL2 && writeThroughEnabled && !replicaLocal {
 		shouldWriteL2 = false
 	}
 	if shouldWriteL2 {
@@ -562,7 +641,7 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	// L3 optional owner write-through for better cache distribution in skewed
 	// traffic scenarios (for example a single hot client pinned to one pod).
 	if propagateL3 && c.l3 != nil {
-		c.l3.SetWithTTL(key, value, ttl)
+		c.l3.SetWithTTL(key, value, pushTTL)
 	}
 }
 

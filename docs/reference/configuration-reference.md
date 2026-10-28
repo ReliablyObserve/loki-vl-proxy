@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (230), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (231), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -203,6 +203,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-peer-hot-read-ahead-top-n` | int | `256` | `extraArgs.peer-hot-read-ahead-top-n` | Number of top hot keys requested from each peer hot index |
 | `-peer-http-url` | string | (empty) | `peerCache.* (chart-managed)` | http |
 | `-peer-insecure-ip-allowlist` | bool | `false` | `extraArgs.peer-insecure-ip-allowlist` | When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured. |
+| `-peer-replication-factor` | int | `2` | `extraArgs.peer-replication-factor` | Replicas of every peer-cache key, owner included: the key's owner on the peer ring and the next distinct peers clockwise (1-5). Write-through writes are pushed to every replica, which keeps the copy in memory and on disk and never pushes it on; a lookup that misses memory and disk asks the replicas in ring order, so a replica that lost its disk, or whose owner is down, gets the key from another replica instead of recomputing it. Each extra replica adds one push per write-through write and the copies' memory and disk on the peers. 1 keeps one copy on the owner. |
 | `-peer-self` | string | (empty) | `peerCache.* (chart-managed)` | 10.0.0.1:3100 |
 | `-peer-self-az` | string | (empty) | `extraArgs.peer-self-az` | us-east-1a |
 | `-peer-srv` | string | (empty) | `peerCache.* (chart-managed)` | srv |

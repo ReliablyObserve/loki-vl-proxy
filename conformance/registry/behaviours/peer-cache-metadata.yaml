@@ -1,0 +1,56 @@
+id: peer-cache-metadata
+kind: resource_control
+title: Label and detected-field answers are read from the ring owner and the disk tier
+
+loki: |
+  Loki answers labels, label values and detected fields from its index and
+  ingesters, the same for every querier; nothing is lost when a querier
+  restarts.
+
+victorialogs: |
+  Every field_names, field_values and stream_field_values listing is a scan
+  of the requested range; VictoriaLogs keeps no listing a proxy replica can
+  share.
+
+proxy: |
+  /labels, /label/{name}/values, /detected_labels, /detected_fields,
+  /detected_field/{name}/values, /index/stats and /index/volume(_range) answers
+  are stored with SetLocalAndDiskWithTTL (setEndpointReadCacheWithTTL):
+  memory and the writer's disk, never pushed. They are read with
+  GetSharedWithAge (endpointReadCacheEntryAge): memory, disk, then the key's
+  replicas in ring order, each serving from memory then disk. The
+  time-bucketed metadata inventory behind them is written with SetWithTTL and
+  pushed to the replicas (storeInventoryEntry).
+  Fleet proof (TestFleetPeerCacheProof): twelve answers computed on A are read
+  on B and C; a request none of whose lookups missed every tier costs no
+  VictoriaLogs call in the fleet, and at least one answer comes from a peer;
+  after a restart B serves answers from its disk; after it lost its disk it
+  reads them from their replicas; with A stopped or paused B and C answer the
+  same; the rebuilt label values equal Loki's.
+  A listing that ends within -max-metadata-cache-freshness (24h) revalidates
+  its recent edge from VictoriaLogs on every replica by design (Loki reads
+  that window live), so the proof's main fixture is older than 24h.
+  Near-now phase (second fixture over the last 23h, rows arriving every
+  second): /labels, /label/{name}/values and /series over 1h, 6h and 24h
+  windows ending now give the same answers on A, B and C, a near-now request
+  takes at most -metadata-edge-refresh-budget plus 1s, and a stream written
+  now is listed on B and C within -metadata-max-staleness plus 2s. On builds
+  with the label stream inventory (its metadata_stream_inventory counters
+  move) the phase also requires that B and C are answered by the inventory
+  with no unit read from VictoriaLogs, that the scope owner rebuilt without
+  its disk and the replicas reading for a stopped owner load the hour units
+  from peers with no unit read from VictoriaLogs, and that a row written
+  three hours in the past is listed on every replica within one
+  -metadata-late-data-sweep-interval plus 15s.
+  Not covered (open): an answer is never pushed, so a replica finds it on a
+  peer only when one of the key's replicas computed it itself, and a replica
+  that lost its disk refills a key it owns only from a replica that computed
+  it; /index/stats and /index/volume answers live 10s, below
+  -disk-cache-min-ttl and close to the 5s a peer requires, so they are
+  effectively per replica.
+
+implementation:
+  - internal/proxy/cache_keys.go
+  - internal/proxy/label_handlers.go
+  - internal/proxy/label_metadata.go
+  - internal/proxy/metadata_inventory.go

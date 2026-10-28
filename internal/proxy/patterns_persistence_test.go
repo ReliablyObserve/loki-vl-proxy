@@ -733,3 +733,54 @@ func mustMarshalJSON(t *testing.T, v interface{}) []byte {
 	}
 	return out
 }
+
+// A replica that restores another replica's patterns snapshot (from disk or
+// from its peers) answers the requests the snapshot's values answered
+// without asking VictoriaLogs: the snapshot keeps the request keys (query,
+// start, end, step, level setting, auth) next to its query-only key.
+//
+// conformance: peer-cache-replication
+func TestPatternsRestoredSnapshotAnswersRequests(t *testing.T) {
+	var calls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n" +
+			`{"_time":"2024-01-15T10:30:30Z","_msg":"GET /api/orders 200 12ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+	}))
+	defer backend.Close()
+
+	target := `/loki/api/v1/patterns?query={app="api"}&start=1705314600&end=1705314720&step=60s`
+	ask := func(p *Proxy) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.Header.Set("X-Scope-OrgID", "team-a")
+		rec := httptest.NewRecorder()
+		p.handlePatterns(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+
+	a := newPatternPersistenceProxy(t, backend.URL, filepath.Join(t.TempDir(), "a.json"), true)
+	t.Cleanup(func() { _ = a.Shutdown(context.Background()) })
+	code, first := ask(a)
+	if code != http.StatusOK || calls.Load() == 0 {
+		t.Fatalf("first answer: %d after %d calls: %s", code, calls.Load(), first)
+	}
+	snapshot := a.buildPatternsSnapshot(time.Now())
+
+	b := newPatternPersistenceProxy(t, backend.URL, filepath.Join(t.TempDir(), "b.json"), true)
+	t.Cleanup(func() { _ = b.Shutdown(context.Background()) })
+	if applied, _ := b.applyPatternsSnapshot(snapshot, patternDedupSourcePeer); applied == 0 {
+		t.Fatal("nothing restored")
+	}
+	before := calls.Load()
+	code, restored := ask(b)
+	if code != http.StatusOK {
+		t.Fatalf("restored replica: %d %s", code, restored)
+	}
+	if n := calls.Load() - before; n != 0 {
+		t.Fatalf("the restored replica asked VictoriaLogs %d times", n)
+	}
+	var want, got patternsResponse
+	if json.Unmarshal([]byte(first), &want) != nil || json.Unmarshal([]byte(restored), &got) != nil || len(got.Data) != len(want.Data) || len(got.Data) == 0 {
+		t.Fatalf("restored answer %s, first %s", restored, first)
+	}
+}

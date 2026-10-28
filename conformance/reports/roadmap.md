@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Endpoints with a test comparing the proxy against Loki: **55%**
-- Behaviour and feature items: **6 proven**, 12 partial, 3 gaps, 0 waived
+- Behaviour and feature items: **6 proven**, 19 partial, 3 gaps, 0 waived
 
 
 ## Next: unproven behaviour
@@ -33,6 +33,13 @@ Proven in part; the rest is named in the item's cases.
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 23 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 4 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
 | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 10 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
+| `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-patterns` — Patterns mined on one replica are served by every replica and restored on a replica that lost its disk | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
+| `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | — | 4 | Unit-proven on a three-replica in-process ring (internal/cache/ peer_replication_test.go, internal/proxy/peer_push_ident |
+| `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | — | 10 | limits/series-limit-error and limits/drilldown-partial-with-warning are written and wired: a metric query above -max-sta |
 | `service-name-derivation` — service_name follows Loki's discovery order | — | 0 | The derivation matches Loki's 13-entry discover_service_name order and is used by selectors, label filters, grouping, la |
 | `severity-detected-level-derivation` — detected_level is derived on the read path | — | 6 | detected_level is derived per returned row from what VictoriaLogs stored: a stored detected_level field, then the first  |

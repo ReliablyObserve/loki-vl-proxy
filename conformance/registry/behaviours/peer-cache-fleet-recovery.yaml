@@ -1,0 +1,51 @@
+id: peer-cache-fleet-recovery
+kind: resource_control
+title: With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs
+
+loki: |
+  Losing a results-cache node or every cache makes Loki slower, never
+  different: the queriers read the store again.
+
+victorialogs: |
+  VictoriaLogs holds the data; every answer can be read again.
+
+proxy: |
+  Every key has its owner and a backup replica (-peer-replication-factor,
+  default 2; see peer-cache-replication). When the owner is unreachable the
+  lookup goes to the backup; a peer that times out is suspended for the
+  breaker cooldown and the calls waiting on it are cancelled, so a paused
+  owner costs a request one -peer-timeout. With every replica's memory and
+  disk gone the first request of each shape reads VictoriaLogs and the
+  write-through layers are shared again at once.
+  Fleet proof (TestFleetPeerCacheProof): with A stopped after it computed a
+  fresh set of every layer's requests, B and C answer each one exactly as A
+  did while their lookups to A fail, the write-through layers from the backup
+  with no VictoriaLogs call; after all three replicas are recreated without
+  disks the answers equal the first ones, the metric, the log lines and the
+  label values equal Loki's, and B and C answer the write-through layers
+  without VictoriaLogs.
+  Contract bounds, asserted: with the owner stopped, paused (a peer that
+  hangs until -peer-timeout) or killed while requests run, every request
+  takes at most the owner's cold read plus the peer timeout and 1s; a
+  replica that refilled after losing its disk holds no more resident memory
+  than before the loss plus the refilled cache bytes and 64 MiB; a peer
+  write above 8 MiB is refused and one below it is read back whole. Also
+  covered: a disk tier that is full (answers unchanged), a disk cache path
+  that cannot be created (the proxy exits non-zero naming the disk cache),
+  recreating a replica under six concurrent clients (the other replicas never
+  fail or change an answer) and a cold fleet asked everything at once.
+  Every request's latency, VictoriaLogs calls and upstream time, peer hits,
+  errors and fetch time (loki_vl_proxy_peer_cache_fetch_duration_seconds),
+  and every phase's per-replica CPU, RSS and cache tier sizes and the
+  backends' docker stats are written to the JSON report the e2e-fleet job
+  uploads (fleet-peer-cache-proof).
+  "No VictoriaLogs call" is counted on every running replica, not only the
+  one asked, without the calls background work makes
+  (loki_vl_proxy_upstream_background_requests_total, where the build has
+  it). The proof reads the replicas per key the proxies report
+  (loki_vl_proxy_peer_cache_replication_factor, absent: one) and asserts the
+  backup behaviour from two on.
+
+implementation:
+  - internal/cache/peer.go
+  - internal/cache/cache.go

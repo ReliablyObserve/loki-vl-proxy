@@ -1,0 +1,9 @@
+id: peer-cache-fleet-recovery
+state: partial
+pending: true
+reason: |
+  The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job
+  e2e-fleet: three proxies, VictoriaLogs and Loki); see the behaviour for what
+  it asserts and what is not covered.
+owner_decision: null
+waiver: null

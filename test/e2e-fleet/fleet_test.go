@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,9 +18,18 @@ import (
 )
 
 var proxyAddrs = []string{
-	"http://localhost:3100", // proxy-a
-	"http://localhost:3101", // proxy-b
-	"http://localhost:3102", // proxy-c
+	envOr("FLEET_PROXY_A_URL", "http://localhost:3100"), // proxy-a
+	envOr("FLEET_PROXY_B_URL", "http://localhost:3101"), // proxy-b
+	envOr("FLEET_PROXY_C_URL", "http://localhost:3102"), // proxy-c
+}
+
+// envOr returns the environment variable key, or def when it is unset, so the
+// tests can target a copy of the stack started on other host ports.
+func envOr(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
 }
 
 var proxyPeerAddrs = []string{
@@ -56,7 +66,7 @@ func ingestLogs(t *testing.T) {
 	}
 
 	body := strings.Join(lines, "\n")
-	resp, err := http.Post("http://localhost:9428/insert/jsonline?_stream_fields=app,env,service.name",
+	resp, err := http.Post(fleetVLURL+"/insert/jsonline?_stream_fields=app,env,service.name",
 		"application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("ingest failed: %v", err)

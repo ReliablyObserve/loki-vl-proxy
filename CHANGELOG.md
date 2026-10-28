@@ -7,7 +7,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Peer-cache keys now have a backup replica, so a replica that loses its
+  disk, or a fleet whose owner is down, reads cached answers from another
+  replica instead of computing them again from VictoriaLogs.**
+  `-peer-replication-factor` (default 2: the key's owner on the peer ring and
+  the next distinct peer clockwise; 1-5; Helm `extraArgs`) sets how many
+  replicas hold each key.
+  - **Writes.** A write-through write is pushed to every replica other than
+    the writer. A replica stores a pushed copy in memory and on disk with the
+    TTL it was sent with, and never pushes it on, so one write costs
+    replication factor minus one pushes and no copy bounces between replicas.
+  - **Reads.** A lookup that misses memory and disk asks the replicas in ring
+    order, owner first. An owner that lost its disk now asks its backup; on
+    main an owner never asked its peers for its own keys. With the owner down
+    or slow, another replica reaches the backup within `-peer-timeout`.
+  - **Peer side.** A peer now serves keys from its disk as well as its memory,
+    so a replica that restarted with its disk still serves its copies; on
+    main a restarted owner served nothing until it recomputed.
+  - **Not pushed.** Entries computed with a user's forwarded credentials
+    (`-forward-headers`, `-forward-cookies`) and values above the peers' 8 MiB
+    body limit are never pushed.
+    - To recognise those entries, the auth fingerprint of a request that
+      forwards credentials now starts with `fwdid.`. Their cache keys
+      therefore change once on upgrade.
+    - Such tenants take one cache miss per key after the upgrade.
+    - Their entries in a persisted patterns snapshot or scoped label-values
+      index from before the upgrade are no longer found and age out.
+  - **New metrics.** `loki_vl_proxy_peer_cache_replication_factor`,
+    `loki_vl_proxy_peer_cache_backup_hits_total`,
+    `loki_vl_proxy_peer_cache_push_too_large_total` and the
+    `loki_vl_proxy_peer_cache_fetch_duration_seconds` histogram (by
+    `replica` owner/backup and `outcome` hit/miss/error).
+    `Cache.Get`, the path of the extent, window and inventory caches, now
+    also counts `loki_vl_proxy_cache_tier_*` and
+    `loki_vl_proxy_cache_backend_fallthrough_total`, as `GetSharedWithAge`
+    already did (a miss costs 1.6 ns more; no allocations).
+  - **Bounded pushes, cheaper fetches.**
+    - At most 64 replica pushes run at once. Up to 4,096 pushes, or 64 MiB,
+      wait behind them; pushes beyond that are dropped and counted
+      (`loki_vl_proxy_peer_cache_push_throttled_total`).
+    - The peer zstd encoder and decoder are shared instead of created per
+      request. A peer fetch of a 4 KiB value went from 1.08 MiB to 16 KiB of
+      allocation and from 276 µs to 75 µs on loopback.
+    - Measured push contention: a label-like request (a memory hit and a
+      200-value JSON encode) on a replica writing about 4,000 times a
+      second (5,352 pushes a second at factor 2) had p99 134 µs at factor
+      2, against 87 µs at factor 1; p50 was unchanged at 5-7 µs and the
+      maximum was 1.0 ms against 2.9 ms.
+  - **Cost** (three replicas over loopback, 4 KiB values):
+    - **Writes.** Every write-through write pushes one more copy: 4,096 bytes
+      on the wire at factor 2, and about 0.22 ms of CPU across sender and
+      receiver, most of it the per-request zstd encoder and the receiver's
+      disk write.
+    - **Memory, disk and capacity.**
+      - Each copy is held in memory and on disk on its replica. At factor 2
+        the ring holds 8.2 KiB of memory and 14.6 KiB of disk per 4 KiB key,
+        against 4.1 KiB and 8.5 KiB at factor 1.
+      - With the same `-cache-max-bytes` the fleet keeps half as many
+        distinct keys. A two-pod fleet holds every key on both pods. Set the
+        factor to 1 to keep the previous capacity.
+    - **Lookups.**
+      - A lookup of a key no replica holds asks one more peer before the
+        answer is computed: about 40 µs on loopback. An owner now asks its
+        backup instead of nobody.
+      - A refill after a lost disk costs one peer round trip per key (1,000
+        keys in 0.26 s).
+      - A local memory hit is as fast as before. The synchronous part of a
+        Set with a peer ring measured 197 ns before and after at factor 1;
+        at factor 2 it is 217 ns for keys this replica does not own (the
+        walk to the second replica). Neither path makes new allocations.
+
 ### Fixed
+
+- **Replicas that start together no longer open each other's breakers.**
+  - At start, a replica dials peers that do not listen yet. The stack load
+    test saw five `connect: connection refused` within 1 ms. Five refusals
+    opened the breaker for the 10 s cooldown, so the peer tier was skipped
+    meanwhile: cold-start traffic went to VictoriaLogs and pushes were lost.
+  - Now a refused connection to a peer that never answered since this
+    process started is not counted towards its breaker. The peer is skipped
+    for 250 ms and tried again
+    (`loki_vl_proxy_peer_cache_peer_not_up_total`).
+  - Pushes made meanwhile are kept, at most 256 or 8 MiB per peer, and sent
+    once the peer answers. They are dropped if it does not answer within
+    30 s (`loki_vl_proxy_peer_cache_push_peer_not_up_total`).
+  - A peer that answered once and then fails counts as before.
+  - Test: three replicas starting 150 and 350 ms apart. No breaker opens,
+    every key written before the others listened is found by the first
+    lookup after start, and 39-43 kept pushes were sent with none dropped.
+- **A paused or hung peer costs a request one `-peer-timeout`, not one per
+  lookup.**
+  - Before, the per-peer breaker opened only after five failures
+    (`internal/cache/peer.go`). Every lookup of a request that needed a key
+    owned by a paused peer therefore waited a full timeout in turn.
+  - The fleet peer cache proof measured, at a 2 s timeout:
+    - log queries 4-6 s;
+    - patterns 4 s;
+    - label values 8-10 s.
+  - Now the first lookup that times out suspends the peer for the breaker
+    cooldown (10 s) and cancels the calls still waiting on it. Those calls
+    go on to the next replica, and later lookups skip the peer.
+  - After the cooldown, one call probes the peer while the others still skip
+    it. A successful probe lifts the suspension; a timed-out probe suspends
+    the peer again.
+  - Other errors count towards the failure threshold as before.
+  - Measured with a paused owner and a 200 ms timeout: 6 sequential lookups
+    take 201 ms, and 6 concurrent lookups take 202 ms.
+- **A replica that restores a patterns snapshot answers the requests the
+  snapshot answered.**
+  - Snapshot entries were kept under a key made of the query alone.
+    `/patterns` requests look up a key with the query, start, end, step,
+    level setting and auth, so a replica that restored its peers' or its
+    disk's snapshot still recomputed every request.
+  - A snapshot entry now also keeps the request keys its value answered (up
+    to 8, newest last; `request_keys` in the snapshot JSON). A restored entry
+    is stored under them too, so the same request is answered with no
+    VictoriaLogs call.
+  - Snapshots written before this change have no request keys and restore
+    as before.
+- **A key fetched from a peer is no longer pushed straight back to its
+  owner, and its TTL is no longer extended.** `Cache.Get` stored a peer hit
+  with `SetWithTTL`, which pushed it back to the owner it came from. It
+  promoted a disk hit with `Set`, which reset its TTL to the default and
+  pushed it to the owner. A fetched or promoted copy is now kept with the TTL
+  it had left and is never pushed.
+- **Owner copies of a write from another replica keep the write's TTL.**
+  The writer clamped its own copy to a 30s shadow and then pushed the clamped
+  TTL, so the owner kept the entry for 30s instead of its TTL.
 
 - **A request that nobody cancelled is no longer answered with a 499 when the
   proxy cancels another call of the same request beside it.** Loki answers 499

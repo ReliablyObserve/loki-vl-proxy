@@ -7,7 +7,9 @@ description: "L3 peer cache design: consistent hashing, zstd/gzip transfers, pee
 
 ## Overview
 
-The fleet cache enables multiple Loki-VL-proxy replicas to share cached data with minimal network overhead. Each key lives on exactly one peer (the **owner**, determined by consistent hashing). Non-owner peers fetch from the owner on local miss and keep short-lived **shadow copies**. With owner write-through enabled (default), non-owner pods also push eligible long-TTL writes to the owner shard so hot traffic pinned to one pod still warms the full fleet.
+The fleet cache enables multiple Loki-VL-proxy replicas to share cached data with minimal network overhead. Each key lives on its **replicas**: the **owner**, determined by consistent hashing, and the next distinct peers clockwise on the ring (`-peer-replication-factor`, default 2: owner and one backup). Other peers fetch from the replicas on local miss, owner first, and keep short-lived **shadow copies**. With write-through enabled (default), eligible long-TTL writes are pushed to every replica, so hot traffic pinned to one pod still warms the full fleet. A replica stores a pushed copy in memory and on disk and serves it from either, and never pushes it on.
+
+Losing a replica costs no recompute: an owner that restarted without its disk asks its backup for its keys (one peer round trip per key, on first lookup), and while an owner is down, or slower than `-peer-timeout`, other peers get its keys from the backup. A copy is kept with the TTL it had left on the replica that served it, never extended, and a copy with less than 5 s left is never served. Values above the peers' 8 MiB body limit and entries computed with a user's forwarded credentials are never pushed.
 
 ```mermaid
 flowchart TD

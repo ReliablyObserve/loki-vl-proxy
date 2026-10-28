@@ -1,0 +1,30 @@
+id: peer-cache-query-range-windows
+kind: resource_control
+title: Log query windows computed by their ring owner are read by the other replicas
+
+loki: |
+  Loki splits a log query by -querier.split-queries-by-interval and caches
+  the splits in its results cache, shared by every frontend.
+
+victorialogs: |
+  Each window is a /select/logsql/query call; VictoriaLogs keeps nothing for
+  a replica to reuse.
+
+proxy: |
+  A query_range log query is split into windows (-query-range-split-interval).
+  A window is stored with SetLocalOnlyWithTTL (fetchQueryRangeWindow): memory
+  only, no disk, no push, and a replica that fetches it keeps it off its disk
+  too. It is read with Get: memory, then the key's replicas in ring order.
+  Fleet proof (TestFleetPeerCacheProof): sixteen windows computed on A, then
+  B, then C are read through the peer tier; after B restarts no window hit on
+  it comes from a disk and every one is a peer read (memory only by design);
+  after it lost its disk it reads windows from their replicas; with A stopped
+  or paused B and C answer the same; the rebuilt lines equal Loki's.
+  Not covered (open): windows never reach the disk tier, although
+  -query-range-history-cache-ttl keeps historical windows for 24h, and a
+  window computed by a replica that is not one of its key's replicas is not
+  shared.
+
+implementation:
+  - internal/proxy/query_range_windowing.go
+  - internal/cache/cache.go
