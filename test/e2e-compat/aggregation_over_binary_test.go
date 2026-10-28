@@ -116,9 +116,11 @@ func TestCompat_AggregationOverBinaryMixedParsers(t *testing.T) {
 // (conformance/registry/generated/parity-discovery.json).
 const aggregationOverBinaryCluster = `label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )`
 
-// TestCompat_AggregationOverBinaryUnderLabelTransforms: a label_replace or a
-// label_join around an aggregation over a binary is applied to the folded
-// answer, on every window shape and at an instant.
+// TestCompat_AggregationOverBinaryUnderLabelTransforms: a label_replace, and
+// one over another that reads its destination, around an aggregation over a
+// binary is applied to the folded answer, on every window shape and at an
+// instant. (Loki's grammar has no label_join: pkg/logql/syntax/lex.go knows
+// only label_replace, and Loki answers a parse error for it.)
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_AggregationOverBinaryUnderLabelTransforms(t *testing.T) {
 	fx := ensureUnwrapSumFixtures(t)
@@ -129,7 +131,7 @@ func TestCompat_AggregationOverBinaryUnderLabelTransforms(t *testing.T) {
 		inner := "sum by (route) (" + amount + " / " + lines + ")"
 		for _, query := range []string{
 			`label_replace(` + inner + `, "dst", "$1", "route", "/(.*)")`,
-			`label_join(` + inner + `, "dst", "-", "route", "route")`,
+			`label_replace(label_replace(` + inner + `, "dst", "$1", "route", "/(.*)"), "dst2", "$1-x", "dst", "(.*)")`,
 		} {
 			t.Run(shape.name+"/"+query, func(t *testing.T) {
 				compareUnwrapSumSeries(t, query, shape.run(t, fx, lokiURL, query), shape.run(t, fx, proxyURL, query))
