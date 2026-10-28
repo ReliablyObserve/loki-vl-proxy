@@ -454,7 +454,7 @@ def main():
                     # vl_cpu_max / vl_cpu_avg are filled from the sampler's samples after the loop.
                     row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False),
-                                                  shape["query"].lstrip().startswith(("topk", "bottomk"))),
+                                                  query.lstrip().startswith(("topk", "bottomk"))),
                            "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None

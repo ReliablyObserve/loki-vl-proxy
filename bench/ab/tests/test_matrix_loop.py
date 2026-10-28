@@ -149,6 +149,31 @@ class RankedSignatureTest(unittest.TestCase):
         self.assertEqual(report.parity(perf_matrix.signature(200, self.body(("a", "5"), ("b", "4")), False, True), wrong, 0.01), "differs")
 
 
+class MetadataShapeTest(unittest.TestCase):
+    def test_matrix_accepts_metadata_shape_without_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shapes = os.path.join(directory, "shapes.json")
+            out = os.path.join(directory, "raw.json")
+            with open(shapes, "w") as handle:
+                json.dump({"ranges": {"1h": [3600, 60]}, "sets": {"metadata-inventory": {
+                    "ranges": ["1h"], "shapes": [{"name": "explore labels", "path": "/loki/api/v1/labels"}]
+                }}}, handle)
+            argv = ["perf_matrix.py", "--set", "metadata-inventory", "--shapes-file", shapes,
+                    "--runs", "1", "--end", "1700003600", "--target", "pr=http://pr", "--out", out]
+            FakeSampler.instances = []
+            with mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(perf_matrix, "request", return_value=(200, b'{"data":["app"]}', 0.01, 1000.0)), \
+                    mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
+                    mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                perf_matrix.main()
+            with open(out) as handle:
+                rows = json.load(handle)["rows"]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["status"], 200)
+            self.assertIn("names=1", rows[0]["signature"])
+
+
 class ProfileRecordTest(unittest.TestCase):
     def test_the_profile_and_the_unaligned_builds_go_into_the_raw_file(self):
         raw = recorded()
