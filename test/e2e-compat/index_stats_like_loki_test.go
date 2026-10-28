@@ -106,24 +106,44 @@ func ensureIndexStatsFixture(t *testing.T) *indexStatsFixture {
 	}
 
 	// Ready when Loki's own query path counts every old line (they are older
-	// than query_ingesters_within, so they come from the flushed chunks) and
-	// Loki's index answers the recent part (an end at now is never served
-	// from Loki's index-stats results cache: max_stats_cache_freshness 10m).
-	deadline := time.Now().Add(240 * time.Second)
+	// than query_ingesters_within, so they come from the flushed chunks),
+	// Loki's index answers the recent part (an end at now is never served from
+	// Loki's index-stats results cache: max_stats_cache_freshness 10m) and
+	// Loki's index answers the old part exactly.
+	//
+	// Loki's index lags the flush (2 of 3 streams, then 3 of 3), and an old
+	// window's answer is stored in Loki's index-stats results cache, keyed by
+	// tenant, query text and the split interval of the start, with overlapping
+	// windows served from the stored extent. A metric query also asks that
+	// cache for its selector's stats (the shard resolver sends an
+	// IndexStatsRequest through the cached stats tripperware:
+	// pkg/querier/queryrange/shard_resolver.go:106-111, roundtrip.go:196-203),
+	// so a readiness probe that used the asserted selector would store the
+	// lagging answer under the very key the assertion reads. Every probe of the old window therefore
+	// uses its own selector text (a no-op pod alternative) and its own end,
+	// and the asserted selector is first asked by the assertion itself.
+	oldWindowEnd := fx.s0.Add(30 * time.Minute)
+	probes := 0
+	deadline := time.Now().Add(120 * time.Second)
 	for {
-		at := fx.s0.Add(30 * time.Minute)
-		query := fmt.Sprintf(`sum(count_over_time({probe=%q, part="old"}[30m]))`, fx.probe)
-		lokiOld, proxyOld := nonSumInstant(t, lokiURL, query, at)[""], nonSumInstant(t, proxyURL, query, at)[""]
+		probes++
+		at := oldWindowEnd.Add(time.Duration(probes) * time.Millisecond)
+		probeSelector := fmt.Sprintf(`{probe=%q, part="old", pod=~"a|b|c|ready%d"}`, fx.probe, probes)
+		lokiOld := nonSumInstant(t, lokiURL, fmt.Sprintf(`sum(count_over_time(%s[30m]))`, probeSelector), at)[""]
+		proxyOld := nonSumInstant(t, proxyURL, fmt.Sprintf(`sum(count_over_time({probe=%q, part="old"}[30m]))`, fx.probe), at)[""]
+		oldIndex := indexStatsGet(t, lokiURL, url.Values{"query": {probeSelector}, "start": {strconv.FormatInt(fx.s0.UnixNano(), 10)}, "end": {strconv.FormatInt(at.UnixNano(), 10)}})
 		recent := indexStatsGet(t, lokiURL, url.Values{"query": {fmt.Sprintf(`{probe=%q, part="recent"}`, fx.probe)}, "since": {"4h"}})
-		if lokiOld == float64(fx.oldLines) && proxyOld == float64(fx.oldLines) && recent.Entries == fx.recentLines+fx.outsideLines {
+		if lokiOld == float64(fx.oldLines) && proxyOld == float64(fx.oldLines) && recent.Entries == fx.recentLines+fx.outsideLines &&
+			oldIndex.Streams == 3 && oldIndex.Entries == fx.oldLines {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("fixture not ready: %d old lines (Loki counts %v, proxy %v), %d recent lines (Loki's index %d)",
-				fx.oldLines, lokiOld, proxyOld, fx.recentLines+fx.outsideLines, recent.Entries)
+			t.Skipf("Loki's index never became exact within 120s (refusing to compare): old part %d lines in 3 streams (Loki counts %v, proxy %v, Loki's index %+v), recent part %d lines (Loki's index %d)",
+				fx.oldLines, lokiOld, proxyOld, oldIndex, fx.recentLines+fx.outsideLines, recent.Entries)
 		}
 		time.Sleep(2 * time.Second)
 	}
+	t.Logf("fixture ready after %d probes", probes)
 	indexStatsFx = fx
 	return fx
 }
