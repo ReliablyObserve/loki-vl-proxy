@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (236), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (237), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -83,6 +83,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 
 | Flag | Type | Default | Helm value | Description |
 |---|---|---|---|---|
+| `-align-queries-with-step` | bool | `false` | `extraArgs.align-queries-with-step` | Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step). Off by default, as in Loki; turn it on when the Loki the proxy stands in for has it on (the Loki Helm chart does), so answers share its evaluation grid and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log, instant and step-less requests are not changed |
 | `-backend-allow-unsupported-version` | bool | `false` | `extraArgs.backend-allow-unsupported-version` | Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true. |
 | `-backend-min-version` | string | `"v1.49.0"` | `extraArgs.backend-min-version` | Minimum VictoriaLogs version considered fully supported at startup (v1.49.0, the latest v1.4x release; every v1.5x release is supported) |
 | `-backend-version-strict` | bool | `false` | `extraArgs.backend-version-strict` | When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set. |

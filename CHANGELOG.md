@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-align-queries-with-step` answers metric range queries on Loki's step
+  grid, and a refresh that moves the window by less than a step is served from
+  the caches.** Loki's query frontend, with `query_range.align_queries_with_step`
+  on (the Loki Helm chart's setting; off in Loki's own defaults,
+  `pkg/querier/queryrange/queryrangebase/roundtrip.go:38,49`), moves both bounds
+  of a metric range query down to a multiple of the step before it evaluates it,
+  `(start_ms / step_ms) * step_ms` and the same for the end
+  (`pkg/querier/queryrange/queryrangebase/step_align.go:20-24`), in the metric
+  tripperware after its limits middleware and before splitting and the results
+  cache (`pkg/querier/queryrange/roundtrip.go:1028-1058`). With `step=137s` and a
+  start 17 s past a multiple of 137, Loki's first sample is 17 s before the start;
+  the proxy started its grid at the start, so its series were shifted by
+  `start mod step` next to such a Loki. A refresh that moved both bounds by
+  less than a step changed the grid phase the stats extent cache keys on and
+  read VictoriaLogs again: on the compatibility stack (whose Loki aligns),
+  unwrap metrics over 24h windows moved 15 s at step 60 s took 0.23 to 2.3 s
+  on main and on the unwrap cache branch, where Loki answered from its results
+  cache in 3 to 5 ms. The new flag (default `false`, Loki's default, global like
+  Loki's, Helm `extraArgs.align-queries-with-step`) moves the bounds of a
+  metric `query_range` request the same way, after the tenant limits and before
+  the response cache, so every evaluation path, cache key and VictoriaLogs call
+  of the request uses Loki's bounds: a refresh inside one step is the same
+  request (answered by the response cache, or by the extent cache from stored
+  buckets). In the proxy's own benchmark (24h, step 60 s, window moved 13 s per
+  request, historical data) a refresh took 0.51 to 0.63 ms with the flag and
+  read one new bucket on the one refresh in four or five that crosses a step,
+  against 4.0 to 4.5 ms and the whole range (1,446 buckets) for raw bounds
+  without it; a request whose start is already on the grid (Grafana's) reused
+  the stored buckets without the flag too and took 1.5 to 1.7 ms. A request
+  that ends near now is still recomputed once its cached answer is older than
+  `-recent-tail-refresh-max-staleness`, judged on the end the client sent, as
+  Loki recomputes the newest `max_cache_freshness_per_query` of every request,
+  so a row that arrives late shows on the next refresh. The 11,000-point
+  limit and `max_query_length` are checked on the bounds the client sent, as
+  in Loki, so a range at a limit whose moved bounds are longer is still
+  answered. Log and instant queries keep
+  their bounds, as in Loki; a request without a step (Loki aligns to its
+  derived range/250 step, which the proxy does not evaluate on),
+  `/loki/api/v1/patterns` and Grafana's query-split residual chunks also keep
+  theirs. The compatibility stack's proxies run with the flag, matching its
+  Loki. Grafana panels look the same either way: Grafana's Loki datasource
+  floors the start to the step when it splits a metric query, and samples stop
+  at the last grid point at or before the end. Registry
+  `semantics/query-range-step-alignment`. Re-implements #574 by @clain23.
+
 ## [2.60.0] - 2026-11-02
 
 ### Fixed

@@ -1,0 +1,618 @@
+package proxy
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"math/rand"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+)
+
+// lokiStepAlignNanos is Loki's StepAlignMiddleware
+// (pkg/querier/queryrange/queryrangebase/step_align.go:20-24) applied to one
+// bound, with the step in milliseconds as the codec keeps it
+// (pkg/querier/queryrange/codec.go:436), returned in nanoseconds.
+func lokiStepAlignNanos(t time.Time, stepMs int64) int64 {
+	return (t.UnixMilli() / stepMs) * stepMs * int64(time.Millisecond)
+}
+
+// The bounds of a metric query_range request move down to multiples of the
+// step exactly as Loki's step-align middleware moves them, and only the
+// requests Loki aligns (metric range queries with a step that pass decoding)
+// are moved.
+// conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
+func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
+	now := time.Unix(1700003600, 123456789)
+	metric := `sum(count_over_time({app="a"}[5m]))`
+	ns := func(sec int64) string { return strconv.FormatInt(sec*int64(time.Second), 10) }
+	cases := []struct {
+		name       string
+		params     url.Values
+		header     map[string]string
+		post       bool
+		aligned    bool
+		start, end int64 // expected Unix nanoseconds when aligned
+		stepMs     int64 // step Loki aligns to, to cross-check start and end
+	}{
+		{
+			// 1700000000 mod 137 = 17 and 1700003600 mod 137 = 55: both
+			// bounds go down, the first point lands 17s before the start.
+			name:    "unaligned start and end at step 137s",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}},
+			aligned: true, start: 1699999983 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
+		},
+		{
+			name:    "nanosecond bounds and a duration step: milliseconds first, then down",
+			params:  url.Values{"query": {metric}, "start": {"1700000012500000000"}, "end": {"1700000999999999999"}, "step": {"1m"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700000940 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "Grafana's step form, 60000ms",
+			params:  url.Values{"query": {metric}, "start": {"1700000012500000000"}, "end": {"1700000999999999999"}, "step": {"60000ms"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700000940 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "already on the grid: unchanged",
+			params:  url.Values{"query": {metric}, "start": {ns(1699999980)}, "end": {ns(1700000940)}, "step": {"60"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700000940 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "a step that does not divide the range",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000003)}, "end": {ns(1700000100)}, "step": {"7s"}},
+			aligned: true, start: 1700000001 * 1e9, end: 1700000099 * 1e9, stepMs: 7000,
+		},
+		{
+			name:    "an end in the future goes down like any other",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000001)}, "end": {ns(1700010001)}, "step": {"60"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700010000 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "a fractional-millisecond step aligns on its whole milliseconds",
+			params:  url.Values{"query": {metric}, "start": {"1700000000000400000"}, "end": {"1700000000010700000"}, "step": {"0.0015"}},
+			aligned: true, start: 1700000000000 * 1e6, end: 1700000000010 * 1e6, stepMs: 1,
+		},
+		{
+			name:    "binary expression",
+			params:  url.Values{"query": {`sum(rate({app="a"}[5m])) / sum(rate({app="a"}[1m]))`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}},
+			aligned: true, start: 1699999983 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
+		},
+		{
+			name:    "vector literal",
+			params:  url.Values{"query": {`vector(1)`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}},
+			aligned: true, start: 1699999983 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
+		},
+		{
+			name:    "no start: Loki's end minus since, then aligned",
+			params:  url.Values{"query": {metric}, "end": {ns(1700003600)}, "since": {"2h"}, "step": {"137"}},
+			aligned: true, start: (1700003600 - 7200) / 137 * 137 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
+		},
+		{
+			name:    "no start and no end: now minus 1h and now, then aligned",
+			params:  url.Values{"query": {metric}, "step": {"60"}},
+			aligned: true, start: lokiStepAlignNanos(now.Add(-time.Hour), 60000), end: lokiStepAlignNanos(now, 60000), stepMs: 60000,
+		},
+		{
+			name:   "POST form",
+			params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}},
+			post:   true, aligned: true, start: 1699999983 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
+		},
+		{name: "log query", params: url.Values{"query": {`{app="a"} |= "x"`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
+		{name: "no step", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700003600)}}},
+		{name: "step under a millisecond", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000000)}, "step": {"0.0001"}}},
+		{name: "over 11,000 points: Loki answers 400 first", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000000 + 11001)}, "step": {"1"}}},
+		{name: "start after end", params: url.Values{"query": {metric}, "start": {ns(1700003600)}, "end": {ns(1700000000)}, "step": {"137"}}},
+		{name: "unparsable query", params: url.Values{"query": {`sum(count_over_time({app="a"}[5m])`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
+		{name: "unresolved Grafana token", params: url.Values{"query": {`sum(count_over_time({app="a"}[$__auto]))`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
+		{
+			name:   "Grafana query-split residual chunk",
+			params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000030)}, "step": {"60"}},
+			header: map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			if tc.post {
+				req = httptest.NewRequest(http.MethodPost, "/loki/api/v1/query_range", strings.NewReader(tc.params.Encode()))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			} else {
+				req = httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+tc.params.Encode(), nil)
+			}
+			for k, v := range tc.header {
+				req.Header.Set(k, v)
+			}
+			got, ok := alignQueryRangeToStep(req, now)
+			if ok != tc.aligned {
+				t.Fatalf("aligned = %v, want %v", ok, tc.aligned)
+			}
+			if !ok {
+				if got != req || requestStepAligned(got) {
+					t.Fatal("a request Loki does not align must go on as it came")
+				}
+				return
+			}
+			if !requestStepAligned(got) {
+				t.Fatal("an aligned request must be marked")
+			}
+			rawStart, rawEnd, _ := lokiRangeBounds(req, now)
+			if want := lokiStepAlignNanos(rawStart, tc.stepMs); want != tc.start {
+				t.Fatalf("table start %d is not Loki's %d", tc.start, want)
+			}
+			if want := lokiStepAlignNanos(rawEnd, tc.stepMs); want != tc.end {
+				t.Fatalf("table end %d is not Loki's %d", tc.end, want)
+			}
+			wantStart, wantEnd := strconv.FormatInt(tc.start, 10), strconv.FormatInt(tc.end, 10)
+			query := got.URL.Query()
+			for _, read := range []struct {
+				where      string
+				start, end string
+			}{
+				{"Form", got.FormValue("start"), got.FormValue("end")},
+				{"URL", query.Get("start"), query.Get("end")},
+			} {
+				if read.start != wantStart || read.end != wantEnd {
+					t.Fatalf("%s bounds = [%s, %s], want [%s, %s]", read.where, read.start, read.end, wantStart, wantEnd)
+				}
+			}
+			if tc.post && (got.PostForm.Get("start") != wantStart || got.PostForm.Get("end") != wantEnd) {
+				t.Fatalf("PostForm bounds = [%s, %s], want [%s, %s]", got.PostForm.Get("start"), got.PostForm.Get("end"), wantStart, wantEnd)
+			}
+			if req.FormValue("start") != tc.params.Get("start") || req.FormValue("end") != tc.params.Get("end") {
+				t.Fatal("the caller's request must not be modified")
+			}
+		})
+	}
+}
+
+// The middleware only runs for query_range with the flag on: instant queries
+// and every other endpoint, and every request with the flag off, reach the
+// handler as they came.
+// conformance: semantics/query-range-step-alignment
+func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
+	params := url.Values{"query": {`sum(count_over_time({app="a"}[5m]))`}, "start": {"1700000000000000000"}, "end": {"1700003600000000000"}, "step": {"137"}, "time": {"1700003600000000000"}}
+	for _, tc := range []struct {
+		endpoint string
+		on       bool
+		moved    bool
+	}{
+		{"query_range", true, true},
+		{"query_range", false, false},
+		{"query", true, false},
+		{"volume_range", true, false},
+		{"patterns", true, false},
+	} {
+		p := &Proxy{alignQueriesWithStep: tc.on}
+		var seen *http.Request
+		h := p.stepAlignMiddleware(tc.endpoint, func(_ http.ResponseWriter, r *http.Request) { seen = r })
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+tc.endpoint+"?"+params.Encode(), nil)
+		h(httptest.NewRecorder(), req)
+		if moved := seen.FormValue("start") != params.Get("start"); moved != tc.moved {
+			t.Fatalf("%s with the flag %v: moved = %v, want %v", tc.endpoint, tc.on, moved, tc.moved)
+		}
+	}
+}
+
+// newAlignTestProxy builds a proxy over backendURL. caches turns on the
+// response cache (Tier0) and the stats extent cache; without them every
+// request is evaluated from VictoriaLogs' answer.
+func newAlignTestProxy(t testing.TB, backendURL string, align, caches bool, limits map[string]any) *Proxy {
+	t.Helper()
+	cfg := Config{
+		BackendURL:               backendURL,
+		Cache:                    cache.NewDisabled(),
+		LogLevel:                 "error",
+		AlignQueriesWithStep:     align,
+		QueryRangeExtentCacheTTL: time.Hour,
+		TenantDefaultLimits:      limits,
+	}
+	if caches {
+		cfg.Cache = cache.NewWithMaxBytes(time.Minute, 100000, 256<<20)
+		cfg.CompatCache = cache.New(time.Minute, 1000)
+		cfg.QueryRangeExtentCache = true
+	}
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatalf("proxy: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+		p.cache.Close()
+		if p.compatCache != nil {
+			p.compatCache.Close()
+		}
+	})
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
+	return p
+}
+
+// alignRouteQueryRange sends a query_range request through the proxy's routes
+// (its middleware chain included).
+func alignRouteQueryRange(t testing.TB, mux http.Handler, p *Proxy, query string, start, end time.Time, step time.Duration) (int, []byte) {
+	t.Helper()
+	params := url.Values{
+		"query": {query},
+		"start": {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(end.UnixNano(), 10)},
+		"step":  {strconv.FormatInt(step.Milliseconds(), 10) + "ms"},
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+	p.statsExtentStores.wait()
+	return rec.Code, rec.Body.Bytes()
+}
+
+func alignRouteMux(p *Proxy) *http.ServeMux {
+	mux := http.NewServeMux()
+	p.RegisterProxyRoutes(mux)
+	return mux
+}
+
+// alignSamples decodes a matrix answer into app -> unix second -> value.
+func alignSamples(t testing.TB, body []byte) map[string]map[int64]string {
+	t.Helper()
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
+		t.Fatalf("not a matrix answer (%v): %s", err, body)
+	}
+	out := map[string]map[int64]string{}
+	for _, series := range resp.Data.Result {
+		app := series.Metric["app"]
+		if out[app] == nil {
+			out[app] = map[int64]string{}
+		}
+		for _, pair := range series.Values {
+			ts, _ := pair[0].(float64)
+			v, _ := pair[1].(string)
+			out[app][int64(ts)] = v
+		}
+	}
+	return out
+}
+
+func alignFixture(s0 time.Time, span time.Duration) []slidingFixtureLine {
+	var lines []slidingFixtureLine
+	for i := 0; time.Duration(i)*13*time.Second < span; i++ {
+		app := []string{"a", "b", "c"}[i%3]
+		lines = append(lines, slidingFixtureLine{ts: s0.Add(time.Duration(i)*13*time.Second + 250*time.Millisecond).UnixNano(), app: app, msg: "n=" + strconv.Itoa(i%17) + " msg=tick" + strings.Repeat("x", i%5)})
+	}
+	return lines
+}
+
+// With the flag on, the answer is Loki's on the step grid: every sample sits
+// at a multiple of the step, the first one at or before the requested start
+// and the last one at the end moved down, with the values Loki computes for
+// those times. With the flag off the grid starts at the requested start, as
+// before. A range just under the 11,000-point limit and a range at
+// max_query_length are accepted on the bounds the client sent, even when the
+// moved bounds would exceed them (Loki checks before it aligns).
+// conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
+func TestQueryRangeStepAlignment_AnswersOnLokisGrid(t *testing.T) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	lines := alignFixture(s0, 4*time.Hour)
+	srv, _ := newSlidingFakeVL(t, lines)
+	start, end := s0.Add(30*time.Minute+17*time.Second), s0.Add(3*time.Hour+41*time.Second+500*time.Millisecond)
+	cases := []struct {
+		query  string
+		fn     string
+		byApp  bool
+		step   time.Duration
+		window time.Duration
+	}{
+		{`sum by (app) (count_over_time({app=~".+"}[5m]))`, "count_over_time", true, 137 * time.Second, 5 * time.Minute},
+		{`sum by (app) (rate({app=~".+"}[2m]))`, "rate", true, 60 * time.Second, 2 * time.Minute},
+		{`sum(bytes_over_time({app=~".+"}[90s]))`, "bytes_over_time", false, 60 * time.Second, 90 * time.Second},
+		{`sum by (app) (count_over_time({app=~".+"}[1m]))`, "count_over_time", true, 15 * time.Second, time.Minute},
+	}
+	for _, align := range []bool{true, false} {
+		p := newAlignTestProxy(t, srv.URL, align, false, nil)
+		mux := alignRouteMux(p)
+		for _, tc := range cases {
+			wantStart, wantEnd := start, end
+			if align {
+				stepMs := tc.step.Milliseconds()
+				wantStart, wantEnd = time.Unix(0, lokiStepAlignNanos(start, stepMs)), time.Unix(0, lokiStepAlignNanos(end, stepMs))
+			}
+			want := lokiSlidingReference(lines, tc.fn, tc.byApp, 0, wantStart, wantEnd, tc.step, tc.window)
+			code, body := alignRouteQueryRange(t, mux, p, tc.query, start, end, tc.step)
+			if code != http.StatusOK {
+				t.Fatalf("align=%v %s: %d %s", align, tc.query, code, body)
+			}
+			got := alignSamples(t, body)
+			if !tc.byApp {
+				got = map[string]map[int64]string{"": got[""]}
+			}
+			assertSlidingSeriesEqual(t, tc.query, want, got)
+			if align {
+				for app, points := range got {
+					for ts := range points {
+						if ts%int64(tc.step/time.Second) != 0 {
+							t.Fatalf("%s app=%q: sample at %d is off the %s grid", tc.query, app, ts, tc.step)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// An offset moves the evaluated window, not the grid: Loki aligns the
+	// bounds the client sent and shifts the window by the offset.
+	p := newAlignTestProxy(t, srv.URL, true, false, nil)
+	mux := alignRouteMux(p)
+	step, offset := 60*time.Second, 433*time.Second
+	shifted := make([]slidingFixtureLine, len(lines))
+	for i, line := range lines {
+		shifted[i] = line
+		shifted[i].ts = line.ts + int64(offset)
+	}
+	alignedStart, alignedEnd := time.Unix(0, lokiStepAlignNanos(start, 60000)), time.Unix(0, lokiStepAlignNanos(end, 60000))
+	want := lokiSlidingReference(shifted, "count_over_time", true, 0, alignedStart, alignedEnd, step, 5*time.Minute)
+	code, body := alignRouteQueryRange(t, mux, p, `sum by (app) (count_over_time({app=~".+"}[5m] offset 433s))`, start, end, step)
+	if code != http.StatusOK {
+		t.Fatalf("offset: %d %s", code, body)
+	}
+	assertSlidingSeriesEqual(t, "offset 433s", want, alignSamples(t, body))
+
+	// Limits are checked on the bounds the client sent.
+	sevens := time.Unix(s0.Unix()/7*7, 0)
+	edges := []struct {
+		name       string
+		limits     map[string]any
+		start, end time.Time
+		step       time.Duration
+	}{
+		// 11,000.5 steps as sent, which Loki's integer division counts as
+		// 11,000; 11,001 once the start moves down 0.9s and the end 0.4s.
+		{"resolution", nil, s0.Add(30*time.Second + 900*time.Millisecond), s0.Add(30*time.Second + 900*time.Millisecond + 11000*time.Second + 500*time.Millisecond), time.Second},
+		// One hour as sent; at step 7s the start moves down 6s and the end
+		// 1s, so the moved range is 3605s.
+		{"max_query_length", map[string]any{"max_query_length": "1h"}, sevens.Add(706 * time.Second), sevens.Add(706*time.Second + time.Hour), 7 * time.Second},
+	}
+	for _, edge := range edges {
+		p := newAlignTestProxy(t, srv.URL, true, false, edge.limits)
+		stepMs := edge.step.Milliseconds()
+		if moved := lokiStepAlignNanos(edge.end, stepMs) - lokiStepAlignNanos(edge.start, stepMs); moved <= int64(edge.end.Sub(edge.start)) {
+			t.Fatalf("%s: the moved range %s must be longer than the range sent %s", edge.name, time.Duration(moved), edge.end.Sub(edge.start))
+		}
+		code, body := alignRouteQueryRange(t, alignRouteMux(p), p, `sum(count_over_time({app=~".+"}[1m]))`, edge.start, edge.end, edge.step)
+		if code != http.StatusOK {
+			t.Fatalf("%s: the bounds as sent are within the limit, Loki answers 200; got %d %s", edge.name, code, body)
+		}
+	}
+}
+
+// alignRefresh is one request of a refresh sequence.
+type alignRefresh struct {
+	start, end time.Time
+	step       time.Duration
+}
+
+// alignRefreshes returns refresh sequences that move a window by less than a
+// step at a time, the way an auto-refreshing dashboard does: both bounds
+// moving (an API client), or a start already on the grid with a raw end
+// (Grafana's query splitting floors the start; the end is now).
+func alignRefreshes(seed int64, from time.Time) []alignRefresh {
+	rng := rand.New(rand.NewSource(seed))
+	var out []alignRefresh
+	for _, step := range []time.Duration{15 * time.Second, time.Minute, 137 * time.Second} {
+		for _, span := range []time.Duration{time.Hour, 3 * time.Hour} {
+			end := from.Add(span + time.Duration(rng.Int63n(int64(30*time.Minute))))
+			for i := 0; i < 8; i++ {
+				end = end.Add(time.Duration(1+rng.Int63n(int64(step/time.Second)-1)) * time.Second / 2)
+				start := end.Add(-span)
+				out = append(out, alignRefresh{start, end, step})
+				grafanaStart := time.Unix(0, lokiStepAlignNanos(start, step.Milliseconds()))
+				out = append(out, alignRefresh{grafanaStart, end, step})
+			}
+		}
+	}
+	return out
+}
+
+// With the flag on, random refresh sequences moving by less than a step give
+// byte for byte the answer of the uncached aligned path, and a refresh that
+// stays inside one step reaches VictoriaLogs no more: the moved request is the
+// same request on the grid, answered by the response cache, and once that is
+// gone (a restart or eviction) by the extent cache from stored buckets.
+// conformance: semantics/query-range-step-alignment, quality/query-range-extent-cache, loki_api_v1_query_range
+func TestQueryRangeStepAlignment_SubStepRefreshServedFromCaches(t *testing.T) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	lines := alignFixture(s0, 5*time.Hour)
+	queries := []string{
+		`sum by (app) (count_over_time({app=~".+"}[5m]))`,
+		`sum by (app) (rate({app=~".+"}[1m]))`,
+		`sum(bytes_over_time({app=~".+"}[2m]))`,
+		`sum by (app) (count_over_time({app=~".+"}[$__auto]))`,
+		`topk(2, sum by (app) (rate({app=~".+"}[5m])))`,
+		`sum(rate({app="a"}[1m])) / sum(rate({app=~".+"}[1m]))`,
+	}
+	refreshes := alignRefreshes(7, s0)
+	cachedSrv, cachedShim := newExtentShim(t, func() http.Handler { srv, _ := newSlidingFakeVL(t, lines); return srv.Config.Handler }())
+	refSrv, _ := newExtentShim(t, func() http.Handler { srv, _ := newSlidingFakeVL(t, lines); return srv.Config.Handler }())
+	cached := newAlignTestProxy(t, cachedSrv.URL, true, true, nil)
+	ref := newAlignTestProxy(t, refSrv.URL, true, false, nil)
+	cachedMux, refMux := alignRouteMux(cached), alignRouteMux(ref)
+	repeats, repeatCalls := 0, 0
+	for _, query := range queries {
+		seen := map[[2]int64]bool{}
+		for _, w := range refreshes {
+			q := strings.ReplaceAll(query, "$__auto", strconv.FormatInt(int64(w.step/time.Second), 10)+"s")
+			wantCode, want := alignRouteQueryRange(t, refMux, ref, q, w.start, w.end, w.step)
+			callsBefore, _ := cachedShim.bucketsRead()
+			gotCode, got := alignRouteQueryRange(t, cachedMux, cached, q, w.start, w.end, w.step)
+			callsAfter, _ := cachedShim.bucketsRead()
+			if gotCode != wantCode || !bytes.Equal(got, want) {
+				t.Fatalf("%s [%s, %s] step %s: the caches changed the answer\n cached: %d %s\nuncached: %d %s", q, w.start.Format(time.RFC3339Nano), w.end.Format(time.RFC3339Nano), w.step, gotCode, got, wantCode, want)
+			}
+			if wantCode != http.StatusOK || !bytes.Contains(want, []byte(`"values":[[`)) {
+				t.Fatalf("%s: the run must answer with data, got %d %s", q, wantCode, want)
+			}
+			grid := [2]int64{lokiStepAlignNanos(w.start, w.step.Milliseconds()), lokiStepAlignNanos(w.end, w.step.Milliseconds())}
+			if seen[grid] {
+				repeats++
+				repeatCalls += callsAfter - callsBefore
+			}
+			seen[grid] = true
+		}
+	}
+	if repeats < len(queries)*20 || repeatCalls != 0 {
+		t.Fatalf("%d refreshes landed on a grid already answered and made %d VictoriaLogs calls; want many and none", repeats, repeatCalls)
+	}
+
+	// Without the response cache, the extent cache answers the same moved
+	// requests from stored buckets.
+	cached.compatCache.Close()
+	cached.compatCache = nil
+	cachedShim.reset()
+	for _, query := range queries[:3] {
+		for _, w := range refreshes {
+			_, want := alignRouteQueryRange(t, refMux, ref, query, w.start, w.end, w.step)
+			_, got := alignRouteQueryRange(t, cachedMux, cached, query, w.start, w.end, w.step)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("%s: the extent cache changed the answer", query)
+			}
+		}
+	}
+	if calls, _ := cachedShim.bucketsRead(); calls != 0 {
+		t.Fatalf("every bucket of these windows was stored; the extent cache made %d VictoriaLogs calls", calls)
+	}
+	if outcomes := extentOutcomes(t, cached); outcomes["hit"] == 0 {
+		t.Fatalf("the extent cache must answer the moved requests from stored buckets: %v", outcomes)
+	}
+}
+
+// A refresh near now is never served a stale answer. Loki recomputes the
+// newest max_cache_freshness_per_query of every request, so a row that arrives
+// late in the newest sample's window shows on the next refresh. With the flag
+// on, refreshes inside one step are the same request, and the moved end can be
+// up to a step older than -recent-tail-refresh-window: whether the request is
+// near now is judged on the end the client sent.
+// conformance: semantics/query-range-step-alignment
+func TestQueryRangeStepAlignment_NearNowRefreshSeesLateRows(t *testing.T) {
+	now := time.Now()
+	// A step whose last grid point is 3 to 9 minutes old: older than the
+	// near-now window (2m), newer than -query-range-freshness (10m), and the
+	// next grid point more than a minute away.
+	var step time.Duration
+	for m := 10; m <= 40 && step == 0; m++ {
+		d := time.Duration(m) * time.Minute
+		since := now.Sub(time.Unix(0, lokiStepAlignNanos(now, d.Milliseconds())))
+		if since > 3*time.Minute && since < 9*time.Minute && d-since > time.Minute {
+			step = d
+		}
+	}
+	if step == 0 {
+		t.Fatalf("no step from 10m to 40m puts the last grid point 3 to 9 minutes before %s", now)
+	}
+	grid := time.Unix(0, lokiStepAlignNanos(now, step.Milliseconds()))
+	lines := alignFixture(now.Add(-3*time.Hour), 3*time.Hour-30*time.Minute)
+	late := append(append([]slidingFixtureLine(nil), lines...), slidingFixtureLine{ts: grid.Add(-time.Second).UnixNano(), app: "a", msg: "n=1 msg=late"})
+	before, _ := newSlidingFakeVL(t, lines)
+	after, _ := newSlidingFakeVL(t, late)
+	var arrived atomic.Bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if arrived.Load() {
+			after.Config.Handler.ServeHTTP(w, r)
+			return
+		}
+		before.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(backend.Close)
+	p, err := New(Config{
+		BackendURL:                    backend.URL,
+		Cache:                         cache.NewWithMaxBytes(time.Minute, 100000, 256<<20),
+		CompatCache:                   cache.New(time.Minute, 1000),
+		LogLevel:                      "error",
+		AlignQueriesWithStep:          true,
+		QueryRangeExtentCache:         true,
+		QueryRangeExtentCacheTTL:      time.Hour,
+		RecentTailRefreshEnabled:      true,
+		RecentTailRefreshMaxStaleness: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("proxy: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+		p.cache.Close()
+		p.compatCache.Close()
+	})
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	mux := alignRouteMux(p)
+	query := `sum(count_over_time({app=~".+"}[5m]))`
+	value := func(body []byte) string { return alignSamples(t, body)[""][grid.Unix()] }
+	_, first := alignRouteQueryRange(t, mux, p, query, now.Add(-2*time.Hour), now, step)
+	arrived.Store(true)
+	time.Sleep(5 * time.Millisecond)
+	later := now.Add(20 * time.Millisecond)
+	_, second := alignRouteQueryRange(t, mux, p, query, later.Add(-2*time.Hour), later, step)
+	want := "1"
+	if v := value(first); v != "" {
+		n, _ := strconv.Atoi(v)
+		want = strconv.Itoa(n + 1)
+	}
+	if got := value(second); got != want {
+		t.Fatalf("the sample at %s after a late row: %q, want %q (before it: %q)", grid.UTC().Format(time.RFC3339), got, want, value(first))
+	}
+}
+
+// subStepRefreshBench runs one request per iteration over a window moved by
+// 13s each time at step 60s (a start phase repeats only after 60 requests),
+// and reports the VictoriaLogs calls and buckets each request read.
+func subStepRefreshBench(b *testing.B, align, grafanaStart bool) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	lines := alignFixture(s0, 26*time.Hour)
+	srv, shim := newExtentShim(b, func() http.Handler { srv, _ := newSlidingFakeVL(b, lines); return srv.Config.Handler }())
+	p := newAlignTestProxy(b, srv.URL, align, true, nil)
+	mux := alignRouteMux(p)
+	query := `sum by (app) (count_over_time({app=~".+"}[5m]))`
+	step := time.Minute
+	end := s0.Add(24*time.Hour + 7*time.Second)
+	request := func(i int) {
+		e := end.Add(time.Duration(i) * 13 * time.Second)
+		s := e.Add(-24 * time.Hour)
+		if grafanaStart {
+			s = time.Unix(0, lokiStepAlignNanos(s, step.Milliseconds()))
+		}
+		if code, body := alignRouteQueryRange(b, mux, p, query, s, e, step); code != http.StatusOK {
+			b.Fatalf("%d %s", code, body)
+		}
+	}
+	request(-1) // the first load
+	shim.reset()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		request(i)
+	}
+	b.StopTimer()
+	calls, buckets := shim.bucketsRead()
+	b.ReportMetric(float64(calls)/float64(b.N), "vl_calls/op")
+	b.ReportMetric(float64(buckets)/float64(b.N), "vl_buckets/op")
+}
+
+// A dashboard refreshing a 24h window every 13 s at step 60 s, the window
+// moving by less than a step each time: raw bounds without alignment (an API
+// client), a floored start with a raw end without alignment (Grafana's query
+// splitting), and raw bounds with -align-queries-with-step.
+func BenchmarkQueryRangeSubStepRefresh(b *testing.B) {
+	b.Run("unaligned/raw_bounds", func(b *testing.B) { subStepRefreshBench(b, false, false) })
+	b.Run("unaligned/grafana_start", func(b *testing.B) { subStepRefreshBench(b, false, true) })
+	b.Run("aligned/raw_bounds", func(b *testing.B) { subStepRefreshBench(b, true, false) })
+}

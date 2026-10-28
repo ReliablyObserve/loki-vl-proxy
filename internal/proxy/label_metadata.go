@@ -608,12 +608,16 @@ func (p *Proxy) shouldRefreshLabelsInBackground(remaining, ttl time.Duration) bo
 }
 
 // requestEndsWithin reports whether the request's end is within window of now.
-// An omitted end means now, as in Loki.
+// An omitted end means now, as in Loki. A request moved onto the step grid is
+// judged on the end the client sent (stepAlignedRawEnd).
 func requestEndsWithin(r *http.Request, window time.Duration) bool {
 	if r == nil || window <= 0 {
 		return false
 	}
 	endRaw := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	if raw, aligned := stepAlignedRawEnd(r); aligned {
+		endRaw = raw
+	}
 	if endRaw == "" {
 		return true
 	}
