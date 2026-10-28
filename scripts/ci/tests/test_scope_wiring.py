@@ -304,7 +304,7 @@ class ScopeWiringTest(unittest.TestCase):
         for needle in ("--numstat", '--base-ref "$BASE_REF"', '--labels "$LABELS"',
                        "BASE_REF: ${{ github.event.pull_request.base.ref }}"):
             self.assertIn(needle, text)
-        # ci-full forces the product lanes only; the baseline label also forces the baseline.
+        # ci-full and baseline force the product lanes here; the classifier gives both the baseline.
         self.assertIn("ci-full", text)
         self.assertIn("elif printf '%s\\n' \"$labels\" | grep -qx 'baseline'", text)
         # The baseline can only come from a classifier that ran on a pull request diff.

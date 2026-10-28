@@ -841,10 +841,14 @@ class BaselineTests(unittest.TestCase):
         self.assertFalse(decide(infra))
         self.assertTrue(decide(infra, labels=[BASELINE_LABEL]))
 
-    def test_ci_full_alone_does_not_force_it(self):
+    def test_ci_full_forces_it(self):
         infra = numstat((".github/workflows/ci.yaml", 400))
-        self.assertFalse(decide(infra, labels=["ci-full"]))
-        self.assertFalse(decide(numstat(("internal/proxy/metric_agg.go", 3)), labels=["ci-full"]))
+        self.assertTrue(decide(infra, labels=["ci-full"]))
+        self.assertTrue(decide(numstat(("internal/proxy/metric_agg.go", 3)), labels=["ci-full"]))
+
+    def test_ci_full_on_a_stacked_pull_request_does_not_force_it(self):
+        self.assertEqual(baseline(["internal/proxy/a.go"], [("internal/proxy/a.go", 3)], "perf/x", ["ci-full"]),
+                         (False, []))
 
     def test_ci_full_does_not_stop_a_big_change_from_triggering(self):
         self.assertTrue(decide(many(BASELINE_FILES + 1), labels=["ci-full"]))
@@ -936,10 +940,10 @@ class BaselineCLITests(unittest.TestCase):
         self.assertEqual(self.run_with(["docs/a.md"], stat, "--base-ref", "main", "--labels", "bug,baseline",
                                        "--force-product"), BASELINE_FLAGS)
 
-    def test_ci_full_on_an_infra_pull_request_gets_the_full_product_ci_without_the_baseline(self):
+    def test_ci_full_on_an_infra_pull_request_gets_the_full_product_ci_and_the_baseline(self):
         stat = [(".github/workflows/ci.yaml", 400)]
         self.assertEqual(self.run_with([".github/workflows/ci.yaml"], stat, "--base-ref", "main", "--labels",
-                                       "ci-full", "--force-product"), ALL_FLAGS)
+                                       "ci-full", "--force-product"), BASELINE_FLAGS)
 
     def test_an_unreadable_numstat_means_no_baseline_and_every_lane(self):
         out = self.run_cli("--files-from", "-", "--numstat", "/nonexistent/numstat", "--base-ref", "main",

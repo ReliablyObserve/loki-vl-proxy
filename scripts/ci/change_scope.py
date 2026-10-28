@@ -239,6 +239,8 @@ GO_ROOTS = ("cmd/**", "internal/**", "pkg/**")
 # entry-point rule adds 3 more (13% together); counting any edit of an entry
 # point would select 44%, which is why it has a size.
 BASELINE_LABEL = "baseline"
+# ci-full forces the full product CI and the baseline run too (owner decision).
+CI_FULL_LABEL = "ci-full"
 BASELINE_BASE = "main"
 BASELINE_LINES = 1500
 BASELINE_FILES = 40
@@ -426,14 +428,15 @@ def baseline(paths, numstat, base_ref, labels=()):
 
     base_ref is the pull request's base branch ("" when it is not a pull
     request); labels are its label names. Only a pull request into main can get
-    it, whatever the label says. The label forces it; otherwise the change must
-    be in the product lane on its own paths (not forced there by ci-full) and
-    its shipped diff must be big.
+    it, whatever the label says. The baseline or ci-full label forces it;
+    otherwise the change must be in the product lane on its own paths and its
+    shipped diff must be big.
     """
     if base_ref != BASELINE_BASE:
         return False, []
-    if BASELINE_LABEL in labels:
-        return True, ["the `%s` label is set" % BASELINE_LABEL]
+    for label in (BASELINE_LABEL, CI_FULL_LABEL):
+        if label in labels:
+            return True, ["the `%s` label is set" % label]
     if scope_lane(paths) != PRODUCT:
         return False, []
     reasons = baseline_reasons(numstat)

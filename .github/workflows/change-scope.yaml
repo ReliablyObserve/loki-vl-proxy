@@ -8,7 +8,7 @@ name: Change scope
 #   perf     the A/B smoke (a superset of stack)
 #   baseline the heavy re-measure that can become the new baseline: every A/B set,
 #            every visual page and the whole VictoriaLogs matrix. "true" only for
-#            a pull request into main that carries the `baseline` label or whose
+#            a pull request into main that carries the `baseline` or `ci-full` label or whose
 #            shipped diff is big (change_scope.py: BASELINE_*); never for a stacked
 #            pull request. Fails the other way round: any doubt is "false".
 # Everything except an unlabelled pull request whose changed paths all fall in
@@ -39,9 +39,9 @@ on:
         value: ${{ jobs.scope.outputs.perf }}
       baseline:
         description: >-
-          "true" only for a pull request into main with the baseline label or a
-          big shipped diff; "false" on every other event, on a stacked pull
-          request, on ci-full alone and on any error.
+          "true" only for a pull request into main with the baseline or ci-full
+          label or a big shipped diff; "false" on every other event, on a stacked
+          pull request and on any error.
         value: ${{ jobs.scope.outputs.baseline }}
 
 permissions: {}
