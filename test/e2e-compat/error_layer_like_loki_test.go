@@ -254,7 +254,7 @@ func TestCompat_ErrorLayerLikeLoki(t *testing.T) {
 				}
 				status, body := rejectedQueryGet(t, proxyURL, tc.path, window(tc.params), "0", nil)
 				got := errLayerE2EClasses(status, body, nil, lokiStatus, strings.TrimSpace(string(lokiBody)), false, false)
-				errLayerE2EVerdict(t, got, []string{"semantics/error-layer-backend-text"}, status, body)
+				errLayerE2EVerdict(t, got, nil, status, body)
 			})
 		}
 	})
@@ -284,7 +284,7 @@ func TestCompat_ErrorLayerLikeLoki(t *testing.T) {
 			t.Fatalf("the 64-byte buffered-response limit was not reached; the case proves nothing: %.300s", body)
 		}
 		got := errLayerE2EClasses(status, body, nil, http.StatusInternalServerError, "", false, true)
-		errLayerE2EVerdict(t, got, []string{"semantics/error-layer-proxy-limit-status"}, status, body)
+		errLayerE2EVerdict(t, got, nil, status, body)
 	})
 
 	failures := []struct {
@@ -294,9 +294,9 @@ func TestCompat_ErrorLayerLikeLoki(t *testing.T) {
 		wantText    string
 		known       []string
 	}{
-		{"vl_stopped", "stopped", false, http.StatusInternalServerError, "", []string{"semantics/error-layer-backend-failure-status", "semantics/error-layer-transport-text"}},
-		{"vl_stopped_mid_body", "stopped_mid_body", false, http.StatusInternalServerError, "", []string{"semantics/error-layer-backend-failure-status", "semantics/error-layer-internal-go-text", "semantics/error-layer-backend-text"}},
-		{"backend_timeout", "slow", true, http.StatusGatewayTimeout, e2eLokiDeadlineExceeded, []string{"semantics/error-layer-cancel-deadline", "semantics/error-layer-transport-text"}},
+		{"vl_stopped", "stopped", false, http.StatusInternalServerError, "", nil},
+		{"vl_stopped_mid_body", "stopped_mid_body", false, http.StatusInternalServerError, "", nil},
+		{"backend_timeout", "slow", true, http.StatusGatewayTimeout, e2eLokiDeadlineExceeded, nil},
 	}
 	for _, fc := range failures {
 		t.Run(fc.name, func(t *testing.T) {

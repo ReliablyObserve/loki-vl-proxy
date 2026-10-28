@@ -114,7 +114,7 @@ buckets relabelled onto Loki's evaluation timestamps (the sample at `t` covers `
 - Drilldown breakdowns share `-stats-query-range-concurrency` slots; a slot is
   free again after `-stats-query-range-inter-query-delay-ms`, which does not
   delay the answer.
-- A response larger than `-backend-max-buffered-response-bytes` returns `502`
+- A response larger than `-backend-max-buffered-response-bytes` returns `500`
   naming that flag; nothing is truncated or sampled silently.
 
 Sliding range metrics (`count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with a

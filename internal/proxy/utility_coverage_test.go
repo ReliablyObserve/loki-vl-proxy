@@ -893,8 +893,8 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 	if wRange.Code != http.StatusInternalServerError {
 		t.Fatalf("expected stats query_range backend status passthrough, got %d body=%s", wRange.Code, wRange.Body.String())
 	}
-	if body := wRange.Body.String(); !strings.Contains(body, "backend blew up") {
-		t.Fatalf("expected backend error body in query_range response, got %s", body)
+	if body := wRange.Body.String(); strings.Contains(body, "backend blew up") {
+		t.Fatalf("query_range response leaks the backend error body: %s", body)
 	}
 
 	for i := 0; i < 10; i++ {
@@ -903,10 +903,12 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 	wQueryErr := httptest.NewRecorder()
 	rQueryErr := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query=sum(rate({app="api"}[1m]))`, nil)
 	p.proxyStatsQuery(wQueryErr, rQueryErr, `sum(rate({app="api"}[1m]))`)
-	if wQueryErr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected circuit breaker open to map to 503, got %d body=%s", wQueryErr.Code, wQueryErr.Body.String())
+	// An open breaker is a failed backend call: Loki's 500
+	// (pkg/util/server/error.go:124-128), not a proxy-only 503.
+	if wQueryErr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected circuit breaker open to map to 500, got %d body=%s", wQueryErr.Code, wQueryErr.Body.String())
 	}
-	if body := wQueryErr.Body.String(); !strings.Contains(strings.ToLower(body), "circuit breaker open") {
-		t.Fatalf("expected circuit breaker error in query response, got %s", body)
+	if body := wQueryErr.Body.String(); strings.Contains(strings.ToLower(body), "circuit breaker open") {
+		t.Fatalf("query response leaks the proxy's breaker state: %s", body)
 	}
 }

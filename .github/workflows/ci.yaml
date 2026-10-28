@@ -194,6 +194,9 @@ jobs:
       - name: Fuzz smoke (json error filter split predicate)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzJSONValidSplitPredicate$' -fuzztime=12s
 
+      - name: Fuzz smoke (Loki client error mapping)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzLokiClientError$' -fuzztime=12s
+
       - name: Fuzz smoke (proxy lifecycle leaves no goroutines)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzProxyLifecycleNoGoroutineLeak$' -fuzztime=12s
 

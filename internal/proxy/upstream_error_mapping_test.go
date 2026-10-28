@@ -22,13 +22,15 @@ func TestStatusFromUpstreamErr(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "nil", err: nil, want: http.StatusBadGateway},
+		{name: "nil", err: nil, want: http.StatusInternalServerError},
 		{name: "context canceled", err: context.Canceled, want: 499},
 		{name: "deadline exceeded", err: context.DeadlineExceeded, want: http.StatusGatewayTimeout},
 		{name: "net timeout", err: timeoutErr{}, want: http.StatusGatewayTimeout},
 		{name: "wrapped canceled", err: errors.New("upstream: context canceled"), want: 499},
 		{name: "wrapped timeout", err: errors.New("upstream deadline exceeded"), want: http.StatusGatewayTimeout},
-		{name: "generic", err: errors.New("connection refused"), want: http.StatusBadGateway},
+		// Loki answers any other failed backend call with 500
+		// (pkg/util/server/error.go:124-128), never 502.
+		{name: "generic", err: errors.New("connection refused"), want: http.StatusInternalServerError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

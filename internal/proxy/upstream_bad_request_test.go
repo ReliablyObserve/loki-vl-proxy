@@ -697,14 +697,11 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 					case body.rejected:
 						assertLokiBadData(t, w)
 						return
-					case !query.partial:
-						if w.Code != http.StatusBadGateway {
-							t.Fatalf("status = %d, want 502 as before; body=%s", w.Code, w.Body.String())
-						}
-						return
-					case !client.grafana:
-						if w.Code != body.status {
-							t.Fatalf("status = %d, want backend status %d as before; body=%s", w.Code, body.status, w.Body.String())
+					case !query.partial || !client.grafana:
+						// Loki's 500 for a failed backend, never VictoriaLogs' 400/422
+						// (pkg/util/server/error.go:124-128).
+						if w.Code != http.StatusInternalServerError {
+							t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
 						}
 						return
 					}
@@ -733,22 +730,23 @@ func TestStatusFromUpstreamErr_ClientMistakes(t *testing.T) {
 		{"backend_400", vlErr(http.StatusBadRequest, vlBodyParsePattern), http.StatusBadRequest},
 		{"backend_422", vlErr(http.StatusUnprocessableEntity, vlBodyParseRegexStats), http.StatusBadRequest},
 		// Limit, execution and unrecognised 400s are backend failures, not client mistakes.
-		{"backend_400_limit", vlErr(http.StatusBadRequest, vlBodyMaxTimeRange), http.StatusBadGateway},
-		{"backend_422_memory", vlErr(http.StatusUnprocessableEntity, vlBodyStatsMemory), http.StatusBadGateway},
-		{"backend_400_storage_eof", vlErr(http.StatusBadRequest, vlBodyMetadataFailure), http.StatusBadGateway},
-		{"backend_400_unknown", vlErr(http.StatusBadRequest, vlBodyUnknown), http.StatusBadGateway},
+		{"backend_400_limit", vlErr(http.StatusBadRequest, vlBodyMaxTimeRange), http.StatusInternalServerError},
+		{"backend_422_memory", vlErr(http.StatusUnprocessableEntity, vlBodyStatsMemory), http.StatusInternalServerError},
+		{"backend_400_storage_eof", vlErr(http.StatusBadRequest, vlBodyMetadataFailure), http.StatusInternalServerError},
+		{"backend_400_unknown", vlErr(http.StatusBadRequest, vlBodyUnknown), http.StatusInternalServerError},
 		{"wrapped_backend_400", fmt.Errorf("left query: %w", vlErr(http.StatusBadRequest, vlBodyEmptyQuery)), http.StatusBadRequest},
 		{"translator_parse_error", &translator.ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}, http.StatusBadRequest},
 		// Valid LogQL the translator cannot express (Loki accepts it): not a client mistake.
-		{"translator_unsupported", &translator.UnsupportedError{Msg: "unsupported"}, http.StatusBadGateway},
+		{"translator_unsupported", &translator.UnsupportedError{Msg: "unsupported"}, http.StatusInternalServerError},
 		// Unchanged mappings. Older VictoriaLogs answers a missing endpoint with 400.
-		{"backend_unsupported_path", vlErr(http.StatusBadRequest, vlBodyUnsupportedPath), http.StatusBadGateway},
-		{"backend_500", vlErr(http.StatusInternalServerError, "boom"), http.StatusBadGateway},
-		{"backend_503", vlErr(http.StatusServiceUnavailable, "too many concurrent queries"), http.StatusBadGateway},
-		{"backend_429", vlErr(http.StatusTooManyRequests, "slow down"), http.StatusBadGateway},
+		{"backend_unsupported_path", vlErr(http.StatusBadRequest, vlBodyUnsupportedPath), http.StatusInternalServerError},
+		{"backend_500", vlErr(http.StatusInternalServerError, "boom"), http.StatusInternalServerError},
+		{"backend_503", vlErr(http.StatusServiceUnavailable, "too many concurrent queries"), http.StatusInternalServerError},
+		// VictoriaLogs' -search.maxConcurrentRequests queue: Loki's queue-full 429.
+		{"backend_429", vlErr(http.StatusTooManyRequests, "slow down"), http.StatusTooManyRequests},
 		{"backend_timeout_text", vlErr(http.StatusServiceUnavailable, "timeout exceeded"), http.StatusGatewayTimeout},
-		{"circuit_breaker", errors.New("circuit breaker open — backend unavailable"), http.StatusServiceUnavailable},
-		{"transport", errors.New("dial tcp: connection refused"), http.StatusBadGateway},
+		{"circuit_breaker", errors.New("circuit breaker open — backend unavailable"), http.StatusInternalServerError},
+		{"transport", errors.New("dial tcp: connection refused"), http.StatusInternalServerError},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -874,8 +872,8 @@ func TestUpstreamBadRequest_LimitErrorsKeepBackendFailureHandling(t *testing.T) 
 			} else {
 				p.handleLabels(w, req)
 			}
-			if w.Code != http.StatusBadGateway {
-				t.Fatalf("%s: status = %d, want 502 for a storage failure; body=%s", uri, w.Code, w.Body.String())
+			if w.Code != http.StatusInternalServerError {
+				t.Fatalf("%s: status = %d, want 500 for a storage failure; body=%s", uri, w.Code, w.Body.String())
 			}
 		}
 	})

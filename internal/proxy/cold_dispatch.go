@@ -215,7 +215,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 
 		ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, endNs, originalLimit)
 		if fetchErr != nil {
-			p.writeError(w, badRequestStatusOr(fetchErr, http.StatusBadGateway), "cold backend error: "+fetchErr.Error())
+			p.writeErr(w, r.Context(), fetchErr)
 			return
 		}
 		trimmed := trimNDJSONBodyToLimit(reverseNDJSONBody(ascBody), r.FormValue("limit"))
@@ -233,7 +233,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 	params := p.buildColdQueryParams(r, logsqlQuery)
 	resp, err := p.coldPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, "cold backend error: "+err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -315,7 +315,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	wg.Wait()
 
 	if hotErr != nil && coldErr != nil {
-		p.writeError(w, statusFromUpstreamErr(hotErr), hotErr.Error())
+		p.writeErr(w, r.Context(), hotErr)
 		return
 	}
 
@@ -325,7 +325,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		if hotResp != nil {
 			hotResp.Body.Close()
 		}
-		p.writeError(w, http.StatusBadGateway, "cold backend error: "+coldErr.Error())
+		p.writeErr(w, r.Context(), coldErr)
 		return
 	}
 	if coldResp.StatusCode >= 400 {
@@ -343,7 +343,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	// the [boundary, end] range without the client knowing live data is missing.
 	if hotErr != nil {
 		coldResp.Body.Close()
-		p.writeError(w, http.StatusBadGateway, "hot backend error: "+hotErr.Error())
+		p.writeErr(w, r.Context(), hotErr)
 		return
 	}
 	if hotResp.StatusCode >= 400 {
@@ -372,7 +372,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		}
 		coldReversed, readErr := readAndReverseNDJSON(coldResp.Body, limit)
 		if readErr != nil {
-			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
+			p.writeErr(w, r.Context(), readErr)
 			return
 		}
 		merged = MergeNDJSON(hotResp.Body, bytes.NewReader(coldReversed))
@@ -381,7 +381,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	// data when both hot and cold backends return full-limit responses.
 	mergedBody, err := readNDJSONToLimit(merged, r.FormValue("limit"))
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, "failed to merge hot+cold results")
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 
@@ -441,7 +441,7 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 		collectPatterns,
 	)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	p.storeAutodetectedPatterns(

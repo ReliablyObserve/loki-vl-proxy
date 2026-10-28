@@ -10,10 +10,11 @@ generated:
 loki_behaviour: |
   Loki answers 503 only from its own readiness and ring checks, never for a
   failed query; a full queue is 429 "too many outstanding requests"
-  (pkg/queue/queue.go:21). The proxy's 503 (circuit breaker, guard rejection,
-  VictoriaLogs' or a front proxy's 503 copied through, stats slot wait) is a
-  leak unless it is a registry-listed proxy limit naming its flag;
-  TestErrorLayer_NoVictoriaLogsLeak lists the cells.
+  (pkg/queue/queue.go:21). The error layer answers an open circuit breaker,
+  a guard rejection and VictoriaLogs' or a front proxy's 503 with Loki's 500,
+  and a cancelled stats slot wait with 499. What still answers 503 is the
+  -max-concurrent admission cap of the rate limiter and the ruler's own
+  status passed through; TestErrorLayer_NoVictoriaLogsLeak lists the cells.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
   TODO: how Grafana Explore and Logs Drilldown render it.

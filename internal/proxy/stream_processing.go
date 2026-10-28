@@ -100,7 +100,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -125,7 +125,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 				return p.vlPost(ctx, "/select/logsql/query", next)
 			})
 		if err != nil {
-			p.writeError(w, statusFromUpstreamErr(err), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(body))
@@ -147,7 +147,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		collectPatterns,
 	)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	p.storeAutodetectedPatterns(

@@ -67,7 +67,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		}
 		body, contentType, err := merge(filteredReq, filteredTenants)
 		if err != nil {
-			p.writeError(w, multiTenantFailureStatus(statusFromUpstreamErr(err)), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 		p.writeMultiTenantMerged(w, filteredReq, endpoint, body, contentType, false)

@@ -571,18 +571,22 @@
     ],
     "semantics/error-layer-backend-failure-status": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-backend-text": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-cancel-deadline": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-internal-go-text": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
@@ -595,6 +599,7 @@
     ],
     "semantics/error-layer-transport-text": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/extracted-metric-known-differences": [
@@ -936,6 +941,7 @@
     ],
     "status-400": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/volume_test.go",
@@ -946,14 +952,17 @@
     ],
     "status-500": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "status-502": [
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "status-503": [
-      "internal/proxy/error_layer_gate_test.go"
+      "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/loki_client_error_test.go"
     ],
     "tenant-label-isolation": [
       "internal/proxy/alerting_tenant_label_test.go",
@@ -1248,6 +1257,17 @@
     "internal/proxy/line_format_error_test.go": [
       "profiles/tail-line-format-parse-error-status",
       "semantics/line-format-template-error-keeps-entry"
+    ],
+    "internal/proxy/loki_client_error_test.go": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-transport-text",
+      "status-400",
+      "status-500",
+      "status-502",
+      "status-503"
     ],
     "internal/proxy/loki_profile_test.go": [
       "loki-compatible-profile",
@@ -2040,7 +2060,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 201,
+  "tests_with_markers": 202,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
