@@ -27,6 +27,9 @@ proxy: |
   peer.go:326) and the fleet then answers with none; with A down B and C
   answer the same from VictoriaLogs; after every replica lost its caches the
   rebuilt answer equals the first one and Loki's.
+  Open, measured on the stack: the owner keeps a bucket pushed by another
+  replica for only 30s (the writer clamps its shadow TTL before pushing it,
+  cache.go:541 then cache.go:565); the proof's reads land within that window.
 
 implementation:
   - internal/proxy/stats_extent_cache.go

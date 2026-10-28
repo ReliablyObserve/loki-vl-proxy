@@ -166,18 +166,39 @@ func scrapeMetricsErr(addr string) (promScrape, error) {
 // scrapeMetricsCtx scrapes with ctx, so the resource sampler can bound a
 // scrape of a paused replica and abort it when the phase ends.
 func scrapeMetricsCtx(ctx context.Context, addr string) (promScrape, error) {
+	// A proxy serves one /metrics scrape at a time (429 otherwise): the
+	// sampler and the counters take turns per replica.
+	lock, _ := scrapeLocks.LoadOrStore(addr, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	for attempt := 0; ; attempt++ {
+		m, retry, err := scrapeOnce(ctx, addr)
+		if !retry || attempt >= 20 || ctx.Err() != nil {
+			return m, err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+var scrapeLocks sync.Map // address -> *sync.Mutex
+
+func scrapeOnce(ctx context.Context, addr string) (promScrape, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/metrics", nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	resp, err := fleetHTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("scrape %s/metrics: %w", addr, err)
+		return nil, false, fmt.Errorf("scrape %s/metrics: %w", addr, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, true, fmt.Errorf("scrape %s/metrics: 429", addr)
+	}
 	if err != nil || resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("scrape %s/metrics: status %d err %v", addr, resp.StatusCode, err)
+		return nil, false, fmt.Errorf("scrape %s/metrics: status %d err %v", addr, resp.StatusCode, err)
 	}
 	var out promScrape
 	for _, line := range strings.Split(string(body), "\n") {
@@ -188,7 +209,7 @@ func scrapeMetricsCtx(ctx context.Context, addr string) (promScrape, error) {
 			out = append(out, s)
 		}
 	}
-	return out, nil
+	return out, false, nil
 }
 
 // parsePromLine parses `name{k="v",...} value` and `name value`.
@@ -286,6 +307,9 @@ type fleetCounters struct {
 	windowHits   float64 // query_range window cache hits (any tier)
 	windowMisses float64
 	patternsPeer float64 // pattern entries restored from peer snapshots at startup
+	// missedAll counts shared-read lookups that missed memory, disk and
+	// peers: 0 for a request means none of its answers was computed.
+	missedAll float64
 	// Where label stream inventory units came from, on builds that have the
 	// inventory (metadata_stream_inventory_unit); its unit lookups use the
 	// shared read path, so they are also in tierL2Hits and tierL3Hits.
@@ -294,6 +318,12 @@ type fleetCounters struct {
 	// one request was answered (set by ask): a replica may forward work to
 	// a peer, so "no VictoriaLogs call" is checked fleet-wide.
 	fleetVLSelect, fleetVLStats, fleetVLSeconds float64
+	// slnRefreshes counts the per-replica stream label names refreshes (one
+	// a minute per replica, started by any query, listing the last hour).
+	slnRefreshes float64
+	// vlRoutes are this replica's VictoriaLogs calls per route; fleetVLRoutes
+	// the fleet's (set by ask).
+	vlRoutes, fleetVLRoutes map[string]float64
 }
 
 func readCounters(t *testing.T, addr string) fleetCounters {
@@ -322,11 +352,39 @@ func countersFrom(m promScrape) fleetCounters {
 		windowHits:   m.sum("loki_vl_proxy_window_cache_hit_total", nil),
 		windowMisses: m.sum("loki_vl_proxy_window_cache_miss_total", nil),
 		patternsPeer: m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
+		missedAll:    m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
 		invMemory:    inv("memory"),
 		invDisk:      inv("disk"),
 		invPeer:      inv("peer"),
 		invVL:        inv("vl"),
+		slnRefreshes: m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "stream_label_names", "outcome": "refresh*"}),
+		vlRoutes:     vlRouteCounts(m),
 	}
+}
+
+func vlRouteCounts(m promScrape) map[string]float64 {
+	out := map[string]float64{}
+	for _, s := range m {
+		if s.name == "loki_vl_proxy_requests_total" && s.labels["system"] == "vl" && s.labels["direction"] == "upstream" && strings.HasPrefix(s.labels["route"], "/select/") {
+			out[s.labels["route"]] += s.value
+		}
+	}
+	return out
+}
+
+func routesMinus(a, b map[string]float64) map[string]float64 {
+	out := map[string]float64{}
+	for k, v := range a {
+		if d := v - b[k]; d != 0 {
+			out[k] = d
+		}
+	}
+	for k, v := range b {
+		if _, ok := a[k]; !ok && v != 0 {
+			out[k] = -v
+		}
+	}
+	return out
 }
 
 func (a fleetCounters) minus(b fleetCounters) fleetCounters {
@@ -337,9 +395,11 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
 		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
-		patternsPeer: a.patternsPeer - b.patternsPeer,
-		invMemory:    a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
+		patternsPeer: a.patternsPeer - b.patternsPeer, missedAll: a.missedAll - b.missedAll,
+		invMemory: a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
 		fleetVLSelect: a.fleetVLSelect - b.fleetVLSelect, fleetVLStats: a.fleetVLStats - b.fleetVLStats, fleetVLSeconds: a.fleetVLSeconds - b.fleetVLSeconds,
+		slnRefreshes: a.slnRefreshes - b.slnRefreshes,
+		vlRoutes:     routesMinus(a.vlRoutes, b.vlRoutes), fleetVLRoutes: routesMinus(a.fleetVLRoutes, b.fleetVLRoutes),
 	}
 }
 
@@ -353,8 +413,8 @@ func (a fleetCounters) topLevelL2Hits() float64 { return a.tierL2Hits - a.invDis
 func (a fleetCounters) topLevelL3Hits() float64 { return a.tierL3Hits - a.invPeer }
 
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f)",
-		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f fleet_vl_routes=%v",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.fleetVLRoutes)
 }
 
 // fleetDown holds the services the proof stopped or paused: they are left
@@ -620,13 +680,16 @@ type fleetFixture struct {
 }
 
 // Four streams, one JSON line a minute each over 8 hours, each stream on its
-// own sub-minute offset; the whole range ended at least an hour ago, so every
-// window, bucket and metadata entry over it is historical and cacheable.
+// own sub-minute offset. The whole range ended more than 25 hours ago, so
+// every window, bucket and metadata entry over it is historical: a label
+// listing that ends within -max-metadata-cache-freshness (24h, Loki's
+// max_metadata_cache_freshness) revalidates its recent edge from
+// VictoriaLogs on every replica by design, which is not what is proven here.
 func ingestFleetFixture(t *testing.T) fleetFixture {
 	t.Helper()
 	now := time.Now().UTC()
 	fx := fleetFixture{probe: fmt.Sprintf("fp%d", now.UnixNano())}
-	fx.start = now.Truncate(time.Hour).Add(-10 * time.Hour)
+	fx.start = now.Truncate(time.Hour).Add(-34 * time.Hour)
 	fx.end = fx.start.Add(8 * time.Hour)
 
 	type stream struct {
@@ -761,7 +824,7 @@ func vlCountLines(t *testing.T, fx fleetFixture) int {
 func lokiCountLines(t *testing.T, fx fleetFixture) int {
 	t.Helper()
 	params := url.Values{
-		"query": {fmt.Sprintf(`sum(count_over_time({fleet_probe=%q}[10h]))`, fx.probe)},
+		"query": {fmt.Sprintf(`sum(count_over_time({fleet_probe=%q}[9h]))`, fx.probe)},
 		"time":  {strconv.FormatInt(fx.end.Add(time.Minute).Unix(), 10)},
 	}
 	body := fleetGet(t, fleetLokiURL, "/loki/api/v1/query?"+params.Encode())

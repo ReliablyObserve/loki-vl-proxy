@@ -39,6 +39,8 @@ type requestRecord struct {
 	PeerHits     float64            `json:"peer_hits"`
 	BackupHits   float64            `json:"backup_hits"`
 	InvUnits     map[string]float64 `json:"inventory_units,omitempty"`
+	FleetRoutes  map[string]float64 `json:"fleet_vl_routes,omitempty"`
+	SLNRefresh   float64            `json:"stream_label_names_refreshes,omitempty"`
 	PeerMisses   float64            `json:"peer_misses"`
 	PeerErrors   float64            `json:"peer_errors"`
 	DiskHits     float64            `json:"disk_hits"`
@@ -179,7 +181,7 @@ func requestRecordFrom(rep replica, req proofRequest, repeat int, latency time.D
 		VLUpstreamMs: d.vlSeconds * 1000,
 		FleetVLCalls: d.fleetVLSelect,
 		PeerHits:     d.peerHits, BackupHits: d.backupHits, PeerMisses: d.peerMisses, PeerErrors: d.peerErrors,
-		InvUnits: inventoryUnits(d),
+		InvUnits: inventoryUnits(d), FleetRoutes: d.fleetVLRoutes, SLNRefresh: d.slnRefreshes,
 		DiskHits: d.tierL2Hits, WindowHits: d.windowHits,
 	}
 }

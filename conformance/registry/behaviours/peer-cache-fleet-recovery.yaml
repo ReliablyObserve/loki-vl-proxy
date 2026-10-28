@@ -42,6 +42,12 @@ proxy: |
   that lost its disk gets the extent buckets it owned from their backup, and
   with the owner down the extent buckets, patterns and label stream
   inventory units it wrote cost no VictoriaLogs call.
+  Open, measured on the stack (fails the proof on every build tested): with
+  the owner paused (connections hang until -peer-timeout) one request waits
+  for several peer timeouts in turn before the per-peer breaker opens after
+  5 failures (peer.go:1621-1634): query_range log queries 4-6s, patterns 4s,
+  label values 8-10s, against a 2s timeout. A stopped or killed owner fails
+  fast and stays within the bound.
   Not covered (open): there is no replica copy of an owner's keys, so while
   an owner is down its keys cost a VictoriaLogs read on every other replica.
 

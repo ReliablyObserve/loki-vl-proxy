@@ -28,7 +28,9 @@ services:
       - "${FLEET_VL_PORT:-9428}:9428"
     command:
       - "-storageDataPath=/vlogs"
-      - "-retentionPeriod=1d"
+      # The peer cache proof's fixture is 26-34h old (older than
+      # -max-metadata-cache-freshness).
+      - "-retentionPeriod=3d"
       - "-httpListenAddr=:9428"
     volumes:
       - vl-data:/vlogs
@@ -91,6 +93,9 @@ services:
       # No background label scans: the peer cache proof counts every
       # VictoriaLogs call a replica makes.
       - "-labels-cache-warm=false"
+      # The proof scrapes /metrics many times a second from one client.
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
       # Snapshots a replica that lost its disk warms from its peers.
       - "-patterns-persist-path=/cache/patterns.json"
       - "-patterns-persist-interval=2s"
@@ -149,6 +154,9 @@ services:
       # No background label scans: the peer cache proof counts every
       # VictoriaLogs call a replica makes.
       - "-labels-cache-warm=false"
+      # The proof scrapes /metrics many times a second from one client.
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
       # Snapshots a replica that lost its disk warms from its peers.
       - "-patterns-persist-path=/cache/patterns.json"
       - "-patterns-persist-interval=2s"
@@ -207,6 +215,9 @@ services:
       # No background label scans: the peer cache proof counts every
       # VictoriaLogs call a replica makes.
       - "-labels-cache-warm=false"
+      # The proof scrapes /metrics many times a second from one client.
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
       # Snapshots a replica that lost its disk warms from its peers.
       - "-patterns-persist-path=/cache/patterns.json"
       - "-patterns-persist-interval=2s"
@@ -236,7 +247,7 @@ services:
   # Edge cases of the peer cache proof, started and removed by the test
   # itself (`docker compose --profile edge up proxy-diskfull`). Both read
   # their peers but are outside the ring of proxy-a/b/c.
-  # proxy-diskfull: the disk tier is a 64 KiB tmpfs, full after a few writes.
+  # proxy-diskfull: the disk tier is a 32 KiB tmpfs, full after a few writes.
   proxy-diskfull:
     profiles: ["edge"]
     image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
@@ -258,8 +269,11 @@ services:
       - "-peer-auth-token=e2e-test-token"
       - "-server.register-instrumentation=true"
       - "-labels-cache-warm=false"
+      # The proof scrapes /metrics many times a second from one client.
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
     tmpfs:
-      - /cache:size=64k
+      - /cache:size=32k
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -289,6 +303,9 @@ services:
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
       - "-peer-auth-token=e2e-test-token"
       - "-labels-cache-warm=false"
+      # The proof scrapes /metrics many times a second from one client.
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
     depends_on:
       victorialogs:
         condition: service_healthy

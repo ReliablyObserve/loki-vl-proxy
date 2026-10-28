@@ -194,11 +194,17 @@ func ask(t *testing.T, rep replica, req proofRequest) (string, fleetCounters, ti
 	latency := time.Since(started)
 	after := settleFleet(t, counted)
 	d := after[rep.name].minus(before[rep.name])
+	d.fleetVLRoutes = map[string]float64{}
+	d.slnRefreshes = 0
 	for _, peer := range counted {
 		f := after[peer.name].minus(before[peer.name])
 		d.fleetVLSelect += f.vlSelect
 		d.fleetVLStats += f.vlStats
 		d.fleetVLSeconds += f.vlSeconds
+		d.slnRefreshes += f.slnRefreshes
+		for route, n := range f.vlRoutes {
+			d.fleetVLRoutes[route] += n
+		}
 	}
 	proofRec.addRequest(requestRecordFrom(rep, req, 0, latency, d))
 	return canonicalJSON(t, fmt.Sprintf("%s on %s", req, rep.name), body), d, latency
@@ -279,21 +285,34 @@ func fleetSelect(c fleetCounters) float64 { return c.fleetVLSelect }
 var replicationFactor = 1
 
 // requireMetadataReadThrough reads each metadata request on the replicas in
-// order. A shared-tier hit (disk or peer) must cost no VictoriaLogs call.
-func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers, replicas ...int) fleetCounters {
+// order. A request none of whose shared-read lookups missed every tier was
+// answered from memory, disk or a peer and must cost no VictoriaLogs call
+// anywhere in the fleet. It returns how many requests were answered at the
+// top level from a peer and from the replica's disk (inventory unit lookups,
+// which use the same tiers, are subtracted).
+func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers, replicas ...int) (fleetCounters, int, int) {
 	t.Helper()
 	var total fleetCounters
+	fromPeer, fromDisk := 0, 0
 	for _, req := range reqs {
 		for _, idx := range replicas {
 			rep := fleetReplica(idx)
 			d, _ := askSame(t, rep, req, want[req.path])
-			if (d.topLevelL3Hits() > 0 || d.topLevelL2Hits() > 0) && d.fleetVLSelect != 0 {
-				t.Errorf("%s on %s was a cache hit (disk %.0f, peer %.0f) yet caused %.0f VictoriaLogs calls in the fleet (%s)", req, rep.name, d.topLevelL2Hits(), d.topLevelL3Hits(), d.fleetVLSelect, d)
+			if d.missedAll == 0 {
+				if d.fleetVLSelect != 0 {
+					t.Errorf("%s on %s missed no cache tier yet caused %.0f VictoriaLogs calls in the fleet (%s)", req, rep.name, d.fleetVLSelect, d)
+				}
+				if d.topLevelL3Hits() > 0 {
+					fromPeer++
+				}
+				if d.topLevelL2Hits() > 0 {
+					fromDisk++
+				}
 			}
 			total = total.plus(d)
 		}
 	}
-	return total
+	return total, fromPeer, fromDisk
 }
 
 // requireWindowReadThrough reads each log request on the replicas in order;
@@ -438,8 +457,8 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		})
 		t.Run("metadata", func(t *testing.T) {
 			warm(t, a, base.metadata, first)
-			total := requireMetadataReadThrough(t, base.metadata, first, replicaB, replicaC)
-			if total.tierL3Hits < 1 {
+			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB, replicaC)
+			if fromPeer < 1 {
 				t.Errorf("no metadata answer computed elsewhere was read by B or C from its owner (%s)", total)
 			}
 			readAgain(t, fleetReplicas(), base.metadata, first)
@@ -481,8 +500,8 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 		})
 		t.Run("metadata", func(t *testing.T) {
-			total := requireMetadataReadThrough(t, base.metadata, first, replicaB)
-			if total.tierL2Hits < 1 {
+			total, _, fromDisk := requireMetadataReadThrough(t, base.metadata, first, replicaB)
+			if fromDisk < 1 {
 				t.Errorf("B served no metadata answer from its own disk after a restart (%s)", total)
 			}
 		})
@@ -553,8 +572,8 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 		})
 		t.Run("metadata", func(t *testing.T) {
-			total := requireMetadataReadThrough(t, base.metadata, first, replicaB)
-			if total.tierL3Hits < 1 {
+			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB)
+			if fromPeer < 1 {
 				t.Errorf("B without a disk read no metadata answer from its peers (%s)", total)
 			}
 			// Builds with the label stream inventory replicate its sealed

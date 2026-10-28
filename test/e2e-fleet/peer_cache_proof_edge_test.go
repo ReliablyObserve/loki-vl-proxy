@@ -108,7 +108,7 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 		})
 	})
 
-	// A proxy whose disk tier is a 64 KiB tmpfs: disk writes fail, answers
+	// A proxy whose disk tier is a 32 KiB tmpfs: disk writes fail, answers
 	// must not.
 	t.Run("edge_disk_full", func(t *testing.T) {
 		full := replica{name: "proxy-diskfull", addr: fleetDiskFullURL}
@@ -140,9 +140,9 @@ func runEdgeCases(t *testing.T, fx fleetFixture, base proofSet, first answers) {
 		}
 		readAgain(t, []replica{full}, set.all(), onFull)
 		waitProxyReady(t, full.addr)
-		proofRec.addEdge("disk_full", map[string]any{"replica": full.name, "ready_ms": readyMs, "write_failure_logged": observed, "tmpfs_bytes": 64 << 10})
+		proofRec.addEdge("disk_full", map[string]any{"replica": full.name, "ready_ms": readyMs, "write_failure_logged": observed, "tmpfs_bytes": 32 << 10})
 		if !observed {
-			t.Logf("no disk write failure was logged on %s: the 64 KiB tier did not fill with this fixture", full.name)
+			t.Logf("no disk write failure was logged on %s: the 32 KiB tier did not fill with this fixture", full.name)
 		}
 	})
 

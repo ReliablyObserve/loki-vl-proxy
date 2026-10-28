@@ -26,6 +26,9 @@ proxy: |
   VictoriaLogs call; after a restart B serves answers from its disk; after
   it lost its disk it reads them from their owners; with A down B and C answer
   the same; the rebuilt label values equal Loki's.
+  A listing that ends within -max-metadata-cache-freshness (24h) revalidates
+  its recent edge from VictoriaLogs on every replica by design (Loki reads
+  that window live), so the proof's fixture is older than 24h.
   Not covered (open): an answer computed by a replica that is not the key's
   owner is never pushed, so the other replicas find it only once the owner
   computed it itself; a replica that lost its disk does not refill the keys
