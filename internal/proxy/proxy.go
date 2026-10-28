@@ -2281,6 +2281,7 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 //
 //nolint:gocyclo // dispatches across cache, multi-tenant fanout, windowing, stats vs logs, streaming and tuple modes; branching is inherent to Loki query_range parity.
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	start := time.Now()
 	// Loki validates the range parameters before it parses the query.
 	if exceedsLokiRangeResolution(r, start) {
