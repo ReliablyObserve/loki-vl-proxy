@@ -12,8 +12,8 @@ import (
 )
 
 // TestCompat_AlignQueriesWithStep: the stack's Loki runs with
-// query_range.align_queries_with_step and its proxies with
-// -align-queries-with-step. A metric range query with a start and end off the
+// query_range.align_queries_with_step (loki-local-config.yaml) and its proxies
+// with -align-queries-with-step at its default, on. A metric range query with a start and end off the
 // step grid (step 137s) is answered on Loki's grid: every sample at a multiple
 // of the step, the first at the start moved down, the last at the end moved
 // down (pkg/querier/queryrange/queryrangebase/step_align.go:20-24), with

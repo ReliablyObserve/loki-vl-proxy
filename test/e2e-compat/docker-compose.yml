@@ -289,8 +289,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      # The stack's Loki runs with query_range.align_queries_with_step.
-      - "-align-queries-with-step=true"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, retention_period 3d (the Loki service's
@@ -373,7 +371,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -453,7 +450,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -533,7 +529,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # CI defaults match this stack's Loki (max_query_series: 1000000).
       # For an interactive playground, set PATTERNS_MAX_QUERY_SERIES=500
       # explicitly: high-cardinality Fields then use the configured series
@@ -598,7 +593,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -662,7 +656,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Match this stack's Loki limits_config (loki-local-config.yaml:
       # max_query_series 1000000, max_entries_limit_per_query 0,
       # query_timeout 5m, retention_period 3d (the Loki service's
@@ -720,7 +713,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -778,7 +770,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -840,7 +831,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -898,7 +888,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -956,7 +945,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all
@@ -1013,7 +1001,6 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-align-queries-with-step=true"
       # Correctness/bench variant: no interactive label picker is served
       # from it, so it skips the startup and keep-warm label scans that
       # every replica would otherwise send VictoriaLogs (7d scans from all

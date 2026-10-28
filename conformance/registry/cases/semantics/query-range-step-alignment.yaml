@@ -1,52 +1,57 @@
 id: semantics/query-range-step-alignment
-title: With -align-queries-with-step, a metric query_range is answered on Loki's step grid and a refresh inside one step is served from the caches (fixed)
+title: A metric query_range is answered on Loki's step grid by default (-align-queries-with-step) and a refresh inside one step is served from the caches (fixed)
 proves:
   - window-bounds-and-step-alignment
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's query frontend, with query_range.align_queries_with_step on (the
-  Loki Helm chart's setting; off in Loki's own defaults,
-  pkg/querier/queryrange/queryrangebase/roundtrip.go:38,49, no per-tenant
-  limit), moves both bounds of a metric range query down to a multiple of the
-  step before it evaluates it:
-  `(start_ms / step_ms) * step_ms`, the same for end
-  (pkg/querier/queryrange/queryrangebase/step_align.go:20-24). It runs in the
-  metric tripperware only, after the limits middleware and before splitting
-  and the results cache (pkg/querier/queryrange/roundtrip.go:1028-1058), so
-  log queries, instant queries and the other endpoints keep their bounds, and
-  max_query_length and the 11,000-point limit are checked on the bounds the
-  client sent. With step=137s and a start 17s past a multiple of 137, Loki's
-  first sample is 17s before the start. A refresh that moves the window by less
-  than a step becomes the same request, which Loki's results cache answers in a
-  few milliseconds.
+  Loki's query frontend, with query_range.align_queries_with_step on (false
+  in its flag defaults, pkg/querier/queryrange/queryrangebase/roundtrip.go:38,49,
+  true in its example configuration and Helm chart; no per-tenant limit),
+  moves both bounds of a metric range query down to a multiple of the step
+  before it evaluates it: `(start_ms / step_ms) * step_ms`, the same for end
+  (pkg/querier/queryrange/queryrangebase/step_align.go:20-24), after decoding
+  the bounds (pkg/loghttp/params.go:160-182: a decimal is seconds with its
+  fraction rounded to milliseconds). It runs in the metric tripperware after
+  the limits middleware and before splitting and the results cache
+  (pkg/querier/queryrange/roundtrip.go:1028-1058), so log queries, instant
+  queries and /index/volume_range keep their bounds, and max_query_length and
+  the 11,000-point limit are checked on the bounds the client sent. A Loki
+  with its flag defaults still floors the start in its metric splitter
+  (split_queries_by_interval, 1h by default;
+  pkg/querier/queryrange/splitters.go:236,308-319), and rounds the end up.
+  With step=137s and a start 17s past a multiple of 137, Loki's first sample
+  is 17s before the start. A refresh that moves the window by less than a step
+  becomes the same request, which Loki's results cache answers in a few
+  milliseconds.
 
-  The proxy evaluated every metric range query at start+k*step. Next to such
-  a Loki its series were shifted by start mod step, and a refresh that moved
-  the window by less than a step changed the grid phase the extent cache keys
-  on, so it read VictoriaLogs again (24h windows moved 15s at step 60s: 0.23 to
-  2.3 s against Loki's 3 to 5 ms on the compatibility stack).
+  The proxy evaluated every metric range query at start+k*step. Its series
+  were shifted by start mod step next to Loki, and a refresh that moved both
+  bounds by less than a step changed the grid phase the extent cache keys on,
+  so it read VictoriaLogs again: 24h windows moved 15s at step 60s took 98 to
+  1,080 ms on 14 of 15 unwrap shapes against Loki's 2.6 to 11.8 ms (13x to
+  199x), with Loki at its flag defaults.
 
-  Fix: -align-queries-with-step (default false, Loki's default) moves the
-  bounds of a metric query_range request the same way, after the tenant limits
-  and before the response cache, so every path, cache key and VictoriaLogs call
-  of the request uses Loki's bounds; the extent cache's bucket grid follows the
+  Fix: -align-queries-with-step, on by default, moves the bounds of a metric
+  query_range request the same way, after the tenant limits and before the
+  response cache, so every path, cache key and VictoriaLogs call of the
+  request uses Loki's bounds; the extent cache's bucket grid follows the
   moved start. A request that ends near now is still recomputed once its
   cached answer is older than -recent-tail-refresh-max-staleness, judged on
   the end the client sent (Loki recomputes the newest
   max_cache_freshness_per_query of every request), so a row that arrives late
-  shows on the next refresh. Not aligned, as in Loki: log and instant
-  queries. Not aligned, unlike Loki: a request without a step (Loki aligns
-  to its derived range/250 step, which the proxy does not evaluate on),
-  /loki/api/v1/patterns, and
-  Grafana's query-split residual chunks, which the handler answers on their
-  raw bounds.
+  shows on the next refresh. -align-queries-with-step=false restores the
+  previous answers.
 
-  Not changed (separate): with the flag off, a Loki with its default
-  split_queries_by_interval (1h) still floors start and rounds end up to the
-  step in its metric splitter (pkg/querier/queryrange/splitters.go:236,308-319),
-  while the proxy keeps the client's start; Grafana's query splitting floors
-  the start itself, so its traffic is on the grid either way.
+  Not covered, unlike Loki: a request without a step (Loki aligns to its
+  derived range/250 step, which the proxy does not evaluate on);
+  /loki/api/v1/patterns, which Loki's pattern tripperware aligns when the
+  flag is on (roundtrip.go:263-285; the proxy's pattern samples are already
+  bucketed on the epoch step grid, and autodetect warms them under the log
+  query's bounds); Grafana Logs Drilldown query-split residual chunks, which
+  the proxy suppresses on their raw bounds; a step under one millisecond,
+  where Loki's middleware divides by a zero step; and the end of a Loki with
+  the flag off, which its splitter rounds up where the proxy moves it down.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -61,11 +66,11 @@ compare:
   mode: exact
   fields: [data.result]
   expect: |
-    With the flag on and a Loki with align_queries_with_step on: every sample
-    at a multiple of 137s, the first at start moved down and the last at end
-    moved down, with Loki's values; the same after the window moves by less
-    than a step, answered without a VictoriaLogs call once the window's
-    buckets are stored.
+    With the default -align-queries-with-step and a Loki with
+    align_queries_with_step on: every sample at a multiple of 137s, the first
+    at start moved down and the last at end moved down, with Loki's values;
+    the same after the window moves by less than a step, answered without a
+    VictoriaLogs call once the window's buckets are stored.
 gap:
   status: fixed
   fixed_by: TBD-PR
@@ -74,8 +79,8 @@ gap:
   visual_reason: 'Grafana''s Loki datasource already floors start to the step when it splits a metric query (metricTimeSplitting.ts splitTimeRange, on by default), and samples stop at the last grid point at or before end with or without the flag, so its panels are the same; the shift shows for API clients with an off-grid start, and the change is in refresh latency'
   effort: S
   area: 'internal/proxy/step_align.go stepAlignMiddleware, alignQueryRangeToStep (routeHandler, before compatCacheMiddleware); handleQueryRange skips the resolution and max_query_length checks on moved bounds; requestEndsWithin reads the end the client sent'
-  loki: 'pkg/querier/queryrange/queryrangebase/step_align.go:20-24; roundtrip.go:1028-1058 (metric tripperware: limits, then step_align, then split and results cache)'
-  proxy: 'opt-in -align-queries-with-step moves metric query_range bounds down to the step grid before the caches and every evaluation path'
-  planned_test: 'TestCompat_AlignQueriesWithStep (test/e2e-compat, group core); TestAlignQueryRangeToStep_LokiStepAlignMiddleware, TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag, TestQueryRangeStepAlignment_AnswersOnLokisGrid, TestQueryRangeStepAlignment_SubStepRefreshServedFromCaches, TestQueryRangeStepAlignment_NearNowRefreshSeesLateRows (internal/proxy)'
-  note: 'Re-implements external PR #574. The e2e against Loki is written, not yet run; the compatibility stack runs every proxy variant with the flag, matching its Loki.'
+  loki: 'pkg/querier/queryrange/queryrangebase/step_align.go:20-24; roundtrip.go:1028-1058 (metric tripperware: limits, then step_align, then split and results cache); pkg/loghttp/params.go:160-210 (bounds and step decode)'
+  proxy: '-align-queries-with-step (default true) moves metric query_range bounds down to the step grid before the caches and every evaluation path; false keeps the client''s start'
+  planned_test: 'TestCompat_AlignQueriesWithStep (test/e2e-compat, group core); TestAlignQueryRangeToStep_LokiStepAlignMiddleware, TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode, FuzzAlignQueryRangeToStep, TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag, TestQueryRangeStepAlignment_AnswersOnLokisGrid, TestQueryRangeStepAlignment_SubStepRefreshServedFromCaches, TestQueryRangeStepAlignment_NearNowRefreshSeesLateRows (internal/proxy); TestBuildProxyConfig_AlignQueriesWithStep (cmd/proxy)'
+  note: 'Re-implements external PR #574. On by default since this change (Breaking for API clients that send off-grid starts).'
   clusters: []

@@ -219,7 +219,8 @@ type Config struct {
 	ExactParserSeriesIdentity bool
 	// AlignQueriesWithStep moves the bounds of a metric query_range request
 	// down to multiples of its step, as Loki's step-align middleware does
-	// under query_range.align_queries_with_step (stepAlignMiddleware).
+	// under query_range.align_queries_with_step (stepAlignMiddleware). The
+	// -align-queries-with-step flag defaults to true.
 	AlignQueriesWithStep bool
 	// PatternsCustom is a static list of patterns always prepended to
 	// /loki/api/v1/patterns responses.
@@ -2284,19 +2285,20 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 
 // lokiRangeBounds is the window Loki reads a range request for
 // (pkg/loghttp/params.go:83-120 determineBounds): end defaults to now, start to
-// min(end, now) minus since, and since to one hour (params.go:23). ok is false
-// when a given start, end or since does not parse.
+// min(end, now) minus since, and since to one hour (params.go:23); start and
+// end are decoded as Loki decodes them (lokiBoundUnixNano). ok is false when a
+// given start, end or since does not parse.
 func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok bool) {
 	end = now
 	if raw := strings.TrimSpace(r.FormValue("end")); raw != "" {
-		ns, ok := parseLokiTimeToUnixNano(raw)
+		ns, ok := lokiBoundUnixNano(raw)
 		if !ok {
 			return start, end, false
 		}
 		end = time.Unix(0, ns)
 	}
 	if raw := strings.TrimSpace(r.FormValue("start")); raw != "" {
-		ns, ok := parseLokiTimeToUnixNano(raw)
+		ns, ok := lokiBoundUnixNano(raw)
 		if !ok {
 			return start, end, false
 		}

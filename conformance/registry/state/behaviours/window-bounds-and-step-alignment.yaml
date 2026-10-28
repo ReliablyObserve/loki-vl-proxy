@@ -7,9 +7,9 @@ reason: |
   remaining cases named by this behaviour — lower-bound-exclusive, step-alignment,
   tumbling-relabel, range-smaller-than-step, grafana-24h-split and
   resolution-limit-11000 — have no case files yet. Step alignment is
-  semantics/query-range-step-alignment: the opt-in -align-queries-with-step
-  moves metric query_range bounds down to the step grid as Loki's
-  align_queries_with_step does, proven by unit tests and an e2e case against
-  the stack's aligning Loki.
+  semantics/query-range-step-alignment: -align-queries-with-step, on by
+  default, moves metric query_range bounds down to the step grid as Loki's
+  align_queries_with_step does, proven by unit, differential and fuzz tests
+  and an e2e case against the stack's aligning Loki.
 owner_decision: null
 waiver: null

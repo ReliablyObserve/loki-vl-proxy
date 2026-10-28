@@ -52,6 +52,8 @@ LOKI_UNCACHED_OVERLAY = "bench/ab/docker-compose.ab-loki-uncached.yml"
 #                  that supports -align-queries-with-step runs with it on
 #   loki-defaults  Loki's own defaults (align off, freshness 10m), through an overlay that changes
 #                  neither the shared config nor the e2e stack; proxy builds run with their defaults
+#                  (a build whose -align-queries-with-step defaults to on runs aligned: a Loki with
+#                  its defaults floors the start to the step in its 1h query splitter too)
 PROFILES = ("aligned", "loki-defaults")
 LOKI_DEFAULTS_OVERLAY = "bench/ab/docker-compose.ab-loki-defaults.yml"
 PROFILE_OVERLAYS = {"aligned": [], "loki-defaults": [LOKI_DEFAULTS_OVERLAY]}
@@ -376,7 +378,21 @@ def probe_align_support(binary, timeout=20):
     return "help requested" in text and "provided but not defined" not in text
 
 
-def align_args(args, profile, supported):
+def source_align_default(tree):
+    """Whether the proxy built from `tree` defaults to -align-queries-with-step=true (cmd/proxy/main.go).
+
+    The binary cannot say: its -help output is discarded. False when the tree has no such flag or the file
+    cannot be read; the probe (probe_align_support) still decides whether the flag exists at all.
+    """
+    try:
+        with open(os.path.join(tree, "cmd", "proxy", "main.go")) as f:
+            source = f.read()
+    except OSError:
+        return False
+    return re.search(r'fs\.Bool\("' + ALIGN_FLAG.lstrip("-") + r'",\s*true\b', source) is not None
+
+
+def align_args(args, profile, supported, default_on=False):
     """(args, state): a proxy's command line with -align-queries-with-step set for the Loki profile.
 
     The build's own stack file may already carry the flag (the e2e stack's proxies run with it), so any
@@ -384,12 +400,14 @@ def align_args(args, profile, supported):
       aligned        "on"           the flag is added   (the stack's Loki aligns queries with the step)
                      "unsupported"  the build has no such flag; nothing is added. The build does not do what
                                     the stack's Loki does, so its aligned rows are not like-for-like
-      loki-defaults  "off"          no flag, the build's default (Loki's own default is off too)
+      loki-defaults  "on" / "off"   no flag: the build's default (default_on, source_align_default). A Loki
+                                    with its defaults evaluates on the step grid too: its metric splitter
+                                    (split_queries_by_interval 1h) floors the start
     """
     profile_check(profile)
     rest = [a for a in args if a.partition("=")[0] != ALIGN_FLAG]
     if profile == "loki-defaults":
-        return rest, "off"
+        return rest, ("on" if supported and default_on else "off")
     return (rest + [ALIGN_FLAG_ENABLED], "on") if supported else (rest, "unsupported")
 
 
@@ -409,7 +427,7 @@ def start_proxies(specs, out, st, service, proxies, profile="aligned", supported
         work = os.path.join(out, f"work-{name}-{profile}")
         os.makedirs(work, exist_ok=True)
         cmd, env = proxy_command(tree, service, port, st.vl, work)
-        cmd, state = align_args(cmd, profile, supported[name])
+        cmd, state = align_args(cmd, profile, supported[name], source_align_default(tree))
         proxy = Proxy(name, binary, cmd, env, port, out, profile, state)
         proxies.append(proxy)  # before start(): a start that fails is still stopped
         proxy.start()

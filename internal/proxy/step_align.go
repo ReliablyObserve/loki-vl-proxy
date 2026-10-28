@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,8 +40,12 @@ func stepAlignedRawEnd(r *http.Request) (string, bool) {
 // tripperware after its limits middleware and before splitting and the
 // results cache (pkg/querier/queryrange/roundtrip.go:1028-1058; the
 // tripperware serves SampleExpr and VariantsExpr range queries,
-// roundtrip.go:419-475). Log queries, instant queries and the other
-// endpoints are not aligned. Here it sits after tenantLimitsMiddleware (the
+// roundtrip.go:419-475). Log queries, instant queries, volume and the
+// metadata endpoints are not aligned. Loki's pattern tripperware aligns
+// /loki/api/v1/patterns too (roundtrip.go:263-285); the proxy does not: its
+// pattern samples are already bucketed on the step grid, and patterns
+// autodetect warms them under the log query's bounds. The flag defaults to
+// on. Here it sits after tenantLimitsMiddleware (the
 // limits middleware) and before the response cache, so a refresh that moves a
 // window by less than a step becomes the same request and is answered from
 // the caches, as Loki's results cache answers it.
@@ -106,7 +111,7 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	_ = aligned.ParseForm()
 	params := aligned.URL.Query()
 	for key, value := range map[string]int64{"start": alignedStart, "end": alignedEnd} {
-		encoded := strconv.FormatInt(value, 10)
+		encoded := encodeAlignedBound(value)
 		aligned.Form.Set(key, encoded)
 		if aligned.Method == http.MethodPost {
 			aligned.PostForm.Set(key, encoded)
@@ -115,4 +120,36 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	}
 	aligned.URL.RawQuery = params.Encode()
 	return aligned, true
+}
+
+// lokiBoundUnixNano parses a start or end as Loki does where the proxy's own
+// parser rounds differently: a number with a decimal point is seconds, with
+// its fraction rounded to milliseconds (pkg/loghttp/params.go:166-171,
+// parseTimestamp). parseLokiTimeToUnixNano multiplies the float instead, so
+// "1700000000.3" lands 1ns before .300 and a 100ms step grid moves it down to
+// .200 where Loki has .300. Every other form, and a decimal of 1e11 or more
+// (which the proxy reads as milliseconds), goes through
+// parseLokiTimeToUnixNano.
+func lokiBoundUnixNano(raw string) (int64, bool) {
+	if strings.Contains(raw, ".") {
+		if seconds, err := strconv.ParseFloat(raw, 64); err == nil && math.Abs(seconds) < 1e11 {
+			whole, fraction := math.Modf(seconds)
+			fraction = math.Round(fraction*1000) / 1000
+			return time.Unix(int64(whole), int64(fraction*float64(time.Second))).UnixNano(), true
+		}
+	}
+	return parseLokiTimeToUnixNano(raw)
+}
+
+// encodeAlignedBound writes a moved bound as integer nanoseconds, the form
+// Grafana sends. The proxy reads an integer by its magnitude (seconds below
+// 1e11, then milliseconds, microseconds), so a time before 1973 written as
+// nanoseconds would be read back as another time; such a bound is written in
+// RFC3339 instead, which every parser reads exactly.
+func encodeAlignedBound(ns int64) string {
+	encoded := strconv.FormatInt(ns, 10)
+	if back, ok := parseLokiTimeToUnixNano(encoded); ok && back == ns {
+		return encoded
+	}
+	return time.Unix(0, ns).UTC().Format(time.RFC3339Nano)
 }

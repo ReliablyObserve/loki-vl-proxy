@@ -7,8 +7,10 @@
 # The "aligned" profile is the stack as it is (test/e2e-compat/loki-local-config.yaml):
 # a Loki with those two settings moves a request's bounds onto the step grid and
 # caches results up to the present, so it can answer a refresh of less than a step
-# as an exact results-cache hit. This profile is a Loki with its defaults: bounds as
-# the client sent them, and the newest 10 minutes of a window always recomputed.
+# as an exact results-cache hit. This profile is a Loki with its defaults: no step
+# alignment middleware (its 1h metric splitter still floors the start to the step and
+# rounds the end up, pkg/querier/queryrange/splitters.go:308-319), and the newest
+# 10 minutes of a window always recomputed.
 # Both are measured so a proxy build is compared with each (bench/ab/README.md,
 # "Like for like").
 #

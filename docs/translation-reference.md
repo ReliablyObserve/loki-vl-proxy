@@ -171,7 +171,7 @@ Supported operators: `+`, `-`, `*`, `/`, `%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `
 Binary expression notes:
 
 - Each operand is executed through the normal query handlers, so trailing range windows, parser errors and extraction aliases are preserved. Operator precedence, parentheses and comparison filtering versus `bool` follow Loki.
-- Vector-vector operands are evaluated on the step-aligned grid, as Loki's query frontend does with `align_queries_with_step` enabled. Against a default Loki, results for an unaligned `start` can differ by less than one step.
+- Vector-vector operands are evaluated on the step-aligned grid, as Loki's query frontend does with `align_queries_with_step` enabled. The proxy aligns metric `query_range` bounds to the step by default (`-align-queries-with-step`); a Loki with its defaults floors the start in its metric splitter too.
 - Implicit many-to-one matches (without `group_left`/`group_right`) are rejected with HTTP 500 and Loki's `multiple matches for labels` error; cardinality is checked at each timestamp.
 - Evaluation is bounded: 64 nesting levels, 1,024 child evaluations, 256 MiB of captured child responses, two million decoded arrays, one million output samples and 64 MiB of label work, with each encoded result capped at 64 MiB. A valid expression exceeding these limits fails explicitly.
 

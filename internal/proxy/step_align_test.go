@@ -105,6 +105,59 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 			params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}},
 			post:   true, aligned: true, start: 1699999983 * 1e9, end: 1700003545 * 1e9, stepMs: 137000,
 		},
+		{
+			name:    "start on the grid, end off it: only the end moves",
+			params:  url.Values{"query": {metric}, "start": {ns(1699999980)}, "end": {ns(1700003600)}, "step": {"60"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700003580 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "start off the grid, end on it: only the start moves",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000017)}, "end": {ns(1700003580)}, "step": {"60"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1700003580 * 1e9, stepMs: 60000,
+		},
+		{
+			name:    "half-second step on nanosecond bounds",
+			params:  url.Values{"query": {metric}, "start": {"1700000000700000000"}, "end": {"1700000060250000000"}, "step": {"0.5"}},
+			aligned: true, start: 1700000000500 * 1e6, end: 1700000060000 * 1e6, stepMs: 500,
+		},
+		{
+			name:    "250ms step in duration form",
+			params:  url.Values{"query": {metric}, "start": {"1700000000300000000"}, "end": {"1700000001999999999"}, "step": {"250ms"}},
+			aligned: true, start: 1700000000250 * 1e6, end: 1700000001750 * 1e6, stepMs: 250,
+		},
+		{
+			// Loki rounds the fraction of a decimal bound to milliseconds
+			// (pkg/loghttp/params.go:166-171): .3 is .300, not the float's
+			// .29999..., which a 100ms grid would move down to .200; .9996 is
+			// the next whole second.
+			name:    "decimal-second bounds are rounded to milliseconds first, as Loki does",
+			params:  url.Values{"query": {metric}, "start": {"1700000000.3"}, "end": {"1700000010.9996"}, "step": {"0.1"}},
+			aligned: true, start: 1700000000300 * 1e6, end: 1700000011000 * 1e6, stepMs: 100,
+		},
+		{
+			name:    "step larger than the range: both bounds land on one grid point",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000010)}, "end": {ns(1700000030)}, "step": {"10m"}},
+			aligned: true, start: 1699999800 * 1e9, end: 1699999800 * 1e9, stepMs: 600000,
+		},
+		{
+			name:    "start equal to end",
+			params:  url.Values{"query": {metric}, "start": {ns(1700000017)}, "end": {ns(1700000017)}, "step": {"60"}},
+			aligned: true, start: 1699999980 * 1e9, end: 1699999980 * 1e9, stepMs: 60000,
+		},
+		{
+			// Go's integer division truncates toward zero, so Loki moves a
+			// bound before 1970 up, not down; the proxy uses the same formula.
+			name:    "a bound before the epoch moves toward zero, as Loki's integer division does",
+			params:  url.Values{"query": {metric}, "start": {"-90"}, "end": {"30"}, "step": {"60"}},
+			aligned: true, start: -60 * 1e9, end: 0, stepMs: 60000,
+		},
+		{
+			// Alignment is on Unix epoch milliseconds: a zone offset, or the
+			// day a zone changes to summer time, does not move the grid.
+			name:    "RFC3339 bounds with a zone offset on a DST change day align in UTC",
+			params:  url.Values{"query": {metric}, "start": {"2026-03-29T03:00:17+02:00"}, "end": {"2026-03-29T04:00:59.999+02:00"}, "step": {"60"}},
+			aligned: true, start: time.Date(2026, 3, 29, 1, 0, 0, 0, time.UTC).UnixNano(), end: time.Date(2026, 3, 29, 2, 0, 0, 0, time.UTC).UnixNano(), stepMs: 60000,
+		},
 		{name: "log query", params: url.Values{"query": {`{app="a"} |= "x"`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
 		{name: "no step", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700003600)}}},
 		{name: "step under a millisecond", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000000)}, "step": {"0.0001"}}},
@@ -150,7 +203,7 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 			if want := lokiStepAlignNanos(rawEnd, tc.stepMs); want != tc.end {
 				t.Fatalf("table end %d is not Loki's %d", tc.end, want)
 			}
-			wantStart, wantEnd := strconv.FormatInt(tc.start, 10), strconv.FormatInt(tc.end, 10)
+			wantStart, wantEnd := encodeAlignedBound(tc.start), encodeAlignedBound(tc.end)
 			query := got.URL.Query()
 			for _, read := range []struct {
 				where      string
@@ -161,6 +214,13 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 			} {
 				if read.start != wantStart || read.end != wantEnd {
 					t.Fatalf("%s bounds = [%s, %s], want [%s, %s]", read.where, read.start, read.end, wantStart, wantEnd)
+				}
+				// The handler reads the moved bounds back as the same instants.
+				if s, ok := parseLokiTimeToUnixNano(read.start); !ok || s != tc.start {
+					t.Fatalf("%s start %q reads back as %d, want %d", read.where, read.start, s, tc.start)
+				}
+				if e, ok := parseLokiTimeToUnixNano(read.end); !ok || e != tc.end {
+					t.Fatalf("%s end %q reads back as %d, want %d", read.where, read.end, e, tc.end)
 				}
 			}
 			if tc.post && (got.PostForm.Get("start") != wantStart || got.PostForm.Get("end") != wantEnd) {
@@ -369,6 +429,35 @@ func TestQueryRangeStepAlignment_AnswersOnLokisGrid(t *testing.T) {
 		t.Fatalf("offset: %d %s", code, body)
 	}
 	assertSlidingSeriesEqual(t, "offset 433s", want, alignSamples(t, body))
+
+	// A step longer than the range: both bounds move down to the same grid
+	// point, and Loki answers one sample there, before the requested start.
+	for _, tc := range []struct {
+		name       string
+		start, end time.Time
+		step       time.Duration
+	}{
+		{"step longer than the range", s0.Add(time.Hour + 10*time.Second), s0.Add(time.Hour + 30*time.Second), 10 * time.Minute},
+		{"start equal to end", s0.Add(2*time.Hour + 17*time.Second), s0.Add(2*time.Hour + 17*time.Second), time.Minute},
+	} {
+		stepMs := tc.step.Milliseconds()
+		alignedStart, alignedEnd := time.Unix(0, lokiStepAlignNanos(tc.start, stepMs)), time.Unix(0, lokiStepAlignNanos(tc.end, stepMs))
+		if !alignedStart.Equal(alignedEnd) || !alignedStart.Before(tc.start) {
+			t.Fatalf("%s: the fixture must move both bounds onto one grid point before the start", tc.name)
+		}
+		want := lokiSlidingReference(lines, "count_over_time", true, 0, alignedStart, alignedEnd, tc.step, 5*time.Minute)
+		code, body := alignRouteQueryRange(t, mux, p, `sum by (app) (count_over_time({app=~".+"}[5m]))`, tc.start, tc.end, tc.step)
+		if code != http.StatusOK {
+			t.Fatalf("%s: %d %s", tc.name, code, body)
+		}
+		got := alignSamples(t, body)
+		assertSlidingSeriesEqual(t, tc.name, want, got)
+		for app, points := range got {
+			if _, ok := points[alignedStart.Unix()]; len(points) != 1 || !ok {
+				t.Fatalf("%s app=%q: want one sample at %d, got %v", tc.name, app, alignedStart.Unix(), points)
+			}
+		}
+	}
 
 	// Limits are checked on the bounds the client sent.
 	sevens := time.Unix(s0.Unix()/7*7, 0)
