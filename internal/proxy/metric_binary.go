@@ -2274,7 +2274,7 @@ func applyOp(a, b float64, op string) float64 {
 	switch op {
 	case "/":
 		if b == 0 {
-			return 0 // avoid division by zero, return 0 like Prometheus
+			return math.NaN() // Loki: a zero divisor is NaN (syntax.MergeBinOp)
 		}
 		return a / b
 	case "*":
@@ -2285,7 +2285,7 @@ func applyOp(a, b float64, op string) float64 {
 		return a - b
 	case "%":
 		if b == 0 {
-			return 0
+			return math.NaN()
 		}
 		return math.Mod(a, b)
 	case "^":

@@ -114,7 +114,7 @@ func TestCritical_ApplyOp_AllOperators(t *testing.T) {
 	}{
 		// Existing operators
 		{10, 3, "/", 10.0 / 3.0},
-		{10, 0, "/", 0}, // division by zero
+		// a zero divisor is NaN (TestApplyOpDivisionAndModuloByZeroAreNaN)
 		{6, 7, "*", 42},
 		{10, 3, "+", 13},
 		{10, 3, "-", 7},

@@ -123,9 +123,18 @@ func binarySampleValue(a, b float64, op string, returnBool bool) (float64, bool)
 		return a - b, true
 	case "*":
 		return a * b, true
+	// Loki guards a zero right operand of / and % with NaN, whatever the left
+	// operand is (syntax.MergeBinOp, pkg/logql/syntax/ast.go:1978-2005), where
+	// IEEE division gives +Inf or -Inf.
 	case "/":
+		if b == 0 {
+			return math.NaN(), true
+		}
 		return a / b, true
 	case "%":
+		if b == 0 {
+			return math.NaN(), true
+		}
 		return math.Mod(a, b), true
 	case "^":
 		return math.Pow(a, b), true

@@ -1,0 +1,59 @@
+id: semantics/binary-division-by-zero-nan
+title: A zero divisor of `/` and `%` is NaN, like Loki (fixed)
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki guards a zero right operand of `/` and `%` with NaN in the one function
+  every binary operation goes through, syntax.MergeBinOp
+  (pkg/logql/syntax/ast.go:1978-2005): `if right.F == 0 { res.F = math.NaN() }`.
+  It applies to a literal fold (reduceBinOp, ast.go:1918-1935, so `1 / 0` is NaN),
+  to a vector against a literal (LiteralStepEvaluator.Next,
+  pkg/logql/evaluator.go:1179) and to two vectors (vectorBinop, evaluator.go:1020),
+  whatever the numerator is: `sum(rate(..)) / 0`, `-1 / 0` and `Inf / 0` are all
+  NaN, never +Inf or -Inf. The proxy computed IEEE a/b, so a nonzero numerator
+  over a zero divisor came back as "+Inf" or "-Inf" (only 0/0 was NaN), and the
+  legacy sample arithmetic used when a query is not parsed as a binary
+  expression answered 0 for both operators. `%` by zero was already NaN through
+  math.Mod on the main path. The comparison operators, `^`, NaN operands and
+  infinite operands already matched MergeBinOp; the edge table in
+  TestBinarySampleValueMatchesLokiMergeBinOp pins every operator against a
+  direct port of it, with and without bool.
+
+  min and max across series skip a NaN unless every value is NaN: Loki's
+  VectorAggEvaluator replaces a NaN accumulator (pkg/logql/evaluator.go:525-535),
+  so `max(x / 0)` over mixed values is the largest real value. Residual, not
+  fixed here: the one proxy fold that lets NaN win is withoutMerge.combine
+  (math.Min / math.Max in internal/proxy/vector_matching.go), fixed by #734
+  (semantics/non-sum-vector-aggregation-unreduced). With this change no other
+  min/max fold receives a NaN: on origin/main an aggregation over a binary
+  expression drops the binary operand (`max(v / 2)` and `max(v / 0)` send VL the
+  same query without the division), which #741 fixes; the folds #741 adds must
+  apply Loki's NaN rule.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({app="payment-service"}[5m])) / 0'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One unlabelled series whose every value is "NaN".
+gap:
+  status: fixed
+  fixed_by: "#745"
+  impact: api-only
+  effort: S
+  area: 'internal/proxy binary_matching.go (binarySampleValue), metric_binary.go (applyOp)'
+  loki: 'pkg/logql/syntax/ast.go:1944-2125 MergeBinOp (the / and % guards at :1978-2005), reduceBinOp :1918; pkg/logql/evaluator.go:1020 vectorBinop, :1179 LiteralStepEvaluator.Next'
+  proxy: 'a zero divisor of / and % is NaN in every sample-arithmetic path'
+  planned_test: 'TestCompat_BinaryDivisionByZeroIsNaN (test/e2e-compat, group core); TestBinarySampleValueMatchesLokiMergeBinOp, TestBinaryScalarFoldMatchesLokiReduceBinOp, TestBinaryMatchersMatchLokiMergeBinOp, TestApplyOpDivisionAndModuloByZeroAreNaN, TestBinaryVectorDivisionByZeroHandlers and TestBinaryConstantVectorDivisionByZeroInstant (internal/proxy)'
+  note: 'Measured on origin/main b20a550f. The e2e is written and not yet run. min/max NaN folding: residual in #734 (withoutMerge.combine) and #741 (aggregation over binary).'
+  clusters: []

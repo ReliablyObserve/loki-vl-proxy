@@ -216,6 +216,7 @@
       "internal/proxy/unwrap_convert_test.go",
       "internal/proxy/unwrap_samples_test.go",
       "internal/translator/unwrap_gate_test.go",
+      "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
@@ -256,6 +257,7 @@
       "internal/translator/extracted_suffix_test.go",
       "internal/translator/regexp_escaping_test.go",
       "internal/translator/unwrap_gate_test.go",
+      "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
@@ -503,6 +505,10 @@
     ],
     "semantics/backend-timeout-argument": [
       "internal/proxy/backend_heavy_test.go"
+    ],
+    "semantics/binary-division-by-zero-nan": [
+      "internal/proxy/binary_division_zero_test.go",
+      "test/e2e-compat/binary_division_zero_test.go"
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
@@ -894,7 +900,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 341,
+  "registry_items": 342,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -977,6 +983,9 @@
       "backend-deadlines-and-cancellation",
       "semantics/json-metric-detected-level-derivation",
       "semantics/live-request-not-cancelled-by-sibling"
+    ],
+    "internal/proxy/binary_division_zero_test.go": [
+      "semantics/binary-division-by-zero-nan"
     ],
     "internal/proxy/binary_matching_test.go": [
       "loki_api_v1_query",
@@ -1527,6 +1536,11 @@
     "test/e2e-compat/bad_request_status_parity_test.go": [
       "loki-compatible-profile"
     ],
+    "test/e2e-compat/binary_division_zero_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/binary-division-by-zero-nan"
+    ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
       "profiles/detected-fields-dotted-json-keys",
@@ -1828,7 +1842,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 184,
+  "tests_with_markers": 186,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1926,5 +1940,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 165
+  "wired_items": 166
 }
