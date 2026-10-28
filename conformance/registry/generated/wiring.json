@@ -181,6 +181,7 @@
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
     "loki_api_v1_detected_labels": [
+      "internal/proxy/label_matcher_regexp_routes_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
     "loki_api_v1_drilldown_limits": [
@@ -1152,6 +1153,7 @@
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
     "internal/proxy/label_matcher_regexp_routes_test.go": [
+      "loki_api_v1_detected_labels",
       "profiles/stream-selector-regexp-anchoring"
     ],
     "internal/proxy/label_metadata_freshness_test.go": [

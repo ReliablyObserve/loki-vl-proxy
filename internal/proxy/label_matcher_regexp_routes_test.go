@@ -18,7 +18,7 @@ import (
 // webhook. The answers the anchored filters select are pinned by
 // TestLabelRegexpMatchesWhatLokiMatches (internal/translator).
 //
-// conformance: profiles/stream-selector-regexp-anchoring
+// conformance: loki_api_v1_detected_labels, profiles/stream-selector-regexp-anchoring
 func TestLabelMatcherRegexpAnchoredOnEveryRoute(t *testing.T) {
 	var mu sync.Mutex
 	var queries []string
