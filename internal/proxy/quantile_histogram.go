@@ -1,18 +1,21 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	fj "github.com/valyala/fastjson"
+	"github.com/grafana/jsonparser"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -98,7 +101,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 	if err != nil {
 		return nil, err
 	}
-	v, err := p.fetchQuantileCounts(ctx, spec, start, end, bucket)
+	body, err := p.fetchQuantileCounts(ctx, spec, start, end, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -114,58 +117,73 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 	cache := make(map[string]*metricSeriesCacheEntry, 32)
 	series := make(map[string]quantileSeries)
 	held := 0
-	for _, res := range v.GetArray("data", "result") {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	// A series per group and value, a point per bucket: the points are read in
+	// place (eachBucketPoint) and only each series' labels are parsed, with a
+	// pooled parser, as collectRangeMetricHits reads its buckets.
+	parser := statsQRFJPool.Get()
+	defer statsQRFJPool.Put(parser)
+	var resultErr error
+	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
+		if resultErr != nil {
+			return
 		}
-		metric := res.Get("metric")
+		if resultErr = ctx.Err(); resultErr != nil {
+			return
+		}
+		metricRaw, _, _, _ := jsonparser.Get(res, "metric")
+		metric, err := parser.ParseBytes(metricRaw)
+		if err != nil {
+			resultErr = fmt.Errorf("parse stats response: %w", err)
+			return
+		}
 		value, err := strconv.ParseFloat(string(metric.GetStringBytes(translator.UnwrapValueAlias)), 64)
 		if err != nil {
-			continue // the gate keeps only values that convert
+			return // the gate keeps only values that convert
 		}
 		var labels map[string]string
 		if byFields {
-			labels = p.statsGroupMetric(res.GetObject("metric"), vlToLoki)
+			labels = p.statsGroupMetric(metric.GetObject(), vlToLoki)
 		} else {
 			labels = p.manualSeriesEntry(cache, metric, string(metric.GetStringBytes("_stream")), strings.TrimSpace(string(metric.GetStringBytes("level"))), spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, true).translated
 		}
 		key := canonicalLabelsKey(labels)
-		points := res.GetArray("values")
-		if point := res.Get("value"); point != nil {
-			points = []*fj.Value{point}
-		}
 		current, seen := series[key]
 		if !seen {
-			if err := seriesLimitCollecting(ctx, len(series), p.manualSeriesLimit(ctx)); err != nil {
-				return nil, err
+			if resultErr = seriesLimitCollecting(ctx, len(series), p.manualSeriesLimit(ctx)); resultErr != nil {
+				return
 			}
 			current.Metric = labels
 		}
-		for _, point := range points {
-			pair := point.GetArray()
-			if len(pair) < 2 {
-				continue
+		add := func(ts int64, raw []byte) {
+			if resultErr != nil {
+				return
 			}
-			ts := start.UnixNano()
-			if bucket > 0 {
-				var ok bool
-				if ts, ok = snapSlidingBucketTimestamp(pair[0], start, bucket); !ok {
-					continue
-				}
-			}
-			count, err := strconv.ParseFloat(string(pair[1].GetStringBytes()), 64)
+			count, err := jsonparser.ParseFloat(raw)
 			if err != nil || count <= 0 {
-				continue
+				return
 			}
 			if held++; held > rowLimit {
-				return nil, fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+				resultErr = fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+				return
 			}
 			current.Samples = append(current.Samples, quantileSample{ts: ts, value: value, count: count})
 		}
+		if bucket > 0 {
+			values, _, _, _ := jsonparser.Get(res, "values")
+			eachBucketPoint(values, start, bucket, add)
+		} else if point, _, _, err := jsonparser.Get(res, "value"); err == nil {
+			// An instant answer: one point, at the start.
+			if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
+				add(start.UnixNano(), []byte(raw))
+			}
+		}
 		series[key] = current
+	}, "data", "result")
+	if resultErr != nil {
+		return nil, resultErr
 	}
 	for key, s := range series {
-		sort.Slice(s.Samples, func(i, j int) bool { return s.Samples[i].ts < s.Samples[j].ts })
+		s.Samples = sortQuantileSamples(s.Samples, start, bucket)
 		series[key] = s
 	}
 	if limit := p.manualSeriesLimit(ctx); limit > 0 && len(series) > limit {
@@ -175,6 +193,47 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 		series = capQuantileSeries(series, limit)
 	}
 	return series, nil
+}
+
+// sortQuantileSamples orders samples by time. Bucket times lie on the
+// start+k*bucket grid, so a counting sort by bucket places them in two passes
+// (a series per value arrives in time order, the values one after another);
+// the order of the values within a bucket is free, the windows rank them. An
+// instant answer has one time.
+func sortQuantileSamples(samples []quantileSample, start time.Time, bucket time.Duration) []quantileSample {
+	if bucket <= 0 || len(samples) < 2 {
+		return samples
+	}
+	lo, hi := samples[0].ts, samples[0].ts
+	size, anchor := int64(bucket), start.UnixNano()
+	onGrid := true
+	for _, s := range samples {
+		if s.ts < lo {
+			lo = s.ts
+		}
+		if s.ts > hi {
+			hi = s.ts
+		}
+		onGrid = onGrid && (s.ts-anchor)%size == 0
+	}
+	if !onGrid || (hi-lo)/size > int64(len(samples))*4 {
+		slices.SortFunc(samples, func(a, b quantileSample) int { return cmp.Compare(a.ts, b.ts) })
+		return samples
+	}
+	offsets := make([]int, (hi-lo)/size+2)
+	for _, s := range samples {
+		offsets[(s.ts-lo)/size+1]++
+	}
+	for i := 1; i < len(offsets); i++ {
+		offsets[i] += offsets[i-1]
+	}
+	out := make([]quantileSample, len(samples))
+	for _, s := range samples {
+		i := (s.ts - lo) / size
+		out[offsets[i]] = s
+		offsets[i]++
+	}
+	return out
 }
 
 // capQuantileSeries keeps the limit series with the most rows, like
@@ -318,18 +377,32 @@ type quantileSlider struct {
 
 func newQuantileSlider(samples []quantileSample) *quantileSlider {
 	w := &quantileSlider{samples: samples, ranks: make([]int, len(samples))}
-	order := make([]int, len(samples))
-	for i := range order {
-		order[i] = i
+	// A histogram holds far fewer distinct values than samples: rank the
+	// distinct values (every NaN one key, 0 and -0 one key, as the order has
+	// them equal) and look each sample's rank up.
+	key := func(v float64) uint64 {
+		switch {
+		case math.IsNaN(v):
+			return math.Float64bits(math.NaN())
+		case v == 0:
+			return 0
+		}
+		return math.Float64bits(v)
+	}
+	rankOf := make(map[uint64]int)
+	for _, s := range samples {
+		if k := key(s.value); rankOf[k] == 0 {
+			rankOf[k] = 1
+			w.values = append(w.values, s.value)
+		}
 	}
 	less := func(a, b float64) bool { return math.IsNaN(a) && !math.IsNaN(b) || a < b }
-	sort.Slice(order, func(i, j int) bool { return less(samples[order[i]].value, samples[order[j]].value) })
-	for _, i := range order {
-		v := samples[i].value
-		if n := len(w.values); n == 0 || less(w.values[n-1], v) {
-			w.values = append(w.values, v)
-		}
-		w.ranks[i] = len(w.values)
+	sort.Slice(w.values, func(i, j int) bool { return less(w.values[i], w.values[j]) })
+	for r, v := range w.values {
+		rankOf[key(v)] = r + 1
+	}
+	for i, s := range samples {
+		w.ranks[i] = rankOf[key(s.value)]
 	}
 	w.tree = make([]float64, len(w.values)+1)
 	return w
@@ -561,8 +634,9 @@ func (p *Proxy) writeQuantileHistogramRange(w http.ResponseWriter, ctx context.C
 }
 
 // fetchQuantileCounts sends the value count query of collectQuantileHistogram
-// and returns its decoded answer, read within -backend-max-buffered-response-bytes.
-func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, start, end time.Time, bucket time.Duration) (*fj.Value, error) {
+// and returns its answer, read within -backend-max-buffered-response-bytes and
+// checked to be a successful JSON answer.
+func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, start, end time.Time, bucket time.Duration) ([]byte, error) {
 	params := url.Values{}
 	params.Set("query", spec.BaseQuery+" | stats by ("+strings.Join(quantileStatsGroupBy(spec), ", ")+") count() as "+quantileCountName)
 	path := "/select/logsql/stats_query"
@@ -599,12 +673,11 @@ func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, s
 	if err != nil {
 		return nil, err
 	}
-	v, err := fj.ParseBytes(body)
-	if err != nil {
-		return nil, fmt.Errorf("parse stats response: %w", err)
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("parse stats response: invalid JSON")
 	}
-	if status := string(v.GetStringBytes("status")); status != "success" {
+	if status, _ := jsonparser.GetString(body, "status"); status != "success" {
 		return nil, fmt.Errorf("stats response non-success status: %s", status)
 	}
-	return v, nil
+	return body, nil
 }

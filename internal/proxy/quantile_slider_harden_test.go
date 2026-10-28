@@ -1,9 +1,14 @@
 package proxy
 
 import (
+	"cmp"
+	"fmt"
 	"math"
 	"math/rand"
+	"slices"
+	"sort"
 	"testing"
+	"time"
 )
 
 // lokiQuantileOfWindow is Loki's quantile_over_time (pkg/logql/range_vector.go:449-487)
@@ -144,5 +149,77 @@ func FuzzQuantileSlider(f *testing.F) {
 			t.Skip()
 		}
 		checkQuantileSlider(t, data, phi, window, walk)
+	})
+}
+
+// checkSortQuantileSamples: sortQuantileSamples orders by time and keeps every
+// sample, the samples of one time as a multiset (the windows rank them by
+// value), for runs on the bucket grid, off it and spread wider than the
+// counting sort takes.
+func checkSortQuantileSamples(t *testing.T, data []byte, bucketSec uint8, offGrid bool) {
+	t.Helper()
+	bucket := time.Duration(1+int(bucketSec)%90) * time.Second
+	start := time.Unix(1_800_000_000, 0)
+	var in []quantileSample
+	for i := 0; i+2 < len(data); i += 3 {
+		ts := start.Add(time.Duration(int(data[i])-64) * bucket).UnixNano()
+		if offGrid && data[i+1]%5 == 0 {
+			ts += int64(data[i+1])
+		}
+		if data[i+2] == 255 {
+			ts += int64(1000 * 1000 * bucket) // far out: the comparison sort answers
+		}
+		in = append(in, quantileSample{ts: ts, value: float64(data[i+1]), count: float64(data[i+2]%7 + 1)})
+	}
+	want := slices.Clone(in)
+	slices.SortStableFunc(want, func(a, b quantileSample) int { return cmp.Compare(a.ts, b.ts) })
+	got := sortQuantileSamples(slices.Clone(in), start, bucket)
+	if len(got) != len(want) {
+		t.Fatalf("%d samples, want %d", len(got), len(want))
+	}
+	key := func(s []quantileSample) []string {
+		out := make([]string, len(s))
+		for i, x := range s {
+			out[i] = fmt.Sprintf("%d/%v/%v", x.ts, x.value, x.count)
+		}
+		return out
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].ts < got[i-1].ts {
+			t.Fatalf("not in time order at %d: %v", i, key(got))
+		}
+	}
+	g, w := key(got), key(want)
+	sort.Strings(g)
+	sort.Strings(w)
+	if !slices.Equal(g, w) {
+		t.Fatalf("samples changed:\n%v\n%v", g, w)
+	}
+}
+
+// TestSortQuantileSamplesMatchesSort: the counting sort of collectQuantileHistogram
+// is the time sort of the samples.
+//
+// conformance: semantics/unwrap-quantile-response-limit
+func TestSortQuantileSamplesMatchesSort(t *testing.T) {
+	rnd := rand.New(rand.NewSource(5))
+	for c := 0; c < 500; c++ {
+		data := make([]byte, 3*rnd.Intn(200))
+		rnd.Read(data)
+		checkSortQuantileSamples(t, data, uint8(rnd.Intn(256)), c%3 == 0)
+	}
+}
+
+// FuzzSortQuantileSamples: the counting sort is the time sort for any samples.
+//
+// conformance: semantics/unwrap-quantile-response-limit
+func FuzzSortQuantileSamples(f *testing.F) {
+	f.Add([]byte{64, 1, 1, 63, 2, 2, 65, 3, 3, 64, 4, 255}, uint8(59), false)
+	f.Add([]byte{70, 5, 1, 10, 10, 2, 70, 15, 3}, uint8(0), true)
+	f.Fuzz(func(t *testing.T, data []byte, bucket uint8, offGrid bool) {
+		if len(data) > 3*512 {
+			t.Skip()
+		}
+		checkSortQuantileSamples(t, data, bucket, offGrid)
 	})
 }
