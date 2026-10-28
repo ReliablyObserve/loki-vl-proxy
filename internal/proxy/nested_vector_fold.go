@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -181,4 +182,56 @@ func (p *Proxy) pushDownWithoutFold(r *http.Request, logql, series string) (stri
 		return "", false
 	}
 	return translator.PushDownWithout(logql, series, p.labelTranslator.ToVL, p.labelTranslator.ToLoki)
+}
+
+// withSlidingWithoutCut returns the bucket stats of a sliding window (range
+// longer than the step) under `sum without (l...)` with VictoriaLogs folding
+// the streams that share their labels but l, bucket by bucket: the stream's
+// count (or bytes) per bucket, the excluded pairs cut out of its _stream text
+// (translator.WithoutStreamCut), and their sum per remaining stream and level.
+// A rate or a bytes_rate keeps the per-stream route: Loki sums each stream's
+// rate (a divide per stream), and the sum of the counts divided once differs
+// from it in the last bits.
+// A window's count is the sum of its buckets', so the per-stream windows
+// summed per step equal the windows of the summed buckets, and a fold that
+// has a line in a window has a sample there, as one of its streams does
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next over range_vector.go
+// windows). The proxy then merges the windows of a series per remaining
+// label set instead of one per stream (a stream per pod per batch is
+// thousands of series over hours). Anything else keeps statsAggFunc.
+func (p *Proxy) withSlidingWithoutCut(r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, step time.Duration) string {
+	var folded string
+	switch {
+	case withoutPushdownOff.Load() || step <= 0 || origSpec.Window == step || origSpec.HasUnwrap:
+		return statsAggFunc
+	case statsAggFunc == "count() as c" && manualFunc == "count_over_time":
+		folded = "sum(c) as c"
+	case statsAggFunc == "sum_len(_msg) as c, count() as __sample_count" && manualFunc == "bytes_over_time":
+		folded = "sum(c) as c, sum(__sample_count) as __sample_count"
+	default:
+		return statsAggFunc
+	}
+	if spec.ByExplicit || len(spec.GroupBy) != 2 || spec.GroupBy[0] != "_stream" || spec.GroupBy[1] != "level" || queryUsesParserStages(spec.BaseQuery) || !lineFiltersOnly(origSpec.BaseQuery) {
+		return statsAggFunc
+	}
+	cut, ok := translator.WithoutStreamCut(r.FormValue("query"), p.labelTranslator.ToVL, p.labelTranslator.ToLoki)
+	if !ok {
+		return statsAggFunc
+	}
+	return statsAggFunc + " " + cut + "| stats by (_stream, level) " + folded
+}
+
+// lineFiltersOnly reports whether a log query is a stream selector with line
+// filters at most: no stage that changes the labels of a series.
+func lineFiltersOnly(logql string) bool {
+	q, err := logqlpkg.ParseLogQuery(logql)
+	if err != nil {
+		return false
+	}
+	for _, stage := range q.Pipeline {
+		if _, ok := stage.(*logqlpkg.LineFilterStage); !ok {
+			return false
+		}
+	}
+	return true
 }

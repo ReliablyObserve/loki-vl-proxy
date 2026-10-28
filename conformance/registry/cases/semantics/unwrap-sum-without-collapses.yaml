@@ -144,4 +144,6 @@ perf:
   modes: [cold, warm, refresh]
   locked: false
   locked_since: null
-  effort_exception: null
+  effort_exception:
+    reason: 'W3 (rate with unwrap) 24h cold runs 1.74x Loki: the VictoriaLogs fold needs the conversion check''s flags carried through a second stats pipe, and the counting rewrite reads one stats pipe, so the unwrapped fold stays per stream'
+    follow_up: 'carry __lvp_bad in the second grouping and teach unwrapCountingRewrite the two-pipe form'

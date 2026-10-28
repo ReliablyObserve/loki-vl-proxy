@@ -133,4 +133,6 @@ perf:
   modes: [cold, warm, refresh]
   locked: false
   locked_since: null
-  effort_exception: null
+  effort_exception:
+    reason: 'E6 and E7 (Loki answers 400) take 2.0-4.3x Loki cold at 1h to 24h: one VictoriaLogs counting stats call is 73 of 81 ms at 6h (the 4 lookups that name the failing line are 7 ms), while Loki stops at the first bad line (19 ms); E2 24h cold is 2.02x (VictoriaLogs 328 ms of 603 ms for the value histogram, the rest decoding and keeping it); measured 2026-10-28 on the A/B stack, loki-defaults'
+    follow_up: 'find the first flagged row with a limit-1 probe sent in parallel with the counting call, or carry it in the counting stats call (row_min per flag group), so a window with a rejected value costs Loki''s early stop; ask VictoriaLogs for a coarser histogram for the quantile'

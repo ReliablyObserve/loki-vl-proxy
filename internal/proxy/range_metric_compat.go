@@ -659,6 +659,7 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 // for every client: absent steps stay absent (no zero-fill), which also keeps
 // absent series out of topk/bottomk ranking.
 func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {
+	markQueryStepsEvaluated(r.Context())
 	// The first translated stats clause may group by stream before the outer
 	// sum. For additive log metrics, combine the raw counts/bytes before window
 	// evaluation and keep the native stats fast path for aggregate-all queries.
@@ -730,6 +731,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		if p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
 			return true
 		}
+		markQueryStepsRoute(r.Context(), "sliding-stats")
 		p.writeSlidingWindowStatsRange(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
 		return true
 	}
@@ -740,6 +742,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		statsAggFunc, quantileCounts = "", false
 	}
 	if quantileCounts {
+		markQueryStepsRoute(r.Context(), "quantile")
 		p.writeQuantileHistogramRange(w, r.Context(), gated, quantile, fetchStart, startTS, endTS, step, origSpec.Window, bucket, sampleShift)
 		return true
 	}
@@ -761,6 +764,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			}
 			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, bucket)
 			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
+				markQueryStepsRoute(r.Context(), "coalesced")
 				p.writeHitsRangeMetricMatrix(w, manualFunc, series, startTS, endTS, step, origSpec.Window)
 				return true
 			}
@@ -772,7 +776,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// With parser stages the stats query keeps them: VictoriaLogs groups by the
 	// parsed fields and counts every line, as the raw evaluator does.
 	streamBuckets := origSpec.Window != step
-	for _, collect := range []func() (map[string]manualSeriesSamples, bool, error){
+	statsAggFunc = p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
+	for route, collect := range []func() (map[string]manualSeriesSamples, bool, error){
 		func() (map[string]manualSeriesSamples, bool, error) {
 			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, false)
 		},
@@ -789,6 +794,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			return true
 		}
 		if ok {
+			markQueryStepsRoute(r.Context(), "buckets-"+strconv.Itoa(route))
 			p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
 			return true
 		}
@@ -799,6 +805,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// for every one of them, so the fetch is extended unconditionally — leaving
 	// it to a subset made the window open at BOTH ends for the rest.
 	fetchEnd := endTS.Add(time.Nanosecond)
+	markQueryStepsRoute(r.Context(), "raw")
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
@@ -2371,9 +2378,13 @@ func encodeWindowMatrix(ctx context.Context, keys []string, metric func(key stri
 		}
 		windowStart := t.Add(-window).UnixNano()
 		windowEnd := t.UnixNano()
-		for _, key := range keys {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+		for i, key := range keys {
+			// A cancelled request stops within 256 series of a step; checking
+			// every one was a sixth of the time of a per-line series fold.
+			if i&255 == 255 {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 			}
 			v, ok := value(key, windowStart, windowEnd)
 			if !ok {
@@ -2428,6 +2439,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 	}
 	sort.Strings(keys)
 
+	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
 	expectedBuckets := int(end.Sub(start)/step) + 1
 	if expectedBuckets > 32768 { // pre-size cap; appends grow beyond it
 		expectedBuckets = 32768
@@ -2470,8 +2482,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		// [t-window, t), present[pLo] the first present bucket from t-window.
 		var sampleWindow, countWindow windowCursor
 		pLo := 0
-		for t := start; !t.After(end); t = t.Add(step) {
-			tNS := t.UnixNano()
+		for tNS := startNS; tNS <= endNS; tNS += stepNS {
 			windowStartNS := tNS - windowNS
 			lo, hi := sampleWindow.span(samples, windowStartNS, tNS)
 			var sum float64
@@ -2493,6 +2504,11 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 				hasLines = pLo < len(present) && present[pLo] < tNS
 			}
 			if !hasLines {
+				next, more := nextHitsStep(tNS, startNS, endNS, stepNS, samples, lo, hi, present, pLo)
+				if !more {
+					break
+				}
+				tNS = next
 				continue
 			}
 			value := sum
@@ -2508,7 +2524,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 				points = append(points, ',')
 			}
 			points = append(points, '[')
-			points = strconv.AppendInt(points, t.Unix(), 10)
+			points = strconv.AppendInt(points, tNS/int64(time.Second), 10)
 			points = append(points, ',', '"')
 			mark := len(points)
 			points = strconv.AppendFloat(points, value, 'f', -1, 64)
@@ -2527,6 +2543,30 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		}
 	}
 	return marshalManualMetricResponse("matrix", results), nil
+}
+
+// nextHitsStep returns, for a window at tNS whose buckets hold no line, the
+// step the loop goes on from (it adds one step): the first evaluation time
+// past the next bucket (or present bucket) at or after tNS is the next window
+// that can hold one, so a series with few buckets (a stream that lived one
+// batch, thousands of them before an outer fold) costs its buckets, not the
+// steps of the range. more is false when no later window holds a bucket.
+func nextHitsStep(tNS, startNS, endNS, stepNS int64, samples []rangeMetricSample, lo, hi int, present []int64, pLo int) (int64, bool) {
+	next := int64(math.MaxInt64)
+	switch {
+	case present != nil:
+		if pLo < len(present) {
+			next = present[pLo]
+		}
+	case lo == hi && hi < len(samples):
+		next = samples[hi].ts
+	case lo < hi:
+		return tNS, true // buckets whose values add up to nothing: the next step
+	}
+	if next == math.MaxInt64 || next >= endNS {
+		return 0, false
+	}
+	return startNS + ((next-startNS)/stepNS)*stepNS, true // the step at or before next
 }
 
 // windowCursor holds the bounds [lo, hi) of the ascending samples labelled in

@@ -129,6 +129,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/pattern-line-filter` — An empty pattern line filter (`\|> ""`, `!> ""`) matches only the empty line, like Loki (fixed) | #743 | 2 | 2 |
 | `profiles/label-filter-regexp-anchoring` — A label-filter regexp after a parser matches what Loki's simplified, anchored filter matches (fixed) | TBD-PR | 0 | 0 |
 | `profiles/stream-selector-regexp-anchoring` — A stream-selector regexp matcher matches the whole label value, on every route and for __tenant_id__ (fixed) | TBD-PR | 0 | 0 |
+| `quality/query-range-settled-steps` — a window-evaluated metric moved by a refresh or a re-run evaluates only the steps it does not hold, with the same answers, headers and 40... | TBD-PR | 0 | 0 |
 | `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
 | `semantics/json-error-filter-metric-split-pushdown` — A `\| json \| __error__=""` metric counts Loki's accepted lines from VictoriaLogs stats, reading only the doubtful lines raw (fixed) | #758 | 0 | 0 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
@@ -150,6 +151,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/unwrap-sum-without-collapses` — sum without over an unwrap range function keeps a series per remaining stream label set, like Loki (fixed) | #739 | 0 | 0 |
 | `semantics/without-nested-under-aggregation` — a without nested under an outer aggregation folds level by level, like Loki (fixed) | #746 | 0 | 0 |
 | `semantics/without-over-inner-aggregation-collapses` — sum without over an inner sum by or count_over_time aggregation keeps a series per remaining label set, like Loki (fixed) | #746 | 0 | 0 |
+| `semantics/without-sliding-sum-folded-buckets` — sum without over count_over_time or bytes_over_time on a sliding window reads its buckets folded by VictoriaLogs, with Loki's series and ... | TBD-PR | 0 | 0 |
 | `severity/otlp-severity-before-vl-1.50` — OTLP rows stored by VictoriaLogs before v1.50 (one `severity` field, no severity_number) get detected_level "Unspecified" / "Info2" (fixed) | #666 | 0 | 0 |
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |

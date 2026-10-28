@@ -203,6 +203,15 @@ jobs:
       - name: Fuzz smoke (topk and bottomk per step)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzTopKPerStep -fuzztime=20s -timeout=60s
 
+      - name: Fuzz smoke (settled steps parse, merge and write-back)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQueryStepsRoundTrip$' -fuzztime=12s
+
+      - name: Fuzz smoke (sliding sum without cut vs per-stream fold)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSlidingWithoutCut$' -fuzztime=12s
+
+      - name: Fuzz smoke (sliding quantile vs window sort)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQuantileSlider$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s
@@ -1035,7 +1044,7 @@ jobs:
       - name: Run fleet cache tests
         env:
           FLEET_PROOF_REPORT: ${{ runner.temp }}/fleet-peer-cache-proof.json
-        run: go test -v -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof)$' ./test/e2e-fleet/
+        run: go test -v -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers)$' ./test/e2e-fleet/
 
       - name: Upload fleet peer cache proof report
         if: always()

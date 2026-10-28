@@ -154,4 +154,6 @@ perf:
   modes: [cold, warm, refresh]
   locked: false
   locked_since: null
-  effort_exception: null
+  effort_exception:
+    reason: 'G7 (duration()) and G8 (bytes()) run 1.1-1.6x Loki cold and warm (24h warm 2.6x for G7): the conversion check and the stats read are two VictoriaLogs calls of 10-11 ms each where Loki reads once (proxy time 1 ms)'
+    follow_up: 'carry the conversion flags through the stats call''s second grouping so one call answers both, and merge the extent cache''s two gap reads'

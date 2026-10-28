@@ -2328,9 +2328,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cacheKey := ""
+	// A range the settled steps cache evaluates (serveQueryRangeSteps) is part
+	// of a request: the request is cached, counted and recorded as a whole.
+	stepsRun := queryStepsRunFor(r)
 	// Skip inner p.cache when compatCacheMiddleware is active — it handles the
 	// outer response capture and store, making a nested inner cache redundant.
-	cacheable := !p.streamResponse && !compatCacheIsActive(r.Context())
+	cacheable := !p.streamResponse && !compatCacheIsActive(r.Context()) && stepsRun == nil
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
 		if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
@@ -2355,6 +2358,17 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
 	r = p.withStatsExtentCache(r)
+	if stepsRun == nil {
+		served, stepsW, stepsR, after := p.serveQueryRangeSteps(w, r, logqlQuery, cacheKey, start)
+		if served {
+			return
+		}
+		w, r = stepsW, stepsR
+		if after != nil {
+			stepsRun = queryStepsRunFor(r)
+			defer after()
+		}
+	}
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
@@ -2458,7 +2472,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
-		p.handleRangeMetricPostAggregation(w, r, start, logqlQuery, postAgg)
+		if postAgg.name == "topk" || postAgg.name == "bottomk" {
+			stepsRun.arm() // ranked per step (applyTopKToMatrix)
+		}
+		p.handleRangeMetricPostAggregation(w, withQueryStepsSilent(r, stepsRun), start, logqlQuery, postAgg)
 		return
 	}
 
@@ -2546,6 +2563,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
+		stepsRun.arm()
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
 		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
@@ -2610,6 +2628,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	elapsed := time.Since(start)
 	code := unwrapRecordedStatus(r.Context(), sc.code)
+	if stepsRun != nil && stepsRun.inner {
+		return // serveQueryRangeSteps records the request
+	}
 	p.metrics.RecordRequest("query_range", code, elapsed)
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, code >= 400)
 }

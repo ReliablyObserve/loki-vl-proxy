@@ -209,11 +209,16 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 		}
 	}
 	pieces = append(pieces, fragments...)
+	for _, c := range chunks {
+		noteQueryStepsRead(ctx, c.readAt) // a step evaluated from these buckets expires with them
+	}
 	body, ok := renderStatsExtentPieces(pieces)
 	if !ok {
 		return p.statsExtentPassThrough(fetchCtx, req)
 	}
-	p.storeStatsExtentChunks(req, lastStored, chunks, fragments)
+	// Kept off the request path: re-encoding a split is the costliest part
+	// of a partial answer.
+	p.storeOffRequestPath(func() { p.storeStatsExtentChunks(req, lastStored, chunks, fragments) })
 	outcome := "partial"
 	if len(fragments) == 0 {
 		outcome = "hit"

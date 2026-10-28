@@ -283,12 +283,121 @@ func quantileSeriesEvaluator(phi float64, series map[string]quantileSeries) ([]s
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	var scratch []quantileSample
+	sliders := make(map[string]*quantileSlider, len(series))
 	metric := func(key string) map[string]string { return series[key].Metric }
 	value := func(key string, windowStart, windowEnd int64) (float64, bool) {
-		return quantileWindow(phi, series[key].Samples, windowStart, windowEnd, &scratch)
+		w := sliders[key]
+		if w == nil {
+			w = newQuantileSlider(series[key].Samples)
+			sliders[key] = w
+		}
+		return w.quantile(phi, windowStart, windowEnd)
 	}
 	return keys, metric, value
+}
+
+// quantileSlider answers quantileWindow for windows that move forward: the
+// counts of the window's buckets are held by value rank in a Fenwick tree, a
+// bucket added when the window reaches it and removed when it leaves, so a
+// step costs the buckets that enter and leave and a rank search, not a sort
+// of the whole window (a [1m] window at a 10 s step over 6 hours is 2,160
+// sorts of every value of six buckets). The order is quantileOfCounts' (NaN
+// first, then ascending), equal values share a rank, and the counts are whole
+// numbers, so the value at each rank is the same as there (0 and -0 compare
+// equal and share a rank; the sort leaves their order open as well).
+type quantileSlider struct {
+	samples []quantileSample // ascending by ts
+	ranks   []int            // the value rank of each sample, 1-based
+	values  []float64        // the value of each rank
+	tree    []float64        // counts by rank (Fenwick, 1-based)
+	total   float64
+	lo, hi  int // samples[lo:hi] are in the tree
+	start   int64
+	used    bool
+}
+
+func newQuantileSlider(samples []quantileSample) *quantileSlider {
+	w := &quantileSlider{samples: samples, ranks: make([]int, len(samples))}
+	order := make([]int, len(samples))
+	for i := range order {
+		order[i] = i
+	}
+	less := func(a, b float64) bool { return math.IsNaN(a) && !math.IsNaN(b) || a < b }
+	sort.Slice(order, func(i, j int) bool { return less(samples[order[i]].value, samples[order[j]].value) })
+	for _, i := range order {
+		v := samples[i].value
+		if n := len(w.values); n == 0 || less(w.values[n-1], v) {
+			w.values = append(w.values, v)
+		}
+		w.ranks[i] = len(w.values)
+	}
+	w.tree = make([]float64, len(w.values)+1)
+	return w
+}
+
+func (w *quantileSlider) add(i int, sign float64) {
+	c := sign * w.samples[i].count
+	w.total += c
+	for r := w.ranks[i]; r < len(w.tree); r += r & -r {
+		w.tree[r] += c
+	}
+}
+
+// at returns the value at 0-based rank of the counts in the tree.
+func (w *quantileSlider) at(rank float64) float64 {
+	pos, step := 0, 1
+	for step*2 < len(w.tree) {
+		step *= 2
+	}
+	for ; step > 0; step /= 2 {
+		if next := pos + step; next < len(w.tree) && w.tree[next] <= rank {
+			pos = next
+			rank -= w.tree[next]
+		}
+	}
+	if pos >= len(w.values) {
+		pos = len(w.values) - 1
+	}
+	return w.values[pos]
+}
+
+func (w *quantileSlider) quantile(phi float64, windowStart, windowEnd int64) (float64, bool) {
+	if !w.used || windowStart < w.start {
+		// The first window, or one that moved back: start again.
+		clear(w.tree)
+		w.total = 0
+		w.lo = sort.Search(len(w.samples), func(i int) bool { return w.samples[i].ts >= windowStart })
+		w.hi = w.lo
+		w.used = true
+	}
+	w.start = windowStart
+	for ; w.lo < len(w.samples) && w.samples[w.lo].ts < windowStart; w.lo++ {
+		if w.lo < w.hi {
+			w.add(w.lo, -1)
+		}
+	}
+	if w.hi < w.lo {
+		w.hi = w.lo
+	}
+	for ; w.hi < len(w.samples) && w.samples[w.hi].ts < windowEnd; w.hi++ {
+		w.add(w.hi, 1)
+	}
+	if w.lo == w.hi {
+		return 0, false
+	}
+	switch n := w.total; {
+	case phi < 0:
+		return math.Inf(-1), true
+	case phi > 1:
+		return math.Inf(+1), true
+	default:
+		rank := phi * (n - 1)
+		lowerIndex := math.Max(0, math.Floor(rank))
+		upperIndex := math.Min(n-1, lowerIndex+1)
+		weight := rank - math.Floor(rank)
+		// As quantileOfCounts writes it (Loki's arithmetic).
+		return w.at(lowerIndex)*(1-weight) + w.at(upperIndex)*weight, true
+	}
 }
 
 // readsQuantileCounts reports whether a manual range metric is a

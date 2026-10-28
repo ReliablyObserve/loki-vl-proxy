@@ -1121,6 +1121,19 @@
    ]
   },
   {
+   "id": "explore-sliding-sum-without-stream-fold",
+   "kind": "explore",
+   "query": "sum without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+   "covers": [
+    "semantics/without-sliding-sum-folded-buckets",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/without-sliding-sum-folded-buckets"
+   ]
+  },
+  {
    "id": "explore-label-browser",
    "kind": "label-browser",
    "covers": [

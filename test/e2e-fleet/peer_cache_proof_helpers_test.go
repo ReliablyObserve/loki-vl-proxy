@@ -307,6 +307,10 @@ type fleetCounters struct {
 	windowHits   float64 // query_range window cache hits (any tier)
 	windowMisses float64
 	patternsPeer float64 // pattern entries restored from peer snapshots at startup
+	// stepsHit, stepsPartial, stepsMiss and stepsStored count the settled
+	// steps lookups of window-evaluated metrics (operation query_steps_cache):
+	// every step held, some held, none held, and answers stored.
+	stepsHit, stepsPartial, stepsMiss, stepsStored float64
 	// missedAll counts shared-read lookups that missed memory, disk and
 	// peers: 0 for a request means none of its answers was computed.
 	missedAll float64
@@ -350,6 +354,9 @@ func countersFrom(m promScrape) fleetCounters {
 	invOp := func(outcome string) float64 {
 		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory", "outcome": outcome})
 	}
+	stepsOp := func(outcome string) float64 {
+		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "query_steps_cache", "outcome": outcome})
+	}
 	inv := func(source string) float64 {
 		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory_unit", "outcome": source})
 	}
@@ -368,6 +375,10 @@ func countersFrom(m promScrape) fleetCounters {
 		windowHits:         m.sum("loki_vl_proxy_window_cache_hit_total", nil),
 		windowMisses:       m.sum("loki_vl_proxy_window_cache_miss_total", nil),
 		patternsPeer:       m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
+		stepsHit:           stepsOp("hit"),
+		stepsPartial:       stepsOp("partial"),
+		stepsMiss:          stepsOp("miss"),
+		stepsStored:        stepsOp("stored"),
 		missedAll:          m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
 		peerFetchSeconds:   m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_sum", nil),
 		peerFetches:        m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_count", nil),
@@ -420,6 +431,7 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
 		patternsPeer: a.patternsPeer - b.patternsPeer, missedAll: a.missedAll - b.missedAll,
+		stepsHit: a.stepsHit - b.stepsHit, stepsPartial: a.stepsPartial - b.stepsPartial, stepsMiss: a.stepsMiss - b.stepsMiss, stepsStored: a.stepsStored - b.stepsStored,
 		peerFetchSeconds: a.peerFetchSeconds - b.peerFetchSeconds, peerFetches: a.peerFetches - b.peerFetches,
 		vlBackground: a.vlBackground - b.vlBackground, vlStatsBackground: a.vlStatsBackground - b.vlStatsBackground,
 		invMemory: a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
@@ -440,8 +452,8 @@ func (a fleetCounters) topLevelL2Hits() float64 { return a.tierL2Hits - a.invDis
 func (a fleetCounters) topLevelL3Hits() float64 { return a.tierL3Hits - a.invPeer }
 
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
-		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f steps(hit=%.0f partial=%.0f miss=%.0f stored=%.0f) missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.stepsHit, a.stepsPartial, a.stepsMiss, a.stepsStored, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
 }
 
 // fleetDown holds the services the proof stopped or paused: they are left
@@ -501,8 +513,8 @@ func scrapeAll(t *testing.T, reps []replica) map[string]fleetCounters {
 	return out
 }
 
-// settleFleet waits until the VictoriaLogs calls and write-through pushes of
-// every replica stop changing: pushes run asynchronously after the response
+// settleFleet waits until the VictoriaLogs calls, kept settled steps and
+// write-through pushes of every replica stop changing: pushes run asynchronously after the response
 // was written, and a request may start background refreshes. Counting before
 // they settle would charge them to the next request.
 func settleFleet(t *testing.T, reps []replica) map[string]fleetCounters {
@@ -518,7 +530,7 @@ func settleFleet(t *testing.T, reps []replica) map[string]fleetCounters {
 		same := true
 		for name, c := range cur {
 			l := last[name]
-			same = same && c.vlSelect == l.vlSelect && c.wtPushes == l.wtPushes && c.wtErrors == l.wtErrors
+			same = same && c.vlSelect == l.vlSelect && c.wtPushes == l.wtPushes && c.wtErrors == l.wtErrors && c.stepsStored == l.stepsStored
 		}
 		if same {
 			stable++
@@ -872,6 +884,50 @@ func lokiCountLines(t *testing.T, fx fleetFixture) int {
 // --- answers compared with Loki ----------------------------------------------
 
 // matrixPoints maps series (its `by` labels) -> timestamp -> value.
+// matrixSumBy is matrixPoints with the values of the series that share their
+// by labels added up per timestamp: Loki answers a metric over these lines
+// with a series per detected_level (it reads the level from the JSON line),
+// which the proxy, deriving it from the fields VictoriaLogs stores, does not,
+// so a sum without the level is compared after the sum.
+func matrixSumBy(t *testing.T, label string, body []byte, by ...string) map[string]map[string]float64 {
+	t.Helper()
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "matrix" {
+		t.Fatalf("%s: not a successful matrix: %v: %.400s", label, err, body)
+	}
+	out := map[string]map[string]float64{}
+	for _, series := range resp.Data.Result {
+		parts := make([]string, 0, len(by))
+		for _, name := range by {
+			parts = append(parts, name+"="+series.Metric[name])
+		}
+		key := strings.Join(parts, ",")
+		if out[key] == nil {
+			out[key] = map[string]float64{}
+		}
+		for _, pair := range series.Values {
+			if len(pair) != 2 {
+				t.Fatalf("%s: malformed sample %v", label, pair)
+			}
+			v, err := strconv.ParseFloat(fmt.Sprint(pair[1]), 64)
+			if err != nil {
+				t.Fatalf("%s: sample %v: %v", label, pair, err)
+			}
+			out[key][fmt.Sprint(pair[0])] += v
+		}
+	}
+	return out
+}
+
 func matrixPoints(t *testing.T, label string, body []byte, by ...string) map[string]map[string]string {
 	t.Helper()
 	var resp struct {

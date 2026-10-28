@@ -1179,7 +1179,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1188,7 +1189,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1197,7 +1199,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1206,7 +1209,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1215,7 +1219,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1224,7 +1229,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1233,7 +1239,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1242,7 +1249,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1251,7 +1259,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1260,7 +1269,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1269,7 +1279,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1278,7 +1289,8 @@
      "covers": [
       "semantics/unwrap-sample-validity",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1378,7 +1390,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1387,7 +1400,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1396,7 +1410,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1405,7 +1420,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1424,7 +1440,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1433,7 +1450,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1442,7 +1460,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1451,7 +1470,8 @@
      "covers": [
       "semantics/unwrap-conversion-error",
       "parser-error-and-label-collision",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     }
    ]
@@ -1471,7 +1491,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1480,7 +1501,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1489,7 +1511,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1498,7 +1521,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1537,7 +1561,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1546,7 +1571,8 @@
      "covers": [
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     }
    ]
@@ -1605,7 +1631,8 @@
      "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration_seconds(ttl) [5m]))",
      "covers": [
       "semantics/unwrap-duration-seconds",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1613,7 +1640,8 @@
      "query": "sum by (service_name) (rate({service_name=\"cache-redis\"} | logfmt | unwrap duration(ttl) [5m]))",
      "covers": [
       "semantics/unwrap-duration-seconds",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1810,7 +1838,8 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1819,7 +1848,8 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1828,7 +1858,8 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1837,7 +1868,8 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1866,7 +1898,8 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1875,7 +1908,9 @@
      "covers": [
       "semantics/unwrap-sum-without-collapses",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps",
+      "semantics/without-sliding-sum-folded-buckets"
      ]
     },
     {
@@ -1960,7 +1995,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1970,7 +2006,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1980,7 +2017,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -1990,7 +2028,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2000,7 +2039,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2010,7 +2050,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2020,7 +2061,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2030,7 +2072,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2040,7 +2083,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2050,7 +2094,8 @@
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
      ]
     },
     {
@@ -2844,6 +2889,68 @@
      ],
      "logs": true,
      "limit": 100
+    }
+   ]
+  },
+  "sliding-sum-without": {
+   "description": "A `sum without` over count_over_time or bytes_over_time on a sliding window (range 1m over Grafana's step) is folded by VictoriaLogs before the proxy computes the windows (semantics/without-sliding-sum-folded-buckets): the bucket read groups by the stream text with the excluded pairs cut out, so VictoriaLogs answers a few dozen series instead of one per short-lived pod stream (about 13,500 an hour). SW1 is the A/B shape W8 of unwrap-sum-without, SW2 its byte sum, SW3 a line filter and two excluded labels, SW4 the trailing spelling. SW5 (rate) and SW6 (max without) keep the per-stream route and must not move. The selector leaves out the OTel-instrumented streams and the otel-collector, as W8 does. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "SW1 sum without pod, count_over_time",
+     "query": "sum without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+     "covers": [
+      "semantics/without-sliding-sum-folded-buckets",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SW2 sum without pod, bytes_over_time",
+     "query": "sum without (pod) (bytes_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+     "covers": [
+      "semantics/without-sliding-sum-folded-buckets",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SW3 sum without pod and version, line filter",
+     "query": "sum without (pod, version) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"} |= \"a\" [1m]))",
+     "covers": [
+      "semantics/without-sliding-sum-folded-buckets",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SW4 trailing sum without pod",
+     "query": "sum(count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m])) without (pod)",
+     "covers": [
+      "semantics/without-sliding-sum-folded-buckets",
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SW5 sum without pod, rate (control)",
+     "query": "sum without (pod) (rate({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+     "covers": [
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SW6 max without pod (control)",
+     "query": "max without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+     "covers": [
+      "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
     }
    ]
   }

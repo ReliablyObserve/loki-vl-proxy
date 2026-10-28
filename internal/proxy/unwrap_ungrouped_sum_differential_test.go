@@ -62,7 +62,7 @@ func (e *vlEmulator) line(row emuRow) string {
 type emuCall struct{ path, query string }
 
 type vlEmulator struct {
-	t       *testing.T
+	t       testing.TB
 	rows    []emuRow
 	field   string // the unwrapped label
 	version string // "" answers no version
@@ -444,6 +444,8 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 						acc += v
 					case "count":
 						acc++
+					case "sum_len":
+						acc += float64(len(rec.f[fx.arg]))
 					case "avg":
 						acc += (v - acc) / float64(i+1)
 					case "max":
