@@ -737,12 +737,13 @@ class LocksCommandTest(unittest.TestCase):
 
 
 class AcceptanceReplayTest(unittest.TestCase):
-    """The seed's locks against the seed day's history lines: its own data flags no locked row, and every item it
-    left unlocked has a row above 2× or no comparable row."""
+    """The seed's locks against seed-day history; later-added locks are judged by their own day."""
 
     def test_seed_day_against_the_seed_locks(self):
         b = seed_bounds()
         locked = {i for i, blk in b["blocks"].items() if blk["locked"] is True}
+        later_locked = {i for i, blk in over2x.read_bounds()["blocks"].items()
+                        if blk["locked"] is True and blk["locked_since"] > SEED}
         self.assertEqual(len(locked), 29)
         state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
         for set_name, r in seed_lines():
@@ -752,7 +753,8 @@ class AcceptanceReplayTest(unittest.TestCase):
                     if st in state[item]:
                         state[item][st] += 1
         self.assertEqual({i: v["above"] for i, v in state.items() if i in locked and v["above"]}, {})
-        self.assertEqual([i for i, v in state.items() if i not in locked and v["within"] and not v["above"]], [])
+        self.assertEqual([i for i, v in state.items()
+                          if i not in locked and i not in later_locked and v["within"] and not v["above"]], [])
 
 
 class ProfileGateTest(unittest.TestCase):

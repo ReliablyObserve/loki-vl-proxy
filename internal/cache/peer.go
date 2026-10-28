@@ -1849,10 +1849,12 @@ func (hr *hashRing) get(key string) string {
 // getN returns up to n distinct nodes for key, walking the ring clockwise
 // from the key's owner.
 func (hr *hashRing) getN(key string, n int) []string {
-	if len(hr.ring) == 0 {
+	if len(hr.ring) == 0 || n <= 0 {
 		return nil
 	}
-	out := make([]string, 0, n)
+	// walk never returns more than MaxReplicationFactor distinct peers. Use a
+	// constant capacity even when a caller supplies a huge replica count.
+	out := make([]string, 0, MaxReplicationFactor)
 	hr.walk(key, n, func(addr string) bool {
 		out = append(out, addr)
 		return true
