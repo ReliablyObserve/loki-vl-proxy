@@ -491,6 +491,10 @@ func TestWithoutFoldLabelOrderAndKeys(t *testing.T) {
 		{"a value that extends another", []map[string]string{{"route": "/a b"}, {"route": "/a", "status": "200"}}, []map[string]string{{"route": "/a", "status": "200"}, {"route": "/a b"}}},
 		{"a value with a comma and an equals sign", []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}, []map[string]string{{"a": "b", "c": "d"}, {"a": "b,c=d"}}},
 		{"a prefix first", []map[string]string{{"a": "x", "b": "y"}, {"a": "x"}}, []map[string]string{{"a": "x"}, {"a": "x", "b": "y"}}},
+		// The typed fold's group key is length-prefixed text, whose order is
+		// not Loki's either.
+		{"an earlier name first, whatever the set's size", []map[string]string{{"x": "a"}, {"job": "a", "x": "a"}}, []map[string]string{{"job": "a", "x": "a"}, {"x": "a"}}},
+		{"a longer value that sorts first", []map[string]string{{"pod": "b"}, {"pod": "ab"}, {"pod": "api-2"}, {"pod": "api-10"}}, []map[string]string{{"pod": "ab"}, {"pod": "api-10"}, {"pod": "api-2"}, {"pod": "b"}}},
 	} {
 		if tc.name == "a value with a comma and an equals sign" && metricKeyStr(tc.metric[0]) != metricKeyStr(tc.metric[1]) {
 			t.Fatal("the two sets should share their name=value text, the key the fold no longer uses")
