@@ -171,11 +171,19 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 		if bucket > 0 {
 			values, _, _, _ := jsonparser.Get(res, "values")
 			eachBucketPoint(values, start, bucket, add)
-		} else if point, _, _, err := jsonparser.Get(res, "value"); err == nil {
-			// An instant answer: one point, at the start.
-			if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
-				add(start.UnixNano(), []byte(raw))
+		} else {
+			// An instant answer: its points (a vector's one value, or a
+			// matrix's), each at the start.
+			if point, _, _, err := jsonparser.Get(res, "value"); err == nil {
+				if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
+					add(start.UnixNano(), []byte(raw))
+				}
 			}
+			_, _ = jsonparser.ArrayEach(res, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+				if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
+					add(start.UnixNano(), []byte(raw))
+				}
+			}, "values")
 		}
 		series[key] = current
 	}, "data", "result")
