@@ -717,11 +717,11 @@ func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
 	// Loki's Drilldown partial-result carve-out covers max_query_series only; a
 	// full query queue stays a 429 for Grafana clients too, so panels show the
 	// rejection instead of an empty chart.
-	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) {
+	status := statusFromUpstreamErr(err)
+	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) || status == 499 || status == http.StatusGatewayTimeout {
 		p.writeErr(w, context.Background(), err)
 		return
 	}
-	status := statusFromUpstreamErr(err)
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
 		status = hsc.StatusCode()

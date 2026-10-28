@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,49 @@ import (
 	"net/url"
 	"testing"
 )
+
+func TestResponseCache_DoesNotStoreDrilldownPartialFailure(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	calls := 0
+	h := p.compatCacheMiddleware("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			p.writeDrilldownPartialFromUpstream(w, http.StatusServiceUnavailable, "backend unavailable")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"level":"info"},"values":[[1,"1"]]}]}}`))
+	})
+	request := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=sum%28count_over_time%28%7Bapp%3D%22a%22%7D%5B5s%5D%29%29&start=1&end=2&step=1", nil))
+		return w
+	}
+	first, second := request(), request()
+	if calls != 2 || first.Header().Get(drilldownPartialUpstreamStatusHeader) == "" || second.Header().Get(drilldownPartialUpstreamStatusHeader) != "" || !json.Valid(second.Body.Bytes()) || second.Body.String() == first.Body.String() {
+		t.Fatalf("partial failure was cached: calls=%d first=%s second=%s", calls, first.Body.String(), second.Body.String())
+	}
+}
+
+func TestGrafanaStatsFailure_DoesNotTurnCancellationIntoSuccess(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"cancelled", context.Canceled, 499},
+		{"deadline", context.DeadlineExceeded, http.StatusGatewayTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			p.writeGrafanaStatsFailure(w, tc.err)
+			if w.Code != tc.want || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {
+				t.Fatalf("stats response: status=%d headers=%v body=%s", w.Code, w.Header(), w.Body.String())
+			}
+		})
+	}
+}
 
 func TestResponseCache_PrimaryExactWindows(t *testing.T) {
 	calls := 0
