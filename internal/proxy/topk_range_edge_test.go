@@ -228,6 +228,30 @@ func TestTopKMatrixEdges(t *testing.T) {
 			want: map[string]map[int]string{"b": {0: "2"}},
 		},
 		{
+			name:   "a tie across the k-th place inside a without group takes the first labels",
+			series: map[string][]string{"a/dev": {"5"}, "b/dev": {"5"}, "c/dev": {"5"}, "a/prod": {"1"}, "b/prod": {"2"}},
+			k:      2, desc: true, group: &logqlpkg.Grouping{Without: true, Labels: []string{"app"}},
+			want: map[string]map[int]string{"a/dev": {0: "5"}, "b/dev": {0: "5"}, "a/prod": {0: "1"}, "b/prod": {0: "2"}},
+		},
+		{
+			name:   "NaN inside a by group loses to a number and fills a group of NaN only",
+			series: map[string][]string{"a/dev": {nan}, "b/dev": {"3"}, "a/prod": {nan}, "b/prod": {nan}, "c/prod": {"-1"}, "a/stage": {nan}},
+			k:      1, desc: true, group: by("env"),
+			want: map[string]map[int]string{"b/dev": {0: "3"}, "c/prod": {0: "-1"}, "a/stage": {0: nan}},
+		},
+		{
+			name:   "k larger than one group but smaller than the total cuts only the larger group",
+			series: map[string][]string{"a/dev": {"9"}, "a/prod": {"1"}, "b/prod": {"5"}, "c/prod": {"3"}},
+			k:      2, desc: true, group: by("env"),
+			want: map[string]map[int]string{"a/dev": {0: "9"}, "b/prod": {0: "5"}, "c/prod": {0: "3"}},
+		},
+		{
+			name:   "a group ranks on its own at a step where another group has no sample",
+			series: map[string][]string{"a/dev": {"1", ""}, "b/dev": {"2", ""}, "a/prod": {"", "4"}, "b/prod": {"", "3"}},
+			k:      1, desc: false, group: by("env"),
+			want: map[string]map[int]string{"a/dev": {0: "1"}, "b/prod": {1: "3"}},
+		},
+		{
 			name:   "without drops the listed labels from the group key",
 			series: map[string][]string{"a/dev": {"1"}, "b/dev": {"2"}, "a/prod": {"7"}, "b/prod": {"8"}},
 			k:      1, desc: false, group: &logqlpkg.Grouping{Without: true, Labels: []string{"app"}},
@@ -266,14 +290,32 @@ func TestInstantTopKPerGroup(t *testing.T) {
 	for _, tc := range []struct {
 		agg  instantMetricPostAgg
 		want []string
+		body []byte // overrides the vector above
 	}{
-		{instantMetricPostAgg{name: "topk", k: 2}, []string{"b/prod", "a/prod"}},
-		{instantMetricPostAgg{name: "topk", k: 1, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"b/prod", "b/dev"}},
-		{instantMetricPostAgg{name: "bottomk", k: 1, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"a/dev", "a/prod"}},
-		{instantMetricPostAgg{name: "topk", k: 1, group: &logqlpkg.Grouping{Without: true, Labels: []string{"app"}}}, []string{"b/prod", "b/dev"}},
-		{instantMetricPostAgg{name: "topk", k: 9}, []string{"b/prod", "a/prod", "b/dev", "a/dev"}},
+		{instantMetricPostAgg{name: "topk", k: 2}, []string{"b/prod", "a/prod"}, nil},
+		{instantMetricPostAgg{name: "topk", k: 1, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"b/prod", "b/dev"}, nil},
+		{instantMetricPostAgg{name: "bottomk", k: 1, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"a/dev", "a/prod"}, nil},
+		{instantMetricPostAgg{name: "topk", k: 1, group: &logqlpkg.Grouping{Without: true, Labels: []string{"app"}}}, []string{"b/prod", "b/dev"}, nil},
+		{instantMetricPostAgg{name: "topk", k: 9}, []string{"b/prod", "a/prod", "b/dev", "a/dev"}, nil},
+		// k larger than every group but smaller than the total keeps all four.
+		{instantMetricPostAgg{name: "topk", k: 2, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"b/prod", "a/prod", "b/dev", "a/dev"}, nil},
+		// A tie across the k-th place inside a without group takes the first labels,
+		// and a NaN loses to every number in its group but fills a place a number leaves; equal
+		// NaN go by label order (the second case: b/dev, not c/dev).
+		{instantMetricPostAgg{name: "topk", k: 2, group: &logqlpkg.Grouping{Without: true, Labels: []string{"app"}}}, []string{"a/dev", "b/dev", "b/prod", "a/prod"},
+			[]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+				`{"metric":{"app":"c","env":"dev"},"value":[1,"5"]},{"metric":{"app":"a","env":"dev"},"value":[1,"5"]},{"metric":{"app":"b","env":"dev"},"value":[1,"5"]},` +
+				`{"metric":{"app":"a","env":"prod"},"value":[1,"NaN"]},{"metric":{"app":"b","env":"prod"},"value":[1,"2"]}]}}`)},
+		{instantMetricPostAgg{name: "bottomk", k: 1, group: &logqlpkg.Grouping{Labels: []string{"env"}}}, []string{"b/prod", "b/dev"},
+			[]byte(`{"status":"success","data":{"resultType":"vector","result":[` +
+				`{"metric":{"app":"c","env":"dev"},"value":[1,"NaN"]},{"metric":{"app":"b","env":"dev"},"value":[1,"NaN"]},` +
+				`{"metric":{"app":"a","env":"prod"},"value":[1,"NaN"]},{"metric":{"app":"b","env":"prod"},"value":[1,"2"]}]}}`)},
 	} {
-		if got := names(applyInstantSortTopkAgg(body, tc.agg)); !reflect.DeepEqual(got, tc.want) {
+		in := body
+		if tc.body != nil {
+			in = tc.body
+		}
+		if got := names(applyInstantSortTopkAgg(in, tc.agg)); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%+v: got %v, want %v", tc.agg, got, tc.want)
 		}
 	}

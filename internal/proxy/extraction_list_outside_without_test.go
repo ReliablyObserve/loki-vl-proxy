@@ -180,7 +180,12 @@ var extractionListShapes = []string{
 // Loki (semantics/topk-bottomk-without-strips-label), where origin/main ranked all
 // the series as one group. The series they rank carry the line (`_msg`) while the
 // series identity is open, so each is a group of its own and the answer is the
-// whole inner vector; the same ranking without a clause is unchanged.
+// whole inner vector; the same ranking without a clause is unchanged. The
+// answers are the ones `topk(1000, ...)` gives over the same fixture (origin/main
+// too, where k exceeds the series and nothing is ranked): origin/main answered the
+// trailing spelling through a mangled inner expression, which ranked all the series
+// as one group and sampled them at other steps (a sliding id=0 at end-60s where its
+// line is in the window of end only).
 //
 // conformance: semantics/unwrap-extraction-list-series-identity, semantics/topk-bottomk-without-strips-label, metric-series-identity
 func TestExtractionListOutsideWithoutKeepsItsGrouping(t *testing.T) {
@@ -439,4 +444,24 @@ func sameFigures(a, b map[string]float64) bool {
 		}
 	}
 	return true
+}
+
+// TestExtractionListTopKWithoutIsBoundedByTheSeriesLimit: each line is a series of
+// its own while the series identity is open
+// (semantics/unwrap-extraction-list-series-identity), so a `without` ranking of an
+// extraction list returns the whole inner vector; the response is the limit error
+// of -max-stats-query-series, not an unbounded answer, in both spellings and on
+// both endpoints.
+//
+// conformance: semantics/topk-bottomk-without-strips-label, limits/series-limit-error
+func TestExtractionListTopKWithoutIsBoundedByTheSeriesLimit(t *testing.T) {
+	rows, _ := extractionListFixture()
+	const inner = `max_over_time({app="uw"} | logfmt amount, route | unwrap amount [5m])`
+	for _, query := range []string{`topk(2, ` + inner + `) without (pod)`, `topk without (pod) (2, ` + inner + `)`} {
+		for _, instant := range []bool{true, false} {
+			if got := withoutScopeAnswer(t, rows, query, instant, 5); got != "400 series limit (5)" {
+				t.Errorf("instant=%v %s: %.120s, want the series limit error", instant, query, got)
+			}
+		}
+	}
 }

@@ -23,6 +23,28 @@ func topKLabel(key, name string) string {
 	return ""
 }
 
+// onlyTopKLabels keeps the named labels of each series key, so series that
+// differ in other labels only (detected_level, service_name) compare equal.
+func onlyTopKLabels(series map[string]map[string]string, names ...string) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for key, points := range series {
+		parts := make([]string, 0, len(names))
+		for _, name := range names {
+			if v := topKLabel(key, name); v != "" {
+				parts = append(parts, name+"="+v)
+			}
+		}
+		kept := strings.Join(parts, ",")
+		if out[kept] == nil {
+			out[kept] = map[string]string{}
+		}
+		for ts, v := range points {
+			out[kept][ts] = v
+		}
+	}
+	return out
+}
+
 // assertTopKRangeParity compares the proxy with Loki sample by sample. Loki
 // breaks a tie at the k-th place by the order of an unordered map, so where the
 // inner vector of a group holds one the values selected must match and the
@@ -156,8 +178,10 @@ func TestCompat_TopkRangePerStep(t *testing.T) {
 	inner := slidingRangeSeries(t, lokiURL, innerQuery, start, end, step, nil)
 	// A range function ranked as it is: a series per stream, with every label
 	// of the stream (pod included) that topk/bottomk without must keep.
+	// Only the stream labels are compared: the others (detected_level,
+	// service_name) are not what this test is about.
 	directQuery := `count_over_time(` + selector + `[5m])`
-	direct := slidingRangeSeries(t, lokiURL, directQuery, start, end, step, nil)
+	direct := onlyTopKLabels(slidingRangeSeries(t, lokiURL, directQuery, start, end, step, nil), "app", "pod")
 
 	for _, tc := range []struct {
 		name        string
@@ -190,6 +214,7 @@ func TestCompat_TopkRangePerStep(t *testing.T) {
 						t.Fatalf("%s: proxy series {%s} lost its pod label", tc.query, key)
 					}
 				}
+				loki, proxy = onlyTopKLabels(loki, "app", "pod"), onlyTopKLabels(proxy, "app", "pod")
 			}
 			if tc.k >= pods*len(apps) {
 				// Nothing is dropped: the answer is the inner vector.

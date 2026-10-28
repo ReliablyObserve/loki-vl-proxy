@@ -141,6 +141,7 @@
     "limits/series-limit-error": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/extraction_list_outside_without_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/top_value_series_limit_test.go",
@@ -1103,6 +1104,7 @@
       "semantics/extracted-suffix-collision"
     ],
     "internal/proxy/extraction_list_outside_without_test.go": [
+      "limits/series-limit-error",
       "metric-series-identity",
       "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-extraction-list-series-identity"

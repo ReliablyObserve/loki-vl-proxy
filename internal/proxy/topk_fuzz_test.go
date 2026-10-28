@@ -252,9 +252,9 @@ func decodeTopKMatrix(t *testing.T, body []byte, start time.Time, step time.Dura
 // FuzzTopKPerStep: topk and bottomk rank every step on its own, inside each
 // group of the by()/without() labels, with NaN last and ties kept to k
 // (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/vector.go). The
-// three places the proxy ranks (the bounded heap over the VictoriaLogs window
-// stats, the filter over a finished matrix and the filter over an instant
-// vector) must keep what Loki's heap keeps over the same vector, for any grid
+// four places the proxy ranks (the bounded heap over the VictoriaLogs window
+// stats, the filter over a finished matrix, the filter over an instant vector
+// and the instant sort) must keep what Loki's heap keeps over the same vector, for any grid
 // of samples (absent, tied, NaN, +Inf), any k from 0 to 6 (the heap is only
 // reached with k above 0: Loki's parser rejects a smaller one), topk and
 // bottomk, and every kind of clause.
@@ -297,33 +297,43 @@ func FuzzTopKPerStep(f *testing.F) {
 			}
 		}
 
-		// The filter over an instant vector (the first step).
+		// The filters over an instant vector (the first step): the vector filter
+		// and the instant sort with its per-group keep.
 		var items []string
 		for i := 0; i < c.series; i++ {
 			if c.present[i][0] {
 				items = append(items, fmt.Sprintf(`{"metric":{"app":%q,"env":%q},"value":[1,%q]}`, c.app(i), c.env(i), strconv.FormatFloat(c.cells[i][0], 'f', -1, 64)))
 			}
 		}
-		vector := applyTopKToVector([]byte(`{"status":"success","data":{"resultType":"vector","result":[`+strings.Join(items, ",")+`]}}`), c.k, c.descending, c.group)
-		var resp struct {
-			Data struct {
-				Result []struct {
-					Metric map[string]string
-					Value  []any
+		body := []byte(`{"status":"success","data":{"resultType":"vector","result":[` + strings.Join(items, ",") + `]}}`)
+		name := "bottomk"
+		if c.descending {
+			name = "topk"
+		}
+		for impl, vector := range map[string][]byte{
+			"applyTopKToVector":       applyTopKToVector(body, c.k, c.descending, c.group),
+			"applyInstantSortTopkAgg": applyInstantSortTopkAgg(body, instantMetricPostAgg{name: name, k: c.k, group: c.group}),
+		} {
+			var resp struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string
+						Value  []any
+					}
 				}
 			}
-		}
-		if err := json.Unmarshal(vector, &resp); err != nil {
-			t.Fatalf("%v: %s", err, vector)
-		}
-		got := topKFuzzStep{}
-		for _, s := range resp.Data.Result {
-			value, err := strconv.ParseFloat(s.Value[1].(string), 64)
-			if err != nil {
-				t.Fatal(err)
+			if err := json.Unmarshal(vector, &resp); err != nil {
+				t.Fatalf("%s: %v: %s", impl, err, vector)
 			}
-			got[s.Metric["app"]+"/"+s.Metric["env"]] = value
+			got := topKFuzzStep{}
+			for _, s := range resp.Data.Result {
+				value, err := strconv.ParseFloat(s.Value[1].(string), 64)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got[s.Metric["app"]+"/"+s.Metric["env"]] = value
+			}
+			c.checkStep(t, impl, 0, got)
 		}
-		c.checkStep(t, "applyTopKToVector", 0, got)
 	})
 }
