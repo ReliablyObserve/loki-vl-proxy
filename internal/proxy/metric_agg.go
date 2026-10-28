@@ -569,7 +569,12 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutChain(bw.body, withoutLabels, originalQuery, withoutOp)
 	}
-	if sc.code < http.StatusBadRequest {
+	// Loki ranks the samples a label_replace leaves apart (two series that end
+	// with one label set stay two samples) and files the survivors under one
+	// series afterwards (pkg/logql/engine.go JoinSampleVector): without a grouping
+	// topk and bottomk rank first, then the transform runs on what they kept.
+	rankFirst := (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.group == nil
+	if sc.code < http.StatusBadRequest && !rankFirst {
 		bw.body = transforms.apply(bw.body)
 	}
 
@@ -587,6 +592,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 
 	result := applyMatrixPostAggregation(bw.body, postAgg)
+	if rankFirst {
+		result = transforms.apply(result)
+	}
 	if foldWithout {
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {

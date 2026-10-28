@@ -660,6 +660,7 @@
       "internal/proxy/metadata_inventory_test.go"
     ],
     "semantics/label-replace-duplicates-before-ranking": [
+      "internal/proxy/ranked_topk_cached_route_test.go",
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
     "semantics/label-replace-instant-vector": [
@@ -1384,6 +1385,7 @@
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache",
+      "semantics/label-replace-duplicates-before-ranking",
       "semantics/label-replace-new-label",
       "series-limits-and-partial-results"
     ],

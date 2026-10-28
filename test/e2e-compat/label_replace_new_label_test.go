@@ -302,13 +302,12 @@ func TestCompat_LabelReplaceNewLabel(t *testing.T) {
 // (semantics/label-replace-duplicates-before-ranking, open).
 // conformance: semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
 func TestCompat_LabelReplaceDuplicatesBeforeRanking(t *testing.T) {
-	ensureDataIngested(t)
-	waitForLokiMetricData(t)
+	fx := ensureLabelReplaceFixture(t)
 
 	at := time.Now().UTC().Truncate(time.Minute)
 	for _, query := range []string{
-		`topk(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))`,
-		`bottomk(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))`,
+		fmt.Sprintf(`topk(1, label_replace(sum by (app) (count_over_time({probe=%q}[5m])), "app", "all", "app", ".+"))`, fx.probe),
+		fmt.Sprintf(`bottomk(1, label_replace(sum by (app) (count_over_time({probe=%q}[5m])), "app", "all", "app", ".+"))`, fx.probe),
 	} {
 		params := url.Values{
 			"query": {query},

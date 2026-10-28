@@ -42,13 +42,13 @@ func rankedTopKLines(seed int64, end time.Time, span time.Duration) []slidingFix
 	for i, app := range rankedTopKApps {
 		pace := time.Duration(6+3*i) * time.Second
 		for ts := from.Add(time.Duration(rng.Intn(5)) * time.Second); ts.Before(end.Add(time.Second)); ts = ts.Add(pace) {
-			lines = append(lines, slidingFixtureLine{ts: ts.UnixNano(), app: app, msg: "x"})
+			lines = append(lines, slidingFixtureLine{ts: ts.UnixNano(), app: app, msg: strings.Repeat("x", 1+i)})
 		}
 	}
 	mid := from.Add(span / 2)
 	for k := 0; k < 400; k++ {
 		ts := mid.Add(time.Duration(rng.Intn(600)) * time.Second)
-		lines = append(lines, slidingFixtureLine{ts: ts.UnixNano(), app: "queue", msg: "y"})
+		lines = append(lines, slidingFixtureLine{ts: ts.UnixNano(), app: "queue", msg: "yyyyyyyy"})
 	}
 	sort.Slice(lines, func(i, j int) bool { return lines[i].ts < lines[j].ts })
 	return lines
@@ -58,8 +58,8 @@ func rankedTopKLines(seed int64, end time.Time, span time.Duration) []slidingFix
 // every step. A step where the k-th and the next value are equal is ambiguous
 // (Loki's heap picks one of them): its timestamp is returned in skip and left
 // out of the comparison.
-func rankedTopKReference(lines []slidingFixtureLine, k int, descending bool, start, end time.Time, step, window time.Duration) (want map[string]map[int64]string, skip map[int64]bool) {
-	all := lokiSlidingReference(lines, "count_over_time", true, 0, start, end, step, window)
+func rankedTopKReference(lines []slidingFixtureLine, fn string, k int, descending bool, start, end time.Time, step, window time.Duration) (want map[string]map[int64]string, skip map[int64]bool) {
+	all := lokiSlidingReference(lines, fn, true, 0, start, end, step, window)
 	want, skip = map[string]map[int64]string{}, map[int64]bool{}
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
 		type entry struct {
@@ -211,6 +211,15 @@ func (s *rankedTopKStack) ask(t testing.TB, query string, start, end time.Time, 
 const rankedTopKInner = `sum by (app) (count_over_time({env="production"}[%s]))`
 const rankedTopKReplace = `label_replace(` + rankedTopKInner + `, "app_short", "$1", "app", "(.*)-.*")`
 
+// rankedTopKFn is the metric of the differential: the four window functions the ranked route serves.
+func rankedTopKQuery(fn, rangeStr string, short bool) string {
+	inner := fmt.Sprintf(`sum by (app) (%s({env="production"}[%s]))`, fn, rangeStr)
+	if short {
+		inner = `label_replace(` + inner + `, "app_short", "$1", "app", "(.*)-.*")`
+	}
+	return inner
+}
+
 // The L3 shape of the label_replace A/B set, topk over label_replace over a
 // grouped count: the first request asks VictoriaLogs for stats buckets only
 // (one call, no window recurrence), the identical repeat asks it for nothing,
@@ -235,7 +244,7 @@ func TestRankedTopKRangeIsServedFromTheBucketCache(t *testing.T) {
 			start := end.Add(-time.Hour)
 			check := func(label string, start, end time.Time) {
 				code, body := s.ask(t, tc.query, start, end, step, nil)
-				want, skip := rankedTopKReference(lines, tc.k, tc.desc, start, end, step, window)
+				want, skip := rankedTopKReference(lines, "count_over_time", tc.k, tc.desc, start, end, step, window)
 				assertRankedTopK(t, label, decodeRankedTopK(t, code, body), want, skip, tc.short)
 			}
 
@@ -279,7 +288,7 @@ func TestRankedTopKRangeDifferential(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 	steps := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 150 * time.Second, 10 * time.Minute}
 	ranges := []string{"2m", "5m", "10m", "1m"}
-	for i := 0; i < 24; i++ {
+	for i := 0; i < 40; i++ {
 		step := steps[rng.Intn(len(steps))]
 		rangeStr := ranges[rng.Intn(len(ranges))]
 		window, _ := time.ParseDuration(rangeStr)
@@ -288,12 +297,9 @@ func TestRankedTopKRangeDifferential(t *testing.T) {
 		if rng.Intn(3) == 0 {
 			fn, desc = "bottomk", false
 		}
-		inner := fmt.Sprintf(rankedTopKInner, rangeStr)
+		metric := []string{"count_over_time", "rate", "bytes_over_time", "bytes_rate"}[rng.Intn(4)]
 		short := rng.Intn(2) == 0
-		if short {
-			inner = fmt.Sprintf(rankedTopKReplace, rangeStr)
-		}
-		query := fmt.Sprintf("%s(%d, %s)", fn, k, inner)
+		query := fmt.Sprintf("%s(%d, %s)", fn, k, rankedTopKQuery(metric, rangeStr, short))
 		span := time.Duration(20+rng.Intn(60)) * step
 		// Windows move back and forth over one grid (a refresh and a re-run) and
 		// sometimes start off the step grid.
@@ -312,7 +318,7 @@ func TestRankedTopKRangeDifferential(t *testing.T) {
 		if onCode != offCode || !bytes.Equal(onBody, offBody) {
 			t.Fatalf("%s: the cache changed the answer\n with: %d %s\nwithout: %d %s", name, onCode, onBody, offCode, offBody)
 		}
-		want, skip := rankedTopKReference(lines, k, desc, start, endAt, step, window)
+		want, skip := rankedTopKReference(lines, metric, k, desc, start, endAt, step, window)
 		assertRankedTopK(t, name, decodeRankedTopK(t, onCode, onBody), want, skip, short)
 	}
 	buckets, grids, _ := on.vlCalls()
@@ -332,14 +338,32 @@ func TestRankedTopKRangeFallsBackToTheWindowRecurrence(t *testing.T) {
 	lines := rankedTopKLines(4, end, 3*time.Hour)
 	start, step, window := end.Add(-time.Hour), 15*time.Second, 5*time.Minute
 	query := `topk(2, ` + fmt.Sprintf(rankedTopKInner, "5m") + `)`
-	want, skip := rankedTopKReference(lines, 2, true, start, end, step, window)
+	want, skip := rankedTopKReference(lines, "count_over_time", 2, true, start, end, step, window)
 
 	t.Run("more series than the limit", func(t *testing.T) {
 		s := newRankedTopKStack(t, lines, true, func(c *Config) { c.MaxStatsQuerySeries = 3 })
 		code, body := s.ask(t, query, start, end, step, nil)
 		assertRankedTopK(t, "over the limit", decodeRankedTopK(t, code, body), want, skip, false)
-		if _, grids, _ := s.vlCalls(); grids != 3 {
-			t.Fatalf("window grid fetches = %d, want 3 (seed, leaving, entering)", grids)
+		buckets, grids, _ := s.vlCalls()
+		if buckets != 1 || grids != 3 {
+			t.Fatalf("cold: %d bucket calls and %d grid fetches, want 1 and 3 (seed, leaving, entering)", buckets, grids)
+		}
+		// The verdict is remembered: the repeat does not read the buckets again.
+		code, body = s.ask(t, query, start, end, step, nil)
+		assertRankedTopK(t, "over the limit, repeat", decodeRankedTopK(t, code, body), want, skip, false)
+		if b, g, _ := s.vlCalls(); b != 1 || g != 6 {
+			t.Fatalf("repeat: %d bucket calls and %d grid fetches in all, want 1 and 6", b, g)
+		}
+	})
+	t.Run("a failing backend is the answer, not a heavier read", func(t *testing.T) {
+		s := newRankedTopKStack(t, lines, true, nil)
+		s.shim.fail = func(start, end int64) bool { return true }
+		code, body := s.ask(t, query, start, end, step, nil)
+		if code < 500 {
+			t.Fatalf("HTTP %d: %s, want the backend failure", code, body)
+		}
+		if _, grids, raw := s.vlCalls(); grids != 0 || raw != 0 {
+			t.Fatalf("a failing backend was asked %d grid fetches and %d raw scans", grids, raw)
 		}
 	})
 	t.Run("drilldown keeps partial series", func(t *testing.T) {
@@ -383,5 +407,49 @@ func TestLabelReplaceTopKRepeatsAreStable(t *testing.T) {
 				t.Fatalf("a repeat asked VictoriaLogs %d more times, want 0", b+g+r-afterFirst)
 			}
 		})
+	}
+}
+
+// label_replace may give two series one label set; Loki ranks the samples (both
+// are kept at each step) and files the survivors under one series, so
+// topk(1, ...) answers the larger of the two at each step, one point per step
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next, pkg/logql/engine.go
+// JoinSampleVector). Reading the buckets must not change that.
+// conformance: semantics/label-replace-new-label, semantics/label-replace-duplicates-before-ranking, loki_api_v1_query_range
+func TestRankedTopKOverLabelSetsLabelReplaceMadeEqual(t *testing.T) {
+	end := time.Unix(rankedTopKEnd, 0).UTC()
+	lines := rankedTopKLines(6, end, 3*time.Hour)
+	start, step, window := end.Add(-time.Hour), 15*time.Second, 5*time.Minute
+	s := newRankedTopKStack(t, lines, true, nil)
+	for _, fn := range []string{"topk", "bottomk"} {
+		query := fn + `(1, label_replace(sum by (app) (count_over_time({env="production"}[5m])), "app", "all", "app", ".+"))`
+		code, body := s.ask(t, query, start, end, step, nil)
+		got := decodeRankedTopK(t, code, body)
+		want, skip := rankedTopKReference(lines, "count_over_time", 1, fn == "topk", start, end, step, window)
+		if len(got) != 1 || len(got[0].Metric) != 1 || got[0].Metric["app"] != "all" {
+			t.Fatalf("%s: %d series, want one {app=\"all\"}: %s", fn, len(got), body)
+		}
+		points := map[int64]string{}
+		for _, pair := range got[0].Values {
+			ts, _ := pair[0].(float64)
+			if _, dup := points[int64(ts)]; dup {
+				t.Fatalf("%s: two points at %d: %s", fn, int64(ts), body)
+			}
+			points[int64(ts)] = pair[1].(string)
+		}
+		ranked := map[int64]string{}
+		for _, perApp := range want {
+			for ts, v := range perApp {
+				ranked[ts] = v
+			}
+		}
+		for ts, v := range ranked {
+			if !skip[ts] && points[ts] != v {
+				t.Fatalf("%s: ts=%d got %q want %q", fn, ts, points[ts], v)
+			}
+		}
+		if len(points) != len(ranked) {
+			t.Fatalf("%s: %d points, want %d", fn, len(points), len(ranked))
+		}
 	}
 }

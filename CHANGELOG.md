@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the grouping yields more series than `-max-stats-query-series` (topk ranks
   them all, Loki's limit applies to the answer), for a Logs Drilldown request that
   keeps the busiest series, and for a range equal to the step (one grid already).
+  A failure of VictoriaLogs on the bucket read is the client's answer (the recurrence is
+  not tried against a backend that is failing), and a grouping over the limit is
+  remembered for five minutes so its bucket read is not repeated on every request.
+  `topk` and `bottomk` without a grouping rank before a `label_replace` around them
+  renames the series, as Loki ranks the samples it leaves apart.
   Not covered: an instant `rate(...)` or `count_over_time(...)` over a stream with
   no level label has no `detected_level="unknown"` where Loki does, with or
   without the `label_replace` (registered open as
