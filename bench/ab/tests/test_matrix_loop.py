@@ -100,7 +100,7 @@ def run_main(raw, extra=(), shapes=(W8, W9)):
         with mock.patch.object(sys, "argv", argv), \
                 mock.patch.object(perf_matrix, "request", replay.request), \
                 mock.patch.object(perf_matrix, "CPUSampler", FakeSampler), \
-                mock.patch.object(perf_matrix, "signature", lambda status, body, logs: json.loads(body)["signature"]), \
+                mock.patch.object(perf_matrix, "signature", lambda status, body, logs, ranked=False: json.loads(body)["signature"]), \
                 mock.patch.object(perf_matrix, "loki_cache_stats", lambda body: json.loads(body)["cache"]), \
                 mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0\n"), \
                 mock.patch.object(perf_matrix.urllib.request, "urlopen") as urlopen, \
@@ -124,6 +124,29 @@ def summarize(raw):
             report.summarize(args)
         with open(saved) as f:
             return json.load(f)
+
+
+class RankedSignatureTest(unittest.TestCase):
+    """Loki picks one of several tied series at each step, so a topk answer's series count is no evidence."""
+
+    @staticmethod
+    def body(*series):
+        return json.dumps({"data": {"resultType": "matrix", "result": [
+            {"metric": {"s": name}, "values": [[1, v], [2, v]]} for name, v in series]}}).encode()
+
+    def test_a_ranked_answer_names_no_series_count(self):
+        proxy = perf_matrix.signature(200, self.body(("a", "5"), ("b", "4")), False, True)
+        loki = perf_matrix.signature(200, self.body(("a", "5"), ("b", "4"), ("c", "4")), False, True)
+        self.assertEqual(proxy, "series=ranked points=4 sum=18")
+        self.assertNotEqual(proxy, loki)  # a third series adds points: a real difference stays visible
+        again = perf_matrix.signature(200, self.body(("a", "5"), ("c", "4")), False, True)
+        self.assertEqual(proxy, again)  # a different tied pick with the same values is the same answer
+        self.assertEqual(report.parity(proxy, again, 0.01), "same")
+
+    def test_other_answers_keep_the_series_count(self):
+        self.assertEqual(perf_matrix.signature(200, self.body(("a", "5"), ("b", "4")), False), "series=2 points=4 sum=18")
+        wrong = perf_matrix.signature(200, self.body(("a", "5"), ("b", "9")), False, True)
+        self.assertEqual(report.parity(perf_matrix.signature(200, self.body(("a", "5"), ("b", "4")), False, True), wrong, 0.01), "differs")
 
 
 class ProfileRecordTest(unittest.TestCase):

@@ -275,8 +275,14 @@ def name_set_signature(kind, names):
     return f"{kind}={len(names)} set={hashlib.sha256(chr(10).join(names).encode()).hexdigest()[:12]}"
 
 
-def signature(status, body, logs):
-    """A result fingerprint: equal signatures mean equal answers."""
+def signature(status, body, logs, ranked=False):
+    """A result fingerprint: equal signatures mean equal answers.
+
+    A topk or bottomk answer (ranked) names no series count: when several series tie at a step,
+    Loki keeps the tied one its map yields (the union of series over the range grows with
+    it), so the count says nothing about the answer, while the points and the sum, which hold
+    every step's ranked values, do.
+    """
     if status != 200:
         try:
             return "ERR " + json.loads(body).get("error", "")[:90]
@@ -312,7 +318,7 @@ def signature(status, body, logs):
                 # report, not a reason to stop the run.
                 not_numbers += 1
             points += 1
-    sig = f"series={len(result)} points={points} sum={total:.6g}"
+    sig = f"series={'ranked' if ranked else len(result)} points={points} sum={total:.6g}"
     return f"{sig} not_numbers={not_numbers}" if not_numbers else sig
 
 
@@ -447,7 +453,8 @@ def main():
                         time.sleep(args.pause)
                     # vl_cpu_max / vl_cpu_avg are filled from the sampler's samples after the loop.
                     row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
-                           "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False)),
+                           "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False),
+                                                  shape["query"].lstrip().startswith(("topk", "bottomk"))),
                            "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
