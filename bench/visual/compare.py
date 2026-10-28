@@ -171,6 +171,56 @@ def same(a, b):
     return None
 
 
+def is_ranked(key):
+    """True for a topk or bottomk query request (its expression starts with the operator, as in bench/ab's signature)."""
+    return key[0] == "query" and str(key[2] or "").lstrip().startswith(("topk", "bottomk"))
+
+
+def same_ranked(a, b):
+    """None when two topk/bottomk answers hold the same ranked values at every step, else a short reason.
+
+    When several series tie across the k-th place at a step, Loki keeps the tied one its map yields
+    (pkg/logql/evaluator.go VectorAggEvaluator.Next: the heap root is replaced only by a strictly better
+    value, and the inner aggregation hands the series over in map order), so the union of series over
+    the range differs between runs of Loki itself, while the ranked values never do. The proxy breaks
+    the tie on the label key. The series sets are therefore not compared: every step's sorted values are,
+    per query ref, and so are the label names the series carry and the frame schema and meta of the series
+    both sides have. A wrong value, a missing step, an extra point, a dropped or renamed label still differs."""
+    if not a or not b or any(x[0] != "metric" for x in (*a.values(), *b.values())):
+        return same(a, b)
+    names = lambda fr: sorted({n for ident in fr for n in json.loads(ident[2])})
+    if names(a) != names(b):
+        return f"label names differ: {names(a)} vs {names(b)}"
+    for ident in set(a) & set(b):
+        if a[ident][2] != b[ident][2]:
+            return f"{ident[2]}: frame schema or meta differs"
+
+    def steps(fr):
+        out = {}
+        for ident, x in fr.items():
+            for t, v in x[1].items():
+                out.setdefault(ident[0], {}).setdefault(t, []).append(v)
+        return {ref: {t: sorted(vs, key=lambda v: (v is None, v or 0)) for t, vs in by_t.items()} for ref, by_t in out.items()}
+
+    sa, sb = steps(a), steps(b)
+    if set(sa) != set(sb):
+        return f"query refs differ: {sorted(map(str, sa))} vs {sorted(map(str, sb))}"
+    for ref in sa:
+        if set(sa[ref]) != set(sb[ref]):
+            return f"{ref}: timestamps differ ({len(sa[ref])} vs {len(sb[ref])} steps)"
+        for t in sa[ref]:
+            u, v = sa[ref][t], sb[ref][t]
+            if len(u) != len(v):
+                return f"{ref}: {len(u)} vs {len(v)} ranked series at {t}"
+            for x, y in zip(u, v):
+                if x is None or y is None:
+                    if x != y:
+                        return f"{ref}: null at {t}"
+                elif not math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-12):
+                    return f"{ref}: ranked values at {t}: {u} vs {v}"
+    return None
+
+
 def nonzero(fr):
     return {k: ("metric", {t: v for t, v in x[1].items() if v}, x[2]) if x[0] == "metric" and any(x[1].values()) else x
             for k, x in fr.items() if not (x[0] == "metric" and not any(x[1].values()))}
@@ -231,11 +281,12 @@ def qids(diffs):
     return [getattr(x, "qid", None) for x in diffs]
 
 
-def compare(left, right, lenient=False, explain=None):
+def compare(left, right, lenient=False, explain=None, vs_loki=False):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
     explain: (raw left, raw right) of the records, to ask explain_vs_loki why a difference is by design; such a
-    difference goes to `explained` with its reason instead of the differences."""
+    difference goes to `explained` with its reason instead of the differences.
+    vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series."""
     keys = sorted(set(left) | set(right), key=str)
     n = ok = missing = 0
     diffs, explained, series = [], [], 0
@@ -255,7 +306,7 @@ def compare(left, right, lenient=False, explain=None):
             xa, xb = la[i], lb[j]
             x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
             series += len(xa)
-            why = same(x, y)
+            why = (same_ranked if vs_loki and is_ranked(k) else same)(x, y)
             if not why:
                 ok += 1
                 continue
@@ -464,9 +515,9 @@ def main():
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
         explained, lnondet = [], []
         if loki_ok:
-            ln, lok, _, _, _, _ = compare(p, l)
-            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]))
-            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]))
+            ln, lok, _, _, _, _ = compare(p, l, vs_loki=True)
+            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]), vs_loki=True)
+            _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]), vs_loki=True)
             # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
             # Loki there) still counts against the base, so a fix towards Loki reads as improved.
             def what(x):  # the request and its reasons, without window timestamps

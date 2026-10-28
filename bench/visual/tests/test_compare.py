@@ -297,6 +297,94 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual(len(self.check(pr, loki)["loki_diffs"]), 1)
 
 
+def ranked_capture(series, expr='topk by (service_name) (2, sum by (service_name, level) (count_over_time({env="production"}[5s])))', uid="ds1"):
+    """A capture of one topk query: {(service_name, level): {step: value}}, one frame per series."""
+    frames = []
+    for (svc, level), by_t in series.items():
+        times = sorted(by_t)
+        frames.append({"schema": {"name": "", "fields": [{"type": "time"}, {"type": "number", "labels": {"service_name": svc, "level": level}}]},
+                       "data": {"values": [times, [by_t[t] for t in times]]}})
+    rec = {"url": "/api/ds/query?ds_type=loki", "method": "POST", "status": 200,
+           "request": {"from": "1", "to": "2", "requestId": uid + "-1", "queries": [
+               {"refId": "A", "expr": expr, "queryType": "range", "datasource": {"type": "loki", "uid": uid}}]},
+           "response": {"results": {"A": {"frames": frames}}}}
+    return {"settled": True, "settle_ms": 1000, "records": [rec], "ui": {"noData": 0, "banners": [], "panelErrors": 0}}
+
+
+class RankedAnswerTest(unittest.TestCase):
+    """Loki keeps the tied series its map yields at the k-th place, so a topk answer is compared by its ranked values per step."""
+    run_compare = CompareTest.run_compare
+
+    # Step 10: pricing-svc ties error 5 = warn 5 behind info 20 (k=2). Loki may keep either; the proxy keeps error.
+    PROXY = {("pricing-svc", "info"): {10: 20, 20: 20}, ("pricing-svc", "error"): {10: 5, 20: 4}}
+    LOKI = {("pricing-svc", "info"): {10: 20, 20: 20}, ("pricing-svc", "warn"): {10: 5}, ("pricing-svc", "error"): {20: 4}}
+
+    def test_a_different_tied_series_with_the_same_ranked_values_is_the_same_answer(self):
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), ranked_capture(self.LOKI))
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertEqual(row["loki_new"], [])
+        self.assertEqual(row["pr_vs_loki"], "1/1 identical")
+
+    def test_the_union_of_series_differing_by_one_is_still_a_difference_for_other_queries(self):
+        expr = 'sum by (service_name, level) (count_over_time({env="production"}[5s]))'
+        _, row = self.run_compare(ranked_capture(self.PROXY, expr), ranked_capture(self.PROXY, expr), ranked_capture(self.LOKI, expr))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("series sets differ", row["loki_diffs"][0])
+
+    def test_bottomk_is_ranked_too(self):
+        expr = 'bottomk(2, sum by (service_name, level) (count_over_time({env="production"}[5s])))'
+        _, row = self.run_compare(ranked_capture(self.PROXY, expr), ranked_capture(self.PROXY, expr), ranked_capture(self.LOKI, expr))
+        self.assertEqual(row["loki_diffs"], [])
+
+    def test_a_wrong_ranked_value_differs(self):
+        loki = {**self.LOKI, ("pricing-svc", "warn"): {10: 6}}
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), ranked_capture(loki))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("ranked values at 10", row["loki_diffs"][0])
+
+    def test_a_missing_step_differs(self):
+        loki = {("pricing-svc", "info"): {10: 20}, ("pricing-svc", "warn"): {10: 5}}  # nothing at step 20
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), ranked_capture(loki))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("timestamps differ", row["loki_diffs"][0])
+
+    def test_an_extra_ranked_series_at_a_step_differs(self):
+        loki = {**self.LOKI, ("pricing-svc", "error"): {10: 5, 20: 4}}  # three series at step 10 against two
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), ranked_capture(loki))
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("ranked series at 10", row["loki_diffs"][0])
+
+    def test_the_base_and_the_pr_run_the_same_code_so_their_series_must_match(self):
+        swapped = {**self.PROXY, ("pricing-svc", "warn"): self.PROXY[("pricing-svc", "error")]}
+        del swapped[("pricing-svc", "error")]
+        code, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(swapped))
+        self.assertEqual(code, 1)
+        self.assertIn("series sets differ", row["main_pr_diffs"][0])
+
+    def test_a_dropped_label_differs(self):
+        # without (level): the proxy must keep the labels the series carry, whichever tied series it picks
+        no_level = ranked_capture(self.LOKI)
+        for frame in no_level["records"][0]["response"]["results"]["A"]["frames"]:
+            frame["schema"]["fields"][1]["labels"].pop("level")
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), no_level)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("label names differ", row["loki_diffs"][0])
+
+    def test_a_frame_meta_difference_of_a_series_both_sides_have_differs(self):
+        loki = ranked_capture(self.LOKI)
+        for frame in loki["records"][0]["response"]["results"]["A"]["frames"]:
+            frame["schema"]["fields"][1]["config"] = {"interval": 60000}
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), loki)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertIn("schema or meta", row["loki_diffs"][0])
+
+    def test_an_error_answer_is_not_a_ranked_answer(self):
+        err = ranked_capture(self.PROXY)
+        err["records"][0]["response"] = {"results": {"A": {"error": "boom"}}}
+        _, row = self.run_compare(ranked_capture(self.PROXY), ranked_capture(self.PROXY), err)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+
+
 class OneSidedTest(unittest.TestCase):
     def test_only_an_extracted_field_breakdown_is_explained(self):
         key = ("query", "A", 'sum by (service_name_extracted) (count_over_time({service_name="x"} | service_name_extracted!="" [$__auto]))')
