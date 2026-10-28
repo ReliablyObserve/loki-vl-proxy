@@ -105,6 +105,38 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 	return (end.Sub(start)+window)/gcdBucket > heavyQueryBucketThreshold
 }
 
+// writeRankedRangeFromBuckets answers the input of a topk or bottomk from the
+// stats_query_range buckets of the unranked window metric (the route, and the
+// stats extent cache, a repeated or moved window reuses) instead of the window
+// recurrence, and reports false when the recurrence must answer. The buckets
+// hold every series the grouping yields, so the caller's ranking sees all of
+// them; they cannot when the grouping yields more series than
+// -max-stats-query-series (the read fails: Loki's limit applies to the answer,
+// which topk shrinks, so the recurrence ranks them), for a request that keeps
+// only the busiest series (Drilldown), when the window equals the step (one
+// grid is read already), or when the unranked metric would use the recurrence
+// itself (no exact bucket grid, or more buckets than the heavy-query bound).
+func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, statsAggFunc, field, manualFunc string, fetchStart, start, end time.Time, step, window, bucket time.Duration, bucketsOK bool, sampleShift time.Duration) bool {
+	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step || requestKeepsPartialSeries(ctx) {
+		return false
+	}
+	unranked := context.WithValue(ctx, rangeTopKKey{}, rangeTopK{})
+	if p.slidingWindowStatsApplies(unranked, spec, field, start, end, step, window, bucket, bucketsOK) {
+		return false
+	}
+	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, fetchStart, end, bucket)
+	if err != nil {
+		return false
+	}
+	result, err := buildHitsRangeMetricMatrix(manualFunc, shiftSeriesSamples(series, sampleShift), start, end, step, window, p.limits().BufferedBackendBodyBytes)
+	if err != nil {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return true
+}
+
 // slidingRecord is one non-empty bucket of one series in one grid.
 type slidingRecord struct {
 	series int32

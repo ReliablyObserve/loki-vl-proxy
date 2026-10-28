@@ -618,11 +618,15 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 	s0 := time.Unix(1699920000, 0).UTC() // day-aligned
 	for _, tc := range []struct {
 		name, query, fn, wantSeedStep, wantStep string
+		wantCalls                               int // 0: the three grids of the recurrence
 		byApp                                   bool
 		span, step, window, every               time.Duration
 	}{
-		// gcd(7m, 1h) = 60s would need 43207 buckets over 30 days.
-		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantSeedStep: "7m0s", wantStep: "1h0m0s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
+		// gcd(7m, 1h) = 60s would need 43207 buckets over 30 days. The range is
+		// under the step, so one 1h bucket per step holds exactly the window
+		// (the window-phase filter keeps its lines): the ranking reads that
+		// single stats call, as the unranked metric does, not the recurrence.
+		{name: "topk rate 7m over 30d at 1h step", query: `topk(1, sum by (app) (rate({app="fine-app"}[7m])))`, fn: "rate", wantCalls: 1, wantSeedStep: "3600s", wantStep: "3600s", byApp: true, span: 30 * 24 * time.Hour, step: time.Hour, window: 7 * time.Minute, every: 7*time.Minute + 13*time.Second},
 		// gcd(17s, 5m) = 1s would need 86700 buckets over 24 hours.
 		{name: "count 5m over 24h at 17s step", query: `sum(count_over_time({app="fine-app"}[5m]))`, fn: "count_over_time", wantSeedStep: "5m0s", wantStep: "17s", span: 24 * time.Hour, step: 17 * time.Second, window: 5 * time.Minute, every: 40 * time.Second},
 	} {
@@ -637,6 +641,12 @@ func TestSlidingRangeMetric_FineBucketsStayOnStats(t *testing.T) {
 			got := runSlidingQueryRange(t, p, tc.query, start, end, tc.step, nil)
 			assertSlidingSeriesEqual(t, tc.query, lokiSlidingReference(lines, tc.fn, tc.byApp, 0, start, end, tc.step, tc.window), got)
 			calls, raw := fake.snapshot()
+			if tc.wantCalls == 1 {
+				if raw != 0 || len(calls) != 1 || calls[0].step != tc.wantStep || strings.Contains(calls[0].query, "| stats by (_time:") || !strings.Contains(calls[0].query, "__lvp_window_phase") {
+					t.Fatalf("expected one stats_query_range call at a %s step with the window-phase filter, got %+v and %d raw scans", tc.wantStep, calls, raw)
+				}
+				return
+			}
 			if raw != 0 || len(calls) != 3 || calls[0].step != tc.wantSeedStep || calls[1].step != tc.wantStep || calls[2].step != tc.wantStep {
 				t.Fatalf("expected a %s seed bucket and two anchored %s grids, got %+v and %d raw scans", tc.wantSeedStep, tc.wantStep, calls, raw)
 			}

@@ -45,6 +45,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters `__error__`, and `| json | __error__=""` keeps only the streams that
   parse (the wrapper used to skip both and answer 200 with every stream). The
   transform is applied to that answer.
+  `topk` and `bottomk` over a grouped `count_over_time`, `rate`, `bytes_over_time`
+  or `bytes_rate` (with or without a `label_replace` between) read the stats
+  buckets of the unranked metric when they hold every series, not the
+  three-grid window recurrence over `/select/logsql/query`: a first request of
+  `topk(3, label_replace(sum by (service_name) (count_over_time({env="production"}[5m])), ...))`
+  is one VictoriaLogs call instead of three, and an identical repeat or a window
+  moved back a minute is answered by the stats extent cache (0 calls, or the
+  four missing buckets) where the recurrence asked VictoriaLogs three full-range
+  questions every time. The ranking is Loki's (the sample at t covers (t-range,
+  t], the k largest of the series present at t); the recurrence still answers
+  when the grouping yields more series than `-max-stats-query-series` (topk ranks
+  them all, Loki's limit applies to the answer), for a Logs Drilldown request that
+  keeps the busiest series, and for a range equal to the step (one grid already).
+  Not covered: an instant `rate(...)` or `count_over_time(...)` over a stream with
+  no level label has no `detected_level="unknown"` where Loki does, with or
+  without the `label_replace` (registered open as
+  `semantics/instant-bare-range-detected-level-unknown`, pinned by
+  `TestInstantBareRangeLacksDetectedLevelUnknown`); the e2e leaves that label out
+  of the bare instant shapes until it is fixed.
   Registry: `semantics/label-replace-new-label`, and the rows this also closes,
   `semantics/label-replace-instant-vector` (the instant answer of
   `label_replace(sum by (level) (count_over_time(...)), "dst", ...)` now carries
