@@ -234,6 +234,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `label_replace(sum by (level) (count_over_time(...)), "dst", ...)` now carries
   `dst`) and `semantics/label-replace-range-binary-marker` (its `query_range`
   form around a binary answers the ratio per level with `dst`, no marker sent).
+- **A failed backend call answers Loki's status and text, never VictoriaLogs'
+  or the transport's.** Loki maps every failed query through one function
+  (`pkg/util/server/error.go` `ClientHTTPStatusAndError`, v3.7.9): a client
+  cancellation is `499` "the request was cancelled by the client" (`:26`,
+  `:103-105`), a deadline `504` "request timed out, decrease the duration of
+  the request or add more label matchers (prefer exact match over regex
+  match) to reduce the amount of data processed" (`:27`, `:106-107`), a full
+  queue `429` "too many outstanding requests" (`pkg/queue/queue.go:21`), an
+  invalid query `400` (`:108-123`), and any other failed storage call `500`
+  (`:124-128`); it never answers a query with `502`, `503` or `422`. The proxy
+  chose the status in 45 places with three helpers whose default was `502`
+  (`503` on some paths) and in 13 more with a literal `502`/`503`, copied
+  VictoriaLogs' own status (its `400` for a
+  memory limit, its `422`), and sent the error text as it was: the transport
+  error with the backend's host, port and endpoint (`Post
+  "http://10.0.0.5:9428/select/logsql/query": dial tcp ...: connection
+  refused`), VictoriaLogs' message and flags (`cannot execute query [...],
+  since it requires more than 100MB of memory ...; to increase
+  -search.maxQueryDuration`), a front proxy's HTML page, or a Go decoder
+  error (`unexpected EOF`, `invalid character 'V' ...`). Cancellations and
+  deadlines on the raw-row metric paths and on rules and alerts answered
+  `502`. The proxy now has one mapper (`lokiClientError`) and one writer
+  (`writeErr`) that every one of those sites uses, plus the ruler, cold-tier
+  and tail clients: the request context first (`499`/`504`), then a
+  cancellation or deadline in the error, VictoriaLogs' or the proxy's full
+  queue (`429` with Loki's text exactly; VictoriaLogs answers a query that
+  waited `-search.maxQueueDuration` for a slot with `503`,
+  `app/vlselect/main.go:268` in v1.49.0, and a query past
+  `-search.maxQueryDuration` before its headers with `503`, `:236`, which now
+  answer `429` and `504`), a query VictoriaLogs rejects as
+  unparsable (`400` with `failed to parse the log query`, Loki's
+  `logqlmodel.ErrParse` text from `pkg/logqlmodel/error.go:13`, without
+  VictoriaLogs' reason or query echo), and `500` for everything else. Loki
+  returns its storage error's own text with that `500`; the proxy never
+  forwards the backend's and answers `Internal Server Error`. Texts the proxy
+  writes in Loki's words keep them: the series limit, the 11,000-points limit,
+  a multiple-matches join, the label-values size limit, and the proxy limits
+  that name their flag (`500` with `... increase
+  -backend-max-buffered-response-bytes` or `-manual-range-metric-row-limit`).
+  The full error, VictoriaLogs' message included, goes to the `request error`
+  log line as `upstream_error`. A native tail that cannot open VictoriaLogs'
+  stream closes with `1011` and the mapped text instead of the transport
+  error with the backend URL; its preflight answers the mapped status before
+  the upgrade instead of VictoriaLogs' `401`/`403`/`5xx`. Of the 281 cells
+  (route x failure mode) the error-layer gate listed as leaking, 67 remain
+  (502 cell-class pairs down to 98): transport text 72 to 4, backend text 151
+  to 25, failure status 167 to 14, cancel/deadline 34 to 2, Go text 25 to 3,
+  proxy limit status 7 to 4, silent success 46 unchanged. Still not covered:
+  the Logs Drilldown stats partial-results reply (every stats failure is a
+  `200` with VictoriaLogs' message in its warning and `X-Proxy-Upstream-*`
+  headers), patterns and detected fields answering `200` on failures, a
+  malformed `200` body decoded as empty, the ruler's non-2xx status and body
+  passed through on rules and alerts, native tail close frames after the
+  stream started, the `-max-concurrent` rate limiter's `503`, index stats and
+  volume answering their buffered-size limit without naming the flag, and the
+  `400` row-limit variant of a `without` fold. Registry:
+  `semantics/error-layer-backend-failure-status`,
+  `semantics/error-layer-backend-text`, `semantics/error-layer-transport-text`,
+  `semantics/error-layer-cancel-deadline`,
+  `semantics/error-layer-internal-go-text`,
+  `semantics/error-layer-proxy-limit-status` (all still open for the cells
+  above).
+  **Breaking:** clients, dashboards and alerts keyed on `502` or `503` from
+  the proxy now see `500`, `504`, `499` or `429` as Loki answers them, with
+  `errorType` `internal`, `timeout`, `canceled` or `bad_data` instead of
+  `unavailable`; `loki_vl_proxy_requests_total{status="502"}` becomes
+  `status="500"` (the upstream request metrics and logs record a failed
+  VictoriaLogs call as `500` instead of `502` too), and the bundled `LokiVLProxyBackendUnreachable` alert now
+  fires on `status="500"`. The heavy-query and metadata-scan queues answer
+  `429` with Loki's text only; the flags they name are in the log line.
+  Error texts no longer carry VictoriaLogs' reason: read it in the proxy log.
 
 ## [2.43.0] - 2026-10-28
 
