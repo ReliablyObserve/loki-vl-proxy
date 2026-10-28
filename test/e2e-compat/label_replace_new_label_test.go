@@ -26,10 +26,14 @@ var (
 	labelReplaceData *labelReplaceFixture
 )
 
-// ensureLabelReplaceFixture ingests a JSON line every 10 seconds, for the last
-// 14 minutes, into one stream per app (two hyphenated names and one without) in
-// Loki and VictoriaLogs, and returns once both count every line and both answer
-// exactly the three series of the fixture.
+// ensureLabelReplaceFixture ingests a JSON line into one stream per app (two
+// hyphenated names and one without) in Loki and VictoriaLogs, from 22 minutes
+// back to now, and returns once both count every line and both answer exactly
+// the three series of the fixture. The streams log every 5, 10 and 15 seconds,
+// so the lines of any 5 minute window number 60, 30 and 20 (give or take one):
+// a ranking over the streams has one answer at every step, where equal counts
+// are a tie that Loki and the proxy may break differently. The data starts
+// before the earliest window a test asks about, so no window is partial.
 func ensureLabelReplaceFixture(t *testing.T) *labelReplaceFixture {
 	t.Helper()
 	labelReplaceOnce.Do(func() {
@@ -38,10 +42,10 @@ func ensureLabelReplaceFixture(t *testing.T) *labelReplaceFixture {
 		var vlRows strings.Builder
 		var lokiStreams []any
 		total := 0
-		for _, app := range []string{"api-gateway", "web", "db-main"} {
+		for app, every := range map[string]time.Duration{"api-gateway": 5 * time.Second, "web": 10 * time.Second, "db-main": 15 * time.Second} {
 			labels := map[string]string{"probe": probe, "app": app}
 			var values [][]string
-			for at := now.Add(-14 * time.Minute); !at.After(now); at = at.Add(10 * time.Second) {
+			for at := now.Add(-22 * time.Minute); !at.After(now); at = at.Add(every) {
 				line := fmt.Sprintf(`{"msg":"tick","at":%d}`, at.UnixNano())
 				values = append(values, []string{strconv.FormatInt(at.UnixNano(), 10), line})
 				row := map[string]string{"_time": at.UTC().Format(time.RFC3339Nano), "_msg": line, "probe": probe, "app": app}
@@ -69,7 +73,7 @@ func ensureLabelReplaceFixture(t *testing.T) *labelReplaceFixture {
 		for {
 			ready := true
 			for _, base := range []string{lokiURL, proxyURL} {
-				params := url.Values{"query": {fmt.Sprintf(`sum by (app) (count_over_time({probe=%q}[20m]))`, probe)}, "time": {strconv.FormatInt(time.Now().Unix(), 10)}}
+				params := url.Values{"query": {fmt.Sprintf(`sum by (app) (count_over_time({probe=%q}[30m]))`, probe)}, "time": {strconv.FormatInt(time.Now().Unix(), 10)}}
 				_, _, resp := doJSONGET(t, base+"/loki/api/v1/query?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 				result := extractArray(extractMap(resp, "data"), "result")
 				sum := 0.0

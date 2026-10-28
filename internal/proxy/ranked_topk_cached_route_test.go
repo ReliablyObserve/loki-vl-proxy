@@ -504,3 +504,75 @@ func TestRankedTopKRangeFallsBackWhenBucketsAreUnreadable(t *testing.T) {
 		}
 	}
 }
+
+// The label_replace e2e fixture, as it was first written: three streams with a
+// line at the same instants every 10 seconds (the data of the e2e starts 22
+// minutes back, so every window of a 15 minute query holds full 5 minutes). Their counts in
+// every window are equal, so a ranking over them is a tie at every step and Loki
+// and the proxy may keep different tied series (Loki's heap keeps the first it
+// meets). The cadences below are the ones the e2e uses now: 5, 10 and 15 seconds,
+// so the counts of any 5m window differ (60, 30, 20 ± 1) and the ranking has one
+// answer.
+func labelReplaceFixtureLines(cadence map[string]time.Duration, end time.Time) []slidingFixtureLine {
+	var lines []slidingFixtureLine
+	for app, every := range cadence {
+		for ts := end.Add(-22 * time.Minute); !ts.After(end); ts = ts.Add(every) {
+			lines = append(lines, slidingFixtureLine{ts: ts.UnixNano(), app: app, msg: "{}"})
+		}
+	}
+	sort.Slice(lines, func(i, j int) bool { return lines[i].ts < lines[j].ts })
+	return lines
+}
+
+// conformance: semantics/label-replace-new-label, loki_api_v1_query_range
+func TestLabelReplaceE2EFixtureTopK(t *testing.T) {
+	end := time.Unix(rankedTopKEnd, 0).UTC().Truncate(time.Minute)
+	start, step, window := end.Add(-15*time.Minute), time.Minute, 5*time.Minute
+	query := `topk(1, ` + fmt.Sprintf(rankedTopKReplace, "5m") + `)`
+	run := func(t *testing.T, lines []slidingFixtureLine) ([]rankedTopKSeries, map[string]map[int64]string, map[int64]bool) {
+		s := newRankedTopKStack(t, lines, true, nil)
+		code, body := s.ask(t, query, start, end, step, nil)
+		want, skip := rankedTopKReference(lines, "count_over_time", 1, true, start, end, step, window)
+		return decodeRankedTopK(t, code, body), want, skip
+	}
+	t.Run("equal cadence: every step is a tie", func(t *testing.T) {
+		every := 10 * time.Second
+		lines := labelReplaceFixtureLines(map[string]time.Duration{"api-gateway": every, "web": every, "db-main": every}, end)
+		got, want, skip := run(t, lines)
+		steps := 0
+		for ts := start; !ts.After(end); ts = ts.Add(step) {
+			steps++
+			if !skip[ts.Unix()] {
+				t.Errorf("step %s is not a tie: the fixture was meant to show ties", ts.Format("15:04:05"))
+			}
+		}
+		t.Logf("%d of %d steps (full windows) are ties", steps, steps)
+		// Whichever series wins a tied step, the value is the tied value.
+		for _, s := range got {
+			for _, pair := range s.Values {
+				ts, _ := pair[0].(float64)
+				v, _ := pair[1].(string)
+				ok := false
+				for _, perApp := range want {
+					ok = ok || perApp[int64(ts)] == v
+				}
+				if !ok {
+					t.Errorf("%v at %v: value %s is no series' count at that step", s.Metric, ts, v)
+				}
+			}
+		}
+	})
+	t.Run("distinct cadences: one answer, compared strictly", func(t *testing.T) {
+		lines := labelReplaceFixtureLines(map[string]time.Duration{"api-gateway": 5 * time.Second, "web": 10 * time.Second, "db-main": 15 * time.Second}, end)
+		got, want, skip := run(t, lines)
+		for ts := start; !ts.After(end); ts = ts.Add(step) {
+			if skip[ts.Unix()] {
+				t.Fatalf("step %s is a tie in the fixture", ts.Format("15:04:05"))
+			}
+		}
+		assertRankedTopK(t, "distinct cadences", got, want, skip, true)
+		if len(got) != 1 || got[0].Metric["app"] != "api-gateway" {
+			t.Fatalf("series %v, want only api-gateway (the busiest stream at every step)", got)
+		}
+	})
+}
