@@ -119,6 +119,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
 | `semantics/plain-name-after-parser-reads-stream-label` — A filter or grouping on a name a parser also reads reads the parsed value; Loki reads the stream label (fixed) | #676 | 4 | 6 |
 | `semantics/pattern-line-filter` — An empty pattern line filter (`\|> ""`, `!> ""`) matches only the empty line, like Loki (fixed) | #743 | 2 | 2 |
+| `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
 | `semantics/json-error-filter-metric-split-pushdown` — A `\| json \| __error__=""` metric counts Loki's accepted lines from VictoriaLogs stats, reading only the doubtful lines raw (fixed) | #758 | 0 | 0 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
 | `semantics/json-metric-detected-level-derivation` — sum by (detected_level) over a JSON pipeline follows the level Loki's ingest gave each line, by level key in document order, by keyword s... | #760 | 0 | 0 |

@@ -41,13 +41,22 @@ type emuRow struct {
 	labels map[string]string // the labels a parser extracts
 	value  float64
 	msg    string // the line; empty: "<field>=<value>"
+	raw    string // the unwrapped text when it is not value's (a word, nan)
+}
+
+// text is the unwrapped label's text.
+func (r emuRow) text() string {
+	if r.raw != "" {
+		return r.raw
+	}
+	return strconv.FormatFloat(r.value, 'f', -1, 64)
 }
 
 func (e *vlEmulator) line(row emuRow) string {
 	if row.msg != "" {
 		return row.msg
 	}
-	return fmt.Sprintf("%s=%v", e.field, row.value)
+	return fmt.Sprintf("%s=%s", e.field, row.text())
 }
 
 type emuCall struct{ path, query string }
@@ -145,13 +154,34 @@ func (e *vlEmulator) selectRows(r *http.Request) []emuRow {
 func (e *vlEmulator) serveRaw(w http.ResponseWriter, r *http.Request) {
 	rows := e.selectRows(r)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ts < rows[j].ts })
+	if strings.Contains(r.FormValue("query"), `| filter __lvp_bad:="1"`) {
+		// The conversion check's lookup: the rows the counting gate flags 1.
+		kept := rows[:0:0]
+		for _, row := range rows {
+			if _, err := strconv.ParseFloat(row.raw, 64); row.raw != "" && err != nil && !strings.EqualFold(row.raw, "nan") {
+				kept = append(kept, row)
+			}
+		}
+		rows = kept
+	}
+	if id, ok := strings.CutPrefix(r.FormValue("query"), "_stream_id:"); ok {
+		// The stored-row read of the conversion check: the stream's rows.
+		kept := rows[:0:0]
+		for _, row := range rows {
+			if strings.HasPrefix(id, strconv.Quote(row.stream)) {
+				kept = append(kept, row)
+			}
+		}
+		rows = kept
+	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	for _, row := range rows {
 		fields := map[string]string{
-			"_time":   time.Unix(0, row.ts).UTC().Format(time.RFC3339Nano),
-			"_stream": row.stream,
-			"_msg":    e.line(row),
-			e.field:   strconv.FormatFloat(row.value, 'f', -1, 64),
+			"_time":      time.Unix(0, row.ts).UTC().Format(time.RFC3339Nano),
+			"_stream":    row.stream,
+			"_stream_id": row.stream,
+			"_msg":       e.line(row),
+			e.field:      row.text(),
 		}
 		for k, v := range row.labels {
 			fields[k] = v
@@ -245,7 +275,24 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		f := map[string]string{"_stream": row.stream, "_msg": e.line(row), "__lvp_v": strconv.FormatFloat(row.value, 'f', -1, 64), "__lvp_bad": "0"}
+		f := map[string]string{"_stream": row.stream, "_msg": e.line(row), "__lvp_v": row.text(), "__lvp_bad": "0"}
+		if row.raw != "" {
+			// The counting gate (unwrapCountedGateMode): a nan is flagged 2 and a
+			// value the conversion rejects 1, each with the value 0, when the
+			// query counts them; the plain gate drops both.
+			flag := "1"
+			if _, err := strconv.ParseFloat(row.raw, 64); err == nil {
+				flag = "0"
+			} else if strings.EqualFold(row.raw, "nan") {
+				flag = "2"
+			}
+			if flag != "0" {
+				if !strings.Contains(r.FormValue("query"), `"`+flag+`" as __lvp_bad`) {
+					continue
+				}
+				f["__lvp_bad"], f["__lvp_v"] = flag, "0"
+			}
+		}
 		for _, m := range emuStreamLabelRE.FindAllStringSubmatch(row.stream, -1) { // stream fields are fields
 			f[m[1]] = m[2]
 		}

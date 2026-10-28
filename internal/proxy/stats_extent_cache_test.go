@@ -457,7 +457,7 @@ func TestStatsExtentCacheDifferentialParsedMetrics(t *testing.T) {
 // The same for the stream-label metric shapes (counts, rates, bytes, by
 // label or by stream, topk, range equal to the step, a binary expression)
 // over the sliding-window fake, and an unwrap the conversion check reads,
-// which goes to VictoriaLogs whole.
+// cached as its counting query.
 // conformance: quality/query-range-extent-cache, loki_api_v1_query_range
 func TestStatsExtentCacheDifferentialStreamMetrics(t *testing.T) {
 	s0 := time.Unix(1700001000, 0).UTC()

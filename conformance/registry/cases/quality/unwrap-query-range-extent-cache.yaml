@@ -1,0 +1,68 @@
+id: quality/unwrap-query-range-extent-cache
+title: an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answers and the same 400s (fixed; a move of less than a step is not covered)
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki answers a moved metric window from its results cache extents
+  (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit), unwrap
+  metrics included, and evaluates the rest; a value its conversion rejects
+  still fails the query with its 400 (pkg/logql/evaluator.go:726-733).
+
+  The stats extent cache (quality/query-range-extent-cache) refused every
+  stats_query_range call of a request whose unwrap the conversion check reads
+  (statsExtentPost), and every query holding `unwrap` gets one: the check
+  counts the nan values even with `| __error__=""`. So every unwrap metric read
+  its whole window from VictoriaLogs on a refresh: on the 2026-10 A/B all 77
+  unwrap refresh rows were slower than Loki, up to 544 ms against 3 ms for
+  `sum by (service_name) (sum_over_time({env="production"} | logfmt | unwrap latency_ms [5m]))`
+  at 6h. The cache ran ahead of the counting rewrite (vlPostHTTP), so dropping
+  the refusal alone would have stored the plain query and turned Loki's 400
+  into a 200.
+
+  Fixed: vlPostHTTP rewrites the query to its counting form before the extent
+  cache, which keys and stores that query's buckets; the rejected values
+  (flag 1) and the nan values (flag 2) are groups of their own in each bucket,
+  bucket-local like every series of the answer, and the check reads them off
+  the answer the cache assembles, stored buckets and fresh ones alike, then
+  looks the rejected row up in its bucket as before. A read the cache sends
+  itself carries the rewritten query. As for every other metric, a row
+  written into a bucket after it was stored is not seen until the entry
+  expires (-query-range-extent-cache-ttl); the newest -query-range-freshness
+  is always read.
+
+  Not covered: a window that moves by less than the step (a dashboard that
+  refreshes every few seconds on a 60 s or 600 s step) is read from
+  VictoriaLogs again (the cause is not isolated yet).
+  Measured on the A/B stack (24h, step 60 s, windows moving 15 s): the unwrap
+  shapes took 0.23 to 2.3 s on main and on this change, Loki 3 to 5 ms.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({env="production"} | logfmt | unwrap latency_ms [5m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki, and Loki's 400 where its window holds
+    a rejected value, for every window of a refresh and a re-run sequence; a
+    refresh of a step or more reads only the new buckets from VictoriaLogs.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: every answer and error is byte for byte the uncached one, proven by the cache-on/off differential; the refresh time is measured by the A/B refresh pass'
+  effort: S
+  area: 'internal/proxy backend.go vlPostHTTP (the counting rewrite ahead of statsExtentPost); stats_extent_cache.go statsExtentPost'
+  loki: 'pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit; pkg/logql/evaluator.go:726-733'
+  proxy: 'unwrap stats_query_range calls answered from stored buckets of the counting query, the counter read off the assembled answer'
+  planned_test: 'TestUnwrapExtentCacheMatchesUncached (internal/proxy); the unwrap conversion-error e2e run twice with moved windows'
+  clusters: []

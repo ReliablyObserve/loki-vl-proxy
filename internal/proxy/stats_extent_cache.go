@@ -50,8 +50,11 @@ import (
 // counted from the oldest read the entry holds (Loki keeps results cache
 // entries for its default validity, 1h: pkg/storage/chunk/cache/cache.go:50). A query whose buckets depend on
 // more than their own rows (a subquery, a relative time filter, time_add,
-// running or total stats), an unwrap checked for conversion errors, and an
-// answer the cache cannot read back exactly go to VictoriaLogs as before.
+// running or total stats) and an answer the cache cannot read back exactly go
+// to VictoriaLogs as before. An unwrap checked for conversion errors is cached
+// as the counting query it sends (vlPostHTTP rewrites ahead of the cache): the
+// rejected and the nan values are groups of their own in each bucket, which the
+// check reads off the assembled answer, stored buckets included.
 
 // statsExtentRequestKey marks a query_range request whose stats_query_range
 // calls the extent cache may answer.
@@ -111,10 +114,6 @@ func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Val
 		return nil, false, nil
 	}
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); fetch {
-		return nil, false, nil
-	}
-	if unwrapCheckFrom(ctx) != nil {
-		// The unwrap check counts the conversion errors of every bucket it reads.
 		return nil, false, nil
 	}
 	req, ok := p.statsExtentRequestFor(ctx, params)
