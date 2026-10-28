@@ -115,6 +115,29 @@
     "rows": 573,
     "share_below": 10.5
    }
+  },
+  {
+   "cold": {
+    "above": 52,
+    "below": 214,
+    "between": 18,
+    "close": 165,
+    "rows": 449,
+    "share_below": 47.7
+   },
+   "commits": [
+    "507915a5d2"
+   ],
+   "date": "2026-10-28",
+   "sets": 25,
+   "warm": {
+    "above": 110,
+    "below": 63,
+    "between": 2,
+    "close": 427,
+    "rows": 602,
+    "share_below": 10.5
+   }
   }
  ],
  "targets": {
