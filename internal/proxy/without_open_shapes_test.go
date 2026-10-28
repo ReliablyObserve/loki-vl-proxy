@@ -282,8 +282,6 @@ func openShapeKeys(series map[string]string) map[string]string {
 //
 // conformance: semantics/without-empty-grouping-range-collapses, metric-series-identity
 func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
-	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
-	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
 	for _, tc := range []struct {
 		row     string
 		query   string
