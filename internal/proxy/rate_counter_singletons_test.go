@@ -615,14 +615,12 @@ func TestRateCounterKeysAreReusedPerQuery(t *testing.T) {
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
 	_ = p.ValidateBackendVersionCompatibility(context.Background())
-	var answers []string
 	for i := 0; i < 2; i++ {
 		params := url.Values{"query": {`sum(rate_counter({app="rc"} | logfmt | unwrap amount [5m]))`}, "start": {strconv.FormatInt(base/1e9-int64(i)*30, 10)}, "end": {strconv.FormatInt(base/1e9+300-int64(i)*30, 10)}, "step": {"30"}}
 		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
 		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"0"`) {
 			t.Fatalf("%d %s", res.Code, res.Body)
 		}
-		answers = append(answers, res.Body.String())
 	}
 	discoveries := 0
 	for _, q := range emu.endpointCalls("/select/logsql/query") {
