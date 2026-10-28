@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.38.0] - 2026-10-28
+
 ### Added
 
 - **Peer-cache keys now have a backup replica, so a replica that loses its
