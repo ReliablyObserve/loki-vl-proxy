@@ -1,9 +1,15 @@
 name: Change scope
 
-# Reusable workflow. Reports whether a pull request changes product paths
-# (output `product` is "true" or "false"). Everything except an unlabelled
-# pull request whose changed paths are all infra reports "true", and so does
-# any error, so a caller that skips on "false" can only skip on purpose.
+# Reusable workflow. Reports which lanes of jobs a pull request needs, as three
+# cumulative outputs, each "true" or "false":
+#   product  the Go unit tests, race, fuzz, bench, conformance and the quality
+#            report: the paths that change the proxy or its evidence
+#   stack    every job that starts a compose stack (a superset of product)
+#   perf     the A/B smoke (a superset of stack)
+# Everything except an unlabelled pull request whose changed paths all fall in
+# a lane reports "true" for the lanes above it, and so does any error, so a
+# caller that skips on "false" can only skip on purpose. scripts/ci/change_scope.py
+# holds the path tables.
 #
 # Callers need `contents: read` and `pull-requests: read`.
 
@@ -12,10 +18,20 @@ on:
     outputs:
       product:
         description: >-
-          "false" only when every changed path is infra; "true" otherwise,
+          "false" only when no changed path is product; "true" otherwise,
           including on any event that is not a pull request, on the ci-full
           label and on any error.
         value: ${{ jobs.scope.outputs.product }}
+      stack:
+        description: >-
+          "false" only when no changed path needs a compose stack job
+          (product implies stack); "true" otherwise.
+        value: ${{ jobs.scope.outputs.stack }}
+      perf:
+        description: >-
+          "false" only when no changed path needs the A/B smoke
+          (stack implies perf); "true" otherwise.
+        value: ${{ jobs.scope.outputs.perf }}
 
 permissions: {}
 
@@ -29,6 +45,8 @@ jobs:
       pull-requests: read
     outputs:
       product: ${{ steps.result.outputs.product }}
+      stack: ${{ steps.result.outputs.stack }}
+      perf: ${{ steps.result.outputs.perf }}
     steps:
       - name: Decide whether the classifier applies
         id: gate
@@ -58,7 +76,7 @@ jobs:
             {
               echo "### Change scope"
               echo
-              echo "Result: \`product=true\` ($reason)."
+              echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\` ($reason)."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "force=false" >> "$GITHUB_OUTPUT"
@@ -80,7 +98,7 @@ jobs:
           # The merge ref's first parent is the base tip, so this is the net
           # change of the pull request. --no-renames lists both the old and
           # the new path of a rename. A failed diff leaves the list empty,
-          # which the classifier reports as product.
+          # which the classifier reports as product (all three lanes true).
           git -c core.quotepath=false diff --name-only --no-renames HEAD^1 HEAD \
             | python3 scripts/ci/change_scope.py --files-from - \
                 --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
@@ -92,12 +110,27 @@ jobs:
           GATE_OUTCOME: ${{ steps.gate.outcome }}
           FORCE: ${{ steps.gate.outputs.force }}
           CLASSIFY_OUTCOME: ${{ steps.classify.outcome }}
-          CLASSIFIED: ${{ steps.classify.outputs.product }}
+          CLASSIFIED_PRODUCT: ${{ steps.classify.outputs.product }}
+          CLASSIFIED_STACK: ${{ steps.classify.outputs.stack }}
+          CLASSIFIED_PERF: ${{ steps.classify.outputs.perf }}
         run: |
+          # A lane is skipped only on an explicit "false" from a classifier that
+          # ran, on a pull request that is not forced; anything else keeps it.
           product=true
+          stack=true
+          perf=true
           if [ "$GATE_OUTCOME" = "success" ] && [ "$FORCE" = "false" ] \
-             && [ "$CLASSIFY_OUTCOME" = "success" ] && [ "$CLASSIFIED" = "false" ]; then
-            product=false
+             && [ "$CLASSIFY_OUTCOME" = "success" ]; then
+            if [ "$CLASSIFIED_PRODUCT" = "false" ]; then product=false; fi
+            if [ "$CLASSIFIED_STACK" = "false" ]; then stack=false; fi
+            if [ "$CLASSIFIED_PERF" = "false" ]; then perf=false; fi
           fi
-          echo "product=$product" >> "$GITHUB_OUTPUT"
-          echo "Change scope: product=$product"
+          # The lanes are nested: a lane that runs keeps the ones below it.
+          if [ "$product" = "true" ]; then stack=true; fi
+          if [ "$stack" = "true" ]; then perf=true; fi
+          {
+            echo "product=$product"
+            echo "stack=$stack"
+            echo "perf=$perf"
+          } >> "$GITHUB_OUTPUT"
+          echo "Change scope: product=$product stack=$stack perf=$perf"

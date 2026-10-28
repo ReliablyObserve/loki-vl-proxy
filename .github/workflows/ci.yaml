@@ -16,10 +16,14 @@ permissions:
   contents: read
 
 jobs:
-  # Reports whether the pull request changes product paths. Product jobs skip
-  # only when this job succeeds with product=false; a scope failure or an empty
-  # output runs them. Every product job that does not depend on `test` carries
-  # the same gate; jobs that depend on `test` skip with it.
+  # Reports which lanes of jobs the pull request needs (product, stack, perf;
+  # nested, so product implies stack implies perf). A job skips only when this
+  # job succeeds with its lane "false"; a scope failure or an empty output runs
+  # it. Product jobs carry the product gate. Jobs that start a compose stack
+  # carry the stack gate (`image`) or, when they also follow `test`, the stack
+  # gate written out below, so a change that only touches a stack config runs
+  # the stack without the unit tests. Jobs that depend on `test` otherwise skip
+  # with it.
   scope:
     permissions:
       contents: read
@@ -78,14 +82,6 @@ jobs:
               unit-results-full.json | head -400
           fi
           exit "$status"
-
-      # bench/ is a separate Go module, so the root ./... above does not cover it.
-      # Its tests include the benchmark Loki config drift guard.
-      - name: Benchmark harness vet and tests (bench module)
-        working-directory: bench
-        run: |
-          go vet ./...
-          go test ./... -count=1 -race
 
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
@@ -335,7 +331,7 @@ jobs:
   # wait for `test`, so the image is ready when they start.
   image:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.stack != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -362,7 +358,8 @@ jobs:
 
   tuple-smoke:
     runs-on: ubuntu-latest
-    needs: [test, image]
+    needs: [scope, test, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
       PROXY_URL: http://127.0.0.1:13100
@@ -788,9 +785,6 @@ jobs:
       - name: Conformance gate
         run: python3 scripts/ci/check_conformance.py --go-results unit-results/unit-results.json --go-results unit-results/race-sensitive.json
 
-      - name: A/B harness unit tests (selection, PR comment, history)
-        run: python3 -m unittest discover -s bench/ab/tests
-
       - name: Visual-proof harness unit tests (plan, gate and comment, publish)
         run: python3 -m unittest discover -s bench/visual/tests
 
@@ -841,6 +835,20 @@ jobs:
       - name: Unit tests (quality gate policy)
         run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope
 
+      # bench/ is a separate Go module, so the root ./... of the test job does not
+      # cover it. Its tests include the drift guard that keeps the benchmark Loki
+      # configs equal to the CI one, the only check a change to those configs has.
+      - name: Benchmark harness vet and tests (bench module)
+        working-directory: bench
+        run: |
+          go vet ./...
+          go test ./... -count=1 -race
+
+      # The A/B harness is proved by perf-smoke, which a change to it runs; its unit
+      # tests run here so that a pull request that skips the Go jobs still runs them.
+      - name: A/B harness unit tests (selection, PR comment, history)
+        run: python3 -m unittest discover -s bench/ab/tests
+
       - name: Verify generated configuration and limits reference
         run: go run ./cmd/configdoc -check
 
@@ -867,7 +875,8 @@ jobs:
 
   e2e-compat-group:
     runs-on: ubuntu-latest
-    needs: [test, image]
+    needs: [scope, test, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ci
     strategy:
@@ -957,28 +966,31 @@ jobs:
     runs-on: ubuntu-latest
     needs: [scope, e2e-compat-group]
     # The groups are skipped, and that is a pass, only when the scope job says
-    # no product path changed. A skipped group on a product pull request (for
-    # example because `test` failed) or an empty scope output fails the gate.
+    # no stack path changed (and so no product path either). A skipped group on
+    # a product or stack pull request (for example because `test` failed) or an
+    # empty scope output fails the gate.
     if: always()
     steps:
       - name: Aggregate grouped compat result
         env:
           GROUP_RESULT: ${{ needs.e2e-compat-group.result }}
           PRODUCT: ${{ needs.scope.outputs.product }}
+          STACK: ${{ needs.scope.outputs.stack }}
         run: |
           if [ "$GROUP_RESULT" = "success" ]; then
             exit 0
           fi
-          if [ "$GROUP_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ]; then
-            echo "Skipped: no product path changed"
+          if [ "$GROUP_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ] && [ "$STACK" = "false" ]; then
+            echo "Skipped: no stack or product path changed"
             exit 0
           fi
-          echo "One or more grouped e2e-compat checks did not pass: $GROUP_RESULT (scope product=$PRODUCT)"
+          echo "One or more grouped e2e-compat checks did not pass: $GROUP_RESULT (scope product=$PRODUCT stack=$STACK)"
           exit 1
 
   e2e-fleet:
     runs-on: ubuntu-latest
-    needs: [test, image]
+    needs: [scope, test, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
@@ -1036,7 +1048,8 @@ jobs:
 
   e2e-ui:
     runs-on: ubuntu-latest
-    needs: [test, image]
+    needs: [scope, test, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ui
     strategy:

@@ -37,7 +37,7 @@ jobs:
         run: echo "vl_versions=$(jq -c '.stack.victorialogs.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
   vl-pinned:
-    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.vl-matrix-source.result == 'success' && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.vl-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
     needs: [vl-matrix-source, scope]
     runs-on: ubuntu-latest
     env:

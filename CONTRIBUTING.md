@@ -56,7 +56,16 @@ python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 
 ## CI Scope
 
-`change_scope.py` also classifies each changed path as product or infra (`classify()`). CI runs the product jobs (unit tests, e2e, compat, bench and the rest) when any changed path is product, and skips them for a pull request that changes only infra paths such as `.github/`, `scripts/`, compose files, `examples/`, `docs/` and `website/`. A path no rule recognises counts as product. Add the `ci-full` label to force a full run. Pushes to `main` always run everything.
+`change_scope.py` also sorts each changed path into a lane (`lane()`; `classify()` answers whether it is the full product lane). A change runs the jobs of the highest lane any of its paths needs; lint, helm, Security / static and CodeQL run in every lane:
+
+| Lane | Paths | Jobs it adds |
+| --- | --- | --- |
+| infra | `.github/`, `scripts/`, `docs/`, `website/`, `examples/`, Markdown at the root and under `bench/` and `test/` (Markdown under `conformance/`, `charts/`, `cmd/`, `internal/`, `pkg/`, `dashboard/` and `alerting/` stays product: a gate reads it or it ships), the benchmark Loki configs, compose files no job starts | none |
+| perf | `bench/ab/` (except the files `bench/visual`, `bench/parity` and the conformance gate read: `stack.py`, `selection.py`, `shapes.json`, the compose overlays) | perf-smoke; the `bench/ab` unit tests run in lint |
+| stack | compose files and configs the CI stacks mount (`test/e2e-compat/loki-local-config.yaml`, `grafana-*.yaml`, `vm*.yml`, `nginx-tail.conf`, the e2e-compat, e2e-fleet and e2e-pipeline compose files) | the jobs that start a stack: e2e-compat, e2e-fleet, e2e-ui, tuple-smoke, compat-*, e2e-pipeline, Security / runtime, visual-smoke, perf-smoke |
+| product | everything else: Go, charts, `go.mod`, `Dockerfile`, the registry, the gates, the classifier and its workflow | all of them |
+
+A path no rule recognises counts as product, and so does an empty file list. Add the `ci-full` label to force a full run. Pushes to `main` always run everything. The bench module tests (they include the check that keeps the benchmark Loki configs equal to the CI one) run in lint, not in the Go unit test job, so a pull request that skips the unit tests still runs them.
 
 CI spends no runs on a pull request that conflicts with `main`. GitHub does not start pull request runs while a conflict exists, and after every push to `main` the `cancel-conflicted-pr-runs` workflow (`scripts/ci/cancel_conflicted_pr_runs.py`) cancels the queued and running pull request runs of every open pull request that now conflicts. Rebase, then push once.
 

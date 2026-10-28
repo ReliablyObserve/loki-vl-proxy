@@ -6,9 +6,12 @@ only; the parser understands the block layout the workflows use) and assert:
 
 - lint and helm always run, so the infra checks they carry are never skipped;
 - every job that reads `needs.scope` lists `scope` in `needs`, and in ci.yaml
-  uses the canonical gate or, for the two aggregators, `if: always()`;
+  uses the gate of its lane (product, stack, or the stack gate of a job that
+  follows `test`) or, for the two aggregators, `if: always()`;
+- every job of every workflow gates on the lane it belongs to, and on no other;
 - every ci.yaml job is gated directly or through a gated job;
-- no job downstream of `test` can run when `test` failed or was skipped;
+- no job downstream of `test` can run when `test` failed, and only the stack
+  jobs, with exactly the gate below, can run when `test` was skipped;
 - both aggregators pass on skipped groups only when scope says `false`.
 """
 
@@ -21,6 +24,36 @@ WORKFLOWS = REPO / ".github" / "workflows"
 CI = WORKFLOWS / "ci.yaml"
 
 CANONICAL_GATE = "${{ !cancelled() && needs.scope.outputs.product != 'false' }}"
+STACK_GATE = "${{ !cancelled() && needs.scope.outputs.stack != 'false' }}"
+# A stack job that follows `test`: it runs after a green `test`, and also when
+# `test` was skipped because no product path changed but a stack path did. `==`
+# on both lane outputs, so an empty output can never take the skipped route.
+STACK_AFTER_TEST_GATE = (
+    "${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success'"
+    " || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false'"
+    " && needs.scope.outputs.stack == 'true')) }}"
+)
+# ci.yaml jobs whose gate is not the product one.
+CI_GATES = {
+    "image": STACK_GATE,
+    "tuple-smoke": STACK_AFTER_TEST_GATE,
+    "e2e-compat-group": STACK_AFTER_TEST_GATE,
+    "e2e-fleet": STACK_AFTER_TEST_GATE,
+    "e2e-ui": STACK_AFTER_TEST_GATE,
+}
+# The lane output every other workflow's gated job reads: (file, job) -> lane.
+WORKFLOW_LANES = {
+    ("perf-ab.yaml", "perf-smoke"): "perf",
+    ("visual-smoke.yaml", "visual-smoke"): "stack",
+    ("compat-loki.yaml", "loki-pinned"): "stack",
+    ("compat-vl.yaml", "vl-pinned"): "stack",
+    ("compat-drilldown.yaml", "drilldown-pinned-runtime"): "stack",
+    ("compat-drilldown.yaml", "drilldown-grafana-pr-matrix"): "stack",
+    ("e2e-pipeline.yml", "e2e-pipeline"): "stack",
+    ("security-pr.yaml", "security-runtime"): "stack",
+    ("pr-quality-report.yaml", "report"): "product",
+}
+LANES = ("product", "stack", "perf")
 ALWAYS_ON = ("lint", "helm")
 AGGREGATORS = ("e2e-compat", "race-stress")
 STATUS_FUNCTIONS = re.compile(r"\b(always|cancelled|failure)\(\)")
@@ -123,11 +156,16 @@ def ci_problems(text):
         if name in AGGREGATORS:
             if job["if"] != "always()":
                 found.append(f"{name} must use if: always(), got {job['if']}")
-            for needle in ("needs.scope.outputs.product", '"skipped"', '= "false"'):
+            needles = ["needs.scope.outputs.product", '"skipped"', '= "false"']
+            if name == "e2e-compat":
+                # Stack jobs run on a stack path, so a skipped group is a pass only
+                # when the stack lane says false as well.
+                needles += ["needs.scope.outputs.stack", '"$STACK" = "false"']
+            for needle in needles:
                 if needle not in job["body"]:
                     found.append(f"{name} must test the scope output: missing {needle}")
-        elif "scope" in job["needs"] and job["if"] != CANONICAL_GATE:
-            found.append(f"{name} must use the canonical gate, got if: {job['if']}")
+        elif "scope" in job["needs"] and job["if"] != CI_GATES.get(name, CANONICAL_GATE):
+            found.append(f"{name} must use its lane's gate, got if: {job['if']}")
 
     gated = {n for n, j in jobs.items() if n != "scope" and "scope" in j["needs"]}
     for name, job in jobs.items():
@@ -144,12 +182,20 @@ def ci_problems(text):
         found.append("conformance must need test: it reads the unit results of test")
 
     # A job downstream of `test` keeps the implicit success(): it must skip
-    # when `test` skips and must not run when `test` failed.
+    # when `test` skips and must not run when `test` failed. The stack jobs are
+    # the one exception, and only with their exact gate (checked above).
     for name, job in jobs.items():
         if name in AGGREGATORS or name == "test":
             continue
+        if name in CI_GATES and CI_GATES[name] == STACK_AFTER_TEST_GATE and job["if"] == STACK_AFTER_TEST_GATE:
+            continue
         if reaches(jobs, name, {"test"}) and job["if"] and STATUS_FUNCTIONS.search(job["if"]):
             found.append(f"{name} is downstream of test but its if: bypasses success(): {job['if']}")
+    for name, gate in CI_GATES.items():
+        if gate == STACK_AFTER_TEST_GATE and name in jobs:
+            needs = set(jobs[name]["needs"])
+            if not {"scope", "test", "image"} <= needs:
+                found.append(f"{name} must need scope, test and image, got {sorted(needs)}")
     return found
 
 
@@ -176,6 +222,7 @@ class ScopeWiringTest(unittest.TestCase):
     def test_aggregators_read_the_scope_output(self):
         for name in AGGREGATORS:
             self.assertIn("needs.scope.outputs.product", self.jobs[name]["body"], name)
+        self.assertIn("needs.scope.outputs.stack", self.jobs["e2e-compat"]["body"])
 
     def test_infra_checks_run_in_lint_not_in_test(self):
         moved = (
@@ -185,11 +232,36 @@ class ScopeWiringTest(unittest.TestCase):
             "scripts.ci.tests.test_scope_wiring",
             "-run '^TestVictoriaLogsSupportPolicy$'",
             "./scripts/ci/validate_compose.sh",
+            # Their paths are in the perf, stack and infra lanes, which skip the
+            # Go unit tests: the bench module holds the drift guard of the three
+            # Loki configs, and bench/ab/tests the A/B harness.
+            "Benchmark harness vet and tests (bench module)",
+            "python3 -m unittest discover -s bench/ab/tests",
         )
         for command in moved:
             self.assertIn(command, self.jobs["lint"]["body"], command)
-        for command in moved[:3]:
+        for command in moved[:3] + moved[6:]:
             self.assertNotIn(command, self.jobs["test"]["body"], command)
+        self.assertNotIn("python3 -m unittest discover -s bench/ab/tests", self.jobs["conformance"]["body"])
+
+    def test_stack_jobs_follow_test_with_the_exact_gate(self):
+        for name, gate in CI_GATES.items():
+            with self.subTest(name):
+                self.assertEqual(self.jobs[name]["if"], gate)
+                if gate == STACK_AFTER_TEST_GATE:
+                    self.assertEqual(self.jobs[name]["needs"], ["scope", "test", "image"])
+        self.assertEqual(self.jobs["image"]["needs"], ["scope"])
+
+    def test_other_workflows_gate_on_their_lane(self):
+        for (filename, name), lane in WORKFLOW_LANES.items():
+            with self.subTest(f"{filename}:{name}"):
+                jobs = parse_jobs((WORKFLOWS / filename).read_text())
+                condition = jobs[name]["if"] or ""
+                self.assertIn("scope", jobs[name]["needs"])
+                self.assertIn(f"needs.scope.outputs.{lane} != 'false'", condition)
+                for other in LANES:
+                    if other != lane:
+                        self.assertNotIn(f"needs.scope.outputs.{other}", condition)
 
     def test_every_workflow_reading_scope_declares_it(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
@@ -209,6 +281,37 @@ class ScopeWiringTest(unittest.TestCase):
             "ungated test": self.text.replace("    needs: [scope]\n" + gate + "    runs-on", "    runs-on", 1),
             "scope missing from needs": self.text.replace("  bench:\n    needs: [scope]", "  bench:\n    needs: []", 1),
             "weaker gate": self.text.replace(CANONICAL_GATE, "${{ needs.scope.outputs.product != 'false' }}", 1),
+            "image gated on the product lane": self.text.replace(
+                "  image:\n    needs: [scope]\n    if: " + STACK_GATE, "  image:\n    needs: [scope]\n    if: " + CANONICAL_GATE, 1
+            ),
+            "stack job runs after a failed test": self.text.replace(
+                STACK_AFTER_TEST_GATE,
+                STACK_AFTER_TEST_GATE.replace("needs.test.result == 'success' ||", "needs.test.result != 'cancelled' ||"),
+                1,
+            ),
+            "skipped test route on an empty output": self.text.replace(
+                STACK_AFTER_TEST_GATE,
+                STACK_AFTER_TEST_GATE.replace("needs.scope.outputs.stack == 'true'", "needs.scope.outputs.stack != 'false'"),
+                1,
+            ),
+            "stack job without scope in needs": self.text.replace(
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]",
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [test, image]",
+                1,
+            ),
+            "stack job ignores the image": self.text.replace(
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n    if: " + STACK_AFTER_TEST_GATE,
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n    if: " + CANONICAL_GATE,
+                1,
+            ),
+            "other job downstream of test uses the stack route": self.text.replace(
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [test]\n",
+                "  docker:\n    if: " + STACK_AFTER_TEST_GATE + "\n    runs-on: ubuntu-latest\n    needs: [test]\n",
+                1,
+            ),
+            "aggregator ignores the stack lane": self.text.replace(
+                ' && [ "$STACK" = "false" ]; then', "; then", 1
+            ),
             "dependent bypasses success()": self.text.replace(
                 "  docker:\n    runs-on: ubuntu-latest\n    needs: [test]\n",
                 "  docker:\n    if: always()\n    runs-on: ubuntu-latest\n    needs: [test]\n",

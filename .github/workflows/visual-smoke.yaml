@@ -52,9 +52,9 @@ jobs:
     name: visual-smoke
     needs: [scope]
     # A label other than the one the gate reads does not re-run it. A pull request that changes
-    # only infra paths skips it (and with it the publish and comment jobs below); a failed scope
+    # only infra or A/B harness paths skips it (and with it the publish and comment jobs below); a failed scope
     # job leaves its output empty, so the job runs.
-    if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') && needs.scope.outputs.stack != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

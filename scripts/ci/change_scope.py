@@ -16,6 +16,23 @@ number of characters including "/". "dir/**" therefore matches everything
 below dir/ at any depth, while "test/*/docker-compose*.yml" matches only a
 compose file one directory below test/.
 
+Between "everything" and "nothing" there are two lanes, for paths that only a
+few product jobs verify. A change runs the jobs of the highest lane any of its
+paths needs:
+
+    infra    lint, helm, Security / static, CodeQL (always on, every lane)
+    perf     + perf-smoke
+    stack    + every job that starts a compose stack (image, tuple-smoke,
+               e2e-compat, e2e-fleet, e2e-ui, e2e-pipeline, the compat-*
+               pinned jobs, Security / runtime, visual-smoke)
+    product  + the Go unit tests, race, fuzz, bench, conformance, quality report
+
+The lanes are cumulative, so the CLI reports three flags, each "false" only when
+the lane's jobs may be skipped: product=false (no Go-level job), stack=false
+(no stack job), perf=false (no perf-smoke). A lane rule sits after the infra
+table, so a path an infra rule names stays infra, and every path that matches
+no rule at all is product.
+
 A second, narrower question is whether a change SHIPS: whether it alters
 something users receive (the proxy binary, the container image, the Helm
 chart, the dashboards and alert rules). Only a change that ships cuts a
@@ -29,7 +46,7 @@ Usage:
     git diff --name-only TAG..HEAD | change_scope.py --files-from - --ships
 
 The CLI always exits 0 once it can report a result. On an empty list or any
-internal error it reports product=true. With --ships it reports
+internal error it reports product=true, stack=true and perf=true. With --ships it reports
 ships=true|false instead: an empty list or an internal error reports
 ships=true, as the release bot always has, and the bot's own checks (the
 changelog and the release labels) stay the deciding gate in that case.
@@ -72,6 +89,16 @@ PRODUCT_OVERRIDES = [
         "scripts/ci/change_scope.py",
         ".github/workflows/change-scope.yaml",
     )),
+    # The parts of bench/ab that other harnesses and gates read: stack.py is
+    # imported by bench/visual and bench/parity, selection.py by
+    # bench/visual/plan.py, shapes.json by the conformance gate, the parity
+    # corpus and perf_evidence.py, and the compose overlays are stack.py's.
+    ("P5", (
+        "bench/ab/selection.py",
+        "bench/ab/stack.py",
+        "bench/ab/shapes.json",
+        "bench/ab/docker-compose*.yml",
+    )),
 ]
 
 # (rule id, globs). Paths verified by an always-on check, or by nothing that
@@ -82,8 +109,13 @@ NON_PRODUCT = [
     ("I3", ("security/**",)),
     # Daily performance report data only. The rest of bench/ is product.
     ("I4", ("bench/ab/history/**", "bench/ab/results/**")),
-    # Compose files of the test stacks.
-    ("I5", ("test/*/docker-compose*.yml",)),
+    # Compose files of the test stacks that no pull request job starts; the
+    # ones CI does start are in LANES (S1). lint validates all of them.
+    ("I5", (
+        "test/e2e-compat/docker-compose.bench.yml",
+        "test/e2e-compat/docker-compose.review.yml",
+        "test/e2e-fleet/docker-compose.http-discovery.yml",
+    )),
     ("I6", ("test/e2e-ui/package.json", "test/e2e-ui/package-lock.json")),
     ("I7", ("examples/**", "docker-compose.yml")),
     ("I8", ("website/**",)),
@@ -107,6 +139,46 @@ NON_PRODUCT = [
         ".hadolint.yaml",
         ".golangci.yml",
     )),
+    # Markdown nobody reads as data. Listed by directory, not as **/*.md:
+    # the Markdown below conformance/ is generated and compared by the
+    # conformance gate, the chart README ships, and cmd/, internal/ and pkg/
+    # stay product whatever they hold. Root-level files are *.md, so a
+    # nested README does not match.
+    ("I13", ("*.md", "bench/*.md", "bench/**/*.md", "test/**/*.md")),
+    # The benchmark Loki configs are mounted only by the benchmark compose
+    # file. Their one pull request check is the drift guard in the bench
+    # module's tests (bench/cmd/seed), which lint runs.
+    ("I14", (
+        "test/e2e-compat/loki-bench-config.yaml",
+        "test/e2e-compat/loki-bench-nocache-config.yaml",
+    )),
+]
+
+# Lanes. (rule id, lane, globs). Paths verified by some product jobs but not
+# the whole set. Consulted after NON_PRODUCT, so an infra rule wins over a
+# lane glob (bench/ab/results/** stays infra below bench/ab/**), and after
+# PRODUCT_OVERRIDES, so a shared module stays product.
+PERF = "perf"
+STACK = "stack"
+INFRA = "infra"
+PRODUCT = "product"
+LANE_ORDER = (INFRA, PERF, STACK, PRODUCT)
+LANES = [
+    # The compose files CI starts, and the configs the e2e-compat stack
+    # mounts (loki-local-config.yaml also feeds the bench drift guard, which
+    # lint runs).
+    ("S1", STACK, (
+        "test/e2e-compat/docker-compose.yml",
+        "test/e2e-fleet/docker-compose.yml",
+        "test/e2e-pipeline/docker-compose.yml",
+        "test/e2e-compat/loki-local-config.yaml",
+        "test/e2e-compat/grafana-*.yaml",
+        "test/e2e-compat/vm*.yml",
+        "test/e2e-compat/nginx-tail.conf",
+    )),
+    # The A/B harness: perf-smoke is its proof, and the unit tests under
+    # bench/ab/tests run in lint.
+    ("S2", PERF, ("bench/ab/**",)),
 ]
 
 # Globs of the paths that ship. Everything the binary, image, chart and
@@ -188,26 +260,54 @@ def normalize(path):
     return path
 
 
-def classify(path):
-    """Return (is_product, rule_id) for one repo-relative path."""
+def lane(path):
+    """Return (lane, rule_id) for one repo-relative path."""
     clean = normalize(path)
     if clean is None:
-        return True, DEFAULT_RULE
+        return PRODUCT, DEFAULT_RULE
     for rule_id, globs in PRODUCT_OVERRIDES:
         if any(glob_match(g, clean) for g in globs):
-            return True, rule_id
+            return PRODUCT, rule_id
     for rule_id, globs in NON_PRODUCT:
         if any(glob_match(g, clean) for g in globs):
-            return False, rule_id
-    return True, DEFAULT_RULE
+            return INFRA, rule_id
+    for rule_id, name, globs in LANES:
+        if any(glob_match(g, clean) for g in globs):
+            return name, rule_id
+    return PRODUCT, DEFAULT_RULE
+
+
+def classify(path):
+    """Return (is_product, rule_id) for one repo-relative path.
+
+    is_product is true only for the full product lane; a stack or perf path
+    is not product but still runs its own jobs (see lane()).
+    """
+    name, rule_id = lane(path)
+    return name == PRODUCT, rule_id
+
+
+def scope_lane(paths):
+    """The highest lane any path needs; product when there are no paths."""
+    paths = [p for p in paths if p and p.strip()]
+    if not paths:
+        return PRODUCT
+    return max((lane(p)[0] for p in paths), key=LANE_ORDER.index)
+
+
+def lane_flags(name):
+    """The three flags a lane switches on: product, stack, perf."""
+    rank = LANE_ORDER.index(name)
+    return {
+        "product": rank >= LANE_ORDER.index(PRODUCT),
+        "stack": rank >= LANE_ORDER.index(STACK),
+        "perf": rank >= LANE_ORDER.index(PERF),
+    }
 
 
 def scope(paths):
     """True when the change is product: any product path, or no paths at all."""
-    paths = [p for p in paths if p and p.strip()]
-    if not paths:
-        return True
-    return any(classify(p)[0] for p in paths)
+    return scope_lane(paths) == PRODUCT
 
 
 def ships(path):
@@ -251,8 +351,9 @@ def _cell(text):
     return text.replace("|", "\\|").replace("`", "'")
 
 
-def render_summary(paths, product, forced=False, note=""):
-    lines = ["### Change scope", "", "Result: `product=%s`" % str(product).lower()]
+def render_summary(paths, flags, forced=False, note=""):
+    lines = ["### Change scope", "", "Result: " + ", ".join(
+        "`%s=%s`" % (key, str(flags[key]).lower()) for key in ("product", "stack", "perf"))]
     if forced:
         lines.append("")
         lines.append("Forced to product by `--force-product`.")
@@ -262,9 +363,8 @@ def render_summary(paths, product, forced=False, note=""):
     if paths:
         lines += ["", "| Path | Class | Rule |", "| --- | --- | --- |"]
         for path in paths[:MAX_SUMMARY_ROWS]:
-            is_product, rule_id = classify(path)
-            lines.append("| `%s` | %s | %s |" % (
-                _cell(path), "product" if is_product else "infra", rule_id))
+            name, rule_id = lane(path)
+            lines.append("| `%s` | %s | %s |" % (_cell(path), name, rule_id))
         if len(paths) > MAX_SUMMARY_ROWS:
             lines.append("")
             lines.append("%d more paths not listed." % (len(paths) - MAX_SUMMARY_ROWS))
@@ -278,13 +378,13 @@ class _Parser(argparse.ArgumentParser):
 
 
 def build_parser():
-    parser = _Parser(description="Classify changed paths as infra or product.")
+    parser = _Parser(description="Classify changed paths into the infra, perf, stack or product lane.")
     parser.add_argument("--files-from", metavar="FILE|-",
                         help="file with one changed path per line, or - for stdin")
     parser.add_argument("--force-product", action="store_true",
-                        help="report product=true whatever the paths are")
+                        help="report every lane whatever the paths are")
     parser.add_argument("--github-output", metavar="FILE",
-                        help="append product=true|false to this file")
+                        help="append product, stack and perf =true|false to this file")
     parser.add_argument("--ships", action="store_true",
                         help="report ships=true|false (does anything users receive change) "
                              "instead of product=true|false")
@@ -293,13 +393,22 @@ def build_parser():
     return parser
 
 
-def emit(product, github_output, name="product"):
-    line = "%s=%s" % (name, str(product).lower())
+FLAG_NAMES = ("product", "stack", "perf")
+ALL_TRUE = {name: True for name in FLAG_NAMES}
+
+
+def emit(value, github_output, name="product"):
+    """Report one flag, or (name="lanes") the three lane flags of a dict."""
+    if name == "lanes":
+        lines = ["%s=%s" % (key, str(value[key]).lower()) for key in FLAG_NAMES]
+    else:
+        lines = ["%s=%s" % (name, str(value).lower())]
     if github_output:
         with open(github_output, "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+            handle.write("".join(line + "\n" for line in lines))
     else:
-        print(line)
+        for line in lines:
+            print(line)
 
 
 def _fallback_output(argv):
@@ -320,11 +429,15 @@ def main(argv=None):
         raise
     except Exception as exc:  # unknown arguments: still report a result
         print("change_scope: %s; treating the change as product" % exc, file=sys.stderr)
-        name = "ships" if "--ships" in argv else "product"
+        ships_mode = "--ships" in argv
         try:
-            emit(True, _fallback_output(argv), name)
+            if ships_mode:
+                emit(True, _fallback_output(argv), "ships")
+            else:
+                emit(ALL_TRUE, _fallback_output(argv), "lanes")
         except Exception:
-            print("%s=true" % name)
+            for name in (("ships",) if ships_mode else FLAG_NAMES):
+                print("%s=true" % name)
         return 0
 
     if args.ships:
@@ -332,32 +445,33 @@ def main(argv=None):
 
     paths = []
     note = ""
-    product = True
+    flags = dict(ALL_TRUE)
     try:
         if args.files_from:
             paths = read_paths(args.files_from)
         if args.force_product:
-            product = True
+            pass
         elif not paths:
             note = "No changed paths were provided, so the change counts as product."
         else:
-            product = scope(paths)
+            flags = lane_flags(scope_lane(paths))
     except Exception as exc:
         print("change_scope: %s; treating the change as product" % exc, file=sys.stderr)
-        product = True
+        flags = dict(ALL_TRUE)
         note = "The classifier failed, so the change counts as product."
 
     try:
-        emit(product, args.github_output)
+        emit(flags, args.github_output, "lanes")
     except Exception as exc:
         print("change_scope: cannot write output: %s" % exc, file=sys.stderr)
-        print("product=true")
+        for name in FLAG_NAMES:
+            print("%s=true" % name)
         return 0
 
     if args.summary:
         try:
             with open(args.summary, "a", encoding="utf-8") as handle:
-                handle.write(render_summary(paths, product, args.force_product, note))
+                handle.write(render_summary(paths, flags, args.force_product, note))
         except Exception as exc:
             print("change_scope: cannot write summary: %s" % exc, file=sys.stderr)
     return 0
