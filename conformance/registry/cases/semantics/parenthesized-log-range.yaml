@@ -79,3 +79,10 @@ gap:
     - f7b13aae
     - f982bf27
     - fb38c36f
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

@@ -45,3 +45,10 @@ cases:
   - severity/keyword-scan-fallback
   - severity/detected-level-filter-json-level
   - severity/otlp-severity-before-vl-1.50
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

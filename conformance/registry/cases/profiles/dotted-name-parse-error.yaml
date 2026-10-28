@@ -47,3 +47,10 @@ compare:
   expect: |
     HTTP 400 bad_data on both, the proxy's `error` equal to Loki's body
     (`parse error at line 1, col 64: syntax error: unexpected .`).
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -27,3 +27,10 @@ victorialogs_candidates:
   - id: pipe-math
     since: v1.40.0
     emitted_by_proxy: true
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -124,3 +124,10 @@ gap:
     - fa6d53ad
     - fbece7b0
     - fe307701
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

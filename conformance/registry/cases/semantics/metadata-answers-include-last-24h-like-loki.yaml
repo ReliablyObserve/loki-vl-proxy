@@ -82,3 +82,10 @@ compare:
     The repeated answer equals Loki's and lists the new label (and its value);
     a window ending before now - 24h is still answered from the cache without a
     backend call; with the flag at 0 the previous caching is unchanged.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

@@ -20,6 +20,7 @@ import perf_evidence  # noqa: E402
 import pr_smoke  # noqa: E402
 
 RESULTS = os.path.join(HERE, "..", "results")
+NO_BOUNDS = {"blocks": {}, "covers": {}}
 NOISE, MIN_DELTA = 0.30, 0.10  # pr_smoke's defaults
 
 
@@ -261,11 +262,14 @@ class MainTest(unittest.TestCase):
         stdout = io.StringIO()
         with mock.patch.object(sys, "argv", argv), mock.patch.object(pr_smoke, "measure", return_value=[result]) as m, \
                 mock.patch.object(pr_smoke.over2x, "baseline_at", return_value={}) as at, \
+                mock.patch.object(pr_smoke.over2x, "bounds_at", return_value=NO_BOUNDS) as bounds_at, \
                 contextlib.redirect_stdout(stdout):
             code = pr_smoke.main()
         base = pr_smoke.git("rev-parse", "HEAD")
         at.assert_called_once_with(base)
-        self.assertEqual(m.call_args.args[-1], {})  # the list reaches measure (and so the re-measure)
+        bounds_at.assert_called_once_with(base)  # the locks of the base: a PR cannot unlock its own rows
+        # The list and the locks reach measure (and so the re-measure).
+        self.assertEqual(m.call_args.args[-2:], ({}, NO_BOUNDS))
         with open(os.path.join(out, "verdict.json")) as f:
             return code, stdout.getvalue(), json.load(f)
 
@@ -439,10 +443,263 @@ class ReplayTest(unittest.TestCase):
         self.assertEqual(sorted({f["shape"].split()[0] for f in bad}), ["J1", "J2", "J3", "J4", "J5"])
         self.assertTrue(all(f["kind"] == "new" and f["mode"] == "warm" for f in bad))
 
+    def test_reverting_758_trips_the_committed_locks(self):
+        # The J shapes cover semantics/json-error-filter-metric-split-pushdown, locked from the 2026-10-27 daily run.
+        b = seed_bounds()
+        with open(os.path.join(RESULTS, "2026-10-22-json-error-split-1h.json")) as f:
+            s = json.load(f)
+        self.assertEqual(over2x.locked_failing(over2x.gate(s, {}, NOISE, MIN_DELTA, b)), [])
+        s["baseline"], s["candidate"] = s["candidate"], s["baseline"]
+        locked = over2x.locked_failing(over2x.gate(s, {}, NOISE, MIN_DELTA, b))
+        self.assertEqual(sorted({f["shape"].split()[0] for f in locked}), ["J1", "J2", "J3", "J4", "J5"])
+        self.assertTrue(all("semantics/json-error-filter-metric-split-pushdown" in f["locked_by"] for f in locked))
+
+    def test_merged_prs_trip_no_committed_lock(self):
+        b = seed_bounds()
+        for name in ("2026-10-22-json-error-split-1h.json", "2026-10-22-json-error-split-control-1h.json",
+                     "2026-10-17-unwrapwithout-control-1h.json", "2026-10-14-detlevel-d-capped-1h.json",
+                     "2026-10-11-unwrapsum-1h.json"):
+            with open(os.path.join(RESULTS, name)) as f:
+                self.assertEqual(over2x.locked_failing(over2x.gate(json.load(f), {}, NOISE, MIN_DELTA, b)), [], name)
+
     def test_long_runs_where_loki_failed_are_not_counted(self):
         found = self.gate("2026-10-22-json-error-split-long.json")
         self.assertTrue(found)
         self.assertEqual({f["kind"] for f in found}, {"loki_failed"})
+
+
+LOCK = {**over2x.registry_io.PERF_DEFAULTS, "locked": True, "locked_since": "2026-10-27"}
+SEED = "2026-10-27"  # the daily run the locks were seeded from
+
+
+def seed_bounds():
+    """The committed bounds with only the locks of the seed: later locks (from later daily data) are left out,
+    so these replays keep their meaning as the registry grows."""
+    b = over2x.read_bounds()
+    b["blocks"] = {i: blk if blk["locked"] is not True or blk["locked_since"] <= SEED
+                   else {**blk, "locked": False, "locked_since": None} for i, blk in b["blocks"].items()}
+    return b
+
+
+def seed_lines():
+    """(set, row) of every history line of the seed day: append-only, so fixed."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(history.HISTORY, "*.jsonl"))):
+        for e in history.read(path):
+            if e["date"] == SEED:
+                out += [(e["set"], r) for r in history.rows_of(e).values()]
+    return out
+OPEN = dict(over2x.registry_io.PERF_DEFAULTS)
+EXCEPTION = {"reason": "a VictoriaLogs scan Loki does not need", "follow_up": "a native pipe"}
+
+
+def bounds(blocks, covers=None):
+    return {"blocks": blocks, "covers": covers or {("control", "s"): list(blocks)}}
+
+
+class AcceptanceTest(unittest.TestCase):
+    """The tiers (owner 2026-10-28): below Loki, close, 1–2×, above 2×; the registry locks and their gate."""
+
+    def test_bands_and_their_noise(self):
+        self.assertEqual(over2x.band(0.1, 0.5), "below")
+        self.assertEqual(over2x.band(0.48, 0.5), "close")       # within 25%
+        self.assertEqual(over2x.band(0.01, 0.05), "close")      # 5× faster, inside the 50 ms floor
+        self.assertEqual(over2x.band(0.8, 0.5), "between")
+        self.assertEqual(over2x.band(1.0, 0.5), "between")      # exactly 2× is not above it
+        self.assertEqual(over2x.band(1.2, 0.5), "above")
+        self.assertEqual(over2x.band(0.04, 0.006), "close")     # 6.7× inside the floor is not above
+
+    def test_distribution(self):
+        d = over2x.distribution([("cold", "below"), ("cold", "below"), ("cold", "close"), ("cold", "above"),
+                                 ("warm", "between")])
+        self.assertEqual(d["cold"], {"rows": 4, "below": 2, "close": 1, "between": 0, "above": 1, "share_below": 50.0})
+        self.assertEqual(list(d), ["cold", "warm"])
+        self.assertEqual(over2x.distribution([]), {})
+
+    def test_ratchet_moves_need_both_margins(self):
+        def dist(below, above, rows=100):
+            return {"cold": {"rows": rows, "below": below, "close": rows - below - above, "between": 0,
+                             "above": above, "share_below": 100.0 * below / rows}}
+        self.assertEqual(over2x.ratchet_moves(dist(50, 5), dist(47, 5)), [])        # 3 rows: noise
+        self.assertEqual(over2x.ratchet_moves(dist(50, 5), dist(46, 5)), [])        # 4 points, 4 rows: noise
+        self.assertEqual([k for _, k, _ in over2x.ratchet_moves(dist(50, 5), dist(44, 5))], ["share_below"])
+        self.assertEqual([k for _, k, _ in over2x.ratchet_moves(dist(50, 5), dist(50, 11))], ["over_2x"])
+        self.assertEqual(over2x.ratchet_moves(dist(50, 5), dist(50, 10)), [])       # 5 rows: noise
+        # 6 rows of 1000 is 0.6 points: noise on a large population.
+        self.assertEqual(over2x.ratchet_moves(dist(500, 50, 1000), dist(494, 56, 1000)), [])
+        self.assertEqual(over2x.ratchet_moves(dist(50, 5), dist(10, 50, rows=90)), [])  # not the same rows
+
+    def test_bound_for(self):
+        b = bounds({"a": LOCK, "b": {**OPEN, "effort_exception": EXCEPTION}, "c": {**LOCK, "max_ratio": 1.5,
+                                                                                   "modes": ["cold"]}})
+        self.assertEqual(over2x.bound_for(b, "control", "s", "cold"),
+                         {"locked": True, "max_ratio": 1.5, "locked_by": ["a", "c"], "exception": ["b"]})
+        self.assertEqual(over2x.bound_for(b, "control", "s", "warm"),
+                         {"locked": True, "max_ratio": 2.0, "locked_by": ["a"], "exception": ["b"]})
+        self.assertFalse(over2x.bound_for(bounds({"b": OPEN}), "control", "s", "warm")["locked"])
+        self.assertFalse(over2x.bound_for(b, "control", "other shape", "warm")["locked"])
+        self.assertFalse(over2x.bound_for(None, "control", "s", "warm")["locked"])
+
+    def test_lock_state(self):
+        b = bounds({"clean": OPEN, "slow": OPEN, "unmeasured": OPEN},
+                   {("control", "s"): ["clean", "slow"], ("control", "t"): ["slow"], ("control", "u"): ["unmeasured"]})
+        s = summary(row(shape="s", pr=0.15, loki=0.1), row(shape="t", pr=0.5, loki=0.1, pr_cold=0.15),
+                    # Loki did not answer: neither within nor above.
+                    row(shape="u", pr=0.5, loki=0.1, status=("200", "200", "504")))
+        state = over2x.lock_state([s], b)
+        self.assertEqual((state["clean"]["within"], state["clean"]["lockable"]), (2, True))
+        self.assertEqual([(r["shape"], r["mode"]) for r in state["slow"]["above"]], [("t", "warm")])
+        self.assertFalse(state["slow"]["lockable"])
+        self.assertFalse(state["unmeasured"]["lockable"])  # no comparable row: no evidence
+        # Loki's cache answering the cold run leaves only warm to count.
+        served = summary(row(shape="s", pr=0.15, loki=0.1, pr_cold=0.5, loki_cold=0.1, cold_cache_served=["loki"]))
+        self.assertEqual(over2x.lock_state([served], b)["clean"]["within"], 1)
+
+    def gate(self, rows, b, baseline=None):
+        return over2x.gate(summary(*rows), baseline or {}, NOISE, MIN_DELTA, b)
+
+    def test_locked_row_above_its_bound_is_a_locked_regression(self):
+        slow = row(pr=0.5, base=0.15, loki=0.1)
+        locked = self.gate([slow], bounds({"a": LOCK}))
+        self.assertEqual([(f["kind"], f["mode"], f["locked"], f["bound"]) for f in over2x.locked_failing(locked)],
+                         [("new", "cold", True, 2.0), ("new", "warm", True, 2.0)])
+        self.assertEqual(over2x.locked_failing(locked)[0]["locked_by"], ["a"])
+        # Unlocked: the same row is an ordinary above-2× finding, not a locked one.
+        unlocked = self.gate([slow], bounds({"a": OPEN}))
+        self.assertEqual([f["kind"] for f in over2x.failing(unlocked)], ["new", "new"])
+        self.assertEqual(over2x.locked_failing(unlocked), [])
+
+    def test_a_tighter_bound_is_used(self):
+        mid = row(pr=0.9, base=0.5, loki=0.5)  # 1.8×: within 2×, above a 1.5× lock, and slower than base
+        self.assertEqual(over2x.failing(self.gate([mid], bounds({"a": OPEN}))), [])
+        found = over2x.locked_failing(self.gate([mid], bounds({"a": {**LOCK, "max_ratio": 1.5}})))
+        self.assertEqual([(f["mode"], f["bound"]) for f in found], [("cold", 1.5), ("warm", 1.5)])
+
+    def test_lock_keeps_the_noise_floor_and_comparability(self):
+        b = bounds({"a": LOCK})
+        self.assertEqual(over2x.failing(self.gate([row(pr=0.04, base=0.01, loki=0.006)], b)), [])  # inside 50 ms
+        self.assertEqual(over2x.failing(self.gate([row(pr=0.5, base=0.15, loki=0.1, status=("200", "200", "504"))], b)),
+                         [])  # Loki failed: not a proxy defect
+        served = row(pr=0.15, base=0.15, loki=0.1, pr_cold=0.5, base_cold=0.15, loki_cold=0.1, cold_cache_served=["loki"])
+        self.assertEqual(over2x.failing(self.gate([served], b)), [])  # Loki's cache answered the cold run
+        # As slow on the base build in the same run: not the PR's doing.
+        self.assertEqual(over2x.failing(self.gate([row(pr=0.5, base=0.5, loki=0.1)], b)), [])
+
+    def test_lost_below_is_flagged_not_failing(self):
+        lost = row(pr=0.6, base=0.2, loki=0.4, verdict="slower")  # base 0.5× Loki, PR 1.5×
+        found = self.gate([lost], bounds({"a": LOCK}))
+        self.assertEqual([(f["kind"], f["mode"]) for f in found], [("lost_below", "cold"), ("lost_below", "warm")])
+        self.assertEqual(over2x.failing(found), [])
+        # Faster than base but still above Loki: was not below Loki, nothing to lose.
+        self.assertEqual(self.gate([row(pr=0.6, base=0.7, loki=0.4)], bounds({"a": LOCK})), [])
+
+    def test_comment_sections(self):
+        rows = [row(shape="s", pr=0.5, base=0.15), row(shape="t", pr=0.5, base=0.15),
+                row(shape="u", pr=0.6, base=0.2, loki=0.4)]
+        b = bounds({"a": LOCK}, {("control", "s"): ["a"]})
+        text, verdict = comment.render([summary(*rows)], SELECTION, dict(META, over_2x_loki="warn"), {}, b)
+        self.assertIn("#### ⚠️ 🔒 Locked rows above their bound: 2", text)
+        self.assertIn("#### ⚠️ Above 2× Loki: 2 new, 0 worsened", text)  # t, outside the lock
+        self.assertLess(text.index("Locked rows above"), text.index("Above 2× Loki: 2 new"))
+        self.assertIn("lost below-Loki", text)
+        self.assertEqual((verdict["exit"], verdict["over_2x"]["locked"], verdict["over_2x"]["lost_below"]), (0, 2, 2))
+        text, verdict = comment.render([summary(*rows)], SELECTION, dict(META, over_2x_loki="fail"), {}, b)
+        self.assertIn("🔴 Performance A/B: locked row above its bound", text)
+        self.assertEqual(verdict["exit"], 1)
+        lines = over2x.annotations(verdict["over_2x"]["rows"], "fail")
+        self.assertTrue(lines[0].startswith("::error title=locked row above its bound::new: control / s / 1h"))
+
+    def test_bounds_at_reads_the_committed_registry(self):
+        repo = tempfile.mkdtemp()
+        git = ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
+        subprocess.run(git[:3] + ["init", "-q"], check=True)
+        os.makedirs(os.path.join(repo, "bench/ab"))
+        os.makedirs(os.path.join(repo, "conformance/registry/cases/semantics"))
+        os.makedirs(os.path.join(repo, "conformance/registry/state/behaviours"))
+        with open(os.path.join(repo, "bench/ab/shapes.json"), "w") as f:
+            json.dump({"sets": {"control": {"shapes": [{"name": "s", "covers": ["semantics/a"]}]}}}, f)
+        with open(os.path.join(repo, "conformance/registry/cases/semantics/a.yaml"), "w") as f:
+            f.write("id: semantics/a\n" + over2x.registry_io.render_perf(LOCK))
+        with open(os.path.join(repo, "conformance/registry/state/behaviours/a.yaml"), "w") as f:
+            f.write("id: semantics/a\n" + over2x.registry_io.render_perf(OPEN))  # a state file: not read
+        subprocess.run(git + ["add", "."], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "x"], check=True)
+        # The working tree unlocking the row does not change what the base says.
+        with open(os.path.join(repo, "conformance/registry/cases/semantics/a.yaml"), "w") as f:
+            f.write("id: semantics/a\n" + over2x.registry_io.render_perf(OPEN))
+        b = over2x.bounds_at("HEAD", repo)
+        self.assertEqual(b["blocks"], {"semantics/a": LOCK})
+        self.assertTrue(over2x.bound_for(b, "control", "s", "warm")["locked"])
+        self.assertFalse(over2x.read_bounds(repo, json.load(open(os.path.join(repo, "bench/ab/shapes.json"))))[
+            "blocks"]["semantics/a"]["locked"])
+        self.assertIsNone(over2x.bounds_at("no-such-ref", repo))
+
+
+class LocksCommandTest(unittest.TestCase):
+    """over2x.py locks: seeding from the daily results, locking by hand, and refusing what the data does not support."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.results = os.path.join(self.root, "results")
+        os.makedirs(self.results)
+        for path, ident in (("cases/semantics/clean.yaml", "semantics/clean"), ("behaviours/slow.yaml", "slow")):
+            full = os.path.join(self.root, "conformance/registry", path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(f"id: {ident}\ntitle: t\n")
+        self.spec = {"sets": {"control": {"shapes": [{"name": "s", "covers": ["semantics/clean", "slow"]},
+                                                     {"name": "t", "covers": ["slow"]}]}}}
+        self.daily([row(shape="s", pr=0.15, loki=0.1), row(shape="t", pr=0.5, loki=0.1)])
+
+    def daily(self, rows):
+        with open(os.path.join(self.results, "daily-control.json"), "w") as f:
+            json.dump(dict(summary(*rows), date="2026-10-27"), f)
+
+    def run_locks(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            code = over2x.locks(args[0], list(args[1:]), self.results, self.root, self.spec)
+        return code, err.getvalue()
+
+    def blocks(self):
+        return over2x.read_bounds(self.root, self.spec)["blocks"]
+
+    def test_seed_locks_only_what_measured_within_and_is_idempotent(self):
+        self.assertEqual(self.run_locks("seed")[0], 0)
+        b = self.blocks()
+        self.assertEqual((b["semantics/clean"]["locked"], b["semantics/clean"]["locked_since"]), (True, "2026-10-27"))
+        self.assertEqual((b["slow"]["locked"], b["slow"]["locked_since"]), (False, None))
+        before = open(os.path.join(self.root, "conformance/registry/behaviours/slow.yaml")).read()
+        self.run_locks("seed")
+        self.assertEqual(open(os.path.join(self.root, "conformance/registry/behaviours/slow.yaml")).read(), before)
+
+    def test_lock_refuses_a_row_above_and_locks_once_it_is_within(self):
+        self.run_locks("seed")
+        code, err = self.run_locks("lock", "slow")
+        self.assertEqual(code, 1)
+        self.assertIn("slow: not locked: 2 row(s) above its bound, 2 within", err)  # t cold and warm
+        self.assertFalse(self.blocks()["slow"]["locked"])
+        self.daily([row(shape="s", pr=0.15, loki=0.1), row(shape="t", pr=0.15, loki=0.1)])
+        self.assertEqual(self.run_locks("lock", "slow")[0], 0)
+        self.assertEqual(self.blocks()["slow"]["locked_since"], "2026-10-27")
+
+
+class AcceptanceReplayTest(unittest.TestCase):
+    """The seed's locks against the seed day's history lines: its own data flags no locked row, and every item it
+    left unlocked has a row above 2× or no comparable row."""
+
+    def test_seed_day_against_the_seed_locks(self):
+        b = seed_bounds()
+        locked = {i for i, blk in b["blocks"].items() if blk["locked"] is True}
+        self.assertEqual(len(locked), 29)
+        state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
+        for set_name, r in seed_lines():
+            for mode, pair in over2x.history_pairs(r).items():
+                for item in b["covers"].get((set_name, r["shape"]), []):
+                    st = over2x.judge(*pair, bound=b["blocks"][item]["max_ratio"])
+                    if st in state[item]:
+                        state[item][st] += 1
+        self.assertEqual({i: v["above"] for i, v in state.items() if i in locked and v["above"]}, {})
+        self.assertEqual([i for i, v in state.items() if i not in locked and v["within"] and not v["above"]], [])
 
 
 if __name__ == "__main__":

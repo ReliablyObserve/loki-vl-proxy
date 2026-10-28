@@ -51,3 +51,10 @@ gap:
     - 9016b6b0
     - ce40a9c8
     - f248d966
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

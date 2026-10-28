@@ -85,3 +85,31 @@ cluster the diff marked as a recorded deviation by the case id it names (which m
 case with status documented, owner-kept, upstream or fixed), every other one by a case's
 `gap.clusters`. A fixed case keeps its clusters until the next recorded run no longer
 shows them. The conformance gate fails otherwise.
+
+## Performance acceptance
+
+The owner's rule (2026-10-28): at most 2× Loki in the worst case, close to Loki in general, below
+Loki for most queries; up to 2× only where going lower is high effort now. Every item an A/B
+shape covers (`bench/ab/shapes.json` `covers`) carries the bound in its own file (not its state
+file), in this fixed form:
+
+```yaml
+perf:
+  max_ratio: 2.0          # the hard bound (at most 2.0): a locked row above it is a regression
+  target_ratio: 1.0       # below Loki; a row between 1× and max_ratio needs an effort_exception
+  modes: [cold, warm, refresh]
+  locked: true            # every row of its shapes measured within max_ratio on the daily run
+  locked_since: '2026-10-27'
+  effort_exception: null
+```
+
+An exception is two indented one-line keys, `reason` (why going below Loki is high effort now,
+quoting the evidence) and `follow_up` (what would bring it below Loki). Locks were seeded from the
+daily results of 2026-10-27 (`python3 bench/ab/over2x.py locks seed`) and are added by people
+(`over2x.py locks lock <id>`, which refuses an item the latest daily results show above its bound);
+the daily run lists the items ready to lock and never edits the registry. A locked item's rows
+above their bound fail the daily run and are listed in `perf-smoke` (bench/ab/README.md,
+"Acceptance tiers and the registry lock"). `scripts/ci/check_conformance.py` fails a malformed
+block, a `max_ratio` above 2.0, a covered item without a block, a block on an item nothing covers,
+and a locked item that covers a row on `bench/ab/history/over-2x-loki.json`.
+`conformance/reports/performance.md` shows each item's lock state and the rows between 1× and 2×.

@@ -52,3 +52,10 @@ victorialogs:
   vl_cannot: |
     TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
 edge_cases: []    # case ids under conformance/registry/cases/
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

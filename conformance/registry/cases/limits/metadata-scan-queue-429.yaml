@@ -60,3 +60,10 @@ loki_parity: |
   pkg/queue/queue.go ErrTooManyRequests, returned as 429 by the query frontend.
   Loki never needs this limiter for /labels because its index answers the
   range without a scan; the message and status are its own.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

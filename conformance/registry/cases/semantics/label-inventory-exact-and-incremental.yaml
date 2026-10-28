@@ -68,3 +68,10 @@ compare:
     written late into a revalidated hour appears; a failed bucket fails the
     listing, never a partial answer; a request sharing a bucket with a
     cancelled one still gets its answer.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

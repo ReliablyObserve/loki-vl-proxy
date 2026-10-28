@@ -82,3 +82,10 @@ gap:
   planned_test: 'TestCompat_PatternLineFilterAnchoring (test/e2e-compat, group core); TestPatternLineFilterAnchoringEdges, TestPatternLineFilterAnchoringDifferential, TestPatternLineFilterAnchoringCorpus, TestPatternLineFilterSingleLiteralShapes (internal/translator); TestPatternLineFilterAnchoringReachesVictoriaLogs, TestPatternLineFilterAnchoringDetectedFields, TestPatternLineFilterIsNotAParserStage (internal/proxy)'
   note: 'The 638 generated and fixed filters (seed 7) on 2,530 lines matched Loki''s real pattern package against the real VictoriaLogs storage of v1.43.1 and v1.50.0 (log rows and stats count, 0 mismatches over 1.6M line checks; 101,528 on the base build), and TestPatternLineFilterAnchoringCorpus replays the same corpus without storage (0 mismatches of 1,614,140 verdicts; 101,414 on the base translation), and TestPatternLineFilterSingleLiteralShapes checks the pipe-free single-literal forms on every line over small alphabets (1,792,980 verdicts, overlapping literals included). The e2e passes against Loki 3.7.7 on VictoriaLogs v1.52.0 and v1.47.0. Consecutive and named captures, which Loki rejects with a 400, are the open row semantics/pattern-line-filter-invalid-captures.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

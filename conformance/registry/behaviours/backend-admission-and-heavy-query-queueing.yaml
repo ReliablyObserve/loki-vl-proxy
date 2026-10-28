@@ -83,3 +83,10 @@ cases:
   - limits/concurrent-full-retention-scans-exhaust-backend
   - limits/metadata-scan-queue-429
   - limits/metadata-scan-adaptive-limit
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

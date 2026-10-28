@@ -69,3 +69,10 @@ gap:
   proxy: 'metric-query filters/grouping on keys no stage exposes read the stored field (documented, owner kept)'
   planned_test: 'TestCompat_LabelFilterOnLineField (exists, profile tests)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

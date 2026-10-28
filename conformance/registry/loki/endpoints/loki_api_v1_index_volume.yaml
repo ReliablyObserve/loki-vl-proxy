@@ -80,3 +80,10 @@ edge_cases:
   - drilldown/index_volume/limit-not-truncating
   - api/index_volume/aggregate-by-labels
   - api/index_volume/empty-window-returns-empty-array
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

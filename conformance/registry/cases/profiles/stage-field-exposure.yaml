@@ -76,3 +76,10 @@ compare:
     categorize-labels (structured metadata left out of the uncategorized
     stream labels, see profiles/uncategorized-streams-carry-structured-metadata),
     on VictoriaLogs v1.52.0 and v1.30.0, the latter measured before the support change (TestCompat_StageFieldExposureLikeLoki).
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

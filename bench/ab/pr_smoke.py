@@ -30,7 +30,8 @@ Steps:
      reported next to cold and warm. Off by default: it adds requests.
      A row above 2× Loki that the PR adds or makes worse (over2x.gate, against
      bench/ab/history/over-2x-loki.json as committed on the base) is re-measured
-     the same way before it is reported.
+     the same way before it is reported; so is a locked row (the registry's
+     perf: blocks as committed on the base) above its bound.
   6. comment.py renders the sticky comment and sets the exit status. With
      --over-2x-loki warn (the default) an above-2× finding is a warning at the
      top of the comment and a ::warning:: annotation; with fail it fails the job.
@@ -106,7 +107,7 @@ def run_matrix(set_name, shapes, targets, args, end, st, out, runs, tag="", rang
 KEEP_ON_CONFIRM = ("refresh", "refresh_status")
 
 
-def confirm(summary, args, plan, st, out, targets, baseline=None):
+def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None):
     """Re-measure the shapes the first pass called slower or faster, or found newly or further above 2× Loki;
     keep the re-run's rows.
 
@@ -114,7 +115,8 @@ def confirm(summary, args, plan, st, out, targets, baseline=None):
     ~70% on a first pass of 4 runs; a 7-run pass on fresh windows settles them.
     """
     moved = ("slower", "faster")
-    over = set(over2x.remeasure(summary, baseline, args.noise, args.min_delta)) if baseline is not None else set()
+    over = (set(over2x.remeasure(summary, baseline, args.noise, args.min_delta, bounds)) if baseline is not None
+            else set())
     slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] in moved} | over)
     if not slow:
         return summary
@@ -211,9 +213,13 @@ def main():
                     raise ValueError(problem)
             else:
                 baseline = over2x.baseline_at(base_sha)
-            summaries = measure(args, sel, out, base_sha, meta, baseline)
+            # The locks as committed on the base: a pull request cannot unlock its own rows.
+            bounds = over2x.bounds_at(base_sha)
+            if bounds is None:
+                stack.log("the registry's perf: blocks at the base cannot be read; no row is locked in this run")
+            summaries = measure(args, sel, out, base_sha, meta, baseline, bounds)
             meta["elapsed_s"] = round(time.time() - t0)
-            text, verdict = comment.render(summaries, sel, meta, baseline)
+            text, verdict = comment.render(summaries, sel, meta, baseline, bounds)
     except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
         traceback.print_exc()
         meta["elapsed_s"] = round(time.time() - t0)
@@ -293,7 +299,7 @@ def write_summaries(summaries, out):
             json.dump(summary, f, indent=1)
 
 
-def measure(args, sel, out, base_sha, meta=None, baseline=None):
+def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
     """Stack up, seed, build, run every selected set; returns the summaries."""
     st = stack.stack_from(args)
     proxies, trees, summaries = [], {}, []
@@ -319,7 +325,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None):
         for plan, (set_name, shapes) in zip(plans, sel["sets"].items()):
             refresh = (plan["refresh_end"], args.refresh_s, args.refresh_runs) if args.refresh_s else None
             summary = run_matrix(set_name, shapes, targets, args, plan["end"], st, out, args.runs, refresh=refresh)
-            summary = confirm(summary, args, plan, st, out, targets, baseline)
+            summary = confirm(summary, args, plan, st, out, targets, baseline, bounds)
             # The set ran on its own block of windows: perf_evidence trusts its warm and refresh figures.
             # summary-<set>.json is rewritten with the marker and the confirmed rows, as the comment shows them.
             summary["isolated_windows"] = True

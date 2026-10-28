@@ -39,3 +39,10 @@ gap:
     - 89a7162d
     - ab9cc1fc
     - f737ddd5
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
