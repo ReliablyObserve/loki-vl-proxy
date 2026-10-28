@@ -586,6 +586,11 @@ func compatCacheCaptureAllowed(code int, flushed bool, header http.Header) bool 
 	if header.Get(staleResponseHeader) != "" {
 		return false
 	}
+	// Drilldown's 200 partial reply represents an upstream failure, not a
+	// reusable answer. Caching it hides a later successful query for five minutes.
+	if header.Get(drilldownPartialUpstreamStatusHeader) != "" {
+		return false
+	}
 	contentType := strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }

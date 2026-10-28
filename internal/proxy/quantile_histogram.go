@@ -438,13 +438,13 @@ func (o *quantileOuter) fold(ctx context.Context, keys []string, metric func(str
 func (p *Proxy) writeQuantileHistogramRange(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, phi float64, fetchStart, start, end time.Time, step, window, bucket, sampleShift time.Duration) {
 	series, err := p.collectQuantileHistogram(ctx, spec, fetchStart, end, bucket)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+		p.writeErr(w, ctx, err)
 		return
 	}
 	shiftQuantileSeries(series, sampleShift)
 	result, err := buildQuantileHistogramMatrix(ctx, phi, series, start, end, step, window)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+		p.writeErr(w, ctx, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

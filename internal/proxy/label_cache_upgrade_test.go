@@ -189,7 +189,7 @@ func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 		wantStatus int
 	}{
 		{name: "rejected query returns the error", streamsErr: "cannot parse `query` arg: unexpected token", wantStatus: http.StatusBadRequest},
-		{name: "storage failure is a backend error", streamsErr: "cannot obtain streams: cannot read index: unexpected EOF", wantStatus: http.StatusBadGateway},
+		{name: "storage failure is a backend error", streamsErr: "cannot obtain streams: cannot read index: unexpected EOF", wantStatus: http.StatusInternalServerError},
 		{name: "unsupported endpoint keeps full-range native answer", streamsErr: `unsupported path requested: "/select/logsql/streams"`, wantStatus: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

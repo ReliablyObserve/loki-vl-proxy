@@ -57,7 +57,8 @@ jobs:
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
           FILES="$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}")"
           RUN_PERF=false
-          if echo "$FILES" | grep -Eq '^(cmd/|internal/|pkg/|go\.mod|go\.sum|Dockerfile|test/e2e-compat/|scripts/ci/(collect_quality_metrics\.sh|check_quality_gate\.py|render_pr_report\.sh)|\.github/workflows/pr-quality-report\.yaml)'; then
+          if echo "$FILES" | grep -E '^(cmd/|internal/|pkg/)' | grep -Eqv '(_test\.go$|/testdata/)' \
+            || echo "$FILES" | grep -Eq '^(go\.mod|go\.sum|Dockerfile|scripts/ci/(collect_quality_metrics\.sh|check_quality_gate\.py))$'; then
             RUN_PERF=true
           fi
           echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"

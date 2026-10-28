@@ -1388,8 +1388,8 @@ func TestDrilldown_DetectedFields_ReturnsErrorWithoutCacheOnBackendFailure(t *te
 	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22svc%22%7D", nil)
 	p.handleDetectedFields(w, r)
 
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502 when detected_fields has no cache fallback, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when detected_fields has no cache fallback, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 

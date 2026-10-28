@@ -1,0 +1,49 @@
+id: semantics/error-layer-proxy-limit-status
+title: Index stats and volume answer the buffered-response limit without naming the flag (open)
+proves:
+  - status-502
+  - limits/series-limit-error
+consumer: any
+why: |
+  -backend-max-buffered-response-bytes and -manual-range-metric-row-limit
+  are proxy limits. Loki's message-size limit is a 500 ResourceExhausted
+  (pkg/util/server/error.go:93-100), its query limits 400 with their own
+  text. The error layer now answers the proxy's limits with 500 and the
+  message naming their flag (`manual metric response exceeds N bytes; narrow
+  the query or increase -backend-max-buffered-response-bytes`), never 502,
+  including bench shape U9 (`sum(rate_counter(... | logfmt | unwrap amount
+  [5m]))`, 502 at 24h before; Loki answers 200 there because it does not read
+  raw rows, a separate parity fix). 4 cells remain (7 before): index stats,
+  volume and volume_range answer the limit with 500 `Internal Server Error`,
+  the untyped `body exceeds configured limit` that names no flag.
+request:
+  scope: internal
+  entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
+    errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
+    connection refused and reset, a reply after -backend-timeout, a client
+    cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
+    body above -backend-max-buffered-response-bytes), driven through 21 client
+    routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
+    rate_counter, json; query; series; labels; label values; detected_fields,
+    detected_field values, detected_labels; index stats, volume, volume_range,
+    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
+    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
+    VictoriaLogs through a fault-injecting forwarder and compares with Loki.
+compare:
+  mode: exact
+  fields: [status, errorType, body, headers]
+  expect: |
+    A documented proxy limit answers 500 internal (or 400 for a query
+    limit Loki has) with a message naming its flag; never 502.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/http_utils.go writeError (limit errors as a typed error) and range_metric_compat.go, metric_binary.go:248, label_handlers.go'
+  loki: 'pkg/util/server/error.go:93-100'
+  proxy: '500 Internal Server Error without the flag on index stats and volume (errBodyTooLarge)'
+  planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

@@ -43,7 +43,7 @@ func TestGroupedQuantileCountLimit(t *testing.T) {
 					if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"1.5"`) {
 						t.Fatalf("counts at the limit rejected: %d %s", rec.Code, rec.Body.String())
 					}
-				} else if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") || strings.Contains(rec.Body.String(), `"result"`) {
+				} else if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") || strings.Contains(rec.Body.String(), `"result"`) {
 					t.Fatalf("over the limit must return the limit error without partial samples: %d %s", rec.Code, rec.Body.String())
 				}
 				if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {

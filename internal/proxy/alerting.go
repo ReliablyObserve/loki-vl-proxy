@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,7 +142,7 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
 	resp, err := p.alertingBackendGet(p.withRequestScope(r), backend, path)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -159,7 +160,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 			body, err = filterAlertingJSONForTenant(body, label, org)
 		}
 		if err != nil || len(body) > maxAlertingResponseBytes {
-			p.writeError(w, http.StatusBadGateway, "invalid alerting backend response")
+			p.writeErr(w, r.Context(), errors.New("invalid alerting backend response"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -481,7 +482,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.alertingBackendGetWithParams(p.withRequestScope(r), p.rulerBackend, "/api/v1/rules", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -499,7 +500,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	var decoded alertingRulesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("invalid ruler backend response: %v", err))
+		p.writeErr(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err))
 		return
 	}
 

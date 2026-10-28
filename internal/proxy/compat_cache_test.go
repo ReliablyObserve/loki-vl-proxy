@@ -201,8 +201,8 @@ func TestCompatCacheMiddleware_DoesNotCacheErrors(t *testing.T) {
 
 	p := newCompatTestProxy(t, backend.URL)
 	first := doCompatProxyRequest(p, "/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D", nil)
-	if first.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502 on first request, got %d", first.Code)
+	if first.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on first request, got %d", first.Code)
 	}
 	second := doCompatProxyRequest(p, "/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D", nil)
 	if second.Code != http.StatusOK {

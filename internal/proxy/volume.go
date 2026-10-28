@@ -234,8 +234,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 		if p.serveStaleReadCacheOnError(w, endpoint, cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest(endpoint, status, time.Since(start))
 		return
 	}

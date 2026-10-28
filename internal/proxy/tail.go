@@ -67,8 +67,8 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	tailCtx, tailCancel := context.WithCancel(r.Context())
 	defer tailCancel()
 
-	if statusCode, msg, ok := p.preflightTailAccess(tailCtx, logsqlQuery, r.FormValue("start")); ok {
-		p.writeError(w, statusCode, msg)
+	if err := p.preflightTailAccess(tailCtx, logsqlQuery, r.FormValue("start")); err != nil {
+		statusCode := p.writeErr(w, tailCtx, err)
 		p.metrics.RecordRequest("tail", statusCode, time.Since(start))
 		return
 	}
@@ -115,11 +115,17 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, nativeTail, fallbackReason := p.openNativeTailStream(wsCtx, logsqlQuery)
-	p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", nativeTail, "fallback", fallbackReason)
+	resp, nativeTail, fallbackErr := p.openNativeTailStream(wsCtx, logsqlQuery)
+	p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", nativeTail, "fallback", fallbackErr)
 	if !nativeTail {
 		if p.tailMode == TailModeNative {
-			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason))
+			// Loki closes with its error text (pkg/querier/tail/http.go:69); the
+			// proxy's is the error layer's, cut to a control frame's 123 bytes.
+			_, _, reason := lokiClientError(wsCtx, fallbackErr)
+			if len(reason) > maxTailCloseReasonBytes {
+				reason = reason[:maxTailCloseReasonBytes]
+			}
+			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, reason))
 			return
 		}
 		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, tp, r.FormValue("start"))
@@ -222,7 +228,7 @@ func (p *Proxy) writeTailRows(ctx context.Context, conn tailConn, tp *tailPipeli
 	return nil
 }
 
-func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHint string) (int, string, bool) {
+func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHint string) error {
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 
@@ -240,24 +246,24 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
 	if err != nil {
 		p.log.Debug("tail preflight skipped", "error", err)
-		return 0, "", false
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 400 {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return 0, "", false
+		return nil
 	}
 
 	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-	msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
-	if msg == "" {
-		msg = http.StatusText(resp.StatusCode)
-	}
-	return resp.StatusCode, msg, true
+	return p.redactedBackendStatusError("", resp.StatusCode, body)
 }
 
-func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, string) {
+// maxTailCloseReasonBytes is the longest reason a websocket close frame holds
+// (RFC 6455 5.5: a 125-byte control payload minus the 2-byte code).
+const maxTailCloseReasonBytes = 123
+
+func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, error) {
 	// Use the full request context (parent) so that the response body reader — which
 	// the caller uses to forward the VL streaming tail — is not cancelled by a short
 	// probe deadline.  VL v1.50+ accepts the request immediately (200 OK headers
@@ -279,30 +285,26 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	vlURL := p.backend.String() + "/select/logsql/tail?" + params.Encode()
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
-		return nil, false, "failed to create native tail request"
+		return nil, false, fmt.Errorf("failed to create native tail request: %w", err)
 	}
 	p.applyBackendHeaders(req)
 	p.forwardTenantHeaders(req)
 
 	resp, err := p.tailClient.Do(req)
 	if err != nil {
-		return nil, false, err.Error()
+		return nil, false, err
 	}
 	if err := decodeCompressedHTTPResponse(resp, 0); err != nil { // a tail stream has no end, so no decoded length cap
 		_ = resp.Body.Close()
-		return nil, false, fmt.Sprintf("backend tail decode error: %v", err)
+		return nil, false, fmt.Errorf("backend tail decode error: %w", err)
 	}
 	if resp.StatusCode == http.StatusOK {
-		return resp, true, ""
+		return resp, true, nil
 	}
 
 	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 	_ = resp.Body.Close()
-	msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
-	if msg == "" {
-		msg = http.StatusText(resp.StatusCode)
-	}
-	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
+	return nil, false, p.redactedBackendStatusError("backend tail unavailable", resp.StatusCode, body)
 }
 
 func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery string, tp *tailPipeline, startHint string) {

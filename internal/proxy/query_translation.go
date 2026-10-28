@@ -1731,8 +1731,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
 	if err != nil {
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
@@ -2031,8 +2030,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	fetchStart := time.Unix(0, startNanos).Add(-spec.rangeWindow).UTC().Format(time.RFC3339Nano)
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, fetchStart, r.FormValue("end"))
 	if err != nil {
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
 		return
@@ -2160,7 +2158,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	// fetchBareParserStatsBuckets applied the series limit.
 	result, err := buildManualRangeMetricMatrixContext(r.Context(), aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2180,8 +2178,7 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 	endWindow := strconv.FormatInt(evalNanos, 10)
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, startWindow, endWindow)
 	if err != nil {
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return

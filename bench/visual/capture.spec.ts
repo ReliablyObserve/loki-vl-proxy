@@ -224,6 +224,9 @@ for (const p of spec.pages as PageSpec[]) {
         page.on("requestfailed", (rq) => {
           if (BACKEND.test(rq.url())) { pending.n--; pending.last = Date.now(); }
         });
+        page.on("requestfinished", (rq) => {
+          if (BACKEND.test(rq.url())) { pending.n--; pending.last = Date.now(); }
+        });
         page.on("response", async (rs) => {
           const rq = rs.request();
           if (!BACKEND.test(rq.url())) return;
@@ -231,7 +234,6 @@ for (const p of spec.pages as PageSpec[]) {
           try { body = await rs.json(); } catch { try { body = await rs.text(); } catch { body = null; } }
           records.push({ url: rq.url().replace(/^https?:\/\/[^/]+/, ""), method: rq.method(),
             request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body });
-          pending.n--; pending.last = Date.now();
         });
         const t0 = Date.now();
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
@@ -246,12 +248,14 @@ for (const p of spec.pages as PageSpec[]) {
         }
         const ok = await settle(page, pending);
         const unavailable = records.some((x) => x.status === 500 && /plugin\.(unavailable|connectionUnavailable)/.test(JSON.stringify(x.response)));
-        // A page that never settled and drew nothing was caught mid-start (or by a dying plugin process): load it again.
-        const empty = !ok && !records.some((x) => x.status === 200);
+        // A 200 whose body could not be read is not a successful data capture.
+        // Retry that and any page with requests still in flight; another 200
+        // resource response must not hide an incomplete panel query.
+        const incomplete = !ok || records.some((x) => x.status === 200 && x.response === null && x.url.startsWith("/api/ds/query"));
         // The app plugin crashed or its bundle did not load ("Plugin failed to load", see queriesAfterPanelModule):
         // load it again in a fresh browser context; the details and console errors of the last attempt are recorded.
         const pluginLoad = (await uiState(page)).banners.some((b) => /^Plugin (failed|unavailable|not found)/.test(b));
-        if ((unavailable || empty || pluginLoad) && attempt < 2) { await ctx.close(); await new Promise((res) => setTimeout(res, 5000)); continue; }
+        if ((unavailable || incomplete || pluginLoad) && attempt < 2) { await ctx.close(); await new Promise((res) => setTimeout(res, 5000)); continue; }
         const dir = path.join(OUT, "shots", p.id, r);
         const ddir = path.join(OUT, "data", p.id, r);
         fs.mkdirSync(dir, { recursive: true });

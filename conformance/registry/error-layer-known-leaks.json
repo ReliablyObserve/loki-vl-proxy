@@ -1,0 +1,232 @@
+{
+  "ceiling": 95,
+  "leaks": {
+    "alerts malformed": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "alerts truncated": [
+      "semantics/error-layer-silent-success"
+    ],
+    "alerts vl400_limit": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl400_parse": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl422": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl429": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl500": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl502_front": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "alerts vl503_front": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "detected_field_values client_cancel": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_field_values malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_field_values timeout": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_field_values truncated": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_fields client_cancel": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_fields malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_fields timeout": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_fields truncated": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_labels malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "detected_labels truncated": [
+      "semantics/error-layer-silent-success"
+    ],
+    "index_stats oversize": [
+      "semantics/error-layer-proxy-limit-status"
+    ],
+    "index_volume malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "index_volume oversize": [
+      "semantics/error-layer-proxy-limit-status"
+    ],
+    "index_volume_range malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "index_volume_range oversize": [
+      "semantics/error-layer-proxy-limit-status"
+    ],
+    "index_volume_range_drilldown malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "index_volume_range_drilldown oversize": [
+      "semantics/error-layer-proxy-limit-status"
+    ],
+    "patterns client_cancel": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns conn_refused": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns conn_reset": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns timeout": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns truncated": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl400_limit": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl422": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl429": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl500": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl502_front": [
+      "semantics/error-layer-silent-success"
+    ],
+    "patterns vl503_front": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_instant malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_log malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_rate malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown conn_refused": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text"
+    ],
+    "query_range_stats_drilldown conn_reset": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text"
+    ],
+    "query_range_stats_drilldown malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown timeout": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text"
+    ],
+    "query_range_stats_drilldown vl400_limit": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown vl422": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown vl429": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown vl500": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown vl502_front": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_stats_drilldown vl503_front": [
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-silent-success"
+    ],
+    "query_range_unwrap_rate_counter malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "rules vl400_limit": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl400_parse": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl422": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl429": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl500": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl502_front": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "rules vl503_front": [
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text"
+    ],
+    "series malformed": [
+      "semantics/error-layer-silent-success"
+    ],
+    "tail client_cancel": [
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-silent-success"
+    ],
+    "tail malformed": [
+      "semantics/error-layer-internal-go-text"
+    ],
+    "tail oversize": [
+      "semantics/error-layer-internal-go-text"
+    ],
+    "tail timeout": [
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-silent-success"
+    ],
+    "tail truncated": [
+      "semantics/error-layer-internal-go-text"
+    ]
+  }
+}

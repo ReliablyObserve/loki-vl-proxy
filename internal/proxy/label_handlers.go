@@ -106,8 +106,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		if p.serveStaleReadCacheOnError(w, "labels", cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("labels", status, time.Since(start))
 		return
 	}
@@ -236,8 +235,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		if (labelName == "service_name" || !isLabelValuesResponseTooLarge(err)) && p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("label_values", status, time.Since(start))
 		return
 	}
@@ -336,8 +334,7 @@ func (p *Proxy) handleDetectedLevelLabelValues(w http.ResponseWriter, r *http.Re
 			params.Set("field", detectedLevelLabel)
 			candidateValues, err := p.fetchVLFieldValues(r.Context(), "/select/logsql/stream_field_values", params)
 			if err != nil {
-				status := statusFromUpstreamErr(err)
-				p.writeError(w, status, err.Error())
+				status := p.writeErr(w, r.Context(), err)
 				p.metrics.RecordRequest("label_values", status, time.Since(start))
 				return
 			}
@@ -463,8 +460,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	coalKey := p.nativeCoalescerKey("series", r.Context(), params)
 	status, body, err := p.vlGetCoalescedWithStatus(r.Context(), coalKey, "/select/logsql/streams", params)
 	if err != nil {
-		httpStatus := statusFromUpstreamErr(err)
-		p.writeError(w, httpStatus, err.Error())
+		httpStatus := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("series", httpStatus, time.Since(start))
 		return
 	}
@@ -569,8 +565,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 		if p.serveStaleReadCacheOnError(w, "index_stats", cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("index_stats", status, time.Since(start))
 		return
 	}
@@ -750,8 +745,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		} else if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
 			return
 		} else {
-			status := statusFromUpstreamErr(err)
-			p.writeError(w, status, err.Error())
+			status := p.writeErr(w, r.Context(), err)
 			p.metrics.RecordRequest("detected_fields", status, time.Since(start))
 			return
 		}
@@ -843,8 +837,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		if p.serveStaleReadCacheOnError(w, "detected_field_values", cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("detected_field_values", status, time.Since(start))
 		return
 	}

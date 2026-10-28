@@ -149,7 +149,7 @@ func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.C
 		if errors.As(err, &upstream) && (upstream.status == http.StatusNotFound || upstream.status == http.StatusMethodNotAllowed || upstream.status == http.StatusNotImplemented) {
 			return false // a VictoriaLogs without stats_query_range: the recurrence reads /select/logsql/query
 		}
-		p.writeError(w, badRequestStatusOr(err, statusFromUpstreamErr(err)), err.Error())
+		p.writeErr(w, ctx, err)
 		return true
 	}
 	result, err := buildHitsRangeMetricMatrix(manualFunc, shiftSeriesSamples(series, sampleShift), start, end, step, window, p.limits().BufferedBackendBodyBytes)
@@ -246,7 +246,7 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 		}
 	}
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, statusFromUpstreamErr(err)), err.Error())
+		p.writeErr(w, ctx, err)
 		return
 	}
 	scale := 1.0
@@ -260,11 +260,7 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}
 	if err != nil {
-		status := http.StatusServiceUnavailable
-		if isCanceledErr(err) || isSeriesLimitError(err) {
-			status = statusFromUpstreamErr(err)
-		}
-		p.writeError(w, status, err.Error())
+		p.writeErr(w, ctx, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

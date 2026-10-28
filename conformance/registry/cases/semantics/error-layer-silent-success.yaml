@@ -1,0 +1,46 @@
+id: semantics/error-layer-silent-success
+title: A failed backend call is answered 200 with an empty or partial result (open)
+proves:
+  - status-500
+  - status-derived
+consumer: any
+why: |
+  Patterns answers 200 [] for every backend failure; detected_fields and
+  detected_field values answer 200 for timeouts, cancellations and broken
+  bodies; Drilldown stats answer 200 with a partial-results warning for every
+  stats failure (writeGrafanaStatsFailure); several routes decode a malformed
+  200 body as empty; native tail closes normally. 46 cells on 16 routes.
+  Loki answers the same failures with an error, and Drilldown's partial
+  carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
+  pkg/logql/engine.go:536-548). An empty chart instead of an error hides the
+  outage from the user.
+request:
+  scope: internal
+  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
+    errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
+    connection refused and reset, a reply after -backend-timeout, a client
+    cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
+    body above -backend-max-buffered-response-bytes), driven through 21 client
+    routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
+    rate_counter, json; query; series; labels; label values; detected_fields,
+    detected_field values, detected_labels; index stats, volume, volume_range,
+    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
+    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
+    VictoriaLogs through a fault-injecting forwarder and compares with Loki.
+compare:
+  mode: exact
+  fields: [status, errorType, body, headers]
+  expect: |
+    The failure mode's error (500, 504, 499, 429), never 200, except the documented max_query_series Drilldown partial reply.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy patterns.go, label_handlers.go detected_*, http_utils.go writeGrafanaStatsFailure, tail.go'
+  loki: 'pkg/querier/queryrange/limits.go:441-524; pkg/util/server/error.go:124-128'
+  proxy: '200 with an empty result or a warning'
+  planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
-	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
 )
@@ -244,6 +244,12 @@ func (p *Proxy) writeDrilldownPartialFromUpstream(w http.ResponseWriter, vlStatu
 }
 
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
+	p.writeErrorCause(w, code, msg, nil)
+}
+
+// writeErrorCause writes the JSON error envelope; cause, when set, is the full
+// error behind msg and goes to the log line only.
+func (p *Proxy) writeErrorCause(w http.ResponseWriter, code int, msg string, cause error) {
 	// Call sites that map backend failures to a fixed 5xx still surface the
 	// heavy-query queue rejection with Loki's queue-full status.
 	if code != http.StatusTooManyRequests && strings.HasPrefix(msg, lokiTooManyOutstandingRequests+": heavy VictoriaLogs queries") {
@@ -258,6 +264,11 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	}
 	if p.log != nil && p.log.Enabled(context.Background(), level) {
 		attrs := []any{"code", code, "error", msg}
+		if cause != nil {
+			// The full error (VictoriaLogs' message, the transport error, the
+			// flag of a proxy queue) is for operators only.
+			attrs = append(attrs, "upstream_error", cause.Error())
+		}
 		if strings.HasPrefix(msg, seriesLimitMessagePrefix) {
 			// Loki's message carries no operator hint; the log says which flag
 			// sets the limit that rejected this query.
@@ -282,25 +293,32 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	json.NewEncoder(w).Encode(body)
 }
 
+// statusFromUpstreamErr classifies a failed backend call (or the proxy work
+// on its answer) into Loki's status set, following Loki v3.7.9
+// pkg/util/server/error.go ClientHTTPStatusAndError: a cancellation is 499
+// (:103-105), a deadline 504 (:106-107), a rejected query or a Loki limit 400
+// (:108-123), a full queue 429 (pkg/queue/queue.go:21) and every other failure
+// 500 (:124-128). Loki never answers a query with 502, 503 or 422. The status
+// is also the one recorded in upstream metrics and logs (upstreamErrorStatus).
 func statusFromUpstreamErr(err error) int {
 	// A VictoriaLogs body that failed after its headers: Loki's 504 when the
-	// query ran out of time, a sanitized 502 otherwise.
+	// query ran out of time, a failed backend call otherwise.
 	var aborted *vlResponseAbortedError
 	if errors.As(err, &aborted) {
 		if aborted.timedOut {
 			return http.StatusGatewayTimeout
 		}
-		return http.StatusBadGateway
+		return http.StatusInternalServerError
 	}
 	// Loki's querier fails a label values response above
 	// grpc_server_max_send_msg_size with 500 ResourceExhausted.
 	if isLabelValuesResponseTooLarge(err) {
 		return http.StatusInternalServerError
 	}
-	if isUpstreamQueryRejected(err) {
+	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) {
 		return http.StatusBadRequest
 	}
-	if isHeavyQueryQueueFull(err) {
+	if isHeavyQueryQueueFull(err) || isUpstreamQueueFull(err) {
 		return http.StatusTooManyRequests
 	}
 	var matchingErr vectorMatchError
@@ -308,10 +326,7 @@ func statusFromUpstreamErr(err error) int {
 		return http.StatusInternalServerError
 	}
 	if err == nil {
-		return http.StatusBadGateway
-	}
-	if errors.Is(err, mw.ErrGuardRejected) {
-		return http.StatusServiceUnavailable
+		return http.StatusInternalServerError
 	}
 	if isCanceledErr(err) {
 		return 499
@@ -327,10 +342,134 @@ func statusFromUpstreamErr(err error) int {
 	if strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") {
 		return http.StatusGatewayTimeout
 	}
-	if strings.Contains(lower, "circuit breaker") {
-		return http.StatusServiceUnavailable
+	// Everything else, an open circuit breaker and a guard rejection included,
+	// is a failed backend call.
+	return http.StatusInternalServerError
+}
+
+// Loki's fixed client texts (v3.7.9).
+const (
+	// pkg/util/server/error.go:26
+	lokiErrClientCanceled = "the request was cancelled by the client"
+	// pkg/logqlmodel/error.go:13 (logqlmodel.ErrParse): the text of a query
+	// VictoriaLogs rejected, without VictoriaLogs' reason or query echo.
+	lokiErrParse = "failed to parse the log query"
+	// Loki returns a failed storage call's own error text (error.go:128) and
+	// has no fixed constant for it; the proxy never forwards the backend's
+	// text, so it answers the status line's reason phrase.
+	lokiErrInternal = "Internal Server Error"
+)
+
+// proxyLimitMarker ends every proxy limit message that names its flag
+// ("...; narrow the query or increase -<flag>").
+const proxyLimitMarker = "; narrow the query or increase -"
+
+// lokiClientError is the proxy's ClientHTTPStatusAndError: the status,
+// errorType and text a client sees for a failed request, with nothing of the
+// backend in it (no VictoriaLogs status, body, LogsQL, host:port or Go error).
+// The request context is checked first, as upstreamErrorStatus does: a call
+// aborted by the client or by the request deadline is 499 or 504 whatever the
+// transport returned.
+func lokiClientError(ctx context.Context, err error) (status int, errorType, text string) {
+	status = upstreamErrorStatus(ctx, err)
+	return status, lokiErrorType(status), lokiClientText(status, err)
+}
+
+// lokiClientText is the client text for err answered with status. Only texts
+// the proxy itself wrote in Loki's words pass through; every other error gets
+// Loki's fixed text for its status.
+func lokiClientText(status int, err error) string {
+	switch status {
+	case 499:
+		return lokiErrClientCanceled
+	case http.StatusGatewayTimeout:
+		return lokiErrDeadlineExceeded
+	case http.StatusTooManyRequests:
+		return lokiTooManyOutstandingRequests
 	}
-	return http.StatusBadGateway
+	if err == nil {
+		return lokiErrInternal
+	}
+	var (
+		seriesErr   *seriesLimitError
+		parseErr    *translator.ParseError
+		pipelineErr *orderedJSONPipelineError
+		matchingErr vectorMatchError
+		tooLarge    *labelValuesResponseTooLargeError
+		bodyLimit   *backendBodyTooLargeError
+	)
+	switch {
+	case errors.As(err, &seriesErr):
+		return seriesErr.Error()
+	case errors.As(err, &parseErr):
+		return parseErr.Error()
+	case errors.As(err, &pipelineErr):
+		return pipelineErr.Error()
+	case errors.As(err, &matchingErr):
+		return matchingErr.Error()
+	case errors.As(err, &tooLarge):
+		return tooLarge.Error()
+	case errors.As(err, &bodyLimit):
+		return bodyLimit.Error()
+	case status == http.StatusBadRequest:
+		return lokiErrParse
+	}
+	if msg, ok := proxyLimitText(err); ok {
+		return msg
+	}
+	return lokiErrInternal
+}
+
+// proxyLimitText returns the message of a proxy limit error that names its
+// flag, built by the proxy with no backend or transport error inside it.
+func proxyLimitText(err error) (string, bool) {
+	var (
+		statusErr *upstreamStatusError
+		urlErr    *url.Error
+		netErr    net.Error
+		aborted   *vlResponseAbortedError
+	)
+	if errors.As(err, &statusErr) || errors.As(err, &urlErr) || errors.As(err, &netErr) || errors.As(err, &aborted) {
+		return "", false
+	}
+	msg := err.Error()
+	i := strings.Index(msg, proxyLimitMarker)
+	if i < 0 || strings.ContainsAny(msg, "\n\"`{") {
+		return "", false
+	}
+	// The flag is the last word: nothing but its name follows the marker.
+	flag := msg[i+len(proxyLimitMarker):]
+	if flag == "" || strings.ContainsAny(flag, " ;:/") {
+		return "", false
+	}
+	return msg, true
+}
+
+// vlQueueTimeoutPrefix starts the 503 VictoriaLogs answers when a query waited
+// -search.maxQueueDuration for one of -search.maxConcurrentRequests slots
+// (app/vlselect/main.go:268 in v1.49.0, :313-318 in v1.53.0).
+const vlQueueTimeoutPrefix = "couldn't start executing the request in "
+
+// isUpstreamQueueFull reports a full VictoriaLogs (or front proxy) queue: a
+// 429, or VictoriaLogs' 503 for a request that never got a slot. Loki answers
+// its own full queue with 429 (pkg/queue/queue.go:21).
+func isUpstreamQueueFull(err error) bool {
+	var statusErr *upstreamStatusError
+	return errors.As(err, &statusErr) && (statusErr.status == http.StatusTooManyRequests || statusErr.class == vlErrorQueueFull)
+}
+
+func isOrderedJSONPipelineError(err error) bool {
+	var pipelineErr *orderedJSONPipelineError
+	return errors.As(err, &pipelineErr)
+}
+
+// writeErr answers a failed request through the single error layer:
+// lokiClientError picks Loki's status and text, the full error goes to the
+// request error log line. It returns the status written.
+func (p *Proxy) writeErr(w http.ResponseWriter, ctx context.Context, err error) int {
+	status, _, text := lokiClientError(ctx, err)
+	p.writeErrorCause(w, status, text, err)
+	return status
 }
 
 // upstreamErrorStatus maps a failed backend call to the status recorded in
@@ -387,6 +526,9 @@ const (
 	vlErrorResourceLimit
 	// vlErrorUnsupportedPath: an older VictoriaLogs lacks the endpoint.
 	vlErrorUnsupportedPath
+	// vlErrorQueueFull: the query never got one of VictoriaLogs'
+	// -search.maxConcurrentRequests slots (Loki: 429).
+	vlErrorQueueFull
 )
 
 // vlQueryRejectedPrefixes start VictoriaLogs messages for invalid queries and
@@ -441,6 +583,9 @@ var vlResourceLimitMarkers = []string{
 
 // classifyVLError classifies a raw (unredacted) VictoriaLogs error message.
 func classifyVLError(status int, rawMsg string) vlErrorClass {
+	if strings.HasPrefix(strings.TrimSpace(rawMsg), vlQueueTimeoutPrefix) {
+		return vlErrorQueueFull
+	}
 	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
 		return vlErrorUnclassified
 	}
@@ -557,63 +702,31 @@ func isUpstreamQueryRejected(err error) bool {
 	return errors.As(err, &parseErr)
 }
 
-// statusFromBackendErr maps an error for a client: a rejected query is 400, a
-// completed backend response keeps its status, anything else goes through
-// statusFromUpstreamErr.
-func statusFromBackendErr(err error) int {
-	if isUpstreamQueryRejected(err) {
-		return http.StatusBadRequest
-	}
-	var hsc httpStatusCoder
-	if errors.As(err, &hsc) {
-		return hsc.StatusCode()
-	}
-	return statusFromUpstreamErr(err)
-}
-
-// writeBackendError answers a completed VictoriaLogs error response and returns
-// the status written: 400 bad_data for a rejected query (including VL's 422 from
-// stats endpoints), the backend status otherwise.
+// writeBackendError answers a completed VictoriaLogs error response through
+// the error layer and returns the status written: 400 bad_data for a rejected
+// query (including VL's 422 from stats endpoints), 429 for a full VictoriaLogs
+// queue, Loki's 500 otherwise.
 func (p *Proxy) writeBackendError(w http.ResponseWriter, status int, body []byte) int {
-	err := p.redactedBackendStatusError("", status, body)
-	code := statusFromBackendErr(err)
-	p.writeError(w, code, err.Error())
-	return code
+	return p.writeErr(w, context.Background(), p.redactedBackendStatusError("", status, body))
 }
 
 // writeGrafanaStatsFailure answers a failed stats call for Grafana-sourced
 // traffic: a rejected query is Loki's 400, every other failure keeps the
 // partial-results reply (writeDrilldownPartialFromUpstream).
 func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
-	if isUpstreamQueryRejected(err) {
-		p.writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	// Loki's Drilldown partial-result carve-out covers max_query_series only; a
 	// full query queue stays a 429 for Grafana clients too, so panels show the
 	// rejection instead of an empty chart.
-	if isHeavyQueryQueueFull(err) {
-		p.writeError(w, http.StatusTooManyRequests, err.Error())
+	status := statusFromUpstreamErr(err)
+	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) || status == 499 {
+		p.writeErr(w, context.Background(), err)
 		return
 	}
-	status := statusFromUpstreamErr(err)
 	var hsc httpStatusCoder
 	if errors.As(err, &hsc) {
 		status = hsc.StatusCode()
 	}
 	p.writeDrilldownPartialFromUpstream(w, status, err.Error())
-}
-
-// badRequestStatusOr returns 400 for a rejected query and fallback otherwise, for
-// call sites that map every other backend failure to one fixed status.
-func badRequestStatusOr(err error, fallback int) int {
-	if isUpstreamQueryRejected(err) {
-		return http.StatusBadRequest
-	}
-	if isHeavyQueryQueueFull(err) {
-		return http.StatusTooManyRequests
-	}
-	return fallback
 }
 
 // shouldRecordBreakerFailure reports whether a failed backend call is evidence

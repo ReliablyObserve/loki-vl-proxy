@@ -264,8 +264,8 @@ func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 	if w.Code == http.StatusOK {
 		t.Errorf("cold failure should not produce a 200 OK silent partial response")
 	}
-	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want 502 or 503 (cold error propagated)", w.Code)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want Loki's 500 (cold error propagated)", w.Code)
 	}
 }
 
@@ -307,8 +307,8 @@ func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	if w.Code == http.StatusOK {
 		t.Errorf("hot failure should not produce a 200 OK silent partial response")
 	}
-	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want 502 or 503 (hot error propagated)", w.Code)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want Loki's 500 (hot error propagated)", w.Code)
 	}
 }
 

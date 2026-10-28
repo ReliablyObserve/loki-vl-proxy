@@ -290,8 +290,8 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	entries, _ := fetchPatterns("/select/logsql/query")
 	if len(entries) == 0 && diag.badRequest != nil {
 		// A rejected query must not be answered from the last pattern snapshot.
-		p.writeError(w, http.StatusBadRequest, diag.badRequest.Error())
-		p.metrics.RecordRequest("patterns", http.StatusBadRequest, time.Since(start))
+		status := p.writeErr(w, r.Context(), diag.badRequest)
+		p.metrics.RecordRequest("patterns", status, time.Since(start))
 		return
 	}
 	if len(entries) == 0 {
@@ -1391,8 +1391,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 		if p.serveStaleReadCacheOnError(w, "detected_labels", cacheKey, start, err) {
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status := p.writeErr(w, r.Context(), err)
 		p.metrics.RecordRequest("detected_labels", status, time.Since(start))
 		return
 	}

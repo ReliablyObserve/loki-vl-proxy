@@ -148,10 +148,9 @@ func TestMetadataScanAdmission_SaturatedReturns429NamingFlag(t *testing.T) {
 		t.Fatalf("rejected after %s, before the queue wait elapsed", waited)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"too many outstanding requests", "-backend-max-concurrent-metadata-scans=1", "-backend-heavy-query-queue-wait=100ms"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("429 body lacks %q: %s", want, body)
-		}
+	// Loki's queue-full text exactly (pkg/queue/queue.go:21); the flags go to the log.
+	if got := lokiErrorText(t, w); got != "too many outstanding requests" {
+		t.Fatalf("429 text = %q, want Loki's", got)
 	}
 	if strings.Contains(body, "-backend-max-concurrent-heavy-queries") {
 		t.Fatalf("metadata rejection names the heavy-query flag: %s", body)
@@ -418,8 +417,7 @@ func TestMetadataScanAdmission_ShedsScansWhenBackendMemoryRuns(t *testing.T) {
 	if scans.Load() == 0 {
 		t.Fatal("the scan never reached VictoriaLogs")
 	}
-	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "stopped to keep VictoriaLogs' memory inside the headroom") ||
-		!strings.Contains(w.Body.String(), "too many outstanding requests") {
+	if w.Code != http.StatusTooManyRequests || lokiErrorText(t, w) != "too many outstanding requests" {
 		t.Fatalf("status %d body %s; want the 429 of a stopped scan", w.Code, w.Body.String())
 	}
 	if took := time.Since(started); took > 5*time.Second {

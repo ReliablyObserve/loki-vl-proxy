@@ -605,7 +605,7 @@ func TestLock_VLErrorsConvertedToPartialResults(t *testing.T) {
 			vlStatus:            http.StatusBadGateway,
 			vlBody:              `{"error":"too many rows scanned"}`,
 			grafanaSourced:      false,
-			expectStatus:        http.StatusBadGateway, // real error visible
+			expectStatus:        http.StatusInternalServerError, // Loki's 500 for a failed backend
 			expectWarningHeader: false,
 			expectUpstreamHdr:   false,
 		},

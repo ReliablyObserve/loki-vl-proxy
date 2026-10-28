@@ -56,8 +56,10 @@ func requireTooLargeError(t *testing.T, err error) {
 	if !strings.Contains(err.Error(), "-backend-max-buffered-response-bytes") {
 		t.Fatalf("error %q does not name the flag that bounds it", err)
 	}
-	if got := statusFromUpstreamErr(err); got != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502", got)
+	// Loki's ResourceExhausted class is a 500 (pkg/util/server/error.go:93-100);
+	// the proxy's limit text names the flag.
+	if status, _, text := lokiClientError(context.Background(), err); status != http.StatusInternalServerError || text != err.Error() {
+		t.Fatalf("client answer = %d %q, want 500 %q", status, text, err.Error())
 	}
 }
 

@@ -1126,8 +1126,8 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	resp := httptest.NewRecorder()
 	p.handleQueryRange(resp, req)
 
-	if resp.Code != http.StatusBadGateway {
-		t.Fatalf("expected windowed query failure status=502, got=%d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected Loki windowed query failure status=500, got=%d body=%s", resp.Code, resp.Body.String())
 	}
 	if got := fullRangeCalls.Load(); got != 0 {
 		t.Fatalf("expected no direct full-range fallback call, got %d", got)
@@ -1140,8 +1140,8 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	if parsed["status"] != "error" {
 		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
 	}
-	if parsed["errorType"] != "unavailable" {
-		t.Fatalf("expected Loki errorType=unavailable, body=%s", resp.Body.String())
+	if parsed["errorType"] != "internal" {
+		t.Fatalf("expected Loki errorType=internal, body=%s", resp.Body.String())
 	}
 }
 
@@ -1617,8 +1617,10 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 		t.Fatal("expected generic validation error to be non-retryable")
 	}
 
-	if got := statusFromBackendErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusServiceUnavailable {
-		t.Fatalf("expected http status passthrough, got=%d", got)
+	// Loki answers a failed backend with 500 (pkg/util/server/error.go:124-128),
+	// never VictoriaLogs' own 503.
+	if got := statusFromUpstreamErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusInternalServerError {
+		t.Fatalf("expected Loki's 500 for a failed backend, got=%d", got)
 	}
 
 	if got := queryRangeWindowRetryBackoff(0); got != queryRangeRetryMinBackoff {

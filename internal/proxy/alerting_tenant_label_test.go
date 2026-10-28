@@ -226,7 +226,7 @@ func TestTenantLabelRouting_UnattributableAlertingAnswerIsRefused(t *testing.T) 
 		rec := httptest.NewRecorder()
 		serveProxy(p, rec, req)
 		backend.Close()
-		if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), "other") {
+		if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "other") {
 			t.Fatalf("%q: %d %s", body, rec.Code, rec.Body.String())
 		}
 	}
@@ -352,9 +352,9 @@ func TestTenantLabelRouting_AlertingAnswerShapes(t *testing.T) {
 		name, body string
 		want       int
 	}{
-		{"groups and alerts", `{"status":"success","data":{"groups":[],"alerts":[]}}`, http.StatusBadGateway},
-		{"groups not a list", `{"status":"success","data":{"groups":"x"}}`, http.StatusBadGateway},
-		{"no data", `{"status":"success"}`, http.StatusBadGateway},
+		{"groups and alerts", `{"status":"success","data":{"groups":[],"alerts":[]}}`, http.StatusInternalServerError},
+		{"groups not a list", `{"status":"success","data":{"groups":"x"}}`, http.StatusInternalServerError},
+		{"no data", `{"status":"success"}`, http.StatusInternalServerError},
 		{"null groups", `{"status":"success","data":{"groups":null}}`, http.StatusOK},
 		{"null alerts", `{"status":"success","data":{"alerts":null}}`, http.StatusOK},
 	} {

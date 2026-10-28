@@ -100,8 +100,8 @@ func TestHandleDetectedLabels_BackendErrorReturnsGatewayError(t *testing.T) {
 
 	p.handleDetectedLabels(w, r)
 
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -132,8 +132,8 @@ func TestHandleDetectedLabels_DoesNotCacheTransientErrorFallback(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest(http.MethodGet, reqPath, nil)
 	p.handleDetectedLabels(w1, r1)
-	if w1.Code != http.StatusBadGateway {
-		t.Fatalf("first call expected 502, got %d body=%s", w1.Code, w1.Body.String())
+	if w1.Code != http.StatusInternalServerError {
+		t.Fatalf("first call expected 500, got %d body=%s", w1.Code, w1.Body.String())
 	}
 
 	fail.Store(false)
@@ -196,8 +196,8 @@ func TestHandleDetectedFields_DoesNotCacheTransientErrorFallback(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest(http.MethodGet, reqPath, nil)
 	p.handleDetectedFields(w1, r1)
-	if w1.Code != http.StatusBadGateway {
-		t.Fatalf("first call expected 502, got %d body=%s", w1.Code, w1.Body.String())
+	if w1.Code != http.StatusInternalServerError {
+		t.Fatalf("first call expected 500, got %d body=%s", w1.Code, w1.Body.String())
 	}
 
 	fail.Store(false)
