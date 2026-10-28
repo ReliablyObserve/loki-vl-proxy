@@ -322,6 +322,11 @@ type fleetCounters struct {
 	// inventory (metadata_stream_inventory_unit); its unit lookups use the
 	// shared read path, so they are also in tierL2Hits and tierL3Hits.
 	invMemory, invDisk, invPeer, invVL float64
+	// How the stream inventory answered (operation metadata_stream_inventory):
+	// from this replica's own scope (hit), through the scope's owner
+	// (forwarded; the owner counts served_peer), or locally after the owner
+	// did not answer (forward_fallback).
+	invHit, invForwarded, invServedPeer, invForwardFallback float64
 	// VictoriaLogs calls made by every running replica of the fleet while
 	// one request was answered (set by ask): a replica may forward work to
 	// a peer, so "no VictoriaLogs call" is checked fleet-wide.
@@ -342,35 +347,42 @@ func readCounters(t *testing.T, addr string) fleetCounters {
 func countersFrom(m promScrape) fleetCounters {
 	vl := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/*"}
 	stats := map[string]string{"system": "vl", "direction": "upstream", "route": "/select/logsql/stats_query_range"}
+	invOp := func(outcome string) float64 {
+		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory", "outcome": outcome})
+	}
 	inv := func(source string) float64 {
 		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory_unit", "outcome": source})
 	}
 	return fleetCounters{
-		vlSelect:          m.sum("loki_vl_proxy_requests_total", vl),
-		vlStats:           m.sum("loki_vl_proxy_requests_total", stats),
-		vlSeconds:         m.sum("loki_vl_proxy_backend_duration_seconds_sum", nil),
-		peerHits:          m.sum("loki_vl_proxy_peer_cache_hits_total", nil),
-		backupHits:        m.sum("loki_vl_proxy_peer_cache_backup_hits_total", nil),
-		peerMisses:        m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
-		peerErrors:        m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
-		wtPushes:          m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
-		wtErrors:          m.sum("loki_vl_proxy_peer_cache_write_through_errors_total", nil),
-		tierL2Hits:        m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l2_disk"}),
-		tierL3Hits:        m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l3_peer"}),
-		windowHits:        m.sum("loki_vl_proxy_window_cache_hit_total", nil),
-		windowMisses:      m.sum("loki_vl_proxy_window_cache_miss_total", nil),
-		patternsPeer:      m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
-		missedAll:         m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
-		peerFetchSeconds:  m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_sum", nil),
-		peerFetches:       m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_count", nil),
-		vlBackground:      m.sum("loki_vl_proxy_upstream_background_requests_total", map[string]string{"system": "vl", "route": "/select/*"}),
-		vlStatsBackground: m.sum("loki_vl_proxy_upstream_background_requests_total", map[string]string{"system": "vl", "route": "/select/logsql/stats_query_range"}),
-		invMemory:         inv("memory"),
-		invDisk:           inv("disk"),
-		invPeer:           inv("peer"),
-		invVL:             inv("vl"),
-		slnRefreshes:      m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "stream_label_names", "outcome": "refresh*"}),
-		vlRoutes:          vlRouteCounts(m),
+		vlSelect:           m.sum("loki_vl_proxy_requests_total", vl),
+		vlStats:            m.sum("loki_vl_proxy_requests_total", stats),
+		vlSeconds:          m.sum("loki_vl_proxy_backend_duration_seconds_sum", nil),
+		peerHits:           m.sum("loki_vl_proxy_peer_cache_hits_total", nil),
+		backupHits:         m.sum("loki_vl_proxy_peer_cache_backup_hits_total", nil),
+		peerMisses:         m.sum("loki_vl_proxy_peer_cache_misses_total", nil),
+		peerErrors:         m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
+		wtPushes:           m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
+		wtErrors:           m.sum("loki_vl_proxy_peer_cache_write_through_errors_total", nil),
+		tierL2Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l2_disk"}),
+		tierL3Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l3_peer"}),
+		windowHits:         m.sum("loki_vl_proxy_window_cache_hit_total", nil),
+		windowMisses:       m.sum("loki_vl_proxy_window_cache_miss_total", nil),
+		patternsPeer:       m.sum("loki_vl_proxy_patterns_restored_from_peers_total", nil),
+		missedAll:          m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
+		peerFetchSeconds:   m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_sum", nil),
+		peerFetches:        m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_count", nil),
+		vlBackground:       m.sum("loki_vl_proxy_upstream_background_requests_total", map[string]string{"system": "vl", "route": "/select/*"}),
+		vlStatsBackground:  m.sum("loki_vl_proxy_upstream_background_requests_total", map[string]string{"system": "vl", "route": "/select/logsql/stats_query_range"}),
+		invMemory:          inv("memory"),
+		invDisk:            inv("disk"),
+		invPeer:            inv("peer"),
+		invVL:              inv("vl"),
+		invHit:             invOp("hit"),
+		invForwarded:       invOp("forwarded"),
+		invServedPeer:      invOp("served_peer"),
+		invForwardFallback: invOp("forward_fallback"),
+		slnRefreshes:       m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "stream_label_names", "outcome": "refresh*"}),
+		vlRoutes:           vlRouteCounts(m),
 	}
 }
 
@@ -411,6 +423,7 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		peerFetchSeconds: a.peerFetchSeconds - b.peerFetchSeconds, peerFetches: a.peerFetches - b.peerFetches,
 		vlBackground: a.vlBackground - b.vlBackground, vlStatsBackground: a.vlStatsBackground - b.vlStatsBackground,
 		invMemory: a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
+		invHit: a.invHit - b.invHit, invForwarded: a.invForwarded - b.invForwarded, invServedPeer: a.invServedPeer - b.invServedPeer, invForwardFallback: a.invForwardFallback - b.invForwardFallback,
 		fleetVLSelect: a.fleetVLSelect - b.fleetVLSelect, fleetVLStats: a.fleetVLStats - b.fleetVLStats, fleetVLSeconds: a.fleetVLSeconds - b.fleetVLSeconds,
 		slnRefreshes: a.slnRefreshes - b.slnRefreshes,
 		vlRoutes:     routesMinus(a.vlRoutes, b.vlRoutes), fleetVLRoutes: routesMinus(a.fleetVLRoutes, b.fleetVLRoutes),

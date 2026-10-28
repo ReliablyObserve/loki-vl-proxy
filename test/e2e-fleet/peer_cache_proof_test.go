@@ -646,6 +646,8 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		compareWithLoki(t, fx, base, rebuilt)
 	})
 
+	runNearNowPhase(t)
+
 	runEdgeCases(t, fx, base, first)
 }
 
