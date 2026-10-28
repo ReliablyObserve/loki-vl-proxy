@@ -732,11 +732,9 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
 	if p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
-		if p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
-			return true
+		if !p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
+			p.writeSlidingStatsRoute(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
 		}
-		markQueryStepsRoute(r.Context(), "sliding-stats")
-		p.writeSlidingWindowStatsRange(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
 		return true
 	}
 	if !bucketsOK || (bucket > 0 && (endTS.Sub(startTS)+origSpec.Window)/bucket > heavyQueryBucketThreshold) {

@@ -223,6 +223,13 @@ func (s *slidingStats) metric(series int32) map[string]string {
 // writeSlidingWindowStatsRange evaluates the query with the two-grid recurrence
 // and writes the Loki matrix. Backend errors are returned to the client rather
 // than retried on a heavier path.
+// writeSlidingStatsRoute marks the request as answered by the sliding stats
+// evaluator for settled steps, then writes the sliding window answer.
+func (p *Proxy) writeSlidingStatsRoute(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, manualFunc, field string, start, end time.Time, step, window time.Duration) {
+	markQueryStepsRoute(ctx, "sliding-stats")
+	p.writeSlidingWindowStatsRange(w, ctx, spec, manualFunc, field, start, end, step, window)
+}
+
 func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, manualFunc, field string, start, end time.Time, step, window time.Duration) {
 	withBytes := field == "__bytes__"
 	steps := int(end.Sub(start) / step)
