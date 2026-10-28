@@ -423,10 +423,10 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	t.Logf("fixture %s: %d lines over [%s, %s)", fx.probe, fx.lines, fx.start.Format(time.RFC3339), fx.end.Format(time.RFC3339))
 
 	// Phase 1: an entry computed on A is read by B and C.
-	ok := t.Run("cross_peer_read", func(t *testing.T) {
+	ok := proofRun(t, "cross_peer_read", func(t *testing.T) {
 		phase := startPhase("cross_peer_read", fleetReplicas())
 		defer phase.stop()
-		t.Run("stats_extent", func(t *testing.T) {
+		proofRun(t, "stats_extent", func(t *testing.T) {
 			d, _ := warm(t, a, base.metric, first)
 			if d.fleetVLStats == 0 {
 				t.Fatalf("A answered %s without a stats_query_range call: the extent cache path was not taken (%s)", base.metric[0], d)
@@ -434,7 +434,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			requireReadsWithoutVL(t, base.metric, first, fleetStats, "stats_query_range")
 			readAgain(t, fleetReplicas(), base.metric, first)
 		})
-		t.Run("patterns", func(t *testing.T) {
+		proofRun(t, "patterns", func(t *testing.T) {
 			warm(t, a, base.patterns, first)
 			for _, req := range base.patterns {
 				if patternsCount(t, req.String(), first[req.path]) == 0 {
@@ -444,7 +444,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			requireReadsWithoutVL(t, base.patterns, first, fleetSelect, "select")
 			readAgain(t, fleetReplicas(), base.patterns, first)
 		})
-		t.Run("query_range_window", func(t *testing.T) {
+		proofRun(t, "query_range_window", func(t *testing.T) {
 			d, _ := warm(t, a, base.windows, first)
 			if d.windowMisses == 0 {
 				t.Fatalf("A answered the log queries without window fetches: windowing was not used (%s)", d)
@@ -455,7 +455,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			readAgain(t, fleetReplicas(), base.windows, first)
 		})
-		t.Run("metadata", func(t *testing.T) {
+		proofRun(t, "metadata", func(t *testing.T) {
 			warm(t, a, base.metadata, first)
 			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB, replicaC)
 			if fromPeer < 1 {
@@ -463,7 +463,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			readAgain(t, fleetReplicas(), base.metadata, first)
 		})
-		t.Run("snapshots_published", func(t *testing.T) {
+		proofRun(t, "snapshots_published", func(t *testing.T) {
 			// The patterns and label-values index snapshots a replica that
 			// lost its disk warms from: some peer other than B must hold each.
 			waitPeerHasKey(t, patternsSnapshotKey, 20*time.Second, a.addr, c.addr)
@@ -477,13 +477,13 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	}
 
 	// Phase 2: B restarts with its disk; its memory is empty.
-	t.Run("memory_lost_disk_kept", func(t *testing.T) {
+	proofRun(t, "memory_lost_disk_kept", func(t *testing.T) {
 		phase := startPhase("memory_lost_disk_kept", fleetReplicas())
 		defer phase.stop()
 		started := time.Now()
 		restartKeepDisk(t, replicaB)
 		proofRec.addEdge("restart_keep_disk", map[string]any{"replica": b.name, "ready_after_ms": ms(time.Since(started))})
-		t.Run("stats_extent", func(t *testing.T) {
+		proofRun(t, "stats_extent", func(t *testing.T) {
 			// Buckets B owns were pushed to it and written to its disk; the
 			// others are on their owners.
 			for _, req := range base.metric {
@@ -492,20 +492,20 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				}
 			}
 		})
-		t.Run("patterns", func(t *testing.T) {
+		proofRun(t, "patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
 				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLSelect != 0 {
 					t.Errorf("%s on B after a restart caused %.0f VictoriaLogs calls (%s)", req, d.fleetVLSelect, d)
 				}
 			}
 		})
-		t.Run("metadata", func(t *testing.T) {
+		proofRun(t, "metadata", func(t *testing.T) {
 			total, _, fromDisk := requireMetadataReadThrough(t, base.metadata, first, replicaB)
 			if fromDisk < 1 {
 				t.Errorf("B served no metadata answer from its own disk after a restart (%s)", total)
 			}
 		})
-		t.Run("query_range_window_memory_only", func(t *testing.T) {
+		proofRun(t, "query_range_window_memory_only", func(t *testing.T) {
 			// Windows are kept in memory only (SetLocalOnlyWithTTL): after a
 			// restart every window hit on B is a peer read, none a disk read.
 			requireWindowReadThrough(t, base.windows, first, replicaB)
@@ -514,7 +514,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	})
 
 	// Phase 3: B loses its disk too and refills from its peers.
-	t.Run("disk_lost_refill_from_peers", func(t *testing.T) {
+	proofRun(t, "disk_lost_refill_from_peers", func(t *testing.T) {
 		phase := startPhase("disk_lost_refill_from_peers", fleetReplicas())
 		stopped := false
 		defer func() {
@@ -525,7 +525,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		started := time.Now()
 		recreateWithoutDisk(t, replicaB)
 		proofRec.addEdge("recreate_without_disk", map[string]any{"replicas": []string{b.name}, "ready_after_ms": ms(time.Since(started))})
-		t.Run("snapshots_warmed_from_peers", func(t *testing.T) {
+		proofRun(t, "snapshots_warmed_from_peers", func(t *testing.T) {
 			deadline := time.Now().Add(30 * time.Second)
 			for readCounters(t, b.addr).patternsPeer < 1 {
 				if time.Now().After(deadline) {
@@ -538,14 +538,14 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			waitPeerHasKey(t, labelValuesSnapshotKey, 30*time.Second, b.addr)
 			proofRec.addEdge("snapshot_warm_from_peers", map[string]any{"replica": b.name, "warm_after_ready_ms": ms(time.Since(started))})
 		})
-		t.Run("patterns", func(t *testing.T) {
+		proofRun(t, "patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
 				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLSelect != 0 {
 					t.Errorf("%s on B without a disk caused %.0f VictoriaLogs calls; the patterns came back from its peers (%s)", req, d.fleetVLSelect, d)
 				}
 			}
 		})
-		t.Run("stats_extent", func(t *testing.T) {
+		proofRun(t, "stats_extent", func(t *testing.T) {
 			// Buckets owned by A or C come from them. The ones B owned are
 			// lost with its disk: with one copy per key (an owner never asks
 			// its peers for its own keys) they are read again from
@@ -571,7 +571,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				}
 			}
 		})
-		t.Run("metadata", func(t *testing.T) {
+		proofRun(t, "metadata", func(t *testing.T) {
 			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB)
 			if fromPeer < 1 {
 				t.Errorf("B without a disk read no metadata answer from its peers (%s)", total)
@@ -583,7 +583,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			proofRec.addEdge("disk_lost_inventory_units", map[string]any{"replica": b.name, "memory": total.invMemory, "disk": total.invDisk, "peer": total.invPeer, "vl": total.invVL})
 		})
-		t.Run("query_range_window", func(t *testing.T) {
+		proofRun(t, "query_range_window", func(t *testing.T) {
 			total := requireWindowReadThrough(t, base.windows, first, replicaB)
 			if total.windowHits < 1 {
 				t.Errorf("B without a disk read no window from its peers (%s)", total)
@@ -597,7 +597,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 
 	// Phase 4: A goes down holding the only copy of the entries it owns; B
 	// and C answer from VictoriaLogs, unchanged, within the peer timeout.
-	t.Run("owner_down_served_by_others", func(t *testing.T) {
+	proofRun(t, "owner_down_served_by_others", func(t *testing.T) {
 		phase := startPhase("owner_down_served_by_others", fleetReplicas())
 		defer phase.stop()
 		fresh := freshProofSet(fx, "down")
@@ -620,7 +620,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	// Phase 5: every replica loses memory and disk; the fleet rebuilds from
 	// VictoriaLogs and answers like Loki.
 	rebuilt := answers{}
-	t.Run("all_lost_rebuild_equals_loki", func(t *testing.T) {
+	proofRun(t, "all_lost_rebuild_equals_loki", func(t *testing.T) {
 		phase := startPhase("all_lost_rebuild_equals_loki", fleetReplicas())
 		defer phase.stop()
 		started := time.Now()

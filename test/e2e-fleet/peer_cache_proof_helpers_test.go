@@ -923,3 +923,30 @@ func labelValues(t *testing.T, label string, body []byte) []string {
 	sort.Strings(resp.Data)
 	return resp.Data
 }
+
+// --- known gaps --------------------------------------------------------------
+
+// proofKnownGaps are subtests of TestFleetPeerCacheProof (paths below it, as
+// "phase/layer") that FLEET_PROOF_SKIP lists, comma separated, for local
+// investigation of one phase only. CI never sets it: every subtest is a gate.
+var proofKnownGaps = func() map[string]bool {
+	out := map[string]bool{}
+	for _, name := range strings.Split(envOr("FLEET_PROOF_SKIP", ""), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			out[name] = true
+		}
+	}
+	return out
+}()
+
+// proofRun is t.Run that skips the subtests FLEET_PROOF_SKIP lists.
+func proofRun(t *testing.T, name string, fn func(t *testing.T)) bool {
+	t.Helper()
+	return t.Run(name, func(t *testing.T) {
+		rel := strings.TrimPrefix(t.Name(), "TestFleetPeerCacheProof/")
+		if proofKnownGaps[rel] {
+			t.Skipf("%s: skipped by FLEET_PROOF_SKIP (local investigation only)", rel)
+		}
+		fn(t)
+	})
+}
