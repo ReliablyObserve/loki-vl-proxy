@@ -205,6 +205,7 @@
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
     "loki_api_v1_query": [
+      "internal/proxy/binary_ignoring_matching_test.go",
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/parenthesized_range_test.go",
@@ -217,6 +218,7 @@
       "internal/proxy/unwrap_samples_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
+      "test/e2e-compat/binary_ignoring_matching_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
@@ -237,6 +239,8 @@
     ],
     "loki_api_v1_query_range": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/binary_ignoring_matching_test.go",
+      "internal/proxy/binary_matching_differential_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
@@ -258,6 +262,7 @@
       "internal/translator/regexp_escaping_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
+      "test/e2e-compat/binary_ignoring_matching_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
@@ -509,6 +514,11 @@
     "semantics/binary-division-by-zero-nan": [
       "internal/proxy/binary_division_zero_test.go",
       "test/e2e-compat/binary_division_zero_test.go"
+    ],
+    "semantics/binary-ignoring-matching": [
+      "internal/proxy/binary_ignoring_matching_test.go",
+      "internal/proxy/binary_matching_differential_test.go",
+      "test/e2e-compat/binary_ignoring_matching_test.go"
     ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
@@ -986,6 +996,15 @@
     ],
     "internal/proxy/binary_division_zero_test.go": [
       "semantics/binary-division-by-zero-nan"
+    ],
+    "internal/proxy/binary_ignoring_matching_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/binary-ignoring-matching"
+    ],
+    "internal/proxy/binary_matching_differential_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/binary-ignoring-matching"
     ],
     "internal/proxy/binary_matching_test.go": [
       "loki_api_v1_query",
@@ -1541,6 +1560,11 @@
       "loki_api_v1_query_range",
       "semantics/binary-division-by-zero-nan"
     ],
+    "test/e2e-compat/binary_ignoring_matching_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/binary-ignoring-matching"
+    ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
       "profiles/detected-fields-dotted-json-keys",
@@ -1842,7 +1866,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 186,
+  "tests_with_markers": 189,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1899,7 +1923,6 @@
     "quality/stats-volume-freshness",
     "semantics/absent-over-time-semantics",
     "semantics/aggregation-over-binary-dropped",
-    "semantics/binary-ignoring-matching",
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
@@ -1940,5 +1963,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 166
+  "wired_items": 167
 }
