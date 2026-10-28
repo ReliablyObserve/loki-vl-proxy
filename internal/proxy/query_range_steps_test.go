@@ -201,32 +201,36 @@ func TestQueryRangeStepsMatchUncached(t *testing.T) {
 	end := s0.Add(3 * time.Hour)
 	for _, tc := range []struct {
 		name     string
+		queries  []string
 		raw      func(at time.Duration, app string) string
 		want400  bool
 		wantNaN  bool
 		minCache int
 	}{
-		{"clean", nil, false, false, 100},
-		{"nan", func(at time.Duration, app string) string {
+		{"clean", queryStepsQueries, nil, false, false, 100},
+		// Every query shape is checked above. The NaN and conversion-error
+		// fixtures exercise representative unwrap aggregations over every
+		// moved window, without repeating unrelated count and binary routes.
+		{"nan", []string{queryStepsQueries[1], queryStepsQueries[6], queryStepsQueries[7], queryStepsQueries[8]}, func(at time.Duration, app string) string {
 			if app == "pay" && at >= 100*time.Minute && at < 101*time.Minute {
 				return "NaN"
 			}
 			return ""
-		}, false, true, 50},
+		}, false, true, 20},
 		// The first window ends at 3h: a rejected value at 3h01m is read only in
 		// the fresh part of a moved window, after its steps were stored.
-		{"rejected value only in the fresh part", func(at time.Duration, app string) string {
+		{"rejected value only in the fresh part", []string{queryStepsQueries[1], queryStepsQueries[6], queryStepsQueries[7]}, func(at time.Duration, app string) string {
 			if app == "pay" && at >= 181*time.Minute && at < 182*time.Minute {
 				return "x7"
 			}
 			return ""
-		}, true, false, 20},
+		}, true, false, 10},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows := queryStepsRows(s0, span, tc.raw)
-			outcomes, withData, nans, rejected := runQueryStepsDifferential(t, rows, queryStepsQueries, queryStepsWindows(end))
+			outcomes, withData, nans, rejected := runQueryStepsDifferential(t, rows, tc.queries, queryStepsWindows(end))
 			t.Logf("outcomes %v; %d answers with data (%d with NaN), %d with Loki's 400", outcomes, withData, nans, rejected)
-			if withData < len(queryStepsQueries)*5 || tc.want400 != (rejected > 0) || tc.wantNaN != (nans > 0) {
+			if withData < len(tc.queries)*5 || tc.want400 != (rejected > 0) || tc.wantNaN != (nans > 0) {
 				t.Fatalf("%d answers with data (%d with NaN), %d with Loki's 400: the run proves little", withData, nans, rejected)
 			}
 			if outcomes["hit"]+outcomes["partial"] < tc.minCache || outcomes["unreadable"] != 0 {
